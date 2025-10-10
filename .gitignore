@@ -1,0 +1,6 @@
+.scanoss
+results.json
+*.wfp
+build
+dist
+target
