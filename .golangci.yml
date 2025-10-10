@@ -9,6 +9,8 @@ run:
 formatters:
   enable:
     - goimports
+    - gofmt
+    - gofumpt
 
   settings:
     goimports:
@@ -18,7 +20,6 @@ linters:
   enable:
     # Enabled by default
     - errcheck # Checks for unchecked errors
-    - gosimple # Simplifies code
     - govet # Reports suspicious constructs
     - ineffassign # Detects ineffectual assignments
     - staticcheck # Comprehensive static analysis
@@ -33,10 +34,7 @@ linters:
     - bodyclose # Checks whether HTTP response body is closed successfully
 
     # Style & code quality
-    - gofmt # Checks whether code is formatted
-    - gofumpt # Stricter gofmt
     - revive # Fast, configurable, extensible, flexible linter
-    - stylecheck # Stylecheck is a replacement for golint
     - unconvert # Removes unnecessary type conversions
     - unparam # Reports unused function parameters
     - whitespace # Checks for unnecessary newlines
