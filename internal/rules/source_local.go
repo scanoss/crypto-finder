@@ -9,23 +9,38 @@ import (
 	"strings"
 )
 
-// LocalRulesLoader handles loading and validation of local rule files.
-type LocalRulesLoader struct{}
+// LocalRuleSource handles loading and validation of local rule files.
+type LocalRuleSource struct {
+	rulePaths []string
+	ruleDirs  []string
+}
 
-// Load validates and collects all rule file paths from individual files and directories.
+// NewLocalRuleSource creates a new local rule source.
 //
 // Parameters:
 //   - rulePaths: Individual rule file paths (from --rules flags)
 //   - ruleDirs: Rule directory paths (from --rules-dir flags)
 //
 // Returns:
+//   - *LocalRuleSource: Source configured to load from local paths and directories
+func NewLocalRuleSource(rulePaths []string, ruleDirs []string) *LocalRuleSource {
+	return &LocalRuleSource{
+		rulePaths: rulePaths,
+		ruleDirs:  ruleDirs,
+	}
+}
+
+// Load validates and collects all rule file paths from individual files and directories.
+// Returns absolute paths to all valid YAML rule files.
+//
+// Returns:
 //   - []string: All validated rule file paths (absolute paths)
 //   - error: If any path is invalid or doesn't exist
-func (l *LocalRulesLoader) Load(rulePaths []string, ruleDirs []string) ([]string, error) {
+func (l *LocalRuleSource) Load() ([]string, error) {
 	allRules := make([]string, 0)
 
 	// Process individual rule files
-	for _, rulePath := range rulePaths {
+	for _, rulePath := range l.rulePaths {
 		absPath, err := l.validateRuleFile(rulePath)
 		if err != nil {
 			return nil, fmt.Errorf("invalid rule file '%s': %w", rulePath, err)
@@ -34,7 +49,7 @@ func (l *LocalRulesLoader) Load(rulePaths []string, ruleDirs []string) ([]string
 	}
 
 	// Process rule directories
-	for _, ruleDir := range ruleDirs {
+	for _, ruleDir := range l.ruleDirs {
 		rules, err := l.loadRulesFromDirectory(ruleDir)
 		if err != nil {
 			return nil, fmt.Errorf("invalid rule directory '%s': %w", ruleDir, err)
@@ -50,6 +65,21 @@ func (l *LocalRulesLoader) Load(rulePaths []string, ruleDirs []string) ([]string
 	return allRules, nil
 }
 
+// Name returns a descriptive name for this rule source.
+func (l *LocalRuleSource) Name() string {
+	totalFiles := len(l.rulePaths)
+	totalDirs := len(l.ruleDirs)
+
+	if totalFiles > 0 && totalDirs > 0 {
+		return fmt.Sprintf("local(%d files, %d dirs)", totalFiles, totalDirs)
+	} else if totalFiles > 0 {
+		return fmt.Sprintf("local(%d files)", totalFiles)
+	} else if totalDirs > 0 {
+		return fmt.Sprintf("local(%d dirs)", totalDirs)
+	}
+	return "local(empty)"
+}
+
 // validateRuleFile validates a single rule file path.
 //
 // It checks:
@@ -58,7 +88,7 @@ func (l *LocalRulesLoader) Load(rulePaths []string, ruleDirs []string) ([]string
 //   - File is readable
 //
 // Returns absolute path if valid, error otherwise.
-func (l *LocalRulesLoader) validateRuleFile(path string) (string, error) {
+func (l *LocalRuleSource) validateRuleFile(path string) (string, error) {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -88,7 +118,7 @@ func (l *LocalRulesLoader) validateRuleFile(path string) (string, error) {
 }
 
 // loadRulesFromDirectory recursively finds all rule files in a directory.
-func (l *LocalRulesLoader) loadRulesFromDirectory(dirPath string) ([]string, error) {
+func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, error) {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
@@ -144,7 +174,7 @@ func (l *LocalRulesLoader) loadRulesFromDirectory(dirPath string) ([]string, err
 }
 
 // isValidRuleExtension checks if a file has a valid rule file extension (.yaml or .yml).
-func (l *LocalRulesLoader) isValidRuleExtension(path string) bool {
+func (l *LocalRuleSource) isValidRuleExtension(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".yaml" || ext == ".yml"
 }

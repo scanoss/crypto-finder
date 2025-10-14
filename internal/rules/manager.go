@@ -2,28 +2,43 @@
 // and filtering of both local and remote rule sets.
 package rules
 
-// Manager orchestrates rule loading, validation, and filtering.
-// For MVP, it handles local rules only. Future versions will support remote rules.
+// Manager orchestrates rule loading from multiple sources.
+// It provides a central coordination point for aggregating rules from various sources
+// (local files, remote URLs, etc.) and will handle caching and validation in the future.
 type Manager struct {
+	sources []RuleSource
 	// Future: Add cache directory and HTTP client for remote rules
 }
 
-// NewManager creates a new rules manager.
-func NewManager() *Manager {
-	return &Manager{}
-}
-
-// LoadLocal validates and returns local rule paths.
-// This is the MVP implementation that handles --rules and --rules-dir flags.
+// NewManager creates a new rules manager with the specified sources.
+// Sources are loaded and aggregated when Load() is called.
 //
 // Parameters:
-//   - rulePaths: Individual rule file paths (from --rules flags)
-//   - ruleDirs: Rule directory paths (from --rules-dir flags)
+//   - sources: Variable number of RuleSource implementations to aggregate
 //
 // Returns:
-//   - []string: All validated rule file paths (absolute paths)
-//   - error: If any path is invalid or doesn't exist
-func (m *Manager) LoadLocal(rulePaths []string, ruleDirs []string) ([]string, error) {
-	loader := &LocalRulesLoader{}
-	return loader.Load(rulePaths, ruleDirs)
+//   - *Manager: Manager configured with the specified sources
+//
+// Example:
+//
+//	manager := rules.NewManager(
+//	    rules.NewLocalRuleSource(rulePaths, ruleDirs),
+//	    // Future: rules.NewRemoteRuleSource(url, cache),
+//	)
+func NewManager(sources ...RuleSource) *Manager {
+	return &Manager{
+		sources: sources,
+	}
+}
+
+// Load aggregates and returns rule file paths from all configured sources.
+// Uses MultiSource internally to handle deduplication and error handling.
+//
+// Returns:
+//   - []string: Deduplicated absolute paths to all rule files
+//   - error: If any source fails to load
+func (m *Manager) Load() ([]string, error) {
+	// Use MultiSource to aggregate all sources
+	multiSource := NewMultiSource(m.sources...)
+	return multiSource.Load()
 }

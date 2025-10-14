@@ -1,6 +1,10 @@
 package skip
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/scanoss/crypto-finder/internal/utils"
+)
 
 // PatternSource defines an interface for loading skip patterns from various sources.
 // Implementations can load patterns from files, remote URLs, databases, environment variables, etc.
@@ -55,7 +59,7 @@ func (m *MultiSource) Load() ([]string, error) {
 	}
 
 	// Deduplicate patterns
-	return deduplicatePatterns(allPatterns), nil
+	return utils.DeduplicateSliceOfStrings(allPatterns), nil
 }
 
 // Name returns a descriptive name for this multi-source.
@@ -67,22 +71,4 @@ func (m *MultiSource) Name() string {
 		return m.sources[0].Name()
 	}
 	return fmt.Sprintf("MultiSource(%d sources)", len(m.sources))
-}
-
-// deduplicatePatterns removes duplicate patterns and empty strings.
-func deduplicatePatterns(patterns []string) []string {
-	seen := make(map[string]bool)
-	result := make([]string, 0, len(patterns))
-
-	for _, pattern := range patterns {
-		if pattern == "" {
-			continue
-		}
-		if !seen[pattern] {
-			seen[pattern] = true
-			result = append(result, pattern)
-		}
-	}
-
-	return result
 }

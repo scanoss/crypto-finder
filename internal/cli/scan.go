@@ -127,9 +127,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Create skip matcher for language detection
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
 
+	// Setup rule sources and inject into manager
+	// For MVP, we only use local rules, but remote sources can be easily added
+	localRuleSource := rules.NewLocalRuleSource(scanRules, scanRuleDirs)
+	rulesManager := rules.NewManager(localRuleSource)
+
+	log.Info().Msgf("Rules manager configured with source: %s", localRuleSource.Name())
+
 	// Setup dependencies
 	langDetector := language.NewEnryDetector(skipMatcher)
-	rulesManager := rules.NewManager()
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
@@ -143,8 +149,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 	scanOpts := engine.ScanOptions{
 		Target:       target,
 		ScannerName:  scanScanner,
-		RulePaths:    scanRules,
-		RuleDirs:     scanRuleDirs,
 		LanguageHint: scanLanguages,
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
@@ -153,9 +157,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	// Execute scan
-	if verbose {
-		fmt.Fprintf(os.Stderr, "Starting scan of %s with scanner '%s'...\n", target, scanScanner)
-	}
+	log.Info().Msgf("Starting scan of %s with scanner '%s'...", target, scanScanner)
 
 	report, err := orchestrator.Scan(ctx, scanOpts)
 	if err != nil {

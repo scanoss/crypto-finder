@@ -43,12 +43,6 @@ type ScanOptions struct {
 	// ScannerName is the name of the scanner to use (e.g., "semgrep")
 	ScannerName string
 
-	// RulePaths are individual rule file paths (from --rules flags)
-	RulePaths []string
-
-	// RuleDirs are rule directory paths (from --rules-dir flags)
-	RuleDirs []string
-
 	// LanguageHint allows manual override of language detection (from --languages flag)
 	LanguageHint []string
 
@@ -60,10 +54,10 @@ type ScanOptions struct {
 //
 // Workflow:
 //  1. Detect languages (or use hint if provided)
-//  2. Load and validate rules
+//  2. Load rules from manager
 //  3. Get scanner from registry
 //  4. Initialize scanner
-//  5. Execute scan
+//  5. Execute scan with loaded rule paths
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
@@ -83,8 +77,8 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*schema.Inte
 		}
 	}
 
-	// Step 2: Load and validate rules
-	rulePaths, err := o.rulesManager.LoadLocal(opts.RulePaths, opts.RuleDirs)
+	// Step 2: Load rules from manager
+	rulePaths, err := o.rulesManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load rules: %w", err)
 	}
