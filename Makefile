@@ -30,3 +30,9 @@ clean: ## Cleans build artifacts
 
 run: build ## Runs the CLI (use ARGS="..." to pass arguments)
 	@$(BUILD_DIR)/scanoss-crypto-finder $(ARGS)
+
+version: ## Display current version
+	@echo "Current version: $(VERSION)"
+
+test: ## Run all tests
+	@go test -v -race -coverprofile=coverage.out ./...

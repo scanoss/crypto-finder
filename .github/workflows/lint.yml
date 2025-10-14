@@ -1,0 +1,28 @@
+name: Lint
+# This workflow will run the golangci-lint analysis
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23.x
+
+      - name: Setup Version
+        run: make version
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          args: --timeout=5m
