@@ -1,3 +1,6 @@
+// Package schema defines the standardized data structures for cryptographic scan results.
+// It provides the interim JSON schema format that is shared across all scanner implementations,
+// ensuring consistent output for consumption by the SCANOSS ecosystem.
 package schema
 
 // InterimReport is the standardized output format for all scanners.

@@ -1,3 +1,6 @@
+// Package scanner provides the core abstraction for cryptographic scanner implementations.
+// It defines the Scanner interface that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit)
+// must implement, along with configuration and metadata types.
 package scanner
 
 import (
@@ -7,7 +10,7 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
-// Scanner defines the contract that all scanner adapters (Semgrep, OpenGrep, CBOM) must implement,
+// Scanner defines the contract that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit) must implement,
 // providing a unified interface for executing different scanning tools.
 //
 // Each scanner implementation is responsible for:

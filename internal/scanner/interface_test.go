@@ -101,8 +101,7 @@ func TestInfo_EmptyFields(t *testing.T) {
 
 func TestConfig_TimeoutZeroValue(t *testing.T) {
 	config := scanner.Config{
-		ExecutablePath: "/usr/bin/scanner",
-		Timeout:        0, // Zero value - should use default
+		Timeout: 0, // Zero value - should use default
 	}
 
 	if config.Timeout != 0 {
@@ -112,8 +111,7 @@ func TestConfig_TimeoutZeroValue(t *testing.T) {
 
 func TestConfig_EnvMapNil(t *testing.T) {
 	config := scanner.Config{
-		ExecutablePath: "/usr/bin/scanner",
-		Env:            nil,
+		Env: nil,
 	}
 
 	if config.Env != nil {
@@ -123,8 +121,7 @@ func TestConfig_EnvMapNil(t *testing.T) {
 
 func TestConfig_ExtraArgsNil(t *testing.T) {
 	config := scanner.Config{
-		ExecutablePath: "/usr/bin/scanner",
-		ExtraArgs:      nil,
+		ExtraArgs: nil,
 	}
 
 	if config.ExtraArgs != nil {
@@ -135,8 +132,7 @@ func TestConfig_ExtraArgsNil(t *testing.T) {
 func TestConfig_ExtraArgsMultiple(t *testing.T) {
 	args := []string{"--verbose", "--debug", "--max-memory=4096"}
 	config := scanner.Config{
-		ExecutablePath: "/usr/bin/scanner",
-		ExtraArgs:      args,
+		ExtraArgs: args,
 	}
 
 	if len(config.ExtraArgs) != 3 {
@@ -155,8 +151,7 @@ func TestConfig_EnvMapMultiple(t *testing.T) {
 		"KEY3": "value3",
 	}
 	config := scanner.Config{
-		ExecutablePath: "/usr/bin/scanner",
-		Env:            env,
+		Env: env,
 	}
 
 	if len(config.Env) != 3 {
