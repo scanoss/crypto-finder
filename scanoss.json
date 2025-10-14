@@ -1,0 +1,10 @@
+{
+  "settings": {
+    "skip": {
+      "patterns": {
+        "scanning": ["target/"]
+      },
+      "sizes": {}
+    }
+  }
+}

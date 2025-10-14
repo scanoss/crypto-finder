@@ -21,6 +21,7 @@ type Adapter struct {
 	workDir        string
 	env            map[string]string
 	extraArgs      []string
+	skipPatterns   []string
 }
 
 // NewAdapter creates a new Semgrep adapter with default settings.
@@ -64,6 +65,9 @@ func (a *Adapter) Initialize(config scanner.Config) error {
 	}
 	if config.ExtraArgs != nil {
 		a.extraArgs = config.ExtraArgs
+	}
+	if config.SkipPatterns != nil {
+		a.skipPatterns = config.SkipPatterns
 	}
 
 	return nil
@@ -131,14 +135,19 @@ func (a *Adapter) detectVersion() (string, error) {
 // buildCommand constructs the semgrep command arguments.
 func (a *Adapter) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
-		"--json",          // JSON output format
-		"--no-git-ignore", // Scan all files, don't respect .gitignore
+		"--json",           // JSON output format
+		"--no-git-ignore",  // Scan all files, don't respect .gitignore
 		"--metrics", "off", // Disable telemetry
 	}
 
 	// Add rule paths
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
+	}
+
+	// Add exclude patterns
+	for _, pattern := range a.skipPatterns {
+		args = append(args, "--exclude", pattern)
 	}
 
 	// Add extra args from config

@@ -5,30 +5,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
+	"github.com/rs/zerolog/log"
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // EnryDetector implements the Detector interface using GitHub's go-enry library.
 // It provides accurate language detection based on file extensions, contents, and
 // linguistic analysis.
 type EnryDetector struct {
-	excludeDirs []string
+	skipMatcher skip.SkipMatcher
 }
 
-// NewEnryDetector creates a new EnryDetector with default excluded directories.
-func NewEnryDetector() *EnryDetector {
+// NewEnryDetector creates a new EnryDetector with a custom SkipMatcher.
+func NewEnryDetector(matcher skip.SkipMatcher) *EnryDetector {
 	return &EnryDetector{
-		excludeDirs: DefaultExcludedDirs,
-	}
-}
-
-// NewEnryDetectorWithExclusions creates a new EnryDetector with custom excluded directories.
-func NewEnryDetectorWithExclusions(excludeDirs []string) *EnryDetector {
-	return &EnryDetector{
-		excludeDirs: excludeDirs,
+		skipMatcher: matcher,
 	}
 }
 
@@ -36,6 +30,8 @@ func NewEnryDetectorWithExclusions(excludeDirs []string) *EnryDetector {
 // It recursively scans all files, uses go-enry for detection, and returns unique
 // language names in lowercase.
 func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
+	log.Debug().Str("path", targetPath).Msg("starting language detection")
+
 	// Validate target path exists
 	info, err := os.Stat(targetPath)
 	if err != nil {
@@ -44,28 +40,32 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 
 	// If it's a single file, detect its language
 	if !info.IsDir() {
+		log.Debug().Str("path", targetPath).Msg("target is a single file")
 		lang, err := d.detectFile(targetPath)
 		if err != nil {
 			return nil, err
 		}
 		if lang != "" {
+			log.Info().Str("path", targetPath).Str("language", lang).Msg("detected language for file")
 			return []string{strings.ToLower(lang)}, nil
 		}
 		return []string{}, nil
 	}
 
 	// Scan directory recursively
+	log.Debug().Str("path", targetPath).Msg("scanning directory recursively")
 	languageMap := make(map[string]bool)
 
 	err = filepath.Walk(targetPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			// Log and continue on permission errors
+			log.Warn().Err(err).Str("path", path).Msg("permission denied or error accessing path")
 			return nil
 		}
 
-		// Skip excluded directories
+		// Skip directories based on configured patterns
 		if info.IsDir() {
-			if d.shouldExcludeDir(info.Name()) {
+			if d.skipMatcher.ShouldSkip(path, true) {
+				log.Debug().Str("path", path).Msg("skipping directory (matches skip pattern)")
 				return filepath.SkipDir
 			}
 			return nil
@@ -76,14 +76,21 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 			return nil
 		}
 
+		// Skip files based on configured patterns
+		if d.skipMatcher.ShouldSkip(path, false) {
+			log.Debug().Str("path", path).Msg("skipping file (matches skip pattern)")
+			return nil
+		}
+
 		// Detect language for this file
 		lang, err := d.detectFile(path)
 		if err != nil {
-			// Log error but continue processing other files
+			log.Warn().Err(err).Str("path", path).Msg("failed to detect language for file")
 			return nil
 		}
 
 		if lang != "" {
+			log.Debug().Str("path", path).Str("language", lang).Msg("detected language")
 			languageMap[strings.ToLower(lang)] = true
 		}
 
@@ -99,6 +106,8 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 	for lang := range languageMap {
 		languages = append(languages, lang)
 	}
+
+	log.Info().Int("count", len(languages)).Strs("languages", languages).Msg("language detection complete")
 
 	return languages, nil
 }
@@ -149,9 +158,4 @@ func (d *EnryDetector) readFileSample(path string) ([]byte, error) {
 	}
 
 	return buffer[:n], nil
-}
-
-// shouldExcludeDir checks if a directory should be excluded from scanning.
-func (d *EnryDetector) shouldExcludeDir(dirName string) bool {
-	return slices.Contains(d.excludeDirs, dirName)
 }

@@ -4,10 +4,13 @@ package cli
 import (
 	"os"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
 var (
+	debug   bool
 	verbose bool
 )
 
@@ -18,15 +21,32 @@ var rootCmd = &cobra.Command{
 	cryptographic operations and extract relevant values. It executes Semgrep
 	as the default scanning engine and outputs results in a standardized interim JSON format.`,
 	SilenceUsage: true,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		setupLogging()
+	},
 }
 
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
+	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "enable debug logging")
 
 	// Subcommands
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(versionCmd)
+}
+
+func setupLogging() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+
+	if debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else if verbose {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	}
 }
 
 func Execute() {

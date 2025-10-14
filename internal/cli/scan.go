@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"github.com/scanoss/crypto-finder/internal/engine"
@@ -16,6 +18,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
+	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
@@ -101,14 +104,37 @@ func runScan(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	targetDir := filepath.Dir(target)
+
+	// Load skip patterns from multiple sources
+	// We will use our default list and scanoss.json as, but also a custom source could be easily added implementing PatternSource interface
+	skipPatternsSources := []skip.PatternSource{
+		skip.NewDefaultsSource(),
+		skip.NewScanossConfigSourceFromDir(targetDir),
+	}
+	multiSourceSkipPatterns := skip.NewMultiSource(skipPatternsSources...)
+	skipPatterns, err := multiSourceSkipPatterns.Load()
+	if err != nil {
+		log.Warn().Err(err).Msgf("failed to load skip patterns from %s", multiSourceSkipPatterns.Name())
+		// Fallback to just use default skipped directories
+		skipPatterns = skip.DefaultSkippedDirs
+	}
+
+	if len(skipPatterns) > 0 {
+		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), multiSourceSkipPatterns.Name())
+	}
+
+	// Create skip matcher for language detection
+	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
+
 	// Setup dependencies
-	langDetector := language.NewEnryDetector()
+	langDetector := language.NewEnryDetector(skipMatcher)
 	rulesManager := rules.NewManager()
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.Register("semgrep", semgrep.NewAdapter())
 	// TODO: Register opengrep, cbom-toolkit
+	scannerRegistry.Register("semgrep", semgrep.NewAdapter())
 
 	// Create orchestrator
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -121,7 +147,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		RuleDirs:     scanRuleDirs,
 		LanguageHint: scanLanguages,
 		ScannerConfig: scanner.Config{
-			Timeout: timeout,
+			Timeout:      timeout,
+			SkipPatterns: skipPatterns,
 		},
 	}
 

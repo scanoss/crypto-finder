@@ -87,6 +87,11 @@ type Config struct {
 	// These are appended to the scanner's default arguments.
 	// Example: []string{"--verbose", "--max-memory=4096"}
 	ExtraArgs []string
+
+	// SkipPatterns contains gitignore-style patterns for files/directories to exclude.
+	// These patterns are passed to the scanner's exclude mechanism (e.g., --exclude for Semgrep).
+	// Example: []string{"node_modules/", "*.min.js", "test/"}
+	SkipPatterns []string
 }
 
 // Info contains metadata about a scanner implementation.
