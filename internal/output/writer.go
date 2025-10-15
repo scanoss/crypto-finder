@@ -8,15 +8,18 @@ import (
 // to various output formats.
 //
 // Implementations exist for:
-//   - JSON (MVP)
-//   - SARIF (Future)
-//   - HTML (Future)
+//   - JSON (default format)
 type Writer interface {
 	// Write formats and writes the report to the specified destination.
 	//
+	// The destination parameter determines where output is written:
+	//   - "" (empty string): Write to stdout
+	//   - "-": Write to stdout (Unix convention)
+	//   - file path: Write to the specified file
+	//
 	// Parameters:
 	//   - report: The scan results to write
-	//   - destination: Output file path
+	//   - destination: Output location (empty/"" for stdout, or file path)
 	//
 	// Returns an error if writing fails.
 	Write(report *entities.InterimReport, destination string) error

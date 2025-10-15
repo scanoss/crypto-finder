@@ -23,17 +23,21 @@ import (
 )
 
 const DEFAULT_SCANNER = "semgrep"
-const DEFAULT_OUTPUT_FILE = "crypto-results.json"
+const DEFAULT_FORMAT = "json"
 const DEFAULT_TIMEOUT = "10m"
 
 // TODO: We'll support more scanners in the future.
 var ALLOWED_SCANNERS []string = []string{"semgrep"}
 
+// Supported output formats
+var SUPPORTED_FORMATS []string = []string{"json"} // Future: csv, html, sarif
+
 var (
 	scanRules      []string
 	scanRuleDirs   []string
 	scanScanner    string
-	scanOutputFile string
+	scanFormat     string
+	scanOutput     string
 	scanLanguages  []string
 	scanFailOnFind bool
 	scanTimeout    string
@@ -45,21 +49,21 @@ var scanCmd = &cobra.Command{
 	Long: `Scan source code repositories for cryptographic algorithm usage.
 
 	The scan command executes a scanner (default: Semgrep) against the target
-	directory or file using specified rules. It outputs findings in a standardized
-	interim JSON format.
+	directory or file using specified rules. By default, it outputs findings to
+	stdout in JSON format. Use --output to write to a file instead.
 
 	Examples:
-	  # Scan with a single rule file
-	  crypto-finder scan --rules ./rules/aes.yaml /path/to/code
+	  # Scan with default JSON output to stdout
+	  crypto-finder scan --rules-dir ./rules /path/to/code
+
+	  # Save output to a file
+	  crypto-finder scan --rules-dir ./rules --output results.json /path/to/code
+
+	  # Pipe output to jq for processing
+	  crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
 
 	  # Scan with multiple rule files
 	  crypto-finder scan --rules rule1.yaml --rules rule2.yaml /path/to/code
-
-	  # Scan with a rule directory
-	  crypto-finder scan --rules-dir ./rules/java/ /path/to/code.java
-
-	  # Specify scanner and output file
-	  crypto-finder scan --scanner semgrep --output-file results.json /path/to/code
 
 	  # Override language detection
 	  crypto-finder scan --languages java,python --rules-dir ./rules/ /path/to/code
@@ -80,7 +84,8 @@ func init() {
 	scanCmd.Flags().StringArrayVar(&scanRules, "rules", []string{}, "Rule file path (repeatable)")
 	scanCmd.Flags().StringArrayVar(&scanRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
 	scanCmd.Flags().StringVar(&scanScanner, "scanner", DEFAULT_SCANNER, "Scanner to use")
-	scanCmd.Flags().StringVar(&scanOutputFile, "output-file", DEFAULT_OUTPUT_FILE, "Output file path")
+	scanCmd.Flags().StringVar(&scanFormat, "format", DEFAULT_FORMAT, "Output format: json (csv, html, sarif coming soon)")
+	scanCmd.Flags().StringVar(&scanOutput, "output", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
 	scanCmd.Flags().StringVar(&scanTimeout, "timeout", DEFAULT_TIMEOUT, "Scan timeout (e.g., 10m, 1h)")
@@ -164,9 +169,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
-	// Write output
-	writer := output.NewJSONWriter()
-	if err := writer.Write(report, scanOutputFile); err != nil {
+	// Get the appropriate writer for the format
+	factory := output.NewWriterFactory()
+	writer, err := factory.GetWriter(scanFormat)
+	if err != nil {
+		return fmt.Errorf("failed to get output writer: %w", err)
+	}
+
+	// Write output (to stdout or file)
+	if err := writer.Write(report, scanOutput); err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 
@@ -177,7 +188,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "\nScan complete:\n")
 	fmt.Fprintf(os.Stderr, "  Files with findings: %d\n", filesCount)
 	fmt.Fprintf(os.Stderr, "  Total crypto assets: %d\n", findingsCount)
-	fmt.Fprintf(os.Stderr, "  Output: %s\n", scanOutputFile)
+
+	// Show output location conditionally
+	if scanOutput != "" && scanOutput != "-" {
+		fmt.Fprintf(os.Stderr, "  Output: %s\n", scanOutput)
+	} else {
+		fmt.Fprintf(os.Stderr, "  Output: <stdout>\n")
+	}
 
 	// Handle --fail-on-findings
 	if scanFailOnFind && findingsCount > 0 {
@@ -201,6 +218,11 @@ func validateScanFlags(target string) error {
 	// Validate scanner
 	if !slices.Contains(ALLOWED_SCANNERS, scanScanner) {
 		return fmt.Errorf("invalid scanner name: %s", scanScanner)
+	}
+
+	// Validate output format
+	if !slices.Contains(SUPPORTED_FORMATS, scanFormat) {
+		return fmt.Errorf("unsupported output format '%s' (supported: %v)", scanFormat, SUPPORTED_FORMATS)
 	}
 
 	// Normalize language hints to lowercase

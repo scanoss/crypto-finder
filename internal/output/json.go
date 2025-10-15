@@ -36,36 +36,24 @@ func NewCompactJSONWriter() *JSONWriter {
 	}
 }
 
-// Write writes the interim report to a JSON file.
+// Write writes the interim report to JSON format.
 //
-// The file is created with permissions 0644 (rw-r--r--).
-// If the file already exists, it will be overwritten.
-// If the parent directory doesn't exist, an error is returned.
+// Destination handling:
+//   - "" (empty) or "-": Write to stdout
+//   - file path: Write to file with permissions 0644 (rw-r--r--)
+//
+// If writing to a file:
+//   - File will be overwritten if it exists
+//   - Parent directory must exist (returns error otherwise)
 func (w *JSONWriter) Write(report *entities.InterimReport, destination string) error {
 	// Validate report
 	if report == nil {
 		return fmt.Errorf("report cannot be nil")
 	}
 
-	// Validate destination path
-	if destination == "" {
-		return fmt.Errorf("destination path cannot be empty")
-	}
-
-	// Convert to absolute path
-	absPath, err := filepath.Abs(destination)
-	if err != nil {
-		return fmt.Errorf("failed to resolve destination path: %w", err)
-	}
-
-	// Check parent directory exists
-	parentDir := filepath.Dir(absPath)
-	if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-		return fmt.Errorf("parent directory does not exist: %s", parentDir)
-	}
-
 	// Marshal to JSON
 	var data []byte
+	var err error
 	if w.PrettyPrint {
 		data, err = json.MarshalIndent(report, "", w.Indent)
 	} else {
@@ -76,10 +64,35 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		return fmt.Errorf("failed to marshal report to JSON: %w", err)
 	}
 
-	// Write to file
-	// 0644 = rw-r--r-- (owner can read/write, others can read)
-	if err := os.WriteFile(absPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write JSON file: %w", err)
+	// Determine output destination
+	if destination == "" || destination == "-" {
+		// Write to stdout
+		if _, err := os.Stdout.Write(data); err != nil {
+			return fmt.Errorf("failed to write to stdout: %w", err)
+		}
+		// Add newline for better terminal output
+		if _, err := os.Stdout.Write([]byte("\n")); err != nil {
+			return fmt.Errorf("failed to write newline to stdout: %w", err)
+		}
+	} else {
+		// Write to file
+		// Convert to absolute path
+		absPath, err := filepath.Abs(destination)
+		if err != nil {
+			return fmt.Errorf("failed to resolve destination path: %w", err)
+		}
+
+		// Check parent directory exists
+		parentDir := filepath.Dir(absPath)
+		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
+			return fmt.Errorf("parent directory does not exist: %s", parentDir)
+		}
+
+		// Write to file
+		// 0644 = rw-r--r-- (owner can read/write, others can read)
+		if err := os.WriteFile(absPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write JSON file: %w", err)
+		}
 	}
 
 	return nil
