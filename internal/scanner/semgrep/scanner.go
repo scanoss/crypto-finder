@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
-// Adapter implements the Scanner interface for Semgrep.
-type Adapter struct {
+const SCANNER_NAME = "semgrep"
+
+// SemgrepScanner implements the Scanner interface for Semgrep.
+type SemgrepScanner struct {
 	executablePath string
 	version        string
 	timeout        time.Duration
@@ -24,57 +26,57 @@ type Adapter struct {
 	skipPatterns   []string
 }
 
-// NewAdapter creates a new Semgrep adapter with default settings.
-func NewAdapter() *Adapter {
-	return &Adapter{
+// NewSemgrepScanner creates a new Semgrep adapter with default settings.
+func NewSemgrepScanner() *SemgrepScanner {
+	return &SemgrepScanner{
 		executablePath: "semgrep", // Will search PATH
 		timeout:        10 * time.Minute,
 	}
 }
 
 // Initialize validates that Semgrep is available and properly configured.
-func (a *Adapter) Initialize(config scanner.Config) error {
+func (s *SemgrepScanner) Initialize(config scanner.Config) error {
 	// Use provided executable path or default
 	if config.ExecutablePath != "" {
-		a.executablePath = config.ExecutablePath
+		s.executablePath = config.ExecutablePath
 	}
 
 	// Detect semgrep in PATH
-	path, err := exec.LookPath(a.executablePath)
+	path, err := exec.LookPath(s.executablePath)
 	if err != nil {
 		return fmt.Errorf("semgrep not found in PATH: %w (install with: pip install semgrep)", err)
 	}
-	a.executablePath = path
+	s.executablePath = path
 
 	// Get semgrep version
-	version, err := a.detectVersion()
+	version, err := s.detectVersion()
 	if err != nil {
 		return fmt.Errorf("failed to detect semgrep version: %w", err)
 	}
-	a.version = version
+	s.version = version
 
 	// Apply configuration
 	if config.Timeout > 0 {
-		a.timeout = config.Timeout
+		s.timeout = config.Timeout
 	}
 	if config.WorkDir != "" {
-		a.workDir = config.WorkDir
+		s.workDir = config.WorkDir
 	}
 	if config.Env != nil {
-		a.env = config.Env
+		s.env = config.Env
 	}
 	if config.ExtraArgs != nil {
-		a.extraArgs = config.ExtraArgs
+		s.extraArgs = config.ExtraArgs
 	}
 	if config.SkipPatterns != nil {
-		a.skipPatterns = config.SkipPatterns
+		s.skipPatterns = config.SkipPatterns
 	}
 
 	return nil
 }
 
 // Scan executes Semgrep against the target with the given rule paths.
-func (a *Adapter) Scan(ctx context.Context, target string, rulePaths []string) (*schema.InterimReport, error) {
+func (a *SemgrepScanner) Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, fmt.Errorf("no rule paths provided")
 	}
@@ -111,17 +113,17 @@ func (a *Adapter) Scan(ctx context.Context, target string, rulePaths []string) (
 }
 
 // GetInfo returns metadata about the Semgrep adapter.
-func (a *Adapter) GetInfo() scanner.Info {
+func (s *SemgrepScanner) GetInfo() scanner.Info {
 	return scanner.Info{
-		Name:        "semgrep",
-		Version:     a.version,
+		Name:        SCANNER_NAME,
+		Version:     s.version,
 		Description: "Static analysis tool for detecting cryptographic algorithm usage",
 	}
 }
 
 // detectVersion runs `semgrep --version` to get the installed version.
-func (a *Adapter) detectVersion() (string, error) {
-	cmd := exec.Command(a.executablePath, "--version")
+func (s *SemgrepScanner) detectVersion() (string, error) {
+	cmd := exec.Command(s.executablePath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
 		return "unknown", nil // Non-fatal, continue without version
@@ -133,7 +135,7 @@ func (a *Adapter) detectVersion() (string, error) {
 }
 
 // buildCommand constructs the semgrep command arguments.
-func (a *Adapter) buildCommand(target string, rulePaths []string) []string {
+func (s *SemgrepScanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",           // JSON output format
 		"--no-git-ignore",  // Scan all files, don't respect .gitignore
@@ -146,13 +148,13 @@ func (a *Adapter) buildCommand(target string, rulePaths []string) []string {
 	}
 
 	// Add exclude patterns
-	for _, pattern := range a.skipPatterns {
+	for _, pattern := range s.skipPatterns {
 		args = append(args, "--exclude", pattern)
 	}
 
 	// Add extra args from config
-	if len(a.extraArgs) > 0 {
-		args = append(args, a.extraArgs...)
+	if len(s.extraArgs) > 0 {
+		args = append(args, s.extraArgs...)
 	}
 
 	// Add target path
@@ -162,17 +164,17 @@ func (a *Adapter) buildCommand(target string, rulePaths []string) []string {
 }
 
 // execute runs the semgrep command and captures stdout/stderr.
-func (a *Adapter) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, a.executablePath, args...)
+func (s *SemgrepScanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	// Set working directory if specified
-	if a.workDir != "" {
-		cmd.Dir = a.workDir
+	if s.workDir != "" {
+		cmd.Dir = s.workDir
 	}
 
 	// Set environment variables
-	if len(a.env) > 0 {
-		cmd.Env = append(cmd.Environ(), mapToEnvSlice(a.env)...)
+	if len(s.env) > 0 {
+		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
 	}
 
 	// Capture stdout and stderr separately
@@ -185,7 +187,7 @@ func (a *Adapter) execute(ctx context.Context, args []string) (stdout []byte, st
 	// Check for context cancellation/timeout
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, stderr, fmt.Errorf("semgrep execution timed out after %v", a.timeout)
+			return nil, stderr, fmt.Errorf("semgrep execution timed out after %v", s.timeout)
 		}
 		return nil, stderr, fmt.Errorf("semgrep execution cancelled: %w", ctx.Err())
 	}
@@ -208,7 +210,7 @@ func (a *Adapter) execute(ctx context.Context, args []string) (stdout []byte, st
 }
 
 // mapError converts semgrep errors to user-friendly messages.
-func (a *Adapter) mapError(err error, stderr string) error {
+func (a *SemgrepScanner) mapError(err error, stderr string) error {
 	// Check for specific error patterns in stderr
 	stderrLower := strings.ToLower(stderr)
 

@@ -1,7 +1,5 @@
-// Package schema defines the standardized data structures for cryptographic scan results.
-// It provides the interim JSON schema format that is shared across all scanner implementations,
-// ensuring consistent output for consumption by the SCANOSS ecosystem.
-package schema
+// Package entities defines the domain data structures for SCANOSS crypto-finder.
+package entities
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -57,37 +55,13 @@ type CryptographicAsset struct {
 	// Rule contains information about the detection rule that triggered this finding
 	Rule RuleInfo `json:"rule"`
 
-	// Type categorizes the cryptographic asset
-	// Values: "algorithm", "certificate", "key"
-	Type string `json:"type"`
-
-	// Algorithm is the specific algorithm name
-	// Examples: "AES", "RSA", "SHA256", "X509"
-	Algorithm string `json:"algorithm,omitempty"`
-
-	// Primitive describes the cryptographic primitive category
-	// Values: "block-cipher", "stream-cipher", "hash", "asymmetric", "symmetric"
-	Primitive string `json:"primitive"`
-
-	// Mode specifies the mode of operation (optional)
-	// Examples: "CBC", "GCM", "ECB", "CTR"
-	Mode string `json:"mode,omitempty"`
-
-	// Padding specifies the padding scheme used (optional)
-	// Examples: "PKCS7", "PKCS5", "NoPadding", "OAEP"
-	Padding string `json:"padding,omitempty"`
-
-	// KeySizeBits is the key size in bits (optional)
-	KeySizeBits int `json:"key_size_bits,omitempty"`
-
-	// Provider identifies the cryptographic provider (optional)
-	// Examples: "unknown", "BouncyCastle", "OpenSSL", "JCE"
-	Provider string `json:"provider,omitempty"`
-
 	// Status represents the current state of this finding
 	// Values: "pending", "identified", "dismissed", "reviewed"
-	// TODO: TBD
 	Status string `json:"status"`
+
+	// Metadata contains metadata extracted from the cryptographic asset
+	// such as key length, algorithm, etc.
+	Metadata map[string]string `json:"metadata"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

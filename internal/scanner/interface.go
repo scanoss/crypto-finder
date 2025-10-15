@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/scanoss/crypto-finder/pkg/schema"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // Scanner defines the contract that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit) must implement,
@@ -20,7 +20,7 @@ import (
 //
 // Example usage:
 //
-//	scanner := semgrep.NewAdapter()
+//	scanner := semgrep.NewSemgrepScanner()
 //	config := scanner.Config{
 //	    ExecutablePath: "/usr/local/bin/semgrep",
 //	    Timeout:        10 * time.Minute,
@@ -53,7 +53,7 @@ type Scanner interface {
 	// which includes cryptographic assets, API surface information, and metadata.
 	//
 	// Returns an error if the scan fails or if the scanner process encounters an error.
-	Scan(ctx context.Context, target string, rulePaths []string) (*schema.InterimReport, error)
+	Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error)
 
 	// GetInfo returns metadata about this scanner implementation.
 	// This includes the scanner's name, version, and description.

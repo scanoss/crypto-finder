@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/scanoss/crypto-finder/pkg/schema"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // Processor handles result aggregation and enrichment.
@@ -18,16 +18,13 @@ func NewProcessor() *Processor {
 // Current processing:
 //   - Validates report structure
 //   - Ensures all required fields are present
-//   - Future: Add file-level language detection override
-//   - Future: Add FIPS compliance checking
-//   - Future: Add vulnerability correlation
-func (p *Processor) Process(report *schema.InterimReport, detectedLanguages []string) (*schema.InterimReport, error) {
+func (p *Processor) Process(report *entities.InterimReport, detectedLanguages []string) (*entities.InterimReport, error) {
 	if report == nil {
 		// Return empty report if scanner found nothing
-		return &schema.InterimReport{
+		return &entities.InterimReport{
 			Version:  "1.0",
-			Tool:     schema.ToolInfo{Name: "unknown", Version: "unknown"},
-			Findings: []schema.Finding{},
+			Tool:     entities.ToolInfo{Name: "unknown", Version: "unknown"},
+			Findings: []entities.Finding{},
 		}, nil
 	}
 
@@ -37,14 +34,8 @@ func (p *Processor) Process(report *schema.InterimReport, detectedLanguages []st
 	}
 
 	if report.Findings == nil {
-		report.Findings = []schema.Finding{}
+		report.Findings = []entities.Finding{}
 	}
-
-	// Future enhancements:
-	// - Override file languages with more accurate detection
-	// - Add FIPS approval status based on algorithm database
-	// - Correlate with CVE database for known vulnerabilities
-	// - Add risk scoring based on algorithm strength
 
 	return report, nil
 }

@@ -13,13 +13,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
-	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
 const DEFAULT_SCANNER = "semgrep"
@@ -140,7 +140,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// Register scanners
 	// TODO: Register opengrep, cbom-toolkit
-	scannerRegistry.Register("semgrep", semgrep.NewAdapter())
+	scannerRegistry.Register("semgrep", semgrep.NewSemgrepScanner())
 
 	// Create orchestrator
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -211,7 +211,7 @@ func validateScanFlags(target string) error {
 	return nil
 }
 
-func countFindings(report *schema.InterimReport) int {
+func countFindings(report *entities.InterimReport) int {
 	if report == nil {
 		return 0
 	}

@@ -3,6 +3,7 @@ package language
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 	log.Debug().Str("path", targetPath).Msg("scanning directory recursively")
 	languageMap := make(map[string]bool)
 
-	err = filepath.Walk(targetPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.WalkDir(targetPath, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			log.Warn().Err(err).Str("path", path).Msg("permission denied or error accessing path")
 			return nil
@@ -72,7 +73,7 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 		}
 
 		// Skip if not a regular file
-		if !info.Mode().IsRegular() {
+		if !info.Type().IsRegular() {
 			return nil
 		}
 
@@ -148,7 +149,7 @@ func (d *EnryDetector) readFileSample(path string) ([]byte, error) {
 	}
 	defer file.Close()
 
-	// Read first 512KB (enry doesn't need more)
+	// Read first 512KB
 	const maxSampleSize = 512 * 1024
 	buffer := make([]byte, maxSampleSize)
 

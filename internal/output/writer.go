@@ -1,7 +1,7 @@
 package output
 
 import (
-	"github.com/scanoss/crypto-finder/pkg/schema"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // Writer defines the interface for formatting and writing scan results
@@ -19,5 +19,5 @@ type Writer interface {
 	//   - destination: Output file path
 	//
 	// Returns an error if writing fails.
-	Write(report *schema.InterimReport, destination string) error
+	Write(report *entities.InterimReport, destination string) error
 }

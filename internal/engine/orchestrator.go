@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
 // Orchestrator coordinates the entire scanning workflow.
@@ -61,7 +61,7 @@ type ScanOptions struct {
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
-func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*schema.InterimReport, error) {
+func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
 	// Step 1: Detect languages
 	var languages []string
 	var err error
@@ -70,7 +70,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*schema.Inte
 		// Use provided language hint
 		languages = opts.LanguageHint
 	} else {
-		// Auto-detect languages
+		// Auto-detect languages so we can use only the needed rules. This significantly optimizes scanner performance.
 		languages, err = o.langDetector.Detect(opts.Target)
 		if err != nil {
 			return nil, fmt.Errorf("failed to detect languages: %w", err)

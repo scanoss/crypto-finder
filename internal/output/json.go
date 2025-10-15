@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/scanoss/crypto-finder/pkg/schema"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // JSONWriter implements the Writer interface for JSON output format.
@@ -41,7 +41,7 @@ func NewCompactJSONWriter() *JSONWriter {
 // The file is created with permissions 0644 (rw-r--r--).
 // If the file already exists, it will be overwritten.
 // If the parent directory doesn't exist, an error is returned.
-func (w *JSONWriter) Write(report *schema.InterimReport, destination string) error {
+func (w *JSONWriter) Write(report *entities.InterimReport, destination string) error {
 	// Validate report
 	if report == nil {
 		return fmt.Errorf("report cannot be nil")

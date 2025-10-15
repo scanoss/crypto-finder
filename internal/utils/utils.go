@@ -1,5 +1,10 @@
 package utils
 
+import (
+	"strings"
+	"unicode"
+)
+
 // DeduplicateSliceOfStrings removes duplicate strings and empty strings from a slice.
 func DeduplicateSliceOfStrings(duplicates []string) []string {
 	seen := make(map[string]bool)
@@ -16,4 +21,25 @@ func DeduplicateSliceOfStrings(duplicates []string) []string {
 	}
 
 	return result
+}
+
+// CamelToSnake converts a camelCase string to snake_case.
+// Example: "algorithmName" -> "algorithm_name"
+func CamelToSnake(s string) string {
+	var result strings.Builder
+
+	for i, r := range s {
+		if unicode.IsUpper(r) {
+			// Add underscore before uppercase letter (except at the start)
+			if i > 0 {
+				result.WriteRune('_')
+			}
+			// Convert to lowercase
+			result.WriteRune(unicode.ToLower(r))
+		} else {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
