@@ -30,7 +30,7 @@ func NewRegistry() *Registry {
 // Example:
 //
 //	registry := NewRegistry()
-//	registry.Register("semgrep", semgrep.NewSemgrepScanner())
+//	registry.Register("semgrep", semgrep.NewScanner())
 func (r *Registry) Register(name string, scanner Scanner) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

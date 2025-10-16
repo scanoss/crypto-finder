@@ -8,24 +8,20 @@ import (
 	"time"
 
 	"github.com/go-enry/go-enry/v2"
-	"github.com/rs/zerolog/log"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // transformToInterim converts Semgrep results to the interim JSON format.
-func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion string) (*entities.InterimReport, error) {
+func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion string) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 
 	// Transform each file's findings
 	findings := make([]entities.Finding, 0, len(findingsByFile))
 	for filePath, results := range findingsByFile {
-		finding, err := transformFileFinding(filePath, results)
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to transform findings for file %s", filePath)
-			continue
-		}
+		finding := transformFileFinding(filePath, results)
 		findings = append(findings, finding)
 	}
 
@@ -33,50 +29,49 @@ func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion st
 	report := &entities.InterimReport{
 		Version: "1.0", // TODO: Use proper version number
 		Tool: entities.ToolInfo{
-			Name:    SCANNER_NAME,
+			Name:    ScannerName,
 			Version: scannerVersion,
 		},
 		Findings: findings,
 	}
 
-	return report, nil
+	return report
 }
 
 // groupByFile groups Semgrep results by file path.
 func groupByFile(results []entities.SemgrepResult) map[string][]entities.SemgrepResult {
 	grouped := make(map[string][]entities.SemgrepResult)
-	for _, result := range results {
-		grouped[result.Path] = append(grouped[result.Path], result)
+	for i := range results {
+		result := &results[i]
+		grouped[result.Path] = append(grouped[result.Path], *result)
 	}
 	return grouped
 }
 
 // transformFileFinding transforms all findings for a single file.
-func transformFileFinding(filePath string, results []entities.SemgrepResult) (entities.Finding, error) {
+func transformFileFinding(filePath string, results []entities.SemgrepResult) entities.Finding {
 	// Detect language
 	language := detectLanguage(filePath)
 
 	// Transform each result to a cryptographic asset
 	assets := make([]entities.CryptographicAsset, 0, len(results))
-	for _, result := range results {
-		asset := transformToCryptographicAsset(result)
+	for i := range results {
+		asset := transformToCryptographicAsset(&results[i])
 		assets = append(assets, asset)
 	}
 
-	finding := entities.Finding{
+	return entities.Finding{
 		FilePath:            filePath,
 		Language:            language,
 		CryptographicAssets: assets,
 		TimestampUTC:        time.Now().UTC().Format(time.RFC3339),
 	}
-
-	return finding, nil
 }
 
 // transformToCryptographicAsset converts a single Semgrep result to a CryptographicAsset.
-func transformToCryptographicAsset(result entities.SemgrepResult) entities.CryptographicAsset {
+func transformToCryptographicAsset(result *entities.SemgrepResult) entities.CryptographicAsset {
 	asset := entities.CryptographicAsset{
-		MatchType:  SCANNER_NAME,
+		MatchType:  ScannerName,
 		LineNumber: result.Start.Line,
 		Match:      strings.TrimSpace(result.Extra.Lines),
 		Rule: entities.RuleInfo{
@@ -96,7 +91,7 @@ func transformToCryptographicAsset(result entities.SemgrepResult) entities.Crypt
 	return asset
 }
 
-// Helper function to safely get metavariable values
+// Helper function to safely get metavariable values.
 func getMetavarValue(metavars map[string]entities.MetavarInfo, key string) string {
 	if key == "" {
 		return ""

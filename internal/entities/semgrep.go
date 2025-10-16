@@ -33,6 +33,7 @@ type SemgrepExtra struct {
 	Lines    string                 `json:"lines"`    // Matched code snippet
 }
 
+// SemgrepMetadata contains metadata from Semgrep rules.
 type SemgrepMetadata struct {
 	Category       string         `json:"category,omitempty"`
 	Subcategory    string         `json:"subcategory,omitempty"`
@@ -46,7 +47,7 @@ type SemgrepMetadata struct {
 	Recommendation string         `json:"recommendation,omitempty"`
 }
 
-// MetavarInfo holds information about a captured metavariables
+// MetavarInfo holds information about a captured metavariables.
 type MetavarInfo struct {
 	Start struct {
 		Line   int `json:"line"`
@@ -62,6 +63,7 @@ type MetavarInfo struct {
 	PropagatedValue *MetavarPropagatedValue `json:"propagated_value"`
 }
 
+// MetavarPropagatedValue contains propagated values for metavariables.
 type MetavarPropagatedValue struct {
 	SvalueStart struct {
 		Line   int `json:"line"`

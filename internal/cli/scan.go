@@ -22,15 +22,18 @@ import (
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
-const DEFAULT_SCANNER = "semgrep"
-const DEFAULT_FORMAT = "json"
-const DEFAULT_TIMEOUT = "10m"
+const (
+	defaultScanner = "semgrep"
+	defaultFormat  = "json"
+	defaultTimeout = "10m"
+)
 
+// AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future.
-var ALLOWED_SCANNERS []string = []string{"semgrep"}
+var AllowedScanners = []string{"semgrep"}
 
-// Supported output formats
-var SUPPORTED_FORMATS []string = []string{"json"} // Future: csv, html, sarif
+// SupportedFormats lists the output formats supported by the tool.
+var SupportedFormats = []string{"json"} // Future: csv, html, sarif
 
 var (
 	scanRules      []string
@@ -70,7 +73,7 @@ var scanCmd = &cobra.Command{
 
 	  # Fail on findings (for CI/CD)
 	  crypto-finder scan --fail-on-findings --rules-dir ./rules/ /path/to/code`,
-	Args: func(cmd *cobra.Command, args []string) error {
+	Args: func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("you must specify a target directory to scan")
 		}
@@ -83,15 +86,15 @@ func init() {
 	// Add flags
 	scanCmd.Flags().StringArrayVar(&scanRules, "rules", []string{}, "Rule file path (repeatable)")
 	scanCmd.Flags().StringArrayVar(&scanRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
-	scanCmd.Flags().StringVar(&scanScanner, "scanner", DEFAULT_SCANNER, "Scanner to use")
-	scanCmd.Flags().StringVar(&scanFormat, "format", DEFAULT_FORMAT, "Output format: json (csv, html, sarif coming soon)")
+	scanCmd.Flags().StringVar(&scanScanner, "scanner", defaultScanner, "Scanner to use")
+	scanCmd.Flags().StringVar(&scanFormat, "format", defaultFormat, "Output format: json (csv, html, sarif coming soon)")
 	scanCmd.Flags().StringVar(&scanOutput, "output", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
-	scanCmd.Flags().StringVar(&scanTimeout, "timeout", DEFAULT_TIMEOUT, "Scan timeout (e.g., 10m, 1h)")
+	scanCmd.Flags().StringVar(&scanTimeout, "timeout", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
 }
 
-func runScan(cmd *cobra.Command, args []string) error {
+func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
 	// Validate flags
@@ -145,7 +148,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// Register scanners
 	// TODO: Register opengrep, cbom-toolkit
-	scannerRegistry.Register("semgrep", semgrep.NewSemgrepScanner())
+	scannerRegistry.Register("semgrep", semgrep.NewScanner())
 
 	// Create orchestrator
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -216,13 +219,13 @@ func validateScanFlags(target string) error {
 	}
 
 	// Validate scanner
-	if !slices.Contains(ALLOWED_SCANNERS, scanScanner) {
+	if !slices.Contains(AllowedScanners, scanScanner) {
 		return fmt.Errorf("invalid scanner name: %s", scanScanner)
 	}
 
 	// Validate output format
-	if !slices.Contains(SUPPORTED_FORMATS, scanFormat) {
-		return fmt.Errorf("unsupported output format '%s' (supported: %v)", scanFormat, SUPPORTED_FORMATS)
+	if !slices.Contains(SupportedFormats, scanFormat) {
+		return fmt.Errorf("unsupported output format '%s' (supported: %v)", scanFormat, SupportedFormats)
 	}
 
 	// Normalize language hints to lowercase

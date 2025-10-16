@@ -23,7 +23,7 @@ type LocalRuleSource struct {
 //
 // Returns:
 //   - *LocalRuleSource: Source configured to load from local paths and directories
-func NewLocalRuleSource(rulePaths []string, ruleDirs []string) *LocalRuleSource {
+func NewLocalRuleSource(rulePaths, ruleDirs []string) *LocalRuleSource {
 	return &LocalRuleSource{
 		rulePaths: rulePaths,
 		ruleDirs:  ruleDirs,
@@ -70,14 +70,16 @@ func (l *LocalRuleSource) Name() string {
 	totalFiles := len(l.rulePaths)
 	totalDirs := len(l.ruleDirs)
 
-	if totalFiles > 0 && totalDirs > 0 {
+	switch {
+	case totalFiles > 0 && totalDirs > 0:
 		return fmt.Sprintf("local(%d files, %d dirs)", totalFiles, totalDirs)
-	} else if totalFiles > 0 {
+	case totalFiles > 0:
 		return fmt.Sprintf("local(%d files)", totalFiles)
-	} else if totalDirs > 0 {
+	case totalDirs > 0:
 		return fmt.Sprintf("local(%d dirs)", totalDirs)
+	default:
+		return "local(empty)"
 	}
-	return "local(empty)"
 }
 
 // validateRuleFile validates a single rule file path.
@@ -142,10 +144,10 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 	// Find all rule files recursively
 	rules := make([]string, 0)
 
-	err = filepath.Walk(absPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// Skip files we can't read
-			return nil
+	err = filepath.Walk(absPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			// Skip files we can't read (intentionally ignoring error to continue walking)
+			return nil //nolint:nilerr // Skip inaccessible files gracefully
 		}
 
 		// Skip directories
@@ -160,7 +162,6 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}

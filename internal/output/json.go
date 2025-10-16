@@ -65,13 +65,14 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 	}
 
 	// Determine output destination
+	//nolint:nestif // Separate stdout and file paths are inherently nested
 	if destination == "" || destination == "-" {
 		// Write to stdout
 		if _, err := os.Stdout.Write(data); err != nil {
 			return fmt.Errorf("failed to write to stdout: %w", err)
 		}
 		// Add newline for better terminal output
-		if _, err := os.Stdout.Write([]byte("\n")); err != nil {
+		if _, err := os.Stdout.WriteString("\n"); err != nil {
 			return fmt.Errorf("failed to write newline to stdout: %w", err)
 		}
 	} else {
@@ -89,8 +90,8 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		}
 
 		// Write to file
-		// 0644 = rw-r--r-- (owner can read/write, others can read)
-		if err := os.WriteFile(absPath, data, 0644); err != nil {
+		// 0o600 = rw------- (owner can read/write only)
+		if err := os.WriteFile(absPath, data, 0o600); err != nil {
 			return fmt.Errorf("failed to write JSON file: %w", err)
 		}
 	}

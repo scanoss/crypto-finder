@@ -41,7 +41,7 @@ func FormatScannerError(scannerName string, err error) error {
 //
 //	err := FormatValidationError("--rules", "no rule files specified", "use --rules <file> or --rules-dir <dir>")
 //	// Output: "Validation error for --rules: no rule files specified. Suggestion: use --rules <file> or --rules-dir <dir>"
-func FormatValidationError(flag string, message string, suggestion string) error {
+func FormatValidationError(flag, message, suggestion string) error {
 	if suggestion != "" {
 		return fmt.Errorf("validation error for %s: %s (suggestion: %s)", flag, message, suggestion)
 	}

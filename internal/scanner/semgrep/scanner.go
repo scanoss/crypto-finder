@@ -4,6 +4,7 @@ package semgrep
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -13,10 +14,11 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
-const SCANNER_NAME = "semgrep"
+// ScannerName is the identifier for the Semgrep scanner.
+const ScannerName = "semgrep"
 
-// SemgrepScanner implements the Scanner interface for Semgrep.
-type SemgrepScanner struct {
+// Scanner implements the scanner.Scanner interface for Semgrep.
+type Scanner struct {
 	executablePath string
 	version        string
 	timeout        time.Duration
@@ -26,16 +28,16 @@ type SemgrepScanner struct {
 	skipPatterns   []string
 }
 
-// NewSemgrepScanner creates a new Semgrep adapter with default settings.
-func NewSemgrepScanner() *SemgrepScanner {
-	return &SemgrepScanner{
+// NewScanner creates a new Semgrep adapter with default settings.
+func NewScanner() *Scanner {
+	return &Scanner{
 		executablePath: "semgrep", // Will search PATH
 		timeout:        10 * time.Minute,
 	}
 }
 
 // Initialize validates that Semgrep is available and properly configured.
-func (s *SemgrepScanner) Initialize(config scanner.Config) error {
+func (s *Scanner) Initialize(config scanner.Config) error {
 	// Use provided executable path or default
 	if config.ExecutablePath != "" {
 		s.executablePath = config.ExecutablePath
@@ -49,11 +51,7 @@ func (s *SemgrepScanner) Initialize(config scanner.Config) error {
 	s.executablePath = path
 
 	// Get semgrep version
-	version, err := s.detectVersion()
-	if err != nil {
-		return fmt.Errorf("failed to detect semgrep version: %w", err)
-	}
-	s.version = version
+	s.version = s.detectVersion()
 
 	// Apply configuration
 	if config.Timeout > 0 {
@@ -76,25 +74,25 @@ func (s *SemgrepScanner) Initialize(config scanner.Config) error {
 }
 
 // Scan executes Semgrep against the target with the given rule paths.
-func (a *SemgrepScanner) Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error) {
+func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, fmt.Errorf("no rule paths provided")
 	}
 
 	// Apply timeout to context if not already set
-	if a.timeout > 0 {
+	if s.timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, a.timeout)
+		ctx, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
 
 	// Build semgrep command
-	args := a.buildCommand(target, rulePaths)
+	args := s.buildCommand(target, rulePaths)
 
 	// Execute semgrep
-	output, stderr, err := a.execute(ctx, args)
+	output, stderr, err := s.execute(ctx, args)
 	if err != nil {
-		return nil, a.mapError(err, stderr)
+		return nil, s.mapError(err, stderr)
 	}
 
 	// Parse semgrep JSON output
@@ -104,38 +102,35 @@ func (a *SemgrepScanner) Scan(ctx context.Context, target string, rulePaths []st
 	}
 
 	// Transform to interim format
-	report, err := transformToInterim(semgrepResults, a.version)
-	if err != nil {
-		return nil, fmt.Errorf("failed to transform results to interim format: %w", err)
-	}
+	report := transformToInterim(semgrepResults, s.version)
 
 	return report, nil
 }
 
 // GetInfo returns metadata about the Semgrep adapter.
-func (s *SemgrepScanner) GetInfo() scanner.Info {
+func (s *Scanner) GetInfo() scanner.Info {
 	return scanner.Info{
-		Name:        SCANNER_NAME,
+		Name:        ScannerName,
 		Version:     s.version,
 		Description: "Static analysis tool for detecting cryptographic algorithm usage",
 	}
 }
 
 // detectVersion runs `semgrep --version` to get the installed version.
-func (s *SemgrepScanner) detectVersion() (string, error) {
-	cmd := exec.Command(s.executablePath, "--version")
+func (s *Scanner) detectVersion() string {
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, s.executablePath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
-		return "unknown", nil // Non-fatal, continue without version
+		return "unknown" // Non-fatal, continue without version
 	}
 
 	// Parse version from output (e.g., "1.45.0")
-	version := strings.TrimSpace(string(output))
-	return version, nil
+	return strings.TrimSpace(string(output))
 }
 
 // buildCommand constructs the semgrep command arguments.
-func (s *SemgrepScanner) buildCommand(target string, rulePaths []string) []string {
+func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",           // JSON output format
 		"--no-git-ignore",  // Scan all files, don't respect .gitignore
@@ -164,7 +159,7 @@ func (s *SemgrepScanner) buildCommand(target string, rulePaths []string) []strin
 }
 
 // execute runs the semgrep command and captures stdout/stderr.
-func (s *SemgrepScanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
+func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	// Set working directory if specified
@@ -189,7 +184,7 @@ func (s *SemgrepScanner) execute(ctx context.Context, args []string) (stdout []b
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, stderr, fmt.Errorf("semgrep execution timed out after %v", s.timeout)
 		}
-		return nil, stderr, fmt.Errorf("semgrep execution cancelled: %w", ctx.Err())
+		return nil, stderr, fmt.Errorf("semgrep execution canceled: %w", ctx.Err())
 	}
 
 	// Semgrep exit codes:
@@ -197,7 +192,8 @@ func (s *SemgrepScanner) execute(ctx context.Context, args []string) (stdout []b
 	// 1 = findings detected (this is actually success for us)
 	// >1 = error
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			// Exit code 1 means findings were detected, which is not an error
 			if exitErr.ExitCode() == 1 {
 				return stdout, stderr, nil
@@ -210,7 +206,7 @@ func (s *SemgrepScanner) execute(ctx context.Context, args []string) (stdout []b
 }
 
 // mapError converts semgrep errors to user-friendly messages.
-func (a *SemgrepScanner) mapError(err error, stderr string) error {
+func (s *Scanner) mapError(err error, stderr string) error {
 	// Check for specific error patterns in stderr
 	stderrLower := strings.ToLower(stderr)
 

@@ -1,5 +1,6 @@
 package skip
 
+// DefaultSkippedDirs contains commonly excluded directories across projects.
 var DefaultSkippedDirs = []string{
 	"nbproject",
 	"nbbuild",

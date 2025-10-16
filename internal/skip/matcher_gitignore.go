@@ -6,7 +6,7 @@ import (
 	ignore "github.com/sabhiram/go-gitignore"
 )
 
-// GitIgnoreMatcher determines whether files or directories match a given gitignore-style pattern
+// GitIgnoreMatcher determines whether files or directories match a given gitignore-style pattern.
 type GitIgnoreMatcher struct {
 	ignorer *ignore.GitIgnore
 }
@@ -74,7 +74,7 @@ func (m *GitIgnoreMatcher) ShouldSkip(path string, isDir bool) bool {
 
 		// For gitignore matching, directories need trailing slash
 		if !strings.HasSuffix(path, "/") {
-			path = path + "/"
+			path += "/"
 		}
 	}
 

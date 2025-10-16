@@ -81,7 +81,7 @@ func TestMultiSource(t *testing.T) {
 	}
 }
 
-// mockPatternSource is a test helper that implements PatternSource
+// mockPatternSource is a test helper that implements PatternSource.
 type mockPatternSource struct {
 	patterns []string
 	name     string

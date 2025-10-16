@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 	cryptographic operations and extract relevant values. It executes Semgrep
 	as the default scanning engine and outputs results in a standardized interim JSON format.`,
 	SilenceUsage: true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
 		setupLogging()
 	},
 }
@@ -40,15 +40,17 @@ func setupLogging() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	if debug {
+	switch {
+	case debug:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	} else if verbose {
+	case verbose:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	} else {
+	default:
 		zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	}
 }
 
+// Execute runs the root command and exits on error.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

@@ -18,7 +18,7 @@ func NewProcessor() *Processor {
 // Current processing:
 //   - Validates report structure
 //   - Ensures all required fields are present
-func (p *Processor) Process(report *entities.InterimReport, detectedLanguages []string) (*entities.InterimReport, error) {
+func (p *Processor) Process(report *entities.InterimReport, _ []string) (*entities.InterimReport, error) {
 	if report == nil {
 		// Return empty report if scanner found nothing
 		return &entities.InterimReport{

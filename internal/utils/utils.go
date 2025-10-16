@@ -1,3 +1,6 @@
+// Package utils provides general utility functions used across the application.
+//
+//nolint:revive // utils is a conventional package name for shared utilities
 package utils
 
 import (
@@ -24,7 +27,8 @@ func DeduplicateSliceOfStrings(duplicates []string) []string {
 }
 
 // CamelToSnake converts a camelCase string to snake_case.
-// Example: "algorithmName" -> "algorithm_name"
+//
+// Example: "algorithmName" -> "algorithm_name".
 func CamelToSnake(s string) string {
 	var result strings.Builder
 

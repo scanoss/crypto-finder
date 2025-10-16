@@ -1,6 +1,7 @@
 package language
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
+
 	"github.com/rs/zerolog/log"
+
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
@@ -30,6 +33,8 @@ func NewEnryDetector(matcher skip.SkipMatcher) *EnryDetector {
 // Detect analyzes the target directory and returns all detected programming languages.
 // It recursively scans all files, uses go-enry for detection, and returns unique
 // language names in lowercase.
+//
+//nolint:gocognit // Function handles multiple validation and scanning concerns
 func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 	log.Debug().Str("path", targetPath).Msg("starting language detection")
 
@@ -97,7 +102,6 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
@@ -147,14 +151,18 @@ func (d *EnryDetector) readFileSample(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Warn().Err(err).Str("path", path).Msg("failed to close file")
+		}
+	}()
 
 	// Read first 512KB
 	const maxSampleSize = 512 * 1024
 	buffer := make([]byte, maxSampleSize)
 
 	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
