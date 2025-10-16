@@ -4,9 +4,9 @@
 package main
 
 import (
-	"fmt"
+	"github.com/scanoss/crypto-finder/internal/cli"
 )
 
 func main() {
-	fmt.Println("Hello World!")
+	cli.Execute()
 }
