@@ -1,0 +1,211 @@
+# GoReleaser configuration for crypto-finder
+# Documentation: https://goreleaser.com
+
+version: 2
+
+# Project metadata
+project_name: crypto-finder
+
+# Build configuration
+builds:
+  - id: crypto-finder
+    main: ./cmd/crypto-finder
+    binary: crypto-finder
+
+    # Inject version info via ldflags
+    ldflags:
+      - -s -w
+      - -X github.com/scanoss/crypto-finder/internal/cli.Version={{.Version}}
+      - -X github.com/scanoss/crypto-finder/internal/cli.GitCommit={{.Commit}}
+      - -X github.com/scanoss/crypto-finder/internal/cli.BuildDate={{.Date}}
+
+    # Target platforms and architectures
+    env:
+      - CGO_ENABLED=0
+
+    goos:
+      - linux
+      - darwin
+      - windows
+
+    goarch:
+      - amd64
+      - arm64
+
+    # Ignore unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+# Archive configuration
+archives:
+  - id: crypto-finder-archive
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+    format_overrides:
+      - goos: windows
+        format: zip
+
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+
+# Checksum generation
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# Snapshot builds (for testing)
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+# Changelog generation
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "typo"
+  groups:
+    - title: "Features"
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: "Bug Fixes"
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: "Other Changes"
+      order: 999
+
+# Docker image configuration
+dockers:
+  # Standard Docker image with Semgrep
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: amd64
+
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: arm64
+
+  # Slim Docker image without Semgrep
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
+    use: buildx
+    dockerfile: Dockerfile.slim
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: amd64
+
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-arm64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-arm64"
+    use: buildx
+    dockerfile: Dockerfile.slim
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: arm64
+
+# Docker manifest for multi-arch support
+docker_manifests:
+  # Standard image manifest
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-arm64"
+
+  # Slim image manifest
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-arm64"
+
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-arm64"
+
+# GitHub release configuration
+release:
+  github:
+    owner: scanoss
+    name: crypto-finder
+
+  draft: false
+  prerelease: auto
+
+  name_template: "v{{.Version}}"
+
+  header: |
+    ## SCANOSS Crypto Finder {{.Version}}
+
+    This release includes binaries for Linux, macOS, and Windows on multiple architectures.
+    Docker images are available on GitHub Container Registry.
+
+  footer: |
+    ## Docker Images
+
+    ```bash
+    # Standard image with Semgrep
+    docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}
+
+    # Slim image without Semgrep
+    docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-slim
+    ```
+
+    ## Installation
+
+    ### Binary Installation
+    Download the appropriate binary for your platform from the assets below.
+
+    ### Docker
+    See above for Docker images.
+
+    **Full Changelog**: https://github.com/scanoss/crypto-finder/compare/{{.PreviousTag}}...{{.Tag}}
