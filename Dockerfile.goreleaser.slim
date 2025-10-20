@@ -1,0 +1,43 @@
+# ============================================================================
+# GoReleaser Dockerfile.slim - Minimal image without Semgrep
+# ============================================================================
+# This Dockerfile is used by GoReleaser and expects a pre-built binary.
+# For manual builds from source, use the regular Dockerfile.slim instead.
+# ============================================================================
+
+FROM alpine:3.18
+
+# Build arguments for version injection
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# Install minimal runtime dependencies
+# - ca-certificates: For HTTPS requests
+RUN apk add --no-cache ca-certificates && rm -rf /var/cache/apk/*
+
+# Copy the pre-built crypto-finder binary from GoReleaser's build context
+COPY crypto-finder /usr/local/bin/crypto-finder
+
+# Make binary executable
+RUN chmod +x /usr/local/bin/crypto-finder
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Add labels for metadata
+LABEL org.opencontainers.image.title="SCANOSS Crypto Finder (Slim)"
+LABEL org.opencontainers.image.description="A tool to scan source code for cryptographic algorithm usage (without bundled Semgrep)"
+LABEL org.opencontainers.image.vendor="SCANOSS"
+LABEL org.opencontainers.image.source="https://github.com/scanoss/crypto-finder"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.version="${VERSION}"
+
+# Verify installation
+RUN crypto-finder version
+
+# Set entrypoint
+ENTRYPOINT ["crypto-finder"]
+
+# Default command shows help
+CMD ["--help"]
