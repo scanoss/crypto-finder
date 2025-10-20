@@ -1,0 +1,43 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Build artifacts
+target/
+*.out
+coverage.out
+
+# Documentation
+*.md
+!LICENSE.md
+architecture.md
+TASKS.md
+CHANGELOG.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+*_test.go
+test/
+testdata/
+
+# Output files
+*.json
+!go.mod
+!go.sum
+
+# CI/CD
+.goreleaser.yml
+
+# Claude
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db

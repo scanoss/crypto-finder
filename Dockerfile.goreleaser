@@ -1,0 +1,42 @@
+# ============================================================================
+# GoReleaser Dockerfile - Standard Image with Semgrep
+# ============================================================================
+# This Dockerfile is used by GoReleaser and expects a pre-built binary.
+# For manual builds from source, use the regular Dockerfile instead.
+# ============================================================================
+
+FROM python:3.11-slim
+
+# Build arguments for version injection
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# Install Semgrep 1.119.0
+RUN pip install --no-cache-dir semgrep==1.119.0
+
+# Copy the pre-built crypto-finder binary from GoReleaser's build context
+COPY crypto-finder /usr/local/bin/crypto-finder
+
+# Make binary executable
+RUN chmod +x /usr/local/bin/crypto-finder
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Add labels for metadata
+LABEL org.opencontainers.image.title="SCANOSS Crypto Finder"
+LABEL org.opencontainers.image.description="A tool to scan source code for cryptographic algorithm usage"
+LABEL org.opencontainers.image.vendor="SCANOSS"
+LABEL org.opencontainers.image.source="https://github.com/scanoss/crypto-finder"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.version="${VERSION}"
+
+# Verify installations
+RUN crypto-finder version && semgrep --version
+
+# Set entrypoint
+ENTRYPOINT ["crypto-finder"]
+
+# Default command shows help
+CMD ["--help"]
