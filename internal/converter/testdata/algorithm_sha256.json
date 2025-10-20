@@ -1,0 +1,27 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/hash.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 10,
+          "rule": {
+            "id": "go-crypto-sha256",
+            "severity": "info"
+          },
+          "metadata": {
+            "primitive": "hash",
+            "algorithmName": "SHA-256",
+            "parameterSetIdentifier": "256",
+            "library": "crypto/sha256",
+            "api": "sha256.New"
+          }
+        }
+      ]
+    }
+  ]
+}

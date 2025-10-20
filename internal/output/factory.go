@@ -25,10 +25,12 @@ type WriterFactory struct {
 //
 // Currently supported formats:
 //   - json: Standard JSON output (pretty-printed by default)
+//   - cyclonedx: CycloneDX 1.6 CBOM format
 func NewWriterFactory() *WriterFactory {
 	return &WriterFactory{
 		writers: map[string]Writer{
-			"json": NewJSONWriter(),
+			"json":      NewJSONWriter(),
+			"cyclonedx": NewCycloneDXWriter(),
 		},
 	}
 }

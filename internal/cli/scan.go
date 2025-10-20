@@ -33,7 +33,7 @@ const (
 var AllowedScanners = []string{"semgrep"}
 
 // SupportedFormats lists the output formats supported by the tool.
-var SupportedFormats = []string{"json"} // Future: csv, html, sarif
+var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
 
 var (
 	scanRules      []string
@@ -87,7 +87,7 @@ func init() {
 	scanCmd.Flags().StringArrayVar(&scanRules, "rules", []string{}, "Rule file path (repeatable)")
 	scanCmd.Flags().StringArrayVar(&scanRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
 	scanCmd.Flags().StringVar(&scanScanner, "scanner", defaultScanner, "Scanner to use")
-	scanCmd.Flags().StringVar(&scanFormat, "format", defaultFormat, "Output format: json (csv, html, sarif coming soon)")
+	scanCmd.Flags().StringVar(&scanFormat, "format", defaultFormat, "Output format: json, cyclonedx (default: json)")
 	scanCmd.Flags().StringVar(&scanOutput, "output", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")

@@ -1,0 +1,28 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/cipher.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 42,
+          "rule": {
+            "id": "go-crypto-aes-256",
+            "severity": "info"
+          },
+          "metadata": {
+            "primitive": "ae",
+            "algorithmName": "AES",
+            "parameterSetIdentifier": "256",
+            "mode": "GCM",
+            "library": "crypto/cipher",
+            "api": "cipher.NewGCM"
+          }
+        }
+      ]
+    }
+  ]
+}

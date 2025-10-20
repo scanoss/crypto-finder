@@ -1,0 +1,25 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/hash_value.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 20,
+          "rule": {
+            "id": "go-crypto-sha256-digest",
+            "severity": "info"
+          },
+          "metadata": {
+            "assetType": "digest",
+            "algorithm": "SHA-256",
+            "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    }
+  ]
+}

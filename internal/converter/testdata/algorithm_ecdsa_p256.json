@@ -1,0 +1,28 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/ecdsa.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 23,
+          "rule": {
+            "id": "go-crypto-ecdsa-p256",
+            "severity": "info"
+          },
+          "metadata": {
+            "primitive": "signature",
+            "algorithmName": "ECDSA",
+            "curve": "P-256",
+            "parameterSetIdentifier": "P-256",
+            "library": "crypto/ecdsa",
+            "api": "ecdsa.Sign"
+          }
+        }
+      ]
+    }
+  ]
+}

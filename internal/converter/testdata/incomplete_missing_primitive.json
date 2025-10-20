@@ -1,0 +1,24 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/incomplete.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 5,
+          "rule": {
+            "id": "incomplete-rule",
+            "severity": "info"
+          },
+          "metadata": {
+            "algorithmName": "AES",
+            "keySize": "128"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/rsa_test.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 15,
+          "rule": {
+            "id": "go-crypto-rsa-keygen",
+            "severity": "warning"
+          },
+          "metadata": {
+            "primitive": "pke",
+            "algorithmName": "RSA",
+            "parameterSetIdentifier": "2048",
+            "library": "crypto/rsa",
+            "api": "rsa.GenerateKey"
+          }
+        }
+      ]
+    }
+  ]
+}
