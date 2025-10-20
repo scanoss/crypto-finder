@@ -10,7 +10,6 @@ import (
 	"github.com/go-enry/go-enry/v2"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // transformToInterim converts Semgrep results to the interim JSON format.
@@ -163,8 +162,7 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 			value = fmt.Sprint(v)
 		}
 
-		// We use CamelToSnake here until we update all rules to use snake_case keys
-		key := utils.CamelToSnake(key)
+		// Maintain camelCase format to align with CycloneDX 1.6 specification
 		asset.Metadata[key] = value
 	}
 }

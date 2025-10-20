@@ -169,7 +169,7 @@ func runScan(_ *cobra.Command, args []string) error {
 
 	report, err := orchestrator.Scan(ctx, scanOpts)
 	if err != nil {
-		return fmt.Errorf("scan failed: %w", err)
+		return err
 	}
 
 	// Get the appropriate writer for the format
