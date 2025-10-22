@@ -48,8 +48,6 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 	m.addPadding(algorithmProps, asset)
 	m.addCurve(algorithmProps, asset)
 	m.addExecutionEnvironment(algorithmProps, asset)
-	m.addImplementationPlatform(algorithmProps, asset)
-	m.addSecurityLevel(algorithmProps, asset)
 
 	// Build crypto properties
 	assetType := cdx.CryptoAssetTypeAlgorithm
@@ -167,44 +165,6 @@ func (m *AlgorithmMapper) addExecutionEnvironment(props *cdx.CryptoAlgorithmProp
 	props.ExecutionEnvironment = cdx.CryptoExecutionEnvironmentSoftwarePlainRAM
 }
 
-// addImplementationPlatform adds implementation platform (library) if available.
-func (m *AlgorithmMapper) addImplementationPlatform(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if library, ok := asset.Metadata["library"]; ok && library != "" {
-		// Map Go stdlib libraries to friendly names
-		platform := mapLibraryToImplementationPlatform(library)
-		props.ImplementationPlatform = cdx.ImplementationPlatform(platform)
-	}
-}
-
-// addSecurityLevel calculates classical security level from key size if available.
-func (m *AlgorithmMapper) addSecurityLevel(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	// Try to extract security level from parameter set identifier or key size
-	var keySize int
-	var err error
-
-	if props.ParameterSetIdentifier != "" {
-		keySize, err = strconv.Atoi(props.ParameterSetIdentifier)
-		if err != nil {
-			// Not a numeric parameter (e.g., curve name)
-			return
-		}
-	} else if keySizeStr, ok := asset.Metadata["keySize"]; ok {
-		keySize, err = strconv.Atoi(keySizeStr)
-		if err != nil {
-			return
-		}
-	} else {
-		return
-	}
-
-	// Calculate classical security level based on algorithm and key size
-	algorithmName := asset.Metadata["algorithmName"]
-	securityLevel := calculateClassicalSecurityLevel(algorithmName, keySize)
-	if securityLevel > 0 {
-		props.ClassicalSecurityLevel = &securityLevel
-	}
-}
-
 // generateComponentName creates a component name from algorithm details.
 // Format: {algorithmName}[-{parameterSetIdentifier}][-{mode}]
 func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *entities.CryptographicAsset) string {
@@ -256,83 +216,13 @@ func (m *AlgorithmMapper) buildProperties(finding *entities.Finding, asset *enti
 		})
 	}
 
+	// Add rule id if available
+	if asset.Rule.ID != "" {
+		properties = append(properties, cdx.Property{
+			Name:  "scanoss:ruleid",
+			Value: asset.Rule.ID,
+		})
+	}
+
 	return &properties
-}
-
-// mapLibraryToImplementationPlatform maps library names to friendly platform names.
-func mapLibraryToImplementationPlatform(library string) string {
-	switch {
-	case strings.HasPrefix(library, "crypto/"):
-		return "Go stdlib"
-	case library == "go-crypto":
-		return "Go stdlib"
-	case strings.HasPrefix(library, "golang.org/x/crypto"):
-		return "golang.org/x/crypto"
-	default:
-		return library
-	}
-}
-
-// calculateClassicalSecurityLevel estimates security level from algorithm and key size.
-// Based on NIST SP 800-57 Part 1 Rev. 5
-func calculateClassicalSecurityLevel(algorithmName string, keySize int) int {
-	algorithmUpper := strings.ToUpper(algorithmName)
-
-	switch {
-	// Symmetric algorithms (AES, ChaCha20, etc.)
-	case strings.Contains(algorithmUpper, "AES"),
-		strings.Contains(algorithmUpper, "CHACHA"),
-		strings.Contains(algorithmUpper, "CAMELLIA"):
-		return keySize
-
-	// Hash functions (SHA-256, SHA-512, etc.)
-	case strings.Contains(algorithmUpper, "SHA"),
-		strings.Contains(algorithmUpper, "BLAKE"),
-		strings.Contains(algorithmUpper, "KECCAK"):
-		return keySize
-
-	// RSA (security level is lower than key size)
-	case algorithmUpper == "RSA":
-		switch {
-		case keySize >= 15360:
-			return 256
-		case keySize >= 7680:
-			return 192
-		case keySize >= 3072:
-			return 128
-		case keySize >= 2048:
-			return 112
-		case keySize >= 1024:
-			return 80
-		default:
-			return 0
-		}
-
-	// ECC (based on curve size or name)
-	case algorithmUpper == "ECDSA", algorithmUpper == "ECDH",
-		strings.Contains(algorithmUpper, "EC"):
-		switch {
-		case keySize >= 512:
-			return 256
-		case keySize >= 384:
-			return 192
-		case keySize >= 256:
-			return 128
-		default:
-			return 0
-		}
-
-	// EdDSA
-	case strings.Contains(algorithmUpper, "ED25519"):
-		return 128
-	case strings.Contains(algorithmUpper, "ED448"):
-		return 224
-
-	// Default: return key size if symmetric-like
-	default:
-		if keySize <= 512 {
-			return keySize
-		}
-		return 0
-	}
 }

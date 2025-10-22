@@ -6,8 +6,8 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-func TestDigestMapper_MapToComponent(t *testing.T) {
-	mapper := NewDigestMapper()
+func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
 
 	tests := []struct {
 		name        string
@@ -92,30 +92,30 @@ func TestDigestMapper_MapToComponent(t *testing.T) {
 
 			// Verify digest-specific properties exist
 			props := *component.Properties
-			hasDigestAlgorithm := false
-			hasDigestValue := false
+			hasMaterialAlgorithm := false
+			hasMaterialValue := false
 
 			for _, prop := range props {
-				if prop.Name == "scanoss:digest:algorithm" {
-					hasDigestAlgorithm = true
+				if prop.Name == "scanoss:material:algorithm" {
+					hasMaterialAlgorithm = true
 				}
-				if prop.Name == "scanoss:digest:value" {
-					hasDigestValue = true
+				if prop.Name == "scanoss:material:value" {
+					hasMaterialValue = true
 				}
 			}
 
-			if !hasDigestAlgorithm {
-				t.Error("Missing scanoss:digest:algorithm property")
+			if !hasMaterialAlgorithm {
+				t.Error("Missing scanoss:material:algorithm property")
 			}
-			if !hasDigestValue {
-				t.Error("Missing scanoss:digest:value property")
+			if !hasMaterialValue {
+				t.Error("Missing scanoss:material:value property")
 			}
 		})
 	}
 }
 
-func TestDigestMapper_ValidateRequiredFields(t *testing.T) {
-	mapper := NewDigestMapper()
+func TestRelatedCryptoMapper_ValidateRequiredFields(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
 
 	tests := []struct {
 		name        string
@@ -126,7 +126,7 @@ func TestDigestMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Complete required fields",
 			metadata: map[string]string{
-				"assetType": "digest",
+				"assetType": "related-crypto-material",
 				"algorithm": "SHA-256",
 			},
 			wantErr: false,
@@ -149,26 +149,24 @@ func TestDigestMapper_ValidateRequiredFields(t *testing.T) {
 			errContains: "assetType",
 		},
 		{
-			name: "Missing algorithm",
+			name: "Missing algorithm is allowed",
 			metadata: map[string]string{
-				"assetType": "digest",
+				"assetType": "related-crypto-material",
 			},
-			wantErr:     true,
-			errContains: "algorithm",
+			wantErr: false,
 		},
 		{
-			name: "Empty algorithm",
+			name: "Empty algorithm is allowed",
 			metadata: map[string]string{
-				"assetType": "digest",
+				"assetType": "related-crypto-material",
 				"algorithm": "  ",
 			},
-			wantErr:     true,
-			errContains: "algorithm",
+			wantErr: false,
 		},
 		{
 			name: "Case-insensitive assetType",
 			metadata: map[string]string{
-				"assetType": "DIGEST",
+				"assetType": "RELATED-CRYPTO-MATERIAL",
 				"algorithm": "SHA-256",
 			},
 			wantErr: false,
@@ -197,8 +195,8 @@ func TestDigestMapper_ValidateRequiredFields(t *testing.T) {
 	}
 }
 
-func TestDigestMapper_BuildProperties(t *testing.T) {
-	mapper := NewDigestMapper()
+func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
 
 	tests := []struct {
 		name              string
@@ -206,28 +204,30 @@ func TestDigestMapper_BuildProperties(t *testing.T) {
 		lineNumber        int
 		metadata          map[string]string
 		wantPropertiesMin int
-		wantDigestValue   bool
+		wantMaterialValue bool
 	}{
 		{
-			name:       "Digest with value",
+			name:       "Related crypto with value",
 			filePath:   "src/test.go",
 			lineNumber: 10,
 			metadata: map[string]string{
-				"algorithm": "SHA-256",
-				"value":     "abc123def456",
+				"materialType": "digest",
+				"algorithm":    "SHA-256",
+				"value":        "abc123def456",
 			},
-			wantPropertiesMin: 5, // file, line, asset:type, algorithm, value
-			wantDigestValue:   true,
+			wantPropertiesMin: 5, // file, line, asset:type, material:type, algorithm, value
+			wantMaterialValue: true,
 		},
 		{
-			name:       "Digest without value",
+			name:       "Related crypto without value",
 			filePath:   "src/test.go",
 			lineNumber: 20,
 			metadata: map[string]string{
-				"algorithm": "SHA-512",
+				"materialType": "digest",
+				"algorithm":    "SHA-512",
 			},
-			wantPropertiesMin: 4, // file, line, asset:type, algorithm (no value)
-			wantDigestValue:   false,
+			wantPropertiesMin: 4, // file, line, asset:type, material:type, algorithm (no value)
+			wantMaterialValue: false,
 		},
 	}
 
@@ -241,7 +241,8 @@ func TestDigestMapper_BuildProperties(t *testing.T) {
 				Metadata:   tt.metadata,
 			}
 
-			props := mapper.buildProperties(finding, asset)
+			materialType := tt.metadata["materialType"]
+			props := mapper.buildProperties(finding, asset, materialType)
 
 			if props == nil {
 				t.Fatal("buildProperties() returned nil")
@@ -255,6 +256,7 @@ func TestDigestMapper_BuildProperties(t *testing.T) {
 			hasFile := false
 			hasLine := false
 			hasAssetType := false
+			hasMaterialType := false
 			hasAlgorithm := false
 			hasValue := false
 
@@ -269,12 +271,14 @@ func TestDigestMapper_BuildProperties(t *testing.T) {
 					hasLine = true
 				case "scanoss:asset:type":
 					hasAssetType = true
-					if prop.Value != "digest" {
-						t.Errorf("Asset type property value = %q, want %q", prop.Value, "digest")
+					if prop.Value != "related-crypto-material" {
+						t.Errorf("Asset type property value = %q, want %q", prop.Value, "related-crypto-material")
 					}
-				case "scanoss:digest:algorithm":
+				case "scanoss:material:type":
+					hasMaterialType = true
+				case "scanoss:material:algorithm":
 					hasAlgorithm = true
-				case "scanoss:digest:value":
+				case "scanoss:material:value":
 					hasValue = true
 				}
 			}
@@ -288,14 +292,17 @@ func TestDigestMapper_BuildProperties(t *testing.T) {
 			if !hasAssetType {
 				t.Error("Missing scanoss:asset:type property")
 			}
+			if !hasMaterialType {
+				t.Error("Missing scanoss:material:type property")
+			}
 			if !hasAlgorithm {
-				t.Error("Missing scanoss:digest:algorithm property")
+				t.Error("Missing scanoss:material:algorithm property")
 			}
-			if tt.wantDigestValue && !hasValue {
-				t.Error("Expected scanoss:digest:value property but not found")
+			if tt.wantMaterialValue && !hasValue {
+				t.Error("Expected scanoss:material:value property but not found")
 			}
-			if !tt.wantDigestValue && hasValue {
-				t.Error("Unexpected scanoss:digest:value property found")
+			if !tt.wantMaterialValue && hasValue {
+				t.Error("Unexpected scanoss:material:value property found")
 			}
 		})
 	}

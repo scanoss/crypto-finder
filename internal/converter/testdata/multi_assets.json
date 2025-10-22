@@ -14,6 +14,7 @@
             "severity": "warning"
           },
           "metadata": {
+            "assetType": "algorithm",
             "primitive": "block-cipher",
             "algorithmName": "AES",
             "parameterSetIdentifier": "128",
@@ -28,6 +29,7 @@
             "severity": "info"
           },
           "metadata": {
+            "assetType": "algorithm",
             "primitive": "hash",
             "algorithmName": "SHA-256",
             "parameterSetIdentifier": "256",
@@ -42,6 +44,7 @@
             "severity": "info"
           },
           "metadata": {
+            "assetType": "algorithm",
             "primitive": "mac",
             "algorithmName": "HMAC-SHA256",
             "library": "crypto/hmac",
@@ -60,6 +63,7 @@
             "severity": "info"
           },
           "metadata": {
+            "assetType": "algorithm",
             "primitive": "signature",
             "algorithmName": "ECDSA",
             "curve": "P-384",

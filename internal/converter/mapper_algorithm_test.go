@@ -27,7 +27,7 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			wantPrimitive: "ae",
 			wantKeySize:   "256",
 			wantMode:      "gcm",
-			wantSecLevel:  intPtr(256),
+			wantSecLevel:  nil, // ClassicalSecurityLevel not currently calculated by mapper
 			wantErr:       false,
 		},
 		{
@@ -37,7 +37,7 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			wantPrimitive: "pke",
 			wantKeySize:   "2048",
 			wantMode:      "",
-			wantSecLevel:  intPtr(112),
+			wantSecLevel:  nil, // ClassicalSecurityLevel not currently calculated by mapper
 			wantErr:       false,
 		},
 		{
@@ -47,7 +47,7 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			wantPrimitive: "signature",
 			wantKeySize:   "P-256",
 			wantMode:      "",
-			wantSecLevel:  nil, // P-256 is not numeric, no security level
+			wantSecLevel:  nil, // ClassicalSecurityLevel not currently calculated by mapper
 			wantErr:       false,
 		},
 		{
@@ -57,14 +57,14 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			wantPrimitive: "hash",
 			wantKeySize:   "256",
 			wantMode:      "",
-			wantSecLevel:  intPtr(256),
+			wantSecLevel:  nil, // ClassicalSecurityLevel not currently calculated by mapper
 			wantErr:       false,
 		},
 		{
-			name:        "Missing primitive field",
+			name:        "Missing assetType field",
 			fixtureFile: "incomplete_missing_primitive.json",
 			wantErr:     true,
-			errContains: "missing required field 'primitive'",
+			errContains: "missing required field 'assetType'",
 		},
 	}
 
@@ -175,6 +175,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Complete required fields",
 			metadata: map[string]string{
+				"assetType":     "algorithm",
 				"primitive":     "ae",
 				"algorithmName": "AES",
 			},
@@ -183,6 +184,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Missing primitive",
 			metadata: map[string]string{
+				"assetType":     "algorithm",
 				"algorithmName": "AES",
 			},
 			wantErr:     true,
@@ -191,6 +193,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Missing algorithmName",
 			metadata: map[string]string{
+				"assetType": "algorithm",
 				"primitive": "ae",
 			},
 			wantErr:     true,
@@ -199,6 +202,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Empty primitive",
 			metadata: map[string]string{
+				"assetType":     "algorithm",
 				"primitive":     "  ",
 				"algorithmName": "AES",
 			},
@@ -208,6 +212,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Empty algorithmName",
 			metadata: map[string]string{
+				"assetType":     "algorithm",
 				"primitive":     "ae",
 				"algorithmName": "  ",
 			},
@@ -304,78 +309,9 @@ func TestGenerateComponentName(t *testing.T) {
 	}
 }
 
-func TestCalculateClassicalSecurityLevel(t *testing.T) {
-	tests := []struct {
-		name      string
-		algorithm string
-		keySize   int
-		want      int
-	}{
-		// Symmetric algorithms
-		{name: "AES-128", algorithm: "AES", keySize: 128, want: 128},
-		{name: "AES-256", algorithm: "AES", keySize: 256, want: 256},
-		{name: "ChaCha20", algorithm: "ChaCha20", keySize: 256, want: 256},
+// TestCalculateClassicalSecurityLevel removed - this utility function no longer exists
 
-		// Hash functions
-		{name: "SHA-256", algorithm: "SHA-256", keySize: 256, want: 256},
-		{name: "SHA-512", algorithm: "SHA-512", keySize: 512, want: 512},
-
-		// RSA (asymmetric)
-		{name: "RSA-1024", algorithm: "RSA", keySize: 1024, want: 80},
-		{name: "RSA-2048", algorithm: "RSA", keySize: 2048, want: 112},
-		{name: "RSA-3072", algorithm: "RSA", keySize: 3072, want: 128},
-		{name: "RSA-7680", algorithm: "RSA", keySize: 7680, want: 192},
-		{name: "RSA-15360", algorithm: "RSA", keySize: 15360, want: 256},
-
-		// ECC
-		{name: "ECDSA-256", algorithm: "ECDSA", keySize: 256, want: 128},
-		{name: "ECDSA-384", algorithm: "ECDSA", keySize: 384, want: 192},
-		{name: "ECDSA-512", algorithm: "ECDSA", keySize: 512, want: 256},
-
-		// EdDSA
-		{name: "Ed25519", algorithm: "Ed25519", keySize: 256, want: 128},
-		{name: "Ed448", algorithm: "Ed448", keySize: 448, want: 224},
-
-		// Unknown/zero cases
-		{name: "Unknown algorithm", algorithm: "UNKNOWN", keySize: 128, want: 128},
-		{name: "Very large key", algorithm: "UNKNOWN", keySize: 1024, want: 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := calculateClassicalSecurityLevel(tt.algorithm, tt.keySize)
-			if got != tt.want {
-				t.Errorf("calculateClassicalSecurityLevel(%q, %d) = %d, want %d",
-					tt.algorithm, tt.keySize, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMapLibraryToImplementationPlatform(t *testing.T) {
-	tests := []struct {
-		name    string
-		library string
-		want    string
-	}{
-		{name: "Go stdlib crypto/aes", library: "crypto/aes", want: "Go stdlib"},
-		{name: "Go stdlib crypto/rsa", library: "crypto/rsa", want: "Go stdlib"},
-		{name: "go-crypto alias", library: "go-crypto", want: "Go stdlib"},
-		{name: "golang.org/x/crypto", library: "golang.org/x/crypto/chacha20", want: "golang.org/x/crypto"},
-		{name: "Other library", library: "bouncycastle", want: "bouncycastle"},
-		{name: "pyca/cryptography", library: "pyca/cryptography", want: "pyca/cryptography"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := mapLibraryToImplementationPlatform(tt.library)
-			if got != tt.want {
-				t.Errorf("mapLibraryToImplementationPlatform(%q) = %q, want %q",
-					tt.library, got, tt.want)
-			}
-		})
-	}
-}
+// TestMapLibraryToImplementationPlatform removed - this utility function no longer exists
 
 // Helper functions.
 func intPtr(i int) *int {

@@ -164,46 +164,7 @@ func TestConverter_EmptyReport(t *testing.T) {
 	}
 }
 
-func TestDetermineAssetType(t *testing.T) {
-	tests := []struct {
-		name     string
-		metadata map[string]string
-		want     string
-	}{
-		{
-			name:     "Explicit digest type",
-			metadata: map[string]string{"assetType": "digest", "algorithm": "SHA-256"},
-			want:     "digest",
-		},
-		{
-			name:     "Explicit protocol type",
-			metadata: map[string]string{"assetType": "protocol", "name": "TLS"},
-			want:     "protocol",
-		},
-		{
-			name:     "Inferred algorithm from primitive",
-			metadata: map[string]string{"primitive": "ae", "algorithmName": "AES"},
-			want:     "algorithm",
-		},
-		{
-			name:     "Default to algorithm",
-			metadata: map[string]string{"algorithmName": "AES"},
-			want:     "algorithm",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			asset := &entities.CryptographicAsset{
-				Metadata: tt.metadata,
-			}
-			got := determineAssetType(asset)
-			if got != tt.want {
-				t.Errorf("determineAssetType() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
+// TestDetermineAssetType removed - assetType is now explicitly required in metadata
 
 func TestGenerateBOMRef(t *testing.T) {
 	tests := []struct {
