@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	convertOutput  string
-	convertVerbose bool
+	convertOutput string
 )
 
 var convertCmd = &cobra.Command{
@@ -62,15 +61,9 @@ Examples:
 func init() {
 	// Add flags
 	convertCmd.Flags().StringVarP(&convertOutput, "output", "o", "", "Output file path (default: stdout)")
-	convertCmd.Flags().BoolVarP(&convertVerbose, "verbose", "v", false, "Enable verbose output")
 }
 
 func runConvert(_ *cobra.Command, args []string) error {
-	// Setup verbose logging if requested
-	if convertVerbose {
-		log.Info().Msg("Verbose mode enabled")
-	}
-
 	// Determine input source
 	var reader io.Reader
 	var inputSource string

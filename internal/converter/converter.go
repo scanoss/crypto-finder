@@ -13,25 +13,34 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// AssetTypeAlgorithm is the type of asset used to store algorithm information in the CBOM.
-const AssetTypeAlgorithm = "algorithm"
+// Asset type constants matching CycloneDX 1.6 cryptographic asset type enum
+const (
+	// AssetTypeAlgorithm represents cryptographic algorithms (AES, RSA, SHA-256, etc.)
+	AssetTypeAlgorithm = "algorithm"
 
-// AssetTypeDigest is the type of asset used to store digest information in the CBOM.
-const AssetTypeDigest = "digest"
+	// AssetTypeProtocol represents cryptographic protocols (TLS, SSH, IPsec, etc.)
+	AssetTypeProtocol = "protocol"
+
+	// AssetTypeCertificate represents X.509 certificates and TLS certificates
+	AssetTypeCertificate = "certificate"
+
+	// AssetTypeRelatedCryptoMaterial represents keys, tokens, secrets, passwords, digests, IVs
+	AssetTypeRelatedCryptoMaterial = "related-crypto-material"
+)
 
 // Converter transforms interim reports to CycloneDX BOM format.
 type Converter struct {
-	algorithmMapper *AlgorithmMapper
-	digestMapper    *DigestMapper
-	validator       *Validator
+	algorithmMapper     *AlgorithmMapper
+	relatedCryptoMapper *RelatedCryptoMapper
+	validator           *Validator
 }
 
 // NewConverter creates a new CBOM converter with all required mappers.
 func NewConverter() *Converter {
 	return &Converter{
-		algorithmMapper: NewAlgorithmMapper(),
-		digestMapper:    NewDigestMapper(),
-		validator:       NewValidator(),
+		algorithmMapper:     NewAlgorithmMapper(),
+		relatedCryptoMapper: NewRelatedCryptoMapper(),
+		validator:           NewValidator(),
 	}
 }
 
@@ -96,33 +105,31 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 
 // convertAsset converts a single cryptographic asset to a CycloneDX component.
 func (c *Converter) convertAsset(finding *entities.Finding, asset *entities.CryptographicAsset) (*cdx.Component, error) {
-	// Determine asset type based on metadata
-	assetType := determineAssetType(asset)
+	// Require explicit assetType in metadata
+	assetType, ok := asset.Metadata["assetType"]
+	if !ok || assetType == "" {
+		return nil, fmt.Errorf("missing required field 'assetType' in crypto metadata (must be one of: %s, %s, %s, %s)",
+			AssetTypeAlgorithm, AssetTypeProtocol, AssetTypeCertificate, AssetTypeRelatedCryptoMaterial)
+	}
 
+	// Route to appropriate mapper based on asset type
 	switch assetType {
 	case AssetTypeAlgorithm:
 		return c.algorithmMapper.MapToComponent(finding, asset)
-	case AssetTypeDigest:
-		return c.digestMapper.MapToComponent(finding, asset)
+
+	case AssetTypeRelatedCryptoMaterial:
+		return c.relatedCryptoMapper.MapToComponent(finding, asset)
+
+	case AssetTypeProtocol:
+		return nil, fmt.Errorf("asset type 'protocol' is not yet implemented - protocol mapper coming soon")
+
+	case AssetTypeCertificate:
+		return nil, fmt.Errorf("asset type 'certificate' is not yet implemented - certificate mapper coming soon")
+
 	default:
-		return nil, fmt.Errorf("unsupported asset type: %s", assetType)
+		return nil, fmt.Errorf("unsupported asset type '%s' (must be one of: %s, %s, %s, %s)",
+			assetType, AssetTypeAlgorithm, AssetTypeProtocol, AssetTypeCertificate, AssetTypeRelatedCryptoMaterial)
 	}
-}
-
-// determineAssetType infers the asset type from metadata.
-func determineAssetType(asset *entities.CryptographicAsset) string {
-	// Check for explicit assetType in metadata
-	if assetType, ok := asset.Metadata["assetType"]; ok {
-		return assetType
-	}
-
-	// Infer from presence of primitive field
-	if _, hasPrimitive := asset.Metadata["primitive"]; hasPrimitive {
-		return AssetTypeAlgorithm
-	}
-
-	// Default to algorithm for backwards compatibility
-	return AssetTypeAlgorithm
 }
 
 // buildMetadata creates BOM metadata with tool information.

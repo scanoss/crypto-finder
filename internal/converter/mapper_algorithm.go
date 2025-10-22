@@ -79,16 +79,27 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 
 // validateRequiredFields checks that all required CBOM fields are present.
 func (m *AlgorithmMapper) validateRequiredFields(asset *entities.CryptographicAsset) error {
+	// Check for assetType
+	assetType, hasAssetType := asset.Metadata["assetType"]
+	if !hasAssetType || strings.TrimSpace(assetType) == "" {
+		return fmt.Errorf("missing required field 'assetType'")
+	}
+
+	// Verify assetType is "algorithm"
+	if strings.ToLower(strings.TrimSpace(assetType)) != "algorithm" {
+		return fmt.Errorf("invalid assetType '%s' for algorithm mapper (must be 'algorithm')", assetType)
+	}
+
 	// Check for primitive
 	primitive, hasPrimitive := asset.Metadata["primitive"]
 	if !hasPrimitive || strings.TrimSpace(primitive) == "" {
-		return fmt.Errorf("missing required field 'primitive'")
+		return fmt.Errorf("missing required field 'primitive' (required for assetType='algorithm')")
 	}
 
 	// Check for algorithm name
 	algorithmName, hasAlgorithmName := asset.Metadata["algorithmName"]
 	if !hasAlgorithmName || strings.TrimSpace(algorithmName) == "" {
-		return fmt.Errorf("missing required field 'algorithmName'")
+		return fmt.Errorf("missing required field 'algorithmName' (required for assetType='algorithm')")
 	}
 
 	return nil

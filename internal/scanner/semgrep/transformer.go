@@ -75,8 +75,8 @@ func transformToCryptographicAsset(result *entities.SemgrepResult) entities.Cryp
 		Match:      strings.TrimSpace(result.Extra.Lines),
 		Rule: entities.RuleInfo{
 			ID:       result.CheckID,
-			Message:  result.Message,
-			Severity: strings.ToUpper(result.Severity),
+			Message:  result.Extra.Message,
+			Severity: strings.ToUpper(result.Extra.Severity),
 		},
 		Metadata: make(map[string]string),
 		Status:   "pending", // TODO: Implement status logic
