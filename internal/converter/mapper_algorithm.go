@@ -166,7 +166,7 @@ func (m *AlgorithmMapper) addExecutionEnvironment(props *cdx.CryptoAlgorithmProp
 }
 
 // generateComponentName creates a component name from algorithm details.
-// Format: {algorithmName}[-{parameterSetIdentifier}][-{mode}]
+// Format: {algorithmName}[-{parameterSetIdentifier}][-{mode}].
 func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *entities.CryptographicAsset) string {
 	parts := []string{algorithmName}
 

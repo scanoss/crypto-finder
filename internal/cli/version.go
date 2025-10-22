@@ -4,19 +4,8 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/scanoss/crypto-finder/internal/version"
 	"github.com/spf13/cobra"
-)
-
-var (
-	// ToolName is the name of the tool.
-	ToolName = "crypto-finder"
-	// Version is the application version (set by build flags).
-	// TODO: Update version information to fetch from the actual git tag
-	Version = "dev"
-	// GitCommit is the git commit hash (set by build flags).
-	GitCommit = "unknown"
-	// BuildDate is the build timestamp (set by build flags).
-	BuildDate = "unknown"
 )
 
 var versionCmd = &cobra.Command{
@@ -27,9 +16,9 @@ var versionCmd = &cobra.Command{
 }
 
 func runVersion(_ *cobra.Command, _ []string) {
-	fmt.Printf("%s version %s\n", ToolName, Version)
-	fmt.Printf("  Git commit:  %s\n", GitCommit)
-	fmt.Printf("  Build date:  %s\n", BuildDate)
+	fmt.Printf("%s version %s\n", version.ToolName, version.Version)
+	fmt.Printf("  Git commit:  %s\n", version.GitCommit)
+	fmt.Printf("  Build date:  %s\n", version.BuildDate)
 	fmt.Printf("  Go version:  %s\n", runtime.Version())
 	fmt.Printf("  OS/Arch:     %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }

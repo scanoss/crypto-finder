@@ -15,9 +15,9 @@ builds:
     # Inject version info via ldflags
     ldflags:
       - -s -w
-      - -X github.com/scanoss/crypto-finder/internal/cli.Version={{.Version}}
-      - -X github.com/scanoss/crypto-finder/internal/cli.GitCommit={{.Commit}}
-      - -X github.com/scanoss/crypto-finder/internal/cli.BuildDate={{.Date}}
+      - -X github.com/scanoss/crypto-finder/internal/version.Version={{.Version}}
+      - -X github.com/scanoss/crypto-finder/internal/version.GitCommit={{.Commit}}
+      - -X github.com/scanoss/crypto-finder/internal/version.BuildDate={{.Date}}
 
     # Target platforms and architectures
     env:

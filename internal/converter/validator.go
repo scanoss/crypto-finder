@@ -42,8 +42,8 @@ func (v *Validator) Validate(bom *cdx.BOM) error {
 
 	// Validate component requirements
 	if bom.Components != nil {
-		for _, component := range *bom.Components {
-			if err := v.validateComponent(&component); err != nil {
+		for i := range *bom.Components {
+			if err := v.validateComponent(&(*bom.Components)[i]); err != nil {
 				return fmt.Errorf("component validation failed: %w", err)
 			}
 		}
@@ -121,6 +121,14 @@ func (v *Validator) validateCryptoProperties(props *cdx.CryptoProperties) error 
 		return v.validateAlgorithmProperties(props)
 	case cdx.CryptoAssetTypeRelatedCryptoMaterial:
 		// Digest assets use related-crypto-material
+		// No specific validation needed beyond assetType
+		return nil
+	case cdx.CryptoAssetTypeCertificate:
+		// Certificate assets
+		// No specific validation needed beyond assetType
+		return nil
+	case cdx.CryptoAssetTypeProtocol:
+		// Protocol assets
 		// No specific validation needed beyond assetType
 		return nil
 	default:

@@ -10,6 +10,10 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
+const (
+	unknownValue = "unknown"
+)
+
 // RelatedCryptoMapper converts related cryptographic material assets to CycloneDX components.
 // This includes keys, tokens, secrets, passwords, digests, IVs, etc.
 type RelatedCryptoMapper struct{}
@@ -30,7 +34,7 @@ func (m *RelatedCryptoMapper) MapToComponent(finding *entities.Finding, asset *e
 	// Extract algorithm field (recommended for context)
 	algorithm := asset.Metadata["algorithm"]
 	if algorithm == "" {
-		algorithm = "unknown"
+		algorithm = unknownValue
 	}
 
 	// Get material type if specified (e.g., "digest", "key", "token", "secret", "iv")
@@ -69,7 +73,7 @@ func (m *RelatedCryptoMapper) MapToComponent(finding *entities.Finding, asset *e
 
 // generateComponentName creates a component name from algorithm and material type.
 func generateComponentName(algorithm, materialType string) string {
-	if algorithm != "unknown" && algorithm != "" {
+	if algorithm != unknownValue && algorithm != "" {
 		return fmt.Sprintf("%s-%s", algorithm, materialType)
 	}
 	return materialType
@@ -77,7 +81,7 @@ func generateComponentName(algorithm, materialType string) string {
 
 // generateDescription creates a description for the component.
 func generateDescription(algorithm, materialType string) string {
-	if algorithm != "unknown" && algorithm != "" {
+	if algorithm != unknownValue && algorithm != "" {
 		return fmt.Sprintf("%s produced by or related to %s", materialType, algorithm)
 	}
 	return fmt.Sprintf("Cryptographic %s", materialType)
@@ -93,8 +97,8 @@ func (m *RelatedCryptoMapper) validateRequiredFields(asset *entities.Cryptograph
 
 	// Verify assetType is "related-crypto-material"
 	normalized := strings.ToLower(strings.TrimSpace(assetType))
-	if normalized != "related-crypto-material" {
-		return fmt.Errorf("invalid assetType '%s' for related-crypto mapper (must be 'related-crypto-material')", assetType)
+	if normalized != AssetTypeRelatedCryptoMaterial {
+		return fmt.Errorf("invalid assetType '%s' for related-crypto mapper (must be '%s')", assetType, AssetTypeRelatedCryptoMaterial)
 	}
 
 	// Algorithm is recommended but not strictly required for all related-crypto-material
@@ -116,7 +120,7 @@ func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *
 		},
 		{
 			Name:  "scanoss:asset:type",
-			Value: "related-crypto-material",
+			Value: AssetTypeRelatedCryptoMaterial,
 		},
 		{
 			Name:  "scanoss:material:type",

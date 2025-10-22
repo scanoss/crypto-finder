@@ -23,9 +23,9 @@ ARG BUILD_DATE=unknown
 
 # Build the binary with version info injected
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s -X github.com/scanoss/crypto-finder/internal/cli.Version=${VERSION} \
-    -X github.com/scanoss/crypto-finder/internal/cli.GitCommit=${GIT_COMMIT} \
-    -X github.com/scanoss/crypto-finder/internal/cli.BuildDate=${BUILD_DATE}" \
+    -ldflags="-w -s -X github.com/scanoss/crypto-finder/internal/version.Version=${VERSION} \
+    -X github.com/scanoss/crypto-finder/internal/version.GitCommit=${GIT_COMMIT} \
+    -X github.com/scanoss/crypto-finder/internal/version.BuildDate=${BUILD_DATE}" \
     -o crypto-finder \
     ./cmd/crypto-finder
 

@@ -10,6 +10,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 // Orchestrator coordinates the entire scanning workflow.
@@ -95,7 +96,12 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	// Step 5: Execute scan
-	report, err := scannerInstance.Scan(ctx, opts.Target, rulePaths)
+	// Create tool info from crypto-finder's name and version
+	toolInfo := entities.ToolInfo{
+		Name:    version.ToolName,
+		Version: version.Version,
+	}
+	report, err := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}

@@ -13,7 +13,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// Asset type constants matching CycloneDX 1.6 cryptographic asset type enum
+// Asset type constants matching CycloneDX 1.6 cryptographic asset type enum.
 const (
 	// AssetTypeAlgorithm represents cryptographic algorithms (AES, RSA, SHA-256, etc.)
 	AssetTypeAlgorithm = "algorithm"
@@ -21,10 +21,10 @@ const (
 	// AssetTypeProtocol represents cryptographic protocols (TLS, SSH, IPsec, etc.)
 	AssetTypeProtocol = "protocol"
 
-	// AssetTypeCertificate represents X.509 certificates and TLS certificates
+	// AssetTypeCertificate represents X.509 certificates and TLS certificates.
 	AssetTypeCertificate = "certificate"
 
-	// AssetTypeRelatedCryptoMaterial represents keys, tokens, secrets, passwords, digests, IVs
+	// AssetTypeRelatedCryptoMaterial represents keys, tokens, secrets, passwords, digests, IVs.
 	AssetTypeRelatedCryptoMaterial = "related-crypto-material"
 )
 
@@ -139,11 +139,12 @@ func (c *Converter) buildMetadata(report *entities.InterimReport) *cdx.Metadata 
 	return &cdx.Metadata{
 		Timestamp: timestamp,
 		Tools: &cdx.ToolsChoice{
-			Tools: &[]cdx.Tool{
+			Components: &[]cdx.Component{
 				{
-					Vendor:  "SCANOSS",
+					Type:    cdx.ComponentTypeApplication,
 					Name:    report.Tool.Name,
 					Version: report.Tool.Version,
+					Group:   "SCANOSS",
 				},
 			},
 		},
@@ -156,11 +157,12 @@ func generateSerialNumber() string {
 }
 
 // generateBOMRef creates a unique BOM reference for a component.
-// Format: crypto-asset/{algorithm}/{file_hash}/{line_number}
+// Format: crypto-asset/{algorithm}/{file_hash}/{line_number}.
 func generateBOMRef(filePath string, lineNumber int, algorithmName string) string {
 	// Create hash of file path for uniqueness
 	hasher := sha256.New()
-	hasher.Write([]byte(fmt.Sprintf("%s:%d:%s", filePath, lineNumber, algorithmName)))
+	//nolint:errcheck // hash.Hash.Write never returns an error
+	fmt.Fprintf(hasher, "%s:%d:%s", filePath, lineNumber, algorithmName)
 	fileHash := fmt.Sprintf("%x", hasher.Sum(nil))[:8] // First 8 chars
 
 	return fmt.Sprintf("crypto-asset/%s/%s/%d", algorithmName, fileHash, lineNumber)

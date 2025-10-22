@@ -74,7 +74,7 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 }
 
 // Scan executes Semgrep against the target with the given rule paths.
-func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error) {
+func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, fmt.Errorf("no rule paths provided")
 	}
@@ -102,7 +102,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string) (
 	}
 
 	// Transform to interim format
-	report := transformToInterim(semgrepResults, s.version)
+	report := transformToInterim(semgrepResults, toolInfo)
 
 	return report, nil
 }

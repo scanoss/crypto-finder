@@ -277,10 +277,10 @@ func TestGetMetavarValue(t *testing.T) {
 
 func TestExtractCryptoMetadata(t *testing.T) {
 	tests := []struct {
-		name             string
-		cryptoMetadata   map[string]any
-		metavars         map[string]entities.MetavarInfo
-		wantMetadata     map[string]string
+		name           string
+		cryptoMetadata map[string]any
+		metavars       map[string]entities.MetavarInfo
+		wantMetadata   map[string]string
 	}{
 		{
 			name: "String with embedded metavar",
@@ -301,9 +301,9 @@ func TestExtractCryptoMetadata(t *testing.T) {
 		{
 			name: "Multiple metavars in values",
 			cryptoMetadata: map[string]any{
-				"algorithmName":           "AES-$keySize",
-				"mode":                    "$mode",
-				"parameterSetIdentifier":  "$keySize",
+				"algorithmName":          "AES-$keySize",
+				"mode":                   "$mode",
+				"parameterSetIdentifier": "$keySize",
 			},
 			metavars: map[string]entities.MetavarInfo{
 				"$keySize": {
@@ -314,9 +314,9 @@ func TestExtractCryptoMetadata(t *testing.T) {
 				},
 			},
 			wantMetadata: map[string]string{
-				"algorithmName":           "AES-256",
-				"mode":                    "GCM",
-				"parameterSetIdentifier":  "256",
+				"algorithmName":          "AES-256",
+				"mode":                   "GCM",
+				"parameterSetIdentifier": "256",
 			},
 		},
 		{
@@ -379,7 +379,7 @@ func TestExtractCryptoMetadata(t *testing.T) {
 			},
 		},
 		{
-			name: "Empty metadata",
+			name:           "Empty metadata",
 			cryptoMetadata: map[string]any{},
 			metavars: map[string]entities.MetavarInfo{
 				"$variant": {

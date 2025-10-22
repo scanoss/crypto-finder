@@ -14,7 +14,7 @@ import (
 )
 
 // transformToInterim converts Semgrep results to the interim JSON format.
-func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion string) *entities.InterimReport {
+func transformToInterim(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 
@@ -27,11 +27,8 @@ func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion st
 
 	// Create interim report
 	report := &entities.InterimReport{
-		Version: "1.0", // TODO: Use proper version number
-		Tool: entities.ToolInfo{
-			Name:    ScannerName,
-			Version: scannerVersion,
-		},
+		Version:  "1.0", // TODO: Use proper version number
+		Tool:     toolInfo,
 		Findings: findings,
 	}
 

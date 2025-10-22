@@ -314,10 +314,6 @@ func TestGenerateComponentName(t *testing.T) {
 // TestMapLibraryToImplementationPlatform removed - this utility function no longer exists
 
 // Helper functions.
-func intPtr(i int) *int {
-	return &i
-}
-
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
 		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||

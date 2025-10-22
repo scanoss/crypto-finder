@@ -13,9 +13,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/output"
 )
 
-var (
-	convertOutput string
-)
+var convertOutput string
 
 var convertCmd = &cobra.Command{
 	Use:   "convert [input-file]",
@@ -63,43 +61,50 @@ func init() {
 	convertCmd.Flags().StringVarP(&convertOutput, "output", "o", "", "Output file path (default: stdout)")
 }
 
-func runConvert(_ *cobra.Command, args []string) error {
-	// Determine input source
-	var reader io.Reader
-	var inputSource string
-
+// getInputReader determines the input source and returns a reader.
+func getInputReader(args []string) (io.Reader, string, func(), error) {
 	if len(args) > 0 {
 		// Read from file
-		inputSource = args[0]
+		inputSource := args[0]
 		file, err := os.Open(inputSource)
 		if err != nil {
-			return fmt.Errorf("failed to open input file: %w", err)
+			return nil, "", nil, fmt.Errorf("failed to open input file: %w", err)
 		}
 
-		defer func() {
+		closeFunc := func() {
 			if err := file.Close(); err != nil {
 				log.Warn().Err(err).Str("path", inputSource).Msg("failed to close file")
 			}
-		}()
+		}
 
-		reader = file
 		log.Info().Str("file", inputSource).Msg("Reading interim format from file")
-	} else {
-		// Check if stdin has data
-		stat, err := os.Stdin.Stat()
-		if err != nil {
-			return fmt.Errorf("failed to stat stdin: %w", err)
-		}
+		return file, inputSource, closeFunc, nil
+	}
 
-		if (stat.Mode() & os.ModeCharDevice) != 0 {
-			// Stdin is a terminal (no piped data)
-			return fmt.Errorf("no input provided: specify a file path or pipe data via stdin\n\nExamples:\n  convert results.json\n  scan | convert\n  convert < results.json")
-		}
+	// Check if stdin has data
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to stat stdin: %w", err)
+	}
 
-		// Read from stdin
-		inputSource = "stdin"
-		reader = os.Stdin
-		log.Info().Msg("Reading interim format from stdin")
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		// Stdin is a terminal (no piped data)
+		return nil, "", nil, fmt.Errorf("no input provided: specify a file path or pipe data via stdin\n\nExamples:\n  convert results.json\n  scan | convert\n  convert < results.json")
+	}
+
+	// Read from stdin
+	log.Info().Msg("Reading interim format from stdin")
+	return os.Stdin, "stdin", nil, nil
+}
+
+func runConvert(_ *cobra.Command, args []string) error {
+	// Determine input source
+	reader, inputSource, closeFunc, err := getInputReader(args)
+	if err != nil {
+		return err
+	}
+	if closeFunc != nil {
+		defer closeFunc()
 	}
 
 	// Parse interim JSON
