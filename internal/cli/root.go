@@ -33,6 +33,7 @@ func init() {
 
 	// Subcommands
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

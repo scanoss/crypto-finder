@@ -48,12 +48,13 @@ type Scanner interface {
 	//   - ctx: Context for cancellation and timeout control
 	//   - target: Path to the directory or file to scan
 	//   - rulePaths: Paths to rule files or directories containing rules
+	//   - toolInfo: Information about the crypto-finder tool (name and version)
 	//
 	// The scan results are transformed into the standardized schema.InterimReport format,
 	// which includes cryptographic assets, API surface information, and metadata.
 	//
 	// Returns an error if the scan fails or if the scanner process encounters an error.
-	Scan(ctx context.Context, target string, rulePaths []string) (*entities.InterimReport, error)
+	Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error)
 
 	// GetInfo returns metadata about this scanner implementation.
 	// This includes the scanner's name, version, and description.

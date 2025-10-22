@@ -1,0 +1,77 @@
+{
+  "tool": {
+    "name": "scanoss-cf",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/multi.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 10,
+          "rule": {
+            "id": "go-crypto-aes-128",
+            "severity": "warning"
+          },
+          "metadata": {
+            "assetType": "algorithm",
+            "primitive": "block-cipher",
+            "algorithmName": "AES",
+            "parameterSetIdentifier": "128",
+            "library": "crypto/aes",
+            "api": "aes.NewCipher"
+          }
+        },
+        {
+          "line_number": 15,
+          "rule": {
+            "id": "go-crypto-sha256",
+            "severity": "info"
+          },
+          "metadata": {
+            "assetType": "algorithm",
+            "primitive": "hash",
+            "algorithmName": "SHA-256",
+            "parameterSetIdentifier": "256",
+            "library": "crypto/sha256",
+            "api": "sha256.New"
+          }
+        },
+        {
+          "line_number": 20,
+          "rule": {
+            "id": "go-crypto-hmac",
+            "severity": "info"
+          },
+          "metadata": {
+            "assetType": "algorithm",
+            "primitive": "mac",
+            "algorithmName": "HMAC-SHA256",
+            "library": "crypto/hmac",
+            "api": "hmac.New"
+          }
+        }
+      ]
+    },
+    {
+      "file_path": "src/crypto/another.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 8,
+          "rule": {
+            "id": "go-crypto-ecdsa",
+            "severity": "info"
+          },
+          "metadata": {
+            "assetType": "algorithm",
+            "primitive": "signature",
+            "algorithmName": "ECDSA",
+            "curve": "P-384",
+            "parameterSetIdentifier": "P-384",
+            "library": "crypto/ecdsa"
+          }
+        }
+      ]
+    }
+  ]
+}

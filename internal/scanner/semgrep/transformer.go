@@ -3,6 +3,7 @@ package semgrep
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -10,11 +11,10 @@ import (
 	"github.com/go-enry/go-enry/v2"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // transformToInterim converts Semgrep results to the interim JSON format.
-func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion string) *entities.InterimReport {
+func transformToInterim(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 
@@ -27,11 +27,8 @@ func transformToInterim(semgrepOutput *entities.SemgrepOutput, scannerVersion st
 
 	// Create interim report
 	report := &entities.InterimReport{
-		Version: "1.0", // TODO: Use proper version number
-		Tool: entities.ToolInfo{
-			Name:    ScannerName,
-			Version: scannerVersion,
-		},
+		Version:  "1.0", // TODO: Use proper version number
+		Tool:     toolInfo,
 		Findings: findings,
 	}
 
@@ -76,8 +73,8 @@ func transformToCryptographicAsset(result *entities.SemgrepResult) entities.Cryp
 		Match:      strings.TrimSpace(result.Extra.Lines),
 		Rule: entities.RuleInfo{
 			ID:       result.CheckID,
-			Message:  result.Message,
-			Severity: strings.ToUpper(result.Severity),
+			Message:  result.Extra.Message,
+			Severity: strings.ToUpper(result.Extra.Severity),
 		},
 		Metadata: make(map[string]string),
 		Status:   "pending", // TODO: Implement status logic
@@ -122,6 +119,35 @@ func getMetavarValue(metavars map[string]entities.MetavarInfo, key string) strin
 	return ""
 }
 
+// resolveMetavars replaces all metavariable references ($VAR) in a string with their actual values.
+// If a metavariable is not found in the metavars map, the original reference is kept.
+// Examples:
+//   - "SHA-$variant" with $variant=256 becomes "SHA-256"
+//   - "AES-$MODE-$PADDING" becomes "AES-CBC-PKCS5" if those metavars exist
+//   - "SHA-$unknown" stays as "SHA-$unknown" if $unknown is not in metavars
+func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string {
+	// If the string doesn't contain $, return as-is for efficiency
+	if !strings.Contains(s, "$") {
+		return s
+	}
+
+	// Regular expression to match metavariable names: $WORD
+	// Metavariable names follow identifier rules (letters, numbers, underscores)
+	re := regexp.MustCompile(`\$[a-zA-Z_][a-zA-Z0-9_]*`)
+
+	// Replace all metavariable references with their values
+	result := re.ReplaceAllStringFunc(s, func(match string) string {
+		value := getMetavarValue(metavars, match)
+		if value != "" {
+			return value
+		}
+		// If metavar not found, keep the original reference
+		return match
+	})
+
+	return result
+}
+
 // extractCryptoMetadata extracts cryptographic details from Semgrep rule metadata.
 //
 // Expected metadata structure (from rule YAML):
@@ -141,13 +167,8 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 		// Handle different types of values in the cryptoMetadata map
 		switch v := metavarValue.(type) {
 		case string:
-			// If it's a string that starts with $, treat it as a metavariable reference
-			if strings.HasPrefix(v, "$") {
-				value = getMetavarValue(metavars, v)
-			} else {
-				// Otherwise use the string value directly
-				value = v
-			}
+			// Replace any metavariable references in the string (e.g., "SHA-$variant" -> "SHA-256")
+			value = resolveMetavars(v, metavars)
 		case bool:
 			// Convert boolean to string
 			if v {
@@ -163,8 +184,7 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 			value = fmt.Sprint(v)
 		}
 
-		// We use CamelToSnake here until we update all rules to use snake_case keys
-		key := utils.CamelToSnake(key)
+		// Maintain camelCase format to align with CycloneDX 1.6 specification
 		asset.Metadata[key] = value
 	}
 }

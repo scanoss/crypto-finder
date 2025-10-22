@@ -8,9 +8,9 @@ BUILD_DIR := ./target
 BINARY_NAME := crypto-finder
 DOCKER_IMAGE := ghcr.io/scanoss/crypto-finder
 LDFLAGS := -ldflags="-s -w \
-	-X github.com/scanoss/crypto-finder/internal/cli.Version=$(VERSION) \
-	-X github.com/scanoss/crypto-finder/internal/cli.GitCommit=$(GIT_COMMIT) \
-	-X github.com/scanoss/crypto-finder/internal/cli.BuildDate=$(BUILD_DATE)"
+	-X github.com/scanoss/crypto-finder/internal/version.Version=$(VERSION) \
+	-X github.com/scanoss/crypto-finder/internal/version.GitCommit=$(GIT_COMMIT) \
+	-X github.com/scanoss/crypto-finder/internal/version.BuildDate=$(BUILD_DATE)"
 
 # HELP
 # This will output the help for each task

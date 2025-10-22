@@ -2,6 +2,7 @@ package engine
 
 import (
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 // Processor handles result aggregation and enrichment.
@@ -23,7 +24,7 @@ func (p *Processor) Process(report *entities.InterimReport, _ []string) (*entiti
 		// Return empty report if scanner found nothing
 		return &entities.InterimReport{
 			Version:  "1.0",
-			Tool:     entities.ToolInfo{Name: "unknown", Version: "unknown"},
+			Tool:     entities.ToolInfo{Name: version.ToolName, Version: version.Version},
 			Findings: []entities.Finding{},
 		}, nil
 	}
