@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/scanoss/crypto-finder/internal/version"
+
 	"github.com/spf13/cobra"
 )
 
