@@ -132,7 +132,7 @@ func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *
 // addType adds the type of the cryptographic related material if available.
 func (m *RelatedCryptoMapper) addType(props *cdx.RelatedCryptoMaterialProperties, asset *entities.CryptographicAsset) {
 	// Try explicit parameterSetIdentifier first
-	if relatedMaterialType, ok := asset.Metadata["type"]; ok && relatedMaterialType != "" {
+	if relatedMaterialType, ok := asset.Metadata["materialType"]; ok && relatedMaterialType != "" {
 		props.Type = cdx.RelatedCryptoMaterialType(relatedMaterialType)
 		return
 	}

@@ -159,7 +159,7 @@ func (v *Validator) validateAlgorithmProperties(props *cdx.CryptoProperties) err
 
 	// Warn if parameterSetIdentifier is missing (recommended but not required)
 	if algProps.ParameterSetIdentifier == "" {
-		log.Warn().
+		log.Debug().
 			Msg("algorithmProperties.parameterSetIdentifier is recommended but missing")
 	}
 

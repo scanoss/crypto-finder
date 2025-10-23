@@ -71,10 +71,10 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 			component, err := c.convertAsset(&finding, &asset)
 			if err != nil {
 				// Log skip but continue processing
-				log.Warn().
+				log.Debug().
 					Str("file", finding.FilePath).
 					Int("line", asset.LineNumber).
-					Str("rule", asset.Rule.ID).
+					Str("ruleID", asset.Rule.ID).
 					Err(err).
 					Msg("Skipping asset - missing required fields")
 				skippedCount++

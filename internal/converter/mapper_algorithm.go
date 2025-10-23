@@ -114,10 +114,10 @@ func (m *AlgorithmMapper) addParameterSetIdentifier(props *cdx.CryptoAlgorithmPr
 		return
 	}
 
-	// Log warning if missing (recommended but not required)
 	algorithmName := asset.Metadata["algorithmName"]
-	log.Warn().
+	log.Debug().
 		Str("algorithm", algorithmName).
+		Str("ruleID", asset.Rule.ID).
 		Msg("Asset missing recommended field 'parameterSetIdentifier'")
 }
 
