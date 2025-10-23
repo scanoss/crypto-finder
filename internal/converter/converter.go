@@ -2,7 +2,6 @@
 package converter
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -75,6 +74,7 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 				log.Warn().
 					Str("file", finding.FilePath).
 					Int("line", asset.LineNumber).
+					Str("rule", asset.Rule.ID).
 					Err(err).
 					Msg("Skipping asset - missing required fields")
 				skippedCount++
@@ -157,15 +157,9 @@ func generateSerialNumber() string {
 }
 
 // generateBOMRef creates a unique BOM reference for a component.
-// Format: crypto-asset/{algorithm}/{file_hash}/{line_number}.
-func generateBOMRef(filePath string, lineNumber int, algorithmName string) string {
-	// Create hash of file path for uniqueness
-	hasher := sha256.New()
-	//nolint:errcheck // hash.Hash.Write never returns an error
-	fmt.Fprintf(hasher, "%s:%d:%s", filePath, lineNumber, algorithmName)
-	fileHash := fmt.Sprintf("%x", hasher.Sum(nil))[:8] // First 8 chars
-
-	return fmt.Sprintf("crypto-asset/%s/%s/%d", algorithmName, fileHash, lineNumber)
+// For now we are using UUIDs. Leaving this function if we decide to use a different approach.
+func generateBOMRef() string {
+	return uuid.NewString()
 }
 
 // countTotalAssets counts all cryptographic assets in the report.

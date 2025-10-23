@@ -1,26 +1,32 @@
 package converter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
+// Helper function for string matching.
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+
 func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 	mapper := NewRelatedCryptoMapper()
 
 	tests := []struct {
-		name        string
-		fixtureFile string
-		wantName    string
-		wantErr     bool
-		errContains string
+		name           string
+		fixtureFile    string
+		wantNameSuffix string
+		wantErr        bool
+		errContains    string
 	}{
 		{
-			name:        "SHA-256 digest",
-			fixtureFile: "digest_sha256.json",
-			wantName:    "SHA-256-digest",
-			wantErr:     false,
+			name:           "SHA-256 digest",
+			fixtureFile:    "digest_sha256.json",
+			wantNameSuffix: "@digest",
+			wantErr:        false,
 		},
 	}
 
@@ -61,9 +67,9 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 				t.Fatal("MapToComponent() returned nil component")
 			}
 
-			// Check name
-			if component.Name != tt.wantName {
-				t.Errorf("Component name = %q, want %q", component.Name, tt.wantName)
+			// Check name has correct suffix (format is {bomRef}@{materialType})
+			if !strings.HasSuffix(component.Name, tt.wantNameSuffix) {
+				t.Errorf("Component name = %q, want suffix %q", component.Name, tt.wantNameSuffix)
 			}
 
 			// Check BOM ref
@@ -85,30 +91,30 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 				t.Errorf("AssetType = %q, want %q", component.CryptoProperties.AssetType, "related-crypto-material")
 			}
 
-			// Check properties for digest-specific fields
+			// Check that basic properties exist (file, line)
 			if component.Properties == nil || len(*component.Properties) == 0 {
 				t.Fatal("Component missing Properties")
 			}
 
-			// Verify digest-specific properties exist
+			// Verify basic location properties exist
 			props := *component.Properties
-			hasMaterialAlgorithm := false
-			hasMaterialValue := false
+			hasFile := false
+			hasLine := false
 
 			for _, prop := range props {
-				if prop.Name == "scanoss:material:algorithm" {
-					hasMaterialAlgorithm = true
+				if prop.Name == "scanoss:location:file" {
+					hasFile = true
 				}
-				if prop.Name == "scanoss:material:value" {
-					hasMaterialValue = true
+				if prop.Name == "scanoss:location:line" {
+					hasLine = true
 				}
 			}
 
-			if !hasMaterialAlgorithm {
-				t.Error("Missing scanoss:material:algorithm property")
+			if !hasFile {
+				t.Error("Missing scanoss:location:file property")
 			}
-			if !hasMaterialValue {
-				t.Error("Missing scanoss:material:value property")
+			if !hasLine {
+				t.Error("Missing scanoss:location:line property")
 			}
 		})
 	}
@@ -126,15 +132,17 @@ func TestRelatedCryptoMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Complete required fields",
 			metadata: map[string]string{
-				"assetType": "related-crypto-material",
-				"algorithm": "SHA-256",
+				"assetType":    "related-crypto-material",
+				"materialType": "digest",
+				"algorithm":    "SHA-256",
 			},
 			wantErr: false,
 		},
 		{
 			name: "Missing assetType",
 			metadata: map[string]string{
-				"algorithm": "SHA-256",
+				"materialType": "digest",
+				"algorithm":    "SHA-256",
 			},
 			wantErr:     true,
 			errContains: "assetType",
@@ -142,32 +150,38 @@ func TestRelatedCryptoMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Wrong assetType",
 			metadata: map[string]string{
-				"assetType": "algorithm",
-				"algorithm": "SHA-256",
+				"assetType":    "algorithm",
+				"materialType": "digest",
+				"algorithm":    "SHA-256",
 			},
 			wantErr:     true,
 			errContains: "assetType",
 		},
 		{
-			name: "Missing algorithm is allowed",
+			name: "Missing materialType",
 			metadata: map[string]string{
 				"assetType": "related-crypto-material",
+				"algorithm": "SHA-256",
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "materialType",
 		},
 		{
-			name: "Empty algorithm is allowed",
+			name: "Empty materialType",
 			metadata: map[string]string{
-				"assetType": "related-crypto-material",
-				"algorithm": "  ",
+				"assetType":    "related-crypto-material",
+				"materialType": "  ",
+				"algorithm":    "SHA-256",
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "materialType",
 		},
 		{
 			name: "Case-insensitive assetType",
 			metadata: map[string]string{
-				"assetType": "RELATED-CRYPTO-MATERIAL",
-				"algorithm": "SHA-256",
+				"assetType":    "RELATED-CRYPTO-MATERIAL",
+				"materialType": "digest",
+				"algorithm":    "SHA-256",
 			},
 			wantErr: false,
 		},
@@ -203,11 +217,12 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 		filePath          string
 		lineNumber        int
 		metadata          map[string]string
+		ruleSeverity      string
+		ruleID            string
 		wantPropertiesMin int
-		wantMaterialValue bool
 	}{
 		{
-			name:       "Related crypto with value",
+			name:       "Related crypto basic properties",
 			filePath:   "src/test.go",
 			lineNumber: 10,
 			metadata: map[string]string{
@@ -215,19 +230,29 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 				"algorithm":    "SHA-256",
 				"value":        "abc123def456",
 			},
-			wantPropertiesMin: 5, // file, line, asset:type, material:type, algorithm, value
-			wantMaterialValue: true,
+			wantPropertiesMin: 2, // file, line
 		},
 		{
-			name:       "Related crypto without value",
+			name:       "Related crypto with severity and rule ID",
 			filePath:   "src/test.go",
 			lineNumber: 20,
 			metadata: map[string]string{
 				"materialType": "digest",
 				"algorithm":    "SHA-512",
 			},
-			wantPropertiesMin: 4, // file, line, asset:type, material:type, algorithm (no value)
-			wantMaterialValue: false,
+			ruleSeverity:      "info",
+			ruleID:            "test-rule-123",
+			wantPropertiesMin: 4, // file, line, severity, ruleid
+		},
+		{
+			name:       "Related crypto with API",
+			filePath:   "src/test.go",
+			lineNumber: 30,
+			metadata: map[string]string{
+				"materialType": "key",
+				"api":          "crypto.generateKey",
+			},
+			wantPropertiesMin: 3, // file, line, api
 		},
 	}
 
@@ -239,10 +264,13 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			asset := &entities.CryptographicAsset{
 				LineNumber: tt.lineNumber,
 				Metadata:   tt.metadata,
+				Rule: entities.RuleInfo{
+					Severity: tt.ruleSeverity,
+					ID:       tt.ruleID,
+				},
 			}
 
-			materialType := tt.metadata["materialType"]
-			props := mapper.buildProperties(finding, asset, materialType)
+			props := mapper.buildProperties(finding, asset)
 
 			if props == nil {
 				t.Fatal("buildProperties() returned nil")
@@ -255,10 +283,6 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			// Check for required properties
 			hasFile := false
 			hasLine := false
-			hasAssetType := false
-			hasMaterialType := false
-			hasAlgorithm := false
-			hasValue := false
 
 			for _, prop := range *props {
 				switch prop.Name {
@@ -269,17 +293,6 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 					}
 				case "scanoss:location:line":
 					hasLine = true
-				case "scanoss:asset:type":
-					hasAssetType = true
-					if prop.Value != "related-crypto-material" {
-						t.Errorf("Asset type property value = %q, want %q", prop.Value, "related-crypto-material")
-					}
-				case "scanoss:material:type":
-					hasMaterialType = true
-				case "scanoss:material:algorithm":
-					hasAlgorithm = true
-				case "scanoss:material:value":
-					hasValue = true
 				}
 			}
 
@@ -288,21 +301,6 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			}
 			if !hasLine {
 				t.Error("Missing scanoss:location:line property")
-			}
-			if !hasAssetType {
-				t.Error("Missing scanoss:asset:type property")
-			}
-			if !hasMaterialType {
-				t.Error("Missing scanoss:material:type property")
-			}
-			if !hasAlgorithm {
-				t.Error("Missing scanoss:material:algorithm property")
-			}
-			if tt.wantMaterialValue && !hasValue {
-				t.Error("Expected scanoss:material:value property but not found")
-			}
-			if !tt.wantMaterialValue && hasValue {
-				t.Error("Unexpected scanoss:material:value property found")
 			}
 		})
 	}

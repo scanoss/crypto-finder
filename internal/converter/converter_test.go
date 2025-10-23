@@ -164,66 +164,6 @@ func TestConverter_EmptyReport(t *testing.T) {
 	}
 }
 
-// TestDetermineAssetType removed - assetType is now explicitly required in metadata
-
-func TestGenerateBOMRef(t *testing.T) {
-	tests := []struct {
-		name          string
-		filePath      string
-		lineNumber    int
-		algorithmName string
-	}{
-		{
-			name:          "Basic generation",
-			filePath:      "src/crypto/test.go",
-			lineNumber:    42,
-			algorithmName: "AES",
-		},
-		{
-			name:          "Different file and line",
-			filePath:      "internal/security/hash.go",
-			lineNumber:    100,
-			algorithmName: "SHA-256",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ref := generateBOMRef(tt.filePath, tt.lineNumber, tt.algorithmName)
-
-			// Check format
-			if ref == "" {
-				t.Error("generateBOMRef() returned empty string")
-			}
-
-			// Should start with "crypto-asset/"
-			expectedPrefix := "crypto-asset/"
-			if len(ref) < len(expectedPrefix) || ref[:len(expectedPrefix)] != expectedPrefix {
-				t.Errorf("BOM ref should start with %q, got %q", expectedPrefix, ref)
-			}
-
-			// Should contain algorithm name
-			// Note: BOM ref format is crypto-asset/{algorithm}/{hash}/{line}
-			// We just verify it's not empty and has correct structure
-			if len(ref) < 20 { // Arbitrary minimum length
-				t.Errorf("BOM ref seems too short: %q", ref)
-			}
-		})
-	}
-
-	// Test uniqueness
-	ref1 := generateBOMRef("test.go", 10, "AES")
-	ref2 := generateBOMRef("test.go", 20, "AES")
-	ref3 := generateBOMRef("test.go", 10, "RSA")
-
-	if ref1 == ref2 {
-		t.Error("Different line numbers should produce different BOM refs")
-	}
-	if ref1 == ref3 {
-		t.Error("Different algorithms should produce different BOM refs")
-	}
-}
-
 func TestCountTotalAssets(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -22,22 +22,18 @@ func NewAlgorithmMapper() *AlgorithmMapper {
 // MapToComponent converts a cryptographic asset to a CycloneDX component.
 // Applies strict mapping - returns error if required fields are missing.
 func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entities.CryptographicAsset) (*cdx.Component, error) {
-	// Validate required fields for CBOM
 	if err := m.validateRequiredFields(asset); err != nil {
 		return nil, err
 	}
 
-	// Extract required fields
 	primitive := asset.Metadata["primitive"]
 	algorithmName := asset.Metadata["algorithmName"]
 
-	// Map primitive to CycloneDX enum
 	cdxPrimitive, err := mapPrimitiveToCycloneDX(primitive)
 	if err != nil {
 		return nil, fmt.Errorf("invalid primitive type: %w", err)
 	}
 
-	// Build algorithm properties
 	algorithmProps := &cdx.CryptoAlgorithmProperties{
 		Primitive: cdxPrimitive,
 	}
@@ -47,22 +43,17 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 	m.addMode(algorithmProps, asset)
 	m.addPadding(algorithmProps, asset)
 	m.addCurve(algorithmProps, asset)
-	m.addExecutionEnvironment(algorithmProps, asset)
 
-	// Build crypto properties
 	assetType := cdx.CryptoAssetTypeAlgorithm
 	cryptoProps := &cdx.CryptoProperties{
 		AssetType:           assetType,
 		AlgorithmProperties: algorithmProps,
 	}
 
-	// Generate component name
 	componentName := m.generateComponentName(algorithmName, asset)
 
-	// Generate BOM reference
-	bomRef := generateBOMRef(finding.FilePath, asset.LineNumber, algorithmName)
+	bomRef := generateBOMRef()
 
-	// Build component
 	componentType := cdx.ComponentTypeCryptographicAsset
 	component := &cdx.Component{
 		Type:             componentType,
@@ -153,18 +144,6 @@ func (m *AlgorithmMapper) addCurve(props *cdx.CryptoAlgorithmProperties, asset *
 	}
 }
 
-// addExecutionEnvironment sets execution environment (defaults to software-plain-ram).
-func (m *AlgorithmMapper) addExecutionEnvironment(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	// Check if explicitly provided
-	if execEnv, ok := asset.Metadata["executionEnvironment"]; ok && execEnv != "" {
-		props.ExecutionEnvironment = cdx.CryptoExecutionEnvironment(execEnv)
-		return
-	}
-
-	// Default to software-plain-ram
-	props.ExecutionEnvironment = cdx.CryptoExecutionEnvironmentSoftwarePlainRAM
-}
-
 // generateComponentName creates a component name from algorithm details.
 // Format: {algorithmName}[-{parameterSetIdentifier}][-{mode}].
 func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *entities.CryptographicAsset) string {
@@ -172,16 +151,20 @@ func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *ent
 
 	// Add parameter set identifier if available
 	if paramSet, ok := asset.Metadata["parameterSetIdentifier"]; ok && paramSet != "" {
-		parts = append(parts, paramSet)
+		if !strings.Contains(algorithmName, paramSet) {
+			parts = append(parts, paramSet)
+		}
 	} else if keySize, ok := asset.Metadata["keySize"]; ok && keySize != "" {
-		parts = append(parts, keySize)
-	} else if curve, ok := asset.Metadata["curve"]; ok && curve != "" {
-		parts = append(parts, curve)
+		if !strings.Contains(algorithmName, keySize) {
+			parts = append(parts, keySize)
+		}
 	}
 
 	// Add mode if available
 	if mode, ok := asset.Metadata["mode"]; ok && mode != "" {
-		parts = append(parts, mode)
+		if !strings.Contains(algorithmName, mode) {
+			parts = append(parts, mode)
+		}
 	}
 
 	return strings.Join(parts, "-")
