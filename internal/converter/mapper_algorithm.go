@@ -151,19 +151,20 @@ func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *ent
 
 	// Add parameter set identifier if available
 	if paramSet, ok := asset.Metadata["parameterSetIdentifier"]; ok && paramSet != "" {
-		if !strings.Contains(algorithmName, paramSet) {
+		if !strings.HasSuffix(algorithmName, "-"+paramSet) {
 			parts = append(parts, paramSet)
 		}
 	} else if keySize, ok := asset.Metadata["keySize"]; ok && keySize != "" {
-		if !strings.Contains(algorithmName, keySize) {
+		if !strings.HasSuffix(algorithmName, "-"+keySize) {
 			parts = append(parts, keySize)
 		}
 	}
 
 	// Add mode if available
 	if mode, ok := asset.Metadata["mode"]; ok && mode != "" {
-		if !strings.Contains(algorithmName, mode) {
-			parts = append(parts, mode)
+		modeUpper := strings.ToUpper(mode)
+		if !strings.HasSuffix(algorithmName, "-"+modeUpper) {
+			parts = append(parts, modeUpper)
 		}
 	}
 

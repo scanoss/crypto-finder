@@ -19,27 +19,6 @@ A powerful CLI tool and execution framework for detecting cryptographic algorith
 
 ## Installation
 
-### Pre-built Binaries
-
-Download the latest release for your platform from the [releases page](https://github.com/scanoss/crypto-finder/releases).
-
-```bash
-# Linux (AMD64)
-wget https://github.com/scanoss/crypto-finder/releases/latest/download/crypto-finder_Linux_x86_64.tar.gz
-tar -xzf crypto-finder_Linux_x86_64.tar.gz
-sudo mv crypto-finder /usr/local/bin/
-
-# macOS (Intel)
-wget https://github.com/scanoss/crypto-finder/releases/latest/download/crypto-finder_Darwin_x86_64.tar.gz
-tar -xzf crypto-finder_Darwin_x86_64.tar.gz
-sudo mv crypto-finder /usr/local/bin/
-
-# macOS (Apple Silicon)
-wget https://github.com/scanoss/crypto-finder/releases/latest/download/crypto-finder_Darwin_arm64.tar.gz
-tar -xzf crypto-finder_Darwin_arm64.tar.gz
-sudo mv crypto-finder /usr/local/bin/
-```
-
 ### Build from Source
 
 Requirements: Go 1.23.2 or later
@@ -106,6 +85,7 @@ crypto-finder scan [flags] <target>
 | `--fail-on-findings` | Exit with error if findings detected | `false` |
 | `--timeout <duration>` | Scan timeout (e.g., 10m, 1h) | `10m` |
 | `--verbose`, `-v` | Enable verbose logging | `false` |
+| `--quiet`, `-q` | Enable quiet mode | `false` |
 
 **Examples:**
 
@@ -175,9 +155,13 @@ Crypto Finder supports configuration via `scanoss.json` in the target directory.
 
 ```json
 {
-  "bom": {
-    "include": ["**/*.java", "**/*.py"],
-    "remove": ["**/test/**", "**/vendor/**"]
+  "settings": {
+    "skip": {
+      "patterns": {
+        "scanning": ["node_modules/", "target/", "venv/"]
+      },
+      "sizes": {}
+    }
   }
 }
 ```
@@ -193,6 +177,8 @@ The following patterns are excluded by default:
 - Build artifacts: `dist/`, `build/`, `target/`, `*.min.js`
 - Archives: `*.zip`, `*.tar.gz`, `*.jar`, `*.war`
 - Binaries: `*.exe`, `*.dll`, `*.so`, `*.dylib`
+
+For more information on skip patterns, refer to default skip patterns [Default Skip Patterns](internal/skip/source_defaults.go)
 
 ## Docker Usage
 
@@ -305,27 +291,6 @@ CycloneDX 1.6 compatible Cryptography Bill of Materials format.
 - Includes algorithm properties and metadata
 - Supports asset types: `algorithm`, `certificate`, `protocol`, `related-crypto-material`
 
-## Project Structure
-
-```
-crypto-finder/
-   cmd/crypto-finder/      # CLI entry point
-   internal/
-      cli/                # CLI commands (scan, convert, version)
-      scanner/            # Scanner implementations (Semgrep)
-      language/           # Language detection (go-enry)
-      rules/              # Rule loading and management
-      engine/             # Scan orchestration
-      output/             # Output formatters (JSON, CycloneDX)
-      converter/          # Format conversion logic
-      entities/           # Data structures (interim, semgrep)
-      skip/               # Skip pattern matching
-   docs/                   # Additional documentation
-   Dockerfile              # Full Docker image with Semgrep
-   Dockerfile.slim         # Slim image without Semgrep
-   Makefile                # Build automation
-   README.md               # This file
-```
 
 ## Development
 
@@ -355,28 +320,6 @@ make lint
 make install
 ```
 
-### Make Commands
-
-Run `make help` to see all available commands:
-
-```
-build                Builds the CLI with version info
-clean                Cleans build artifacts
-coverage             Generate coverage report
-deps                 Download dependencies
-docker-build         Build Docker image with Semgrep
-docker-build-slim    Build slim Docker image without Semgrep
-docker-push          Push Docker images to GHCR
-docker-run           Run Docker container with example
-docker-test          Test Docker image functionality
-install              Install the CLI to $GOPATH/bin
-lint                 Lints the code
-release              Create a release with GoReleaser
-release-snapshot     Test GoReleaser build locally
-test                 Run all tests
-version              Display current version
-```
-
 ### Running Tests
 
 ```bash
@@ -401,16 +344,6 @@ git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
 make release
 ```
-
-## Architecture
-
-For detailed technical architecture, design patterns, and implementation details, see [architecture.md](architecture.md).
-
-Key architectural highlights:
-- **Modular Scanner Interface**: Extensible design for multiple scanning engines
-- **Language Detection**: Automatic project language detection using go-enry
-- **Rule Source Pattern**: Flexible loading from local files (with future support for remote sources)
-- **Skip Pattern Matching**: Configurable file exclusion with gitignore-style patterns
 
 ## Contributing
 
