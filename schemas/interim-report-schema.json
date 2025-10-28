@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scanoss.com/schemas/interim-report.json",
+  "title": "SCANOSS Crypto-Finder Interim Report",
+  "description": "Standardized output format for cryptographic findings from SCANOSS crypto-finder scanners",
+  "type": "object",
+  "required": ["version", "tool", "findings"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Version of the interim report schema (e.g., \"1.0\")",
+      "examples": ["1.0"]
+    },
+    "tool": {
+      "$ref": "#/$defs/ToolInfo"
+    },
+    "findings": {
+      "type": "array",
+      "description": "All detected cryptographic assets grouped by file",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    }
+  },
+  "$defs": {
+    "ToolInfo": {
+      "type": "object",
+      "description": "Metadata about the scanner that produced the report",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the scanner tool",
+          "examples": ["scanoss-cf", "cbom-toolkit"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the scanner tool",
+          "examples": ["1.45.0"]
+        }
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "description": "All cryptographic assets discovered in a single file",
+      "required": [
+        "file_path",
+        "language",
+        "cryptographic_assets",
+        "timestamp_utc"
+      ],
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Path to the file containing cryptographic assets"
+        },
+        "language": {
+          "type": "string",
+          "description": "Programming language of the file",
+          "examples": ["java", "python", "go", "javascript", "c", "cpp"]
+        },
+        "cryptographic_assets": {
+          "type": "array",
+          "description": "All cryptographic materials found in this file",
+          "items": {
+            "$ref": "#/$defs/CryptographicAsset"
+          }
+        },
+        "timestamp_utc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when this file was scanned"
+        }
+      }
+    },
+    "CryptographicAsset": {
+      "type": "object",
+      "description": "A single detected cryptographic element",
+      "required": [
+        "match_type",
+        "line_number",
+        "match",
+        "rule",
+        "status",
+        "metadata"
+      ],
+      "properties": {
+        "match_type": {
+          "type": "string",
+          "description": "Detection method used",
+          "examples": ["semgrep", "cbom_toolkit", "keyword_search"]
+        },
+        "line_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line number where the asset was detected"
+        },
+        "match": {
+          "type": "string",
+          "description": "Actual code snippet that was matched"
+        },
+        "rule": {
+          "$ref": "#/$defs/RuleInfo"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current state of this finding",
+          "examples": ["pending", "identified"]
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Metadata extracted from the cryptographic asset (e.g., key length, algorithm)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "RuleInfo": {
+      "type": "object",
+      "description": "Information about the detection rule that identified the cryptographic asset",
+      "required": ["id", "message", "severity"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the rule",
+          "examples": [
+            "java.crypto.javax.cipher-aes-ecb",
+            "python.crypto.cryptography.key-generation"
+          ],
+          "pattern": "^[a-z0-9]+\\.[a-z0-9]+\\.[a-z0-9.-]+$"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable description of what was detected"
+        },
+        "severity": {
+          "type": "string",
+          "description": "Importance level of the finding",
+          "examples": ["WARNING", "ERROR", "INFO"]
+        }
+      }
+    }
+  }
+}

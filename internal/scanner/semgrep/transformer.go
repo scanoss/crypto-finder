@@ -9,19 +9,20 @@ import (
 	"time"
 
 	"github.com/go-enry/go-enry/v2"
+	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // transformToInterim converts Semgrep results to the interim JSON format.
-func transformToInterim(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo) *entities.InterimReport {
+func transformToInterim(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 
 	// Transform each file's findings
 	findings := make([]entities.Finding, 0, len(findingsByFile))
 	for filePath, results := range findingsByFile {
-		finding := transformFileFinding(filePath, results)
+		finding := transformFileFinding(filePath, results, target)
 		findings = append(findings, finding)
 	}
 
@@ -46,7 +47,7 @@ func groupByFile(results []entities.SemgrepResult) map[string][]entities.Semgrep
 }
 
 // transformFileFinding transforms all findings for a single file.
-func transformFileFinding(filePath string, results []entities.SemgrepResult) entities.Finding {
+func transformFileFinding(filePath string, results []entities.SemgrepResult, target string) entities.Finding {
 	// Detect language
 	language := detectLanguage(filePath)
 
@@ -57,8 +58,14 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult) ent
 		assets = append(assets, asset)
 	}
 
+	relativePath, err := filepath.Rel(target, filePath)
+	if err != nil {
+		log.Warn().Msgf("Failed to get relative path for %s", filePath)
+		relativePath = filePath
+	}
+
 	return entities.Finding{
-		FilePath:            filePath,
+		FilePath:            relativePath,
 		Language:            language,
 		CryptographicAssets: assets,
 		TimestampUTC:        time.Now().UTC().Format(time.RFC3339),
