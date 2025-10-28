@@ -1,7 +1,7 @@
 .scanoss
-results.json
 *.wfp
 build
 dist
 target
-crypto-results.json
+*results*.json
+coverage.out

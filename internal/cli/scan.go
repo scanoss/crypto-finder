@@ -57,22 +57,22 @@ var scanCmd = &cobra.Command{
 
 	Examples:
 	  # Scan with default JSON output to stdout
-	  crypto-finder scan --rules-dir ./rules /path/to/code
+	  scanoss-cf scan --rules-dir ./rules /path/to/code
 
 	  # Save output to a file
-	  crypto-finder scan --rules-dir ./rules --output results.json /path/to/code
+	  scanoss-cf scan --rules-dir ./rules --output results.json /path/to/code
 
 	  # Pipe output to jq for processing
-	  crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
+	  scanoss-cf scan --rules-dir ./rules /path/to/code | jq '.findings | length'
 
 	  # Scan with multiple rule files
-	  crypto-finder scan --rules rule1.yaml --rules rule2.yaml /path/to/code
+	  scanoss-cf scan --rules rule1.yaml --rules rule2.yaml /path/to/code
 
 	  # Override language detection
-	  crypto-finder scan --languages java,python --rules-dir ./rules/ /path/to/code
+	  scanoss-cf scan --languages java,python --rules-dir ./rules/ /path/to/code
 
 	  # Fail on findings (for CI/CD)
-	  crypto-finder scan --fail-on-findings --rules-dir ./rules/ /path/to/code`,
+	  scanoss-cf scan --fail-on-findings --rules-dir ./rules/ /path/to/code`,
 	Args: func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("you must specify a target directory to scan")
@@ -84,14 +84,14 @@ var scanCmd = &cobra.Command{
 
 func init() {
 	// Add flags
-	scanCmd.Flags().StringArrayVar(&scanRules, "rules", []string{}, "Rule file path (repeatable)")
+	scanCmd.Flags().StringArrayVarP(&scanRules, "rules", "r", []string{}, "Rule file path (repeatable)")
 	scanCmd.Flags().StringArrayVar(&scanRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
-	scanCmd.Flags().StringVar(&scanScanner, "scanner", defaultScanner, "Scanner to use")
-	scanCmd.Flags().StringVar(&scanFormat, "format", defaultFormat, "Output format: json, cyclonedx (default: json)")
-	scanCmd.Flags().StringVar(&scanOutput, "output", "", "Output file path (default: stdout)")
+	scanCmd.Flags().StringVar(&scanScanner, "scanner", defaultScanner, fmt.Sprintf("Scanner to use (default: %s)", defaultScanner))
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", defaultFormat, "Output format: json, cyclonedx (default: json)")
+	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
-	scanCmd.Flags().StringVar(&scanTimeout, "timeout", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
+	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
 }
 
 func runScan(_ *cobra.Command, args []string) error {

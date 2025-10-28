@@ -102,7 +102,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	}
 
 	// Transform to interim format
-	report := transformToInterim(semgrepResults, toolInfo)
+	report := transformToInterim(semgrepResults, toolInfo, target)
 
 	return report, nil
 }

@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
@@ -70,6 +72,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	if len(opts.LanguageHint) > 0 {
 		// Use provided language hint
 		languages = opts.LanguageHint
+		log.Info().Strs("languages", opts.LanguageHint).Msg("Using provided language hints")
 	} else {
 		// Auto-detect languages so we can use only the needed rules. This significantly optimizes scanner performance.
 		languages, err = o.langDetector.Detect(opts.Target)
@@ -80,6 +83,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 	// Step 2: Load rules from manager
 	rulePaths, err := o.rulesManager.Load()
+	log.Info().Strs("paths", rulePaths).Int("count", len(rulePaths)).Msg("Loaded rules")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load rules: %w", err)
 	}

@@ -112,7 +112,7 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 		languages = append(languages, lang)
 	}
 
-	log.Info().Int("count", len(languages)).Strs("languages", languages).Msg("language detection complete")
+	log.Info().Int("count", len(languages)).Strs("languages", languages).Msg("Auto-detected languages")
 
 	return languages, nil
 }

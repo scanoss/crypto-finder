@@ -12,6 +12,7 @@ import (
 var (
 	debug   bool
 	verbose bool
+	quiet   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -28,8 +29,9 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	// Global flags
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
-	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Enable quiet logging")
 
 	// Subcommands
 	rootCmd.AddCommand(scanCmd)
@@ -42,10 +44,12 @@ func setupLogging() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
 	switch {
-	case debug:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case quiet:
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	case verbose:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case debug:
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	default:
 		zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	}
