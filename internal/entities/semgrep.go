@@ -80,12 +80,12 @@ type MetavarPropagatedValue struct {
 
 // SemgrepError represents an error from Semgrep execution.
 type SemgrepError struct {
-	Code    int                  `json:"code,omitempty"`    // Error code
-	Type    any                  `json:"type"`              // Error type (string or [string, locations])
-	Level   string               `json:"level"`             // Error level
-	Message string               `json:"message"`           // Error message
-	Path    string               `json:"path"`              // File path (if applicable)
-	Spans   []SemgrepErrorSpan   `json:"spans,omitempty"`   // Error spans
+	Code    int                `json:"code,omitempty"`  // Error code
+	Type    any                `json:"type"`            // Error type (string or [string, locations])
+	Level   string             `json:"level"`           // Error level
+	Message string             `json:"message"`         // Error message
+	Path    string             `json:"path"`            // File path (if applicable)
+	Spans   []SemgrepErrorSpan `json:"spans,omitempty"` // Error spans
 }
 
 // SemgrepErrorSpan represents a location span in a Semgrep error.
