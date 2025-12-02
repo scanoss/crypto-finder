@@ -15,10 +15,10 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "ae",
-            "algorithmName": "AES",
-            "parameterSetIdentifier": "256",
-            "mode": "GCM",
+            "algorithmPrimitive": "ae",
+            "algorithmFamily": "AES",
+            "algorithmParameterSetIdentifier": "256",
+            "algorithmMode": "GCM",
             "library": "crypto/cipher",
             "api": "cipher.NewGCM"
           }

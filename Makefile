@@ -143,9 +143,9 @@ release-check: ## Check if GoReleaser config is valid
 # Development helpers
 # ============================================================================
 
-install: build ## Install the CLI to $GOPATH/bin
-	@echo "Installing $(BINARY_NAME) to $(GOPATH)/bin..."
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
+install: build ## Install the CLI to /usr/local/bin
+	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
+	@sudo cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/
 	@echo "✅ Installed successfully! Run 'crypto-finder --help' to get started."
 
 deps: ## Download dependencies

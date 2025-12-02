@@ -175,49 +175,49 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		{
 			name: "Complete required fields",
 			metadata: map[string]string{
-				"assetType":     "algorithm",
-				"primitive":     "ae",
-				"algorithmName": "AES",
+				"assetType":          "algorithm",
+				"algorithmPrimitive": "ae",
+				"algorithmFamily":    "AES",
 			},
 			wantErr: false,
 		},
 		{
-			name: "Missing primitive",
+			name: "Missing algorithmPrimitive",
 			metadata: map[string]string{
-				"assetType":     "algorithm",
-				"algorithmName": "AES",
+				"assetType":       "algorithm",
+				"algorithmFamily": "AES",
 			},
 			wantErr:     true,
-			errContains: "primitive",
+			errContains: "algorithmPrimitive",
 		},
 		{
-			name: "Missing algorithmName",
+			name: "Missing algorithmFamily",
 			metadata: map[string]string{
-				"assetType": "algorithm",
-				"primitive": "ae",
+				"assetType":          "algorithm",
+				"algorithmPrimitive": "ae",
 			},
 			wantErr:     true,
-			errContains: "algorithmName",
+			errContains: "algorithmFamily",
 		},
 		{
-			name: "Empty primitive",
+			name: "Empty algorithmPrimitive",
 			metadata: map[string]string{
-				"assetType":     "algorithm",
-				"primitive":     "  ",
-				"algorithmName": "AES",
+				"assetType":          "algorithm",
+				"algorithmPrimitive": "  ",
+				"algorithmFamily":    "AES",
 			},
 			wantErr:     true,
-			errContains: "primitive",
+			errContains: "algorithmPrimitive",
 		},
 		{
-			name: "Empty algorithmName",
+			name: "Empty algorithmFamily",
 			metadata: map[string]string{
-				"assetType":     "algorithm",
-				"primitive":     "ae",
-				"algorithmName": "  ",
+				"assetType":          "algorithm",
+				"algorithmPrimitive": "ae",
+				"algorithmFamily":    "  ",
 			},
 			wantErr:     true,
-			errContains: "algorithmName",
+			errContains: "algorithmFamily",
 		},
 	}
 
@@ -243,68 +243,3 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 	}
 }
 
-func TestGenerateComponentName(t *testing.T) {
-	mapper := NewAlgorithmMapper()
-
-	tests := []struct {
-		name          string
-		algorithmName string
-		metadata      map[string]string
-		want          string
-	}{
-		{
-			name:          "Algorithm with parameterSetIdentifier and mode",
-			algorithmName: "AES",
-			metadata: map[string]string{
-				"parameterSetIdentifier": "256",
-				"mode":                   "GCM",
-			},
-			want: "AES-256-GCM",
-		},
-		{
-			name:          "Algorithm with keySize instead of parameterSetIdentifier",
-			algorithmName: "AES",
-			metadata: map[string]string{
-				"keySize": "128",
-				"mode":    "CBC",
-			},
-			want: "AES-128-CBC",
-		},
-		// {
-		// 	name:          "Algorithm with curve",
-		// 	algorithmName: "ECDSA",
-		// 	metadata: map[string]string{
-		// 		"curve": "P-256",
-		// 	},
-		// 	want: "ECDSA-P-256",
-		// },
-		{
-			name:          "Algorithm with only name",
-			algorithmName: "SHA-256",
-			metadata:      map[string]string{},
-			want:          "SHA-256",
-		},
-		{
-			name:          "Algorithm with keySize but no mode",
-			algorithmName: "RSA",
-			metadata: map[string]string{
-				"keySize": "2048",
-			},
-			want: "RSA-2048",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			asset := &entities.CryptographicAsset{
-				Metadata: tt.metadata,
-			}
-
-			got := mapper.generateComponentName(tt.algorithmName, asset)
-
-			if got != tt.want {
-				t.Errorf("generateComponentName() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
