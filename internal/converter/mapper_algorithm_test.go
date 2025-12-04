@@ -242,4 +242,3 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 		})
 	}
 }
-

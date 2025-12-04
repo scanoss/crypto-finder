@@ -53,8 +53,8 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 
 	// Transform each result to a cryptographic asset
 	assets := make([]entities.CryptographicAsset, 0, len(results))
-	for _, result := range results {
-		asset := transformToCryptographicAsset(&result)
+	for i := range results {
+		asset := transformToCryptographicAsset(&results[i])
 		assets = append(assets, asset)
 	}
 
