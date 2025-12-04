@@ -39,7 +39,9 @@ func mapPrimitiveToCycloneDX(primitive string) (cdx.CryptoPrimitive, error) {
 		return cdx.CryptoPrimitiveCombiner, nil
 	case "drbg":
 		return cdx.CryptoPrimitiveDRBG, nil
+	case "other":
+		return cdx.CryptoPrimitiveOther, nil
 	default:
-		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, xof, key-agree, combiner, drbg, other, unknown)", primitive)
+		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, xof, key-agree, combiner, drbg, other)", primitive)
 	}
 }
