@@ -26,10 +26,9 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 		return nil, err
 	}
 
-	primitive := asset.Metadata["primitive"]
-	algorithmName := asset.Metadata["algorithmName"]
+	algorithmPrimitive := asset.Metadata["algorithmPrimitive"]
 
-	cdxPrimitive, err := mapPrimitiveToCycloneDX(primitive)
+	cdxPrimitive, err := mapPrimitiveToCycloneDX(algorithmPrimitive)
 	if err != nil {
 		return nil, fmt.Errorf("invalid primitive type: %w", err)
 	}
@@ -38,11 +37,13 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 		Primitive: cdxPrimitive,
 	}
 
+	// TODO: Add algorithmFamily, it's not supported yet in cdx library and cdx 1.6 spec
 	// Add optional fields
 	m.addParameterSetIdentifier(algorithmProps, asset)
 	m.addMode(algorithmProps, asset)
 	m.addPadding(algorithmProps, asset)
-	m.addCurve(algorithmProps, asset)
+
+	algorithmName := m.getAlgorithmName(asset)
 
 	assetType := cdx.CryptoAssetTypeAlgorithm
 	cryptoProps := &cdx.CryptoProperties{
@@ -50,15 +51,13 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 		AlgorithmProperties: algorithmProps,
 	}
 
-	componentName := m.generateComponentName(algorithmName, asset)
-
 	bomRef := generateBOMRef()
 
 	componentType := cdx.ComponentTypeCryptographicAsset
 	component := &cdx.Component{
 		Type:             componentType,
 		BOMRef:           bomRef,
-		Name:             componentName,
+		Name:             algorithmName,
 		CryptoProperties: cryptoProps,
 		Properties:       m.buildProperties(finding, asset),
 	}
@@ -80,15 +79,15 @@ func (m *AlgorithmMapper) validateRequiredFields(asset *entities.CryptographicAs
 	}
 
 	// Check for primitive
-	primitive, hasPrimitive := asset.Metadata["primitive"]
+	primitive, hasPrimitive := asset.Metadata["algorithmPrimitive"]
 	if !hasPrimitive || strings.TrimSpace(primitive) == "" {
-		return fmt.Errorf("missing required field 'primitive' (required for assetType='algorithm')")
+		return fmt.Errorf("missing required field 'algorithmPrimitive' (required for assetType='algorithm')")
 	}
 
-	// Check for algorithm name
-	algorithmName, hasAlgorithmName := asset.Metadata["algorithmName"]
-	if !hasAlgorithmName || strings.TrimSpace(algorithmName) == "" {
-		return fmt.Errorf("missing required field 'algorithmName' (required for assetType='algorithm')")
+	// Check for family
+	family, hasFamily := asset.Metadata["algorithmFamily"]
+	if !hasFamily || strings.TrimSpace(family) == "" {
+		return fmt.Errorf("missing required field 'algorithmFamily' (required for assetType='algorithm')")
 	}
 
 	return nil
@@ -97,75 +96,54 @@ func (m *AlgorithmMapper) validateRequiredFields(asset *entities.CryptographicAs
 // addParameterSetIdentifier adds parameter set identifier (key size, curve, etc.) if available.
 func (m *AlgorithmMapper) addParameterSetIdentifier(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
 	// Try explicit parameterSetIdentifier first
-	if paramSet, ok := asset.Metadata["parameterSetIdentifier"]; ok && paramSet != "" {
+	if paramSet, ok := asset.Metadata["algorithmParameterSetIdentifier"]; ok && paramSet != "" {
 		props.ParameterSetIdentifier = paramSet
 		return
 	}
 
-	// Fallback to keySize if available
-	if keySize, ok := asset.Metadata["keySize"]; ok && keySize != "" {
-		props.ParameterSetIdentifier = keySize
-		return
-	}
-
-	// Fallback to curve if available
-	if curve, ok := asset.Metadata["curve"]; ok && curve != "" {
-		props.ParameterSetIdentifier = curve
-		return
-	}
-
-	algorithmName := asset.Metadata["algorithmName"]
 	log.Debug().
-		Str("algorithm", algorithmName).
+		Str("match", asset.Match).
 		Str("ruleID", asset.Rule.ID).
-		Msg("Asset missing recommended field 'parameterSetIdentifier'")
+		Msg("Asset missing recommended field for assetType='algorithm' 'algorithmParameterSetIdentifier'")
 }
 
 // addMode adds encryption mode if available.
 func (m *AlgorithmMapper) addMode(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if mode, ok := asset.Metadata["mode"]; ok && mode != "" {
+	if algorithmMode, ok := asset.Metadata["algorithmMode"]; ok && algorithmMode != "" {
 		// Normalize to lowercase for CycloneDX
-		modeLower := strings.ToLower(mode)
+		modeLower := strings.ToLower(algorithmMode)
 		props.Mode = cdx.CryptoAlgorithmMode(modeLower)
 	}
 }
 
 // addPadding adds padding scheme if available.
 func (m *AlgorithmMapper) addPadding(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if padding, ok := asset.Metadata["padding"]; ok && padding != "" {
-		props.Padding = cdx.CryptoPadding(padding)
+	if algorithmPadding, ok := asset.Metadata["algorithmPadding"]; ok && algorithmPadding != "" {
+		props.Padding = cdx.CryptoPadding(algorithmPadding)
 	}
 }
 
-// addCurve adds elliptic curve if available.
-func (m *AlgorithmMapper) addCurve(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if curve, ok := asset.Metadata["curve"]; ok && curve != "" {
-		props.Curve = curve
+// getAlgorithmName gets the algorithmName based on the asset metadata.
+// If algorithmName is specified, we use it as is.
+// Otherwise, we construct the name based on the metadata.
+// {algorithmFamily}[-{algorithmParameterSetIdentifier}][-{algorithmMode}].
+func (m *AlgorithmMapper) getAlgorithmName(asset *entities.CryptographicAsset) string {
+	if algorithmName, ok := asset.Metadata["algorithmName"]; ok && algorithmName != "" {
+		return algorithmName
 	}
-}
 
-// generateComponentName creates a component name from algorithm details.
-// Format: {algorithmName}[-{parameterSetIdentifier}][-{mode}].
-func (m *AlgorithmMapper) generateComponentName(algorithmName string, asset *entities.CryptographicAsset) string {
-	parts := []string{algorithmName}
+	algorithmFamily := asset.Metadata["algorithmFamily"]
+	parts := []string{algorithmFamily}
 
 	// Add parameter set identifier if available
-	if paramSet, ok := asset.Metadata["parameterSetIdentifier"]; ok && paramSet != "" {
-		if !strings.HasSuffix(algorithmName, "-"+paramSet) {
-			parts = append(parts, paramSet)
-		}
-	} else if keySize, ok := asset.Metadata["keySize"]; ok && keySize != "" {
-		if !strings.HasSuffix(algorithmName, "-"+keySize) {
-			parts = append(parts, keySize)
-		}
+	if paramSet, ok := asset.Metadata["algorithmParameterSetIdentifier"]; ok && paramSet != "" {
+		parts = append(parts, paramSet)
 	}
 
 	// Add mode if available
-	if mode, ok := asset.Metadata["mode"]; ok && mode != "" {
+	if mode, ok := asset.Metadata["algorithmMode"]; ok && mode != "" {
 		modeUpper := strings.ToUpper(mode)
-		if !strings.HasSuffix(algorithmName, "-"+modeUpper) {
-			parts = append(parts, modeUpper)
-		}
+		parts = append(parts, modeUpper)
 	}
 
 	return strings.Join(parts, "-")

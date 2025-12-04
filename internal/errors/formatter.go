@@ -1,6 +1,6 @@
-// Package errors provides utilities for formatting error messages in the CLI.
+// Package clierrors provides utilities for formatting error messages in the CLI.
 // It helps create consistent, user-friendly error output with context and suggestions.
-package errors
+package clierrors
 
 import (
 	"fmt"

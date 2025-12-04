@@ -15,9 +15,9 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "block-cipher",
-            "algorithmName": "AES",
-            "parameterSetIdentifier": "128",
+            "algorithmPrimitive": "block-cipher",
+            "algorithmFamily": "AES",
+            "algorithmParameterSetIdentifier": "128",
             "library": "crypto/aes",
             "api": "aes.NewCipher"
           }
@@ -30,9 +30,10 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "hash",
+            "algorithmPrimitive": "hash",
+            "algorithmFamily": "SHA",
             "algorithmName": "SHA-256",
-            "parameterSetIdentifier": "256",
+            "algorithmParameterSetIdentifier": "256",
             "library": "crypto/sha256",
             "api": "sha256.New"
           }
@@ -45,7 +46,8 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "mac",
+            "algorithmPrimitive": "mac",
+            "algorithmFamily": "HMAC-SHA256",
             "algorithmName": "HMAC-SHA256",
             "library": "crypto/hmac",
             "api": "hmac.New"
@@ -64,10 +66,10 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "signature",
-            "algorithmName": "ECDSA",
+            "algorithmPrimitive": "signature",
+            "algorithmFamily": "ECDSA",
             "curve": "P-384",
-            "parameterSetIdentifier": "P-384",
+            "algorithmParameterSetIdentifier": "P-384",
             "library": "crypto/ecdsa"
           }
         }

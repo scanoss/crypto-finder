@@ -161,12 +161,13 @@ func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string 
 //
 //	metadata:
 //	  crypto:
-//	    algorithm: "AES" or $ALGORITHM
-//	    primitive: "block-cipher"
-//	    mode: "CBC" or $MODE
-//	    padding: "PKCS7"
-//	    key_size_bits: 128
-//	    provider: "JCE"
+//	    algorithmFamily: "AES"
+//	    algorithmName: "AES-128-GCM"
+//	    algorithmPrimitive: "block-cipher"
+//	    algorithmMode: "CBC" or $MODE
+//	    algorithmPadding: "PKCS7"
+//	    algorithmParameterSetIdentifier: 128
+//	    library: "OpenSSL"
 func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata map[string]any, metavars map[string]entities.MetavarInfo) {
 	for key, metavarValue := range cryptoMetadata {
 		var value string

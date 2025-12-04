@@ -15,9 +15,9 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "pke",
-            "algorithmName": "RSA",
-            "parameterSetIdentifier": "2048",
+            "algorithmPrimitive": "pke",
+            "algorithmFamily": "RSA",
+            "algorithmParameterSetIdentifier": "2048",
             "library": "crypto/rsa",
             "api": "rsa.GenerateKey"
           }

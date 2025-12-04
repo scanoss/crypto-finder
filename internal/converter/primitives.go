@@ -31,28 +31,17 @@ func mapPrimitiveToCycloneDX(primitive string) (cdx.CryptoPrimitive, error) {
 		return cdx.CryptoPrimitivePKE, nil
 	case "kem":
 		return cdx.CryptoPrimitiveKEM, nil
+	case "xof":
+		return cdx.CryptoPrimitiveXOF, nil
+	case "key-agree":
+		return cdx.CryptoPrimitiveKeyAgree, nil
+	case "combiner":
+		return cdx.CryptoPrimitiveCombiner, nil
 	case "drbg":
 		return cdx.CryptoPrimitiveDRBG, nil
 	case "other":
 		return cdx.CryptoPrimitiveOther, nil
 	default:
-		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, drbg, other)", primitive)
-	}
-}
-
-// PrimitiveTypes returns all supported primitive type strings.
-func PrimitiveTypes() []string {
-	return []string{
-		"ae",
-		"block-cipher",
-		"stream-cipher",
-		"hash",
-		"signature",
-		"mac",
-		"kdf",
-		"pke",
-		"kem",
-		"drbg",
-		"other",
+		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, xof, key-agree, combiner, drbg, other)", primitive)
 	}
 }

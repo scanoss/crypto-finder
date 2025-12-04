@@ -179,6 +179,9 @@ func (v *Validator) validatePrimitive(primitive cdx.CryptoPrimitive) error {
 		cdx.CryptoPrimitivePKE,
 		cdx.CryptoPrimitiveKEM,
 		cdx.CryptoPrimitiveDRBG,
+		cdx.CryptoPrimitiveKeyAgree,
+		cdx.CryptoPrimitiveCombiner,
+		cdx.CryptoPrimitiveXOF,
 		cdx.CryptoPrimitiveOther,
 	}
 
@@ -186,5 +189,11 @@ func (v *Validator) validatePrimitive(primitive cdx.CryptoPrimitive) error {
 		return nil
 	}
 
-	return fmt.Errorf("invalid primitive value: %s (must be one of: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, drbg, other)", primitive)
+	var validPrimitivesStr string
+	for _, validPrimitive := range validPrimitives {
+		validPrimitivesStr += string(validPrimitive) + ", "
+	}
+	validPrimitivesStr = validPrimitivesStr[:len(validPrimitivesStr)-2]
+
+	return fmt.Errorf("invalid primitive value: %s (must be one of: %s)", primitive, validPrimitivesStr)
 }

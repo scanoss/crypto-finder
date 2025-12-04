@@ -15,9 +15,10 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "hash",
+            "algorithmPrimitive": "hash",
+            "algorithmFamily": "SHA",
             "algorithmName": "SHA-256",
-            "parameterSetIdentifier": "256",
+            "algorithmParameterSetIdentifier": "256",
             "library": "crypto/sha256",
             "api": "sha256.New"
           }

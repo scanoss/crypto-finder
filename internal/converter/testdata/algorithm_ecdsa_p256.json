@@ -15,10 +15,10 @@
           },
           "metadata": {
             "assetType": "algorithm",
-            "primitive": "signature",
-            "algorithmName": "ECDSA",
+            "algorithmPrimitive": "signature",
+            "algorithmFamily": "ECDSA",
             "curve": "P-256",
-            "parameterSetIdentifier": "P-256",
+            "algorithmParameterSetIdentifier": "P-256",
             "library": "crypto/ecdsa",
             "api": "ecdsa.Sign"
           }
