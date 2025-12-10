@@ -8,11 +8,12 @@ A powerful CLI tool and execution framework for detecting cryptographic algorith
 
 ## Features
 
-- **Multi-Scanner Support**: Currently supports Semgrep with extensible architecture for additional scanners
+- **Multi-Scanner Support**: Supports OpenGrep (default) and Semgrep with extensible architecture for additional scanners
+- **Advanced Taint Analysis**: OpenGrep scanner includes `--taint-intrafile` by default for enhanced dataflow analysis
 - **Automatic Language Detection**: Uses [go-enry](https://github.com/go-enry/go-enry) to detect project languages for optimized scanning
 - **Flexible Rule Management**: Support for local rule files and directories
 - **Standardized Output**: Interim JSON format compatible with the SCANOSS ecosystem
-- **CycloneDX Support**: Convert results to CycloneDX 1.6 CBOM format
+- **CycloneDX Support**: Convert results to CycloneDX 1.7 CBOM format
 - **CI/CD Ready**: Docker images and integration-friendly design
 - **Performance Optimized**: Language-based rule filtering to minimize scan time
 - **Skip Patterns**: Configurable file/directory exclusion via scanoss.json
@@ -33,7 +34,7 @@ sudo make install
 ### Docker
 
 ```bash
-# Full image with Semgrep included
+# Full image with OpenGrep and Semgrep included
 docker pull ghcr.io/scanoss/crypto-finder:latest
 
 # Slim image (requires external scanner)
@@ -78,7 +79,7 @@ crypto-finder scan [flags] <target>
 |------|-------------|---------|
 | `--rules <file>` | Rule file path (repeatable) | - |
 | `--rules-dir <dir>` | Rule directory path (repeatable) | - |
-| `--scanner <name>` | Scanner to use | `semgrep` |
+| `--scanner <name>` | Scanner to use: `opengrep`, `semgrep` | `opengrep` |
 | `--format <format>` | Output format: `json`, `cyclonedx` | `json` |
 | `--output <file>` | Output file path | stdout |
 | `--languages <langs>` | Override language detection (comma-separated) | auto-detect |
@@ -107,6 +108,9 @@ crypto-finder scan --fail-on-findings --rules-dir ./rules/ /path/to/code
 
 # Pipe output to jq for processing
 crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
+
+# Use Semgrep scanner instead of default OpenGrep
+crypto-finder scan --scanner semgrep --rules-dir ./rules /path/to/code
 ```
 
 ### Convert Command
@@ -251,8 +255,8 @@ The default output format containing detailed cryptographic asset information.
 {
   "version": "1.0",
   "tool": {
-    "name": "semgrep",
-    "version": "1.45.0"
+    "name": "opengrep",
+    "version": "1.12.1"
   },
   "findings": [
     {
@@ -260,7 +264,7 @@ The default output format containing detailed cryptographic asset information.
       "language": "java",
       "cryptographic_assets": [
         {
-          "match_type": "semgrep",
+          "match_type": "opengrep",
           "line_number": 29,
           "match": "cipher = Cipher.getInstance(\"AES/CBC/PKCS5Padding\");",
           "rule": {
@@ -283,10 +287,10 @@ The default output format containing detailed cryptographic asset information.
 
 ### CycloneDX CBOM Format
 
-CycloneDX 1.6 compatible Cryptography Bill of Materials format.
+CycloneDX 1.7 compatible Cryptography Bill of Materials format.
 
 **Features:**
-- Validates against CycloneDX 1.6 schema
+- Validates against CycloneDX 1.7 schema
 - Maps cryptographic assets to standardized component types
 - Includes algorithm properties and metadata
 - Supports asset types: `algorithm`, `certificate`, `protocol`, `related-crypto-material`
@@ -299,7 +303,7 @@ CycloneDX 1.6 compatible Cryptography Bill of Materials format.
 - Go 1.23.2 or later
 - Make
 - Docker (optional, for container builds)
-- Semgrep (for running scans)
+- OpenGrep >= 1.12.1 or Semgrep >= 1.119.0 (for running scans)
 
 ### Building
 
@@ -330,6 +334,7 @@ make test
 make coverage
 
 # Run specific test
+go test -v ./internal/scanner/opengrep/...
 go test -v ./internal/scanner/semgrep/...
 ```
 

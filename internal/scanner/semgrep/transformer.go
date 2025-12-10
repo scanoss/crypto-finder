@@ -14,8 +14,9 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// transformToInterim converts Semgrep results to the interim JSON format.
-func transformToInterim(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string) *entities.InterimReport {
+// TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.
+// This function can be reused by other compatible scanners (e.g., OpenGrep).
+func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 

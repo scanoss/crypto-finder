@@ -18,19 +18,20 @@ import (
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 const (
-	defaultScanner = "semgrep"
+	defaultScanner = "opengrep"
 	defaultFormat  = "json"
 	defaultTimeout = "10m"
 )
 
 // AllowedScanners lists the scanners supported by the tool.
-// TODO: We'll support more scanners in the future.
-var AllowedScanners = []string{"semgrep"}
+// TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
+var AllowedScanners = []string{"opengrep", "semgrep"}
 
 // SupportedFormats lists the output formats supported by the tool.
 var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
@@ -51,7 +52,7 @@ var scanCmd = &cobra.Command{
 	Short: "Scan source code for cryptographic usage",
 	Long: `Scan source code repositories for cryptographic algorithm usage.
 
-	The scan command executes a scanner (default: Semgrep) against the target
+	The scan command executes a scanner (default: OpenGrep) against the target
 	directory or file using specified rules. By default, it outputs findings to
 	stdout in JSON format. Use --output to write to a file instead.
 
@@ -147,7 +148,8 @@ func runScan(_ *cobra.Command, args []string) error {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	// TODO: Register opengrep, cbom-toolkit
+	// TODO: Register cbom-toolkit
+	scannerRegistry.Register("opengrep", opengrep.NewScanner())
 	scannerRegistry.Register("semgrep", semgrep.NewScanner())
 
 	// Create orchestrator

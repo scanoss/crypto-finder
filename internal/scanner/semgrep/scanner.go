@@ -96,13 +96,13 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	}
 
 	// Parse semgrep JSON output
-	semgrepResults, err := parseSemgrepOutput(output)
+	semgrepResults, err := ParseSemgrepCompatibleOutput(output)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse semgrep output: %w", err)
 	}
 
 	// Transform to interim format
-	report := transformToInterim(semgrepResults, toolInfo, target)
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target)
 
 	return report, nil
 }
