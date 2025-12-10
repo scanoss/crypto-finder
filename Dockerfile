@@ -30,17 +30,26 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/crypto-finder
 
 # ============================================================================
-# Stage 2: Install Semgrep
+# Stage 2: Install Scanners (Semgrep and OpenGrep)
 # ============================================================================
-FROM python:3.11-slim AS semgrep-installer
+FROM python:3.11-slim AS scanner-installer
 
-# Install Semgrep 1.119.0
-RUN pip install --no-cache-dir semgrep==1.119.0
+# Install system dependencies for OpenGrep installer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Semgrep 1.145.0
+RUN pip install --no-cache-dir semgrep==1.145.0
+
+# Install OpenGrep (minimum version 1.12.1)
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
 
 # ============================================================================
 # Stage 3: Final image with Python runtime
 # ============================================================================
-FROM semgrep-installer
+FROM scanner-installer
 
 # Copy the crypto-finder binary from builder
 COPY --from=builder /build/crypto-finder /usr/local/bin/crypto-finder
@@ -57,7 +66,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version="${VERSION}"
 
 # Verify installations
-RUN crypto-finder version && semgrep --version
+RUN crypto-finder version && semgrep --version && opengrep --version
 
 # Set entrypoint
 ENTRYPOINT ["crypto-finder"]

@@ -9,8 +9,9 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// parseSemgrepOutput parses Semgrep's JSON output into the SemgrepOutput schema.
-func parseSemgrepOutput(data []byte) (*entities.SemgrepOutput, error) {
+// ParseSemgrepCompatibleOutput parses Semgrep's JSON output into the SemgrepOutput schema.
+// This function can be reused by other compatible scanners (e.g., OpenGrep).
+func ParseSemgrepCompatibleOutput(data []byte) (*entities.SemgrepOutput, error) {
 	if len(data) == 0 {
 		// Empty output means no findings, which is valid
 		return &entities.SemgrepOutput{
@@ -53,7 +54,7 @@ func getErrorType(typeField any) string {
 	}
 
 	// If it's an array, extract the first element
-	if typeSlice, ok := typeField.([]interface{}); ok && len(typeSlice) > 0 {
+	if typeSlice, ok := typeField.([]any); ok && len(typeSlice) > 0 {
 		if typeStr, ok := typeSlice[0].(string); ok {
 			return typeStr
 		}

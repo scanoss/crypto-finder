@@ -1,5 +1,5 @@
 # ============================================================================
-# GoReleaser Dockerfile - Standard Image with Semgrep
+# GoReleaser Dockerfile - Standard Image with Scanners
 # ============================================================================
 # This Dockerfile is used by GoReleaser and expects a pre-built binary.
 # For manual builds from source, use the regular Dockerfile instead.
@@ -12,8 +12,17 @@ ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-# Install Semgrep 1.119.0
-RUN pip install --no-cache-dir semgrep==1.119.0
+# Install system dependencies for OpenGrep installer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Semgrep 1.145.0
+RUN pip install --no-cache-dir semgrep==1.145.0
+
+# Install OpenGrep (minimum version 1.12.1)
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
 
 # Copy the pre-built crypto-finder binary from GoReleaser's build context
 COPY crypto-finder /usr/local/bin/crypto-finder
@@ -33,7 +42,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version="${VERSION}"
 
 # Verify installations
-RUN crypto-finder version && semgrep --version
+RUN crypto-finder version && semgrep --version && opengrep --version
 
 # Set entrypoint
 ENTRYPOINT ["crypto-finder"]

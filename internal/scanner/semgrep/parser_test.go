@@ -7,7 +7,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-func TestParseSemgrepOutput_WithArrayTypeError(t *testing.T) {
+func TestParseSemgrepCompatibleOutput_WithArrayTypeError(t *testing.T) {
 	// Test parsing a Semgrep error with an array-type field (like PartialParsing errors)
 	jsonData := `{
 		"results": [],
@@ -38,7 +38,7 @@ func TestParseSemgrepOutput_WithArrayTypeError(t *testing.T) {
 		]
 	}`
 
-	output, err := parseSemgrepOutput([]byte(jsonData))
+	output, err := ParseSemgrepCompatibleOutput([]byte(jsonData))
 	if err != nil {
 		t.Fatalf("Failed to parse Semgrep output: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestParseSemgrepOutput_WithArrayTypeError(t *testing.T) {
 	}
 }
 
-func TestParseSemgrepOutput_WithStringTypeError(t *testing.T) {
+func TestParseSemgrepCompatibleOutput_WithStringTypeError(t *testing.T) {
 	// Test parsing a Semgrep error with a simple string type
 	jsonData := `{
 		"results": [],
@@ -91,7 +91,7 @@ func TestParseSemgrepOutput_WithStringTypeError(t *testing.T) {
 		]
 	}`
 
-	output, err := parseSemgrepOutput([]byte(jsonData))
+	output, err := ParseSemgrepCompatibleOutput([]byte(jsonData))
 	if err != nil {
 		t.Fatalf("Failed to parse Semgrep output: %v", err)
 	}
