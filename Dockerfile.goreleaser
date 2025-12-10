@@ -30,6 +30,9 @@ COPY crypto-finder /usr/local/bin/crypto-finder
 # Make binary executable
 RUN chmod +x /usr/local/bin/crypto-finder
 
+# Add opengrep to PATH
+ENV PATH="$PATH:/root/.opengrep/cli/latest"
+
 # Create workspace directory
 WORKDIR /workspace
 

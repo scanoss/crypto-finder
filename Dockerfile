@@ -54,8 +54,14 @@ FROM scanner-installer
 # Copy the crypto-finder binary from builder
 COPY --from=builder /build/crypto-finder /usr/local/bin/crypto-finder
 
+# Add opengrep to PATH
+ENV PATH="$PATH:/root/.opengrep/cli/latest"
+
 # Create workspace directory
 WORKDIR /workspace
+
+# Build arguments for labels
+ARG VERSION=dev
 
 # Add labels for metadata
 LABEL org.opencontainers.image.title="SCANOSS Crypto Finder"
