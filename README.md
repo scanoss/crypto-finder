@@ -85,6 +85,7 @@ crypto-finder scan [flags] <target>
 | `--languages <langs>` | Override language detection (comma-separated) | auto-detect |
 | `--fail-on-findings` | Exit with error if findings detected | `false` |
 | `--timeout <duration>` | Scan timeout (e.g., 10m, 1h) | `10m` |
+| `--scanner-args <arg>` | Pass additional arguments to scanner (repeatable) | - |
 | `--verbose`, `-v` | Enable verbose logging | `false` |
 | `--quiet`, `-q` | Enable quiet mode | `false` |
 
@@ -111,6 +112,12 @@ crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
 
 # Use Semgrep scanner instead of default OpenGrep
 crypto-finder scan --scanner semgrep --rules-dir ./rules /path/to/code
+
+# Pass extra arguments to the scanner (e.g., increase verbosity)
+crypto-finder scan --scanner-args="--verbose" --rules-dir ./rules /path/to/code
+
+# Pass multiple scanner arguments
+crypto-finder scan --scanner-args="--verbose" --scanner-args="--max-memory=4GB" --rules-dir ./rules /path/to/code
 ```
 
 ### Convert Command

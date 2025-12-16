@@ -45,6 +45,7 @@ var (
 	scanLanguages  []string
 	scanFailOnFind bool
 	scanTimeout    string
+	scannerArgs    []string
 )
 
 var scanCmd = &cobra.Command{
@@ -93,6 +94,7 @@ func init() {
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
 	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
+	scanCmd.Flags().StringArrayVar(&scannerArgs, "scanner-args", []string{}, "Pass additional arguments directly to the scanner (repeatable)")
 }
 
 func runScan(_ *cobra.Command, args []string) error {
@@ -163,6 +165,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
+			ExtraArgs:    scannerArgs,
 		},
 	}
 
