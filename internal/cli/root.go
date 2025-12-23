@@ -37,6 +37,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(configureCmd)
 }
 
 func setupLogging() {
