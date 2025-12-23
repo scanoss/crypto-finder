@@ -11,12 +11,14 @@ A powerful CLI tool and execution framework for detecting cryptographic algorith
 - **Multi-Scanner Support**: Supports OpenGrep (default) and Semgrep with extensible architecture for additional scanners
 - **Advanced Taint Analysis**: OpenGrep scanner includes `--taint-intrafile` by default for enhanced dataflow analysis
 - **Automatic Language Detection**: Uses [go-enry](https://github.com/go-enry/go-enry) to detect project languages for optimized scanning
-- **Flexible Rule Management**: Support for local rule files and directories
+- **Remote Rulesets**: Automatically fetch curated rulesets from SCANOSS API with local caching and TTL-based expiration
+- **Flexible Rule Management**: Support for remote rulesets, local rule files, and directories with seamless combination
 - **Standardized Output**: Interim JSON format compatible with the SCANOSS ecosystem
 - **CycloneDX Support**: Convert results to CycloneDX 1.7 CBOM format
 - **CI/CD Ready**: Docker images and integration-friendly design
 - **Performance Optimized**: Language-based rule filtering to minimize scan time
 - **Skip Patterns**: Configurable file/directory exclusion via scanoss.json
+- **Offline Mode**: Use cached rulesets without API access for air-gapped environments
 
 ## Installation
 
@@ -49,18 +51,36 @@ go install github.com/scanoss/crypto-finder/cmd/crypto-finder@latest
 
 ## Quick Start
 
+### With Remote Rulesets (Recommended)
+
+```bash
+# Configure your API key (one-time setup)
+crypto-finder configure --api-key YOUR_API_KEY
+
+# Or you can also specify api key and url via cli flags
+crypto-finder scan /path/to/code --api-key YOUR_API_KEY --api-url https://your-custom-api.com
+
+# Scan using remote rulesets (automatically downloaded and cached)
+crypto-finder scan /path/to/code
+
+# Combine remote rules with local custom rules
+crypto-finder scan --rules-dir ./custom-rules /path/to/code
+```
+
+### With Local Rules Only
+
 ```bash
 # Scan a directory with custom rules
-crypto-finder scan --rules-dir ./rules /path/to/code
+crypto-finder scan --no-remote-rules --rules-dir ./rules /path/to/code
 
 # Save output to a file
-crypto-finder scan --rules-dir ./rules --output results.json /path/to/code
+crypto-finder scan --no-remote-rules --rules-dir ./rules --output results.json /path/to/code
 
 # Convert to CycloneDX CBOM format
 crypto-finder convert results.json --output cbom.json
 
 # Scan and convert in one pipeline
-crypto-finder scan --rules-dir ./rules /path/to/code | crypto-finder convert --output cbom.json
+crypto-finder scan --no-remote-rules --rules-dir ./rules /path/to/code | crypto-finder convert --output cbom.json
 ```
 
 ## Usage
@@ -79,6 +99,10 @@ crypto-finder scan [flags] <target>
 |------|-------------|---------|
 | `--rules <file>` | Rule file path (repeatable) | - |
 | `--rules-dir <dir>` | Rule directory path (repeatable) | - |
+| `--no-remote-rules` | Disable default remote ruleset | `false` |
+| `--offline` | Use only cached rules, don't contact API | `false` |
+| `--api-key <key>` | SCANOSS API key (overrides config file) | - |
+| `--api-url <url>` | SCANOSS API base URL (overrides config file) | `https://api.scanoss.com` |
 | `--scanner <name>` | Scanner to use: `opengrep`, `semgrep` | `opengrep` |
 | `--format <format>` | Output format: `json`, `cyclonedx` | `json` |
 | `--output <file>` | Output file path | stdout |
@@ -91,26 +115,38 @@ crypto-finder scan [flags] <target>
 **Examples:**
 
 ```bash
-# Basic scan with rules directory
-crypto-finder scan --rules-dir ./rules /path/to/code
+# Scan with remote rulesets (default behavior)
+crypto-finder scan /path/to/code
+
+# Combine remote and local rules
+crypto-finder scan --rules-dir ./custom-rules /path/to/code
+
+# Disable remote rules, use local only
+crypto-finder scan --no-remote-rules --rules-dir ./rules /path/to/code
+
+# Offline mode (use cached rules only)
+crypto-finder scan --offline /path/to/code
+
+# Override API key for this scan
+crypto-finder scan --api-key YOUR_KEY /path/to/code
 
 # Multiple rule sources
 crypto-finder scan --rules rule1.yaml --rules rule2.yaml --rules-dir ./rules/ /path/to/code
 
 # Override language detection
-crypto-finder scan --languages java,python --rules-dir ./rules/ /path/to/code
+crypto-finder scan --languages java,python /path/to/code
 
 # Output directly to CycloneDX format
-crypto-finder scan --format cyclonedx --rules-dir ./rules --output cbom.json /path/to/code
+crypto-finder scan --format cyclonedx --output cbom.json /path/to/code
 
 # CI/CD mode (fail on findings)
-crypto-finder scan --fail-on-findings --rules-dir ./rules/ /path/to/code
+crypto-finder scan --fail-on-findings /path/to/code
 
 # Pipe output to jq for processing
-crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
+crypto-finder scan /path/to/code | jq '.findings | length'
 
 # Use Semgrep scanner instead of default OpenGrep
-crypto-finder scan --scanner semgrep --rules-dir ./rules /path/to/code
+crypto-finder scan --scanner semgrep /path/to/code
 ```
 
 ### Convert Command
@@ -149,6 +185,154 @@ Display version information.
 
 ```bash
 crypto-finder version
+```
+
+### Configure Command
+
+Configure SCANOSS crypto-finder settings such as API key and base URL.
+
+```bash
+crypto-finder configure [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--api-key <key>` | Set SCANOSS API key |
+| `--api-url <url>` | Set SCANOSS API base URL |
+
+**Examples:**
+
+```bash
+# Configure API key
+crypto-finder configure --api-key YOUR_API_KEY
+
+# Configure custom API URL
+crypto-finder configure --api-url https://custom.scanoss.com
+
+# Configure both
+crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
+```
+
+Configuration is stored in `~/.scanoss/crypto-finder/config.json`.
+
+## Remote Rulesets
+
+Crypto Finder can automatically fetch curated rulesets from the SCANOSS API, providing always-up-to-date cryptographic detection rules without manual management.
+
+### Features
+
+- **Automatic Downloads**: Default "dca" ruleset is automatically fetched on first scan
+- **Local Caching**: Downloaded rulesets are cached at `~/.scanoss/crypto-finder/cache/`
+- **TTL-Based Expiration**:
+  - Pinned versions (e.g., `v1.0.0`): 7 days
+  - Latest versions: 24 hours
+- **Offline Support**: Use `--offline` flag to work with cached rules without API access
+- **Checksum Verification**: SHA256 verification ensures ruleset integrity
+- **Retry Logic**: Automatic retry with exponential backoff on network failures
+- **Seamless Integration**: Combine remote and local rules effortlessly
+
+### Configuration
+
+#### 1. API Key Setup
+
+You can configure your API key using one of three methods (in priority order):
+
+```bash
+# Method 1: CLI flag (highest priority)
+crypto-finder scan --api-key YOUR_KEY /path/to/code
+
+# Method 2: Environment variable
+export SCANOSS_API_KEY=YOUR_KEY
+crypto-finder scan /path/to/code
+
+# Method 3: Config file (recommended for persistent use)
+crypto-finder configure --api-key YOUR_KEY
+crypto-finder scan /path/to/code
+```
+
+#### 2. API URL (Optional)
+
+The default API URL is `https://api.scanoss.com`. To use a custom instance:
+
+```bash
+# Via configure command
+crypto-finder configure --api-url https://custom.scanoss.com
+
+# Via environment variable
+export SCANOSS_API_URL=https://custom.scanoss.com
+
+# Via CLI flag
+crypto-finder scan --api-url https://custom.scanoss.com /path/to/code
+```
+
+### Usage Examples
+
+```bash
+# Use remote rules (default behavior)
+crypto-finder scan /path/to/code
+
+# Combine remote rules with local custom rules
+crypto-finder scan --rules-dir ./my-rules /path/to/code
+
+# Disable remote rules
+crypto-finder scan --no-remote-rules --rules-dir ./local-rules /path/to/code
+
+# Offline mode (use only cached rulesets)
+crypto-finder scan --offline /path/to/code
+```
+
+### Cache Management
+
+**Cache Location:**
+```
+~/.scanoss/crypto-finder/cache/rulesets/{name}/{version}/
+  ├── manifest.json              # Ruleset metadata
+  ├── .cache-meta.json           # Cache metadata (timestamps, checksum, TTL)
+  └── [language dirs]/           # Rule files organized by language
+```
+
+**Cache Behavior:**
+- First scan: Downloads and caches the default "dca" ruleset
+- Subsequent scans: Uses cached version if not expired
+- Expired cache: Automatically re-downloads on next scan
+- Manual cleanup: Simply delete `~/.scanoss/crypto-finder/cache/`
+
+### Troubleshooting
+
+#### No API Key Error
+
+```
+Error: API key required for remote rules
+
+Configure your API key using one of:
+  1. CLI flag:    crypto-finder scan --api-key <key> [target]
+  2. Environment: export SCANOSS_API_KEY=<key>
+  3. Config file: crypto-finder configure --api-key <key>
+
+Or disable remote rules: crypto-finder scan --no-remote-rules [target]
+```
+
+**Solution**: Configure your API key using any of the methods above.
+
+#### Offline Mode Without Cache
+
+```
+Error: Ruleset not cached and offline mode enabled
+
+Run online first to cache rules, or use --no-remote-rules
+```
+
+**Solution**: Run a scan while online to cache the rulesets, then use `--offline` for subsequent scans.
+
+#### Network Timeout
+
+If the API is unreachable but cached rules exist, crypto-finder will automatically fall back to the cache with a warning:
+
+```
+Warning: Failed to download remote rules (timeout)
+Using cached rules from 2025-01-15 10:30:00
 ```
 
 ## Configuration
