@@ -12,6 +12,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/scanoss/crypto-finder/internal/api"
+	"github.com/scanoss/crypto-finder/internal/cache"
+	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
@@ -24,9 +27,11 @@ import (
 )
 
 const (
-	defaultScanner = "opengrep"
-	defaultFormat  = "json"
-	defaultTimeout = "10m"
+	defaultScanner        = "opengrep"
+	defaultFormat         = "json"
+	defaultTimeout        = "10m"
+	defaultRulesetName    = "dca"
+	defaultRulesetVersion = "latest"
 )
 
 // AllowedScanners lists the scanners supported by the tool.
@@ -37,14 +42,18 @@ var AllowedScanners = []string{"opengrep", "semgrep"}
 var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
 
 var (
-	scanRules      []string
-	scanRuleDirs   []string
-	scanScanner    string
-	scanFormat     string
-	scanOutput     string
-	scanLanguages  []string
-	scanFailOnFind bool
-	scanTimeout    string
+	scanRules         []string
+	scanRuleDirs      []string
+	scanScanner       string
+	scanFormat        string
+	scanOutput        string
+	scanLanguages     []string
+	scanFailOnFind    bool
+	scanTimeout       string
+	scanNoRemoteRules bool
+	scanOffline       bool
+	scanAPIKey        string
+	scanAPIURL        string
 )
 
 var scanCmd = &cobra.Command{
@@ -93,8 +102,13 @@ func init() {
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
 	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
+	scanCmd.Flags().BoolVar(&scanNoRemoteRules, "no-remote-rules", false, "Disable default remote ruleset")
+	scanCmd.Flags().BoolVar(&scanOffline, "offline", false, "Use only cached rules, don't contact API")
+	scanCmd.Flags().StringVar(&scanAPIKey, "api-key", "", "SCANOSS API key")
+	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
 }
 
+//nolint:gocognit,gocyclo,funlen // Ignore cognitive complexity for runScan
 func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
@@ -136,26 +150,77 @@ func runScan(_ *cobra.Command, args []string) error {
 	// Create skip matcher for language detection
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
 
-	// Setup rule sources and inject into manager
-	// For MVP, we only use local rules, but remote sources can be easily added
-	localRuleSource := rules.NewLocalRuleSource(scanRules, scanRuleDirs)
-	rulesManager := rules.NewManager(localRuleSource)
+	cfg := config.GetInstance()
+	if err := cfg.Initialize(scanAPIKey, scanAPIURL); err != nil {
+		return fmt.Errorf("failed to initialize config: %w", err)
+	}
 
-	log.Info().Msgf("Rules manager configured with source: %s", localRuleSource.Name())
+	ruleSources := make([]rules.RuleSource, 0)
+
+	if !scanNoRemoteRules {
+		if cfg.GetAPIKey() == "" {
+			return fmt.Errorf(`API key required for remote rules
+			Configure your API key using one of:
+			  1. CLI flag:    crypto-finder scan --api-key <key> [target]
+			  2. Environment: export SCANOSS_API_KEY=<key>
+			  3. Config file: crypto-finder configure --api-key <key>
+
+			Or disable remote rules: crypto-finder scan --no-remote-rules [target]`)
+		}
+
+		log.Info().
+			Str("ruleset", defaultRulesetName).
+			Str("version", defaultRulesetVersion).
+			Bool("offline", scanOffline).
+			Msg("Remote rules enabled")
+
+		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		cacheManager, err := cache.NewManager(apiClient)
+		if err != nil {
+			return fmt.Errorf("failed to create cache manager: %w", err)
+		}
+
+		remoteSource := rules.NewRemoteRuleSource(
+			ctx,
+			defaultRulesetName,
+			defaultRulesetVersion,
+			cacheManager,
+			scanOffline,
+		)
+		ruleSources = append(ruleSources, remoteSource)
+	}
+
+	// Append local rule sources if specified
+	if len(scanRules) > 0 || len(scanRuleDirs) > 0 {
+		localSource := rules.NewLocalRuleSource(scanRules, scanRuleDirs)
+		ruleSources = append(ruleSources, localSource)
+		log.Info().Msgf("Local rules enabled: %s", localSource.Name())
+	}
+
+	// Create rules manager with all sources
+	var rulesManager *rules.Manager
+	switch len(ruleSources) {
+	case 0:
+		return fmt.Errorf("no rule sources configured (use --rules, --rules-dir, or enable remote rules)")
+	case 1:
+		rulesManager = rules.NewManager(ruleSources[0])
+		log.Info().Msgf("Rules manager configured with source: %s", ruleSources[0].Name())
+	default:
+		multiSource := rules.NewMultiSource(ruleSources...)
+		rulesManager = rules.NewManager(multiSource)
+		log.Info().Msgf("Rules manager configured with %d sources", len(ruleSources))
+	}
 
 	// Setup dependencies
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	// TODO: Register cbom-toolkit
 	scannerRegistry.Register("opengrep", opengrep.NewScanner())
 	scannerRegistry.Register("semgrep", semgrep.NewScanner())
 
-	// Create orchestrator
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
-	// Build scan options
 	scanOpts := engine.ScanOptions{
 		Target:       target,
 		ScannerName:  scanScanner,
@@ -166,7 +231,6 @@ func runScan(_ *cobra.Command, args []string) error {
 		},
 	}
 
-	// Execute scan
 	log.Info().Msgf("Starting scan of %s with scanner '%s'...", target, scanScanner)
 
 	report, err := orchestrator.Scan(ctx, scanOpts)
@@ -174,7 +238,6 @@ func runScan(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get the appropriate writer for the format
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
 	if err != nil {
@@ -216,8 +279,9 @@ func validateScanFlags(target string) error {
 	}
 
 	// Validate that at least one rule source is specified
-	if len(scanRules) == 0 && len(scanRuleDirs) == 0 {
-		return fmt.Errorf("no rules specified: use --rules <file> or --rules-dir <directory>")
+	// Either local rules OR remote rules (unless --no-remote-rules is set)
+	if len(scanRules) == 0 && len(scanRuleDirs) == 0 && scanNoRemoteRules {
+		return fmt.Errorf("no rules specified: use --rules <file>, --rules-dir <directory>, or enable remote rules")
 	}
 
 	// Validate scanner

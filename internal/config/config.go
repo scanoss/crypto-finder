@@ -128,7 +128,7 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 	}
 
 	// Read config file (3rd priority)
-	// Ignore errors - file might not exist yet, we will create it later
+	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later
 	_ = viper.ReadInConfig()
 
 	// Apply CLI flags (highest priority)
