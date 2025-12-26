@@ -12,11 +12,7 @@ import (
 func TestNewScanner(t *testing.T) {
 	s := NewScanner()
 
-	if s == nil {
-		t.Fatal("NewScanner returned nil")
-	}
-
-	if s != nil && s.executablePath != "opengrep" {
+	if s.executablePath != "opengrep" {
 		t.Errorf("Expected default executable path 'opengrep', got '%s'", s.executablePath)
 	}
 
