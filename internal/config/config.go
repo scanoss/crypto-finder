@@ -68,9 +68,10 @@ func (c *Config) GetAPIURL() string {
 // SetAPIKey updates the API key and persists to config file.
 func (c *Config) SetAPIKey(key string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.apiKey = key
 	viper.Set("api_key", key)
-	c.mu.Unlock()
 
 	return c.writeConfig()
 }
@@ -78,9 +79,10 @@ func (c *Config) SetAPIKey(key string) error {
 // SetAPIURL updates the API URL and persists to config file.
 func (c *Config) SetAPIURL(url string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.apiURL = url
 	viper.Set("api_url", url)
-	c.mu.Unlock()
 
 	return c.writeConfig()
 }

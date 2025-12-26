@@ -16,7 +16,7 @@ func TestNewScanner(t *testing.T) {
 		t.Fatal("NewScanner returned nil")
 	}
 
-	if s.executablePath != "opengrep" {
+	if s != nil && s.executablePath != "opengrep" {
 		t.Errorf("Expected default executable path 'opengrep', got '%s'", s.executablePath)
 	}
 

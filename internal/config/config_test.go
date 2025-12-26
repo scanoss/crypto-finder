@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// setupTest prepares a clean test environment
+// setupTest prepares a clean test environment.
 func setupTest(t *testing.T) func() {
 	t.Helper()
 
@@ -348,7 +348,7 @@ func TestSetters_ThreadSafe(t *testing.T) {
 
 	// Final value should be one of the written values
 	finalKey := cfg.GetAPIKey()
-	if len(finalKey) == 0 {
+	if finalKey == "" {
 		t.Error("Expected non-empty API key after concurrent writes")
 	}
 }

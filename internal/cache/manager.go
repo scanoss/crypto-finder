@@ -238,7 +238,11 @@ func (m *Manager) extractTarball(tarball []byte, targetDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzr.Close()
+	defer func() {
+		if err := gzr.Close(); err != nil {
+			log.Warn().Err(err).Msg("Failed to close gzip reader")
+		}
+	}()
 
 	// Create tar reader
 	tr := tar.NewReader(gzr)
@@ -275,7 +279,9 @@ func (m *Manager) extractTarball(tarball []byte, targetDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+			// #nosec G115 -- Safe conversion: header.Mode & 0o777 max value is 511, well within uint32 range
+			mode := os.FileMode(uint32(header.Mode & 0o777))
+			if err := os.MkdirAll(target, mode); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", target, err)
 			}
 
@@ -289,15 +295,24 @@ func (m *Manager) extractTarball(tarball []byte, targetDir string) error {
 				return fmt.Errorf("failed to create file %s: %w", target, err)
 			}
 
-			if _, err := io.Copy(outFile, tr); err != nil {
-				outFile.Close()
+			// Limit file size to prevent decompression bomb attacks (100MB per file)
+			const maxFileSize = 100 * 1024 * 1024 // 100MB
+			limitedReader := io.LimitReader(tr, maxFileSize)
+
+			if _, err := io.Copy(outFile, limitedReader); err != nil {
+				if closeErr := outFile.Close(); closeErr != nil {
+					log.Warn().Err(closeErr).Str("file", target).Msg("Failed to close file after write error")
+				}
 				return fmt.Errorf("failed to write file %s: %w", target, err)
 			}
 
-			outFile.Close()
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("failed to close file %s: %w", target, err)
+			}
 
-			// Set file permissions
-			if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
+			// #nosec G115 -- Safe conversion: header.Mode & 0o777 max value is 511, well within uint32 range
+			mode := os.FileMode(uint32(header.Mode & 0o777))
+			if err := os.Chmod(target, mode); err != nil {
 				log.Warn().
 					Err(err).
 					Str("file", target).
@@ -318,7 +333,7 @@ func (m *Manager) saveManifest(manifest *api.Manifest, path string) error {
 	}
 
 	// Write to file
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write manifest file: %w", err)
 	}
 

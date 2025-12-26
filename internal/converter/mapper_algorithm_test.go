@@ -100,11 +100,6 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 				return
 			}
 
-			// Validate component
-			if component == nil {
-				t.Fatal("MapToComponent() returned nil component")
-			}
-
 			// Check name
 			if component.Name != tt.wantName {
 				t.Errorf("Component name = %q, want %q", component.Name, tt.wantName)
@@ -125,9 +120,6 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			}
 
 			algProps := component.CryptoProperties.AlgorithmProperties
-			if algProps == nil {
-				t.Fatal("Component missing AlgorithmProperties")
-			}
 
 			// Check primitive
 			if string(algProps.Primitive) != tt.wantPrimitive {
