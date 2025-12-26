@@ -62,11 +62,6 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 				return
 			}
 
-			// Validate component
-			if component == nil {
-				t.Fatal("MapToComponent() returned nil component")
-			}
-
 			// Check name has correct suffix (format is {bomRef}@{materialType})
 			if !strings.HasSuffix(component.Name, tt.wantNameSuffix) {
 				t.Errorf("Component name = %q, want suffix %q", component.Name, tt.wantNameSuffix)
@@ -271,10 +266,6 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			}
 
 			props := mapper.buildProperties(finding, asset)
-
-			if props == nil {
-				t.Fatal("buildProperties() returned nil")
-			}
 
 			if len(*props) < tt.wantPropertiesMin {
 				t.Errorf("Properties count = %d, want at least %d", len(*props), tt.wantPropertiesMin)
