@@ -156,6 +156,9 @@ linters:
         - name: exported
         - name: increment-decrement
         - name: var-naming
+          arguments:
+            - ["ID"]
+            - ["api"]
         - name: var-declaration
         - name: package-comments
         - name: range
