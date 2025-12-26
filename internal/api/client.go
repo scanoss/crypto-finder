@@ -1,5 +1,5 @@
-// Package api provides an HTTP client for the SCANOSS REST API.
-package api
+// Package apiclient provides an HTTP client for the SCANOSS REST API.
+package apiclient
 
 import (
 	"context"
