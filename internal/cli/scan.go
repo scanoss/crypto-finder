@@ -67,22 +67,22 @@ var scanCmd = &cobra.Command{
 
 	Examples:
 	  # Scan with default JSON output to stdout
-	  scanoss-cf scan --rules-dir ./rules /path/to/code
+	  crypto-finder scan --rules-dir ./rules /path/to/code
 
 	  # Save output to a file
-	  scanoss-cf scan --rules-dir ./rules --output results.json /path/to/code
+	  crypto-finder scan --rules-dir ./rules --output results.json /path/to/code
 
 	  # Pipe output to jq for processing
-	  scanoss-cf scan --rules-dir ./rules /path/to/code | jq '.findings | length'
+	  crypto-finder scan --rules-dir ./rules /path/to/code | jq '.findings | length'
 
 	  # Scan with multiple rule files
-	  scanoss-cf scan --rules rule1.yaml --rules rule2.yaml /path/to/code
+	  crypto-finder scan --rules rule1.yaml --rules rule2.yaml /path/to/code
 
 	  # Override language detection
-	  scanoss-cf scan --languages java,python --rules-dir ./rules/ /path/to/code
+	  crypto-finder scan --languages java,python --rules-dir ./rules/ /path/to/code
 
 	  # Fail on findings (for CI/CD)
-	  scanoss-cf scan --fail-on-findings --rules-dir ./rules/ /path/to/code`,
+	  crypto-finder scan --fail-on-findings --rules-dir ./rules/ /path/to/code`,
 	Args: func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("you must specify a target directory to scan")
@@ -108,7 +108,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
 }
 
-//nolint:gocognit,gocyclo,funlen // Ignore cognitive complexity for runScan
+//nolint:gocyclo,funlen // Ignore cognitive complexity for runScan
 func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
@@ -158,16 +158,6 @@ func runScan(_ *cobra.Command, args []string) error {
 	ruleSources := make([]rules.RuleSource, 0)
 
 	if !scanNoRemoteRules {
-		if cfg.GetAPIKey() == "" {
-			return fmt.Errorf(`API key required for remote rules
-			Configure your API key using one of:
-			  1. CLI flag:    crypto-finder scan --api-key <key> [target]
-			  2. Environment: export SCANOSS_API_KEY=<key>
-			  3. Config file: crypto-finder configure --api-key <key>
-
-			Or disable remote rules: crypto-finder scan --no-remote-rules [target]`)
-		}
-
 		log.Info().
 			Str("ruleset", defaultRulesetName).
 			Str("version", defaultRulesetVersion).

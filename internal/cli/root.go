@@ -1,4 +1,4 @@
-// Package cli provides the command-line interface implementation for scanoss-cf.
+// Package cli provides the command-line interface implementation for crypto-finder.
 package cli
 
 import (
@@ -16,7 +16,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "scanoss-cf",
+	Use:   "crypto-finder",
 	Short: "SCANOSS Crypto-Finder scans source code for cryptographic algorithm usage",
 	Long: `SCANOSS Crypto-Finder is a CLI tool that scans source code repositories to detect
 	cryptographic operations and extract relevant values. It executes OpenGrep
