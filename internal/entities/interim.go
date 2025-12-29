@@ -17,7 +17,7 @@ type InterimReport struct {
 
 // ToolInfo contains metadata about the scanner that produced the report.
 type ToolInfo struct {
-	// Name of the scanner tool (e.g., "scanoss-cf", "cbom-toolkit", etc)
+	// Name of the scanner tool (e.g., "crypto-finder", "cbom-toolkit", etc)
 	Name string `json:"name"`
 
 	// Version of the scanner tool (e.g., "1.45.0")

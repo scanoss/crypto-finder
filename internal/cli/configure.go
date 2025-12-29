@@ -20,13 +20,13 @@ var configureCmd = &cobra.Command{
 
 	Examples:
 	  # Configure API key
-	  scanoss-cf configure --api-key YOUR_API_KEY
+	  crypto-finder configure --api-key YOUR_API_KEY
 
 	  # Configure API URL
-	  scanoss-cf configure --api-url https://api.scanoss.com
+	  crypto-finder configure --api-url https://api.scanoss.com
 
 	  # Configure multiple values
-	  scanoss-cf configure --api-key YOUR_API_KEY --api-url https://api.scanoss.com`,
+	  crypto-finder configure --api-key YOUR_API_KEY --api-url https://api.scanoss.com`,
 	RunE: runConfigure,
 }
 

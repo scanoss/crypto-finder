@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
@@ -92,16 +94,18 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Execute semgrep
 	output, stderr, err := s.execute(ctx, args)
 	if err != nil {
-		return nil, s.mapError(err, stderr)
+		cmdStr := fmt.Sprintf("%s %s", s.executablePath, strings.Join(args, " "))
+		if stderr != "" {
+			return nil, fmt.Errorf("semgrep command failed\nCommand: %s\nError: %w\nStderr:\n%s", cmdStr, err, stderr)
+		}
+		return nil, fmt.Errorf("semgrep command failed\nCommand: %s\nError: %w", cmdStr, err)
 	}
 
-	// Parse semgrep JSON output
 	semgrepResults, err := ParseSemgrepCompatibleOutput(output)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse semgrep output: %w", err)
 	}
 
-	// Transform to interim format
 	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target)
 
 	return report, nil
@@ -137,22 +141,18 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 		"--metrics", "off", // Disable telemetry
 	}
 
-	// Add rule paths
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
 	}
 
-	// Add exclude patterns
 	for _, pattern := range s.skipPatterns {
 		args = append(args, "--exclude", pattern)
 	}
 
-	// Add extra args from config
 	if len(s.extraArgs) > 0 {
 		args = append(args, s.extraArgs...)
 	}
 
-	// Add target path
 	args = append(args, target)
 
 	return args
@@ -172,16 +172,23 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
 	}
 
-	// Capture stdout and stderr separately
+	log.Info().Msg("Executing semgrep scan")
+
+	startTime := time.Now()
+
 	stderrBuf := &strings.Builder{}
 	cmd.Stderr = stderrBuf
 
 	stdout, err = cmd.Output()
 	stderr = stderrBuf.String()
+	duration := time.Since(startTime)
 
 	// Check for context cancellation/timeout
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Error().
+				Dur("duration", duration).
+				Msg("semgrep execution timed out")
 			return nil, stderr, fmt.Errorf("semgrep execution timed out after %v", s.timeout)
 		}
 		return nil, stderr, fmt.Errorf("semgrep execution canceled: %w", ctx.Err())
@@ -191,48 +198,34 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	// 0 = success, no findings
 	// 1 = findings detected (this is actually success for us)
 	// >1 = error
+	var exitCode int
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
 			// Exit code 1 means findings were detected, which is not an error
-			if exitErr.ExitCode() == 1 {
+			if exitCode == 1 {
+				log.Info().
+					Dur("duration", duration).
+					Msgf("semgrep completed in %.2fs (exit code: %d)", duration.Seconds(), exitCode)
 				return stdout, stderr, nil
 			}
 		}
+		log.Error().
+			Int("exit_code", exitCode).
+			Dur("duration", duration).
+			Err(err).
+			Msg("semgrep execution failed")
 		return nil, stderr, err
 	}
 
+	// Success with exit code 0
+	exitCode = 0
+	log.Info().
+		Dur("duration", duration).
+		Msgf("semgrep completed in %.2fs (exit code: %d)", duration.Seconds(), exitCode)
+
 	return stdout, stderr, nil
-}
-
-// mapError converts semgrep errors to user-friendly messages.
-func (s *Scanner) mapError(err error, stderr string) error {
-	// Check for specific error patterns in stderr
-	stderrLower := strings.ToLower(stderr)
-
-	if strings.Contains(stderrLower, "invalid") && strings.Contains(stderrLower, "yaml") {
-		return fmt.Errorf("semgrep rule syntax error: %w\nDetails: %s", err, stderr)
-	}
-
-	if strings.Contains(stderrLower, "no such file") {
-		return fmt.Errorf("semgrep could not find target file/directory: %w", err)
-	}
-
-	if strings.Contains(stderrLower, "permission denied") {
-		return fmt.Errorf("semgrep permission denied: %w", err)
-	}
-
-	// Check if it's a timeout
-	if err.Error() == "signal: killed" || strings.Contains(err.Error(), "timeout") {
-		return fmt.Errorf("semgrep timed out (increase timeout with --timeout flag)")
-	}
-
-	// Generic error with stderr context
-	if stderr != "" {
-		return fmt.Errorf("semgrep failed: %w\nDetails: %s", err, stderr)
-	}
-
-	return fmt.Errorf("semgrep failed: %w", err)
 }
 
 // mapToEnvSlice converts a map to KEY=VALUE environment variable slice.

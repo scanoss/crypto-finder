@@ -31,7 +31,7 @@
         "name": {
           "type": "string",
           "description": "Name of the scanner tool",
-          "examples": ["scanoss-cf", "cbom-toolkit"]
+          "examples": ["crypto-finder", "cbom-toolkit"]
         },
         "version": {
           "type": "string",
