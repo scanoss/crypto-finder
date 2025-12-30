@@ -51,7 +51,7 @@ var (
 	scanFailOnFind    bool
 	scanTimeout       string
 	scanNoRemoteRules bool
-	scanOffline       bool
+	scanNoCache       bool
 	scanAPIKey        string
 	scanAPIURL        string
 )
@@ -103,7 +103,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
 	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
 	scanCmd.Flags().BoolVar(&scanNoRemoteRules, "no-remote-rules", false, "Disable default remote ruleset")
-	scanCmd.Flags().BoolVar(&scanOffline, "offline", false, "Use only cached rules, don't contact API")
+	scanCmd.Flags().BoolVar(&scanNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
 	scanCmd.Flags().StringVar(&scanAPIKey, "api-key", "", "SCANOSS API key")
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
 }
@@ -161,7 +161,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		log.Info().
 			Str("ruleset", defaultRulesetName).
 			Str("version", defaultRulesetVersion).
-			Bool("offline", scanOffline).
+			Bool("no-cache", scanNoCache).
 			Msg("Remote rules enabled")
 
 		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
@@ -170,12 +170,13 @@ func runScan(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create cache manager: %w", err)
 		}
 
+		cacheManager.SetNoCache(scanNoCache)
+
 		remoteSource := rules.NewRemoteRuleSource(
 			ctx,
 			defaultRulesetName,
 			defaultRulesetVersion,
 			cacheManager,
-			scanOffline,
 		)
 		ruleSources = append(ruleSources, remoteSource)
 	}
