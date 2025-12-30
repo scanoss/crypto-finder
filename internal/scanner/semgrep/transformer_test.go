@@ -507,3 +507,217 @@ func TestDetectLanguage(t *testing.T) {
 		})
 	}
 }
+
+func TestTransformSemgrepCompatibleOutputToInterimFormat(t *testing.T) {
+	t.Parallel()
+
+	semgrepOutput := &entities.SemgrepOutput{
+		Results: []entities.SemgrepResult{
+			{
+				CheckID: "go.crypto.tls.load-key-pair",
+				Path:    "/test/main.go",
+				Start:   entities.SemgrepLocation{Line: 10, Col: 5},
+				Extra: entities.SemgrepExtra{
+					Message:  "TLS certificate loading detected",
+					Severity: "info",
+					Lines:    "tls.LoadX509KeyPair(...)",
+					Metadata: entities.SemgrepMetadata{
+						Crypto: map[string]any{
+							"assetType": "certificate",
+							"library":   "crypto/tls",
+						},
+					},
+				},
+			},
+			{
+				CheckID: "go.crypto.aes",
+				Path:    "/test/crypto.go",
+				Start:   entities.SemgrepLocation{Line: 20, Col: 1},
+				Extra: entities.SemgrepExtra{
+					Message:  "AES detected",
+					Severity: "warning",
+					Lines:    "aes.NewCipher(key)",
+					Metadata: entities.SemgrepMetadata{
+						Crypto: map[string]any{
+							"algorithm": "AES",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	toolInfo := entities.ToolInfo{
+		Name:    "semgrep",
+		Version: "1.0.0",
+	}
+
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput, toolInfo, "/test")
+
+	if report == nil {
+		t.Fatal("Expected non-nil report")
+	}
+
+	if report.Version != "1.0" {
+		t.Errorf("Expected version '1.0', got '%s'", report.Version)
+	}
+
+	if report.Tool.Name != "semgrep" {
+		t.Errorf("Expected tool name 'semgrep', got '%s'", report.Tool.Name)
+	}
+
+	if len(report.Findings) != 2 {
+		t.Fatalf("Expected 2 findings, got %d", len(report.Findings))
+	}
+}
+
+func TestGroupByFile(t *testing.T) {
+	t.Parallel()
+
+	results := []entities.SemgrepResult{
+		{Path: "/test/file1.go", CheckID: "rule1"},
+		{Path: "/test/file2.go", CheckID: "rule2"},
+		{Path: "/test/file1.go", CheckID: "rule3"},
+	}
+
+	grouped := groupByFile(results)
+
+	if len(grouped) != 2 {
+		t.Fatalf("Expected 2 files, got %d", len(grouped))
+	}
+
+	if len(grouped["/test/file1.go"]) != 2 {
+		t.Errorf("Expected 2 results for file1.go, got %d", len(grouped["/test/file1.go"]))
+	}
+
+	if len(grouped["/test/file2.go"]) != 1 {
+		t.Errorf("Expected 1 result for file2.go, got %d", len(grouped["/test/file2.go"]))
+	}
+}
+
+func TestTransformFileFinding(t *testing.T) {
+	t.Parallel()
+
+	results := []entities.SemgrepResult{
+		{
+			CheckID: "go.crypto.aes",
+			Path:    "/test/main.go",
+			Start:   entities.SemgrepLocation{Line: 15, Col: 1},
+			Extra: entities.SemgrepExtra{
+				Message:  "AES usage detected",
+				Severity: "warning",
+				Lines:    "aes.NewCipher(key)",
+			},
+		},
+		{
+			CheckID: "go.crypto.rsa",
+			Path:    "/test/main.go",
+			Start:   entities.SemgrepLocation{Line: 25, Col: 1},
+			Extra: entities.SemgrepExtra{
+				Message:  "RSA usage detected",
+				Severity: "info",
+				Lines:    "rsa.GenerateKey(...)",
+			},
+		},
+	}
+
+	finding := transformFileFinding("/test/main.go", results, "/test")
+
+	if finding.FilePath != "main.go" {
+		t.Errorf("Expected 'main.go', got '%s'", finding.FilePath)
+	}
+
+	if finding.Language != "go" {
+		t.Errorf("Expected language 'go', got '%s'", finding.Language)
+	}
+
+	if len(finding.CryptographicAssets) != 2 {
+		t.Fatalf("Expected 2 assets, got %d", len(finding.CryptographicAssets))
+	}
+
+	if finding.TimestampUTC == "" {
+		t.Error("Expected non-empty timestamp")
+	}
+}
+
+func TestTransformToCryptographicAsset(t *testing.T) {
+	t.Parallel()
+
+	result := &entities.SemgrepResult{
+		CheckID: "python.crypto.sha256",
+		Start:   entities.SemgrepLocation{Line: 20, Col: 5},
+		Extra: entities.SemgrepExtra{
+			Message:  "SHA-256 usage",
+			Severity: "info",
+			Lines:    "hashlib.sha256(data)",
+			Metadata: entities.SemgrepMetadata{
+				Crypto: map[string]any{
+					"algorithm": "SHA-256",
+					"assetType": "algorithm",
+				},
+			},
+			Metavars: map[string]entities.MetavarInfo{},
+		},
+	}
+
+	asset := transformToCryptographicAsset(result)
+
+	if asset.MatchType != "semgrep" {
+		t.Errorf("Expected match type 'semgrep', got '%s'", asset.MatchType)
+	}
+
+	if asset.LineNumber != 20 {
+		t.Errorf("Expected line 20, got %d", asset.LineNumber)
+	}
+
+	if asset.Match != "hashlib.sha256(data)" {
+		t.Errorf("Expected match 'hashlib.sha256(data)', got '%s'", asset.Match)
+	}
+
+	if asset.Rule.ID != "python.crypto.sha256" {
+		t.Errorf("Expected rule ID 'python.crypto.sha256', got '%s'", asset.Rule.ID)
+	}
+
+	if asset.Rule.Severity != "INFO" {
+		t.Errorf("Expected severity 'INFO', got '%s'", asset.Rule.Severity)
+	}
+
+	if asset.Status != "pending" {
+		t.Errorf("Expected status 'pending', got '%s'", asset.Status)
+	}
+
+	if asset.Metadata["algorithm"] != "SHA-256" {
+		t.Errorf("Expected algorithm 'SHA-256', got '%s'", asset.Metadata["algorithm"])
+	}
+}
+
+func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
+	t.Parallel()
+
+	result := &entities.SemgrepResult{
+		CheckID: "test.rule",
+		Start:   entities.SemgrepLocation{Line: 1, Col: 1},
+		Extra: entities.SemgrepExtra{
+			Message:  "Test message",
+			Severity: "error",
+			Lines:    "test code",
+			Metadata: entities.SemgrepMetadata{
+				Crypto: nil,
+			},
+		},
+	}
+
+	asset := transformToCryptographicAsset(result)
+
+	if asset.Rule.Severity != "ERROR" {
+		t.Errorf("Expected severity 'ERROR', got '%s'", asset.Rule.Severity)
+	}
+
+	if asset.Metadata == nil {
+		t.Error("Expected non-nil metadata map")
+	}
+
+	if len(asset.Metadata) != 0 {
+		t.Errorf("Expected empty metadata, got %d entries", len(asset.Metadata))
+	}
+}
