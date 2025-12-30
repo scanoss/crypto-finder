@@ -153,3 +153,31 @@ func TestDefaultsSource(t *testing.T) {
 		t.Error("DefaultsSource should include common directories like node_modules or vendor")
 	}
 }
+
+func TestMultiSource_Name(t *testing.T) {
+	t.Parallel()
+
+	// Test empty MultiSource
+	empty := NewMultiSource()
+	if empty.Name() != "MultiSource(empty)" {
+		t.Errorf("Empty MultiSource name should be 'MultiSource(empty)', got: %s", empty.Name())
+	}
+
+	// Test MultiSource with single source
+	source1 := &mockPatternSource{name: "test-source"}
+	single := NewMultiSource(source1)
+	name := single.Name()
+
+	if name == "" {
+		t.Error("MultiSource name should not be empty")
+	}
+
+	// Test MultiSource with multiple sources
+	source2 := &mockPatternSource{name: "other-source"}
+	multi := NewMultiSource(source1, source2)
+	multiName := multi.Name()
+
+	if multiName == "" {
+		t.Error("MultiSource name should not be empty")
+	}
+}
