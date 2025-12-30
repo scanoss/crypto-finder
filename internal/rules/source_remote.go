@@ -13,7 +13,6 @@ type RemoteRuleSource struct {
 	rulesetName  string
 	version      string
 	cacheManager *cache.Manager
-	offline      bool
 	ctx          context.Context
 }
 
@@ -24,7 +23,6 @@ type RemoteRuleSource struct {
 //   - rulesetName: Name of the ruleset to fetch (e.g., "dca")
 //   - version: Version of the ruleset (e.g., "latest", "v1.0.0")
 //   - cacheManager: Cache manager for downloading and caching rulesets
-//   - offline: If true, only use cached rulesets without contacting API
 //
 // Returns:
 //   - *RemoteRuleSource: Configured remote rule source
@@ -33,19 +31,17 @@ func NewRemoteRuleSource(
 	rulesetName string,
 	version string,
 	cacheManager *cache.Manager,
-	offline bool,
 ) *RemoteRuleSource {
 	return &RemoteRuleSource{
 		rulesetName:  rulesetName,
 		version:      version,
 		cacheManager: cacheManager,
-		offline:      offline,
 		ctx:          ctx,
 	}
 }
 
 // Load retrieves the path to the cached ruleset directory.
-// If the ruleset is not cached or has expired, it will be downloaded (unless offline mode is enabled).
+// If the ruleset is not cached or has expired, it will be downloaded.
 // The returned path points to a directory containing the ruleset's .yaml files.
 //
 // Returns:
@@ -56,7 +52,6 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 		r.ctx,
 		r.rulesetName,
 		r.version,
-		r.offline,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ruleset '%s@%s': %w", r.rulesetName, r.version, err)
@@ -67,8 +62,5 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 
 // Name returns a human-readable identifier for this source.
 func (r *RemoteRuleSource) Name() string {
-	if r.offline {
-		return fmt.Sprintf("remote:%s@%s (offline)", r.rulesetName, r.version)
-	}
 	return fmt.Sprintf("remote:%s@%s", r.rulesetName, r.version)
 }

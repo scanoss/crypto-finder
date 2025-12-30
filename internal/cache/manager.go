@@ -29,6 +29,7 @@ const (
 type Manager struct {
 	apiClient *api.Client
 	cacheDir  string
+	noCache   bool
 }
 
 // NewManager creates a new cache manager.
@@ -41,38 +42,49 @@ func NewManager(apiClient *api.Client) (*Manager, error) {
 	return &Manager{
 		apiClient: apiClient,
 		cacheDir:  cacheDir,
+		noCache:   false,
 	}, nil
 }
 
+// SetNoCache enables or disables cache bypass mode.
+// When enabled, the manager will always download fresh rulesets and update the cache,
+// ignoring any existing cached rulesets.
+func (m *Manager) SetNoCache(enabled bool) {
+	m.noCache = enabled
+}
+
 // GetRulesetPath returns the path to a cached ruleset
-// If the ruleset is not cached or expired, it downloads it first
-// If offline is true, it only uses the cache and returns an error if not available.
-func (m *Manager) GetRulesetPath(ctx context.Context, name, version string, offline bool) (string, error) {
+// If the ruleset is not cached or expired, it downloads it first.
+// If noCache is enabled, it always downloads a fresh copy and updates the cache.
+func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (string, error) {
 	rulesetPath := m.getRulesetCachePath(name, version)
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 
-	// Check if cache exists and is valid
-	if m.isCacheValid(rulesetPath, metadataPath) {
-		log.Debug().
+	// Skip cache check if noCache is enabled
+	if !m.noCache {
+		// Check if cache exists and is valid
+		if m.isCacheValid(rulesetPath, metadataPath) {
+			log.Debug().
+				Str("ruleset", name).
+				Str("version", version).
+				Str("path", rulesetPath).
+				Msg("Using cached ruleset")
+
+			// Update last accessed time
+			if err := m.updateLastAccessed(metadataPath); err != nil {
+				log.Warn().Err(err).Msg("Failed to update last accessed time")
+			}
+
+			return rulesetPath, nil
+		}
+	} else {
+		log.Info().
 			Str("ruleset", name).
 			Str("version", version).
-			Str("path", rulesetPath).
-			Msg("Using cached ruleset")
-
-		// Update last accessed time
-		if err := m.updateLastAccessed(metadataPath); err != nil {
-			log.Warn().Err(err).Msg("Failed to update last accessed time")
-		}
-
-		return rulesetPath, nil
+			Msg("Cache bypass enabled, forcing fresh download")
 	}
 
-	// Cache is invalid or doesn't exist
-	if offline {
-		return "", fmt.Errorf("ruleset '%s@%s' not cached and offline mode enabled", name, version)
-	}
-
-	// Download and cache the ruleset
+	// Cache is invalid, doesn't exist, or noCache is enabled - download and cache the ruleset
 	log.Info().
 		Str("ruleset", name).
 		Str("version", version).
