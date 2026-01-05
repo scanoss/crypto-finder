@@ -15,11 +15,11 @@ import (
 	api "github.com/scanoss/crypto-finder/internal/api"
 )
 
-// createMockTarballServer creates an httptest server that returns a minimal valid tarball
+// createMockTarballServer creates an httptest server that returns a minimal valid tarball.
 func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var tarballData []byte
 
 		if statusCode == http.StatusOK {
@@ -81,7 +81,6 @@ func TestManager_GetRulesetPath_CacheHit(t *testing.T) {
 
 	// Execute - should use cache, not download
 	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("GetRulesetPath() failed: %v", err)
@@ -117,7 +116,6 @@ func TestManager_GetRulesetPath_CacheMiss(t *testing.T) {
 
 	// Execute - cache doesn't exist, should download
 	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("GetRulesetPath() failed: %v", err)
@@ -178,7 +176,6 @@ func TestManager_GetRulesetPath_NoCache(t *testing.T) {
 
 	// Execute - should bypass cache and download
 	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("GetRulesetPath() failed: %v", err)
@@ -231,7 +228,6 @@ func TestManager_GetRulesetPath_ExpiredCache(t *testing.T) {
 
 	// Execute - cache is expired, should download
 	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("GetRulesetPath() failed: %v", err)
@@ -421,7 +417,7 @@ func TestManager_ContextCancellation(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create server that delays response
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Cancel context before responding
 		cancel()
 		time.Sleep(100 * time.Millisecond)
@@ -447,7 +443,7 @@ func TestManager_ContextCancellation(t *testing.T) {
 
 func Example_cacheWorkflow() {
 	// Setup
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Return minimal valid tarball
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)

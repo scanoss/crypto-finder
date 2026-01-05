@@ -7,17 +7,17 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// mockScanner implements Scanner interface for testing
+// mockScanner implements Scanner interface for testing.
 type mockScanner struct {
 	name    string
 	version string
 }
 
-func (m *mockScanner) Initialize(config Config) error {
+func (m *mockScanner) Initialize(_ Config) error {
 	return nil
 }
 
-func (m *mockScanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+func (m *mockScanner) Scan(_ context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
 	return &entities.InterimReport{}, nil
 }
 

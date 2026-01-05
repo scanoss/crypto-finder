@@ -10,10 +10,10 @@ func TestFormatError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		operation string
-		err       error
-		wantNil   bool
+		name         string
+		operation    string
+		err          error
+		wantNil      bool
 		wantContains []string
 	}{
 		{
@@ -23,15 +23,15 @@ func TestFormatError(t *testing.T) {
 			wantNil:   true,
 		},
 		{
-			name:      "simple error",
-			operation: "connecting to server",
-			err:       errors.New("connection refused"),
+			name:         "simple error",
+			operation:    "connecting to server",
+			err:          errors.New("connection refused"),
 			wantContains: []string{"error during", "connecting to server", "connection refused"},
 		},
 		{
-			name:      "wrapped error",
-			operation: "parsing config",
-			err:       errors.New("invalid JSON"),
+			name:         "wrapped error",
+			operation:    "parsing config",
+			err:          errors.New("invalid JSON"),
 			wantContains: []string{"error during", "parsing config", "invalid JSON"},
 		},
 	}
@@ -78,15 +78,15 @@ func TestFormatScannerError(t *testing.T) {
 			wantNil:     true,
 		},
 		{
-			name:        "scanner not found",
-			scannerName: "semgrep",
-			err:         errors.New("executable not found in PATH"),
+			name:         "scanner not found",
+			scannerName:  "semgrep",
+			err:          errors.New("executable not found in PATH"),
 			wantContains: []string{"scanner", "semgrep", "error", "executable not found"},
 		},
 		{
-			name:        "scanner execution error",
-			scannerName: "opengrep",
-			err:         errors.New("exit code 1"),
+			name:         "scanner execution error",
+			scannerName:  "opengrep",
+			err:          errors.New("exit code 1"),
 			wantContains: []string{"scanner", "opengrep", "error", "exit code 1"},
 		},
 	}
@@ -206,10 +206,10 @@ func TestFormatMultiError(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:       "single error",
-			context:    "validation",
-			errors:     []error{errors.New("file not found")},
-			wantSingle: true,
+			name:         "single error",
+			context:      "validation",
+			errors:       []error{errors.New("file not found")},
+			wantSingle:   true,
 			wantContains: []string{"file not found"},
 		},
 		{
@@ -344,7 +344,7 @@ func TestWrapWithSuggestion(t *testing.T) {
 
 			// Check if we got the original error back (no wrapping)
 			if tt.wantOriginal {
-				if result != tt.err {
+				if !errors.Is(tt.err, result) {
 					t.Error("Expected original error to be returned unchanged")
 				}
 				if strings.Contains(errStr, "suggestion") {

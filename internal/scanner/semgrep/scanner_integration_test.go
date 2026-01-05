@@ -11,7 +11,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
-// checkSemgrepAvailable checks if semgrep is installed
+// checkSemgrepAvailable checks if semgrep is installed.
 func checkSemgrepAvailable(t *testing.T) {
 	t.Helper()
 	_, err := exec.LookPath("semgrep")
@@ -29,7 +29,6 @@ func TestScanner_Integration_Initialize(t *testing.T) {
 	}
 
 	err := s.Initialize(config)
-
 	if err != nil {
 		t.Fatalf("Initialize() failed: %v", err)
 	}
@@ -76,7 +75,6 @@ func TestScanner_Integration_Scan(t *testing.T) {
 	defer cancel()
 
 	report, err := s.Scan(ctx, target, []string{ruleFile}, toolInfo)
-
 	if err != nil {
 		t.Fatalf("Scan() failed: %v", err)
 	}

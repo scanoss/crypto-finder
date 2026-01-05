@@ -28,7 +28,6 @@ func TestMultiSource_Load_AggregatesSources(t *testing.T) {
 
 	multiSource := NewMultiSource(source1, source2)
 	paths, err := multiSource.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -57,7 +56,6 @@ func TestMultiSource_Load_Deduplicates(t *testing.T) {
 
 	multiSource := NewMultiSource(source1, source2)
 	paths, err := multiSource.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -163,7 +161,6 @@ func TestMultiSource_Load_EmptySources(t *testing.T) {
 
 	multiSource := NewMultiSource()
 	paths, err := multiSource.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -184,7 +181,6 @@ func TestMultiSource_Load_SingleEmptySource(t *testing.T) {
 
 	multiSource := NewMultiSource(source)
 	paths, err := multiSource.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -235,7 +231,6 @@ func TestMultiSource_Load_Integration(t *testing.T) {
 
 	multiSource := NewMultiSource(localSource)
 	paths, err := multiSource.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -245,4 +240,3 @@ func TestMultiSource_Load_Integration(t *testing.T) {
 		t.Errorf("Expected at least 2 rule paths, got %d", len(paths))
 	}
 }
-

@@ -15,7 +15,6 @@ func TestLocalRuleSource_Load_WithRuleFiles(t *testing.T) {
 
 	source := NewLocalRuleSource([]string{ruleFile1, ruleFile2}, []string{})
 	paths, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -40,7 +39,6 @@ func TestLocalRuleSource_Load_WithRuleDir(t *testing.T) {
 
 	source := NewLocalRuleSource([]string{}, []string{ruleDir})
 	paths, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -76,7 +74,6 @@ func TestLocalRuleSource_Load_MixedFilesAndDirs(t *testing.T) {
 	)
 
 	paths, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -161,7 +158,6 @@ func TestLocalRuleSource_Load_Deduplication(t *testing.T) {
 	// but MultiSource will when aggregating
 	source := NewLocalRuleSource([]string{ruleFile, ruleFile}, []string{})
 	paths, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -192,7 +188,6 @@ func TestLocalRuleSource_Load_NestedDirectories(t *testing.T) {
 	// Scan from parent directory
 	source := NewLocalRuleSource([]string{}, []string{tempDir})
 	paths, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}

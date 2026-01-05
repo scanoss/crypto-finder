@@ -82,4 +82,3 @@ func TestRemoteRuleSource_Name(t *testing.T) {
 		})
 	}
 }
-

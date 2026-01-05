@@ -85,7 +85,7 @@ func TestOrchestrator_Scan_Success(t *testing.T) {
 
 	// Setup mocks
 	detector := &mockDetector{
-		detectFunc: func(targetPath string) ([]string, error) {
+		detectFunc: func(_ string) ([]string, error) {
 			return []string{"go", "python"}, nil
 		},
 	}
@@ -99,7 +99,7 @@ func TestOrchestrator_Scan_Success(t *testing.T) {
 	rulesManager := rules.NewManager(ruleSource)
 
 	mockScan := &mockScanner{
-		scanFunc: func(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+		scanFunc: func(_ context.Context, _ string, _ []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 			return &entities.InterimReport{
 				Version: "1.0",
 				Tool:    toolInfo,
@@ -142,7 +142,6 @@ func TestOrchestrator_Scan_Success(t *testing.T) {
 	}
 
 	report, err := orchestrator.Scan(ctx, opts)
-
 	// Assert
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -168,7 +167,7 @@ func TestOrchestrator_Scan_WithLanguageHint(t *testing.T) {
 
 	detectorCalled := false
 	detector := &mockDetector{
-		detectFunc: func(targetPath string) ([]string, error) {
+		detectFunc: func(_ string) ([]string, error) {
 			detectorCalled = true
 			return []string{"go"}, nil
 		},
@@ -191,7 +190,6 @@ func TestOrchestrator_Scan_WithLanguageHint(t *testing.T) {
 	}
 
 	_, err := orchestrator.Scan(ctx, opts)
-
 	// Assert
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -208,7 +206,7 @@ func TestOrchestrator_Scan_LanguageDetectionError(t *testing.T) {
 	ctx := context.Background()
 
 	detector := &mockDetector{
-		detectFunc: func(targetPath string) ([]string, error) {
+		detectFunc: func(_ string) ([]string, error) {
 			return nil, errors.New("language detection failed")
 		},
 	}
@@ -312,7 +310,7 @@ func TestOrchestrator_Scan_ScannerInitializeError(t *testing.T) {
 	rulesManager := rules.NewManager(ruleSource)
 
 	mockScan := &mockScanner{
-		initializeFunc: func(config scanner.Config) error {
+		initializeFunc: func(_ scanner.Config) error {
 			return errors.New("scanner initialization failed")
 		},
 	}
@@ -348,7 +346,7 @@ func TestOrchestrator_Scan_ScanExecutionError(t *testing.T) {
 	rulesManager := rules.NewManager(ruleSource)
 
 	mockScan := &mockScanner{
-		scanFunc: func(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+		scanFunc: func(_ context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
 			return nil, errors.New("scan execution failed")
 		},
 	}
@@ -385,7 +383,7 @@ func TestOrchestrator_Scan_ContextCancellation(t *testing.T) {
 	rulesManager := rules.NewManager(ruleSource)
 
 	mockScan := &mockScanner{
-		scanFunc: func(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+		scanFunc: func(ctx context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
 			// Check context cancellation
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -422,7 +420,7 @@ func TestOrchestrator_Scan_ToolInfoPropagation(t *testing.T) {
 
 	var receivedToolInfo entities.ToolInfo
 	mockScan := &mockScanner{
-		scanFunc: func(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+		scanFunc: func(_ context.Context, _ string, _ []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 			receivedToolInfo = toolInfo
 			return &entities.InterimReport{
 				Version:  "1.0",
@@ -443,7 +441,6 @@ func TestOrchestrator_Scan_ToolInfoPropagation(t *testing.T) {
 	}
 
 	_, err := orchestrator.Scan(ctx, opts)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
