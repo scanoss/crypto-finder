@@ -100,6 +100,10 @@ func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *
 			Name:  "scanoss:location:start_line",
 			Value: strconv.Itoa(asset.StartLine),
 		},
+		{
+			Name:  "scanoss:location:end_line",
+			Value: strconv.Itoa(asset.EndLine),
+		},
 	}
 
 	// Add API if available

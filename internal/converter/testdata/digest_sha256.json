@@ -8,7 +8,8 @@
       "file_path": "src/crypto/hash_value.go",
       "cryptographic_assets": [
         {
-          "line_number": 20,
+          "start_line": 20,
+          "end_line": 20,
           "rule": {
             "id": "go-crypto-sha256-digest",
             "severity": "info"

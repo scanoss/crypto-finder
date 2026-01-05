@@ -160,6 +160,10 @@ func (m *AlgorithmMapper) buildProperties(finding *entities.Finding, asset *enti
 			Name:  "scanoss:location:start_line",
 			Value: strconv.Itoa(asset.StartLine),
 		},
+		{
+			Name:  "scanoss:location:end_line",
+			Value: strconv.Itoa(asset.EndLine),
+		},
 	}
 
 	// Add API if available
