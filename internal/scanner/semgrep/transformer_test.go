@@ -666,8 +666,8 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 		t.Errorf("Expected match type 'semgrep', got '%s'", asset.MatchType)
 	}
 
-	if asset.LineNumber != 20 {
-		t.Errorf("Expected line 20, got %d", asset.LineNumber)
+	if asset.StartLine != 20 {
+		t.Errorf("Expected start line 20, got %d", asset.StartLine)
 	}
 
 	if asset.Match != "hashlib.sha256(data)" {

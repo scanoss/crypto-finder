@@ -24,9 +24,10 @@ func createTestReport() *entities.InterimReport {
 				TimestampUTC: time.Now().UTC().Format(time.RFC3339),
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
-						MatchType:  "semgrep",
-						LineNumber: 10,
-						Match:      "AES.encrypt",
+						MatchType: "semgrep",
+						StartLine: 10,
+						EndLine:   10,
+						Match:     "AES.encrypt",
 						Rule: entities.RuleInfo{
 							ID:       "go.crypto.aes",
 							Message:  "AES usage detected",
