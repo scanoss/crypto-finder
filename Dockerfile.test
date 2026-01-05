@@ -4,7 +4,7 @@
 # This image is used for running integration tests in CI/CD and locally.
 # It includes Go, semgrep, and opengrep to support scanner integration tests.
 
-FROM golang:1.23
+FROM golang:1.25
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

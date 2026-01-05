@@ -94,22 +94,29 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 			// Verify basic location properties exist
 			props := *component.Properties
 			hasFile := false
-			hasLine := false
+			hasStartLine := false
+			hasEndLine := false
 
 			for _, prop := range props {
 				if prop.Name == "scanoss:location:file" {
 					hasFile = true
 				}
-				if prop.Name == "scanoss:location:line" {
-					hasLine = true
+				if prop.Name == "scanoss:location:start_line" {
+					hasStartLine = true
+				}
+				if prop.Name == "scanoss:location:end_line" {
+					hasEndLine = true
 				}
 			}
 
 			if !hasFile {
 				t.Error("Missing scanoss:location:file property")
 			}
-			if !hasLine {
-				t.Error("Missing scanoss:location:line property")
+			if !hasStartLine {
+				t.Error("Missing scanoss:location:start_line property")
+			}
+			if !hasEndLine {
+				t.Error("Missing scanoss:location:end_line property")
 			}
 		})
 	}
@@ -210,16 +217,18 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 	tests := []struct {
 		name              string
 		filePath          string
-		lineNumber        int
+		StartLine         int
+		EndLine           int
 		metadata          map[string]string
 		ruleSeverity      string
 		ruleID            string
 		wantPropertiesMin int
 	}{
 		{
-			name:       "Related crypto basic properties",
-			filePath:   "src/test.go",
-			lineNumber: 10,
+			name:      "Related crypto basic properties",
+			filePath:  "src/test.go",
+			StartLine: 10,
+			EndLine:   10,
 			metadata: map[string]string{
 				"materialType": "digest",
 				"algorithm":    "SHA-256",
@@ -228,9 +237,10 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			wantPropertiesMin: 2, // file, line
 		},
 		{
-			name:       "Related crypto with severity and rule ID",
-			filePath:   "src/test.go",
-			lineNumber: 20,
+			name:      "Related crypto with severity and rule ID",
+			filePath:  "src/test.go",
+			StartLine: 20,
+			EndLine:   20,
 			metadata: map[string]string{
 				"materialType": "digest",
 				"algorithm":    "SHA-512",
@@ -240,9 +250,10 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			wantPropertiesMin: 4, // file, line, severity, ruleid
 		},
 		{
-			name:       "Related crypto with API",
-			filePath:   "src/test.go",
-			lineNumber: 30,
+			name:      "Related crypto with API",
+			filePath:  "src/test.go",
+			StartLine: 30,
+			EndLine:   30,
 			metadata: map[string]string{
 				"materialType": "key",
 				"api":          "crypto.generateKey",
@@ -257,8 +268,9 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 				FilePath: tt.filePath,
 			}
 			asset := &entities.CryptographicAsset{
-				LineNumber: tt.lineNumber,
-				Metadata:   tt.metadata,
+				StartLine: tt.StartLine,
+				EndLine:   tt.EndLine,
+				Metadata:  tt.metadata,
 				Rule: entities.RuleInfo{
 					Severity: tt.ruleSeverity,
 					ID:       tt.ruleID,
@@ -273,7 +285,8 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 
 			// Check for required properties
 			hasFile := false
-			hasLine := false
+			hasStartLine := false
+			hasEndLine := false
 
 			for _, prop := range *props {
 				switch prop.Name {
@@ -282,16 +295,21 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 					if prop.Value != tt.filePath {
 						t.Errorf("File property value = %q, want %q", prop.Value, tt.filePath)
 					}
-				case "scanoss:location:line":
-					hasLine = true
+				case "scanoss:location:start_line":
+					hasStartLine = true
+				case "scanoss:location:end_line":
+					hasEndLine = true
 				}
 			}
 
 			if !hasFile {
 				t.Error("Missing scanoss:location:file property")
 			}
-			if !hasLine {
-				t.Error("Missing scanoss:location:line property")
+			if !hasStartLine {
+				t.Error("Missing scanoss:location:start_line property")
+			}
+			if !hasEndLine {
+				t.Error("Missing scanoss:location:end_line property")
 			}
 		})
 	}

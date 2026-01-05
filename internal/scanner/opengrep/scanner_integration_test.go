@@ -116,8 +116,8 @@ func TestScanner_Integration_Scan(t *testing.T) {
 				t.Errorf("Finding[%d], Asset[%d]: rule ID should not be empty", i, j)
 			}
 
-			if asset.LineNumber == 0 {
-				t.Errorf("Finding[%d], Asset[%d]: line number should not be 0", i, j)
+			if asset.StartLine == 0 {
+				t.Errorf("Finding[%d], Asset[%d]: start line should not be 0", i, j)
 			}
 		}
 	}
