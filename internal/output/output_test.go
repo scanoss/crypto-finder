@@ -19,8 +19,8 @@ func createTestReport() *entities.InterimReport {
 		},
 		Findings: []entities.Finding{
 			{
-				FilePath: "test.go",
-				Language: "go",
+				FilePath:     "test.go",
+				Language:     "go",
 				TimestampUTC: time.Now().UTC().Format(time.RFC3339),
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
@@ -55,7 +55,6 @@ func TestJSONWriter_WriteToFile(t *testing.T) {
 
 	writer := &JSONWriter{}
 	err := writer.Write(report, outputFile)
-
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -94,7 +93,6 @@ func TestJSONWriter_WriteToStdout(t *testing.T) {
 	writer := &JSONWriter{}
 	// Write to stdout (empty string)
 	err := writer.Write(report, "")
-
 	if err != nil {
 		t.Fatalf("Write() to stdout failed: %v", err)
 	}
@@ -123,7 +121,6 @@ func TestJSONWriter_CompactFormat(t *testing.T) {
 
 	writer := NewCompactJSONWriter()
 	err := writer.Write(report, outputFile)
-
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -181,7 +178,6 @@ func TestCycloneDXWriter_WriteToFile(t *testing.T) {
 
 	writer := NewCycloneDXWriter()
 	err := writer.Write(report, outputFile)
-
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -224,7 +220,6 @@ func TestCycloneDXWriter_WriteToStdout(t *testing.T) {
 	writer := NewCycloneDXWriter()
 	// Write to stdout (empty string)
 	err := writer.Write(report, "")
-
 	if err != nil {
 		t.Fatalf("Write() to stdout failed: %v", err)
 	}
@@ -249,7 +244,6 @@ func TestWriterFactory_GetJSONWriter(t *testing.T) {
 
 	factory := NewWriterFactory()
 	writer, err := factory.GetWriter("json")
-
 	if err != nil {
 		t.Fatalf("GetWriter(\"json\") failed: %v", err)
 	}
@@ -269,7 +263,6 @@ func TestWriterFactory_GetCycloneDXWriter(t *testing.T) {
 
 	factory := NewWriterFactory()
 	writer, err := factory.GetWriter("cyclonedx")
-
 	if err != nil {
 		t.Fatalf("GetWriter(\"cyclonedx\") failed: %v", err)
 	}
@@ -312,7 +305,6 @@ func TestJSONWriter_EmptyFindings(t *testing.T) {
 
 	writer := &JSONWriter{}
 	err := writer.Write(report, outputFile)
-
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -350,7 +342,6 @@ func TestCycloneDXWriter_EmptyFindings(t *testing.T) {
 
 	writer := NewCycloneDXWriter()
 	err := writer.Write(report, outputFile)
-
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}

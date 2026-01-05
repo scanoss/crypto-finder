@@ -1,6 +1,4 @@
 // Package utils provides general utility functions used across the application.
-//
-//nolint:revive // utils is a conventional package name for shared utilities
 package utils
 
 // DeduplicateSliceOfStrings removes duplicate strings and empty strings from a slice.

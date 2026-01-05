@@ -36,7 +36,6 @@ func TestManager_Load_SingleSource(t *testing.T) {
 
 	manager := NewManager(source)
 	paths, err := manager.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -69,7 +68,6 @@ func TestManager_Load_MultipleSources(t *testing.T) {
 
 	manager := NewManager(source1, source2)
 	paths, err := manager.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -103,7 +101,7 @@ func TestManager_Load_ErrorPropagation(t *testing.T) {
 	}
 }
 
-// mockRuleSource is a test helper
+// mockRuleSource is a test helper.
 type mockRuleSource struct {
 	loadFunc func() ([]string, error)
 	nameFunc func() string

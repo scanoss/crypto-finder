@@ -61,7 +61,6 @@ func TestScanossConfigSource_Load_FileExists(t *testing.T) {
 
 	source := NewScanossConfigSource(configPath)
 	patterns, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -86,7 +85,6 @@ func TestScanossConfigSource_Load_FileDoesNotExist(t *testing.T) {
 
 	source := NewScanossConfigSource(configPath)
 	patterns, err := source.Load()
-
 	// Should not return error when file doesn't exist
 	if err != nil {
 		t.Fatalf("Expected no error for missing file, got: %v", err)
@@ -120,7 +118,6 @@ func TestScanossConfigSource_Load_EmptyPatterns(t *testing.T) {
 
 	source := NewScanossConfigSource(configPath)
 	patterns, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -173,7 +170,6 @@ func TestScanossConfigSource_Load_MissingSettings(t *testing.T) {
 
 	source := NewScanossConfigSource(configPath)
 	patterns, err := source.Load()
-
 	// Should not error, just return empty/nil patterns
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -233,7 +229,6 @@ func TestScanossConfigSource_Load_ComplexPatterns(t *testing.T) {
 
 	source := NewScanossConfigSource(configPath)
 	patterns, err := source.Load()
-
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}

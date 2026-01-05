@@ -8,10 +8,10 @@ import (
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
-// noOpSkipMatcher is a mock that never skips anything
+// noOpSkipMatcher is a mock that never skips anything.
 type noOpSkipMatcher struct{}
 
-func (n *noOpSkipMatcher) ShouldSkip(path string, isDir bool) bool {
+func (n *noOpSkipMatcher) ShouldSkip(_ string, _ bool) bool {
 	return false
 }
 
@@ -120,7 +120,6 @@ func TestEnryDetector_WithSkipMatcher(t *testing.T) {
 	detector := NewEnryDetector(skipMatcher)
 
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}
@@ -149,7 +148,6 @@ func TestEnryDetector_EmptyDirectory(t *testing.T) {
 
 	detector := NewEnryDetector(&noOpSkipMatcher{})
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}
@@ -185,7 +183,6 @@ func TestEnryDetector_MultipleLanguages(t *testing.T) {
 
 	detector := NewEnryDetector(&noOpSkipMatcher{})
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}
@@ -240,7 +237,6 @@ func TestEnryDetector_VendorFilesIgnored(t *testing.T) {
 	// NoOp skip matcher won't skip vendor, but enry's built-in logic should filter it
 	detector := NewEnryDetector(&noOpSkipMatcher{})
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}
@@ -267,7 +263,6 @@ func TestEnryDetector_NonRegularFiles(t *testing.T) {
 
 	detector := NewEnryDetector(&noOpSkipMatcher{})
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}
@@ -292,7 +287,6 @@ func TestEnryDetector_CaseSensitivity(t *testing.T) {
 
 	detector := NewEnryDetector(&noOpSkipMatcher{})
 	languages, err := detector.Detect(tempDir)
-
 	if err != nil {
 		t.Fatalf("Detect() failed: %v", err)
 	}

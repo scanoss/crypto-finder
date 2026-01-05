@@ -70,7 +70,6 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 
 	// Execute
 	data, manifest, err := client.DownloadRuleset(ctx, "dca", "v1.0.0")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("DownloadRuleset() failed: %v", err)
@@ -104,7 +103,7 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 func TestClient_DownloadRuleset_404NotFound(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("ruleset not found"))
 	}))
@@ -130,7 +129,7 @@ func TestClient_DownloadRuleset_404NotFound(t *testing.T) {
 func TestClient_DownloadRuleset_401Unauthorized(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("invalid API key"))
 	}))
@@ -156,7 +155,7 @@ func TestClient_DownloadRuleset_401Unauthorized(t *testing.T) {
 func TestClient_DownloadRuleset_403Forbidden(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("access denied"))
 	}))
@@ -183,7 +182,7 @@ func TestClient_DownloadRuleset_500ServerError(t *testing.T) {
 	t.Parallel()
 
 	attemptCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attemptCount++
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("server error"))
@@ -220,7 +219,7 @@ func TestClient_DownloadRuleset_RetrySuccess(t *testing.T) {
 	_ = gzWriter.Close()
 	tarballData := buf.Bytes()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		attemptCount++
 
 		// Fail first 2 attempts, succeed on 3rd
@@ -244,7 +243,6 @@ func TestClient_DownloadRuleset_RetrySuccess(t *testing.T) {
 
 	// Execute
 	data, manifest, err := client.DownloadRuleset(ctx, "dca", "latest")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("DownloadRuleset() failed: %v", err)
@@ -268,7 +266,7 @@ func TestClient_DownloadRuleset_ContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Cancel context before responding
 		cancel()
 		time.Sleep(100 * time.Millisecond)
@@ -297,7 +295,7 @@ func TestClient_DownloadRuleset_MissingHeaders(t *testing.T) {
 	_ = gzWriter.Close()
 	tarballData := buf.Bytes()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Return 200 but without required headers
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
@@ -320,8 +318,8 @@ func TestIsRetryable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		err        error
+		name        string
+		err         error
 		isRetryable bool
 	}{
 		{
@@ -364,7 +362,7 @@ func TestIsRetryable(t *testing.T) {
 func TestManifest_TimezoneParsing(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)
 		emptyTar := make([]byte, 1024)
@@ -385,7 +383,6 @@ func TestManifest_TimezoneParsing(t *testing.T) {
 
 	// Execute
 	_, manifest, err := client.DownloadRuleset(ctx, "dca", "v1.0.0")
-
 	// Assert
 	if err != nil {
 		t.Fatalf("DownloadRuleset() failed: %v", err)

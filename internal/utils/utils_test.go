@@ -1,4 +1,4 @@
-package utils
+package utils //nolint:revive // utils is a conventional package name for shared utilities
 
 import (
 	"reflect"
