@@ -215,16 +215,16 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 	tests := []struct {
 		name              string
 		filePath          string
-		lineNumber        int
+		StartLine         int
 		metadata          map[string]string
 		ruleSeverity      string
 		ruleID            string
 		wantPropertiesMin int
 	}{
 		{
-			name:       "Related crypto basic properties",
-			filePath:   "src/test.go",
-			lineNumber: 10,
+			name:      "Related crypto basic properties",
+			filePath:  "src/test.go",
+			StartLine: 10,
 			metadata: map[string]string{
 				"materialType": "digest",
 				"algorithm":    "SHA-256",
@@ -233,9 +233,9 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			wantPropertiesMin: 2, // file, line
 		},
 		{
-			name:       "Related crypto with severity and rule ID",
-			filePath:   "src/test.go",
-			lineNumber: 20,
+			name:      "Related crypto with severity and rule ID",
+			filePath:  "src/test.go",
+			StartLine: 20,
 			metadata: map[string]string{
 				"materialType": "digest",
 				"algorithm":    "SHA-512",
@@ -245,9 +245,9 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 			wantPropertiesMin: 4, // file, line, severity, ruleid
 		},
 		{
-			name:       "Related crypto with API",
-			filePath:   "src/test.go",
-			lineNumber: 30,
+			name:      "Related crypto with API",
+			filePath:  "src/test.go",
+			StartLine: 30,
 			metadata: map[string]string{
 				"materialType": "key",
 				"api":          "crypto.generateKey",
@@ -262,8 +262,8 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 				FilePath: tt.filePath,
 			}
 			asset := &entities.CryptographicAsset{
-				LineNumber: tt.lineNumber,
-				Metadata:   tt.metadata,
+				StartLine: tt.StartLine,
+				Metadata:  tt.metadata,
 				Rule: entities.RuleInfo{
 					Severity: tt.ruleSeverity,
 					ID:       tt.ruleID,

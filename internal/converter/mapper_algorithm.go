@@ -157,8 +157,8 @@ func (m *AlgorithmMapper) buildProperties(finding *entities.Finding, asset *enti
 			Value: finding.FilePath,
 		},
 		{
-			Name:  "scanoss:location:line",
-			Value: strconv.Itoa(asset.LineNumber),
+			Name:  "scanoss:location:start_line",
+			Value: strconv.Itoa(asset.StartLine),
 		},
 	}
 

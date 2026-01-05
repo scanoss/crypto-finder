@@ -46,8 +46,11 @@ type CryptographicAsset struct {
 	// Values: "semgrep", "cbom_toolkit", "keyword_search"
 	MatchType string `json:"match_type"`
 
-	// LineNumber is the line number where the asset was detected
-	LineNumber int `json:"line_number"`
+	// StartLine is the first line number where the asset was detected
+	StartLine int `json:"start_line"`
+
+	// EndLine is the last line number where the asset was detected
+	EndLine int `json:"end_line"`
 
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`

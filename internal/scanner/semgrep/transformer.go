@@ -76,9 +76,10 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 // transformToCryptographicAsset converts a single Semgrep result to a CryptographicAsset.
 func transformToCryptographicAsset(result *entities.SemgrepResult) entities.CryptographicAsset {
 	asset := entities.CryptographicAsset{
-		MatchType:  ScannerName,
-		LineNumber: result.Start.Line,
-		Match:      strings.TrimSpace(result.Extra.Lines),
+		MatchType: ScannerName,
+		StartLine: result.Start.Line,
+		EndLine:   result.End.Line,
+		Match:     strings.TrimSpace(result.Extra.Lines),
 		Rule: entities.RuleInfo{
 			ID:       result.CheckID,
 			Message:  result.Extra.Message,

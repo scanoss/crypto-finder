@@ -73,7 +73,8 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 				// Log skip but continue processing
 				log.Debug().
 					Str("file", finding.FilePath).
-					Int("line", asset.LineNumber).
+					Int("start_line", asset.StartLine).
+					Int("end_line", asset.EndLine).
 					Str("ruleID", asset.Rule.ID).
 					Err(err).
 					Msg("Skipping asset - missing required fields")
