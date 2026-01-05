@@ -22,7 +22,7 @@ A powerful CLI tool and execution framework for detecting cryptographic algorith
 
 ### Build from Source
 
-Requirements: Go 1.23.2 or later
+Requirements: Go 1.25 or later
 
 ```bash
 git clone https://github.com/scanoss/crypto-finder.git
@@ -300,7 +300,7 @@ CycloneDX 1.7 compatible Cryptography Bill of Materials format.
 
 ### Prerequisites
 
-- Go 1.23.2 or later
+- Go 1.25 or later
 - Make
 - Docker (optional, for container builds)
 - OpenGrep >= 1.12.1 or Semgrep >= 1.119.0 (for running scans)

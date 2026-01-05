@@ -97,8 +97,12 @@ func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *
 			Value: finding.FilePath,
 		},
 		{
-			Name:  "scanoss:location:line",
-			Value: strconv.Itoa(asset.LineNumber),
+			Name:  "scanoss:location:start_line",
+			Value: strconv.Itoa(asset.StartLine),
+		},
+		{
+			Name:  "scanoss:location:end_line",
+			Value: strconv.Itoa(asset.EndLine),
 		},
 	}
 
