@@ -3,6 +3,7 @@ package converter
 import (
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -227,6 +228,151 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 			if tt.wantErr && tt.errContains != "" {
 				if !contains(err.Error(), tt.errContains) {
 					t.Errorf("Error should contain %q, got %q", tt.errContains, err.Error())
+				}
+			}
+		})
+	}
+}
+
+func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
+	mapper := NewAlgorithmMapper()
+
+	tests := []struct {
+		name              string
+		primitive         string
+		wantFunctions     []cdx.CryptoFunction
+		wantFunctionCount int
+	}{
+		{
+			name:              "Authenticated Encryption",
+			primitive:         "ae",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt, cdx.CryptoFunctionTag},
+			wantFunctionCount: 3,
+		},
+		{
+			name:              "Block Cipher",
+			primitive:         "block-cipher",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Hash Function",
+			primitive:         "hash",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionDigest},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "Signature Algorithm",
+			primitive:         "signature",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionSign, cdx.CryptoFunctionVerify},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Key Derivation Function",
+			primitive:         "kdf",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionKeyderive},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "DRBG (Random Generator)",
+			primitive:         "drbg",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionGenerate},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "Key Encapsulation Mechanism",
+			primitive:         "kem",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncapsulate, cdx.CryptoFunctionDecapsulate},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Message Authentication Code",
+			primitive:         "mac",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionTag, cdx.CryptoFunctionVerify},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Public Key Encryption",
+			primitive:         "pke",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Stream Cipher",
+			primitive:         "stream-cipher",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+			wantFunctionCount: 2,
+		},
+		{
+			name:              "Extendable Output Function",
+			primitive:         "xof",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionDigest},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "Key Agreement",
+			primitive:         "key-agree",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionKeygen},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "Combiner (combines multiple primitives)",
+			primitive:         "combiner",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionOther},
+			wantFunctionCount: 1,
+		},
+		{
+			name:              "Other Primitive",
+			primitive:         "other",
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionOther},
+			wantFunctionCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &entities.CryptographicAsset{
+				Metadata: map[string]string{
+					"assetType":          "algorithm",
+					"algorithmPrimitive": tt.primitive,
+					"algorithmFamily":    "TestAlgorithm",
+				},
+			}
+
+			component, err := mapper.MapToComponentWithEvidence(asset)
+			if err != nil {
+				t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+			}
+
+			if component.CryptoProperties == nil {
+				t.Fatal("CryptoProperties is nil")
+			}
+
+			algProps := component.CryptoProperties.AlgorithmProperties
+			if algProps == nil {
+				t.Fatal("AlgorithmProperties is nil")
+			}
+
+			if algProps.CryptoFunctions == nil {
+				t.Fatal("CryptoFunctions is nil")
+			}
+
+			functions := *algProps.CryptoFunctions
+			if len(functions) != tt.wantFunctionCount {
+				t.Errorf("CryptoFunctions count = %d, want %d", len(functions), tt.wantFunctionCount)
+			}
+
+			// Check that all expected functions are present
+			for _, wantFn := range tt.wantFunctions {
+				found := false
+				for _, fn := range functions {
+					if fn == wantFn {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected function %q not found in %v", wantFn, functions)
 				}
 			}
 		})

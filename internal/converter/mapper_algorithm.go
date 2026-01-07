@@ -10,6 +10,26 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
+// primitiveToFunctions maps cryptographic primitive types to their cryptographic functions.
+// This mapping is based on standardized cryptographic definitions (NIST, IETF) and is stable.
+// Only includes valid CycloneDX primitives as defined in the CycloneDX specification.
+var primitiveToFunctions = map[string][]cdx.CryptoFunction{
+	"ae":            {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt, cdx.CryptoFunctionTag},
+	"block-cipher":  {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"stream-cipher": {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"hash":          {cdx.CryptoFunctionDigest},
+	"signature":     {cdx.CryptoFunctionSign, cdx.CryptoFunctionVerify},
+	"mac":           {cdx.CryptoFunctionTag, cdx.CryptoFunctionVerify},
+	"kdf":           {cdx.CryptoFunctionKeyderive},
+	"pke":           {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"kem":           {cdx.CryptoFunctionEncapsulate, cdx.CryptoFunctionDecapsulate},
+	"xof":           {cdx.CryptoFunctionDigest},
+	"key-agree":     {cdx.CryptoFunctionKeygen},
+	"combiner":      {cdx.CryptoFunctionOther}, // Combines multiple primitives
+	"drbg":          {cdx.CryptoFunctionGenerate},
+	"other":         {cdx.CryptoFunctionOther},
+}
+
 // AlgorithmMapper converts cryptographic algorithm assets to CycloneDX components.
 type AlgorithmMapper struct{}
 
@@ -43,6 +63,7 @@ func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.Cryptograph
 	m.addPadding(algorithmProps, asset)
 	m.addExecutionEnvironment(algorithmProps, asset)
 	m.addImplementationPlatform(algorithmProps, asset)
+	m.addCryptoFunctions(algorithmProps, asset)
 
 	algorithmName := m.getAlgorithmName(asset)
 
@@ -148,6 +169,26 @@ func (m *AlgorithmMapper) addImplementationPlatform(props *cdx.CryptoAlgorithmPr
 	}
 
 	props.ImplementationPlatform = cdx.ImplementationPlatform(platform)
+}
+
+// addCryptoFunctions adds cryptographic functions based on the algorithm primitive type.
+// Maps from algorithmPrimitive to the cryptographic functions the algorithm implements.
+// For example: "hash" → ["digest"], "signature" → ["sign", "verify"]
+func (m *AlgorithmMapper) addCryptoFunctions(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
+	primitiveStr := string(props.Primitive)
+
+	// Look up functions for this primitive
+	functions, ok := primitiveToFunctions[primitiveStr]
+	if !ok {
+		// If primitive not found, default to unknown
+		log.Debug().
+			Str("primitive", primitiveStr).
+			Msg("Unknown primitive type, defaulting cryptoFunctions to 'unknown'")
+		functions = []cdx.CryptoFunction{cdx.CryptoFunctionUnknown}
+	}
+
+	// Set the crypto functions
+	props.CryptoFunctions = &functions
 }
 
 // getAlgorithmName gets the algorithmName based on the asset metadata.
