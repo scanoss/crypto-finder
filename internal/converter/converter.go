@@ -86,6 +86,7 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 			log.Debug().
 				Str("name", aggregated.Name).
 				Str("assetType", aggregated.AssetType).
+				Str("ruleID", aggregated.ReferenceAsset.Rule.ID).
 				Err(err).
 				Msg("Skipping aggregated asset - conversion failed")
 			skippedCount++
