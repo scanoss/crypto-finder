@@ -19,9 +19,9 @@ func NewRelatedCryptoMapper() *RelatedCryptoMapper {
 	return &RelatedCryptoMapper{}
 }
 
-// MapToComponent converts a related-crypto-material asset to a CycloneDX component.
-// Applies strict mapping - returns error if required fields are missing.
-func (m *RelatedCryptoMapper) MapToComponent(finding *entities.Finding, asset *entities.CryptographicAsset) (*cdx.Component, error) {
+// MapToComponentWithEvidence converts a related-crypto-material asset to a CycloneDX component.
+// This method does NOT build properties or evidence - those are handled by the converter.
+func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.CryptographicAsset) (*cdx.Component, error) {
 	if err := m.validateRequiredFields(asset); err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (m *RelatedCryptoMapper) MapToComponent(finding *entities.Finding, asset *e
 
 	bomRef := generateBOMRef()
 
-	componentName := generateComponentName(bomRef, materialType)
+	componentName := m.getMaterialName(asset)
 
 	componentType := cdx.ComponentTypeCryptographicAsset
 	component := &cdx.Component{
@@ -50,15 +50,10 @@ func (m *RelatedCryptoMapper) MapToComponent(finding *entities.Finding, asset *e
 		Name:             componentName,
 		Description:      generateDescription(materialType),
 		CryptoProperties: cryptoProps,
-		Properties:       m.buildProperties(finding, asset),
+		// Properties and Evidence will be set by the converter
 	}
 
 	return component, nil
-}
-
-// generateComponentName creates a component name from material type and bom-ref.
-func generateComponentName(bomRef, materialType string) string {
-	return fmt.Sprintf("%s@%s", bomRef, materialType)
 }
 
 // generateDescription creates a description for the component.
@@ -87,6 +82,18 @@ func (m *RelatedCryptoMapper) validateRequiredFields(asset *entities.Cryptograph
 	}
 
 	return nil
+}
+
+// getMaterialName gets the material name for grouping purposes.
+// For related-crypto-material, we group by the material type.
+func (m *RelatedCryptoMapper) getMaterialName(asset *entities.CryptographicAsset) string {
+	materialType := asset.Metadata["materialType"]
+	if materialType == "" {
+		materialType = "unknown"
+	}
+	// For now, we group by material type
+	// In the future, we might want more sophisticated grouping
+	return materialType
 }
 
 // buildProperties creates custom properties for related-crypto-material traceability.

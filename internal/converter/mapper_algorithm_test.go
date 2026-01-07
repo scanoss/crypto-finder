@@ -83,7 +83,7 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 			asset := &finding.CryptographicAssets[0]
 
 			// Run mapper
-			component, err := mapper.MapToComponent(finding, asset)
+			component, err := mapper.MapToComponentWithEvidence(asset)
 
 			// Check error expectation
 			if (err != nil) != tt.wantErr {
@@ -147,10 +147,8 @@ func TestAlgorithmMapper_MapToComponent(t *testing.T) {
 				}
 			}
 
-			// Check properties
-			if component.Properties == nil || len(*component.Properties) == 0 {
-				t.Error("Component missing Properties for traceability")
-			}
+			// Note: Properties are no longer set by MapToComponentWithEvidence
+			// They are built by the converter's buildEvidence method instead
 		})
 	}
 }
