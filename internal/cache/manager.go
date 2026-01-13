@@ -17,6 +17,7 @@ import (
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
@@ -75,7 +76,17 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 				log.Warn().Err(err).Msg("Failed to update last accessed time")
 			}
 
-			return rulesetPath, nil
+			// Validate that cached ruleset contains rule files
+			if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+				log.Warn().
+					Err(err).
+					Str("ruleset", name).
+					Str("version", version).
+					Msg("Cached ruleset is invalid, will re-download")
+				// Cache is corrupted, proceed to download
+			} else {
+				return rulesetPath, nil
+			}
 		}
 	} else {
 		log.Info().
@@ -92,6 +103,10 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 
 	if err := m.downloadAndCache(ctx, name, version, rulesetPath); err != nil {
 		return "", fmt.Errorf("failed to download ruleset: %w", err)
+	}
+
+	if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+		return "", fmt.Errorf("downloaded ruleset validation failed: %w", err)
 	}
 
 	return rulesetPath, nil
