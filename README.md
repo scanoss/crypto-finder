@@ -536,22 +536,35 @@ make release
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
+Contributions are welcome! We appreciate bug reports, feature requests, and pull requests.
 
-### Development Workflow
+Before contributing, please:
+- Read our [Contributing Guidelines](CONTRIBUTING.md)
+- Review our [Code of Conduct](CODE_OF_CONDUCT.md)
+- Ensure your contributions comply with the GPL-2.0-only license
+
+### Quick Start
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run tests (`make test`)
 5. Run linter (`make lint`)
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Commit your changes (`git commit -m 'feat: add an amazing feature'`)
 7. Push to the branch (`git push origin feature/amazing-feature`)
 8. Open a Pull Request
 
+For detailed information on development setup, code style, and testing requirements, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
-This project is part of the SCANOSS ecosystem. See [LICENSE](LICENSE) for details.
+Copyright (C) 2026 SCANOSS.COM
+
+This program is free software; you can redistribute it and/or modify it under the terms of the **GNU General Public License version 2** as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [LICENSE](LICENSE) file for the full license text.
+
+**SPDX-License-Identifier:** GPL-2.0-only
 
 ## Links
 
