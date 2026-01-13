@@ -269,6 +269,12 @@ func validateScanFlags(target string) error {
 		return fmt.Errorf("no rules specified: use --rules <file>, --rules-dir <directory>, or enable remote rules")
 	}
 
+	for _, ruleDir := range scanRuleDirs {
+		if err := validateRuleDirNotEmpty(ruleDir); err != nil {
+			return err
+		}
+	}
+
 	// Validate scanner
 	if !slices.Contains(AllowedScanners, scanScanner) {
 		return fmt.Errorf("invalid scanner name: %s", scanScanner)
@@ -282,6 +288,44 @@ func validateScanFlags(target string) error {
 	// Normalize language hints to lowercase
 	for i, lang := range scanLanguages {
 		scanLanguages[i] = strings.ToLower(strings.TrimSpace(lang))
+	}
+
+	return nil
+}
+
+// validateRuleDirNotEmpty checks if a rule directory exists, is a directory, and contains rule files.
+func validateRuleDirNotEmpty(dirPath string) error {
+	info, err := os.Stat(dirPath)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("rules directory '%s' does not exist", dirPath)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check rules directory '%s': %w", dirPath, err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("rules directory '%s' is not a directory", dirPath)
+	}
+
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to read rules directory '%s': %w", dirPath, err)
+	}
+
+	hasRuleFiles := false
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".yaml" || ext == ".yml" {
+			hasRuleFiles = true
+			break
+		}
+	}
+
+	if !hasRuleFiles {
+		return fmt.Errorf("rules directory '%s' contains no rule files (.yaml or .yml)", dirPath)
 	}
 
 	return nil
