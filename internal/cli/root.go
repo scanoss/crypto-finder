@@ -2,12 +2,14 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -60,8 +62,18 @@ func setupLogging() {
 
 // Execute runs the root command and exits on error.
 func Execute() {
+	// Disable pterm colors if not running in a TTY (e.g., piped output or non-interactive terminal)
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		pterm.DisableColor()
+	}
+
 	if err := rootCmd.Execute(); err != nil {
-		pterm.Error.Printfln("%s", err)
+		// Use plain error output in non-TTY environments to avoid color artifacts
+		if !term.IsTerminal(int(os.Stderr.Fd())) {
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+		} else {
+			pterm.Error.Printfln("%s", err)
+		}
 		os.Exit(1)
 	}
 }
