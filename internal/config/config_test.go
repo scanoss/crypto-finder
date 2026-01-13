@@ -379,3 +379,206 @@ func TestValidate_Success(t *testing.T) {
 		t.Errorf("Validation should pass, got error: %v", err)
 	}
 }
+
+// TestConfigFilePermissions_NewFile verifies that new config files are created with 0o600 permissions.
+func TestConfigFilePermissions_NewFile(t *testing.T) {
+	defer setupTest(t)()
+
+	cfg := GetInstance()
+	err := cfg.Initialize("test-key", "https://test.example.com")
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Write config file
+	err = cfg.SetAPIKey("new-test-key")
+	if err != nil {
+		t.Fatalf("SetAPIKey failed: %v", err)
+	}
+
+	// Verify file permissions
+	configPath := viper.ConfigFileUsed()
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file: %v", err)
+	}
+
+	actualPerm := info.Mode().Perm()
+	expectedPerm := os.FileMode(0o600)
+
+	if actualPerm != expectedPerm {
+		t.Errorf("Expected config file permissions %s, got %s", expectedPerm, actualPerm)
+	}
+}
+
+// TestConfigFilePermissions_ExistingFileWithWrongPermissions verifies that existing config files
+// with incorrect permissions are automatically fixed.
+func TestConfigFilePermissions_ExistingFileWithWrongPermissions(t *testing.T) {
+	defer setupTest(t)()
+
+	// Create config file with wrong permissions (0o644 - world readable)
+	configPath := viper.ConfigFileUsed()
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configContent := []byte(`{"api_key":"test-key","api_url":"https://test.example.com"}`)
+	if err := os.WriteFile(configPath, configContent, 0o644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	// Verify file was created with wrong permissions
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file: %v", err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("Test setup failed: expected 0o644, got %s", info.Mode().Perm())
+	}
+
+	// Initialize config - should automatically fix permissions
+	cfg := GetInstance()
+	err = cfg.Initialize("", "")
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Verify permissions were fixed
+	info, err = os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file after fix: %v", err)
+	}
+
+	actualPerm := info.Mode().Perm()
+	expectedPerm := os.FileMode(0o600)
+
+	if actualPerm != expectedPerm {
+		t.Errorf("Expected config file permissions %s after auto-fix, got %s", expectedPerm, actualPerm)
+	}
+}
+
+// TestConfigFilePermissions_CorrectPermissions verifies that files with correct permissions
+// are not modified.
+func TestConfigFilePermissions_CorrectPermissions(t *testing.T) {
+	defer setupTest(t)()
+
+	// Create config file with correct permissions (0o600)
+	configPath := viper.ConfigFileUsed()
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configContent := []byte(`{"api_key":"test-key","api_url":"https://test.example.com"}`)
+	if err := os.WriteFile(configPath, configContent, 0o600); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	// Get initial mod time
+	initialInfo, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file: %v", err)
+	}
+	initialModTime := initialInfo.ModTime()
+
+	// Initialize config - should not modify file
+	cfg := GetInstance()
+	err = cfg.Initialize("", "")
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Verify permissions are still correct
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file: %v", err)
+	}
+
+	actualPerm := info.Mode().Perm()
+	expectedPerm := os.FileMode(0o600)
+
+	if actualPerm != expectedPerm {
+		t.Errorf("Expected config file permissions %s, got %s", expectedPerm, actualPerm)
+	}
+
+	// Verify file was not modified (modtime should be the same)
+	if !info.ModTime().Equal(initialModTime) {
+		t.Errorf("File was modified when it shouldn't have been")
+	}
+}
+
+// TestEnsureConfigPermissions_NonExistentFile verifies that ensureConfigPermissions handles
+// non-existent files gracefully.
+func TestEnsureConfigPermissions_NonExistentFile(t *testing.T) {
+	defer setupTest(t)()
+
+	cfg := GetInstance()
+
+	// Call ensureConfigPermissions without initializing viper or creating a file
+	err := cfg.ensureConfigPermissions()
+	if err != nil {
+		t.Errorf("ensureConfigPermissions should not error on non-existent file, got: %v", err)
+	}
+}
+
+// TestEnsureConfigPermissions_Integration verifies the full lifecycle of config file
+// permission handling.
+func TestEnsureConfigPermissions_Integration(t *testing.T) {
+	defer setupTest(t)()
+
+	cfg := GetInstance()
+
+	// Step 1: Initialize with new config - should create file with correct permissions
+	err := cfg.Initialize("initial-key", "https://initial.example.com")
+	if err != nil {
+		t.Fatalf("Initial initialization failed: %v", err)
+	}
+
+	err = cfg.SetAPIKey("step1-key")
+	if err != nil {
+		t.Fatalf("SetAPIKey failed: %v", err)
+	}
+
+	configPath := viper.ConfigFileUsed()
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file: %v", err)
+	}
+
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("Step 1: Expected permissions 0o600, got %s", info.Mode().Perm())
+	}
+
+	// Step 2: Manually change permissions to simulate wrong permissions
+	if err := os.Chmod(configPath, 0o644); err != nil {
+		t.Fatalf("Failed to change permissions for test: %v", err)
+	}
+
+	// Step 3: Reset and re-initialize - should auto-fix permissions
+	ResetInstance()
+	viper.Reset()
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("json")
+
+	cfg = GetInstance()
+	err = cfg.Initialize("", "")
+	if err != nil {
+		t.Fatalf("Re-initialization failed: %v", err)
+	}
+
+	// Step 4: Verify permissions were auto-fixed
+	info, err = os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("Failed to stat config file after re-init: %v", err)
+	}
+
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("Step 4: Expected permissions 0o600 after auto-fix, got %s", info.Mode().Perm())
+	}
+
+	// Step 5: Verify API key was preserved through the permission fix
+	if cfg.GetAPIKey() != "step1-key" {
+		t.Errorf("API key was not preserved, expected 'step1-key', got '%s'", cfg.GetAPIKey())
+	}
+}
