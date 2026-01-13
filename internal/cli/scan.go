@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
@@ -240,19 +241,12 @@ func runScan(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 
-	// Print summary to stderr
 	findingsCount := countFindings(report)
 	filesCount := len(report.Findings)
 
-	fmt.Fprintf(os.Stderr, "\nScan complete:\n")
-	fmt.Fprintf(os.Stderr, "  Files with findings: %d\n", filesCount)
-	fmt.Fprintf(os.Stderr, "  Total crypto assets: %d\n", findingsCount)
-
-	// Show output location conditionally
-	if scanOutput != "" && scanOutput != "-" {
-		fmt.Fprintf(os.Stderr, "  Output: %s\n", scanOutput)
-	} else {
-		fmt.Fprintf(os.Stderr, "  Output: <stdout>\n")
+	err = printScanSummary(filesCount, findingsCount)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to render scan summary")
 	}
 
 	// Handle --fail-on-findings
@@ -303,4 +297,29 @@ func countFindings(report *entities.InterimReport) int {
 		count += len(finding.CryptographicAssets)
 	}
 	return count
+}
+
+// printScanSummary displays scan summary in a user-friendly format.
+func printScanSummary(filesCount, findingsCount int) error {
+	stats := []pterm.BulletListItem{
+		{Level: 1, Text: fmt.Sprintf("Files with findings: %d", filesCount)},
+		{Level: 1, Text: fmt.Sprintf("Total crypto assets: %d", findingsCount)},
+	}
+
+	var scanOutputLocation string
+	if scanOutput != "" && scanOutput != "-" {
+		scanOutputLocation = scanOutput
+	} else {
+		scanOutputLocation = "<stdout>"
+	}
+
+	stats = append(stats, pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Output: %s", scanOutputLocation)})
+
+	pterm.DefaultSection.Println("Scan Summary")
+	err := pterm.DefaultBulletList.WithItems(stats).Render()
+	if err != nil {
+		return fmt.Errorf("failed to render scan summary: %w", err)
+	}
+
+	return nil
 }
