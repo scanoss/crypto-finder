@@ -17,10 +17,12 @@
 package cache
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,6 +33,52 @@ import (
 	api "github.com/scanoss/crypto-finder/internal/api"
 )
 
+func writeRulesetTarball(gzWriter *gzip.Writer) error {
+	tarWriter := tar.NewWriter(gzWriter)
+	defer func() {
+		if err := tarWriter.Close(); err != nil {
+			log.Printf("Failed to close tar writer: %v", err)
+		}
+	}()
+
+	content := []byte("rules: []\n")
+	headers := []*tar.Header{
+		{
+			Name: "semgrep-rules/java/example.yaml",
+			Mode: 0o600,
+			Size: int64(len(content)),
+		},
+		{
+			Name: "semgrep-rules/python/example.yml",
+			Mode: 0o600,
+			Size: int64(len(content)),
+		},
+	}
+
+	for _, header := range headers {
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+		if _, err := tarWriter.Write(content); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeRuleFile(t *testing.T, rulePath string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(rulePath), 0o755); err != nil {
+		t.Fatalf("Failed to create rule dir: %v", err)
+	}
+
+	if err := os.WriteFile(rulePath, []byte("rules: []\n"), 0o600); err != nil {
+		t.Fatalf("Failed to write rule file: %v", err)
+	}
+}
+
 // createMockTarballServer creates an httptest server that returns a minimal valid tarball.
 func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) *httptest.Server {
 	t.Helper()
@@ -39,12 +87,11 @@ func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) 
 		var tarballData []byte
 
 		if statusCode == http.StatusOK {
-			// Create a minimal gzipped tarball (empty tar)
 			var buf bytes.Buffer
 			gzWriter := gzip.NewWriter(&buf)
-			// Empty tar (2x 512-byte null blocks)
-			emptyTar := make([]byte, 1024)
-			_, _ = gzWriter.Write(emptyTar)
+			if err := writeRulesetTarball(gzWriter); err != nil {
+				t.Fatalf("Failed to write tarball: %v", err)
+			}
 			_ = gzWriter.Close()
 			tarballData = buf.Bytes()
 		}
@@ -76,6 +123,7 @@ func TestManager_GetRulesetPath_CacheHit(t *testing.T) {
 	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
 		t.Fatalf("Failed to create cache directory: %v", err)
 	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
 
 	// Create valid metadata (not expired)
 	metadata := NewMetadata("dca", "latest", "checksum123", 86400) // 24h TTL
@@ -460,11 +508,11 @@ func TestManager_ContextCancellation(t *testing.T) {
 func Example_cacheWorkflow() {
 	// Setup
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Return minimal valid tarball
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)
-		emptyTar := make([]byte, 1024)
-		_, _ = gzWriter.Write(emptyTar)
+		if err := writeRulesetTarball(gzWriter); err != nil {
+			panic(err)
+		}
 		_ = gzWriter.Close()
 		tarballData := buf.Bytes()
 
@@ -480,7 +528,17 @@ func Example_cacheWorkflow() {
 
 	// Create client and manager
 	apiClient := api.NewClient(server.URL, "test-key")
-	manager, _ := NewManager(apiClient)
+	tempDir, err := os.MkdirTemp("", "crypto-finder-cache-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	manager := &Manager{
+		apiClient: apiClient,
+		cacheDir:  tempDir,
+		noCache:   false,
+	}
 
 	// First call - downloads and caches
 	ctx := context.Background()

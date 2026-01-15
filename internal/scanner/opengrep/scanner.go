@@ -150,7 +150,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
 
 	// Transform to interim format (reuse Semgrep transformer)
-	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target)
+	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths)
 
 	return report, nil
 }

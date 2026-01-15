@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,14 +33,14 @@ import (
 
 // TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.
 // This function can be reused by other compatible scanners (e.g., OpenGrep).
-func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string) *entities.InterimReport {
+func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string, rulePaths []string) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 
 	// Transform each file's findings
 	findings := make([]entities.Finding, 0, len(findingsByFile))
 	for filePath, results := range findingsByFile {
-		finding := transformFileFinding(filePath, results, target)
+		finding := transformFileFinding(filePath, results, target, rulePaths)
 		findings = append(findings, finding)
 	}
 
@@ -64,14 +65,14 @@ func groupByFile(results []entities.SemgrepResult) map[string][]entities.Semgrep
 }
 
 // transformFileFinding transforms all findings for a single file.
-func transformFileFinding(filePath string, results []entities.SemgrepResult, target string) entities.Finding {
+func transformFileFinding(filePath string, results []entities.SemgrepResult, target string, rulePaths []string) entities.Finding {
 	// Detect language
 	language := detectLanguage(filePath)
 
 	// Transform each result to a cryptographic asset
 	assets := make([]entities.CryptographicAsset, 0, len(results))
 	for i := range results {
-		asset := transformToCryptographicAsset(&results[i])
+		asset := transformToCryptographicAsset(&results[i], rulePaths)
 		assets = append(assets, asset)
 	}
 
@@ -90,14 +91,14 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 }
 
 // transformToCryptographicAsset converts a single Semgrep result to a CryptographicAsset.
-func transformToCryptographicAsset(result *entities.SemgrepResult) entities.CryptographicAsset {
+func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []string) entities.CryptographicAsset {
 	asset := entities.CryptographicAsset{
 		MatchType: ScannerName,
 		StartLine: result.Start.Line,
 		EndLine:   result.End.Line,
 		Match:     strings.TrimSpace(result.Extra.Lines),
 		Rule: entities.RuleInfo{
-			ID:       result.CheckID,
+			ID:       cleanRuleID(result.CheckID, rulePaths),
 			Message:  result.Extra.Message,
 			Severity: strings.ToUpper(result.Extra.Severity),
 		},
@@ -111,6 +112,96 @@ func transformToCryptographicAsset(result *entities.SemgrepResult) entities.Cryp
 	}
 
 	return asset
+}
+
+func cleanRuleID(ruleID string, rulePaths []string) string {
+	if ruleID == "" || len(rulePaths) == 0 {
+		return ruleID
+	}
+
+	prefixes := buildRuleIDPrefixes(rulePaths)
+	for _, prefix := range prefixes {
+		cleaned, ok := stripRuleIDPrefix(ruleID, prefix)
+		if ok {
+			return cleaned
+		}
+	}
+
+	return ruleID
+}
+
+func buildRuleIDPrefixes(rulePaths []string) []string {
+	prefixes := make(map[string]struct{})
+
+	for _, rulePath := range rulePaths {
+		if rulePath == "" {
+			continue
+		}
+
+		absPath := rulePath
+		if resolved, err := filepath.Abs(rulePath); err == nil {
+			absPath = resolved
+		}
+
+		addRuleIDPrefix(prefixes, absPath)
+
+		if ext := filepath.Ext(absPath); ext != "" {
+			addRuleIDPrefix(prefixes, strings.TrimSuffix(absPath, ext))
+			addRuleIDPrefix(prefixes, filepath.Dir(absPath))
+		}
+	}
+
+	values := make([]string, 0, len(prefixes))
+	for prefix := range prefixes {
+		values = append(values, prefix)
+	}
+
+	sort.Slice(values, func(i, j int) bool {
+		return len(values[i]) > len(values[j])
+	})
+
+	return values
+}
+
+func addRuleIDPrefix(prefixes map[string]struct{}, path string) {
+	if path == "" {
+		return
+	}
+
+	normalized := filepath.Clean(path)
+	slash := filepath.ToSlash(normalized)
+	slash = strings.TrimPrefix(slash, "./")
+	slash = strings.TrimPrefix(slash, "/")
+	slash = strings.TrimSuffix(slash, "/")
+	if slash != "" {
+		prefixes[slash] = struct{}{}
+	}
+
+	dot := strings.ReplaceAll(slash, "/", ".")
+	dot = strings.Trim(dot, ".")
+	if dot != "" {
+		prefixes[dot] = struct{}{}
+	}
+}
+
+func stripRuleIDPrefix(ruleID, prefix string) (string, bool) {
+	if prefix == "" {
+		return ruleID, false
+	}
+
+	if strings.HasPrefix(ruleID, prefix+".") {
+		return strings.TrimPrefix(ruleID, prefix+"."), true
+	}
+
+	if strings.HasPrefix(ruleID, prefix+"/") {
+		return strings.TrimPrefix(ruleID, prefix+"/"), true
+	}
+
+	if strings.HasPrefix(ruleID, prefix+"\\") {
+		return strings.TrimPrefix(ruleID, prefix+"\\"), true
+	}
+
+	return ruleID, false
 }
 
 // Helper function to safely get metavariable values.

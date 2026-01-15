@@ -127,7 +127,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 
 	LogSemgrepCompatibleErrors(semgrepResults.Errors)
 
-	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target)
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target, rulePaths)
 
 	return report, nil
 }

@@ -99,11 +99,10 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	for _, aggregated := range aggregatedAssets {
 		component, err := c.convertAggregatedAsset(&aggregated)
 		if err != nil {
-			log.Debug().
+			log.Info().
 				Str("name", aggregated.Name).
 				Str("assetType", aggregated.AssetType).
 				Str("ruleID", aggregated.ReferenceAsset.Rule.ID).
-				Err(err).
 				Msg("Skipping aggregated asset - conversion failed")
 			skippedCount++
 			continue
