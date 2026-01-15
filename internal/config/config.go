@@ -30,12 +30,14 @@ import (
 
 // Default configuration values.
 const (
-	DefaultAPIURL         = "https://api.scanoss.com"
-	DefaultTimeout        = 30 * time.Second
-	DefaultMaxRetries     = 3
-	DefaultRetryDelay     = 5 * time.Second
-	DefaultCacheTTL       = 7 * 24 * time.Hour // 7 days for pinned versions
-	DefaultLatestCacheTTL = 24 * time.Hour     // 24 hours for @latest
+	DefaultAPIURL           = "https://api.scanoss.com"
+	DefaultTimeout          = 30 * time.Second
+	DefaultMaxRetries       = 3
+	DefaultRetryDelay       = 5 * time.Second
+	DefaultCacheTTL         = 7 * 24 * time.Hour  // 7 days for pinned versions
+	DefaultLatestCacheTTL   = 24 * time.Hour      // 24 hours for @latest
+	DefaultMaxStaleCacheAge = 30 * 24 * time.Hour // 30 days for stale cache fallback
+	MaxStaleCacheAge        = 90 * 24 * time.Hour // Maximum allowed: 90 days
 )
 
 // Config manages application configuration.

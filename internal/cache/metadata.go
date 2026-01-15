@@ -39,6 +39,16 @@ func (m *Metadata) IsExpired() bool {
 	return time.Now().After(expiryTime)
 }
 
+// Age returns the age of the cache (time since download).
+func (m *Metadata) Age() time.Duration {
+	return time.Since(m.DownloadedAt)
+}
+
+// IsTooStale checks if the cache is older than the specified maximum age.
+func (m *Metadata) IsTooStale(maxAge time.Duration) bool {
+	return m.Age() > maxAge
+}
+
 // UpdateLastAccessed updates the last accessed timestamp.
 func (m *Metadata) UpdateLastAccessed() {
 	m.LastAccessed = time.Now()

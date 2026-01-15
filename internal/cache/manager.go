@@ -44,9 +44,11 @@ const (
 
 // Manager manages the local cache of downloaded rulesets.
 type Manager struct {
-	apiClient *api.Client
-	cacheDir  string
-	noCache   bool
+	apiClient        *api.Client
+	cacheDir         string
+	noCache          bool
+	strictMode       bool
+	maxStaleCacheAge time.Duration
 }
 
 // NewManager creates a new cache manager.
@@ -57,9 +59,11 @@ func NewManager(apiClient *api.Client) (*Manager, error) {
 	}
 
 	return &Manager{
-		apiClient: apiClient,
-		cacheDir:  cacheDir,
-		noCache:   false,
+		apiClient:        apiClient,
+		cacheDir:         cacheDir,
+		noCache:          false,
+		strictMode:       false,
+		maxStaleCacheAge: config.DefaultMaxStaleCacheAge,
 	}, nil
 }
 
@@ -68,6 +72,19 @@ func NewManager(apiClient *api.Client) (*Manager, error) {
 // ignoring any existing cached rulesets.
 func (m *Manager) SetNoCache(enabled bool) {
 	m.noCache = enabled
+}
+
+// SetStrictMode enables or disables strict mode.
+// When enabled, the manager will fail if cache is expired and API is unreachable,
+// instead of falling back to stale cache.
+func (m *Manager) SetStrictMode(enabled bool) {
+	m.strictMode = enabled
+}
+
+// SetMaxStaleCacheAge sets the maximum age for stale cache fallback.
+// If the cached rules are older than this duration, they will not be used as fallback.
+func (m *Manager) SetMaxStaleCacheAge(maxAge time.Duration) {
+	m.maxStaleCacheAge = maxAge
 }
 
 // GetRulesetPath returns the path to a cached ruleset
@@ -118,6 +135,15 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 		Msg("Downloading ruleset")
 
 	if err := m.downloadAndCache(ctx, name, version, rulesetPath); err != nil {
+		// Download failed - try stale cache fallback if not in strict mode
+		if !m.strictMode {
+			if stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, name, version); staleErr == nil {
+				// Successfully using stale cache
+				return stalePath, nil
+			}
+			// Stale cache fallback also failed, log why and return original error
+			log.Debug().Msg("Stale cache fallback unavailable")
+		}
 		return "", fmt.Errorf("failed to download ruleset: %w", err)
 	}
 
@@ -394,6 +420,51 @@ func (m *Manager) getTTL(version string) time.Duration {
 		return config.DefaultLatestCacheTTL
 	}
 	return config.DefaultCacheTTL
+}
+
+// tryStaleCache attempts to use stale (expired) cache as a fallback when API is unreachable.
+// Returns the cached ruleset path if valid stale cache exists and is within max age limit.
+// Returns an error if no stale cache exists, cache is too old, or validation fails.
+func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string) (string, error) {
+	// Check if ruleset directory exists
+	if _, err := os.Stat(rulesetPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("no cached ruleset found")
+	}
+
+	// Load metadata
+	metadata, err := LoadMetadata(metadataPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to load cache metadata: %w", err)
+	}
+
+	// Check if cache is too stale
+	if metadata.IsTooStale(m.maxStaleCacheAge) {
+		cacheAge := metadata.Age()
+		return "", fmt.Errorf("cached ruleset is too old (age: %s, max: %s)",
+			cacheAge.Round(time.Hour),
+			m.maxStaleCacheAge.Round(time.Hour))
+	}
+
+	// Validate that cached ruleset contains rule files
+	if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+		return "", fmt.Errorf("cached ruleset is invalid: %w", err)
+	}
+
+	// Cache is usable, log warning and return
+	cacheAge := metadata.Age()
+	log.Warn().
+		Str("ruleset", name).
+		Str("version", version).
+		Dur("age", cacheAge.Round(time.Hour)).
+		Time("cached_at", metadata.DownloadedAt).
+		Msg("Failed to download remote rules. Using stale cache")
+
+	// Update last accessed time
+	if err := m.updateLastAccessed(metadataPath); err != nil {
+		log.Warn().Err(err).Msg("Failed to update last accessed time")
+	}
+
+	return rulesetPath, nil
 }
 
 // newBytesReader creates an io.Reader from a byte slice.

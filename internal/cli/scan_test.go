@@ -291,3 +291,58 @@ func TestAllowedScannersAndFormats(t *testing.T) {
 		}
 	})
 }
+
+func TestParseDuration(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expected    string // Expected duration as string (e.g., "24h0m0s")
+		expectError bool
+	}{
+		// Standard Go formats (should pass through to time.ParseDuration)
+		{name: "minutes", input: "10m", expected: "10m0s", expectError: false},
+		{name: "hours", input: "1h", expected: "1h0m0s", expectError: false},
+		{name: "seconds", input: "30s", expected: "30s", expectError: false},
+		{name: "combined", input: "1h30m", expected: "1h30m0s", expectError: false},
+
+		// Days format
+		{name: "1 day", input: "1d", expected: "24h0m0s", expectError: false},
+		{name: "30 days", input: "30d", expected: "720h0m0s", expectError: false},
+		{name: "90 days", input: "90d", expected: "2160h0m0s", expectError: false},
+		{name: "fractional days", input: "0.5d", expected: "12h0m0s", expectError: false},
+		{name: "1.5 days", input: "1.5d", expected: "36h0m0s", expectError: false},
+
+		// Weeks format
+		{name: "1 week", input: "1w", expected: "168h0m0s", expectError: false},
+		{name: "2 weeks", input: "2w", expected: "336h0m0s", expectError: false},
+		{name: "fractional weeks", input: "0.5w", expected: "84h0m0s", expectError: false},
+
+		// Invalid formats
+		{name: "invalid - empty", input: "", expected: "", expectError: true},
+		{name: "invalid - just letter", input: "d", expected: "", expectError: true},
+		{name: "invalid - no number", input: "abcd", expected: "", expectError: true},
+		{name: "invalid - invalid unit", input: "10x", expected: "", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			duration, err := parseDuration(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for input '%s', but got none", tt.input)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error for input '%s': %v", tt.input, err)
+				return
+			}
+
+			if duration.String() != tt.expected {
+				t.Errorf("Input '%s': expected %s, got %s", tt.input, tt.expected, duration.String())
+			}
+		})
+	}
+}

@@ -194,7 +194,7 @@ For a complete list of commands and options, run `crypto-finder --help`.
 - **Flexible Configuration** - Combine remote and local rules, configure via CLI, env vars, or config files
 - **Multiple Output Formats** - Interim JSON and CycloneDX 1.6 CBOM formats
 - **CI/CD Ready** - Docker images for GitHub Actions, GitLab CI, Jenkins, and more
-- **Smart Caching** - TTL-based cache with automatic fallback when API is unreachable
+- **Smart Caching** - TTL-based cache with automatic stale cache fallback (opt-out with `--strict`)
 
 ### Documentation
 

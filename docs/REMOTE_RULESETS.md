@@ -9,7 +9,7 @@ Crypto Finder can automatically fetch curated rulesets from the SCANOSS API, pro
 - **TTL-Based Expiration**:
   - Pinned versions (e.g., `v1.0.0`): 7 days
   - Latest versions: 24 hours
-- **Automatic Fallback**: Uses cached rules when API is unreachable
+- **Stale Cache Fallback**: Automatically uses expired cache (up to 30 days old) when API is unreachable (opt-out with `--strict`)
 - **Checksum Verification**: SHA256 verification ensures ruleset integrity
 - **Retry Logic**: Automatic retry with exponential backoff on network failures
 - **Seamless Integration**: Combine remote and local rules effortlessly
@@ -51,7 +51,7 @@ crypto-finder scan --api-url https://custom.scanoss.com /path/to/code
 ## Usage Examples
 
 ```bash
-# Use remote rules (default behavior)
+# Use remote rules (default behavior with stale cache fallback)
 crypto-finder scan /path/to/code
 
 # Combine remote rules with local custom rules
@@ -62,6 +62,12 @@ crypto-finder scan --no-remote-rules --rules-dir ./local-rules /path/to/code
 
 # Force fresh download (bypass cache)
 crypto-finder scan --no-cache /path/to/code
+
+# Strict mode: fail if cache expired and API unreachable (no stale cache fallback)
+crypto-finder scan --strict /path/to/code
+
+# Configure maximum age for stale cache fallback (default: 30 days, max: 90 days)
+crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
 ```
 
 ## Cache Management
@@ -80,7 +86,32 @@ crypto-finder scan --no-cache /path/to/code
 - **First scan**: Downloads and caches the default "dca" ruleset
 - **Subsequent scans**: Uses cached version if not expired
 - **Expired cache**: Automatically re-downloads on next scan
+- **API unreachable + expired cache**: Uses stale cache as fallback (if within max age limit)
 - **Manual cleanup**: Simply delete `~/.scanoss/crypto-finder/cache/`
+
+### Stale Cache Fallback (Default Behavior)
+
+When the cache expires and the API is unreachable, crypto-finder automatically falls back to the expired cache if it's within the maximum stale age (default: 30 days):
+
+**Flow:**
+1. Check if cache is valid (not expired)
+   - ✅ Valid → Use cached rules
+2. Cache expired → Try to download fresh rules from API
+   - ✅ API reachable → Download and update cache
+   - ❌ API unreachable → Check stale cache fallback:
+     - If cache age ≤ max stale age (30 days) → **Use stale cache with warning**
+     - If cache age > max stale age → **Fail with error**
+     - If `--strict` flag enabled → **Fail with error**
+
+**Why This Matters:**
+- **Resilience**: Transient API issues don't block scans
+- **CI/CD Reliability**: Pipelines don't fail due to infrastructure problems
+- **Offline Capability**: Continue scanning with slightly stale rules
+
+**When to Use `--strict`:**
+- Compliance audits requiring fresh rules
+- Security-critical scans where staleness is unacceptable
+- Environments where failure is preferred over using outdated rules
 
 ## Troubleshooting
 
@@ -99,23 +130,55 @@ Or disable remote rules: crypto-finder scan --no-remote-rules [target]
 
 **Solution**: Configure your API key using any of the methods above.
 
-### Cache Not Available
+### Cache Not Available / Air-Gapped Environments
 
 If you're in an air-gapped environment and need to use cached rules:
 
 **Solution**:
 1. Run a scan while connected to download and cache rulesets
 2. Transfer the cache directory (`~/.scanoss/crypto-finder/cache/`) to the air-gapped environment
-3. The tool will automatically use cached rules when the API is unreachable
+3. The tool will automatically use the cache within the TTL period (24h for latest, 7d for pinned versions)
+4. After TTL expires, scans will use stale cache fallback (up to 30 days) with a warning
+5. For long-term offline use, consider using `--no-remote-rules --rules-dir` with local rules
 
-### Network Timeout
+### API Unreachable / Network Timeout
 
-If the API is unreachable but cached rules exist, crypto-finder will automatically fall back to the cache with a warning:
+When the API is unreachable and expired cache exists, crypto-finder will automatically fall back to stale cache with a warning:
 
+**Example Warning:**
 ```
-Warning: Failed to download remote rules (timeout)
-Using cached rules from 2025-01-15 10:30:00
+WARN: Failed to download remote rules (timeout). Using stale cache (age: 5d, cached: 2025-01-10 10:30:00 UTC)
 ```
+
+**Behavior:**
+- Scan continues successfully using stale cache
+- Warning is logged to stderr
+- Exit code is 0 (success)
+
+**To Disable Fallback (Fail Instead):**
+```bash
+crypto-finder scan --strict /path/to/code
+```
+
+### Cache Too Stale
+
+If cached rules exceed the maximum stale age (default: 30 days), the scan will fail:
+
+**Error:**
+```
+Error: failed to download ruleset: server error: please try again later: 500 Internal Server Error
+```
+
+**Solutions:**
+1. **Wait for API to recover** and retry
+2. **Increase max stale age** (up to 90 days):
+   ```bash
+   crypto-finder scan --max-stale-age 90d /path/to/code  # 90 days
+   ```
+3. **Use local rules** instead:
+   ```bash
+   crypto-finder scan --no-remote-rules --rules-dir ./local-rules /path/to/code
+   ```
 
 ## Best Practices
 
@@ -123,7 +186,13 @@ Using cached rules from 2025-01-15 10:30:00
 2. **Hybrid Approach**: Combine remote rules with project-specific local rules for customization
 3. **CI/CD Pipelines**:
    - Use environment variable `SCANOSS_API_KEY` for secure key management
-   - Use `--no-cache` to ensure latest rules in critical security scans
+   - **Default behavior** (with stale cache fallback) is recommended for most pipelines to prevent failures due to transient API issues
+   - Use `--strict` for compliance-critical pipelines where fresh rules are mandatory
+   - Consider using `--max-stale-age` to tune the acceptable staleness window (e.g., `--max-stale-age 7d` for 7 days)
+4. **Offline/Air-Gapped Environments**:
+   - Pre-cache rules before going offline
+   - Stale cache fallback provides up to 30 days of grace period (configurable to 90 days)
+   - For longer periods, use `--no-remote-rules --rules-dir` with local rules
 
 ## Related Documentation
 

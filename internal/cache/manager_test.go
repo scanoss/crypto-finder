@@ -324,9 +324,11 @@ func TestManager_GetRulesetPath_DownloadError(t *testing.T) {
 
 	apiClient := api.NewClient(server.URL, "test-key")
 	manager := &Manager{
-		apiClient: apiClient,
-		cacheDir:  tempDir,
-		noCache:   false,
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       true, // Enable strict mode to prevent fallback
+		maxStaleCacheAge: 30 * 24 * time.Hour,
 	}
 
 	// Execute - download should fail
@@ -335,6 +337,177 @@ func TestManager_GetRulesetPath_DownloadError(t *testing.T) {
 	// Assert
 	if err == nil {
 		t.Fatal("Expected error but got none")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that's within max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create metadata with expired TTL but within max stale age (5 days old)
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // 1 second TTL (expired)
+	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error (API unreachable)
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled
+		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
+	}
+
+	// Execute - API fails, should use stale cache
+	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should succeed with stale cache
+	if err != nil {
+		t.Fatalf("GetRulesetPath() failed: %v (expected to use stale cache)", err)
+	}
+
+	if path != rulesetPath {
+		t.Errorf("Expected path %s, got %s", rulesetPath, path)
+	}
+
+	// Verify it's actually using the expired cache
+	loadedMetadata, err := LoadMetadata(metadataPath)
+	if err != nil {
+		t.Fatalf("Failed to load metadata: %v", err)
+	}
+
+	if !loadedMetadata.IsExpired() {
+		t.Error("Expected cache to be expired")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_TooOld(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that exceeds max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create metadata that's 40 days old (exceeds 30 day limit)
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata.DownloadedAt = time.Now().Add(-40 * 24 * time.Hour) // 40 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled but cache too old
+		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
+	}
+
+	// Execute - should fail because cache is too stale
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail
+	if err == nil {
+		t.Fatal("Expected error but got none (cache should be too stale)")
+	}
+}
+
+func TestManager_GetRulesetPath_StrictMode_NoFallback(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that's within max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create expired metadata that would otherwise be usable
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       true, // Strict mode prevents fallback
+		maxStaleCacheAge: 30 * 24 * time.Hour,
+	}
+
+	// Execute - should fail even though stale cache is available
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail due to strict mode
+	if err == nil {
+		t.Fatal("Expected error but got none (strict mode should prevent fallback)")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_NoCache(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled but no cache exists
+		maxStaleCacheAge: 30 * 24 * time.Hour,
+	}
+
+	// Execute - no cache exists, should fail
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail because no cache exists at all
+	if err == nil {
+		t.Fatal("Expected error but got none (no cache exists)")
 	}
 }
 
