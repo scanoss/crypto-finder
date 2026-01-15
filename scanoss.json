@@ -6,5 +6,27 @@
       },
       "sizes": {}
     }
+  },
+  "bom": {
+    "remove": [
+      {
+        "purl": "pkg:github/ibrahmsql/gocat"
+      },
+      {
+        "purl": "pkg:github/xdream8/revanced-creator"
+      },
+      {
+        "purl": "pkg:github/chickenzord/linkding-mcp"
+      },
+      {
+        "purl": "pkg:github/hostinger/api-cli"
+      },
+      {
+        "purl": "pkg:github/perigrin/pvm"
+      },
+      {
+        "purl": "pkg:github/lipkau/mealie_translate"
+      }
+    ]
   }
 }
