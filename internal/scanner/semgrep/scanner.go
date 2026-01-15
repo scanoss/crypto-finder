@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -183,6 +184,7 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
 	spinner, err := pterm.DefaultSpinner.
 		WithRemoveWhenDone(true).
+		WithWriter(os.Stderr).
 		Start("Running Semgrep scan...")
 	if err != nil {
 		return nil, "", err

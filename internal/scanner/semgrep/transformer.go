@@ -17,7 +17,9 @@
 package semgrep
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,6 +30,7 @@ import (
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -36,11 +39,12 @@ import (
 func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string, rulePaths []string) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
+	ruleVersion := detectRuleVersion(rulePaths)
 
 	// Transform each file's findings
 	findings := make([]entities.Finding, 0, len(findingsByFile))
 	for filePath, results := range findingsByFile {
-		finding := transformFileFinding(filePath, results, target, rulePaths)
+		finding := transformFileFinding(filePath, results, target, rulePaths, ruleVersion)
 		findings = append(findings, finding)
 	}
 
@@ -65,14 +69,14 @@ func groupByFile(results []entities.SemgrepResult) map[string][]entities.Semgrep
 }
 
 // transformFileFinding transforms all findings for a single file.
-func transformFileFinding(filePath string, results []entities.SemgrepResult, target string, rulePaths []string) entities.Finding {
+func transformFileFinding(filePath string, results []entities.SemgrepResult, target string, rulePaths []string, ruleVersion string) entities.Finding {
 	// Detect language
 	language := detectLanguage(filePath)
 
 	// Transform each result to a cryptographic asset
 	assets := make([]entities.CryptographicAsset, 0, len(results))
 	for i := range results {
-		asset := transformToCryptographicAsset(&results[i], rulePaths)
+		asset := transformToCryptographicAsset(&results[i], rulePaths, ruleVersion)
 		assets = append(assets, asset)
 	}
 
@@ -91,7 +95,7 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 }
 
 // transformToCryptographicAsset converts a single Semgrep result to a CryptographicAsset.
-func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []string) entities.CryptographicAsset {
+func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []string, ruleVersion string) entities.CryptographicAsset {
 	asset := entities.CryptographicAsset{
 		MatchType: ScannerName,
 		StartLine: result.Start.Line,
@@ -101,6 +105,7 @@ func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []s
 			ID:       cleanRuleID(result.CheckID, rulePaths),
 			Message:  result.Extra.Message,
 			Severity: strings.ToUpper(result.Extra.Severity),
+			Version:  ruleVersion,
 		},
 		Metadata: make(map[string]string),
 		Status:   "pending", // TODO: Implement status logic
@@ -112,6 +117,73 @@ func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []s
 	}
 
 	return asset
+}
+
+func detectRuleVersion(rulePaths []string) string {
+	if len(rulePaths) == 0 {
+		return ""
+	}
+
+	rulesetsDir, err := config.GetRulesetsDir()
+	if err != nil {
+		return ""
+	}
+
+	version := ""
+	rulesetsDir = filepath.Clean(rulesetsDir)
+	for _, rulePath := range rulePaths {
+		if rulePath == "" {
+			continue
+		}
+
+		absPath := rulePath
+		if resolved, err := filepath.Abs(rulePath); err == nil {
+			absPath = resolved
+		}
+
+		rel, err := filepath.Rel(rulesetsDir, absPath)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		if len(parts) < 2 {
+			continue
+		}
+
+		rulesetRoot := filepath.Join(rulesetsDir, parts[0], parts[1])
+		candidate := readRulesetManifestVersion(filepath.Join(rulesetRoot, "manifest.json"))
+		if candidate == "" {
+			continue
+		}
+
+		if version == "" {
+			version = candidate
+			continue
+		}
+
+		if version != candidate {
+			return ""
+		}
+	}
+
+	return version
+}
+
+func readRulesetManifestVersion(manifestPath string) string {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ""
+	}
+
+	return manifest.Version
 }
 
 func cleanRuleID(ruleID string, rulePaths []string) string {

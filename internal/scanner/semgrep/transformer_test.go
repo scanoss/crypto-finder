@@ -637,7 +637,7 @@ func TestTransformFileFinding(t *testing.T) {
 		},
 	}
 
-	finding := transformFileFinding("/test/main.go", results, "/test", nil)
+	finding := transformFileFinding("/test/main.go", results, "/test", nil, "")
 
 	if finding.FilePath != "main.go" {
 		t.Errorf("Expected 'main.go', got '%s'", finding.FilePath)
@@ -676,7 +676,7 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 		},
 	}
 
-	asset := transformToCryptographicAsset(result, nil)
+	asset := transformToCryptographicAsset(result, nil, "")
 
 	if asset.MatchType != "semgrep" {
 		t.Errorf("Expected match type 'semgrep', got '%s'", asset.MatchType)
@@ -723,7 +723,7 @@ func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
 		},
 	}
 
-	asset := transformToCryptographicAsset(result, nil)
+	asset := transformToCryptographicAsset(result, nil, "")
 
 	if asset.Rule.Severity != "ERROR" {
 		t.Errorf("Expected severity 'ERROR', got '%s'", asset.Rule.Severity)

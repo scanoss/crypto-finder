@@ -338,8 +338,8 @@ func printScanSummary(filesCount, findingsCount int) error {
 
 	stats = append(stats, pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Output: %s", scanOutputLocation)})
 
-	pterm.DefaultSection.Println("Scan Summary")
-	err := pterm.DefaultBulletList.WithItems(stats).Render()
+	pterm.DefaultSection.WithWriter(os.Stderr).Println("Scan Summary")
+	err := pterm.DefaultBulletList.WithItems(stats).WithWriter(os.Stderr).Render()
 	if err != nil {
 		return fmt.Errorf("failed to render scan summary: %w", err)
 	}

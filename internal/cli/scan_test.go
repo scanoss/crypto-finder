@@ -17,6 +17,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -150,8 +152,16 @@ func TestValidateScanFlags(t *testing.T) {
 
 	t.Run("with rules directory", func(t *testing.T) {
 		tempDir := t.TempDir()
+		ruleDir := filepath.Join(tempDir, "rules")
+		if err := os.MkdirAll(ruleDir, 0o755); err != nil {
+			t.Fatalf("Failed to create rules directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(ruleDir, "rule.yaml"), []byte("rules: []\n"), 0o600); err != nil {
+			t.Fatalf("Failed to create rule file: %v", err)
+		}
+
 		scanRules = []string{}
-		scanRuleDirs = []string{"/rules/dir"}
+		scanRuleDirs = []string{ruleDir}
 		scanNoRemoteRules = false
 		scanScanner = "semgrep"
 		scanFormat = "cyclonedx"

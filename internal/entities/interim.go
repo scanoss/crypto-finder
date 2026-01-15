@@ -95,4 +95,7 @@ type RuleInfo struct {
 	// Severity indicates the importance level of the finding
 	// Values: "WARNING", "ERROR", "INFO"
 	Severity string `json:"severity"`
+
+	// Version is the ruleset version when known (e.g., "latest", "v1.0.1")
+	Version string `json:"version,omitempty"`
 }
