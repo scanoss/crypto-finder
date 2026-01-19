@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-01-19
+### Fixed
+- Fix ./github/workflows/version-bump.yml workflow to use Github App Token instead of Personal Access Token
+
 ## [0.1.0] - 2026-01-13
 ### Added
 - LICENSE file with GPL-2.0-only license text
@@ -20,3 +24,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README.md Contributing section to reference CONTRIBUTING.md and CODE_OF_CONDUCT.md
 
 [0.1.0]: https://github.com/scanoss/crypto-finder/compare/v0.0.0...v0.1.0
+[0.1.1]: https://github.com/scanoss/crypto-finder/compare/v0.1.0...v0.1.1
