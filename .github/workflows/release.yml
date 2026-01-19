@@ -53,8 +53,17 @@ jobs:
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      - name: Check Windows signing secrets
+        id: check-windows-secrets
+        run: |
+          if [[ -n "${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME }}" ]]; then
+            echo "available=true" >> $GITHUB_OUTPUT
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Sign Windows binaries
-        if: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME != '' }}
+        if: steps.check-windows-secrets.outputs.available == 'true'
         uses: sslcom/esigner-codesign@v1.3.2
         with:
           command: batch_sign
@@ -68,7 +77,7 @@ jobs:
           environment_name: PROD
 
       - name: Re-package signed Windows binaries
-        if: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME != '' }}
+        if: steps.check-windows-secrets.outputs.available == 'true'
         shell: bash
         run: |
           set -e
