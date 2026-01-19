@@ -158,24 +158,23 @@ func TestValidateRuleDirNotEmpty(t *testing.T) {
 
 	t.Run("walk error", func(t *testing.T) {
 		tempDir := t.TempDir()
-		lockedDir := filepath.Join(tempDir, "locked")
-		if err := os.MkdirAll(lockedDir, 0o700); err != nil {
-			t.Fatalf("Failed to create locked dir: %v", err)
-		}
-		if err := os.Chmod(lockedDir, 0o000); err != nil {
-			t.Fatalf("Failed to restrict permissions: %v", err)
-		}
-		defer os.Chmod(lockedDir, 0o700)
 
-		// Check if chmod actually prevents reading (may not work in CI environments with elevated privileges)
-		_, readErr := os.ReadDir(lockedDir)
-		if readErr == nil {
-			t.Skip("Skipping test: chmod 0o000 does not prevent reading (likely running with elevated privileges)")
+		// Create a symlink loop to trigger a walk error deterministically
+		link1 := filepath.Join(tempDir, "link1")
+		link2 := filepath.Join(tempDir, "link2")
+
+		// Create symlinks that point to each other (infinite loop)
+		if err := os.Symlink(link2, link1); err != nil {
+			t.Fatalf("Failed to create symlink: %v", err)
+		}
+		if err := os.Symlink(link1, link2); err != nil {
+			t.Fatalf("Failed to create symlink: %v", err)
 		}
 
+		// ValidateRuleDirNotEmpty will encounter an error when walking the symlink loop
 		err := ValidateRuleDirNotEmpty(tempDir)
 		if err == nil {
-			t.Fatal("Expected error for unreadable directory")
+			t.Fatal("Expected error when walking directory with symlink loop")
 		}
 	})
 }
