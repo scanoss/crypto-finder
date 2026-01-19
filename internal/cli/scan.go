@@ -130,7 +130,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 }
 
-//nolint:gocyclo,funlen // Ignore cognitive complexity for runScan
+//nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
 func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
@@ -339,10 +339,11 @@ func countFindings(report *entities.InterimReport) int {
 
 // printScanSummary displays scan summary in a user-friendly format.
 func printScanSummary(filesCount, findingsCount int) error {
-	stats := []pterm.BulletListItem{
-		{Level: 1, Text: fmt.Sprintf("Files with findings: %d", filesCount)},
-		{Level: 1, Text: fmt.Sprintf("Total crypto assets: %d", findingsCount)},
-	}
+	stats := make([]pterm.BulletListItem, 0, 3)
+	stats = append(stats,
+		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Files with findings: %d", filesCount)},
+		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Total crypto assets: %d", findingsCount)},
+	)
 
 	var scanOutputLocation string
 	if scanOutput != "" && scanOutput != "-" {
@@ -377,25 +378,23 @@ func parseDuration(s string) (time.Duration, error) {
 	// Check for "d" (days) suffix
 	if strings.HasSuffix(s, "d") {
 		days := strings.TrimSuffix(s, "d")
-		n, parseErr := fmt.Sscanf(days, "%f", new(float64))
+		var value float64
+		n, parseErr := fmt.Sscanf(days, "%f", &value)
 		if parseErr != nil || n != 1 {
 			return 0, fmt.Errorf("invalid duration format: %s", s)
 		}
-		var value float64
-		fmt.Sscanf(days, "%f", &value)
-		return time.Duration(value * 24) * time.Hour, nil
+		return time.Duration(value*24) * time.Hour, nil
 	}
 
 	// Check for "w" (weeks) suffix
 	if strings.HasSuffix(s, "w") {
 		weeks := strings.TrimSuffix(s, "w")
-		n, parseErr := fmt.Sscanf(weeks, "%f", new(float64))
+		var value float64
+		n, parseErr := fmt.Sscanf(weeks, "%f", &value)
 		if parseErr != nil || n != 1 {
 			return 0, fmt.Errorf("invalid duration format: %s", s)
 		}
-		var value float64
-		fmt.Sscanf(weeks, "%f", &value)
-		return time.Duration(value * 24 * 7) * time.Hour, nil
+		return time.Duration(value*24*7) * time.Hour, nil
 	}
 
 	// Return original error if no custom suffix matched

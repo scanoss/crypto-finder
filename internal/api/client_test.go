@@ -21,8 +21,10 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -407,5 +409,74 @@ func TestManifest_TimezoneParsing(t *testing.T) {
 	expectedTime := time.Date(2024, 12, 25, 10, 30, 0, 0, time.UTC)
 	if !manifest.CreatedAt.Equal(expectedTime) {
 		t.Errorf("Expected CreatedAt %v, got %v", expectedTime, manifest.CreatedAt)
+	}
+}
+
+func TestClient_getHeaderValue(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	headers := http.Header{}
+	headers.Set("Grpc-Metadata-scanoss-ruleset-name", "dca")
+
+	value := client.getHeaderValue(headers, "scanoss-ruleset-name")
+	if value != "dca" {
+		t.Fatalf("Expected header value 'dca', got %q", value)
+	}
+}
+
+func TestClient_manifestFromHeaders_MissingHeaders(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	headers := http.Header{}
+	headers.Set("scanoss-ruleset-name", "dca")
+	headers.Set("scanoss-ruleset-version", "v1.0.0")
+	headers.Set("x-checksum-sha256", "abc123")
+
+	_, err := client.manifestFromHeaders(headers)
+	if err == nil {
+		t.Fatal("Expected error for missing created-at header")
+	}
+}
+
+func TestClient_manifestFromHeaders_InvalidTime(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	headers := http.Header{}
+	headers.Set("scanoss-ruleset-name", "dca")
+	headers.Set("scanoss-ruleset-version", "v1.0.0")
+	headers.Set("x-checksum-sha256", "abc123")
+	headers.Set("scanoss-ruleset-created-at", "not-a-time")
+
+	_, err := client.manifestFromHeaders(headers)
+	if err == nil {
+		t.Fatal("Expected error for invalid created-at header")
+	}
+}
+
+func TestClient_handleHTTPError_Default(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	resp := &http.Response{
+		StatusCode: http.StatusTeapot,
+		Status:     "418 I'm a teapot",
+		Body:       io.NopCloser(strings.NewReader("")),
+	}
+
+	err := client.handleHTTPError(resp, "https://api.example.com/teapot")
+	if err == nil {
+		t.Fatal("Expected error for teapot response")
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("Expected HTTPError type, got %T", err)
+	}
+
+	if httpErr.Message != "418 I'm a teapot" {
+		t.Fatalf("Expected message fallback to status, got %q", httpErr.Message)
 	}
 }

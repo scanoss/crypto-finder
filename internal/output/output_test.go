@@ -186,6 +186,58 @@ func TestJSONWriter_ParentDirNotExist(t *testing.T) {
 	}
 }
 
+func TestJSONWriter_WriteFileError(t *testing.T) {
+	t.Parallel()
+
+	report := createTestReport()
+	tempDir := t.TempDir()
+	// Create a subdirectory and use it as the output path (not a file inside it)
+	dirPath := filepath.Join(tempDir, "outputdir")
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	writer := NewJSONWriter()
+	// Attempting to write to a directory path will fail deterministically
+	err := writer.Write(report, dirPath)
+	if err == nil {
+		t.Fatal("Expected error when writing to directory path")
+	}
+}
+
+func TestCycloneDXWriter_ParentDirNotExist(t *testing.T) {
+	t.Parallel()
+
+	report := createTestReport()
+	outputFile := "/nonexistent/directory/output.cdx.json"
+
+	writer := NewCycloneDXWriter()
+	err := writer.Write(report, outputFile)
+
+	if err == nil {
+		t.Fatal("Expected error for non-existent parent directory")
+	}
+}
+
+func TestCycloneDXWriter_WriteFileError(t *testing.T) {
+	t.Parallel()
+
+	report := createTestReport()
+	tempDir := t.TempDir()
+	// Create a subdirectory and use it as the output path (not a file inside it)
+	dirPath := filepath.Join(tempDir, "outputdir")
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	writer := NewCycloneDXWriter()
+	// Attempting to write to a directory path will fail deterministically
+	err := writer.Write(report, dirPath)
+	if err == nil {
+		t.Fatal("Expected error when writing to directory path")
+	}
+}
+
 func TestCycloneDXWriter_WriteToFile(t *testing.T) {
 	t.Parallel()
 

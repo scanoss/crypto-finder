@@ -598,3 +598,22 @@ func TestEnsureConfigPermissions_Integration(t *testing.T) {
 		t.Errorf("API key was not preserved, expected 'step1-key', got '%s'", cfg.GetAPIKey())
 	}
 }
+
+func TestEnsureConfigPermissions_StatError(t *testing.T) {
+	defer setupTest(t)()
+
+	cfg := GetInstance()
+
+	configDir := filepath.Dir(viper.ConfigFileUsed())
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+	if err := os.Chmod(configDir, 0o000); err != nil {
+		t.Fatalf("Failed to restrict permissions: %v", err)
+	}
+	defer os.Chmod(configDir, 0o700)
+
+	if err := cfg.ensureConfigPermissions(); err == nil {
+		t.Fatal("Expected error from stat failure")
+	}
+}

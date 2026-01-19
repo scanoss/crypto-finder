@@ -182,12 +182,15 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the semgrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	spinner, err := pterm.DefaultSpinner.
-		WithRemoveWhenDone(true).
-		WithWriter(os.Stderr).
-		Start("Running Semgrep scan...")
-	if err != nil {
-		return nil, "", err
+	var spinner *pterm.SpinnerPrinter
+	if scanner.ShouldUseSpinner() {
+		spinner, err = pterm.DefaultSpinner.
+			WithRemoveWhenDone(true).
+			WithWriter(os.Stderr).
+			Start("Running Semgrep scan...")
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
@@ -209,10 +212,12 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
 
-	if err != nil {
-		spinner.Fail(fmt.Sprintf("OpenGrep failed after %.2fs", duration.Seconds()))
-	} else {
-		spinner.Success(fmt.Sprintf("OpenGrep completed in %.2fs", duration.Seconds()))
+	if spinner != nil {
+		if err != nil {
+			spinner.Fail(fmt.Sprintf("Semgrep failed after %.2fs", duration.Seconds()))
+		} else {
+			spinner.Success(fmt.Sprintf("Semgrep completed in %.2fs", duration.Seconds()))
+		}
 	}
 
 	// Check for context cancellation/timeout

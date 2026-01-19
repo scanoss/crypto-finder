@@ -21,7 +21,11 @@ package scanner
 
 import (
 	"context"
+	"flag"
+	"os"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -126,4 +130,12 @@ type Info struct {
 	// Description provides a brief explanation of what the scanner detects.
 	// Example: "Static analysis tool for detecting cryptographic algorithm usage"
 	Description string
+}
+
+// ShouldUseSpinner returns true when interactive output is safe.
+func ShouldUseSpinner() bool {
+	if flag.Lookup("test.v") != nil {
+		return false
+	}
+	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
 }

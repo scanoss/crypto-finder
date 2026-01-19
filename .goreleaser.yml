@@ -44,7 +44,7 @@ archives:
 
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
     files:
       - LICENSE*
@@ -56,9 +56,25 @@ checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+
+      ids:
+        - crypto-finder-archive
+
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+
 # Snapshot builds (for testing)
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 # Changelog generation
 changelog:
@@ -82,7 +98,7 @@ changelog:
 
 # Docker image configuration
 dockers:
-  # Standard Docker image with Semgrep
+  # Standard Docker image with scanners (OpenGrep default, Semgrep available)
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64"
@@ -115,7 +131,7 @@ dockers:
       - "--build-arg=BUILD_DATE={{.Date}}"
     goarch: arm64
 
-  # Slim Docker image without Semgrep
+  # Slim Docker image without scanners (binary only)
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
@@ -193,10 +209,10 @@ release:
     ## Docker Images
 
     ```bash
-    # Standard image with Semgrep
+    # Standard image with scanners (OpenGrep default, Semgrep available)
     docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}
 
-    # Slim image without Semgrep
+    # Slim image (binary only, no scanners)
     docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-slim
     ```
 

@@ -19,8 +19,9 @@ package converter
 import (
 	"testing"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/scanoss/crypto-finder/internal/entities"
+
+	cdx "github.com/CycloneDX/cyclonedx-go"
 )
 
 func TestAlgorithmMapper_MapToComponent(t *testing.T) {

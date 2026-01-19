@@ -95,6 +95,7 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 
 	// Skip cache check if noCache is enabled
+	//nolint:nestif // Cache validation and fallback logic requires nested conditionals for proper error handling
 	if !m.noCache {
 		// Check if cache exists and is valid
 		if m.isCacheValid(rulesetPath, metadataPath) {

@@ -189,8 +189,8 @@ func (m *AlgorithmMapper) addImplementationPlatform(props *cdx.CryptoAlgorithmPr
 
 // addCryptoFunctions adds cryptographic functions based on the algorithm primitive type.
 // Maps from algorithmPrimitive to the cryptographic functions the algorithm implements.
-// For example: "hash" → ["digest"], "signature" → ["sign", "verify"]
-func (m *AlgorithmMapper) addCryptoFunctions(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
+// For example: "hash" → ["digest"], "signature" → ["sign", "verify"].
+func (m *AlgorithmMapper) addCryptoFunctions(props *cdx.CryptoAlgorithmProperties, _ *entities.CryptographicAsset) {
 	primitiveStr := string(props.Primitive)
 
 	// Look up functions for this primitive

@@ -14,9 +14,12 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-package utils //nolint:revive // utils is a conventional package name for shared utilities
+//revive:disable:var-naming // utils is a conventional package name for shared utilities
+package utils
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -101,4 +104,78 @@ func TestDeduplicateSliceOfStrings_NilInput(t *testing.T) {
 	if len(result) != 0 {
 		t.Errorf("Expected empty slice, got %v", result)
 	}
+}
+
+func TestValidateRuleDirNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("missing directory", func(t *testing.T) {
+		err := ValidateRuleDirNotEmpty("/nonexistent/path")
+		if err == nil {
+			t.Fatal("Expected error for missing directory")
+		}
+	})
+
+	t.Run("path is file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		filePath := filepath.Join(tempDir, "rules.txt")
+		if err := os.WriteFile(filePath, []byte("data"), 0o600); err != nil {
+			t.Fatalf("Failed to write temp file: %v", err)
+		}
+
+		err := ValidateRuleDirNotEmpty(filePath)
+		if err == nil {
+			t.Fatal("Expected error for non-directory path")
+		}
+	})
+
+	t.Run("no rule files", func(t *testing.T) {
+		tempDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tempDir, "notes.txt"), []byte("data"), 0o600); err != nil {
+			t.Fatalf("Failed to write temp file: %v", err)
+		}
+
+		err := ValidateRuleDirNotEmpty(tempDir)
+		if err == nil {
+			t.Fatal("Expected error for missing rule files")
+		}
+	})
+
+	t.Run("rule files present", func(t *testing.T) {
+		tempDir := t.TempDir()
+		rulesPath := filepath.Join(tempDir, "rules", "rule.yml")
+		if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil {
+			t.Fatalf("Failed to create rules dir: %v", err)
+		}
+		if err := os.WriteFile(rulesPath, []byte("rules: []\n"), 0o600); err != nil {
+			t.Fatalf("Failed to write rule file: %v", err)
+		}
+
+		if err := ValidateRuleDirNotEmpty(tempDir); err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+	})
+
+	t.Run("walk error", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lockedDir := filepath.Join(tempDir, "locked")
+		if err := os.MkdirAll(lockedDir, 0o700); err != nil {
+			t.Fatalf("Failed to create locked dir: %v", err)
+		}
+		if err := os.Chmod(lockedDir, 0o000); err != nil {
+			t.Fatalf("Failed to restrict permissions: %v", err)
+		}
+		defer os.Chmod(lockedDir, 0o700)
+
+		// Check if chmod actually prevents reading (may not work in CI environments with elevated privileges)
+		_, readErr := os.ReadDir(lockedDir)
+		if readErr == nil {
+			t.Skip("Skipping test: chmod 0o000 does not prevent reading (likely running with elevated privileges)")
+		}
+
+		err := ValidateRuleDirNotEmpty(tempDir)
+		if err == nil {
+			t.Fatal("Expected error for unreadable directory")
+		}
+	})
 }

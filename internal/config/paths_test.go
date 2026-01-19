@@ -250,3 +250,21 @@ func TestPathsConsistency(t *testing.T) {
 		t.Errorf("configPath should be under appDir: %s not under %s", configPath, appDir)
 	}
 }
+
+func TestGetRootDir_CreateError(t *testing.T) {
+	oldHome := os.Getenv("HOME")
+	tempDir := t.TempDir()
+	if err := os.Chmod(tempDir, 0o000); err != nil {
+		t.Fatalf("Failed to restrict temp dir: %v", err)
+	}
+	defer os.Chmod(tempDir, 0o700)
+	if err := os.Setenv("HOME", tempDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer os.Setenv("HOME", oldHome)
+
+	_, err := GetRootDir()
+	if err == nil {
+		t.Fatal("Expected error from GetRootDir when mkdir fails")
+	}
+}

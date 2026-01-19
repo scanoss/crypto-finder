@@ -200,7 +200,7 @@ func TestCountTotalAssets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var allFindings []entities.Finding
+			allFindings := make([]entities.Finding, 0, len(tt.files))
 			for _, file := range tt.files {
 				report := loadFixture(t, file)
 				allFindings = append(allFindings, report.Findings...)
