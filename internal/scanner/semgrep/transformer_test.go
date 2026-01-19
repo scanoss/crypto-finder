@@ -1,3 +1,19 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 package semgrep
 
 import (
@@ -552,7 +568,7 @@ func TestTransformSemgrepCompatibleOutputToInterimFormat(t *testing.T) {
 		Version: "1.0.0",
 	}
 
-	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput, toolInfo, "/test")
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput, toolInfo, "/test", nil)
 
 	if report == nil {
 		t.Fatal("Expected non-nil report")
@@ -621,7 +637,7 @@ func TestTransformFileFinding(t *testing.T) {
 		},
 	}
 
-	finding := transformFileFinding("/test/main.go", results, "/test")
+	finding := transformFileFinding("/test/main.go", results, "/test", nil, "")
 
 	if finding.FilePath != "main.go" {
 		t.Errorf("Expected 'main.go', got '%s'", finding.FilePath)
@@ -660,7 +676,7 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 		},
 	}
 
-	asset := transformToCryptographicAsset(result)
+	asset := transformToCryptographicAsset(result, nil, "")
 
 	if asset.MatchType != "semgrep" {
 		t.Errorf("Expected match type 'semgrep', got '%s'", asset.MatchType)
@@ -707,7 +723,7 @@ func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
 		},
 	}
 
-	asset := transformToCryptographicAsset(result)
+	asset := transformToCryptographicAsset(result, nil, "")
 
 	if asset.Rule.Severity != "ERROR" {
 		t.Errorf("Expected severity 'ERROR', got '%s'", asset.Rule.Severity)
@@ -720,4 +736,39 @@ func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
 	if len(asset.Metadata) != 0 {
 		t.Errorf("Expected empty metadata, got %d entries", len(asset.Metadata))
 	}
+}
+
+func TestCleanRuleID(t *testing.T) {
+	t.Parallel()
+
+	rulePaths := []string{
+		"/Users/tester/semgrep-rules",
+		"/Users/tester/.scanoss/crypto-finder/cache/rulesets/dca/latest",
+	}
+
+	t.Run("StripsRulesDirPrefix", func(t *testing.T) {
+		ruleID := "Users.tester.semgrep-rules.java.crypto.aes"
+		got := cleanRuleID(ruleID, rulePaths)
+		want := "java.crypto.aes"
+		if got != want {
+			t.Errorf("cleanRuleID(%q) = %q, want %q", ruleID, got, want)
+		}
+	})
+
+	t.Run("StripsCachePrefix", func(t *testing.T) {
+		ruleID := "Users.tester..scanoss.crypto-finder.cache.rulesets.dca.latest.java.crypto.rsa"
+		got := cleanRuleID(ruleID, rulePaths)
+		want := "java.crypto.rsa"
+		if got != want {
+			t.Errorf("cleanRuleID(%q) = %q, want %q", ruleID, got, want)
+		}
+	})
+
+	t.Run("NoMatchKeepsOriginal", func(t *testing.T) {
+		ruleID := "go.crypto.sha256"
+		got := cleanRuleID(ruleID, rulePaths)
+		if got != ruleID {
+			t.Errorf("cleanRuleID(%q) = %q, want %q", ruleID, got, ruleID)
+		}
+	})
 }

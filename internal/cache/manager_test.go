@@ -1,10 +1,28 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 package cache
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +33,52 @@ import (
 	api "github.com/scanoss/crypto-finder/internal/api"
 )
 
+func writeRulesetTarball(gzWriter *gzip.Writer) error {
+	tarWriter := tar.NewWriter(gzWriter)
+	defer func() {
+		if err := tarWriter.Close(); err != nil {
+			log.Printf("Failed to close tar writer: %v", err)
+		}
+	}()
+
+	content := []byte("rules: []\n")
+	headers := []*tar.Header{
+		{
+			Name: "semgrep-rules/java/example.yaml",
+			Mode: 0o600,
+			Size: int64(len(content)),
+		},
+		{
+			Name: "semgrep-rules/python/example.yml",
+			Mode: 0o600,
+			Size: int64(len(content)),
+		},
+	}
+
+	for _, header := range headers {
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+		if _, err := tarWriter.Write(content); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeRuleFile(t *testing.T, rulePath string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(rulePath), 0o755); err != nil {
+		t.Fatalf("Failed to create rule dir: %v", err)
+	}
+
+	if err := os.WriteFile(rulePath, []byte("rules: []\n"), 0o600); err != nil {
+		t.Fatalf("Failed to write rule file: %v", err)
+	}
+}
+
 // createMockTarballServer creates an httptest server that returns a minimal valid tarball.
 func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) *httptest.Server {
 	t.Helper()
@@ -23,12 +87,11 @@ func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) 
 		var tarballData []byte
 
 		if statusCode == http.StatusOK {
-			// Create a minimal gzipped tarball (empty tar)
 			var buf bytes.Buffer
 			gzWriter := gzip.NewWriter(&buf)
-			// Empty tar (2x 512-byte null blocks)
-			emptyTar := make([]byte, 1024)
-			_, _ = gzWriter.Write(emptyTar)
+			if err := writeRulesetTarball(gzWriter); err != nil {
+				t.Fatalf("Failed to write tarball: %v", err)
+			}
 			_ = gzWriter.Close()
 			tarballData = buf.Bytes()
 		}
@@ -60,6 +123,7 @@ func TestManager_GetRulesetPath_CacheHit(t *testing.T) {
 	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
 		t.Fatalf("Failed to create cache directory: %v", err)
 	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
 
 	// Create valid metadata (not expired)
 	metadata := NewMetadata("dca", "latest", "checksum123", 86400) // 24h TTL
@@ -260,9 +324,11 @@ func TestManager_GetRulesetPath_DownloadError(t *testing.T) {
 
 	apiClient := api.NewClient(server.URL, "test-key")
 	manager := &Manager{
-		apiClient: apiClient,
-		cacheDir:  tempDir,
-		noCache:   false,
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       true, // Enable strict mode to prevent fallback
+		maxStaleCacheAge: 30 * 24 * time.Hour,
 	}
 
 	// Execute - download should fail
@@ -271,6 +337,177 @@ func TestManager_GetRulesetPath_DownloadError(t *testing.T) {
 	// Assert
 	if err == nil {
 		t.Fatal("Expected error but got none")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that's within max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create metadata with expired TTL but within max stale age (5 days old)
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // 1 second TTL (expired)
+	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error (API unreachable)
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled
+		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
+	}
+
+	// Execute - API fails, should use stale cache
+	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should succeed with stale cache
+	if err != nil {
+		t.Fatalf("GetRulesetPath() failed: %v (expected to use stale cache)", err)
+	}
+
+	if path != rulesetPath {
+		t.Errorf("Expected path %s, got %s", rulesetPath, path)
+	}
+
+	// Verify it's actually using the expired cache
+	loadedMetadata, err := LoadMetadata(metadataPath)
+	if err != nil {
+		t.Fatalf("Failed to load metadata: %v", err)
+	}
+
+	if !loadedMetadata.IsExpired() {
+		t.Error("Expected cache to be expired")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_TooOld(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that exceeds max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create metadata that's 40 days old (exceeds 30 day limit)
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata.DownloadedAt = time.Now().Add(-40 * 24 * time.Hour) // 40 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled but cache too old
+		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
+	}
+
+	// Execute - should fail because cache is too stale
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail
+	if err == nil {
+		t.Fatal("Expected error but got none (cache should be too stale)")
+	}
+}
+
+func TestManager_GetRulesetPath_StrictMode_NoFallback(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup: Create expired cache that's within max stale age
+	rulesetPath := filepath.Join(tempDir, "dca", "latest")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create cache directory: %v", err)
+	}
+	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
+
+	// Create expired metadata that would otherwise be usable
+	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("Failed to save metadata: %v", err)
+	}
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       true, // Strict mode prevents fallback
+		maxStaleCacheAge: 30 * 24 * time.Hour,
+	}
+
+	// Execute - should fail even though stale cache is available
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail due to strict mode
+	if err == nil {
+		t.Fatal("Expected error but got none (strict mode should prevent fallback)")
+	}
+}
+
+func TestManager_GetRulesetPath_StaleCache_NoCache(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Setup mock server that returns error
+	server := createMockTarballServer(t, http.StatusInternalServerError, false)
+	defer server.Close()
+
+	apiClient := api.NewClient(server.URL, "test-key")
+	manager := &Manager{
+		apiClient:        apiClient,
+		cacheDir:         tempDir,
+		noCache:          false,
+		strictMode:       false, // Fallback enabled but no cache exists
+		maxStaleCacheAge: 30 * 24 * time.Hour,
+	}
+
+	// Execute - no cache exists, should fail
+	_, err := manager.GetRulesetPath(ctx, "dca", "latest")
+
+	// Assert - should fail because no cache exists at all
+	if err == nil {
+		t.Fatal("Expected error but got none (no cache exists)")
 	}
 }
 
@@ -444,11 +681,11 @@ func TestManager_ContextCancellation(t *testing.T) {
 func Example_cacheWorkflow() {
 	// Setup
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Return minimal valid tarball
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)
-		emptyTar := make([]byte, 1024)
-		_, _ = gzWriter.Write(emptyTar)
+		if err := writeRulesetTarball(gzWriter); err != nil {
+			panic(err)
+		}
 		_ = gzWriter.Close()
 		tarballData := buf.Bytes()
 
@@ -464,7 +701,17 @@ func Example_cacheWorkflow() {
 
 	// Create client and manager
 	apiClient := api.NewClient(server.URL, "test-key")
-	manager, _ := NewManager(apiClient)
+	tempDir, err := os.MkdirTemp("", "crypto-finder-cache-example")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	manager := &Manager{
+		apiClient: apiClient,
+		cacheDir:  tempDir,
+		noCache:   false,
+	}
 
 	// First call - downloads and caches
 	ctx := context.Background()

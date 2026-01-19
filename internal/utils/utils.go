@@ -1,3 +1,19 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 // Package utils provides general utility functions used across the application.
 package utils
 
@@ -41,21 +57,23 @@ func ValidateRuleDirNotEmpty(dirPath string) error {
 		return fmt.Errorf("rules directory '%s' is not a directory", dirPath)
 	}
 
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return fmt.Errorf("failed to read rules directory '%s': %w", dirPath, err)
-	}
-
 	hasRuleFiles := false
-	for _, entry := range entries {
+	walkErr := filepath.WalkDir(dirPath, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if entry.IsDir() {
-			continue
+			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if ext == ".yaml" || ext == ".yml" {
 			hasRuleFiles = true
-			break
+			return filepath.SkipAll
 		}
+		return nil
+	})
+	if walkErr != nil {
+		return fmt.Errorf("failed to read rules directory '%s': %w", dirPath, walkErr)
 	}
 
 	if !hasRuleFiles {

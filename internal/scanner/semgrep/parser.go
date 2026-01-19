@@ -1,8 +1,25 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 package semgrep
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -59,7 +76,7 @@ func LogSemgrepCompatibleErrors(errors []entities.SemgrepError) bool {
 		return false
 	}
 
-	var errorItems, warnItems []pterm.BulletListItem
+	var errorItems []pterm.BulletListItem
 
 	for _, e := range errors {
 		errType := "Unknown"
@@ -83,33 +100,18 @@ func LogSemgrepCompatibleErrors(errors []entities.SemgrepError) bool {
 			Bullet: errType,
 		}
 
-		switch e.Level {
-		case "warn", "warning":
-			item.BulletStyle = pterm.NewStyle(pterm.FgYellow)
-			warnItems = append(warnItems, item)
-		default:
+		if e.Level == "error" {
 			item.BulletStyle = pterm.NewStyle(pterm.FgRed)
 			errorItems = append(errorItems, item)
 		}
 	}
 
-	pterm.Println()
-
 	// Display errors
 	if len(errorItems) > 0 {
 		pterm.Error.Println("Scanner Errors")
-		err := pterm.DefaultBulletList.WithItems(errorItems).Render()
+		err := pterm.DefaultBulletList.WithItems(errorItems).WithWriter(os.Stderr).Render()
 		if err != nil {
 			log.Error().Err(err).Msg("failed while displaying output errors")
-		}
-	}
-
-	// Display warnings
-	if len(warnItems) > 0 {
-		pterm.Warning.Println("Warnings")
-		err := pterm.DefaultBulletList.WithItems(warnItems).Render()
-		if err != nil {
-			log.Error().Err(err).Msg("failed while displaying output warnings")
 		}
 	}
 

@@ -1,3 +1,19 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 package cli
 
 import (
@@ -56,6 +72,8 @@ var (
 	scanNoCache       bool
 	scanAPIKey        string
 	scanAPIURL        string
+	scanStrict        bool
+	scanMaxStaleAge   string
 )
 
 var scanCmd = &cobra.Command{
@@ -103,11 +121,13 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
-	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h)")
+	scanCmd.Flags().StringVarP(&scanTimeout, "timeout", "t", defaultTimeout, "Scan timeout (e.g., 10m, 1h, 30d, 2w)")
 	scanCmd.Flags().BoolVar(&scanNoRemoteRules, "no-remote-rules", false, "Disable default remote ruleset")
 	scanCmd.Flags().BoolVar(&scanNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
 	scanCmd.Flags().StringVar(&scanAPIKey, "api-key", "", "SCANOSS API key")
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
+	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
+	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 }
 
 //nolint:gocyclo,funlen // Ignore cognitive complexity for runScan
@@ -120,9 +140,9 @@ func runScan(_ *cobra.Command, args []string) error {
 	}
 
 	// Parse timeout
-	timeout, err := time.ParseDuration(scanTimeout)
+	timeout, err := parseDuration(scanTimeout)
 	if err != nil {
-		return fmt.Errorf("invalid timeout format '%s': %w (use format like '10m' or '1h')", scanTimeout, err)
+		return fmt.Errorf("invalid timeout format '%s': %w (use format like '10m', '1h', '30d', or '2w')", scanTimeout, err)
 	}
 
 	// Create context with timeout
@@ -173,6 +193,17 @@ func runScan(_ *cobra.Command, args []string) error {
 		}
 
 		cacheManager.SetNoCache(scanNoCache)
+		cacheManager.SetStrictMode(scanStrict)
+
+		// Parse and validate max stale age
+		maxStaleAge, err := parseDuration(scanMaxStaleAge)
+		if err != nil {
+			return fmt.Errorf("invalid --max-stale-age format '%s': %w (use format like '30d', '720h', or '2w')", scanMaxStaleAge, err)
+		}
+		if maxStaleAge > config.MaxStaleCacheAge {
+			return fmt.Errorf("--max-stale-age cannot exceed %s (got: %s)", config.MaxStaleCacheAge, maxStaleAge)
+		}
+		cacheManager.SetMaxStaleCacheAge(maxStaleAge)
 
 		remoteSource := rules.NewRemoteRuleSource(
 			ctx,
@@ -322,11 +353,51 @@ func printScanSummary(filesCount, findingsCount int) error {
 
 	stats = append(stats, pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Output: %s", scanOutputLocation)})
 
-	pterm.DefaultSection.Println("Scan Summary")
-	err := pterm.DefaultBulletList.WithItems(stats).Render()
+	pterm.DefaultSection.WithWriter(os.Stderr).Println("Scan Summary")
+	err := pterm.DefaultBulletList.WithItems(stats).WithWriter(os.Stderr).Render()
 	if err != nil {
 		return fmt.Errorf("failed to render scan summary: %w", err)
 	}
 
 	return nil
+}
+
+// parseDuration parses a duration string supporting standard Go formats plus:
+//   - "d" for days (e.g., "30d" = 720 hours)
+//   - "w" for weeks (e.g., "2w" = 336 hours)
+//
+// Standard formats (ns, us, ms, s, m, h) are parsed by time.ParseDuration.
+func parseDuration(s string) (time.Duration, error) {
+	// Try standard parsing first (supports: ns, us, ms, s, m, h)
+	d, err := time.ParseDuration(s)
+	if err == nil {
+		return d, nil
+	}
+
+	// Check for "d" (days) suffix
+	if strings.HasSuffix(s, "d") {
+		days := strings.TrimSuffix(s, "d")
+		n, parseErr := fmt.Sscanf(days, "%f", new(float64))
+		if parseErr != nil || n != 1 {
+			return 0, fmt.Errorf("invalid duration format: %s", s)
+		}
+		var value float64
+		fmt.Sscanf(days, "%f", &value)
+		return time.Duration(value * 24) * time.Hour, nil
+	}
+
+	// Check for "w" (weeks) suffix
+	if strings.HasSuffix(s, "w") {
+		weeks := strings.TrimSuffix(s, "w")
+		n, parseErr := fmt.Sscanf(weeks, "%f", new(float64))
+		if parseErr != nil || n != 1 {
+			return 0, fmt.Errorf("invalid duration format: %s", s)
+		}
+		var value float64
+		fmt.Sscanf(weeks, "%f", &value)
+		return time.Duration(value * 24 * 7) * time.Hour, nil
+	}
+
+	// Return original error if no custom suffix matched
+	return 0, fmt.Errorf("invalid duration format: %s", s)
 }

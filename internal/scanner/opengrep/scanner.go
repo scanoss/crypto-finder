@@ -1,3 +1,19 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 // Package opengrep provides the OpenGrep scanner adapter implementation.
 // It executes OpenGrep and transforms its output into the interim JSON format.
 package opengrep
@@ -6,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -134,7 +151,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
 
 	// Transform to interim format (reuse Semgrep transformer)
-	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target)
+	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths)
 
 	return report, nil
 }
@@ -212,6 +229,7 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
 	spinner, err := pterm.DefaultSpinner.
 		WithRemoveWhenDone(true).
+		WithWriter(os.Stderr).
 		Start("Running OpenGrep scan...")
 	if err != nil {
 		return nil, "", err

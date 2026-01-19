@@ -1,3 +1,19 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version 2.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 package cache
 
 import (
@@ -140,5 +156,116 @@ func TestNewMetadata(t *testing.T) {
 	}
 	if meta.LastAccessed.Before(before) || meta.LastAccessed.After(after) {
 		t.Error("LastAccessed timestamp not set correctly")
+	}
+}
+
+func TestMetadata_Age(t *testing.T) {
+	tests := []struct {
+		name         string
+		downloadedAt time.Time
+		expectedAge  time.Duration
+		tolerance    time.Duration
+	}{
+		{
+			name:         "5 days old",
+			downloadedAt: time.Now().Add(-5 * 24 * time.Hour),
+			expectedAge:  5 * 24 * time.Hour,
+			tolerance:    1 * time.Second,
+		},
+		{
+			name:         "1 hour old",
+			downloadedAt: time.Now().Add(-1 * time.Hour),
+			expectedAge:  1 * time.Hour,
+			tolerance:    1 * time.Second,
+		},
+		{
+			name:         "30 days old",
+			downloadedAt: time.Now().Add(-30 * 24 * time.Hour),
+			expectedAge:  30 * 24 * time.Hour,
+			tolerance:    1 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &Metadata{
+				RulesetName:    "test",
+				Version:        "latest",
+				DownloadedAt:   tt.downloadedAt,
+				LastAccessed:   time.Now(),
+				ChecksumSHA256: "test-checksum",
+				TTLSeconds:     3600,
+			}
+
+			age := meta.Age()
+
+			// Check if age is within tolerance of expected age
+			diff := age - tt.expectedAge
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > tt.tolerance {
+				t.Errorf("Age() = %v, want %v (±%v), diff = %v", age, tt.expectedAge, tt.tolerance, diff)
+			}
+		})
+	}
+}
+
+func TestMetadata_IsTooStale(t *testing.T) {
+	tests := []struct {
+		name         string
+		downloadedAt time.Time
+		maxAge       time.Duration
+		expectStale  bool
+	}{
+		{
+			name:         "within limit - 5 days old, 30 day max",
+			downloadedAt: time.Now().Add(-5 * 24 * time.Hour),
+			maxAge:       30 * 24 * time.Hour,
+			expectStale:  false,
+		},
+		{
+			name:         "exceeds limit - 40 days old, 30 day max",
+			downloadedAt: time.Now().Add(-40 * 24 * time.Hour),
+			maxAge:       30 * 24 * time.Hour,
+			expectStale:  true,
+		},
+		{
+			name:         "just under limit - 29d 23h old, 30 day max",
+			downloadedAt: time.Now().Add(-29*24*time.Hour - 23*time.Hour),
+			maxAge:       30 * 24 * time.Hour,
+			expectStale:  false, // Just under limit should be OK
+		},
+		{
+			name:         "just over limit - 30d + 1h old, 30 day max",
+			downloadedAt: time.Now().Add(-30*24*time.Hour - 1*time.Hour),
+			maxAge:       30 * 24 * time.Hour,
+			expectStale:  true,
+		},
+		{
+			name:         "very old - 90 days old, 30 day max",
+			downloadedAt: time.Now().Add(-90 * 24 * time.Hour),
+			maxAge:       30 * 24 * time.Hour,
+			expectStale:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &Metadata{
+				RulesetName:    "test",
+				Version:        "latest",
+				DownloadedAt:   tt.downloadedAt,
+				LastAccessed:   time.Now(),
+				ChecksumSHA256: "test-checksum",
+				TTLSeconds:     3600,
+			}
+
+			isStale := meta.IsTooStale(tt.maxAge)
+
+			if isStale != tt.expectStale {
+				t.Errorf("IsTooStale(%v) = %v, want %v (age: %v)", tt.maxAge, isStale, tt.expectStale, meta.Age())
+			}
+		})
 	}
 }
