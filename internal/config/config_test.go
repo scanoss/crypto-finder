@@ -604,16 +604,20 @@ func TestEnsureConfigPermissions_StatError(t *testing.T) {
 
 	cfg := GetInstance()
 
-	configDir := filepath.Dir(viper.ConfigFileUsed())
+	// Create a symlink loop to trigger a stat error deterministically
+	// This will cause os.Stat to fail with "too many levels of symbolic links"
+	configPath := viper.ConfigFileUsed()
+	configDir := filepath.Dir(configPath)
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("Failed to create config dir: %v", err)
 	}
-	if err := os.Chmod(configDir, 0o000); err != nil {
-		t.Fatalf("Failed to restrict permissions: %v", err)
+
+	// Create a symlink that points to itself (infinite loop)
+	if err := os.Symlink(configPath, configPath); err != nil {
+		t.Fatalf("Failed to create symlink loop: %v", err)
 	}
-	defer os.Chmod(configDir, 0o700)
 
 	if err := cfg.ensureConfigPermissions(); err == nil {
-		t.Fatal("Expected error from stat failure")
+		t.Fatal("Expected error from stat failure due to symlink loop")
 	}
 }

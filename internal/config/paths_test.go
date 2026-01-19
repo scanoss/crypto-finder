@@ -254,17 +254,21 @@ func TestPathsConsistency(t *testing.T) {
 func TestGetRootDir_CreateError(t *testing.T) {
 	oldHome := os.Getenv("HOME")
 	tempDir := t.TempDir()
-	if err := os.Chmod(tempDir, 0o000); err != nil {
-		t.Fatalf("Failed to restrict temp dir: %v", err)
+
+	// Create a file where HOME would normally be a directory
+	// This will cause MkdirAll to fail when trying to create subdirectories
+	homeFile := filepath.Join(tempDir, "home-file")
+	if err := os.WriteFile(homeFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("Failed to create home file: %v", err)
 	}
-	defer os.Chmod(tempDir, 0o700)
-	if err := os.Setenv("HOME", tempDir); err != nil {
+
+	if err := os.Setenv("HOME", homeFile); err != nil {
 		t.Fatalf("Failed to set HOME: %v", err)
 	}
 	defer os.Setenv("HOME", oldHome)
 
 	_, err := GetRootDir()
 	if err == nil {
-		t.Fatal("Expected error from GetRootDir when mkdir fails")
+		t.Fatal("Expected error from GetRootDir when mkdir fails due to file in path")
 	}
 }

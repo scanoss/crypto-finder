@@ -263,11 +263,9 @@ func TestManager_downloadAndCache_ManifestSaveError(t *testing.T) {
 
 	targetPath := filepath.Join(tempDir, "dca", "latest")
 	manifestPath := filepath.Join(targetPath+tempSuffix, manifestFileName)
-	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	if err := os.WriteFile(manifestPath, []byte("locked"), 0o400); err != nil {
-		t.Fatalf("Failed to write locked manifest: %v", err)
+	// Create the manifest path as a directory (not a file) to trigger a save error
+	if err := os.MkdirAll(manifestPath, 0o755); err != nil {
+		t.Fatalf("Failed to create manifest directory: %v", err)
 	}
 
 	if err := manager.downloadAndCache(context.Background(), "dca", "latest", targetPath); err == nil {
