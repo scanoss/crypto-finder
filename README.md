@@ -39,7 +39,7 @@ Before you begin, ensure you have the following installed:
 
     ```bash
     # OpenGrep (recommended)
-    # Download from https://github.com/returntocorp/semgrep
+    # Download from https://github.com/opengrep/opengrep
 
     # Semgrep
     pip install semgrep
