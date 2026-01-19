@@ -2,7 +2,6 @@ package converter
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -10,6 +9,26 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
+
+// primitiveToFunctions maps cryptographic primitive types to their cryptographic functions.
+// This mapping is based on standardized cryptographic definitions (NIST, IETF) and is stable.
+// Only includes valid CycloneDX primitives as defined in the CycloneDX specification.
+var primitiveToFunctions = map[string][]cdx.CryptoFunction{
+	"ae":            {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt, cdx.CryptoFunctionTag},
+	"block-cipher":  {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"stream-cipher": {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"hash":          {cdx.CryptoFunctionDigest},
+	"signature":     {cdx.CryptoFunctionSign, cdx.CryptoFunctionVerify},
+	"mac":           {cdx.CryptoFunctionTag, cdx.CryptoFunctionVerify},
+	"kdf":           {cdx.CryptoFunctionKeyderive},
+	"pke":           {cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
+	"kem":           {cdx.CryptoFunctionEncapsulate, cdx.CryptoFunctionDecapsulate},
+	"xof":           {cdx.CryptoFunctionDigest},
+	"key-agree":     {cdx.CryptoFunctionKeygen},
+	"combiner":      {cdx.CryptoFunctionOther}, // Combines multiple primitives
+	"drbg":          {cdx.CryptoFunctionGenerate},
+	"other":         {cdx.CryptoFunctionOther},
+}
 
 // AlgorithmMapper converts cryptographic algorithm assets to CycloneDX components.
 type AlgorithmMapper struct{}
@@ -19,9 +38,10 @@ func NewAlgorithmMapper() *AlgorithmMapper {
 	return &AlgorithmMapper{}
 }
 
-// MapToComponent converts a cryptographic asset to a CycloneDX component.
-// Applies strict mapping - returns error if required fields are missing.
-func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entities.CryptographicAsset) (*cdx.Component, error) {
+// MapToComponentWithEvidence converts a cryptographic asset to a CycloneDX component
+// with support for new fields (executionEnvironment, implementationPlatform).
+// This method does NOT build properties or evidence - those are handled by the converter.
+func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.CryptographicAsset) (*cdx.Component, error) {
 	if err := m.validateRequiredFields(asset); err != nil {
 		return nil, err
 	}
@@ -37,11 +57,13 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 		Primitive: cdxPrimitive,
 	}
 
-	// TODO: Add algorithmFamily, it's not supported yet in cdx library and cdx 1.6 spec
 	// Add optional fields
 	m.addParameterSetIdentifier(algorithmProps, asset)
 	m.addMode(algorithmProps, asset)
 	m.addPadding(algorithmProps, asset)
+	m.addExecutionEnvironment(algorithmProps, asset)
+	m.addImplementationPlatform(algorithmProps, asset)
+	m.addCryptoFunctions(algorithmProps, asset)
 
 	algorithmName := m.getAlgorithmName(asset)
 
@@ -59,7 +81,7 @@ func (m *AlgorithmMapper) MapToComponent(finding *entities.Finding, asset *entit
 		BOMRef:           bomRef,
 		Name:             algorithmName,
 		CryptoProperties: cryptoProps,
-		Properties:       m.buildProperties(finding, asset),
+		// Properties and Evidence will be set by the converter
 	}
 
 	return component, nil
@@ -123,6 +145,52 @@ func (m *AlgorithmMapper) addPadding(props *cdx.CryptoAlgorithmProperties, asset
 	}
 }
 
+// addExecutionEnvironment adds execution environment field.
+// Default: "software-plain-ram", can be overridden by rule metadata.
+func (m *AlgorithmMapper) addExecutionEnvironment(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
+	executionEnv := "software-plain-ram" // Default value
+
+	// Allow override from rule metadata
+	if envFromMetadata, ok := asset.Metadata["executionEnvironment"]; ok && envFromMetadata != "" {
+		executionEnv = envFromMetadata
+	}
+
+	props.ExecutionEnvironment = cdx.CryptoExecutionEnvironment(executionEnv)
+}
+
+// addImplementationPlatform adds implementation platform field.
+// Default: "x86_64", can be overridden by rule metadata.
+func (m *AlgorithmMapper) addImplementationPlatform(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
+	platform := "x86_64" // Default value
+
+	// Allow override from rule metadata
+	if platformFromMetadata, ok := asset.Metadata["implementationPlatform"]; ok && platformFromMetadata != "" {
+		platform = platformFromMetadata
+	}
+
+	props.ImplementationPlatform = cdx.ImplementationPlatform(platform)
+}
+
+// addCryptoFunctions adds cryptographic functions based on the algorithm primitive type.
+// Maps from algorithmPrimitive to the cryptographic functions the algorithm implements.
+// For example: "hash" → ["digest"], "signature" → ["sign", "verify"]
+func (m *AlgorithmMapper) addCryptoFunctions(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
+	primitiveStr := string(props.Primitive)
+
+	// Look up functions for this primitive
+	functions, ok := primitiveToFunctions[primitiveStr]
+	if !ok {
+		// If primitive not found, default to unknown
+		log.Debug().
+			Str("primitive", primitiveStr).
+			Msg("Unknown primitive type, defaulting cryptoFunctions to 'unknown'")
+		functions = []cdx.CryptoFunction{cdx.CryptoFunctionUnknown}
+	}
+
+	// Set the crypto functions
+	props.CryptoFunctions = &functions
+}
+
 // getAlgorithmName gets the algorithmName based on the asset metadata.
 // If algorithmName is specified, we use it as is.
 // Otherwise, we construct the name based on the metadata.
@@ -147,48 +215,4 @@ func (m *AlgorithmMapper) getAlgorithmName(asset *entities.CryptographicAsset) s
 	}
 
 	return strings.Join(parts, "-")
-}
-
-// buildProperties creates custom properties for traceability.
-func (m *AlgorithmMapper) buildProperties(finding *entities.Finding, asset *entities.CryptographicAsset) *[]cdx.Property {
-	properties := []cdx.Property{
-		{
-			Name:  "scanoss:location:file",
-			Value: finding.FilePath,
-		},
-		{
-			Name:  "scanoss:location:start_line",
-			Value: strconv.Itoa(asset.StartLine),
-		},
-		{
-			Name:  "scanoss:location:end_line",
-			Value: strconv.Itoa(asset.EndLine),
-		},
-	}
-
-	// Add API if available
-	if api, ok := asset.Metadata["api"]; ok && api != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:api",
-			Value: api,
-		})
-	}
-
-	// Add severity
-	if asset.Rule.Severity != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:severity",
-			Value: asset.Rule.Severity,
-		})
-	}
-
-	// Add rule id if available
-	if asset.Rule.ID != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:ruleid",
-			Value: asset.Rule.ID,
-		})
-	}
-
-	return &properties
 }

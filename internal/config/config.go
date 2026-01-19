@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
@@ -115,6 +116,7 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 		// Setup viper
 		viper.SetConfigFile(configPath)
 		viper.SetConfigType("json")
+		viper.SetConfigPermissions(0o600)
 	}
 
 	// Set defaults (lowest priority)
@@ -132,6 +134,10 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 	// Read config file (3rd priority)
 	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later
 	_ = viper.ReadInConfig()
+
+	if err := c.ensureConfigPermissions(); err != nil {
+		log.Warn().Err(err).Msg("Failed to ensure config file permissions")
+	}
 
 	// Apply CLI flags (highest priority)
 	if apiKeyFlag != "" {
@@ -151,7 +157,10 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 
 // writeConfig writes the current viper configuration to the config file.
 // Handles both creating new config files and updating existing ones.
+// Ensures the config file has secure permissions (0o600) after writing.
 func (c *Config) writeConfig() error {
+	configPath := viper.ConfigFileUsed()
+
 	if err := viper.WriteConfig(); err != nil {
 		// If file doesn't exist, use SafeWriteConfig
 		var configNotFoundErr viper.ConfigFileNotFoundError
@@ -159,10 +168,65 @@ func (c *Config) writeConfig() error {
 			if err := viper.SafeWriteConfig(); err != nil {
 				return fmt.Errorf("failed to create config file: %w", err)
 			}
+			// File was just created, ensure it has correct permissions
+			if err := os.Chmod(configPath, 0o600); err != nil {
+				return fmt.Errorf("failed to set config file permissions: %w", err)
+			}
 			return nil
 		}
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
+
+	// Ensure permissions are correct after write (in case file already existed)
+	if err := os.Chmod(configPath, 0o600); err != nil {
+		return fmt.Errorf("failed to set config file permissions: %w", err)
+	}
+
+	return nil
+}
+
+// ensureConfigPermissions checks and fixes permissions on the config file.
+// Config files contain sensitive API keys and must be readable only by the owner (0o600).
+// If permissions are too open, it automatically fixes them and logs a warning.
+func (c *Config) ensureConfigPermissions() error {
+	configPath := viper.ConfigFileUsed()
+	if configPath == "" {
+		// No config file path set, nothing to check
+		return nil
+	}
+
+	// Check if file exists
+	info, err := os.Stat(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist yet, will be created with correct permissions
+			return nil
+		}
+		// Unable to stat file, but don't fail - just return the error for logging
+		return fmt.Errorf("unable to check config file permissions: %w", err)
+	}
+
+	// Check current permissions
+	currentPerm := info.Mode().Perm()
+	expectedPerm := os.FileMode(0o600)
+
+	// If permissions are already correct, nothing to do
+	if currentPerm == expectedPerm {
+		return nil
+	}
+
+	// Permissions are too open, fix them
+	if err := os.Chmod(configPath, expectedPerm); err != nil {
+		return fmt.Errorf("unable to fix config file permissions: %w", err)
+	}
+
+	// Log warning about the fix
+	log.Warn().
+		Str("file", configPath).
+		Str("old_permissions", currentPerm.String()).
+		Str("new_permissions", expectedPerm.String()).
+		Msg("Config file had insecure permissions, automatically fixed")
+
 	return nil
 }
 

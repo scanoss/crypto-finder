@@ -154,9 +154,6 @@ func (v *Validator) validateAlgorithmProperties(props *cdx.CryptoProperties) err
 		return err
 	}
 
-	// Note: Algorithm name is stored in Component.Name, not in algorithmProperties
-	// The algorithmProperties struct doesn't have a Variant field in CycloneDX 1.6
-
 	// Warn if parameterSetIdentifier is missing (recommended but not required)
 	if algProps.ParameterSetIdentifier == "" {
 		log.Debug().

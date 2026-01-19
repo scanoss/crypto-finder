@@ -3,6 +3,7 @@ package converter
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -32,6 +33,7 @@ type Converter struct {
 	algorithmMapper     *AlgorithmMapper
 	relatedCryptoMapper *RelatedCryptoMapper
 	validator           *Validator
+	aggregator          *Aggregator
 }
 
 // NewConverter creates a new CBOM converter with all required mappers.
@@ -40,11 +42,12 @@ func NewConverter() *Converter {
 		algorithmMapper:     NewAlgorithmMapper(),
 		relatedCryptoMapper: NewRelatedCryptoMapper(),
 		validator:           NewValidator(),
+		aggregator:          NewAggregator(),
 	}
 }
 
 // Convert transforms an interim report to a CycloneDX BOM.
-// It applies strict mapping - assets without required fields are skipped.
+// It aggregates assets by identity and builds evidence for each occurrence.
 // Returns the BOM and any validation errors.
 func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	if report == nil {
@@ -52,6 +55,17 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	}
 
 	log.Info().Msg("Starting conversion to CycloneDX CBOM format")
+
+	// Aggregate assets by identity
+	aggregatedAssets, err := c.aggregator.AggregateAssets(report)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate assets: %w", err)
+	}
+
+	log.Info().
+		Int("total_occurrences", countTotalAssets(report)).
+		Int("unique_assets", len(aggregatedAssets)).
+		Msg("Asset aggregation complete")
 
 	// Create BOM with metadata
 	bom := &cdx.BOM{
@@ -62,34 +76,30 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 		Metadata:     c.buildMetadata(report),
 	}
 
-	// Convert all findings to components
+	// Convert aggregated assets to components
 	components := []cdx.Component{}
 	skippedCount := 0
 
-	for _, finding := range report.Findings {
-		for _, asset := range finding.CryptographicAssets {
-			component, err := c.convertAsset(&finding, &asset)
-			if err != nil {
-				// Log skip but continue processing
-				log.Debug().
-					Str("file", finding.FilePath).
-					Int("start_line", asset.StartLine).
-					Int("end_line", asset.EndLine).
-					Str("ruleID", asset.Rule.ID).
-					Err(err).
-					Msg("Skipping asset - missing required fields")
-				skippedCount++
-				continue
-			}
-
-			components = append(components, *component)
+	for _, aggregated := range aggregatedAssets {
+		component, err := c.convertAggregatedAsset(&aggregated)
+		if err != nil {
+			log.Debug().
+				Str("name", aggregated.Name).
+				Str("assetType", aggregated.AssetType).
+				Str("ruleID", aggregated.ReferenceAsset.Rule.ID).
+				Err(err).
+				Msg("Skipping aggregated asset - conversion failed")
+			skippedCount++
+			continue
 		}
+
+		components = append(components, *component)
 	}
 
 	bom.Components = &components
 
 	log.Info().
-		Int("total_assets", countTotalAssets(report)).
+		Int("unique_assets", len(aggregatedAssets)).
 		Int("converted", len(components)).
 		Int("skipped", skippedCount).
 		Msg("Conversion complete")
@@ -104,33 +114,95 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	return bom, nil
 }
 
-// convertAsset converts a single cryptographic asset to a CycloneDX component.
-func (c *Converter) convertAsset(finding *entities.Finding, asset *entities.CryptographicAsset) (*cdx.Component, error) {
-	// Require explicit assetType in metadata
-	assetType, ok := asset.Metadata["assetType"]
-	if !ok || assetType == "" {
-		return nil, fmt.Errorf("missing required field 'assetType' in crypto metadata (must be one of: %s, %s, %s, %s)",
-			AssetTypeAlgorithm, AssetTypeProtocol, AssetTypeCertificate, AssetTypeRelatedCryptoMaterial)
-	}
+// convertAggregatedAsset converts an aggregated cryptographic asset to a CycloneDX component.
+// This builds a single component with evidence tracking all occurrences and detection methods.
+func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Component, error) {
+	var baseComponent *cdx.Component
+	var err error
 
-	// Route to appropriate mapper based on asset type
-	switch assetType {
+	switch aggregated.AssetType {
 	case AssetTypeAlgorithm:
-		return c.algorithmMapper.MapToComponent(finding, asset)
+		baseComponent, err = c.algorithmMapper.MapToComponentWithEvidence(
+			aggregated.ReferenceAsset,
+		)
 
 	case AssetTypeRelatedCryptoMaterial:
-		return c.relatedCryptoMapper.MapToComponent(finding, asset)
+		baseComponent, err = c.relatedCryptoMapper.MapToComponentWithEvidence(
+			aggregated.ReferenceAsset,
+		)
 
 	case AssetTypeProtocol:
-		return nil, fmt.Errorf("asset type 'protocol' is not yet implemented - protocol mapper coming soon")
+		return nil, fmt.Errorf("asset type 'protocol' is not yet implemented")
 
 	case AssetTypeCertificate:
-		return nil, fmt.Errorf("asset type 'certificate' is not yet implemented - certificate mapper coming soon")
+		return nil, fmt.Errorf("asset type 'certificate' is not yet implemented")
 
 	default:
-		return nil, fmt.Errorf("unsupported asset type '%s' (must be one of: %s, %s, %s, %s)",
-			assetType, AssetTypeAlgorithm, AssetTypeProtocol, AssetTypeCertificate, AssetTypeRelatedCryptoMaterial)
+		return nil, fmt.Errorf("unsupported asset type '%s'", aggregated.AssetType)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	baseComponent.Name = aggregated.Name
+	baseComponent.Evidence = c.buildEvidence(aggregated)
+
+	return baseComponent, nil
+}
+
+// buildEvidence constructs the evidence structure with occurrences and identities.
+func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
+	occurrences := make([]cdx.EvidenceOccurrence, 0, len(aggregated.Occurrences))
+	for _, occ := range aggregated.Occurrences {
+		occurrence := cdx.EvidenceOccurrence{
+			Location: occ.FilePath,
+		}
+
+		if occ.StartLine > 0 {
+			occurrence.Line = &occ.StartLine
+		}
+
+		if occ.RuleID != "" {
+			occurrence.AdditionalContext = fmt.Sprintf("scanoss:ruleid,%s", occ.RuleID)
+		}
+
+		occurrences = append(occurrences, occurrence)
+	}
+
+	// Build identity array
+	identities := make([]cdx.EvidenceIdentity, 0, len(aggregated.Identities))
+	for _, identity := range aggregated.Identities {
+		methods := []cdx.EvidenceIdentityMethod{}
+
+		confidence := float32(identity.Confidence)
+
+		if identity.API != "" {
+			cleanedMatch := strings.Join(strings.Fields(identity.Match), " ")
+			methods = append(methods, cdx.EvidenceIdentityMethod{
+				Technique:  "source-code-analysis",
+				Value:      fmt.Sprintf("scanoss:match,%s", cleanedMatch),
+				Confidence: &confidence,
+			})
+		}
+
+		identities = append(identities, cdx.EvidenceIdentity{
+			Methods:    &methods,
+			Confidence: &confidence,
+		})
+	}
+
+	evidence := &cdx.Evidence{}
+
+	if len(occurrences) > 0 {
+		evidence.Occurrences = &occurrences
+	}
+
+	if len(identities) > 0 {
+		evidence.Identity = &identities
+	}
+
+	return evidence
 }
 
 // buildMetadata creates BOM metadata with tool information.

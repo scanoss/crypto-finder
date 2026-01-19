@@ -16,17 +16,17 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 	mapper := NewRelatedCryptoMapper()
 
 	tests := []struct {
-		name           string
-		fixtureFile    string
-		wantNameSuffix string
-		wantErr        bool
-		errContains    string
+		name        string
+		fixtureFile string
+		wantName    string
+		wantErr     bool
+		errContains string
 	}{
 		{
-			name:           "SHA-256 digest",
-			fixtureFile:    "digest_sha256.json",
-			wantNameSuffix: "@digest",
-			wantErr:        false,
+			name:        "SHA-256 digest",
+			fixtureFile: "digest_sha256.json",
+			wantName:    "digest",
+			wantErr:     false,
 		},
 	}
 
@@ -45,7 +45,7 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 			asset := &finding.CryptographicAssets[0]
 
 			// Run mapper
-			component, err := mapper.MapToComponent(finding, asset)
+			component, err := mapper.MapToComponentWithEvidence(asset)
 
 			// Check error expectation
 			if (err != nil) != tt.wantErr {
@@ -62,9 +62,14 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 				return
 			}
 
-			// Check name has correct suffix (format is {bomRef}@{materialType})
-			if !strings.HasSuffix(component.Name, tt.wantNameSuffix) {
-				t.Errorf("Component name = %q, want suffix %q", component.Name, tt.wantNameSuffix)
+			// Validate component
+			if component == nil {
+				t.Fatal("MapToComponent() returned nil component")
+			}
+
+			// Check name matches expected material type
+			if component.Name != tt.wantName {
+				t.Errorf("Component name = %q, want %q", component.Name, tt.wantName)
 			}
 
 			// Check BOM ref
@@ -86,38 +91,8 @@ func TestRelatedCryptoMapper_MapToComponent(t *testing.T) {
 				t.Errorf("AssetType = %q, want %q", component.CryptoProperties.AssetType, "related-crypto-material")
 			}
 
-			// Check that basic properties exist (file, line)
-			if component.Properties == nil || len(*component.Properties) == 0 {
-				t.Fatal("Component missing Properties")
-			}
-
-			// Verify basic location properties exist
-			props := *component.Properties
-			hasFile := false
-			hasStartLine := false
-			hasEndLine := false
-
-			for _, prop := range props {
-				if prop.Name == "scanoss:location:file" {
-					hasFile = true
-				}
-				if prop.Name == "scanoss:location:start_line" {
-					hasStartLine = true
-				}
-				if prop.Name == "scanoss:location:end_line" {
-					hasEndLine = true
-				}
-			}
-
-			if !hasFile {
-				t.Error("Missing scanoss:location:file property")
-			}
-			if !hasStartLine {
-				t.Error("Missing scanoss:location:start_line property")
-			}
-			if !hasEndLine {
-				t.Error("Missing scanoss:location:end_line property")
-			}
+			// Note: Properties are no longer set by MapToComponentWithEvidence
+			// They are built by the converter's buildEvidence method instead
 		})
 	}
 }

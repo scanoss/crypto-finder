@@ -2,11 +2,14 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
+	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -21,7 +24,8 @@ var rootCmd = &cobra.Command{
 	Long: `SCANOSS Crypto-Finder is a CLI tool that scans source code repositories to detect
 	cryptographic operations and extract relevant values. It executes OpenGrep
 	as the default scanning engine and outputs results in a standardized interim JSON format.`,
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	PersistentPreRun: func(_ *cobra.Command, _ []string) {
 		setupLogging()
 	},
@@ -58,7 +62,18 @@ func setupLogging() {
 
 // Execute runs the root command and exits on error.
 func Execute() {
+	// Disable pterm colors if not running in a TTY (e.g., piped output or non-interactive terminal)
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		pterm.DisableColor()
+	}
+
 	if err := rootCmd.Execute(); err != nil {
+		// Use plain error output in non-TTY environments to avoid color artifacts
+		if !term.IsTerminal(int(os.Stderr.Fd())) {
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+		} else {
+			pterm.Error.Printfln("%s", err)
+		}
 		os.Exit(1)
 	}
 }

@@ -200,6 +200,111 @@ func TestCountTotalAssets(t *testing.T) {
 	}
 }
 
+func TestConverter_ConvertAggregatedAsset_ErrorPaths(t *testing.T) {
+	converter := NewConverter()
+
+	tests := []struct {
+		name        string
+		aggregated  *AggregatedAsset
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "Protocol asset - not implemented",
+			aggregated: &AggregatedAsset{
+				Name:      "TLS-1.3",
+				AssetType: AssetTypeProtocol,
+				ReferenceAsset: &entities.CryptographicAsset{
+					Metadata: map[string]string{
+						"assetType": "protocol",
+					},
+				},
+				ReferenceFinding: &entities.Finding{},
+				Occurrences:      []AssetOccurrence{},
+				Identities:       []AssetIdentity{},
+			},
+			wantErr:     true,
+			errContains: "protocol",
+		},
+		{
+			name: "Certificate asset - not implemented",
+			aggregated: &AggregatedAsset{
+				Name:      "X.509-Cert",
+				AssetType: AssetTypeCertificate,
+				ReferenceAsset: &entities.CryptographicAsset{
+					Metadata: map[string]string{
+						"assetType": "certificate",
+					},
+				},
+				ReferenceFinding: &entities.Finding{},
+				Occurrences:      []AssetOccurrence{},
+				Identities:       []AssetIdentity{},
+			},
+			wantErr:     true,
+			errContains: "certificate",
+		},
+		{
+			name: "Unknown asset type",
+			aggregated: &AggregatedAsset{
+				Name:      "Unknown",
+				AssetType: "unknown-type",
+				ReferenceAsset: &entities.CryptographicAsset{
+					Metadata: map[string]string{
+						"assetType": "unknown-type",
+					},
+				},
+				ReferenceFinding: &entities.Finding{},
+				Occurrences:      []AssetOccurrence{},
+				Identities:       []AssetIdentity{},
+			},
+			wantErr:     true,
+			errContains: "unsupported asset type",
+		},
+		{
+			name: "Algorithm with missing required fields",
+			aggregated: &AggregatedAsset{
+				Name:      "InvalidAlgorithm",
+				AssetType: AssetTypeAlgorithm,
+				ReferenceAsset: &entities.CryptographicAsset{
+					Metadata: map[string]string{
+						"assetType": "algorithm",
+						// Missing algorithmPrimitive and algorithmFamily
+					},
+				},
+				ReferenceFinding: &entities.Finding{},
+				Occurrences:      []AssetOccurrence{},
+				Identities:       []AssetIdentity{},
+			},
+			wantErr:     true,
+			errContains: "missing required field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component, err := converter.convertAggregatedAsset(tt.aggregated)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("convertAggregatedAsset() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("Error should contain %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if component == nil {
+				t.Error("Expected component but got nil")
+			}
+		})
+	}
+}
+
 // Helper function to load test fixtures.
 func loadFixture(t *testing.T, filename string) *entities.InterimReport {
 	t.Helper()

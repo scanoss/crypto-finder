@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-version"
+	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -116,10 +117,12 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	output, stderr, err := s.execute(ctx, args)
 	if err != nil {
 		cmdStr := fmt.Sprintf("%s %s", s.executablePath, strings.Join(args, " "))
-		if stderr != "" {
-			return nil, fmt.Errorf("opengrep command failed\nCommand: %s\nError: %w\nStderr:\n%s", cmdStr, err, stderr)
-		}
-		return nil, fmt.Errorf("opengrep command failed\nCommand: %s\nError: %w", cmdStr, err)
+		log.Debug().
+			Str("command", cmdStr).
+			Str("stderr", stderr).
+			Msg("opengrep command failed")
+
+		return nil, err
 	}
 
 	// Parse opengrep JSON output (uses same format as Semgrep)
@@ -127,6 +130,8 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse opengrep output: %w", err)
 	}
+
+	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
 
 	// Transform to interim format (reuse Semgrep transformer)
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target)
@@ -205,6 +210,13 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the opengrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
+	spinner, err := pterm.DefaultSpinner.
+		WithRemoveWhenDone(true).
+		Start("Running OpenGrep scan...")
+	if err != nil {
+		return nil, "", err
+	}
+
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
@@ -215,16 +227,19 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
 	}
 
-	log.Info().Msg("Executing opengrep scan")
-
 	startTime := time.Now()
 
 	stderrBuf := &strings.Builder{}
 	cmd.Stderr = stderrBuf
-
 	stdout, err = cmd.Output()
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
+
+	if err != nil {
+		spinner.Fail(fmt.Sprintf("OpenGrep failed after %.2fs", duration.Seconds()))
+	} else {
+		spinner.Success(fmt.Sprintf("OpenGrep completed in %.2fs", duration.Seconds()))
+	}
 
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -253,11 +268,11 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 				return stdout, stderr, nil
 			}
 		}
-		log.Error().
-			Int("exit_code", exitCode).
-			Dur("duration", duration).
-			Err(err).
-			Msg("opengrep execution failed")
+
+		err = semgrep.HandleSemgrepCompatibleErrors(stdout, duration, exitCode, ScannerName)
+		if err != nil {
+			return nil, stderr, err
+		}
 		return nil, stderr, err
 	}
 
