@@ -1,0 +1,35 @@
+# ============================================================================
+# Test Docker Image
+# ============================================================================
+# This image is used for running integration tests in CI/CD and locally.
+# It includes Go, semgrep, and opengrep to support scanner integration tests.
+
+FROM golang:1.25
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install semgrep (pinned version for reproducibility)
+RUN pip3 install --no-cache-dir semgrep==1.145.0 --break-system-packages
+
+# Install opengrep (minimum version 1.12.1 required for taint analysis)
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+
+# Add opengrep to PATH
+ENV PATH="/root/.opengrep/cli/latest:${PATH}"
+
+# Verify installations
+RUN go version && \
+    semgrep --version && \
+    opengrep --version
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command runs tests
+CMD ["go", "test", "-v", "-race", "-coverprofile=coverage.out", "-covermode=atomic", "./..."]

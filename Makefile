@@ -40,12 +40,33 @@ run: build ## Runs the CLI (use ARGS="..." to pass arguments)
 version: ## Display current version
 	@echo "Current version: $(VERSION)"
 
+# ============================================================================
+# Test targets
+# ============================================================================
 test: ## Run all tests
 	@go test -v -race -coverprofile=coverage.out ./...
+
+test-docker: ## Run tests in Docker (same as CI) with semgrep/opengrep
+	@echo "Building test Docker image with Go + semgrep + opengrep..."
+	@docker build -t crypto-finder-test:latest -f Dockerfile.test .
+	@echo "Running tests in Docker container..."
+	@docker run --rm \
+	    -v $(PWD):/workspace \
+	    -w /workspace \
+	    crypto-finder-test:latest
+	@echo "✅ Tests completed! Coverage report: coverage.out"
 
 coverage: test ## Generate coverage report
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+coverage-check: ## Check coverage thresholds (requires go-test-coverage)
+	@if command -v go-test-coverage >/dev/null 2>&1; then \
+	    go-test-coverage --config=.testcoverage.yml; \
+	else \
+	    echo "⚠️  go-test-coverage not installed. Install with:"; \
+	    echo "  go install github.com/vladopajic/go-test-coverage/v2@latest"; \
+	fi
 
 # ============================================================================
 # Docker targets

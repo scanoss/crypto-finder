@@ -88,11 +88,6 @@ func TestConverter_Convert(t *testing.T) {
 				return // Expected error, test passed
 			}
 
-			// Validate BOM structure
-			if bom == nil {
-				t.Fatal("Convert() returned nil BOM")
-			}
-
 			// Check BOM format
 			if bom.BOMFormat != "CycloneDX" {
 				t.Errorf("BOM format = %q, want %q", bom.BOMFormat, "CycloneDX")

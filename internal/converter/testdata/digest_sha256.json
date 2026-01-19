@@ -1,6 +1,6 @@
 {
   "tool": {
-    "name": "scanoss-cf",
+    "name": "crypto-finder",
     "version": "0.1.0"
   },
   "findings": [

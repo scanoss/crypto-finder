@@ -1,0 +1,43 @@
+rules:
+  - id: go.crypto.tls.load-key-pair
+    message: Detected X.509 certificate and key loading for TLS
+    severity: INFO
+    languages:
+      - go
+    patterns:
+      - pattern-either:
+          - pattern: tls.LoadX509KeyPair($CERTFILE, $KEYFILE)
+          - pattern: tls.X509KeyPair($CERTPEM, $KEYPEM)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: certificate
+        findingType: certificate_handling
+        operation: other
+        library: crypto/tls
+        api: tls.LoadX509KeyPair
+        materialSource: loaded
+
+  - id: go.crypto.des.key-generation
+    message: Detected DES key generation (weak encryption)
+    severity: WARNING
+    languages:
+      - go
+    patterns:
+      - pattern: des.NewCipher($KEY)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        findingType: key_generation
+        operation: keygen
+        algorithmPrimitive: block-cipher
+        algorithmName: DES
+        algorithmFamily: DES
+        library: crypto/des
+        api: des.NewCipher
+        materialSource: generated

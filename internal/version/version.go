@@ -4,9 +4,8 @@ package version
 
 var (
 	// ToolName is the name of the tool.
-	ToolName = "scanoss-cf"
+	ToolName = "crypto-finder"
 	// Version is the application version (set by build flags).
-	// TODO: Update version information to fetch from the actual git tag
 	Version = "dev"
 	// GitCommit is the git commit hash (set by build flags).
 	GitCommit = "unknown"

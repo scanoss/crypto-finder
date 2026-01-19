@@ -5,3 +5,5 @@ dist
 target
 *results*.json
 coverage.out
+coverage.html
+tmp/

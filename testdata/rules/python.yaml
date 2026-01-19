@@ -1,0 +1,38 @@
+rules:
+  - id: python.crypto.secrets.token-bytes
+    message: Detected secure random bytes generation using secrets.token_bytes()
+    severity: INFO
+    languages:
+      - python
+    patterns:
+      - pattern-either:
+          - pattern: secrets.token_bytes(...)
+          - pattern: secrets.token_bytes($NBYTES)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        primitive: drbg
+        algorithmName: CSPRNG
+        library: secrets
+        api: token_bytes
+
+  - id: python.crypto.hmac.new
+    message: Detected HMAC usage
+    severity: INFO
+    languages:
+      - python
+    patterns:
+      - pattern: hmac.new($KEY, $MSG, ...)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmFamily: HMAC
+        algorithmPrimitive: mac
+        library: hmac
+        api: hmac.new
