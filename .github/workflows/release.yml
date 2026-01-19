@@ -47,6 +47,113 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Sign Windows binaries
+        uses: sslcom/esigner-codesign@v1.3.2
+        with:
+          command: batch_sign
+          username: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME }}
+          password: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_PASSWORD }}
+          credential_id: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_CREDENTIAL_ID }}
+          totp_secret: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_TOTP_SECRET }}
+          dir_path: dist
+          file_pattern: "*.exe"
+          malware_block: false
+          clean_logs: false
+          environment_name: PROD
+
+      - name: Re-package signed Windows binaries
+        shell: bash
+        run: |
+          set -e
+          echo "Re-packaging Windows archives with signed binaries..."
+
+          # Find all Windows .zip files
+          for zipfile in dist/*_windows_*.zip; do
+            if [ -f "$zipfile" ]; then
+              echo "Processing: $zipfile"
+
+              # Extract archive name without extension
+              basename=$(basename "$zipfile" .zip)
+
+              # Create temporary directory for extraction
+              tempdir="dist/temp_${basename}"
+              mkdir -p "$tempdir"
+
+              # Extract the original archive
+              unzip -q "$zipfile" -d "$tempdir"
+
+              # Find the signed .exe in the build directory
+              # GoReleaser creates build directories like: crypto-finder_windows_amd64_v1/
+              builddir=$(find dist -type d -name "*${basename#crypto-finder_}" | head -n 1)
+
+              if [ -z "$builddir" ]; then
+                echo "Warning: Could not find build directory for $basename"
+                # Try alternative pattern
+                builddir=$(find dist -type d -name "${basename}" | head -n 1)
+              fi
+
+              if [ -n "$builddir" ] && [ -f "$builddir/crypto-finder.exe" ]; then
+                echo "  Found signed binary at: $builddir/crypto-finder.exe"
+
+                # Replace the unsigned binary with signed one
+                cp -f "$builddir/crypto-finder.exe" "$tempdir/crypto-finder.exe"
+
+                # Re-create the zip archive
+                cd "$tempdir"
+                zip -q -r "../${basename}.zip" .
+                cd - > /dev/null
+
+                echo "  ✓ Re-packaged with signed binary"
+              else
+                echo "  Warning: Signed binary not found at expected location"
+              fi
+
+              rm -rf "$tempdir"
+            fi
+          done
+
+          # Regenerate checksums for all archives
+          shopt -s nullglob
+          files=(dist/crypto-finder_*_checksums.txt)
+
+          if [ ${#files[@]} -gt 0 ]; then
+            echo ""
+            echo "Regenerating checksums..."
+            cd dist
+
+            # Remove old checksums
+            rm -f *_checksums.txt
+
+            # Build archives array in the dist directory
+            archives=(*.tar.gz *.zip)
+
+            # Generate new checksums for all archives
+            if [ ${#archives[@]} -gt 0 ]; then
+              # Extract version from first archive name using parameter expansion
+              first_archive="${archives[0]}"
+              # Extract version (e.g., v1.2.3) from filename like crypto-finder_v1.2.3_linux_amd64.tar.gz
+              version="${first_archive#crypto-finder_}"  # Remove prefix
+              version="${version%%_*}"  # Extract first token (the version)
+              version="${version:-v0.0.0}"  # Fallback to v0.0.0 if extraction fails
+
+              sha256sum "${archives[@]}" | tee "crypto-finder_${version}_checksums.txt"
+            else
+              echo "Error: No archives found to checksum"
+              exit 1
+            fi
+
+            cd - > /dev/null
+            echo "✓ Checksums updated"
+          fi
+
+          echo ""
+          echo "Windows binary re-packaging complete!"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

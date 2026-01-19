@@ -250,3 +250,25 @@ func TestPathsConsistency(t *testing.T) {
 		t.Errorf("configPath should be under appDir: %s not under %s", configPath, appDir)
 	}
 }
+
+func TestGetRootDir_CreateError(t *testing.T) {
+	oldHome := os.Getenv("HOME")
+	tempDir := t.TempDir()
+
+	// Create a file where HOME would normally be a directory
+	// This will cause MkdirAll to fail when trying to create subdirectories
+	homeFile := filepath.Join(tempDir, "home-file")
+	if err := os.WriteFile(homeFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("Failed to create home file: %v", err)
+	}
+
+	if err := os.Setenv("HOME", homeFile); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer os.Setenv("HOME", oldHome)
+
+	_, err := GetRootDir()
+	if err == nil {
+		t.Fatal("Expected error from GetRootDir when mkdir fails due to file in path")
+	}
+}

@@ -15,6 +15,8 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 // Package utils provides general utility functions used across the application.
+//
+//revive:disable:var-naming // utils is a conventional package name for shared utilities
 package utils
 
 import (
@@ -58,7 +60,7 @@ func ValidateRuleDirNotEmpty(dirPath string) error {
 	}
 
 	hasRuleFiles := false
-	walkErr := filepath.WalkDir(dirPath, func(path string, entry os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(dirPath, func(_ string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

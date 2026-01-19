@@ -179,6 +179,7 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 func (c *Config) writeConfig() error {
 	configPath := viper.ConfigFileUsed()
 
+	//nolint:nestif // Config file creation requires nested error handling for WriteConfig fallback to SafeWriteConfig
 	if err := viper.WriteConfig(); err != nil {
 		// If file doesn't exist, use SafeWriteConfig
 		var configNotFoundErr viper.ConfigFileNotFoundError

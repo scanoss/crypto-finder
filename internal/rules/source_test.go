@@ -172,6 +172,30 @@ func TestMultiSource_Name(t *testing.T) {
 	}
 }
 
+func TestMultiSource_Name_Empty(t *testing.T) {
+	t.Parallel()
+
+	multiSource := NewMultiSource()
+	if multiSource.Name() != "MultiSource(empty)" {
+		t.Errorf("Expected MultiSource(empty), got %s", multiSource.Name())
+	}
+}
+
+func TestMultiSource_Name_SingleSource(t *testing.T) {
+	t.Parallel()
+
+	source := &mockRuleSource{
+		nameFunc: func() string {
+			return "only-source"
+		},
+	}
+
+	multiSource := NewMultiSource(source)
+	if multiSource.Name() != "only-source" {
+		t.Errorf("Expected only-source, got %s", multiSource.Name())
+	}
+}
+
 func TestMultiSource_Load_EmptySources(t *testing.T) {
 	t.Parallel()
 

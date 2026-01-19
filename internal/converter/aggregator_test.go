@@ -260,6 +260,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 				t.Errorf("Expected %d aggregated assets, got %d", tt.expectedAssetCount, len(aggregated))
 			}
 
+			//nolint:nestif // Test validation requires nested checks to verify all fields of aggregated results
 			if len(aggregated) > 0 {
 				firstAsset := aggregated[0]
 

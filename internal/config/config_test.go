@@ -598,3 +598,26 @@ func TestEnsureConfigPermissions_Integration(t *testing.T) {
 		t.Errorf("API key was not preserved, expected 'step1-key', got '%s'", cfg.GetAPIKey())
 	}
 }
+
+func TestEnsureConfigPermissions_StatError(t *testing.T) {
+	defer setupTest(t)()
+
+	cfg := GetInstance()
+
+	// Create a symlink loop to trigger a stat error deterministically
+	// This will cause os.Stat to fail with "too many levels of symbolic links"
+	configPath := viper.ConfigFileUsed()
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+
+	// Create a symlink that points to itself (infinite loop)
+	if err := os.Symlink(configPath, configPath); err != nil {
+		t.Fatalf("Failed to create symlink loop: %v", err)
+	}
+
+	if err := cfg.ensureConfigPermissions(); err == nil {
+		t.Fatal("Expected error from stat failure due to symlink loop")
+	}
+}

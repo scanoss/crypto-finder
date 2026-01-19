@@ -354,7 +354,7 @@ func TestManager_GetRulesetPath_StaleCache_Success(t *testing.T) {
 	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
 
 	// Create metadata with expired TTL but within max stale age (5 days old)
-	metadata := NewMetadata("dca", "latest", "checksum123", 1) // 1 second TTL (expired)
+	metadata := NewMetadata("dca", "latest", "checksum123", 1)  // 1 second TTL (expired)
 	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 	if err := metadata.Save(metadataPath); err != nil {
@@ -370,13 +370,12 @@ func TestManager_GetRulesetPath_StaleCache_Success(t *testing.T) {
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
 		noCache:          false,
-		strictMode:       false, // Fallback enabled
+		strictMode:       false,               // Fallback enabled
 		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
 	}
 
 	// Execute - API fails, should use stale cache
 	path, err := manager.GetRulesetPath(ctx, "dca", "latest")
-
 	// Assert - should succeed with stale cache
 	if err != nil {
 		t.Fatalf("GetRulesetPath() failed: %v (expected to use stale cache)", err)
@@ -411,7 +410,7 @@ func TestManager_GetRulesetPath_StaleCache_TooOld(t *testing.T) {
 	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
 
 	// Create metadata that's 40 days old (exceeds 30 day limit)
-	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata := NewMetadata("dca", "latest", "checksum123", 1)   // Expired
 	metadata.DownloadedAt = time.Now().Add(-40 * 24 * time.Hour) // 40 days ago
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 	if err := metadata.Save(metadataPath); err != nil {
@@ -427,7 +426,7 @@ func TestManager_GetRulesetPath_StaleCache_TooOld(t *testing.T) {
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
 		noCache:          false,
-		strictMode:       false, // Fallback enabled but cache too old
+		strictMode:       false,               // Fallback enabled but cache too old
 		maxStaleCacheAge: 30 * 24 * time.Hour, // 30 days
 	}
 
@@ -454,7 +453,7 @@ func TestManager_GetRulesetPath_StrictMode_NoFallback(t *testing.T) {
 	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "example.yaml"))
 
 	// Create expired metadata that would otherwise be usable
-	metadata := NewMetadata("dca", "latest", "checksum123", 1) // Expired
+	metadata := NewMetadata("dca", "latest", "checksum123", 1)  // Expired
 	metadata.DownloadedAt = time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 	if err := metadata.Save(metadataPath); err != nil {
@@ -644,6 +643,37 @@ func TestManager_getTTL(t *testing.T) {
 				t.Errorf("getTTL(%s) = %v, expected %v", tt.version, result, tt.ttl)
 			}
 		})
+	}
+}
+
+func TestManager_isCacheValid_InvalidMetadata(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	manager := &Manager{cacheDir: tempDir}
+
+	rulesetPath := filepath.Join(tempDir, "invalid")
+	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
+		t.Fatalf("Failed to create ruleset dir: %v", err)
+	}
+
+	metadataPath := filepath.Join(rulesetPath, metadataFileName)
+	if err := os.WriteFile(metadataPath, []byte("broken"), 0o600); err != nil {
+		t.Fatalf("Failed to write metadata: %v", err)
+	}
+
+	if manager.isCacheValid(rulesetPath, metadataPath) {
+		t.Fatal("Expected invalid cache for broken metadata")
+	}
+}
+
+func TestManager_updateLastAccessed_Error(t *testing.T) {
+	t.Parallel()
+
+	manager := &Manager{}
+	err := manager.updateLastAccessed("/nonexistent/metadata.json")
+	if err == nil {
+		t.Fatal("Expected error for missing metadata file")
 	}
 }
 

@@ -41,7 +41,7 @@ LABEL org.opencontainers.image.title="SCANOSS Crypto Finder"
 LABEL org.opencontainers.image.description="A tool to scan source code for cryptographic algorithm usage"
 LABEL org.opencontainers.image.vendor="SCANOSS"
 LABEL org.opencontainers.image.source="https://github.com/scanoss/crypto-finder"
-LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.licenses="GPL-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 
 # Verify installations
