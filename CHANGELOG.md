@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-01-19
+### Fixed
+- Disable Sign Windows Binaries step when secrets are not available
+
 ## [0.1.1] - 2026-01-19
 ### Fixed
 - Fix ./github/workflows/version-bump.yml workflow to use Github App Token instead of Personal Access Token
@@ -25,3 +29,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [0.1.0]: https://github.com/scanoss/crypto-finder/compare/v0.0.0...v0.1.0
 [0.1.1]: https://github.com/scanoss/crypto-finder/compare/v0.1.0...v0.1.1
+[0.1.2]: https://github.com/scanoss/crypto-finder/compare/v0.1.1...v0.1.2

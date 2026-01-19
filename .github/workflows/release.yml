@@ -54,6 +54,7 @@ jobs:
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Sign Windows binaries
+        if: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME != '' }}
         uses: sslcom/esigner-codesign@v1.3.2
         with:
           command: batch_sign
@@ -62,12 +63,12 @@ jobs:
           credential_id: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_CREDENTIAL_ID }}
           totp_secret: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_TOTP_SECRET }}
           dir_path: dist
-          file_pattern: "*.exe"
           malware_block: false
           clean_logs: false
           environment_name: PROD
 
       - name: Re-package signed Windows binaries
+        if: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME != '' }}
         shell: bash
         run: |
           set -e
