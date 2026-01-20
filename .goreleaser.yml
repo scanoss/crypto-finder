@@ -61,7 +61,7 @@ notarize:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
 
       ids:
-        - crypto-finder-archive
+        - crypto-finder
 
       sign:
         certificate: "{{.Env.MACOS_SIGN_P12}}"
