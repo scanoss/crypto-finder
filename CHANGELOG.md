@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-01-20
+### Fixed
+- Fix macOS signing secret mapping in release workflow to use correct GitHub organization secrets (MACOS_DEVELOPER_CERT and MACOS_DEVELOPER_CERT_PASSWORD)
+
 ## [0.1.2] - 2026-01-19
 ### Fixed
 - Disable Sign Windows Binaries step when secrets are not available
@@ -30,3 +34,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/scanoss/crypto-finder/compare/v0.0.0...v0.1.0
 [0.1.1]: https://github.com/scanoss/crypto-finder/compare/v0.1.0...v0.1.1
 [0.1.2]: https://github.com/scanoss/crypto-finder/compare/v0.1.1...v0.1.2
+[0.1.3]: https://github.com/scanoss/crypto-finder/compare/v0.1.2...v0.1.3
