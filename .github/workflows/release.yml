@@ -92,7 +92,7 @@ jobs:
           credential_id: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_CREDENTIAL_ID }}
           totp_secret: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_TOTP_SECRET }}
           dir_path: dist/windows-signing
-          malware_block: false
+          malware_block: true
           clean_logs: false
           environment_name: PROD
 
