@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fix macOS signing secret mapping in release workflow to use correct GitHub organization secrets (MACOS_DEVELOPER_CERT and MACOS_DEVELOPER_CERT_PASSWORD)
 - Fix macOS notarization configuration to reference correct build ID (crypto-finder instead of crypto-finder-archive)
+- Fix Windows signing to only process .exe files, avoiding errors with metadata.json and other non-executable files
 
 ## [0.1.2] - 2026-01-19
 ### Fixed

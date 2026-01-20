@@ -62,6 +62,26 @@ jobs:
             echo "available=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Prepare Windows binaries for signing
+        if: steps.check-windows-secrets.outputs.available == 'true'
+        run: |
+          set -e
+          echo "Preparing Windows executables for signing..."
+
+          # Create temporary directory for executables only
+          mkdir -p dist/windows-signing
+
+          # Find and copy only .exe files to signing directory
+          find dist -name "*.exe" -type f -exec cp {} dist/windows-signing/ \;
+
+          exe_count=$(find dist/windows-signing -name "*.exe" -type f | wc -l)
+          echo "Found $exe_count .exe files to sign"
+
+          if [ "$exe_count" -eq 0 ]; then
+            echo "Warning: No .exe files found to sign"
+            exit 1
+          fi
+
       - name: Sign Windows binaries
         if: steps.check-windows-secrets.outputs.available == 'true'
         uses: sslcom/esigner-codesign@v1.3.2
@@ -71,7 +91,7 @@ jobs:
           password: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_PASSWORD }}
           credential_id: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_CREDENTIAL_ID }}
           totp_secret: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_TOTP_SECRET }}
-          dir_path: dist
+          dir_path: dist/windows-signing
           malware_block: false
           clean_logs: false
           environment_name: PROD
@@ -83,10 +103,24 @@ jobs:
           set -e
           echo "Re-packaging Windows archives with signed binaries..."
 
-          # Find all Windows .zip files
+          # Copy signed executables back to their original build directories
+          for signed_exe in dist/windows-signing/*.exe; do
+            if [ -f "$signed_exe" ]; then
+              echo "Processing signed: $(basename "$signed_exe")"
+              # Find all build directories and copy the signed exe back
+              for builddir in dist/*_windows_*/; do
+                if [ -d "$builddir" ] && [ -f "$builddir/crypto-finder.exe" ]; then
+                  cp -f "$signed_exe" "$builddir/crypto-finder.exe"
+                  echo "  ✓ Copied to: $builddir"
+                fi
+              done
+            fi
+          done
+
+          # Find all Windows .zip files and re-package them
           for zipfile in dist/*_windows_*.zip; do
             if [ -f "$zipfile" ]; then
-              echo "Processing: $zipfile"
+              echo "Re-packaging: $zipfile"
 
               # Extract archive name without extension
               basename=$(basename "$zipfile" .zip)
@@ -98,21 +132,10 @@ jobs:
               # Extract the original archive
               unzip -q "$zipfile" -d "$tempdir"
 
-              # Find the signed .exe in the build directory
-              # GoReleaser creates build directories like: crypto-finder_windows_amd64_v1/
-              builddir=$(find dist -type d -name "*${basename#crypto-finder_}" | head -n 1)
-
-              if [ -z "$builddir" ]; then
-                echo "Warning: Could not find build directory for $basename"
-                # Try alternative pattern
-                builddir=$(find dist -type d -name "${basename}" | head -n 1)
-              fi
-
-              if [ -n "$builddir" ] && [ -f "$builddir/crypto-finder.exe" ]; then
-                echo "  Found signed binary at: $builddir/crypto-finder.exe"
-
-                # Replace the unsigned binary with signed one
-                cp -f "$builddir/crypto-finder.exe" "$tempdir/crypto-finder.exe"
+              # Use the signed exe from windows-signing directory
+              if [ -f "dist/windows-signing/crypto-finder.exe" ]; then
+                echo "  Replacing with signed binary"
+                cp -f "dist/windows-signing/crypto-finder.exe" "$tempdir/crypto-finder.exe"
 
                 # Re-create the zip archive
                 cd "$tempdir"
@@ -121,7 +144,7 @@ jobs:
 
                 echo "  ✓ Re-packaged with signed binary"
               else
-                echo "  Warning: Signed binary not found at expected location"
+                echo "  Warning: Signed binary not found"
               fi
 
               rm -rf "$tempdir"
