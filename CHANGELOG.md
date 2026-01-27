@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Fixed
 - Fix non-deterministic output in deduplicator by preserving asset insertion order
+- Fix deduplicator incorrectly merging assets of different types (e.g., IV and algorithm) detected on the same line by including assetType in deduplication key
 
 ### Removed
 - Remove unused `buildProperties` method from RelatedCryptoMapper (rule information is now properly handled via CycloneDX Evidence structure)

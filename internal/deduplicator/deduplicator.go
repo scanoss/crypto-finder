@@ -12,27 +12,33 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// locationKey represents a unique location in a file based on line positions.
+// locationKey represents a unique location in a file based on line positions and asset type.
+// Assets of different types (e.g., algorithm vs related-crypto-material) at the same location
+// are considered distinct and will not be merged during deduplication.
 type locationKey struct {
 	filePath  string
 	startLine int
 	endLine   int
+	assetType string
 }
 
 // String returns a string representation of the location key for debugging.
 func (k locationKey) String() string {
-	return fmt.Sprintf("%s:%d-%d", k.filePath, k.startLine, k.endLine)
+	return fmt.Sprintf("%s:%d-%d[%s]", k.filePath, k.startLine, k.endLine, k.assetType)
 }
 
 // DeduplicateInterimReport removes duplicate CryptographicAssets that share
-// the same file path and line position. When duplicates are found, their
-// metadata and rule information are merged into a single asset.
+// the same file path, line position, and asset type. When duplicates are found,
+// their metadata and rule information are merged into a single asset.
 //
 // The deduplication process:
-// 1. Groups assets by (file_path, start_line, end_line) tuple
+// 1. Groups assets by (file_path, start_line, end_line, asset_type) tuple
 // 2. For each group, merges all assets into one representative asset
 // 3. Preserves all unique metadata values from merged assets
-// 4. Maintains the first rule's information as the primary rule
+// 4. Merges all unique rules from all assets in the group
+//
+// Assets of different types (e.g., "algorithm" vs "related-crypto-material")
+// at the same location are kept separate to prevent metadata confusion.
 //
 // This function modifies the report in-place and returns it for convenience.
 func DeduplicateInterimReport(report *entities.InterimReport) *entities.InterimReport {
@@ -55,15 +61,19 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 		return assets
 	}
 
-	// Group assets by their location
+	// Group assets by their location and asset type
 	assetGroups := make(map[locationKey][]entities.CryptographicAsset)
 	firstSeenKeys := make([]locationKey, 0)
 
 	for _, asset := range assets {
+		// Extract assetType from metadata (use empty string if not present)
+		assetType := asset.Metadata["assetType"]
+
 		key := locationKey{
 			filePath:  filePath,
 			startLine: asset.StartLine,
 			endLine:   asset.EndLine,
+			assetType: assetType,
 		}
 
 		if _, exists := assetGroups[key]; !exists {

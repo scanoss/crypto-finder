@@ -438,15 +438,182 @@ func TestDeduplicateInterimReport_SingleAsset(t *testing.T) {
 	}
 }
 
+// TestDeduplicateInterimReport_DifferentAssetTypesSameLine tests that assets
+// of different types at the same location are NOT merged.
+func TestDeduplicateInterimReport_DifferentAssetTypesSameLine(t *testing.T) {
+	report := &entities.InterimReport{
+		Version: "1.1",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "crypto.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 23,
+						EndLine:   23,
+						Match:     "GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.related-crypto-material.initialization-vector",
+							Message:  "Detected GCM initialization vector usage",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":    "related-crypto-material",
+							"materialType": "initialization-vector",
+							"api":          "GCMParameterSpec",
+						},
+						Status: "pending",
+					},
+					{
+						StartLine: 23,
+						EndLine:   23,
+						Match:     "GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.algorithm.ae.aes-gcm-parameterspec",
+							Message:  "Detected AES-GCM parameter specification",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":                        "algorithm",
+							"algorithmFamily":                  "AES",
+							"algorithmMode":                    "GCM",
+							"algorithmPrimitive":               "ae",
+							"algorithmParameterSetIdentifier": "128",
+						},
+						Status: "pending",
+					},
+				},
+			},
+		},
+	}
+
+	result := DeduplicateInterimReport(report)
+	assets := result.Findings[0].CryptographicAssets
+
+	// Should have 2 separate assets, not merged
+	if len(assets) != 2 {
+		t.Fatalf("Expected 2 separate assets (different types), got %d", len(assets))
+	}
+
+	// Verify first asset is related-crypto-material
+	if assets[0].Metadata["assetType"] != "related-crypto-material" {
+		t.Errorf("First asset should be related-crypto-material, got %s", assets[0].Metadata["assetType"])
+	}
+	if assets[0].Metadata["materialType"] != "initialization-vector" {
+		t.Errorf("First asset should have materialType")
+	}
+	if len(assets[0].Rules) != 1 {
+		t.Errorf("First asset should have 1 rule, got %d", len(assets[0].Rules))
+	}
+
+	// Verify second asset is algorithm
+	if assets[1].Metadata["assetType"] != "algorithm" {
+		t.Errorf("Second asset should be algorithm, got %s", assets[1].Metadata["assetType"])
+	}
+	if assets[1].Metadata["algorithmFamily"] != "AES" {
+		t.Errorf("Second asset should have algorithmFamily")
+	}
+	if len(assets[1].Rules) != 1 {
+		t.Errorf("Second asset should have 1 rule, got %d", len(assets[1].Rules))
+	}
+}
+
+// TestDeduplicateInterimReport_SameAssetTypeSameLine tests that assets
+// of the SAME type at the same location ARE merged (existing behavior).
+func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
+	report := &entities.InterimReport{
+		Version: "1.1",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "crypto.go",
+				Language: "go",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 42,
+						EndLine:   42,
+						Match:     "cipher.NewGCM(block)",
+						Rules: []entities.RuleInfo{{
+							ID:       "go-crypto-aes-gcm",
+							Message:  "AES-GCM encryption detected",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":                        "algorithm",
+							"algorithmFamily":                  "AES",
+							"algorithmMode":                    "GCM",
+							"algorithmPrimitive":               "ae",
+							"algorithmParameterSetIdentifier": "256",
+						},
+						Status: "pending",
+					},
+					{
+						StartLine: 42,
+						EndLine:   42,
+						Match:     "cipher.NewGCM(block)",
+						Rules: []entities.RuleInfo{{
+							ID:       "go-crypto-authenticated-encryption",
+							Message:  "Authenticated encryption pattern detected",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":          "algorithm",
+							"algorithmFamily":    "AES",
+							"algorithmMode":      "GCM",
+							"algorithmPrimitive": "ae",
+						},
+						Status: "pending",
+					},
+				},
+			},
+		},
+	}
+
+	result := DeduplicateInterimReport(report)
+	assets := result.Findings[0].CryptographicAssets
+
+	// Should have 1 merged asset (same type, same location)
+	if len(assets) != 1 {
+		t.Fatalf("Expected 1 merged asset (same type), got %d", len(assets))
+	}
+
+	// Verify the merged asset has both rules
+	if len(assets[0].Rules) != 2 {
+		t.Errorf("Merged asset should have 2 rules, got %d", len(assets[0].Rules))
+	}
+
+	// Verify both rule IDs are present
+	ruleIDs := make(map[string]bool)
+	for _, rule := range assets[0].Rules {
+		ruleIDs[rule.ID] = true
+	}
+	if !ruleIDs["go-crypto-aes-gcm"] {
+		t.Errorf("Missing rule 'go-crypto-aes-gcm'")
+	}
+	if !ruleIDs["go-crypto-authenticated-encryption"] {
+		t.Errorf("Missing rule 'go-crypto-authenticated-encryption'")
+	}
+
+	// Verify metadata is preserved
+	if assets[0].Metadata["assetType"] != "algorithm" {
+		t.Errorf("assetType should be 'algorithm', got %s", assets[0].Metadata["assetType"])
+	}
+	if assets[0].Metadata["algorithmFamily"] != "AES" {
+		t.Errorf("algorithmFamily should be 'AES', got %s", assets[0].Metadata["algorithmFamily"])
+	}
+}
+
 // TestLocationKey_String tests the string representation of locationKey.
 func TestLocationKey_String(t *testing.T) {
 	key := locationKey{
 		filePath:  "crypto.go",
 		startLine: 10,
 		endLine:   15,
+		assetType: "algorithm",
 	}
 
-	expected := "crypto.go:10-15"
+	expected := "crypto.go:10-15[algorithm]"
 	actual := key.String()
 
 	if actual != expected {
