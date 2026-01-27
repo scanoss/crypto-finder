@@ -46,6 +46,7 @@ type Scanner struct {
 	env            map[string]string
 	extraArgs      []string
 	skipPatterns   []string
+	disableDedup   bool
 }
 
 // NewScanner creates a new Semgrep adapter with default settings.
@@ -89,6 +90,7 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	if config.SkipPatterns != nil {
 		s.skipPatterns = config.SkipPatterns
 	}
+	s.disableDedup = config.DisableDedup
 
 	return nil
 }
@@ -128,7 +130,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 
 	LogSemgrepCompatibleErrors(semgrepResults.Errors)
 
-	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target, rulePaths)
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepResults, toolInfo, target, rulePaths, s.disableDedup)
 
 	return report, nil
 }

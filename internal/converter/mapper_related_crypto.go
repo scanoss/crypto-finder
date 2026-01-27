@@ -138,18 +138,18 @@ func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *
 	}
 
 	// Add severity
-	if asset.Rule.Severity != "" {
+	if len(asset.Rules) > 0 && asset.Rules[0].Severity != "" {
 		properties = append(properties, cdx.Property{
 			Name:  "scanoss:severity",
-			Value: asset.Rule.Severity,
+			Value: asset.Rules[0].Severity,
 		})
 	}
 
 	// Add rule id if available
-	if asset.Rule.ID != "" {
+	if len(asset.Rules) > 0 && asset.Rules[0].ID != "" {
 		properties = append(properties, cdx.Property{
 			Name:  "scanoss:ruleid",
-			Value: asset.Rule.ID,
+			Value: asset.Rules[0].ID,
 		})
 	}
 

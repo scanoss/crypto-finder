@@ -262,10 +262,10 @@ func TestRelatedCryptoMapper_BuildProperties(t *testing.T) {
 				StartLine: tt.StartLine,
 				EndLine:   tt.EndLine,
 				Metadata:  tt.metadata,
-				Rule: entities.RuleInfo{
+				Rules: []entities.RuleInfo{{
 					Severity: tt.ruleSeverity,
 					ID:       tt.ruleID,
-				},
+				}},
 			}
 
 			props := mapper.buildProperties(finding, asset)

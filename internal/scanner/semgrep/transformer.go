@@ -31,12 +31,13 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/deduplicator"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.
 // This function can be reused by other compatible scanners (e.g., OpenGrep).
-func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string, rulePaths []string) *entities.InterimReport {
+func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.SemgrepOutput, toolInfo entities.ToolInfo, target string, rulePaths []string, disableDedup bool) *entities.InterimReport {
 	// Group results by file path
 	findingsByFile := groupByFile(semgrepOutput.Results)
 	ruleVersion := detectRuleVersion(rulePaths)
@@ -50,9 +51,14 @@ func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.Sem
 
 	// Create interim report
 	report := &entities.InterimReport{
-		Version:  "1.0", // TODO: Use proper version number
+		Version:  "1.1", // Updated to v1.1 to support multiple rules per asset
 		Tool:     toolInfo,
 		Findings: findings,
+	}
+
+	// Deduplicate findings at the same location before returning (unless disabled)
+	if !disableDedup {
+		report = deduplicator.DeduplicateInterimReport(report)
 	}
 
 	return report
@@ -96,19 +102,22 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 
 // transformToCryptographicAsset converts a single Semgrep result to a CryptographicAsset.
 func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []string, ruleVersion string) entities.CryptographicAsset {
+	// Create the rule info for this detection
+	ruleInfo := entities.RuleInfo{
+		ID:       cleanRuleID(result.CheckID, rulePaths),
+		Message:  result.Extra.Message,
+		Severity: strings.ToUpper(result.Extra.Severity),
+		Version:  ruleVersion,
+	}
+
 	asset := entities.CryptographicAsset{
 		MatchType: ScannerName,
 		StartLine: result.Start.Line,
 		EndLine:   result.End.Line,
 		Match:     strings.TrimSpace(result.Extra.Lines),
-		Rule: entities.RuleInfo{
-			ID:       cleanRuleID(result.CheckID, rulePaths),
-			Message:  result.Extra.Message,
-			Severity: strings.ToUpper(result.Extra.Severity),
-			Version:  ruleVersion,
-		},
-		Metadata: make(map[string]string),
-		Status:   "pending", // TODO: Implement status logic
+		Rules:     []entities.RuleInfo{ruleInfo}, // Now an array to support multiple rules
+		Metadata:  make(map[string]string),
+		Status:    "pending", // TODO: Implement status logic
 	}
 
 	// Extract cryptographic details from rule metadata

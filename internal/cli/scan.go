@@ -74,6 +74,7 @@ var (
 	scanAPIURL        string
 	scanStrict        bool
 	scanMaxStaleAge   string
+	scanNoDedup       bool
 )
 
 var scanCmd = &cobra.Command{
@@ -128,6 +129,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
+	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -252,6 +254,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
+			DisableDedup: scanNoDedup,
 		},
 	}
 

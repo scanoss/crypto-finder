@@ -44,7 +44,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 42,
 								EndLine:   42,
-								Rule:      entities.RuleInfo{ID: "go-sha256", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-sha256", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "SHA-2",
@@ -75,7 +75,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 10,
 								EndLine:   10,
-								Rule:      entities.RuleInfo{ID: "go-sha256", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-sha256", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "SHA-2",
@@ -93,7 +93,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 20,
 								EndLine:   20,
-								Rule:      entities.RuleInfo{ID: "go-sha256", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-sha256", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "SHA-2",
@@ -111,7 +111,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 30,
 								EndLine:   30,
-								Rule:      entities.RuleInfo{ID: "go-sha256-alt", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-sha256-alt", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "SHA-2",
@@ -142,7 +142,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 10,
 								EndLine:   10,
-								Rule:      entities.RuleInfo{ID: "go-aes-gcm", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-aes-gcm", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "AES",
@@ -161,7 +161,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 20,
 								EndLine:   20,
-								Rule:      entities.RuleInfo{ID: "go-sha256", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-sha256", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":                       "algorithm",
 									"algorithmFamily":                 "SHA-2",
@@ -192,7 +192,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 10,
 								EndLine:   10,
-								Rule:      entities.RuleInfo{ID: "go-secrets-choice", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-secrets-choice", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":          "algorithm",
 									"algorithmName":      "CSPRNG",
@@ -210,7 +210,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 20,
 								EndLine:   20,
-								Rule:      entities.RuleInfo{ID: "go-secrets-randbelow", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-secrets-randbelow", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":          "algorithm",
 									"algorithmName":      "CSPRNG",
@@ -228,7 +228,7 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 							{
 								StartLine: 30,
 								EndLine:   30,
-								Rule:      entities.RuleInfo{ID: "go-os-urandom", Severity: "INFO"},
+								Rules:     []entities.RuleInfo{{ID: "go-os-urandom", Severity: "INFO"}},
 								Metadata: map[string]string{
 									"assetType":          "algorithm",
 									"algorithmName":      "CSPRNG",
@@ -245,6 +245,99 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 			expectedFirstName:   "CSPRNG",
 			expectedOccurrences: 3,
 			expectedIdentities:  3, // Three different rules (one per API)
+		},
+		{
+			name: "Multi-rule asset - single asset with multiple rules creates multiple identities",
+			report: &entities.InterimReport{
+				Version: "1.0",
+				Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+				Findings: []entities.Finding{
+					{
+						FilePath: "crypto/multi.go",
+						Language: "go",
+						CryptographicAssets: []entities.CryptographicAsset{
+							{
+								StartLine: 42,
+								EndLine:   42,
+								Match:     "crypto/sha256.New()",
+								Rules: []entities.RuleInfo{
+									{ID: "go-sha256-primary", Message: "SHA-256 detected via primary rule", Severity: "INFO"},
+									{ID: "go-sha256-secondary", Message: "SHA-256 detected via secondary rule", Severity: "WARNING"},
+									{ID: "go-hash-generic", Message: "Generic hash function detected", Severity: "INFO"},
+								},
+								Metadata: map[string]string{
+									"assetType":                       "algorithm",
+									"algorithmFamily":                 "SHA-2",
+									"algorithmPrimitive":              "hash",
+									"algorithmParameterSetIdentifier": "256",
+									"api":                             "crypto/sha256.New",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedAssetCount:  1,
+			expectedFirstName:   "SHA-2-256",
+			expectedOccurrences: 1,
+			expectedIdentities:  3, // Three rules in one asset = three identities
+		},
+		{
+			name: "Multi-rule deduplication - same rule+API combination appears only once",
+			report: &entities.InterimReport{
+				Version: "1.0",
+				Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+				Findings: []entities.Finding{
+					{
+						FilePath: "crypto/file1.go",
+						Language: "go",
+						CryptographicAssets: []entities.CryptographicAsset{
+							{
+								StartLine: 10,
+								EndLine:   10,
+								Match:     "crypto/sha256.New()",
+								Rules: []entities.RuleInfo{
+									{ID: "go-sha256-rule", Message: "SHA-256 detected", Severity: "INFO"},
+									{ID: "go-hash-generic", Message: "Generic hash", Severity: "INFO"},
+								},
+								Metadata: map[string]string{
+									"assetType":                       "algorithm",
+									"algorithmFamily":                 "SHA-2",
+									"algorithmPrimitive":              "hash",
+									"algorithmParameterSetIdentifier": "256",
+									"api":                             "crypto/sha256.New",
+								},
+							},
+						},
+					},
+					{
+						FilePath: "crypto/file2.go",
+						Language: "go",
+						CryptographicAssets: []entities.CryptographicAsset{
+							{
+								StartLine: 20,
+								EndLine:   20,
+								Match:     "crypto/sha256.Sum256(data)",
+								Rules: []entities.RuleInfo{
+									{ID: "go-sha256-rule", Message: "SHA-256 detected", Severity: "INFO"},
+									{ID: "go-sha256-sum", Message: "SHA-256 sum function", Severity: "INFO"},
+								},
+								Metadata: map[string]string{
+									"assetType":                       "algorithm",
+									"algorithmFamily":                 "SHA-2",
+									"algorithmPrimitive":              "hash",
+									"algorithmParameterSetIdentifier": "256",
+									"api":                             "crypto/sha256.New",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedAssetCount:  1,
+			expectedFirstName:   "SHA-2-256",
+			expectedOccurrences: 2,
+			expectedIdentities:  3, // go-sha256-rule (deduplicated), go-hash-generic, go-sha256-sum
 		},
 	}
 
@@ -287,8 +380,8 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 					if occ.EndLine == 0 {
 						t.Errorf("Occurrence %d missing EndLine", i)
 					}
-					if occ.RuleID == "" {
-						t.Errorf("Occurrence %d missing RuleID", i)
+					if len(occ.RuleIDs) == 0 {
+						t.Errorf("Occurrence %d missing RuleIDs", i)
 					}
 				}
 
@@ -300,6 +393,108 @@ func TestAggregator_AggregateAssets(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAggregator_MultiRuleIdentityMetadata(t *testing.T) {
+	// This test verifies that when a single asset has multiple rules,
+	// each rule's metadata (message, severity) is properly preserved in separate identities
+	aggregator := NewAggregator()
+
+	report := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "crypto/test.go",
+				Language: "go",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 42,
+						EndLine:   42,
+						Match:     "crypto/sha256.New()",
+						Rules: []entities.RuleInfo{
+							{ID: "rule-1", Message: "Message from rule 1", Severity: "INFO"},
+							{ID: "rule-2", Message: "Message from rule 2", Severity: "WARNING"},
+							{ID: "rule-3", Message: "Message from rule 3", Severity: "ERROR"},
+						},
+						Metadata: map[string]string{
+							"assetType":                       "algorithm",
+							"algorithmFamily":                 "SHA-2",
+							"algorithmPrimitive":              "hash",
+							"algorithmParameterSetIdentifier": "256",
+							"api":                             "crypto/sha256.New",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	aggregated, err := aggregator.AggregateAssets(report)
+	if err != nil {
+		t.Fatalf("AggregateAssets() error = %v", err)
+	}
+
+	if len(aggregated) != 1 {
+		t.Fatalf("Expected 1 aggregated asset, got %d", len(aggregated))
+	}
+
+	asset := aggregated[0]
+
+	if len(asset.Identities) != 3 {
+		t.Fatalf("Expected 3 identities, got %d", len(asset.Identities))
+	}
+
+	// Verify each identity has the correct metadata
+	expectedIdentities := map[string]struct {
+		message  string
+		severity string
+	}{
+		"rule-1": {message: "Message from rule 1", severity: "INFO"},
+		"rule-2": {message: "Message from rule 2", severity: "WARNING"},
+		"rule-3": {message: "Message from rule 3", severity: "ERROR"},
+	}
+
+	for _, identity := range asset.Identities {
+		expected, found := expectedIdentities[identity.RuleID]
+		if !found {
+			t.Errorf("Unexpected rule ID: %s", identity.RuleID)
+			continue
+		}
+
+		if identity.Message != expected.message {
+			t.Errorf("Rule %s: expected message '%s', got '%s'", identity.RuleID, expected.message, identity.Message)
+		}
+
+		if identity.Severity != expected.severity {
+			t.Errorf("Rule %s: expected severity '%s', got '%s'", identity.RuleID, expected.severity, identity.Severity)
+		}
+
+		if identity.API != "crypto/sha256.New" {
+			t.Errorf("Rule %s: expected API 'crypto/sha256.New', got '%s'", identity.RuleID, identity.API)
+		}
+
+		if identity.Match != "crypto/sha256.New()" {
+			t.Errorf("Rule %s: expected match 'crypto/sha256.New()', got '%s'", identity.RuleID, identity.Match)
+		}
+	}
+
+	// Verify occurrence has all rule IDs
+	if len(asset.Occurrences) != 1 {
+		t.Fatalf("Expected 1 occurrence, got %d", len(asset.Occurrences))
+	}
+
+	occurrence := asset.Occurrences[0]
+	if len(occurrence.RuleIDs) != 3 {
+		t.Errorf("Expected 3 rule IDs in occurrence, got %d", len(occurrence.RuleIDs))
+	}
+
+	expectedRuleIDs := map[string]bool{"rule-1": true, "rule-2": true, "rule-3": true}
+	for _, ruleID := range occurrence.RuleIDs {
+		if !expectedRuleIDs[ruleID] {
+			t.Errorf("Unexpected rule ID in occurrence: %s", ruleID)
+		}
 	}
 }
 

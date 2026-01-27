@@ -84,6 +84,13 @@ func TestConverter_Convert(t *testing.T) {
 			wantSkipped:    0,
 			wantErr:        false,
 		},
+		{
+			name:           "Multiple rules on same line (deduplicated)",
+			fixtureFile:    "multi_rule_same_line.json",
+			wantComponents: 1,
+			wantSkipped:    0,
+			wantErr:        false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -318,6 +325,67 @@ func TestConverter_ConvertAggregatedAsset_ErrorPaths(t *testing.T) {
 				t.Error("Expected component but got nil")
 			}
 		})
+	}
+}
+
+func TestConverter_MultipleRulesOnSameLine(t *testing.T) {
+	converter := NewConverter()
+
+	// Load test fixture with multiple rules detecting the same line
+	report := loadFixture(t, "multi_rule_same_line.json")
+
+	// Run conversion
+	bom, err := converter.Convert(report)
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+
+	// Verify we get exactly 1 component (deduplicated)
+	if bom.Components == nil || len(*bom.Components) != 1 {
+		t.Fatalf("Expected 1 component, got %d", len(*bom.Components))
+	}
+
+	component := (*bom.Components)[0]
+
+	// Verify the component has crypto properties
+	if component.CryptoProperties == nil {
+		t.Fatal("Component missing CryptoProperties")
+	}
+
+	// Verify evidence structure
+	if component.Evidence == nil {
+		t.Fatal("Component missing Evidence")
+	}
+
+	// Verify occurrences contain code snippets (not rule IDs)
+	if component.Evidence.Occurrences == nil || len(*component.Evidence.Occurrences) == 0 {
+		t.Fatal("Component missing Evidence.Occurrences")
+	}
+
+	// Verify identity contains rule IDs (not code)
+	if component.Evidence.Identity == nil || len(*component.Evidence.Identity) == 0 {
+		t.Fatal("Component missing Evidence.Identity")
+	}
+
+	identities := *component.Evidence.Identity
+	if len(identities) != 2 {
+		t.Errorf("Expected 2 identity entries (one per rule), got %d", len(identities))
+	}
+
+	// Verify each identity contains methods with rule IDs
+	for i, identity := range identities {
+		if identity.Methods == nil || len(*identity.Methods) == 0 {
+			t.Errorf("Identity[%d] has no methods", i)
+			continue
+		}
+		method := (*identity.Methods)[0]
+		if method.Value == "" {
+			t.Errorf("Identity[%d] method has empty value", i)
+		}
+		// Methods should contain rule IDs in format "scanoss:ruleid,<rule-id>"
+		if !contains(method.Value, "scanoss:ruleid") {
+			t.Errorf("Identity[%d] method value should contain 'scanoss:ruleid', got %q", i, method.Value)
+		}
 	}
 }
 

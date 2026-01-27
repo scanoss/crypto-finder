@@ -10,10 +10,12 @@
         {
           "start_line": 20,
           "end_line": 20,
-          "rule": {
-            "id": "go-crypto-sha256-digest",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-sha256-digest",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "related-crypto-material",
             "materialType": "digest",

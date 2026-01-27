@@ -5,14 +5,20 @@
   },
   "findings": [
     {
-      "file_path": "src/crypto/cipher.go",
+      "file_path": "src/crypto/encryption.go",
       "cryptographic_assets": [
         {
           "line_number": 42,
           "rules": [
             {
-              "id": "go-crypto-aes-256",
-              "severity": "info"
+              "id": "go-crypto-aes-gcm",
+              "severity": "info",
+              "message": "AES-GCM encryption detected"
+            },
+            {
+              "id": "go-crypto-authenticated-encryption",
+              "severity": "info",
+              "message": "Authenticated encryption pattern detected"
             }
           ],
           "metadata": {

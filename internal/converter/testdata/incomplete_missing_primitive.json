@@ -9,10 +9,12 @@
       "cryptographic_assets": [
         {
           "line_number": 5,
-          "rule": {
-            "id": "incomplete-rule",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "incomplete-rule",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "algorithmName": "AES",
             "keySize": "128"

@@ -17,6 +17,10 @@
 // Package entities defines the domain data structures for SCANOSS crypto-finder.
 package entities
 
+import (
+	"encoding/json"
+)
+
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
 // that can be consumed by the SCANOSS ecosystem and other downstream tools.
@@ -71,8 +75,9 @@ type CryptographicAsset struct {
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
 
-	// Rule contains information about the detection rule that triggered this finding
-	Rule RuleInfo `json:"rule"`
+	// Rules contains information about all detection rules that triggered this finding
+	// This allows multiple rules to detect the same cryptographic asset
+	Rules []RuleInfo `json:"rules"`
 
 	// Status represents the current state of this finding
 	// Values: "pending", "identified", "dismissed", "reviewed"
@@ -98,4 +103,32 @@ type RuleInfo struct {
 
 	// Version is the ruleset version when known (e.g., "latest", "v1.0.1")
 	Version string `json:"version,omitempty"`
+}
+
+// UnmarshalJSON provides backward compatibility for the old "rule" field format.
+// It handles both:
+// - Old format: {"rule": {...}}  -> converted to {"rules": [{...}]}
+// - New format: {"rules": [{...}, {...}]}
+func (c *CryptographicAsset) UnmarshalJSON(data []byte) error {
+	// Create a temporary type to avoid recursion
+	type Alias CryptographicAsset
+
+	// Try to unmarshal with the new format first
+	aux := &struct {
+		Rule *RuleInfo `json:"rule,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// If old "rule" field is present and Rules array is empty, migrate it
+	if aux.Rule != nil && len(c.Rules) == 0 {
+		c.Rules = []RuleInfo{*aux.Rule}
+	}
+
+	return nil
 }

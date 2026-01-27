@@ -9,10 +9,12 @@
       "cryptographic_assets": [
         {
           "line_number": 15,
-          "rule": {
-            "id": "go-crypto-rsa-keygen",
-            "severity": "warning"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-rsa-keygen",
+              "severity": "warning"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "pke",

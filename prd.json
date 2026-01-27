@@ -1,0 +1,122 @@
+{
+  "name": "Per-Line Rule Deduplication",
+  "description": "Currently, crypto-finder produces duplicate findings when multiple detection rules match the same line of code. This creates noise in the interim report output, clutters analysis results, and degrades the user experience for security analysts reviewing cryptographic asset findings. This PRD defines a per-line rule aggregation system that merges multiple rule detections on the same code line while preserving complete traceability of which rules triggered the detection.",
+  "branchName": "feature/mdaloia/per-line-rule-deduplication",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Deduplicate findings at interim report level",
+      "description": "As a developer, I need to implement deduplication logic that merges CryptographicAsset entries with identical line positions after scanning completes.",
+      "acceptanceCriteria": [
+        "Create new deduplicator component in `internal/deduplicator/deduplicator.go`",
+        "Implement grouping by `(file_path, start_line, end_line)` tuple",
+        "Merge CryptographicAssets with matching positions into single asset",
+        "Preserve all unique metadata from merged rules",
+        "Call deduplicator from scanner transformer before returning interim report",
+        "Typecheck passes",
+        "Unit tests cover merge logic with multiple rules"
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-002",
+      "title": "Update data model to support multiple rules per asset",
+      "description": "As a developer, I need to change the CryptographicAsset structure to store an array of rules instead of a single rule.",
+      "acceptanceCriteria": [
+        "Change `CryptographicAsset.Rule` to `CryptographicAsset.Rules []RuleInfo` in `internal/entities/interim.go`",
+        "Change `AssetOccurrence.RuleID` to `AssetOccurrence.RuleIDs []string` in `internal/converter/aggregator.go`",
+        "Update JSON schema `schemas/interim-report-schema.json` to v1.1 with rules array",
+        "Add backward compatibility handling for old `rule` field (optional migration shim)",
+        "Typecheck passes",
+        "All existing tests updated to use new structure"
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-003",
+      "title": "Update aggregator to handle multi-rule assets",
+      "description": "As a developer, I need to update the aggregator to process assets with multiple rules and create proper identities.",
+      "acceptanceCriteria": [
+        "Update `aggregator.go:138-147` to extract all rule IDs from `asset.Rules[]` array",
+        "Update `addIdentityIfNew()` to iterate over all rules and create one identity per rule",
+        "Ensure identity deduplication still works (check for existing rule+API combinations)",
+        "Preserve all rule metadata (message, severity) in respective identities",
+        "Typecheck passes",
+        "Unit tests verify multiple identities created from multi-rule asset"
+      ],
+      "priority": 3,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-004",
+      "title": "Fix CycloneDX evidence format alignment",
+      "description": "As a developer, I need to correct the evidence structure to align with CycloneDX specification (occurrences contain locations/code, identity methods contain rule IDs).",
+      "acceptanceCriteria": [
+        "Change `converter.go:182` occurrence.additionalContext to use code snippet: `occ.Match` instead of rule ID",
+        "Change `converter.go:198-200` identity method value to use rule ID: `fmt.Sprintf(\"scanoss:ruleid,%s\", identity.RuleID)` instead of code snippet",
+        "Each identity.methods[] entry contains single rule ID (not comma-separated)",
+        "Multiple rules create multiple method entries in the methods array",
+        "Typecheck passes",
+        "Integration tests verify correct CycloneDX output format"
+      ],
+      "priority": 4,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-005",
+      "title": "Add configuration flag for deduplication control",
+      "description": "As a user, I want to disable per-line deduplication if needed for debugging or compatibility with existing workflows.",
+      "acceptanceCriteria": [
+        "Add `--no-dedup` CLI flag in `internal/cli/` with description",
+        "Default behavior: deduplication enabled",
+        "When `--no-dedup` is set, skip deduplicator call and preserve original behavior",
+        "Flag documented in CLI help text",
+        "Typecheck passes",
+        "Manual test confirms both modes work correctly"
+      ],
+      "priority": 4,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-006",
+      "title": "Update test fixtures and documentation",
+      "description": "As a developer, I need to update all test fixtures to use the new data structure and document the changes for users.",
+      "acceptanceCriteria": [
+        "Update all `testdata/*.json` fixtures to use `\"rules\": []` array format",
+        "Update test assertions to expect new evidence structure",
+        "Add test case with multiple rules on same line showing deduplication",
+        "Create before/after example outputs in documentation",
+        "Document migration guide for consumers of interim report format",
+        "All tests pass with new structure"
+      ],
+      "priority": 4,
+      "passes": true,
+      "labels": [],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-01-27T11:30:31.705Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/prd-per-line-rule-deduplication.md",
+    "updatedAt": "2026-01-27T12:02:25.905Z"
+  }
+}

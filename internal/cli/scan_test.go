@@ -198,7 +198,7 @@ func TestCountFindings(t *testing.T) {
 					FilePath: "test.go",
 					CryptographicAssets: []entities.CryptographicAsset{
 						{
-							Rule: entities.RuleInfo{ID: "test-rule"},
+							Rules: []entities.RuleInfo{{ID: "test-rule"}},
 						},
 					},
 				},
@@ -216,14 +216,14 @@ func TestCountFindings(t *testing.T) {
 				{
 					FilePath: "test1.go",
 					CryptographicAssets: []entities.CryptographicAsset{
-						{Rule: entities.RuleInfo{ID: "rule1"}},
-						{Rule: entities.RuleInfo{ID: "rule2"}},
+						{Rules: []entities.RuleInfo{{ID: "rule1"}}},
+						{Rules: []entities.RuleInfo{{ID: "rule2"}}},
 					},
 				},
 				{
 					FilePath: "test2.go",
 					CryptographicAssets: []entities.CryptographicAsset{
-						{Rule: entities.RuleInfo{ID: "rule3"}},
+						{Rules: []entities.RuleInfo{{ID: "rule3"}}},
 					},
 				},
 			},

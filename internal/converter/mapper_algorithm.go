@@ -139,9 +139,13 @@ func (m *AlgorithmMapper) addParameterSetIdentifier(props *cdx.CryptoAlgorithmPr
 		return
 	}
 
+	ruleID := ""
+	if len(asset.Rules) > 0 {
+		ruleID = asset.Rules[0].ID
+	}
 	log.Debug().
 		Str("match", asset.Match).
-		Str("ruleID", asset.Rule.ID).
+		Str("ruleID", ruleID).
 		Msg("Asset missing recommended field for assetType='algorithm' 'algorithmParameterSetIdentifier'")
 }
 
