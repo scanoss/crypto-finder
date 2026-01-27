@@ -9,10 +9,12 @@
       "cryptographic_assets": [
         {
           "line_number": 23,
-          "rule": {
-            "id": "go-crypto-ecdsa-p256",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-ecdsa-p256",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "signature",

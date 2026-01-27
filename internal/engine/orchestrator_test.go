@@ -129,11 +129,11 @@ func TestOrchestrator_Scan_Success(t *testing.T) {
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",
-								Rule: entities.RuleInfo{
+								Rules: []entities.RuleInfo{{
 									ID:       "go.crypto.aes",
 									Message:  "AES usage detected",
 									Severity: "INFO",
-								},
+								}},
 								Status:   "pending",
 								Metadata: map[string]string{"algorithm": "AES"},
 							},

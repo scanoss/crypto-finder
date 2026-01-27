@@ -9,10 +9,12 @@
       "cryptographic_assets": [
         {
           "line_number": 10,
-          "rule": {
-            "id": "go-crypto-aes-128",
-            "severity": "warning"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-aes-128",
+              "severity": "warning"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "block-cipher",
@@ -24,10 +26,12 @@
         },
         {
           "line_number": 15,
-          "rule": {
-            "id": "go-crypto-sha256",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-sha256",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "hash",
@@ -40,10 +44,12 @@
         },
         {
           "line_number": 20,
-          "rule": {
-            "id": "go-crypto-hmac",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-hmac",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "mac",
@@ -60,10 +66,12 @@
       "cryptographic_assets": [
         {
           "line_number": 8,
-          "rule": {
-            "id": "go-crypto-ecdsa",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-ecdsa",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "signature",

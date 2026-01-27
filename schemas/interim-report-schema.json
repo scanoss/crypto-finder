@@ -8,8 +8,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.0\")",
-      "examples": ["1.0"]
+      "description": "Version of the interim report schema (e.g., \"1.1\")",
+      "examples": ["1.1", "1.0"]
     },
     "tool": {
       "$ref": "#/$defs/ToolInfo"
@@ -80,7 +80,6 @@
         "match_type",
         "line_number",
         "match",
-        "rule",
         "status",
         "metadata"
       ],
@@ -99,8 +98,16 @@
           "type": "string",
           "description": "Actual code snippet that was matched"
         },
+        "rules": {
+          "type": "array",
+          "description": "Detection rules that identified this cryptographic asset (v1.1+)",
+          "items": {
+            "$ref": "#/$defs/RuleInfo"
+          }
+        },
         "rule": {
-          "$ref": "#/$defs/RuleInfo"
+          "$ref": "#/$defs/RuleInfo",
+          "description": "Single detection rule (deprecated, use 'rules' array in v1.1+)"
         },
         "status": {
           "type": "string",
@@ -114,7 +121,11 @@
             "type": "string"
           }
         }
-      }
+      },
+      "oneOf": [
+        {"required": ["rules"]},
+        {"required": ["rule"]}
+      ]
     },
     "RuleInfo": {
       "type": "object",

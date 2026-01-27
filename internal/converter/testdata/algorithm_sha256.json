@@ -9,10 +9,12 @@
       "cryptographic_assets": [
         {
           "line_number": 10,
-          "rule": {
-            "id": "go-crypto-sha256",
-            "severity": "info"
-          },
+          "rules": [
+            {
+              "id": "go-crypto-sha256",
+              "severity": "info"
+            }
+          ],
           "metadata": {
             "assetType": "algorithm",
             "algorithmPrimitive": "hash",

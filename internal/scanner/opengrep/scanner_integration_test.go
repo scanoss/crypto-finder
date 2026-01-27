@@ -128,7 +128,7 @@ func TestScanner_Integration_Scan(t *testing.T) {
 		}
 
 		for j, asset := range finding.CryptographicAssets {
-			if asset.Rule.ID == "" {
+			if len(asset.Rules) == 0 || asset.Rules[0].ID == "" {
 				t.Errorf("Finding[%d], Asset[%d]: rule ID should not be empty", i, j)
 			}
 

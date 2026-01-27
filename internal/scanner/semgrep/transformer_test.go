@@ -568,14 +568,14 @@ func TestTransformSemgrepCompatibleOutputToInterimFormat(t *testing.T) {
 		Version: "1.0.0",
 	}
 
-	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput, toolInfo, "/test", nil)
+	report := TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput, toolInfo, "/test", nil, false)
 
 	if report == nil {
 		t.Fatal("Expected non-nil report")
 	}
 
-	if report.Version != "1.0" {
-		t.Errorf("Expected version '1.0', got '%s'", report.Version)
+	if report.Version != "1.1" {
+		t.Errorf("Expected version '1.1', got '%s'", report.Version)
 	}
 
 	if report.Tool.Name != "semgrep" {
@@ -690,12 +690,12 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 		t.Errorf("Expected match 'hashlib.sha256(data)', got '%s'", asset.Match)
 	}
 
-	if asset.Rule.ID != "python.crypto.sha256" {
-		t.Errorf("Expected rule ID 'python.crypto.sha256', got '%s'", asset.Rule.ID)
+	if asset.Rules[0].ID != "python.crypto.sha256" {
+		t.Errorf("Expected rule ID 'python.crypto.sha256', got '%s'", asset.Rules[0].ID)
 	}
 
-	if asset.Rule.Severity != "INFO" {
-		t.Errorf("Expected severity 'INFO', got '%s'", asset.Rule.Severity)
+	if asset.Rules[0].Severity != "INFO" {
+		t.Errorf("Expected severity 'INFO', got '%s'", asset.Rules[0].Severity)
 	}
 
 	if asset.Status != "pending" {
@@ -725,8 +725,8 @@ func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
 
 	asset := transformToCryptographicAsset(result, nil, "")
 
-	if asset.Rule.Severity != "ERROR" {
-		t.Errorf("Expected severity 'ERROR', got '%s'", asset.Rule.Severity)
+	if asset.Rules[0].Severity != "ERROR" {
+		t.Errorf("Expected severity 'ERROR', got '%s'", asset.Rules[0].Severity)
 	}
 
 	if asset.Metadata == nil {

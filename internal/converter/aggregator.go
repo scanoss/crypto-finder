@@ -53,8 +53,9 @@ type AssetOccurrence struct {
 	// EndLine is the line number where the asset ends
 	EndLine int
 
-	// RuleID is the ID of the rule that detected this occurrence
-	RuleID string
+	// RuleIDs contains all rule IDs that detected this occurrence
+	// Multiple rules can detect the same cryptographic asset
+	RuleIDs []string
 
 	// API is the cryptographic API that was detected (if available)
 	API string
@@ -136,11 +137,17 @@ func (a *Aggregator) AggregateAssets(report *entities.InterimReport) ([]Aggregat
 			}
 
 			// Add occurrence
+			// Collect all rule IDs from the asset's rules
+			ruleIDs := make([]string, len(asset.Rules))
+			for i, rule := range asset.Rules {
+				ruleIDs[i] = rule.ID
+			}
+
 			occurrence := AssetOccurrence{
 				FilePath:  finding.FilePath,
 				StartLine: asset.StartLine,
 				EndLine:   asset.EndLine,
-				RuleID:    asset.Rule.ID,
+				RuleIDs:   ruleIDs,
 				API:       asset.Metadata["api"],
 				Match:     asset.Match,
 			}
@@ -179,24 +186,32 @@ func (a *Aggregator) getAssetKey(asset *entities.CryptographicAsset) string {
 
 // addIdentityIfNew adds a new identity entry if this rule hasn't been seen for this asset.
 func (a *Aggregator) addIdentityIfNew(aggregated *AggregatedAsset, asset *entities.CryptographicAsset) {
-	ruleID := asset.Rule.ID
 	api := asset.Metadata["api"]
 
-	// Check if we already have an identity for this rule + API combination
-	for _, existing := range aggregated.Identities {
-		if existing.RuleID == ruleID && existing.API == api {
-			return // Already exists
+	// Process each rule from the asset's rules
+	for _, rule := range asset.Rules {
+		ruleID := rule.ID
+
+		// Check if we already have an identity for this rule + API combination
+		found := false
+		for _, existing := range aggregated.Identities {
+			if existing.RuleID == ruleID && existing.API == api {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			// Add new identity
+			identity := AssetIdentity{
+				RuleID:     ruleID,
+				API:        api,
+				Message:    rule.Message,
+				Severity:   rule.Severity,
+				Match:      asset.Match,
+				Confidence: 1.0, // Default confidence for source-code-analysis
+			}
+			aggregated.Identities = append(aggregated.Identities, identity)
 		}
 	}
-
-	// Add new identity
-	identity := AssetIdentity{
-		RuleID:     ruleID,
-		API:        api,
-		Message:    asset.Rule.Message,
-		Severity:   asset.Rule.Severity,
-		Match:      asset.Match,
-		Confidence: 1.0, // Default confidence for source-code-analysis
-	}
-	aggregated.Identities = append(aggregated.Identities, identity)
 }

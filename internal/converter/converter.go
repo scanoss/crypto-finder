@@ -99,10 +99,14 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	for _, aggregated := range aggregatedAssets {
 		component, err := c.convertAggregatedAsset(&aggregated)
 		if err != nil {
+			ruleID := ""
+			if len(aggregated.ReferenceAsset.Rules) > 0 {
+				ruleID = aggregated.ReferenceAsset.Rules[0].ID
+			}
 			log.Info().
 				Str("name", aggregated.Name).
 				Str("assetType", aggregated.AssetType).
-				Str("ruleID", aggregated.ReferenceAsset.Rule.ID).
+				Str("ruleID", ruleID).
 				Msg("Skipping aggregated asset - conversion failed")
 			skippedCount++
 			continue
@@ -178,8 +182,9 @@ func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
 			occurrence.Line = &occ.StartLine
 		}
 
-		if occ.RuleID != "" {
-			occurrence.AdditionalContext = fmt.Sprintf("scanoss:ruleid,%s", occ.RuleID)
+		if occ.Match != "" {
+			cleanedMatch := strings.Join(strings.Fields(occ.Match), " ")
+			occurrence.AdditionalContext = fmt.Sprintf("scanoss:match,%s", cleanedMatch)
 		}
 
 		occurrences = append(occurrences, occurrence)
@@ -192,11 +197,10 @@ func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
 
 		confidence := float32(identity.Confidence)
 
-		if identity.API != "" {
-			cleanedMatch := strings.Join(strings.Fields(identity.Match), " ")
+		if identity.RuleID != "" {
 			methods = append(methods, cdx.EvidenceIdentityMethod{
 				Technique:  "source-code-analysis",
-				Value:      fmt.Sprintf("scanoss:match,%s", cleanedMatch),
+				Value:      fmt.Sprintf("scanoss:ruleid,%s", identity.RuleID),
 				Confidence: &confidence,
 			})
 		}

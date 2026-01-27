@@ -113,6 +113,11 @@ type Config struct {
 	// These patterns are passed to the scanner's exclude mechanism (e.g., --exclude for Semgrep).
 	// Example: []string{"node_modules/", "*.min.js", "test/"}
 	SkipPatterns []string
+
+	// DisableDedup when true, disables per-line deduplication of cryptographic assets.
+	// By default (false), assets detected at the same location are merged.
+	// Set to true to preserve all individual detections for debugging or compatibility.
+	DisableDedup bool
 }
 
 // Info contains metadata about a scanner implementation.

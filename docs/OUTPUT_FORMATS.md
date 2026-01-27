@@ -10,10 +10,10 @@ The default output format containing detailed cryptographic asset information op
 
 ```json
 {
-  "version": "1.0",
+  "version": "1.1",
   "tool": {
-    "name": "opengrep",
-    "version": "1.12.1"
+    "name": "crypto-finder",
+    "version": "0.1.0"
   },
   "findings": [
     {
@@ -22,18 +22,24 @@ The default output format containing detailed cryptographic asset information op
       "cryptographic_assets": [
         {
           "match_type": "scanner_name",
-          "line_number": 123,
+          "start_line": 123,
+          "end_line": 123,
           "match": "code snippet",
-          "rule": {
-            "id": "rule.id",
-            "message": "description",
-            "severity": "INFO|WARNING|ERROR"
-          },
-          "type": "algorithm|certificate|protocol|related-crypto-material",
-          "name": "algorithm_name",
-          "primitive": "primitive_type",
-          "mode": "mode_of_operation",
-          "padding": "padding_scheme"
+          "rules": [
+            {
+              "id": "rule.id",
+              "message": "description",
+              "severity": "INFO|WARNING|ERROR"
+            }
+          ],
+          "status": "pending|identified|dismissed|reviewed",
+          "metadata": {
+            "assetType": "algorithm|certificate|protocol|related-crypto-material",
+            "algorithmFamily": "algorithm_family",
+            "algorithmPrimitive": "primitive_type",
+            "algorithmMode": "mode_of_operation",
+            "algorithmPadding": "padding_scheme"
+          }
         }
       ],
       "timestamp_utc": "2025-01-15T10:00:00Z"
@@ -42,37 +48,44 @@ The default output format containing detailed cryptographic asset information op
 }
 ```
 
+> **Note:** Version 1.1 introduces the `rules` array field (replacing single `rule` field) to support per-line deduplication. Multiple detection rules can now identify the same cryptographic asset.
+
 ### Field Descriptions
 
 | Field | Description |
 |-------|-------------|
-| `version` | Format version (currently "1.0") |
-| `tool.name` | Scanner used (opengrep or semgrep) |
+| `version` | Format version (currently "1.1") |
+| `tool.name` | Scanner used (crypto-finder) |
 | `tool.version` | Scanner version |
 | `findings` | Array of file-level findings |
 | `file_path` | Relative path to scanned file |
 | `language` | Detected programming language |
 | `cryptographic_assets` | Array of crypto findings in the file |
 | `match_type` | Scanner that detected the asset |
-| `line_number` | Line where the match was found |
+| `start_line` | First line where the asset was detected |
+| `end_line` | Last line where the asset was detected |
 | `match` | Actual code snippet matched |
-| `rule.id` | Unique rule identifier |
-| `rule.message` | Human-readable description |
-| `rule.severity` | Finding severity level |
-| `type` | Asset classification |
-| `name` | Algorithm/protocol name |
-| `primitive` | Cryptographic primitive type |
-| `mode` | Mode of operation (for block ciphers) |
-| `padding` | Padding scheme used |
+| `rules` | Array of detection rules that identified this asset |
+| `rules[].id` | Unique rule identifier |
+| `rules[].message` | Human-readable description |
+| `rules[].severity` | Finding severity level |
+| `status` | Finding status (pending, identified, dismissed, reviewed) |
+| `metadata` | Key-value pairs with asset-specific metadata |
+| `metadata.assetType` | Asset classification |
+| `metadata.algorithmFamily` | Algorithm/protocol family name |
+| `metadata.algorithmPrimitive` | Cryptographic primitive type |
+| `metadata.algorithmMode` | Mode of operation (for block ciphers) |
+| `metadata.algorithmPadding` | Padding scheme used |
 
 ### Example Output
 
+**Single Rule Detection:**
 ```json
 {
-  "version": "1.0",
+  "version": "1.1",
   "tool": {
-    "name": "opengrep",
-    "version": "1.12.1"
+    "name": "crypto-finder",
+    "version": "0.1.0"
   },
   "findings": [
     {
@@ -81,21 +94,73 @@ The default output format containing detailed cryptographic asset information op
       "cryptographic_assets": [
         {
           "match_type": "opengrep",
-          "line_number": 29,
+          "start_line": 29,
+          "end_line": 29,
           "match": "cipher = Cipher.getInstance(\"AES/CBC/PKCS5Padding\");",
-          "rule": {
-            "id": "java.crypto.cipher-aes-cbc",
-            "message": "AES cipher usage detected",
-            "severity": "INFO"
-          },
-          "type": "algorithm",
-          "name": "AES",
-          "primitive": "block-cipher",
-          "mode": "CBC",
-          "padding": "PKCS5Padding"
+          "rules": [
+            {
+              "id": "java.crypto.cipher-aes-cbc",
+              "message": "AES cipher usage detected",
+              "severity": "INFO"
+            }
+          ],
+          "status": "pending",
+          "metadata": {
+            "assetType": "algorithm",
+            "algorithmFamily": "AES",
+            "algorithmPrimitive": "block-cipher",
+            "algorithmMode": "CBC",
+            "algorithmPadding": "PKCS5Padding"
+          }
         }
       ],
       "timestamp_utc": "2025-10-22T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Multiple Rules Detection (Deduplicated):**
+```json
+{
+  "version": "1.1",
+  "tool": {
+    "name": "crypto-finder",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/cipher.go",
+      "language": "go",
+      "cryptographic_assets": [
+        {
+          "match_type": "opengrep",
+          "start_line": 42,
+          "end_line": 42,
+          "match": "cipher.NewGCM(block)",
+          "rules": [
+            {
+              "id": "go-crypto-aes-gcm",
+              "message": "AES-GCM encryption detected",
+              "severity": "INFO"
+            },
+            {
+              "id": "go-crypto-authenticated-encryption",
+              "message": "Authenticated encryption pattern detected",
+              "severity": "INFO"
+            }
+          ],
+          "status": "pending",
+          "metadata": {
+            "assetType": "algorithm",
+            "algorithmFamily": "AES",
+            "algorithmPrimitive": "ae",
+            "algorithmParameterSetIdentifier": "256",
+            "algorithmMode": "GCM"
+          }
+        }
+      ],
+      "timestamp_utc": "2025-01-27T10:00:00Z"
     }
   ]
 }

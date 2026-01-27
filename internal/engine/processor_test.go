@@ -65,11 +65,11 @@ func TestProcessor_Process(t *testing.T) {
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",
-								Rule: entities.RuleInfo{
+								Rules: []entities.RuleInfo{{
 									ID:       "go.crypto.aes",
 									Message:  "AES detected",
 									Severity: "INFO",
-								},
+								}},
 								Status:   "pending",
 								Metadata: map[string]string{"algorithm": "AES"},
 							},
@@ -94,11 +94,11 @@ func TestProcessor_Process(t *testing.T) {
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",
-								Rule: entities.RuleInfo{
+								Rules: []entities.RuleInfo{{
 									ID:       "go.crypto.aes",
 									Message:  "AES detected",
 									Severity: "INFO",
-								},
+								}},
 								Status:   "pending",
 								Metadata: map[string]string{"algorithm": "AES"},
 							},
