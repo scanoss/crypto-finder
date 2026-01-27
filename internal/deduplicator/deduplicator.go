@@ -57,18 +57,25 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 
 	// Group assets by their location
 	assetGroups := make(map[locationKey][]entities.CryptographicAsset)
+	firstSeenKeys := make([]locationKey, 0)
+
 	for _, asset := range assets {
 		key := locationKey{
 			filePath:  filePath,
 			startLine: asset.StartLine,
 			endLine:   asset.EndLine,
 		}
+
+		if _, exists := assetGroups[key]; !exists {
+			firstSeenKeys = append(firstSeenKeys, key)
+		}
+
 		assetGroups[key] = append(assetGroups[key], asset)
 	}
 
-	// Merge each group into a single asset
 	deduplicated := make([]entities.CryptographicAsset, 0, len(assetGroups))
-	for _, group := range assetGroups {
+	for _, key := range firstSeenKeys {
+		group := assetGroups[key]
 		mergedAsset := mergeAssets(group)
 		deduplicated = append(deduplicated, mergedAsset)
 	}

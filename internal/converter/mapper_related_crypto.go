@@ -18,7 +18,6 @@ package converter
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -110,50 +109,6 @@ func (m *RelatedCryptoMapper) getMaterialName(asset *entities.CryptographicAsset
 	// For now, we group by material type
 	// In the future, we might want more sophisticated grouping
 	return materialType
-}
-
-// buildProperties creates custom properties for related-crypto-material traceability.
-func (m *RelatedCryptoMapper) buildProperties(finding *entities.Finding, asset *entities.CryptographicAsset) *[]cdx.Property {
-	properties := []cdx.Property{
-		{
-			Name:  "scanoss:location:file",
-			Value: finding.FilePath,
-		},
-		{
-			Name:  "scanoss:location:start_line",
-			Value: strconv.Itoa(asset.StartLine),
-		},
-		{
-			Name:  "scanoss:location:end_line",
-			Value: strconv.Itoa(asset.EndLine),
-		},
-	}
-
-	// Add API if available
-	if api, ok := asset.Metadata["api"]; ok && api != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:api",
-			Value: api,
-		})
-	}
-
-	// Add severity
-	if len(asset.Rules) > 0 && asset.Rules[0].Severity != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:severity",
-			Value: asset.Rules[0].Severity,
-		})
-	}
-
-	// Add rule id if available
-	if len(asset.Rules) > 0 && asset.Rules[0].ID != "" {
-		properties = append(properties, cdx.Property{
-			Name:  "scanoss:ruleid",
-			Value: asset.Rules[0].ID,
-		})
-	}
-
-	return &properties
 }
 
 // addType adds the type of the cryptographic related material if available.
