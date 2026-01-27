@@ -48,7 +48,7 @@ The default output format containing detailed cryptographic asset information op
 }
 ```
 
-> **Note:** Version 1.1 introduces the `rules` array field (replacing single `rule` field) to support per-line deduplication. Multiple detection rules can now identify the same cryptographic asset. See [Migration Guide](MIGRATION_GUIDE.md) for details.
+> **Note:** Version 1.1 introduces the `rules` array field (replacing single `rule` field) to support per-line deduplication. Multiple detection rules can now identify the same cryptographic asset.
 
 ### Field Descriptions
 

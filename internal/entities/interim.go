@@ -108,7 +108,7 @@ type RuleInfo struct {
 // UnmarshalJSON provides backward compatibility for the old "rule" field format.
 // It handles both:
 // - Old format: {"rule": {...}}  -> converted to {"rules": [{...}]}
-// - New format: {"rules": [{...}, {...}]}
+// - New format: {"rules": [{...}, {...}]}.
 func (c *CryptographicAsset) UnmarshalJSON(data []byte) error {
 	// Create a temporary type to avoid recursion
 	type Alias CryptographicAsset

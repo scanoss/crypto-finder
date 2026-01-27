@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-01-27
+### Added
+- Per-line deduplication of cryptographic findings to eliminate duplicate detections when multiple rules identify the same asset
+- Support for multiple detection rules per cryptographic asset with new `rules` array field
+- Interim report format v1.1 with enhanced data model for multi-rule assets
+- Configuration flag for deduplication control
+
+### Changed
+- Interim report format version bumped from v1.0 to v1.1 (breaking change: `rule` field replaced with `rules` array)
+- Data model updated to support multiple rules per asset in `internal/entities/interim.go`
+- Aggregator logic enhanced to handle multi-rule assets in `internal/converter/aggregator.go`
+- CycloneDX evidence format alignment improvements
+- Updated `schemas/interim-report-schema.json` to reflect v1.1 format
+
 ## [0.1.3] - 2026-01-20
 ### Fixed
 - Fix macOS signing secret mapping in release workflow to use correct GitHub organization secrets (MACOS_DEVELOPER_CERT and MACOS_DEVELOPER_CERT_PASSWORD)
@@ -38,3 +52,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.1]: https://github.com/scanoss/crypto-finder/compare/v0.1.0...v0.1.1
 [0.1.2]: https://github.com/scanoss/crypto-finder/compare/v0.1.1...v0.1.2
 [0.1.3]: https://github.com/scanoss/crypto-finder/compare/v0.1.2...v0.1.3
+[0.1.4]: https://github.com/scanoss/crypto-finder/compare/v0.1.3...v0.1.4

@@ -10,7 +10,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// TestDeduplicateInterimReport_NilReport tests that a nil report is handled gracefully
+// TestDeduplicateInterimReport_NilReport tests that a nil report is handled gracefully.
 func TestDeduplicateInterimReport_NilReport(t *testing.T) {
 	result := DeduplicateInterimReport(nil)
 	if result != nil {
@@ -18,7 +18,7 @@ func TestDeduplicateInterimReport_NilReport(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_EmptyReport tests that an empty report is handled correctly
+// TestDeduplicateInterimReport_EmptyReport tests that an empty report is handled correctly.
 func TestDeduplicateInterimReport_EmptyReport(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -38,7 +38,7 @@ func TestDeduplicateInterimReport_EmptyReport(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_NoOverlap tests that assets with different locations are not merged
+// TestDeduplicateInterimReport_NoOverlap tests that assets with different locations are not merged.
 func TestDeduplicateInterimReport_NoOverlap(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -90,7 +90,7 @@ func TestDeduplicateInterimReport_NoOverlap(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_ExactDuplicates tests merging of exact duplicates at same location
+// TestDeduplicateInterimReport_ExactDuplicates tests merging of exact duplicates at same location.
 func TestDeduplicateInterimReport_ExactDuplicates(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -161,7 +161,7 @@ func TestDeduplicateInterimReport_ExactDuplicates(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_MergeMetadata tests merging of assets with complementary metadata
+// TestDeduplicateInterimReport_MergeMetadata tests merging of assets with complementary metadata.
 func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -197,9 +197,9 @@ func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
-							"algorithmName":                      "AES-256-GCM",
-							"algorithmParameterSetIdentifier":    "256",
-							"library":                            "crypto/aes",
+							"algorithmName":                   "AES-256-GCM",
+							"algorithmParameterSetIdentifier": "256",
+							"library":                         "crypto/aes",
 						},
 						Status: "pending",
 					},
@@ -253,7 +253,7 @@ func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_ConflictingMetadata tests handling of conflicting metadata values
+// TestDeduplicateInterimReport_ConflictingMetadata tests handling of conflicting metadata values.
 func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -324,7 +324,7 @@ func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_MultipleFiles tests deduplication across multiple files
+// TestDeduplicateInterimReport_MultipleFiles tests deduplication across multiple files.
 func TestDeduplicateInterimReport_MultipleFiles(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -390,7 +390,7 @@ func TestDeduplicateInterimReport_MultipleFiles(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_SingleAsset tests that a single asset is returned unchanged
+// TestDeduplicateInterimReport_SingleAsset tests that a single asset is returned unchanged.
 func TestDeduplicateInterimReport_SingleAsset(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -438,7 +438,7 @@ func TestDeduplicateInterimReport_SingleAsset(t *testing.T) {
 	}
 }
 
-// TestLocationKey_String tests the string representation of locationKey
+// TestLocationKey_String tests the string representation of locationKey.
 func TestLocationKey_String(t *testing.T) {
 	key := locationKey{
 		filePath:  "crypto.go",

@@ -12,14 +12,14 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// locationKey represents a unique location in a file based on line positions
+// locationKey represents a unique location in a file based on line positions.
 type locationKey struct {
 	filePath  string
 	startLine int
 	endLine   int
 }
 
-// String returns a string representation of the location key for debugging
+// String returns a string representation of the location key for debugging.
 func (k locationKey) String() string {
 	return fmt.Sprintf("%s:%d-%d", k.filePath, k.startLine, k.endLine)
 }
@@ -49,7 +49,7 @@ func DeduplicateInterimReport(report *entities.InterimReport) *entities.InterimR
 	return report
 }
 
-// deduplicateAssets deduplicates a slice of cryptographic assets based on their line positions
+// deduplicateAssets deduplicates a slice of cryptographic assets based on their line positions.
 func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []entities.CryptographicAsset {
 	if len(assets) <= 1 {
 		return assets
@@ -84,7 +84,7 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 // - Preserves the first asset's match text (they should be identical for same location)
 // - Merges all rules from all assets into the Rules array, preserving unique rules
 // - Merges all unique metadata key-value pairs from all assets
-// - Maintains the most severe status if different
+// - Maintains the most severe status if different.
 func mergeAssets(assets []entities.CryptographicAsset) entities.CryptographicAsset {
 	if len(assets) == 1 {
 		return assets[0]
