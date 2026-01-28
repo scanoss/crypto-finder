@@ -322,15 +322,18 @@ func getMetavarValue(metavars map[string]entities.MetavarInfo, key string) strin
 //   - "SHA-$variant" with $variant=256 becomes "SHA-256"
 //   - "AES-$MODE-$PADDING" becomes "AES-CBC-PKCS5" if those metavars exist
 //   - "SHA-$unknown" stays as "SHA-$unknown" if $unknown is not in metavars
+//   - "ECDSA-$2" with $2=256 becomes "ECDSA-256" (numbered capture groups from regex)
 func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string {
 	// If the string doesn't contain $, return as-is for efficiency
 	if !strings.Contains(s, "$") {
 		return s
 	}
 
-	// Regular expression to match metavariable names: $WORD
-	// Metavariable names follow identifier rules (letters, numbers, underscores)
-	re := regexp.MustCompile(`\$[a-zA-Z_][a-zA-Z0-9_]*`)
+	// Regular expression to match metavariable names:
+	// - Traditional metavars: $WORD (letters, numbers, underscores, must start with letter/underscore)
+	// - Numbered metavars: $1, $2, etc. (from regex capture groups)
+	// Pattern matches either: $[a-zA-Z_][a-zA-Z0-9_]* OR $[0-9]+
+	re := regexp.MustCompile(`\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\d+)`)
 
 	// Replace all metavariable references with their values
 	result := re.ReplaceAllStringFunc(s, func(match string) string {
