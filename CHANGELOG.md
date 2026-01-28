@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.5] - 2026-01-28
+### Fixed
+- Fix metavar resolution for numbered capture groups ($1, $2, etc.) from Semgrep regex patterns
+
+## [0.1.4] - 2026-01-27
 ### Fixed
 - Fix non-deterministic output in deduplicator by preserving asset insertion order
 - Fix deduplicator incorrectly merging assets of different types (e.g., IV and algorithm) detected on the same line by including assetType in deduplication key
@@ -13,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Remove unused `buildProperties` method from RelatedCryptoMapper (rule information is now properly handled via CycloneDX Evidence structure)
 
-## [0.1.4] - 2026-01-27
+### Added
 ### Added
 - Per-line deduplication of cryptographic findings to eliminate duplicate detections when multiple rules identify the same asset
 - Support for multiple detection rules per cryptographic asset with new `rules` array field

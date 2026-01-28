@@ -187,6 +187,35 @@ func TestResolveMetavars(t *testing.T) {
 			},
 			want: "first-second",
 		},
+		{
+			name:  "Numbered metavars from regex capture groups",
+			input: "ECDSA-$2",
+			metavars: map[string]entities.MetavarInfo{
+				"$1": {
+					AbstractContent: "elliptic",
+				},
+				"$2": {
+					AbstractContent: "256",
+				},
+			},
+			want: "ECDSA-256",
+		},
+		{
+			name:  "Multiple numbered metavars",
+			input: "$1-$2-$3",
+			metavars: map[string]entities.MetavarInfo{
+				"$1": {
+					AbstractContent: "AES",
+				},
+				"$2": {
+					AbstractContent: "256",
+				},
+				"$3": {
+					AbstractContent: "GCM",
+				},
+			},
+			want: "AES-256-GCM",
+		},
 	}
 
 	for _, tt := range tests {
@@ -440,6 +469,58 @@ func TestExtractCryptoMetadata(t *testing.T) {
 			},
 			wantMetadata: map[string]string{
 				"algorithmName": "SHA-$unknown",
+			},
+		},
+		{
+			name: "ECDSA with numbered metavars from regex capture groups",
+			cryptoMetadata: map[string]any{
+				"algorithmFamily":                 "ECDSA",
+				"algorithmName":                   "ECDSA-$2",
+				"algorithmParameterSetIdentifier": "$2",
+				"algorithmPrimitive":              "signature",
+				"api":                             "ecdsa.GenerateKey",
+				"assetType":                       "algorithm",
+				"curve":                           "$2",
+				"findingType":                     "key_generation",
+				"library":                         "crypto/ecdsa",
+				"materialSource":                  "generated",
+				"operation":                       "keygen",
+			},
+			metavars: map[string]entities.MetavarInfo{
+				"$1": {
+					AbstractContent: "elliptic",
+				},
+				"$2": {
+					AbstractContent: "256",
+				},
+				"$package": {
+					AbstractContent: "elliptic",
+				},
+				"$FUNC": {
+					AbstractContent: "elliptic.P256",
+				},
+				"$curve": {
+					AbstractContent: "256",
+				},
+				"$CURVE": {
+					AbstractContent: "curve",
+					PropagatedValue: &entities.MetavarPropagatedValue{
+						SvalueAbstractContent: "elliptic.P256()",
+					},
+				},
+			},
+			wantMetadata: map[string]string{
+				"algorithmFamily":                 "ECDSA",
+				"algorithmName":                   "ECDSA-256",
+				"algorithmParameterSetIdentifier": "256",
+				"algorithmPrimitive":              "signature",
+				"api":                             "ecdsa.GenerateKey",
+				"assetType":                       "algorithm",
+				"curve":                           "256",
+				"findingType":                     "key_generation",
+				"library":                         "crypto/ecdsa",
+				"materialSource":                  "generated",
+				"operation":                       "keygen",
 			},
 		},
 	}
