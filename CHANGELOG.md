@@ -20,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove unused `buildProperties` method from RelatedCryptoMapper (rule information is now properly handled via CycloneDX Evidence structure)
 
 ### Added
-### Added
 - Per-line deduplication of cryptographic findings to eliminate duplicate detections when multiple rules identify the same asset
 - Support for multiple detection rules per cryptographic asset with new `rules` array field
 - Interim report format v1.1 with enhanced data model for multi-rule assets

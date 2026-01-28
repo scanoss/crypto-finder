@@ -333,7 +333,7 @@ func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string 
 	// - Traditional metavars: $WORD (letters, numbers, underscores, must start with letter/underscore)
 	// - Numbered metavars: $1, $2, etc. (from regex capture groups)
 	// Pattern matches either: $[a-zA-Z_][a-zA-Z0-9_]* OR $[0-9]+
-	re := regexp.MustCompile(`\$(?:[a-zA-Z_][a-zA-Z0-9_]*|[0-9]+)`)
+	re := regexp.MustCompile(`\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\d+)`)
 
 	// Replace all metavariable references with their values
 	result := re.ReplaceAllStringFunc(s, func(match string) string {
