@@ -25,6 +25,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/output"
 )
@@ -135,6 +136,9 @@ func runConvert(_ *cobra.Command, args []string) error {
 		Str("version", report.Tool.Version).
 		Int("findings", len(report.Findings)).
 		Msg("Interim format parsed successfully")
+
+	oidEnricher := enricher.NewOIDEnricher()
+	oidEnricher.EnrichReport(&report)
 
 	// Convert to CycloneDX using the writer
 	factory := output.NewWriterFactory()

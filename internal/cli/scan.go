@@ -33,6 +33,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/cache"
 	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
@@ -264,6 +265,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	report.Version = entities.InterimFormatVersion
+
+	oidEnricher := enricher.NewOIDEnricher()
+	oidEnricher.EnrichReport(report)
 
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
