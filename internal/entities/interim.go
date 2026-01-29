@@ -21,6 +21,9 @@ import (
 	"encoding/json"
 )
 
+// InterimFormatVersion is the current version of the interim report schema.
+const InterimFormatVersion = "1.1"
+
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
 // that can be consumed by the SCANOSS ecosystem and other downstream tools.
@@ -86,6 +89,11 @@ type CryptographicAsset struct {
 	// Metadata contains metadata extracted from the cryptographic asset
 	// such as key length, algorithm, etc.
 	Metadata map[string]string `json:"metadata"`
+
+	// OID is the Object Identifier for the cryptographic algorithm.
+	// Sources: NIST CSOR, PKCS#1, ANSI X9.62, etc.
+	// Example: "2.16.840.1.101.3.4.1.2" for AES-128-CBC
+	OID string `json:"oid,omitempty"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.
