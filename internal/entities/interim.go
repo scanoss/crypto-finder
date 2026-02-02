@@ -146,6 +146,7 @@ func (c *CryptographicAsset) GetKey() string {
 // getAlgorithmKey generates a key for algorithm assets using algorithmName or using algorithmFamily with mode and padding if available.
 // Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
 // Format: "algorithm:<name>:<metadata>" or "algorithm:<family>:<mode>:<padding>:<metadata>" or "algorithm:<family>:<metadata>".
+// If primary identifiers are missing, fall back to a location-based key to avoid merging unrelated assets.
 func (c *CryptographicAsset) getAlgorithmKey() string {
 	family := c.Metadata["algorithmFamily"]
 	name := c.Metadata["algorithmName"]
@@ -167,12 +168,19 @@ func (c *CryptographicAsset) getAlgorithmKey() string {
 		return fmt.Sprintf("algorithm:%s:%s%s", family, mode, metadataSuffix)
 	}
 
+	// If family is empty, fall back to location-based key to prevent merging distinct assets
+	if family == "" {
+		location := fmt.Sprintf("%d:%d", c.StartLine, c.EndLine)
+		return fmt.Sprintf("algorithm:location:%s%s", location, metadataSuffix)
+	}
+
 	return fmt.Sprintf("algorithm:%s%s", family, metadataSuffix)
 }
 
 // getRelatedCryptoMaterialKey generates a key for related-crypto-material assets using materialType.
 // Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
 // Format: "related-crypto-material:<type>:<metadata>".
+// If materialType is missing, fall back to a location-based key to avoid merging unrelated assets.
 func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
 	materialType := c.Metadata["materialType"]
 
@@ -180,12 +188,19 @@ func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
 	excludeKeys := []string{"materialType"}
 	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
 
+	// If materialType is empty, fall back to location-based key to prevent merging distinct assets
+	if materialType == "" {
+		location := fmt.Sprintf("%d:%d", c.StartLine, c.EndLine)
+		return fmt.Sprintf("related-crypto-material:location:%s%s", location, metadataSuffix)
+	}
+
 	return fmt.Sprintf("related-crypto-material:%s%s", materialType, metadataSuffix)
 }
 
 // getProtocolKey generates a key for protocol assets using protocolType and optional version.
 // Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
 // Format: "protocol:<type>:<version>:<metadata>" or "protocol:<type>:<metadata>".
+// If protocolType is missing, fall back to a location-based key to avoid merging unrelated assets.
 func (c *CryptographicAsset) getProtocolKey() string {
 	protocolType := c.Metadata["protocolType"]
 	protocolVersion := c.Metadata["protocolVersion"]
@@ -193,6 +208,12 @@ func (c *CryptographicAsset) getProtocolKey() string {
 	// Exclude fields already used in the primary key
 	excludeKeys := []string{"protocolType", "protocolVersion"}
 	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	// If protocolType is empty, fall back to location-based key to prevent merging distinct assets
+	if protocolType == "" {
+		location := fmt.Sprintf("%d:%d", c.StartLine, c.EndLine)
+		return fmt.Sprintf("protocol:location:%s%s", location, metadataSuffix)
+	}
 
 	if protocolVersion != "" {
 		return fmt.Sprintf("protocol:%s:%s%s", protocolType, protocolVersion, metadataSuffix)
