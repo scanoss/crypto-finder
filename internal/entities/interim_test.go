@@ -177,7 +177,7 @@ func TestCryptographicAsset_GetKey_Certificate(t *testing.T) {
 			expectedKey:  "certificate:1234567890ABCDEF",
 		},
 		{
-			name:        "Certificate with empty serial uses location and type/format",
+			name:         "Certificate with empty serial uses location and type/format",
 			serialNumber: "",
 			startLine:    10,
 			endLine:      12,

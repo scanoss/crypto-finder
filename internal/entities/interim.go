@@ -231,7 +231,7 @@ func (c *CryptographicAsset) getCertificateKey() string {
 // Excludes: assetType, filePath, startLine, endLine (always excluded)
 // Additional exclusions can be provided via excludeKeys parameter (e.g., algorithmName, protocolType).
 // Returns a string of colon-separated key=value pairs in alphabetical order.
-// Example: ":api=Cipher.getInstance:library=JCA:primitive=ae"
+// Example: ":api=Cipher.getInstance:library=JCA:primitive=ae".
 func (c *CryptographicAsset) getMetadataKeySuffix(excludeKeys []string) string {
 	// Always exclude these fields from the suffix
 	alwaysExclude := map[string]bool{
