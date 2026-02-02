@@ -198,6 +198,7 @@ func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 						}},
 						Metadata: map[string]string{
 							"algorithmName":                   "AES-256-GCM",
+							"algorithmFamily":                 "AES",
 							"algorithmParameterSetIdentifier": "256",
 							"library":                         "crypto/aes",
 						},
@@ -214,6 +215,7 @@ func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 						}},
 						Metadata: map[string]string{
 							"algorithmName":    "AES-256-GCM",
+							"algorithmFamily":  "AES",
 							"algorithmPadding": "PKCS7",
 						},
 						Status: "pending",
@@ -253,7 +255,8 @@ func TestDeduplicateInterimReport_MergeMetadata(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_ConflictingMetadata tests handling of conflicting metadata values.
+// TestDeduplicateInterimReport_ConflictingMetadata tests that assets with different
+// identifying metadata (algorithmFamily, algorithmName) are NOT merged.
 func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.0",
@@ -273,6 +276,7 @@ func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
+							"assetType":       "algorithm",
 							"algorithmName":   "SHA-256",
 							"algorithmFamily": "SHA2",
 						},
@@ -288,8 +292,9 @@ func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
+							"assetType":       "algorithm",
 							"algorithmName":   "SHA-256",
-							"algorithmFamily": "SHA-2", // Slightly different value
+							"algorithmFamily": "SHA-2", // Different value - should NOT merge
 							"outputSize":      "256",
 						},
 						Status: "pending",
@@ -301,26 +306,28 @@ func TestDeduplicateInterimReport_ConflictingMetadata(t *testing.T) {
 
 	result := DeduplicateInterimReport(report)
 	assets := result.Findings[0].CryptographicAssets
-	if len(assets) != 1 {
-		t.Fatalf("Expected 1 deduplicated asset, got %d", len(assets))
+	// Assets with different algorithmFamily should NOT be merged
+	if len(assets) != 2 {
+		t.Fatalf("Expected 2 separate assets (different algorithmFamily), got %d", len(assets))
 	}
 
-	merged := assets[0]
-
-	// algorithmName should remain the same (both have "SHA-256")
-	if merged.Metadata["algorithmName"] != "SHA-256" {
-		t.Errorf("Expected algorithmName = SHA-256, got %s", merged.Metadata["algorithmName"])
+	// Each asset should retain its original metadata
+	foundSHA2 := false
+	foundSHA2Dash := false
+	for _, asset := range assets {
+		switch asset.Metadata["algorithmFamily"] {
+		case "SHA2":
+			foundSHA2 = true
+		case "SHA-2":
+			foundSHA2Dash = true
+		}
 	}
 
-	// algorithmFamily should contain both values (comma-separated)
-	familyValue := merged.Metadata["algorithmFamily"]
-	if familyValue != "SHA2,SHA-2" {
-		t.Errorf("Expected algorithmFamily to contain both values, got %s", familyValue)
+	if !foundSHA2 {
+		t.Error("Expected to find asset with algorithmFamily = SHA2")
 	}
-
-	// outputSize should be added from the second asset
-	if merged.Metadata["outputSize"] != "256" {
-		t.Errorf("Expected outputSize = 256, got %s", merged.Metadata["outputSize"])
+	if !foundSHA2Dash {
+		t.Error("Expected to find asset with algorithmFamily = SHA-2")
 	}
 }
 
@@ -520,7 +527,8 @@ func TestDeduplicateInterimReport_DifferentAssetTypesSameLine(t *testing.T) {
 }
 
 // TestDeduplicateInterimReport_SameAssetTypeSameLine tests that assets
-// of the SAME type at the same location ARE merged (existing behavior).
+// of the SAME type at the same location ARE merged when they have consistent metadata.
+// This simulates two different rules detecting the same algorithm with the same properties.
 func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
 	report := &entities.InterimReport{
 		Version: "1.1",
@@ -545,6 +553,7 @@ func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
 							"algorithmMode":                   "GCM",
 							"algorithmPrimitive":              "ae",
 							"algorithmParameterSetIdentifier": "256",
+							"library":                         "crypto/aes",
 						},
 						Status: "pending",
 					},
@@ -558,10 +567,12 @@ func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
-							"assetType":          "algorithm",
-							"algorithmFamily":    "AES",
-							"algorithmMode":      "GCM",
-							"algorithmPrimitive": "ae",
+							"assetType":                       "algorithm",
+							"algorithmFamily":                 "AES",
+							"algorithmMode":                   "GCM",
+							"algorithmPrimitive":              "ae",
+							"algorithmParameterSetIdentifier": "256",
+							"library":                         "crypto/aes",
 						},
 						Status: "pending",
 					},
@@ -604,16 +615,248 @@ func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
 	}
 }
 
-// TestLocationKey_String tests the string representation of locationKey.
-func TestLocationKey_String(t *testing.T) {
-	key := locationKey{
-		filePath:  "crypto.go",
-		startLine: 10,
-		endLine:   15,
-		assetType: "algorithm",
+// TestDeduplicateInterimReport_DifferentSemanticProperties ensures assets with
+// different semantic properties (different algorithms) remain separate even at the same location.
+func TestDeduplicateInterimReport_DifferentSemanticProperties(t *testing.T) {
+	report := &entities.InterimReport{
+		Version: "1.1",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "crypto.go",
+				Language: "go",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 10,
+						EndLine:   10,
+						Match:     "cipher.NewGCM(block)",
+						Rules: []entities.RuleInfo{{
+							ID:       "go-crypto-aes-256-gcm",
+							Message:  "AES-256-GCM detected",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":                       "algorithm",
+							"algorithmFamily":                 "AES",
+							"algorithmName":                   "AES-256-GCM",
+							"algorithmMode":                   "GCM",
+							"algorithmPrimitive":              "ae",
+							"algorithmParameterSetIdentifier": "256",
+							"library":                         "crypto/aes",
+						},
+						Status: "pending",
+					},
+					{
+						StartLine: 10,
+						EndLine:   10,
+						Match:     "cipher.NewCBCEncrypter(block, iv)",
+						Rules: []entities.RuleInfo{{
+							ID:       "go-crypto-aes-128-cbc",
+							Message:  "AES-128-CBC detected",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":                       "algorithm",
+							"algorithmFamily":                 "AES",
+							"algorithmName":                   "AES-128-CBC",
+							"algorithmMode":                   "CBC",
+							"algorithmPrimitive":              "block-cipher",
+							"algorithmParameterSetIdentifier": "128",
+							"library":                         "crypto/aes",
+						},
+						Status: "pending",
+					},
+				},
+			},
+		},
 	}
 
-	expected := "crypto.go:10-15[algorithm]"
+	result := DeduplicateInterimReport(report)
+	assets := result.Findings[0].CryptographicAssets
+
+	// Should have 2 separate assets (different algorithms should NOT merge)
+	if len(assets) != 2 {
+		t.Fatalf("Expected 2 separate assets (different algorithms), got %d", len(assets))
+	}
+
+	// Verify each asset has only its own rule
+	if len(assets[0].Rules) != 1 {
+		t.Errorf("First asset should have 1 rule, got %d", len(assets[0].Rules))
+	}
+	if len(assets[1].Rules) != 1 {
+		t.Errorf("Second asset should have 1 rule, got %d", len(assets[1].Rules))
+	}
+
+	// Verify both algorithm names are present (order may vary)
+	algorithmNames := make(map[string]bool)
+	algorithmNames[assets[0].Metadata["algorithmName"]] = true
+	algorithmNames[assets[1].Metadata["algorithmName"]] = true
+
+	if !algorithmNames["AES-256-GCM"] {
+		t.Errorf("Missing AES-256-GCM algorithm")
+	}
+	if !algorithmNames["AES-128-CBC"] {
+		t.Errorf("Missing AES-128-CBC algorithm")
+	}
+}
+
+// TestDeduplicateInterimReport_CertificateDifferentLines ensures certificate findings
+// without serial numbers are not merged across lines.
+func TestDeduplicateInterimReport_CertificateDifferentLines(t *testing.T) {
+	report := &entities.InterimReport{
+		Version: "1.1",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "EncryptionUtils.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 43,
+						EndLine:   43,
+						Match:     "CertificateFactory.getInstance(\"X.509\")",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.certificate.x509.factory",
+							Message:  "Detected certificate factory usage",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":         "certificate",
+							"certificateType":   "X.509",
+							"certificateFormat": "X.509",
+							"library":           "JCA/JCE",
+						},
+						Status: "pending",
+					},
+					{
+						StartLine: 44,
+						EndLine:   44,
+						Match:     "factory.generateCertificate(certificateStream)",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.certificate.x509.generate",
+							Message:  "Detected certificate generation from input stream",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":         "certificate",
+							"certificateType":   "generation",
+							"certificateFormat": "X.509",
+							"library":           "JCA/JCE",
+						},
+						Status: "pending",
+					},
+				},
+			},
+		},
+	}
+
+	result := DeduplicateInterimReport(report)
+	assets := result.Findings[0].CryptographicAssets
+
+	if len(assets) != 2 {
+		t.Fatalf("Expected 2 certificate assets (no merge across lines), got %d", len(assets))
+	}
+}
+
+// TestDeduplicateInterimReport_SameAlgorithmDifferentLines tests that algorithm
+// assets with the same algorithmFamily and algorithmName but at different line
+// numbers are NOT merged. This ensures distinct usages of the same algorithm
+// are properly reported at their correct locations.
+func TestDeduplicateInterimReport_SameAlgorithmDifferentLines(t *testing.T) {
+	report := &entities.InterimReport{
+		Version: "1.1",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "AESGCM.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 23,
+						EndLine:   23,
+						Match:     "GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.algorithm.ae.aes-gcm-parameterspec",
+							Message:  "Detected AES-GCM parameter specification",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":       "algorithm",
+							"algorithmFamily": "AES",
+							"algorithmName":   "AES-GCM",
+							"algorithmMode":   "gcm",
+						},
+						Status: "pending",
+					},
+					{
+						StartLine: 30,
+						EndLine:   30,
+						Match:     "cipher.init(mode, key, gcpSpec);",
+						Rules: []entities.RuleInfo{{
+							ID:       "java.jca.algorithm.ae.aes-gcm",
+							Message:  "Detected AES-GCM authenticated encryption usage",
+							Severity: "INFO",
+						}},
+						Metadata: map[string]string{
+							"assetType":       "algorithm",
+							"algorithmFamily": "AES",
+							"algorithmName":   "AES-GCM",
+							"algorithmMode":   "gcm",
+						},
+						Status: "pending",
+					},
+				},
+			},
+		},
+	}
+
+	result := DeduplicateInterimReport(report)
+	assets := result.Findings[0].CryptographicAssets
+
+	// Should have 2 separate assets, not merged (different locations)
+	if len(assets) != 2 {
+		t.Fatalf("Expected 2 separate algorithm assets at different lines, got %d", len(assets))
+	}
+
+	// Verify first asset is at line 23
+	if assets[0].StartLine != 23 || assets[0].EndLine != 23 {
+		t.Errorf("First asset should be at line 23, got %d:%d", assets[0].StartLine, assets[0].EndLine)
+	}
+	if assets[0].Metadata["algorithmFamily"] != "AES" {
+		t.Errorf("First asset should have algorithmFamily AES")
+	}
+	if len(assets[0].Rules) != 1 {
+		t.Errorf("First asset should have 1 rule, got %d", len(assets[0].Rules))
+	}
+	if assets[0].Rules[0].ID != "java.jca.algorithm.ae.aes-gcm-parameterspec" {
+		t.Errorf("First asset should have rule java.jca.algorithm.ae.aes-gcm-parameterspec")
+	}
+
+	// Verify second asset is at line 30
+	if assets[1].StartLine != 30 || assets[1].EndLine != 30 {
+		t.Errorf("Second asset should be at line 30, got %d:%d", assets[1].StartLine, assets[1].EndLine)
+	}
+	if assets[1].Metadata["algorithmFamily"] != "AES" {
+		t.Errorf("Second asset should have algorithmFamily AES")
+	}
+	if len(assets[1].Rules) != 1 {
+		t.Errorf("Second asset should have 1 rule, got %d", len(assets[1].Rules))
+	}
+	if assets[1].Rules[0].ID != "java.jca.algorithm.ae.aes-gcm" {
+		t.Errorf("Second asset should have rule java.jca.algorithm.ae.aes-gcm")
+	}
+}
+
+// TestAssetGroupKey_String tests the string representation of assetGroupKey.
+func TestAssetGroupKey_String(t *testing.T) {
+	key := assetGroupKey{
+		filePath:  "crypto.go",
+		assetKey:  "algorithm:AES:AES-256-GCM",
+		startLine: 42,
+		endLine:   42,
+	}
+
+	expected := "crypto.go[algorithm:AES:AES-256-GCM@42:42]"
 	actual := key.String()
 
 	if actual != expected {

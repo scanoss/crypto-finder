@@ -17,6 +17,7 @@
 package converter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -393,5 +394,181 @@ func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAlgorithmMapper_OIDResolution(t *testing.T) {
+	mapper := NewAlgorithmMapper()
+
+	tests := []struct {
+		name            string
+		algoName        string
+		family          string
+		paramSet        string
+		mode            string
+		primitive       string
+		wantOID         string
+		wantOIDNonEmpty bool
+	}{
+		{
+			name:            "AES-128-CBC with specific OID",
+			algoName:        "AES-128-CBC",
+			family:          "AES",
+			paramSet:        "128",
+			mode:            "CBC",
+			primitive:       "ae",
+			wantOID:         OIDAES128CBC,
+			wantOIDNonEmpty: true,
+		},
+		{
+			name:            "AES-256-GCM with specific OID",
+			algoName:        "AES-256-GCM",
+			family:          "AES",
+			paramSet:        "256",
+			mode:            "GCM",
+			primitive:       "ae",
+			wantOID:         OIDAES256GCM,
+			wantOIDNonEmpty: true,
+		},
+		{
+			name:            "SHA-256 with specific OID",
+			algoName:        "SHA-256",
+			family:          "SHA",
+			paramSet:        "256",
+			primitive:       "hash",
+			wantOID:         OIDSHA256,
+			wantOIDNonEmpty: true,
+		},
+		{
+			name:            "RSA with family OID fallback",
+			algoName:        "RSA-2048",
+			family:          "RSA",
+			paramSet:        "2048",
+			primitive:       "pke",
+			wantOID:         OIDRSA,
+			wantOIDNonEmpty: true,
+		},
+		{
+			name:            "ECDSA with family OID fallback",
+			algoName:        "ECDSA-P-256",
+			family:          "ECDSA",
+			paramSet:        "P-256",
+			primitive:       "signature",
+			wantOID:         OIDECPublicKey,
+			wantOIDNonEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &entities.CryptographicAsset{
+				Metadata: map[string]string{
+					"assetType":                       "algorithm",
+					"algorithmPrimitive":              tt.primitive,
+					"algorithmFamily":                 tt.family,
+					"algorithmName":                   tt.algoName,
+					"algorithmParameterSetIdentifier": tt.paramSet,
+					"algorithmMode":                   tt.mode,
+				},
+			}
+
+			component, err := mapper.MapToComponentWithEvidence(asset)
+			if err != nil {
+				t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+			}
+
+			if component.CryptoProperties == nil {
+				t.Fatal("CryptoProperties is nil")
+			}
+
+			if tt.wantOIDNonEmpty {
+				if component.CryptoProperties.OID == "" {
+					t.Error("OID is empty, expected a valid OID")
+				}
+				if component.CryptoProperties.OID != tt.wantOID {
+					t.Errorf("OID = %q, want %q", component.CryptoProperties.OID, tt.wantOID)
+				}
+			}
+		})
+	}
+}
+
+func TestAlgorithmMapper_OIDUnknownAlgorithm(t *testing.T) {
+	mapper := NewAlgorithmMapper()
+
+	// Test that unknown algorithms don't get an OID assigned
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":                       "algorithm",
+			"algorithmPrimitive":              "block-cipher",
+			"algorithmFamily":                 "UNKNOWN-CIPHER",
+			"algorithmName":                   "UNKNOWN-CIPHER-999",
+			"algorithmParameterSetIdentifier": "999",
+			"algorithmMode":                   "XYZ",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	if component.CryptoProperties == nil {
+		t.Fatal("CryptoProperties is nil")
+	}
+
+	// Unknown algorithms should not have an OID
+	if component.CryptoProperties.OID != "" {
+		t.Errorf("OID = %q for unknown algorithm, expected empty", component.CryptoProperties.OID)
+	}
+}
+
+func TestAlgorithmMapper_OIDFormat(t *testing.T) {
+	mapper := NewAlgorithmMapper()
+
+	// Test that OIDs have the correct format (dot-separated numbers)
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":                       "algorithm",
+			"algorithmPrimitive":              "ae",
+			"algorithmFamily":                 "AES",
+			"algorithmName":                   "AES-128-CBC",
+			"algorithmParameterSetIdentifier": "128",
+			"algorithmMode":                   "CBC",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	if component.CryptoProperties == nil {
+		t.Fatal("CryptoProperties is nil")
+	}
+
+	oid := component.CryptoProperties.OID
+	if oid == "" {
+		t.Fatal("OID is empty")
+	}
+
+	// OID should be in the format: 2.16.840.1.101.3.4.1.2 (dot-separated numbers)
+	parts := strings.Split(oid, ".")
+	if len(parts) < 2 {
+		t.Errorf("OID format invalid: %q (expected at least 2 parts)", oid)
+	}
+
+	// Each part should be numeric
+	for _, part := range parts {
+		if part == "" {
+			t.Errorf("OID %q has empty part", oid)
+			continue
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				t.Errorf("OID %q has non-numeric part: %q", oid, part)
+				break
+			}
+		}
 	}
 }

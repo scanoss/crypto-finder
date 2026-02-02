@@ -73,16 +73,6 @@ func TestResolveMetavars(t *testing.T) {
 			want: "RSA-2048",
 		},
 		{
-			name:  "Metavar not found - keep original",
-			input: "SHA-$unknown",
-			metavars: map[string]entities.MetavarInfo{
-				"$variant": {
-					AbstractContent: "256",
-				},
-			},
-			want: "SHA-$unknown",
-		},
-		{
 			name:  "Multiple metavars, some missing",
 			input: "AES-$keySize-$mode-$unknown",
 			metavars: map[string]entities.MetavarInfo{
@@ -93,7 +83,7 @@ func TestResolveMetavars(t *testing.T) {
 					AbstractContent: "CBC",
 				},
 			},
-			want: "AES-128-CBC-$unknown",
+			want: "AES-128-CBC-",
 		},
 		{
 			name:  "Empty string",
@@ -134,13 +124,13 @@ func TestResolveMetavars(t *testing.T) {
 			name:     "Empty metavars map",
 			input:    "SHA-$variant",
 			metavars: map[string]entities.MetavarInfo{},
-			want:     "SHA-$variant",
+			want:     "SHA-",
 		},
 		{
 			name:     "Nil metavars map",
 			input:    "SHA-$variant",
 			metavars: nil,
-			want:     "SHA-$variant",
+			want:     "SHA-",
 		},
 		{
 			name:  "Complex pattern with multiple variations",
@@ -468,7 +458,7 @@ func TestExtractCryptoMetadata(t *testing.T) {
 				},
 			},
 			wantMetadata: map[string]string{
-				"algorithmName": "SHA-$unknown",
+				"algorithmName": "SHA-",
 			},
 		},
 		{

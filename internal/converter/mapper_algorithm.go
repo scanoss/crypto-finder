@@ -47,11 +47,15 @@ var primitiveToFunctions = map[string][]cdx.CryptoFunction{
 }
 
 // AlgorithmMapper converts cryptographic algorithm assets to CycloneDX components.
-type AlgorithmMapper struct{}
+type AlgorithmMapper struct {
+	oidMapper *OIDMapper
+}
 
 // NewAlgorithmMapper creates a new algorithm mapper.
 func NewAlgorithmMapper() *AlgorithmMapper {
-	return &AlgorithmMapper{}
+	return &AlgorithmMapper{
+		oidMapper: NewOIDMapper(),
+	}
 }
 
 // MapToComponentWithEvidence converts a cryptographic asset to a CycloneDX component
@@ -87,6 +91,14 @@ func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.Cryptograph
 	cryptoProps := &cdx.CryptoProperties{
 		AssetType:           assetType,
 		AlgorithmProperties: algorithmProps,
+	}
+
+	oid := asset.OID
+	if oid == "" {
+		oid = m.oidMapper.ResolveOID(asset)
+	}
+	if oid != "" {
+		cryptoProps.OID = oid
 	}
 
 	bomRef := generateBOMRef()

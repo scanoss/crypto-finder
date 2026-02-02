@@ -8,6 +8,11 @@
     }
   },
   "bom": {
+    "include": [
+      {
+        "purl": "pkg:github/scanoss/crypto-finder"
+      }
+    ],
     "remove": [
       {
         "purl": "pkg:github/ibrahmsql/gocat"
