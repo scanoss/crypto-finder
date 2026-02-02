@@ -341,8 +341,8 @@ func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string 
 		if value != "" {
 			return value
 		}
-		// If metavar not found, keep the original reference
-		return match
+		// If metavar not found, return an empty string
+		return ""
 	})
 
 	return result
@@ -385,8 +385,10 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 			value = fmt.Sprint(v)
 		}
 
-		// Maintain camelCase format to align with CycloneDX 1.6 specification
-		asset.Metadata[key] = value
+		if value != "" {
+			// Maintain camelCase format to align with CycloneDX 1.6 specification
+			asset.Metadata[key] = value
+		}
 	}
 }
 

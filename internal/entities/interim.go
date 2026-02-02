@@ -19,6 +19,9 @@ package entities
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
@@ -113,10 +116,163 @@ type RuleInfo struct {
 	Version string `json:"version,omitempty"`
 }
 
+// GetKey generates a unique key for deduplication based on asset type and identifying metadata.
+// Assets with the same key are considered the same cryptographic entity and will be merged.
+// The key is constructed using asset-type-specific identifying fields:
+//   - algorithm: algorithmName if available, otherwise algorithmFamily + mode + padding, otherwise algorithmFamily
+//   - related-crypto-material: materialType
+//   - protocol: protocolType
+//   - certificate: certificateSerialNumber (or location-based fallback when missing)
+//
+// This method provides a single source of truth for asset identity across the codebase,
+// used by both the deduplicator (per-file) and aggregator (cross-file).
+func (c *CryptographicAsset) GetKey() string {
+	assetType := c.Metadata["assetType"]
+
+	switch assetType {
+	case "algorithm":
+		return c.getAlgorithmKey()
+	case "related-crypto-material":
+		return c.getRelatedCryptoMaterialKey()
+	case "protocol":
+		return c.getProtocolKey()
+	case "certificate":
+		return c.getCertificateKey()
+	default:
+		return fmt.Sprintf("%d:%d:%s", c.StartLine, c.EndLine, assetType)
+	}
+}
+
+// getAlgorithmKey generates a key for algorithm assets using algorithmName or using algorithmFamily with mode and padding if available.
+// Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
+// Format: "algorithm:<name>:<metadata>" or "algorithm:<family>:<mode>:<padding>:<metadata>" or "algorithm:<family>:<metadata>".
+func (c *CryptographicAsset) getAlgorithmKey() string {
+	family := c.Metadata["algorithmFamily"]
+	name := c.Metadata["algorithmName"]
+	mode := c.Metadata["algorithmMode"]
+	padding := c.Metadata["algorithmPadding"]
+
+	// Exclude fields already used in the primary key
+	excludeKeys := []string{"algorithmFamily", "algorithmName", "algorithmMode", "algorithmPadding"}
+	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	if name != "" {
+		return fmt.Sprintf("algorithm:%s%s", name, metadataSuffix)
+	}
+
+	if mode != "" && padding != "" {
+		return fmt.Sprintf("algorithm:%s:%s:%s%s", family, mode, padding, metadataSuffix)
+	}
+	if mode != "" {
+		return fmt.Sprintf("algorithm:%s:%s%s", family, mode, metadataSuffix)
+	}
+
+	return fmt.Sprintf("algorithm:%s%s", family, metadataSuffix)
+}
+
+// getRelatedCryptoMaterialKey generates a key for related-crypto-material assets using materialType.
+// Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
+// Format: "related-crypto-material:<type>:<metadata>".
+func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
+	materialType := c.Metadata["materialType"]
+
+	// Exclude fields already used in the primary key
+	excludeKeys := []string{"materialType"}
+	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	return fmt.Sprintf("related-crypto-material:%s%s", materialType, metadataSuffix)
+}
+
+// getProtocolKey generates a key for protocol assets using protocolType and optional version.
+// Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
+// Format: "protocol:<type>:<version>:<metadata>" or "protocol:<type>:<metadata>".
+func (c *CryptographicAsset) getProtocolKey() string {
+	protocolType := c.Metadata["protocolType"]
+	protocolVersion := c.Metadata["protocolVersion"]
+
+	// Exclude fields already used in the primary key
+	excludeKeys := []string{"protocolType", "protocolVersion"}
+	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	if protocolVersion != "" {
+		return fmt.Sprintf("protocol:%s:%s%s", protocolType, protocolVersion, metadataSuffix)
+	}
+
+	return fmt.Sprintf("protocol:%s%s", protocolType, metadataSuffix)
+}
+
+// getCertificateKey generates a key for certificate assets using certificateSerialNumber.
+// Additional metadata fields are appended as sorted key=value pairs for enhanced uniqueness.
+// Format: "certificate:<serialNumber>:<metadata>".
+// If serial number is missing, fall back to a location-based key to avoid merging
+// distinct certificate-related findings in the same file.
+func (c *CryptographicAsset) getCertificateKey() string {
+	serialNumber := strings.TrimSpace(c.Metadata["certificateSerialNumber"])
+	certType := strings.TrimSpace(c.Metadata["certificateType"])
+	certFormat := strings.TrimSpace(c.Metadata["certificateFormat"])
+
+	// Exclude fields already used in the primary key
+	excludeKeys := []string{"certificateSerialNumber", "certificateType", "certificateFormat"}
+	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	if serialNumber != "" {
+		return fmt.Sprintf("certificate:%s%s", serialNumber, metadataSuffix)
+	}
+
+	if certType != "" || certFormat != "" {
+		return fmt.Sprintf("certificate:%d:%d:%s:%s%s", c.StartLine, c.EndLine, certType, certFormat, metadataSuffix)
+	}
+
+	return fmt.Sprintf("certificate:%d:%d%s", c.StartLine, c.EndLine, metadataSuffix)
+}
+
+// getMetadataKeySuffix generates sorted key=value pairs from metadata fields.
+// This enhances asset keys with additional identifying metadata beyond the primary identifier.
+// Excludes: assetType, filePath, startLine, endLine (always excluded)
+// Additional exclusions can be provided via excludeKeys parameter (e.g., algorithmName, protocolType).
+// Returns a string of colon-separated key=value pairs in alphabetical order.
+// Example: ":api=Cipher.getInstance:library=JCA:primitive=ae"
+func (c *CryptographicAsset) getMetadataKeySuffix(excludeKeys []string) string {
+	// Always exclude these fields from the suffix
+	alwaysExclude := map[string]bool{
+		"assetType": true,
+		"filePath":  true,
+		"startLine": true,
+		"endLine":   true,
+	}
+
+	// Add custom exclude keys
+	for _, key := range excludeKeys {
+		alwaysExclude[key] = true
+	}
+
+	// Collect remaining metadata keys
+	var keys []string
+	for key, value := range c.Metadata {
+		if !alwaysExclude[key] && value != "" {
+			keys = append(keys, key)
+		}
+	}
+
+	// Sort keys alphabetically for consistent ordering
+	sort.Strings(keys)
+
+	// Build the key=value suffix
+	var suffix strings.Builder
+	for _, key := range keys {
+		suffix.WriteString(":")
+		suffix.WriteString(key)
+		suffix.WriteString("=")
+		suffix.WriteString(c.Metadata[key])
+	}
+
+	return suffix.String()
+}
+
 // UnmarshalJSON provides backward compatibility for the old "rule" field format.
 // It handles both:
-// - Old format: {"rule": {...}}  -> converted to {"rules": [{...}]}
-// - New format: {"rules": [{...}, {...}]}.
+//   - Old format: {"rule": {...}}  -> converted to {"rules": [{...}]}
+//   - New format: {"rules": [{...}, {...}]}.
 func (c *CryptographicAsset) UnmarshalJSON(data []byte) error {
 	// Create a temporary type to avoid recursion
 	type Alias CryptographicAsset
