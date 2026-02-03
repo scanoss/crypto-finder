@@ -18,6 +18,8 @@
 package converter
 
 import (
+	"sort"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -214,4 +216,11 @@ func (a *Aggregator) addIdentityIfNew(aggregated *AggregatedAsset, asset *entiti
 			aggregated.Identities = append(aggregated.Identities, identity)
 		}
 	}
+}
+
+// SortAssets sorts aggregated assets alphabetically by Name for deterministic output.
+func (a *Aggregator) SortAssets(assets []AggregatedAsset) {
+	sort.Slice(assets, func(i, j int) bool {
+		return assets[i].Name < assets[j].Name
+	})
 }

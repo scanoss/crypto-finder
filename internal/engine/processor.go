@@ -54,5 +54,8 @@ func (p *Processor) Process(report *entities.InterimReport, _ []string) (*entiti
 		report.Findings = []entities.Finding{}
 	}
 
+	report.SortFindings()
+	report.SortAssets()
+
 	return report, nil
 }
