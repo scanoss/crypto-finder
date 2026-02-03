@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-02-03
+### Changed
+- Improved deterministic output by sorting findings by file path and cryptographic assets by line number in interim format
+- Enhanced CycloneDX CBOM output consistency by sorting components alphabetically by name and occurrences by file path and line number
+- Ensured identical code scans always produce byte-for-byte identical JSON output regardless of internal processing order
+
 ## [0.2.0] - 2026-01-29
 ### Added
 - Add OID enrichment with proper mappings
@@ -70,3 +76,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.4]: https://github.com/scanoss/crypto-finder/compare/v0.1.3...v0.1.4
 [0.1.5]: https://github.com/scanoss/crypto-finder/compare/v0.1.4...v0.1.5
 [0.2.0]: https://github.com/scanoss/crypto-finder/compare/v0.1.5...v0.2.0
+[0.2.1]: https://github.com/scanoss/crypto-finder/compare/v0.2.0...v0.2.1

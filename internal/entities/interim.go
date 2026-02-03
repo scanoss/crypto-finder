@@ -317,3 +317,21 @@ func (c *CryptographicAsset) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
+
+// SortFindings sorts the Findings array by FilePath (lexicographically).
+// This ensures deterministic output regardless of scan order.
+func (r *InterimReport) SortFindings() {
+	sort.Slice(r.Findings, func(i, j int) bool {
+		return r.Findings[i].FilePath < r.Findings[j].FilePath
+	})
+}
+
+// SortAssets sorts CryptographicAssets within each Finding by StartLine.
+// This ensures assets within the same file appear in line order.
+func (r *InterimReport) SortAssets() {
+	for i := range r.Findings {
+		sort.Slice(r.Findings[i].CryptographicAssets, func(a, b int) bool {
+			return r.Findings[i].CryptographicAssets[a].StartLine < r.Findings[i].CryptographicAssets[b].StartLine
+		})
+	}
+}

@@ -19,6 +19,7 @@ package converter
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -77,6 +78,8 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate assets: %w", err)
 	}
+
+	c.aggregator.SortAssets(aggregatedAssets)
 
 	log.Info().
 		Int("total_occurrences", countTotalAssets(report)).
@@ -172,6 +175,9 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 
 // buildEvidence constructs the evidence structure with occurrences and identities.
 func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
+	// Sort occurrences by FilePath first, then by Line for deterministic output
+	c.sortOccurrences(aggregated.Occurrences)
+
 	occurrences := make([]cdx.EvidenceOccurrence, 0, len(aggregated.Occurrences))
 	for _, occ := range aggregated.Occurrences {
 		occurrence := cdx.EvidenceOccurrence{
@@ -261,4 +267,16 @@ func countTotalAssets(report *entities.InterimReport) int {
 		count += len(finding.CryptographicAssets)
 	}
 	return count
+}
+
+// sortOccurrences sorts occurrences by FilePath (primary) and Line (secondary).
+func (c *Converter) sortOccurrences(occurrences []AssetOccurrence) {
+	sort.Slice(occurrences, func(i, j int) bool {
+		// Sort by FilePath first
+		if occurrences[i].FilePath != occurrences[j].FilePath {
+			return occurrences[i].FilePath < occurrences[j].FilePath
+		}
+		// If same file, sort by StartLine
+		return occurrences[i].StartLine < occurrences[j].StartLine
+	})
 }
