@@ -158,6 +158,103 @@ const (
 	OIDHMACSHA512 = OIDHMACBase + ".11" // hmacWithSHA512
 )
 
+// NIST CSOR KEM Algorithm Base OID (2.16.840.1.101.3.4.4).
+const (
+	// OIDKEMs is the parent OID for Key Encapsulation Mechanisms.
+	// {nistAlgorithm(4) kems(4)}.
+	OIDKEMs = OIDNISTAlgorithm + ".4"
+)
+
+// NIST CSOR ML-DSA (Module-Lattice Digital Signature Algorithm) OIDs (2.16.840.1.101.3.4.3.17-19).
+// Source: RFC 9881, FIPS 204.
+const (
+	OIDMLDSA44 = OIDSigAlgs + ".17" // ML-DSA-44
+	OIDMLDSA65 = OIDSigAlgs + ".18" // ML-DSA-65
+	OIDMLDSA87 = OIDSigAlgs + ".19" // ML-DSA-87
+)
+
+// NIST CSOR ML-KEM (Module-Lattice Key Encapsulation Mechanism) OIDs (2.16.840.1.101.3.4.4.1-3).
+// Source: NIST CSOR, FIPS 203.
+const (
+	OIDMLKEM512  = OIDKEMs + ".1" // ML-KEM-512
+	OIDMLKEM768  = OIDKEMs + ".2" // ML-KEM-768
+	OIDMLKEM1024 = OIDKEMs + ".3" // ML-KEM-1024
+)
+
+// NIST CSOR SLH-DSA (Stateless Hash-Based Digital Signature Algorithm) OIDs (2.16.840.1.101.3.4.3.20-31).
+// Source: RFC 9814/9909, FIPS 205.
+const (
+	OIDSLHDSASHA2128s   = OIDSigAlgs + ".20" // SLH-DSA-SHA2-128s
+	OIDSLHDSASHA2128f   = OIDSigAlgs + ".21" // SLH-DSA-SHA2-128f
+	OIDSLHDSASHA2192s   = OIDSigAlgs + ".22" // SLH-DSA-SHA2-192s
+	OIDSLHDSASHA2192f   = OIDSigAlgs + ".23" // SLH-DSA-SHA2-192f
+	OIDSLHDSASHA2256s   = OIDSigAlgs + ".24" // SLH-DSA-SHA2-256s
+	OIDSLHDSASHA2256f   = OIDSigAlgs + ".25" // SLH-DSA-SHA2-256f
+	OIDSLHDSASHAKE128s  = OIDSigAlgs + ".26" // SLH-DSA-SHAKE-128s
+	OIDSLHDSASHAKE128f  = OIDSigAlgs + ".27" // SLH-DSA-SHAKE-128f
+	OIDSLHDSASHAKE192s  = OIDSigAlgs + ".28" // SLH-DSA-SHAKE-192s
+	OIDSLHDSASHAKE192f  = OIDSigAlgs + ".29" // SLH-DSA-SHAKE-192f
+	OIDSLHDSASHAKE256s  = OIDSigAlgs + ".30" // SLH-DSA-SHAKE-256s
+	OIDSLHDSASHAKE256f  = OIDSigAlgs + ".31" // SLH-DSA-SHAKE-256f
+)
+
+// RSA additional algorithm OIDs (PKCS#1).
+const (
+	OIDRSAOAEP = OIDPKCS1 + ".7" // rsaes-oaep (RSAES-OAEP)
+)
+
+// PKCS#5 Key Derivation OIDs (1.2.840.113549.1.5.*).
+// Source: RFC 2898 (PKCS#5 v2.1).
+const (
+	OIDPKCS5  = "1.2.840.113549.1.5"
+	OIDPBKDF2 = OIDPKCS5 + ".12" // PBKDF2
+)
+
+// RSA Digest Algorithm OIDs (1.2.840.113549.2.*).
+// Source: RFC 1321 (MD5), RFC 1320 (MD4).
+const (
+	OIDRSADigestAlgorithm = "1.2.840.113549.2"
+	OIDMD4                = OIDRSADigestAlgorithm + ".4" // MD4
+	OIDMD5                = OIDRSADigestAlgorithm + ".5" // MD5
+)
+
+// scrypt OID (1.3.6.1.4.1.11591.4.11).
+// Source: RFC 7914.
+const (
+	OIDScrypt = "1.3.6.1.4.1.11591.4.11"
+)
+
+// Curve25519/Curve448 Algorithm OIDs (1.3.101.*).
+// Source: RFC 8410.
+const (
+	OIDCurves25519448 = "1.3.101"
+	OIDX25519         = OIDCurves25519448 + ".110" // X25519 (ECDH)
+	OIDX448           = OIDCurves25519448 + ".111" // X448 (ECDH)
+	OIDEd25519        = OIDCurves25519448 + ".112" // Ed25519 (EdDSA)
+	OIDEd448          = OIDCurves25519448 + ".113" // Ed448 (EdDSA)
+)
+
+// ANSI X9.42 Diffie-Hellman OIDs (1.2.840.10046.2.1).
+// Source: RFC 2631.
+const (
+	OIDANSIX942 = "1.2.840.10046"
+	OIDDH       = OIDANSIX942 + ".2.1" // dhPublicNumber (FFDH)
+)
+
+// SM2/SM3 Chinese National Standard Algorithm OIDs.
+// Source: GB/T 32918 (SM2), GB/T 32905 (SM3).
+const (
+	OIDSM2 = "1.2.156.10197.1.501" // SM2 with SM3
+	OIDSM3 = "1.2.156.10197.1.401" // SM3 hash
+)
+
+// RC4 Algorithm OID (1.2.840.113549.3.4).
+// Source: RSA PKCS (deprecated cipher).
+const (
+	OIDRSAEncryptionAlgorithm = "1.2.840.113549.3"
+	OIDRC4                    = OIDRSAEncryptionAlgorithm + ".4" // RC4 (arcfour)
+)
+
 // OIW SECSIG Legacy Algorithm OIDs (1.3.14.3.2.*).
 // Source: OIW Security Special Interest Group (deprecated algorithms).
 const (

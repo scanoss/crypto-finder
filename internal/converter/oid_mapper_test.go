@@ -577,6 +577,188 @@ func TestOIDMapper_IsKnownFamily(t *testing.T) {
 	}
 }
 
+func TestOIDMapper_ResolveOID_PostQuantumVariants(t *testing.T) {
+	mapper := NewOIDMapper()
+
+	tests := []struct {
+		name     string
+		algoName string
+		family   string
+		wantOID  string
+	}{
+		// ML-DSA variants (FIPS 204 / RFC 9881)
+		{"ML-DSA-44 by name", "ML-DSA-44", "", OIDMLDSA44},
+		{"ML-DSA-65 by name", "ML-DSA-65", "", OIDMLDSA65},
+		{"ML-DSA-87 by name", "ML-DSA-87", "", OIDMLDSA87},
+		{"ML-DSA family", "", "ML-DSA", OIDSigAlgs},
+		{"MLDSA family alias", "", "MLDSA", OIDSigAlgs},
+
+		// ML-KEM variants (FIPS 203)
+		{"ML-KEM-512 by name", "ML-KEM-512", "", OIDMLKEM512},
+		{"ML-KEM-768 by name", "ML-KEM-768", "", OIDMLKEM768},
+		{"ML-KEM-1024 by name", "ML-KEM-1024", "", OIDMLKEM1024},
+		{"ML-KEM family", "", "ML-KEM", OIDKEMs},
+		{"MLKEM family alias", "", "MLKEM", OIDKEMs},
+
+		// SLH-DSA SHA2 variants (FIPS 205 / RFC 9814/9909)
+		{"SLH-DSA-SHA2-128s", "SLH-DSA-SHA2-128s", "", OIDSLHDSASHA2128s},
+		{"SLH-DSA-SHA2-128f", "SLH-DSA-SHA2-128f", "", OIDSLHDSASHA2128f},
+		{"SLH-DSA-SHA2-192s", "SLH-DSA-SHA2-192s", "", OIDSLHDSASHA2192s},
+		{"SLH-DSA-SHA2-192f", "SLH-DSA-SHA2-192f", "", OIDSLHDSASHA2192f},
+		{"SLH-DSA-SHA2-256s", "SLH-DSA-SHA2-256s", "", OIDSLHDSASHA2256s},
+		{"SLH-DSA-SHA2-256f", "SLH-DSA-SHA2-256f", "", OIDSLHDSASHA2256f},
+
+		// SLH-DSA SHAKE variants
+		{"SLH-DSA-SHAKE-128s", "SLH-DSA-SHAKE-128s", "", OIDSLHDSASHAKE128s},
+		{"SLH-DSA-SHAKE-128f", "SLH-DSA-SHAKE-128f", "", OIDSLHDSASHAKE128f},
+		{"SLH-DSA-SHAKE-192s", "SLH-DSA-SHAKE-192s", "", OIDSLHDSASHAKE192s},
+		{"SLH-DSA-SHAKE-192f", "SLH-DSA-SHAKE-192f", "", OIDSLHDSASHAKE192f},
+		{"SLH-DSA-SHAKE-256s", "SLH-DSA-SHAKE-256s", "", OIDSLHDSASHAKE256s},
+		{"SLH-DSA-SHAKE-256f", "SLH-DSA-SHAKE-256f", "", OIDSLHDSASHAKE256f},
+
+		// SLH-DSA family fallback
+		{"SLH-DSA family", "", "SLH-DSA", OIDSigAlgs},
+		{"SLHDSA family alias", "", "SLHDSA", OIDSigAlgs},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &entities.CryptographicAsset{
+				Metadata: map[string]string{
+					"algorithmName":   tt.algoName,
+					"algorithmFamily": tt.family,
+				},
+			}
+
+			got := mapper.ResolveOID(asset)
+			if got != tt.wantOID {
+				t.Errorf("ResolveOID() = %v, want %v", got, tt.wantOID)
+			}
+		})
+	}
+}
+
+func TestOIDMapper_ResolveOID_ClassicMissing(t *testing.T) {
+	mapper := NewOIDMapper()
+
+	tests := []struct {
+		name     string
+		algoName string
+		family   string
+		wantOID  string
+	}{
+		// Hash algorithms
+		{"MD5 by name", "MD5", "", OIDMD5},
+		{"MD5 family", "", "MD5", OIDMD5},
+		{"MD4 by name", "MD4", "", OIDMD4},
+		{"MD4 family", "", "MD4", OIDMD4},
+
+		// Key derivation functions
+		{"PBKDF2 by name", "PBKDF2", "", OIDPBKDF2},
+		{"PBKDF2 family", "", "PBKDF2", OIDPBKDF2},
+		{"scrypt by name", "scrypt", "", OIDScrypt},
+		{"scrypt family", "", "scrypt", OIDScrypt},
+
+		// Curve25519/448 key exchange
+		{"X25519 by name", "X25519", "", OIDX25519},
+		{"X25519 family", "", "X25519", OIDX25519},
+		{"X448 by name", "X448", "", OIDX448},
+		{"X448 family", "", "X448", OIDX448},
+
+		// EdDSA signatures
+		{"Ed25519 by name", "Ed25519", "", OIDEd25519},
+		{"Ed448 by name", "Ed448", "", OIDEd448},
+		{"EdDSA family", "", "EdDSA", OIDCurves25519448},
+
+		// Diffie-Hellman
+		{"DH by name", "DH", "", OIDDH},
+		{"DH family", "", "DH", OIDDH},
+		{"FFDH by name", "FFDH", "", OIDDH},
+		{"FFDH family", "", "FFDH", OIDDH},
+
+		// ECDH
+		{"ECDH by name", "ECDH", "", OIDECPublicKey},
+		{"ECDH family", "", "ECDH", OIDECPublicKey},
+
+		// Chinese standards
+		{"SM2 by name", "SM2", "", OIDSM2},
+		{"SM2 family", "", "SM2", OIDSM2},
+		{"SM3 by name", "SM3", "", OIDSM3},
+		{"SM3 family", "", "SM3", OIDSM3},
+
+		// Deprecated ciphers
+		{"RC4 by name", "RC4", "", OIDRC4},
+		{"RC4 family", "", "RC4", OIDRC4},
+
+		// RSA-OAEP
+		{"RSA-OAEP by name", "RSA-OAEP", "", OIDRSAOAEP},
+		{"RSAES-OAEP by name", "RSAES-OAEP", "", OIDRSAOAEP},
+
+		// HMAC family
+		{"HMAC family", "", "HMAC", OIDHMACBase},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &entities.CryptographicAsset{
+				Metadata: map[string]string{
+					"algorithmName":   tt.algoName,
+					"algorithmFamily": tt.family,
+				},
+			}
+
+			got := mapper.ResolveOID(asset)
+			if got != tt.wantOID {
+				t.Errorf("ResolveOID() = %v, want %v", got, tt.wantOID)
+			}
+		})
+	}
+}
+
+func TestOIDMapper_NIST_CSOR_PostQuantum_OIDs(t *testing.T) {
+	// Verify specific NIST CSOR post-quantum OIDs match expected values.
+	tests := []struct {
+		oid     string
+		wantOID string
+		desc    string
+	}{
+		// ML-DSA (RFC 9881)
+		{OIDMLDSA44, "2.16.840.1.101.3.4.3.17", "ML-DSA-44"},
+		{OIDMLDSA65, "2.16.840.1.101.3.4.3.18", "ML-DSA-65"},
+		{OIDMLDSA87, "2.16.840.1.101.3.4.3.19", "ML-DSA-87"},
+
+		// ML-KEM (NIST CSOR)
+		{OIDKEMs, "2.16.840.1.101.3.4.4", "KEMs parent"},
+		{OIDMLKEM512, "2.16.840.1.101.3.4.4.1", "ML-KEM-512"},
+		{OIDMLKEM768, "2.16.840.1.101.3.4.4.2", "ML-KEM-768"},
+		{OIDMLKEM1024, "2.16.840.1.101.3.4.4.3", "ML-KEM-1024"},
+
+		// SLH-DSA SHA2 (RFC 9814/9909)
+		{OIDSLHDSASHA2128s, "2.16.840.1.101.3.4.3.20", "SLH-DSA-SHA2-128s"},
+		{OIDSLHDSASHA2128f, "2.16.840.1.101.3.4.3.21", "SLH-DSA-SHA2-128f"},
+		{OIDSLHDSASHA2192s, "2.16.840.1.101.3.4.3.22", "SLH-DSA-SHA2-192s"},
+		{OIDSLHDSASHA2192f, "2.16.840.1.101.3.4.3.23", "SLH-DSA-SHA2-192f"},
+		{OIDSLHDSASHA2256s, "2.16.840.1.101.3.4.3.24", "SLH-DSA-SHA2-256s"},
+		{OIDSLHDSASHA2256f, "2.16.840.1.101.3.4.3.25", "SLH-DSA-SHA2-256f"},
+
+		// SLH-DSA SHAKE (RFC 9814/9909)
+		{OIDSLHDSASHAKE128s, "2.16.840.1.101.3.4.3.26", "SLH-DSA-SHAKE-128s"},
+		{OIDSLHDSASHAKE128f, "2.16.840.1.101.3.4.3.27", "SLH-DSA-SHAKE-128f"},
+		{OIDSLHDSASHAKE192s, "2.16.840.1.101.3.4.3.28", "SLH-DSA-SHAKE-192s"},
+		{OIDSLHDSASHAKE192f, "2.16.840.1.101.3.4.3.29", "SLH-DSA-SHAKE-192f"},
+		{OIDSLHDSASHAKE256s, "2.16.840.1.101.3.4.3.30", "SLH-DSA-SHAKE-256s"},
+		{OIDSLHDSASHAKE256f, "2.16.840.1.101.3.4.3.31", "SLH-DSA-SHAKE-256f"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if tt.oid != tt.wantOID {
+				t.Errorf("OID constant = %v, want %v", tt.oid, tt.wantOID)
+			}
+		})
+	}
+}
+
 func TestOIDMapper_GetCounts(t *testing.T) {
 	mapper := NewOIDMapper()
 
@@ -584,12 +766,12 @@ func TestOIDMapper_GetCounts(t *testing.T) {
 	familyCount := mapper.GetFamilyOIDCount()
 
 	// We should have a reasonable number of mappings
-	if nameCount < 50 {
-		t.Errorf("Expected at least 50 name mappings, got %d", nameCount)
+	if nameCount < 85 {
+		t.Errorf("Expected at least 85 name mappings, got %d", nameCount)
 	}
 
-	if familyCount < 7 {
-		t.Errorf("Expected at least 7 unique family mappings after normalization, got %d", familyCount)
+	if familyCount < 20 {
+		t.Errorf("Expected at least 20 unique family mappings after normalization, got %d", familyCount)
 	}
 
 	t.Logf("OID Mapper initialized with %d specific name mappings and %d family mappings",

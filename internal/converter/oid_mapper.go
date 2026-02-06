@@ -151,6 +151,102 @@ func (m *OIDMapper) initializeMappings() {
 
 	// Legacy RSA Signatures (OIW - deprecated).
 	m.addNameMapping("SHA1-WITH-RSA", OIDSHA1WithRSA)
+
+	// ML-DSA Family (NIST FIPS 204 / RFC 9881).
+	m.addFamilyMapping("ML-DSA", OIDSigAlgs)
+	m.addFamilyMapping("MLDSA", OIDSigAlgs)
+	m.addNameMapping("ML-DSA-44", OIDMLDSA44)
+	m.addNameMapping("ML-DSA-65", OIDMLDSA65)
+	m.addNameMapping("ML-DSA-87", OIDMLDSA87)
+
+	// ML-KEM Family (NIST FIPS 203).
+	m.addFamilyMapping("ML-KEM", OIDKEMs)
+	m.addFamilyMapping("MLKEM", OIDKEMs)
+	m.addNameMapping("ML-KEM-512", OIDMLKEM512)
+	m.addNameMapping("ML-KEM-768", OIDMLKEM768)
+	m.addNameMapping("ML-KEM-1024", OIDMLKEM1024)
+
+	// SLH-DSA Family (NIST FIPS 205 / RFC 9814/9909).
+	m.addFamilyMapping("SLH-DSA", OIDSigAlgs)
+	m.addFamilyMapping("SLHDSA", OIDSigAlgs)
+	m.addNameMapping("SLH-DSA-SHA2-128S", OIDSLHDSASHA2128s)
+	m.addNameMapping("SLH-DSA-SHA2-128F", OIDSLHDSASHA2128f)
+	m.addNameMapping("SLH-DSA-SHA2-192S", OIDSLHDSASHA2192s)
+	m.addNameMapping("SLH-DSA-SHA2-192F", OIDSLHDSASHA2192f)
+	m.addNameMapping("SLH-DSA-SHA2-256S", OIDSLHDSASHA2256s)
+	m.addNameMapping("SLH-DSA-SHA2-256F", OIDSLHDSASHA2256f)
+	m.addNameMapping("SLH-DSA-SHAKE-128S", OIDSLHDSASHAKE128s)
+	m.addNameMapping("SLH-DSA-SHAKE-128F", OIDSLHDSASHAKE128f)
+	m.addNameMapping("SLH-DSA-SHAKE-192S", OIDSLHDSASHAKE192s)
+	m.addNameMapping("SLH-DSA-SHAKE-192F", OIDSLHDSASHAKE192f)
+	m.addNameMapping("SLH-DSA-SHAKE-256S", OIDSLHDSASHAKE256s)
+	m.addNameMapping("SLH-DSA-SHAKE-256F", OIDSLHDSASHAKE256f)
+
+	// MD5 (RFC 1321).
+	m.addFamilyMapping("MD5", OIDMD5)
+	m.addNameMapping("MD5", OIDMD5)
+
+	// MD4 (RFC 1320).
+	m.addFamilyMapping("MD4", OIDMD4)
+	m.addNameMapping("MD4", OIDMD4)
+
+	// MD Family (maps to RSA Digest Algorithm base arc).
+	m.addFamilyMapping("MD", OIDRSADigestAlgorithm)
+
+	// PBKDF2 (RFC 2898 / PKCS#5).
+	m.addFamilyMapping("PBKDF2", OIDPBKDF2)
+	m.addNameMapping("PBKDF2", OIDPBKDF2)
+
+	// scrypt (RFC 7914).
+	m.addFamilyMapping("SCRYPT", OIDScrypt)
+	m.addNameMapping("SCRYPT", OIDScrypt)
+
+	// EdDSA Family (RFC 8410).
+	m.addFamilyMapping("EDDSA", OIDCurves25519448)
+	m.addNameMapping("ED25519", OIDEd25519)
+	m.addNameMapping("ED448", OIDEd448)
+
+	// X25519 (RFC 8410).
+	m.addFamilyMapping("X25519", OIDX25519)
+	m.addNameMapping("X25519", OIDX25519)
+
+	// X448 (RFC 8410).
+	m.addFamilyMapping("X448", OIDX448)
+	m.addNameMapping("X448", OIDX448)
+
+	// ECDH (ecPublicKey OID, shared with ECDSA per RFC 5480).
+	m.addFamilyMapping("ECDH", OIDECPublicKey)
+	m.addNameMapping("ECDH", OIDECPublicKey)
+
+	// DH / FFDH (ANSI X9.42 / RFC 2631).
+	m.addFamilyMapping("DH", OIDDH)
+	m.addFamilyMapping("FFDH", OIDDH)
+	m.addNameMapping("DH", OIDDH)
+	m.addNameMapping("FFDH", OIDDH)
+
+	// SM2 (GB/T 32918).
+	m.addFamilyMapping("SM2", OIDSM2)
+	m.addNameMapping("SM2", OIDSM2)
+
+	// SM3 (GB/T 32905).
+	m.addFamilyMapping("SM3", OIDSM3)
+	m.addNameMapping("SM3", OIDSM3)
+
+	// RC4 (RSA PKCS - deprecated).
+	m.addFamilyMapping("RC4", OIDRC4)
+	m.addNameMapping("RC4", OIDRC4)
+
+	// RSA-OAEP (PKCS#1).
+	m.addNameMapping("RSA-OAEP", OIDRSAOAEP)
+	m.addNameMapping("RSAES-OAEP", OIDRSAOAEP)
+
+	// RSA additional family mappings.
+	m.addFamilyMapping("RSAES-OAEP", OIDRSAOAEP)
+	m.addFamilyMapping("RSAES-PKCS1", OIDRSA)
+	m.addFamilyMapping("RSASSA-PKCS1", OIDPKCS1)
+
+	// HMAC Family (base arc).
+	m.addFamilyMapping("HMAC", OIDHMACBase)
 }
 
 // addNameMapping adds a specific algorithm name to OID mapping.
