@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `--interfile` flag for cross-file analysis support when using Semgrep Pro (`--scanner semgrep --interfile`)
+
 ## [0.2.2] - 2026-02-06
 ### Added
 - Add OID mappings for post-quantum algorithms: ML-DSA (FIPS 204), ML-KEM (FIPS 203), and SLH-DSA (FIPS 205) with all parameter set variants

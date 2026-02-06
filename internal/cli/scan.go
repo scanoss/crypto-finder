@@ -76,6 +76,7 @@ var (
 	scanStrict        bool
 	scanMaxStaleAge   string
 	scanNoDedup       bool
+	scanInterfile     bool
 )
 
 var scanCmd = &cobra.Command{
@@ -131,6 +132,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
+	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -256,6 +258,7 @@ func runScan(_ *cobra.Command, args []string) error {
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
 			DisableDedup: scanNoDedup,
+			Interfile:    scanInterfile,
 		},
 	}
 
@@ -319,6 +322,11 @@ func validateScanFlags(target string) error {
 	// Validate scanner
 	if !slices.Contains(AllowedScanners, scanScanner) {
 		return fmt.Errorf("invalid scanner name: %s", scanScanner)
+	}
+
+	// Validate interfile flag is only used with semgrep
+	if scanInterfile && scanScanner != "semgrep" {
+		return fmt.Errorf("--interfile flag is only supported with --scanner semgrep")
 	}
 
 	// Validate output format

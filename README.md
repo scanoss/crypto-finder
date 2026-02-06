@@ -180,6 +180,7 @@ crypto-finder scan [flags] <target>
 - `--languages <langs>` - Override language detection (comma-separated)
 - `--fail-on-findings` - Exit with error if findings detected
 - `--timeout <duration>` - Scan timeout (default: 10m)
+- `--interfile` - Enable cross-file analysis (Semgrep Pro only)
 - `--verbose`, `-v` - Enable verbose logging
 - `--help` - Display help information
 

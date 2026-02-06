@@ -329,6 +329,17 @@ crypto-finder scan /path/to/code
 crypto-finder scan --scanner semgrep /path/to/code
 ```
 
+### Cross-File Analysis (Semgrep Pro)
+
+When using the Semgrep scanner, you can enable cross-file (interfile) analysis with the `--interfile` flag. This adds the `--pro` flag to the underlying Semgrep command, enabling Semgrep Pro features such as cross-file taint tracking and type inference.
+
+```bash
+# Enable cross-file analysis with Semgrep Pro
+crypto-finder scan --scanner semgrep --interfile /path/to/code
+```
+
+> **Note:** The `--interfile` flag is only supported with `--scanner semgrep`. Using it with other scanners will result in an error. A valid Semgrep Pro license is required.
+
 ## Language Detection
 
 ### Automatic Detection

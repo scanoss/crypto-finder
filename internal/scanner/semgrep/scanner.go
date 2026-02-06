@@ -47,6 +47,7 @@ type Scanner struct {
 	extraArgs      []string
 	skipPatterns   []string
 	disableDedup   bool
+	interfile      bool
 }
 
 // NewScanner creates a new Semgrep adapter with default settings.
@@ -91,6 +92,7 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 		s.skipPatterns = config.SkipPatterns
 	}
 	s.disableDedup = config.DisableDedup
+	s.interfile = config.Interfile
 
 	return nil
 }
@@ -167,6 +169,10 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
+	}
+
+	if s.interfile {
+		args = append(args, "--pro")
 	}
 
 	for _, pattern := range s.skipPatterns {
