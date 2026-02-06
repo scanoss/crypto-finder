@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	defaultScanner        = "opengrep"
+	defaultScanner        = opengrep.ScannerName
 	defaultFormat         = "json"
 	defaultTimeout        = "10m"
 	defaultRulesetName    = "dca"
@@ -55,7 +55,7 @@ const (
 
 // AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
-var AllowedScanners = []string{"opengrep", "semgrep"}
+var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
 // SupportedFormats lists the output formats supported by the tool.
 var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
@@ -245,8 +245,8 @@ func runScan(_ *cobra.Command, args []string) error {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.Register("opengrep", opengrep.NewScanner())
-	scannerRegistry.Register("semgrep", semgrep.NewScanner())
+	scannerRegistry.Register(opengrep.ScannerName, opengrep.NewScanner())
+	scannerRegistry.Register(semgrep.ScannerName, semgrep.NewScanner())
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
@@ -325,7 +325,7 @@ func validateScanFlags(target string) error {
 	}
 
 	// Validate interfile flag is only used with semgrep
-	if scanInterfile && scanScanner != "semgrep" {
+	if scanInterfile && scanScanner != semgrep.ScannerName {
 		return fmt.Errorf("--interfile flag is only supported with --scanner semgrep")
 	}
 
