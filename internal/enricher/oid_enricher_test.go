@@ -266,3 +266,87 @@ func TestOIDEnricher_EnrichReport_EmptyReport(_ *testing.T) {
 	// Should not panic
 	enricher.EnrichReport(report)
 }
+
+func TestOIDEnricher_EnrichAsset_PostQuantum(t *testing.T) {
+	enricher := NewOIDEnricher()
+
+	tests := []struct {
+		name        string
+		family      string
+		algoName    string
+		expectedOID string
+	}{
+		{
+			name:        "Enrich ML-DSA-44",
+			family:      "ML-DSA",
+			algoName:    "ML-DSA-44",
+			expectedOID: converter.OIDMLDSA44,
+		},
+		{
+			name:        "Enrich ML-DSA-65",
+			family:      "ML-DSA",
+			algoName:    "ML-DSA-65",
+			expectedOID: converter.OIDMLDSA65,
+		},
+		{
+			name:        "Enrich ML-DSA-87",
+			family:      "ML-DSA",
+			algoName:    "ML-DSA-87",
+			expectedOID: converter.OIDMLDSA87,
+		},
+		{
+			name:        "Enrich ML-KEM-768",
+			family:      "ML-KEM",
+			algoName:    "ML-KEM-768",
+			expectedOID: converter.OIDMLKEM768,
+		},
+		{
+			name:        "Enrich ML-KEM-1024",
+			family:      "ML-KEM",
+			algoName:    "ML-KEM-1024",
+			expectedOID: converter.OIDMLKEM1024,
+		},
+		{
+			name:        "Enrich SLH-DSA-SHA2-128s",
+			family:      "SLH-DSA",
+			algoName:    "SLH-DSA-SHA2-128s",
+			expectedOID: converter.OIDSLHDSASHA2128s,
+		},
+		{
+			name:        "Enrich SLH-DSA-SHAKE-256f",
+			family:      "SLH-DSA",
+			algoName:    "SLH-DSA-SHAKE-256f",
+			expectedOID: converter.OIDSLHDSASHAKE256f,
+		},
+		{
+			name:        "Enrich ML-DSA family only",
+			family:      "ML-DSA",
+			algoName:    "",
+			expectedOID: converter.OIDSigAlgs,
+		},
+		{
+			name:        "Enrich ML-KEM family only",
+			family:      "ML-KEM",
+			algoName:    "",
+			expectedOID: converter.OIDKEMs,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset := &entities.CryptographicAsset{
+				OID: "",
+				Metadata: map[string]string{
+					"algorithmFamily": tt.family,
+					"algorithmName":   tt.algoName,
+				},
+			}
+
+			enricher.EnrichAsset(asset)
+
+			if asset.OID != tt.expectedOID {
+				t.Errorf("OID = %q, want %q", asset.OID, tt.expectedOID)
+			}
+		})
+	}
+}

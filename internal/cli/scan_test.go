@@ -32,6 +32,7 @@ func TestValidateScanFlags(t *testing.T) {
 	origScanner := scanScanner
 	origFormat := scanFormat
 	origLanguages := scanLanguages
+	origInterfile := scanInterfile
 
 	defer func() {
 		// Restore original values
@@ -41,6 +42,7 @@ func TestValidateScanFlags(t *testing.T) {
 		scanScanner = origScanner
 		scanFormat = origFormat
 		scanLanguages = origLanguages
+		scanInterfile = origInterfile
 	}()
 
 	t.Run("valid target with rules", func(t *testing.T) {
@@ -169,6 +171,36 @@ func TestValidateScanFlags(t *testing.T) {
 		err := validateScanFlags(tempDir)
 		if err != nil {
 			t.Errorf("Expected no error with rules directory, got: %v", err)
+		}
+	})
+
+	t.Run("interfile with non-semgrep scanner", func(t *testing.T) {
+		tempDir := t.TempDir()
+		scanRules = []string{"rule.yaml"}
+		scanRuleDirs = []string{}
+		scanNoRemoteRules = false
+		scanScanner = "opengrep"
+		scanFormat = "json"
+		scanInterfile = true
+
+		err := validateScanFlags(tempDir)
+		if err == nil {
+			t.Error("Expected error when --interfile is used with non-semgrep scanner")
+		}
+	})
+
+	t.Run("interfile with semgrep scanner", func(t *testing.T) {
+		tempDir := t.TempDir()
+		scanRules = []string{"rule.yaml"}
+		scanRuleDirs = []string{}
+		scanNoRemoteRules = false
+		scanScanner = "semgrep"
+		scanFormat = "json"
+		scanInterfile = true
+
+		err := validateScanFlags(tempDir)
+		if err != nil {
+			t.Errorf("Expected no error with --interfile and semgrep scanner, got: %v", err)
 		}
 	})
 }

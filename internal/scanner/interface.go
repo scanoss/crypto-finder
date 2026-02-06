@@ -118,6 +118,11 @@ type Config struct {
 	// By default (false), assets detected at the same location are merged.
 	// Set to true to preserve all individual detections for debugging or compatibility.
 	DisableDedup bool
+
+	// Interfile enables cross-file (interfile) analysis.
+	// When enabled with Semgrep, this adds the --pro flag to enable Semgrep Pro features.
+	// Only supported by the Semgrep scanner.
+	Interfile bool
 }
 
 // Info contains metadata about a scanner implementation.

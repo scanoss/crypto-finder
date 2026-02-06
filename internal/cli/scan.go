@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	defaultScanner        = "opengrep"
+	defaultScanner        = opengrep.ScannerName
 	defaultFormat         = "json"
 	defaultTimeout        = "10m"
 	defaultRulesetName    = "dca"
@@ -55,7 +55,7 @@ const (
 
 // AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
-var AllowedScanners = []string{"opengrep", "semgrep"}
+var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
 // SupportedFormats lists the output formats supported by the tool.
 var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
@@ -76,6 +76,7 @@ var (
 	scanStrict        bool
 	scanMaxStaleAge   string
 	scanNoDedup       bool
+	scanInterfile     bool
 )
 
 var scanCmd = &cobra.Command{
@@ -131,6 +132,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
+	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -243,8 +245,8 @@ func runScan(_ *cobra.Command, args []string) error {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.Register("opengrep", opengrep.NewScanner())
-	scannerRegistry.Register("semgrep", semgrep.NewScanner())
+	scannerRegistry.Register(opengrep.ScannerName, opengrep.NewScanner())
+	scannerRegistry.Register(semgrep.ScannerName, semgrep.NewScanner())
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
@@ -256,6 +258,7 @@ func runScan(_ *cobra.Command, args []string) error {
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
 			DisableDedup: scanNoDedup,
+			Interfile:    scanInterfile,
 		},
 	}
 
@@ -319,6 +322,11 @@ func validateScanFlags(target string) error {
 	// Validate scanner
 	if !slices.Contains(AllowedScanners, scanScanner) {
 		return fmt.Errorf("invalid scanner name: %s", scanScanner)
+	}
+
+	// Validate interfile flag is only used with semgrep
+	if scanInterfile && scanScanner != semgrep.ScannerName {
+		return fmt.Errorf("--interfile flag is only supported with --scanner semgrep")
 	}
 
 	// Validate output format
