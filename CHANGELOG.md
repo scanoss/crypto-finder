@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Add `--interfile` flag for cross-file analysis support when using Semgrep Pro (`--scanner semgrep --interfile`)
+## [0.2.3] - 2026-02-09
+### Removed
+- Remove `timestamp_utc` from JSON output
 
 ## [0.2.2] - 2026-02-06
 ### Added
 - Add OID mappings for post-quantum algorithms: ML-DSA (FIPS 204), ML-KEM (FIPS 203), and SLH-DSA (FIPS 205) with all parameter set variants
 - Add OID mappings for classic algorithms: MD5, MD4, PBKDF2, scrypt, X25519, X448, Ed25519, Ed448, DH, ECDH, SM2, SM3, RC4, RSA-OAEP, and HMAC family
+- Add `--interfile` flag for cross-file analysis support when using Semgrep Pro (`--scanner semgrep --interfile`)
 
 ## [0.2.1] - 2026-02-03
 ### Changed
@@ -86,3 +88,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/scanoss/crypto-finder/compare/v0.1.5...v0.2.0
 [0.2.2]: https://github.com/scanoss/crypto-finder/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/scanoss/crypto-finder/compare/v0.2.0...v0.2.1
+[0.2.2]: https://github.com/scanoss/crypto-finder/compare/v0.2.1...v0.2.2

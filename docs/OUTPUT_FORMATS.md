@@ -42,7 +42,6 @@ The default output format containing detailed cryptographic asset information op
           }
         }
       ],
-      "timestamp_utc": "2025-01-15T10:00:00Z"
     }
   ]
 }
@@ -114,7 +113,6 @@ The default output format containing detailed cryptographic asset information op
           }
         }
       ],
-      "timestamp_utc": "2025-10-22T10:00:00Z"
     }
   ]
 }
@@ -160,7 +158,6 @@ The default output format containing detailed cryptographic asset information op
           }
         }
       ],
-      "timestamp_utc": "2025-01-27T10:00:00Z"
     }
   ]
 }
