@@ -721,7 +721,6 @@ func TestTransformFileFinding(t *testing.T) {
 	if len(finding.CryptographicAssets) != 2 {
 		t.Fatalf("Expected 2 assets, got %d", len(finding.CryptographicAssets))
 	}
-
 }
 
 func TestTransformToCryptographicAsset(t *testing.T) {

@@ -34,8 +34,8 @@ func createTestReport() *entities.InterimReport {
 		},
 		Findings: []entities.Finding{
 			{
-				FilePath:     "test.go",
-				Language:     "go",
+				FilePath: "test.go",
+				Language: "go",
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
 						MatchType: "semgrep",
