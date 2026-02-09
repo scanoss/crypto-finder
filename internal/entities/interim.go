@@ -61,9 +61,6 @@ type Finding struct {
 
 	// CryptographicAssets contains all cryptographic materials found in this file
 	CryptographicAssets []CryptographicAsset `json:"cryptographic_assets"`
-
-	// TimestampUTC is the ISO 8601 timestamp when this file was scanned
-	TimestampUTC string `json:"timestamp_utc"`
 }
 
 // CryptographicAsset represents a single detected cryptographic element.

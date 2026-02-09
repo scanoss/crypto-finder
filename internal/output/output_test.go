@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -37,7 +36,6 @@ func createTestReport() *entities.InterimReport {
 			{
 				FilePath:     "test.go",
 				Language:     "go",
-				TimestampUTC: time.Now().UTC().Format(time.RFC3339),
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
 						MatchType: "semgrep",

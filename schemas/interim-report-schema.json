@@ -46,8 +46,7 @@
       "required": [
         "file_path",
         "language",
-        "cryptographic_assets",
-        "timestamp_utc"
+        "cryptographic_assets"
       ],
       "properties": {
         "file_path": {
@@ -65,11 +64,6 @@
           "items": {
             "$ref": "#/$defs/CryptographicAsset"
           }
-        },
-        "timestamp_utc": {
-          "type": "string",
-          "format": "date-time",
-          "description": "ISO 8601 timestamp when this file was scanned"
         }
       }
     },

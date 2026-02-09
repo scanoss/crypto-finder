@@ -722,9 +722,6 @@ func TestTransformFileFinding(t *testing.T) {
 		t.Fatalf("Expected 2 assets, got %d", len(finding.CryptographicAssets))
 	}
 
-	if finding.TimestampUTC == "" {
-		t.Error("Expected non-empty timestamp")
-	}
 }
 
 func TestTransformToCryptographicAsset(t *testing.T) {

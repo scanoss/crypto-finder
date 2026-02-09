@@ -25,7 +25,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/zerolog/log"
@@ -96,7 +95,6 @@ func transformFileFinding(filePath string, results []entities.SemgrepResult, tar
 		FilePath:            relativePath,
 		Language:            language,
 		CryptographicAssets: assets,
-		TimestampUTC:        time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
