@@ -273,3 +273,10 @@ const (
 	OIDDSAWithSHA  = OIDOIWSECSIG + ".13" // dsaWithSHA
 	OIDDSAWithSHA1 = OIDOIWSECSIG + ".27" // dsaWithSHA1
 )
+
+// HSS/LMS (Leighton-Micali Signature) Algorithm OID (1.2.840.113549.1.9.16.3.17).
+// Source: RFC 8554 (LMS), RFC 8708 (HSS/LMS in CMS). https://www.rfc-editor.org/rfc/rfc8708.html.
+const (
+	OIDSMIMEAlg = "1.2.840.113549.1.9.16.3"
+	OIDLMS      = OIDSMIMEAlg + ".17" // id-alg-hss-lms-hashsig
+)

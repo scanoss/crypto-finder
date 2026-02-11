@@ -182,6 +182,12 @@ func (m *OIDMapper) initializeMappings() {
 	m.addNameMapping("SLH-DSA-SHAKE-256S", OIDSLHDSASHAKE256s)
 	m.addNameMapping("SLH-DSA-SHAKE-256F", OIDSLHDSASHAKE256f)
 
+	// LMS/HSS Family (RFC 8554 / RFC 8708).
+	m.addFamilyMapping("LMS", OIDLMS)
+	m.addNameMapping("LMS", OIDLMS)
+	m.addNameMapping("HSS", OIDLMS)
+	m.addNameMapping("HSS-LMS", OIDLMS)
+
 	// MD5 (RFC 1321).
 	m.addFamilyMapping("MD5", OIDMD5)
 	m.addNameMapping("MD5", OIDMD5)
