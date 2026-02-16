@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-23
+### Added
+- Dependency scanning: detect cryptographic usage in third-party dependencies with call chain tracing
+  - Go support via `go list` and `go mod graph`
+  - Java support via Maven dependency resolution
+  - Python support via pip with isolated virtualenv
+  - Rust support via `cargo metadata`
+- `--scan-dependencies` CLI flag to enable dependency scanning
+- `--export-callgraph` flag for debugging call graph output
+- Java source code parser using tree-sitter
+- Python source code parser using tree-sitter
+- Rust source code parser using tree-sitter
+- `Dockerfile.deps` / `latest-deps` Docker image with all language toolchains for dependency scanning
+- Parallel dependency scanning across multiple dependencies
+- Support for multiple call chains per cryptographic finding
+- Dependency scanning documentation (`docs/DEPENDENCY_SCANNING.md`)
+
+### Fixed
+- Docker build compatibility with Go 1.25 and go-tree-sitter (CGO linking)
+
 ## [0.2.4] - 2026-02-11
 ### Added
 - Add OID mapping for LMS/HSS hash-based signature algorithm (RFC 8554 / RFC 8708)
@@ -93,4 +113,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.1]: https://github.com/scanoss/crypto-finder/compare/v0.2.0...v0.2.1
 [0.2.2]: https://github.com/scanoss/crypto-finder/compare/v0.2.1...v0.2.2
 [0.2.3]: https://github.com/scanoss/crypto-finder/compare/v0.2.2...v0.2.3
+[0.3.0]: https://github.com/scanoss/crypto-finder/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/scanoss/crypto-finder/compare/v0.2.3...v0.2.4

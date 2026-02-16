@@ -10,7 +10,7 @@ The default output format containing detailed cryptographic asset information op
 
 ```json
 {
-  "version": "1.1",
+  "version": "1.2",
   "tool": {
     "name": "crypto-finder",
     "version": "0.1.0"
@@ -39,21 +39,33 @@ The default output format containing detailed cryptographic asset information op
             "algorithmPrimitive": "primitive_type",
             "algorithmMode": "mode_of_operation",
             "algorithmPadding": "padding_scheme"
-          }
+          },
+          "source": "direct|dependency",
+          "dependency_info": {
+            "module": "golang.org/x/crypto",
+            "version": "v0.17.0",
+            "function": "golang.org/x/crypto/chacha20poly1305.New"
+          },
+          "call_chains": [
+            [
+              {"function": "example.com/app.main", "file": "main.go", "line": 15},
+              {"function": "golang.org/x/crypto/chacha20poly1305.New", "file": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
+            ]
+          ]
         }
-      ],
+      ]
     }
   ]
 }
 ```
 
-> **Note:** Version 1.1 introduces the `rules` array field (replacing single `rule` field) to support per-line deduplication. Multiple detection rules can now identify the same cryptographic asset.
+> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 adds `source`, `dependency_info`, and `call_chains` as structured fields for dependency scanning attribution. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
 
 ### Field Descriptions
 
 | Field | Description |
 |-------|-------------|
-| `version` | Format version (currently "1.1") |
+| `version` | Format version (currently "1.2") |
 | `tool.name` | Scanner used (crypto-finder) |
 | `tool.version` | Scanner version |
 | `findings` | Array of file-level findings |
@@ -75,6 +87,9 @@ The default output format containing detailed cryptographic asset information op
 | `metadata.algorithmPrimitive` | Cryptographic primitive type |
 | `metadata.algorithmMode` | Mode of operation (for block ciphers) |
 | `metadata.algorithmPadding` | Padding scheme used |
+| `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
+| `dependency_info` | Attribution for dependency findings: `module`, `version`, `function` (v1.2+) |
+| `call_chains` | Array of arrays of `{function, file, line}` — all paths from entry point to crypto site (v1.2+) |
 
 ### Example Output
 
@@ -274,4 +289,5 @@ CycloneDX CBOM output can be consumed by:
 ## Related Documentation
 
 - [Main README](../README.md) - Usage and command reference
+- [Dependency Scanning](DEPENDENCY_SCANNING.md) - How dependency scanning, call graph tracing, and attribution work
 - [Docker Usage](DOCKER_USAGE.md) - Container-based scanning and format conversion

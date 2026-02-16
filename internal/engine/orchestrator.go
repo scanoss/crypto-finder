@@ -67,6 +67,10 @@ type ScanOptions struct {
 
 	// ScannerConfig contains scanner-specific configuration
 	ScannerConfig scanner.Config
+
+	// RulePaths, when non-nil, bypasses the rules manager and uses these paths directly.
+	// This is used by the dependency scanner to pass pre-loaded, language-filtered rules.
+	RulePaths []string
 }
 
 // Scan orchestrates the complete scanning workflow.
@@ -97,11 +101,23 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		}
 	}
 
-	// Step 2: Load rules from manager
-	rulePaths, err := o.rulesManager.Load()
-	log.Info().Strs("paths", rulePaths).Int("count", len(rulePaths)).Msg("Loaded rules")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load rules: %w", err)
+	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
+	var rulePaths []string
+	if len(opts.RulePaths) > 0 {
+		rulePaths = opts.RulePaths
+		log.Debug().Int("count", len(rulePaths)).Msg("Using pre-loaded rule paths")
+	} else {
+		rulePaths, err = o.rulesManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load rules: %w", err)
+		}
+		log.Info().Int("count", len(rulePaths)).Msg("Loaded rules")
+
+		// Filter rules to only include those matching detected languages.
+		// This significantly reduces scanner overhead for large rule sets.
+		if len(languages) > 0 {
+			rulePaths = filterRulesByLanguages(rulePaths, languages)
+		}
 	}
 
 	// Step 3: Get scanner from registry

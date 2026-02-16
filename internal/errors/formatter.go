@@ -85,7 +85,16 @@ func FormatMultiError(context string, errs []error) error {
 		return errs[0]
 	}
 
-	return fmt.Errorf("multiple errors during %s: %w", context, errors.Join(errs...))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "multiple errors during %s:\n", context)
+	for i, err := range errors {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		fmt.Fprintf(&sb, "  - %v", err)
+	}
+
+	return fmt.Errorf("%s", sb.String())
 }
 
 // WrapWithSuggestion wraps an error with a helpful suggestion.

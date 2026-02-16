@@ -26,6 +26,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 var (
@@ -78,14 +80,19 @@ func setupLogging() {
 
 // Execute runs the root command and exits on error.
 func Execute() {
+	stderrFD, ok := utils.FDToInt(os.Stderr.Fd())
+	if !ok {
+		pterm.DisableColor()
+	}
+
 	// Disable pterm colors if not running in a TTY (e.g., piped output or non-interactive terminal)
-	if !term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // Fd() returns a small non-negative value.
+	if !ok || !term.IsTerminal(stderrFD) {
 		pterm.DisableColor()
 	}
 
 	if err := rootCmd.Execute(); err != nil {
 		// Use plain error output in non-TTY environments to avoid color artifacts
-		if !term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // Fd() returns a small non-negative value.
+		if !ok || !term.IsTerminal(stderrFD) {
 			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
 		} else {
 			pterm.Error.Printfln("%s", err)

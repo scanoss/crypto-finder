@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir semgrep==1.145.0 --break-system-packages
 
 # Install opengrep (minimum version 1.12.1 required for taint analysis)
-RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash
 
 # Add opengrep to PATH
 ENV PATH="/root/.opengrep/cli/latest:${PATH}"

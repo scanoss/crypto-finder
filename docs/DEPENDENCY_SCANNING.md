@@ -1,0 +1,988 @@
+# Dependency Scanning & Call Chain Attribution
+
+This document explains how crypto-finder discovers cryptographic usage in project dependencies and traces it back to user code through call graph analysis.
+
+## Overview
+
+When `--scan-dependencies` is enabled, crypto-finder goes beyond scanning the user's source code. It resolves the project's dependency tree, scans each dependency for cryptographic usage, builds a cross-package call graph, and traces each finding back to the user's code to answer: **"Does my code actually reach this crypto function?"**
+
+```mermaid
+flowchart TB
+    subgraph Input
+        UC[User Code<br/><i>your project</i>]
+        DEP[Dependencies<br/><i>go.sum / pom.xml / ...</i>]
+    end
+
+    subgraph Pipeline["ScanWithDependencies Pipeline"]
+        direction TB
+        S1["① Resolve Dependencies"]
+        S2["② Load & Filter Rules"]
+        S3["③ Scan Dependencies in Parallel"]
+        S4["④ Build Call Graph"]
+        S5["⑤ Trace & Attribute Findings"]
+        S6["⑥ Merge Reports"]
+
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6
+    end
+
+    UC --> S1
+    DEP --> S1
+
+    S6 --> OUT[Final Report<br/><i>with source, call_chains,<br/>dependency_info</i>]
+```
+
+## The Six-Step Pipeline
+
+The full pipeline lives in [`DependencyScanner.ScanWithDependencies()`](../internal/engine/dependency_scanner.go). Here's what each step does and why.
+
+### Step 1: Resolve Dependencies
+
+```mermaid
+flowchart LR
+    Target["Project Dir"] --> Resolver
+    Resolver --> RR["ResolveResult"]
+    RR --> Modules["[]Dependency<br/>{Module, Version, Dir}"]
+    RR --> RootMod["RootModule<br/><i>e.g. github.com/myorg/app</i>"]
+```
+
+The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dependencies and locates their source code on disk. Each ecosystem has its own resolver implementation (see [Supported Ecosystems](#supported-ecosystems) below). Each `Dependency` carries:
+
+| Field     | Go Example                          | Java Example                     | Purpose                          |
+|-----------|-------------------------------------|----------------------------------|----------------------------------|
+| `Module`  | `golang.org/x/crypto`              | `org.bouncycastle:bcprov-jdk18on`| Import path / coordinate         |
+| `Version` | `v0.17.0`                           | `1.77`                           | Resolved version                 |
+| `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | Filesystem path to scan |
+
+The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is used later to determine which packages are "user code" vs. "dependency code".
+
+### Step 2: Load & Filter Rules
+
+Rules are pre-loaded once and filtered to the ecosystem's language(s). For a Go project, only `go` rules are kept; for Java, only `java` rules. This avoids running irrelevant rules against source code, significantly reducing scanner overhead.
+
+### Step 3: Scan Dependencies in Parallel
+
+```mermaid
+flowchart TB
+    Work["Deduplicated Deps"] --> Pool["Worker Pool<br/><i>default: 4 goroutines</i>"]
+    Pool --> W1["Worker 1"] --> R1["Report A"]
+    Pool --> W2["Worker 2"] --> R2["Report B"]
+    Pool --> W3["Worker 3"] --> R3["Report C"]
+    Pool --> W4["Worker 4"] --> R4["Report D"]
+```
+
+Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` to avoid scanning the same package twice.
+
+Only dependencies **with findings** proceed to step 4 — this keeps the call graph small and focused.
+
+### Step 4: Build the Call Graph
+
+This is where the architecture gets interesting. The call graph builder uses **tree-sitter** to parse source files, which means it works on raw source without needing a full Go toolchain or Java compiler. The [`Parser` interface](../internal/callgraph/builder.go) abstracts all language-specific behavior:
+
+```go
+type Parser interface {
+    ParseDirectory(dir string, packagePath string) ([]*FileAnalysis, error)
+    SkipDirs() map[string]bool
+    SubPackagePath(parentPath, dirName string) string
+    PackageSeparator() string  // "/" for Go, "." for Java
+}
+```
+
+The [`NewParserForEcosystem()`](../internal/callgraph/parser_registry.go) factory selects the right parser (`GoParser` or `JavaParser`) based on the detected ecosystem.
+
+```mermaid
+flowchart TB
+    subgraph "Package Dirs (input)"
+        U["User Code Dir<br/><i>+ import path</i>"]
+        D1["Dep with findings<br/><i>golang.org/x/crypto</i>"]
+        D2["Dep with findings<br/><i>org.bouncycastle:bcprov-jdk18on</i>"]
+    end
+
+    subgraph "Builder.BuildFromDirectories()"
+        direction TB
+        Parse["Parser.ParseDirectory()<br/><i>tree-sitter per source file</i>"]
+        FnMap["Functions map<br/><i>FunctionID → FunctionDecl</i>"]
+        RevIdx["Callers reverse index<br/><i>callee → []callerID</i>"]
+
+        Parse --> FnMap
+        FnMap --> RevIdx
+    end
+
+    U --> Parse
+    D1 --> Parse
+    D2 --> Parse
+
+    RevIdx --> CG["CallGraph"]
+```
+
+#### What the parser extracts
+
+Each language parser extracts the same semantic information into the shared `FileAnalysis` / `FunctionDecl` structures. For Go (`.go` files, excluding `_test.go`):
+
+| Extracted | Example | Stored As |
+|-----------|---------|-----------|
+| Package imports | `import "crypto/aes"` | `Imports["aes"] = "crypto/aes"` |
+| Function declarations | `func Encrypt(...)` | `FunctionDecl{ID, FilePath, StartLine, EndLine, Calls}` |
+| Method declarations | `func (b *Block) Seal(...)` | Same, with `Type = "*Block"` |
+| Call expressions | `aes.NewCipher(key)` | `FunctionCall{Callee: {Package: "crypto/aes", Name: "NewCipher"}}` |
+
+For Java (`.java` files):
+
+| Extracted | Example | Stored As |
+|-----------|---------|-----------|
+| Package declaration | `package javax.crypto;` | `PackagePath = "javax.crypto"` |
+| Imports (explicit) | `import javax.crypto.Cipher;` | `Imports["Cipher"] = "javax.crypto"` |
+| Imports (wildcard) | `import java.security.*;` | `WildcardImports = ["java.security"]` |
+| Class methods | `class Cipher { getInstance(...) }` | `FunctionDecl{..., Type: "Cipher", Name: "getInstance"}` |
+| Constructors | `new SecretKeySpec(...)` | Call to `FunctionID{..., Type: "SecretKeySpec", Name: "<init>"}` |
+| Method invocations | `Cipher.getInstance("AES")` | Resolved via imports → `FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance"}` |
+| Local variable types | `Cipher cipher = Cipher.getInstance(...)` | Enables `cipher.doFinal()` → resolves `cipher` to `Cipher` type |
+
+#### The two data structures
+
+The `CallGraph` holds two maps:
+
+```
+Functions:  "crypto/aes.NewCipher"         → FunctionDecl{...}
+            "example.com/app.Encrypt"      → FunctionDecl{Calls: [...]}
+            "example.com/app.main"         → FunctionDecl{Calls: [...]}
+
+Callers:    "crypto/aes.NewCipher"         → ["example.com/app.Encrypt"]
+            "example.com/app.Encrypt"      → ["example.com/app.main"]
+```
+
+- **`Functions`** maps `FunctionID.String()` → `*FunctionDecl` (forward: function → its outgoing calls)
+- **`Callers`** maps callee → `[]callerID` (reverse: who calls this function?)
+
+The reverse index is what enables **backward tracing** — starting from a crypto finding and walking up to user code.
+
+### Step 5: Trace & Attribute Findings
+
+This is the core of the attribution system. For each crypto finding in a dependency:
+
+```mermaid
+flowchart TB
+    Finding["Crypto Finding<br/><i>file: chacha20.go, line: 42</i>"] --> Contain["FindContainingFunction()<br/><i>Which function spans line 42?</i>"]
+    Contain --> FnID["FunctionID<br/><i>chacha20poly1305.New</i>"]
+    FnID --> Trace["TraceBack(target, userPackages)"]
+
+    subgraph "BFS Backward Trace"
+        direction TB
+        Start["Start: chacha20poly1305.New"]
+        Mid["Caller: mypkg.SecureEncrypt"]
+        End["Caller: main.main ✓<br/><i>user package reached!</i>"]
+
+        Start -.->|"Callers[] lookup"| Mid
+        Mid -.->|"Callers[] lookup"| End
+    end
+
+    Trace --> BFS
+    BFS --> Chain["CallChain<br/>[main.main → mypkg.SecureEncrypt → chacha20poly1305.New]"]
+```
+
+#### How `TraceBack` works (BFS)
+
+1. **Start** with the target function (where the crypto finding was detected)
+2. **Look up** all callers via the reverse index (`graph.Callers[targetKey]`)
+3. **Prepend** each caller to the chain being built (so the chain grows backward: `[caller, ...existing]`)
+4. **Terminate** when a root function is reached (a function with no callers, e.g., `main`)
+5. **Validate** that the complete chain passes through at least one user-package function
+6. **Cycle detection** prevents infinite loops in recursive call graphs
+7. **Return** all complete chains (BFS finds all paths from entry points to the crypto call site)
+
+The result is an ordered array: **`[program_entry_point, ..., intermediate, ..., crypto_call_site]`** — array position `[i]` calls position `[i+1]`.
+
+#### Attribution output
+
+After tracing, each finding gets structured fields:
+
+**Dependency finding:**
+```go
+asset.Source = "dependency"
+asset.DependencyInfo = &DependencyInfo{
+    Module:   "golang.org/x/crypto",
+    Version:  "v0.17.0",
+    Function: "golang.org/x/crypto/chacha20poly1305.New",
+}
+asset.CallChains = [][]CallChainEntry{
+    {
+        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
+        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
+        {Function: "golang.org/x/crypto/chacha20poly1305.New", File: "golang.org/x/crypto@v0.17.0/chacha20.go", Line: 42},
+    },
+}
+```
+
+**User code finding** (enriched with intra-project call chain):
+```go
+asset.Source = "direct"
+asset.CallChains = [][]CallChainEntry{
+    {
+        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
+        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
+    },
+}
+```
+
+### Step 6: Merge Reports
+
+```mermaid
+flowchart TB
+    UR["User Report<br/><i>source: direct</i>"]
+    DR1["Dep Report 1"]
+    DR2["Dep Report 2"]
+
+    DR1 --> Filter{"Has call_chains?<br/><i>(reachable from user code)</i>"}
+    DR2 --> Filter
+
+    Filter -->|Yes| Reachable["Include in merged report"]
+    Filter -->|No, --dep-include-unreachable| Reachable
+    Filter -->|No| Drop["Excluded"]
+
+    UR --> Merged["Merged Report"]
+    Reachable --> Merged
+```
+
+By default, only **reachable** dependency findings (those with a non-empty `call_chains`) are included. The `--dep-include-unreachable` flag overrides this to include all dependency findings regardless of traceability.
+
+User code findings are always included and marked with `source: "direct"`.
+
+---
+
+## Practical Walkthrough
+
+This section traces the entire pipeline using the test project at `testdata/projects/go_with_crypto_dep/`. Every value shown is real — produced by running `crypto-finder scan --scan-dependencies` against this project.
+
+### The Source Code
+
+Three files make up the project:
+
+**`go.mod`** — declares one direct dependency:
+```
+module example.com/crypto-test
+go 1.21
+require golang.org/x/crypto v0.31.0
+require golang.org/x/sys v0.28.0 // indirect
+```
+
+**`main.go`** — the entry point. Does **not** use crypto directly:
+```go
+package main
+
+import "example.com/crypto-test/mypkg"
+
+func main() {
+    key := make([]byte, 32)
+    message := []byte("Hello, crypto-finder dependency scanning!")
+
+    encrypted, err := mypkg.SecureEncrypt(key, message)   // line 14
+    decrypted, err := mypkg.SecureDecrypt(key, encrypted)  // line 19
+}
+```
+
+**`mypkg/crypto.go`** — user's wrapper package. Uses crypto from a dependency:
+```go
+package mypkg
+
+import (
+    "crypto/rand"
+    "golang.org/x/crypto/chacha20poly1305"
+)
+
+func SecureEncrypt(key []byte, plaintext []byte) ([]byte, error) {  // line 12
+    aead, err := chacha20poly1305.New(key)                          // line 13 — crypto!
+    nonce := make([]byte, aead.NonceSize())
+    rand.Read(nonce)                                                // line 19 — crypto!
+    ciphertext := aead.Seal(nonce, nonce, plaintext, nil)
+    return ciphertext, nil
+}
+
+func SecureDecrypt(key []byte, ciphertext []byte) ([]byte, error) { // line 28
+    aead, err := chacha20poly1305.New(key)                          // line 29 — crypto!
+    // ...
+}
+```
+
+### Step 1: Scan User Code (the normal scan)
+
+The orchestrator runs Semgrep/OpenGrep rules against user code. It finds **3 assets** in `mypkg/crypto.go`:
+
+| Line | Match | Rule |
+|------|-------|------|
+| 13 | `chacha20poly1305.New(key)` | `go.xcrypto.chacha20poly1305.aead` |
+| 19 | `rand.Read(nonce)` | `go.crypto.rand.usage` |
+| 29 | `chacha20poly1305.New(key)` | `go.xcrypto.chacha20poly1305.aead` |
+
+This produces the **user report**. At this point there are no `source`, `call_chain`, or `dependency_info` fields — just raw findings.
+
+### Step 2: Resolve Dependencies
+
+The Go resolver runs `go list -m -json all`. It returns:
+
+```
+RootModule: "example.com/crypto-test"
+
+Dependencies:
+  Module                    Version   Dir
+  golang.org/x/crypto       v0.31.0   ~/go/pkg/mod/golang.org/x/crypto@v0.31.0
+  golang.org/x/sys          v0.28.0   ~/go/pkg/mod/golang.org/x/sys@v0.28.0
+```
+
+The `RootModule` (`example.com/crypto-test`) is the key — any package whose import path starts with this prefix is considered **user code**. Everything else is a dependency.
+
+### Step 3: Scan Dependencies in Parallel
+
+Each dependency gets scanned with the same rules, limited to Go rules only:
+
+| Dependency | Crypto Assets Found | Why |
+|------------|--------------------:|-----|
+| `golang.org/x/crypto` | ~870 | It **is** a crypto library — virtually every file matches |
+| `golang.org/x/sys` | ~3 | False positives (function names like `Generate` matching crypto rules) |
+
+Total: **~873 dependency findings**. Both dependencies have findings, so both proceed to step 4.
+
+### Step 4: Build the Call Graph
+
+The builder receives three package directories:
+
+```
+PackageDirs = [
+    {Dir: ".../go_with_crypto_dep",           ImportPath: "example.com/crypto-test"},
+    {Dir: ".../golang.org/x/crypto@v0.31.0",  ImportPath: "golang.org/x/crypto"},
+    {Dir: ".../golang.org/x/sys@v0.28.0",     ImportPath: "golang.org/x/sys"},
+]
+```
+
+The tree-sitter parser processes every `.go` file and extracts function declarations with their calls.
+
+**From `main.go`:**
+```
+FunctionDecl: example.com/crypto-test.main
+  File: main.go, Lines: 10–26
+  Calls:
+    → example.com/crypto-test/mypkg.SecureEncrypt  (line 14)
+    → example.com/crypto-test/mypkg.SecureDecrypt  (line 19)
+```
+
+**From `mypkg/crypto.go`:**
+```
+FunctionDecl: example.com/crypto-test/mypkg.SecureEncrypt
+  File: mypkg/crypto.go, Lines: 12–25
+  Calls:
+    → golang.org/x/crypto/chacha20poly1305.New     (line 13)
+    → crypto/rand.Read                             (line 19)
+
+FunctionDecl: example.com/crypto-test/mypkg.SecureDecrypt
+  File: mypkg/crypto.go, Lines: 28–46
+  Calls:
+    → golang.org/x/crypto/chacha20poly1305.New     (line 29)
+```
+
+**From `golang.org/x/crypto/...`:** hundreds more function declarations.
+
+Then `buildCallerIndex()` creates the **reverse index** (callee → who calls it):
+
+```
+Callers["example.com/crypto-test/mypkg.SecureEncrypt"]
+    = ["example.com/crypto-test.main"]
+
+Callers["example.com/crypto-test/mypkg.SecureDecrypt"]
+    = ["example.com/crypto-test.main"]
+
+Callers["golang.org/x/crypto/chacha20poly1305.New"]
+    = ["example.com/crypto-test/mypkg.SecureEncrypt",
+       "example.com/crypto-test/mypkg.SecureDecrypt"]
+```
+
+This reverse index is what makes backward tracing possible.
+
+### Step 5: Trace & Attribute
+
+The system now traces **each finding** back through the call graph to user code. Three different scenarios play out:
+
+#### Scenario A: User finding — `chacha20poly1305.New` at line 13
+
+This finding is in `mypkg/crypto.go` (user code). The enrichment flow:
+
+**5a-1. Find the containing function:**
+
+`FindContainingFunction("mypkg/crypto.go", 13)` iterates all `FunctionDecl`s, looking for one whose `FilePath` matches and whose `StartLine..EndLine` spans line 13. It finds **`SecureEncrypt`** (lines 12–25).
+
+**5a-2. Trace back to entry point:**
+
+`TraceBack(SecureEncrypt, userPackages={"example.com/crypto-test"}, maxDepth=0)`:
+
+```
+BFS queue: [ [SecureEncrypt] ]
+
+Iteration 1:
+  chain = [SecureEncrypt]
+  head  = SecureEncrypt
+  Look up Callers["...mypkg.SecureEncrypt"] → ["...main"]
+  Prepend caller: chain becomes [main, SecureEncrypt]
+  → push to queue
+
+Iteration 2:
+  chain = [main, SecureEncrypt]
+  head  = main
+  Look up Callers["...main"] → [] (no callers — root function)
+  Chain reaches user code? YES (both functions are user code)
+  Chain length > 1? YES
+  → CHAIN COMPLETE! Add to results.
+```
+
+**5a-3. Result:**
+
+```json
+"source": "direct",
+"call_chains": [
+    [
+        {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
+        {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+    ]
+]
+```
+
+Note: `main`'s line is **14** (the line where `main` *calls* `SecureEncrypt`), not line 10 where `main` is declared. This is because `findCallLine()` searches `main`'s `Calls` list for the specific call to `SecureEncrypt` and returns that call-site line number.
+
+#### Scenario B: User finding — `chacha20poly1305.New` at line 29
+
+Same logic, but traces through `SecureDecrypt`:
+
+```
+FindContainingFunction("mypkg/crypto.go", 29) → SecureDecrypt (lines 28–46)
+
+TraceBack(SecureDecrypt):
+  [SecureDecrypt]
+  → prepend caller → [main, SecureDecrypt]
+  → main has no callers (root function), chain reaches user code → CHAIN COMPLETE
+```
+
+```json
+"source": "direct",
+"call_chains": [
+    [
+        {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
+        {"function": "example.com/crypto-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go","line": 28}
+    ]
+]
+```
+
+Note: `main`'s line is now **19** — the line where `main` calls `SecureDecrypt`, not 14.
+
+#### Scenario C: Dependency finding — deep `x/crypto` internal functions (UNREACHABLE)
+
+Take any internal function in `golang.org/x/crypto`, say `ssh.newAESCTR`:
+
+```
+FindContainingFunction(".../ssh/cipher.go", N) → ssh.newAESCTR
+
+TraceBack(ssh.newAESCTR):
+  [ssh.newAESCTR]
+  → Callers: maybe some internal SSH functions
+  → Keep walking back to root functions...
+  → Root functions found, but no chain passes through "example.com/crypto-test"
+  → All chains discarded (no user code reached).
+```
+
+Result: `call_chains` is **empty**. Without `--dep-include-unreachable`, this finding gets **dropped** from the merged report.
+
+This is why the default scan shows only **3 findings** (all user code), while `--dep-include-unreachable` shows **~873**. The vast majority of `golang.org/x/crypto`'s internal crypto usage is not reachable from the user's `main()`.
+
+### Step 6: Merge
+
+```
+User report (3 findings, source="direct")
+  + Dependency reports (filtered by reachability)
+  ─────────────────────────────────────
+  = Merged report (3 findings by default, ~873 with --dep-include-unreachable)
+```
+
+In this test project, no dependency findings survived the reachability filter. Why? Because the user code calls `chacha20poly1305.New` **directly** inside `mypkg/crypto.go` — a file in the user's own module. The crypto usage is already captured as `source: "direct"`. There's no intermediate dependency wrapper that the user calls which *then* reaches crypto.
+
+If the project had a longer chain — e.g. `main → mypkg.Encrypt → someMiddleware.Process → chacha20poly1305.New` where `someMiddleware` is a dependency — then we'd see a dependency finding with a 3-step call chain survive the filter.
+
+### Actual JSON Output
+
+The final output (default mode, no `--dep-include-unreachable`):
+
+```json
+{
+  "version": "1.2",
+  "tool": {"name": "crypto-finder", "version": "dev"},
+  "findings": [
+    {
+      "file_path": "mypkg/crypto.go",
+      "language": "go",
+      "cryptographic_assets": [
+        {
+          "match_type": "semgrep",
+          "start_line": 13,
+          "end_line": 13,
+          "match": "aead, err := chacha20poly1305.New(key)",
+          "rules": [{"id": "go.xcrypto.chacha20poly1305.aead", "message": "Detected ChaCha20-Poly1305 AEAD usage", "severity": "INFO"}],
+          "status": "pending",
+          "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
+          "source": "direct",
+          "call_chains": [
+            [
+              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
+              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+            ]
+          ]
+        },
+        {
+          "match_type": "semgrep",
+          "start_line": 19,
+          "end_line": 19,
+          "match": "if _, err := rand.Read(nonce); err != nil {",
+          "rules": [{"id": "go.crypto.rand.usage", "message": "Detected cryptographically secure random number generation", "severity": "INFO"}],
+          "status": "pending",
+          "metadata": {"algorithmFamily": "CSPRNG", "assetType": "algorithm", "...": "..."},
+          "source": "direct",
+          "call_chains": [
+            [
+              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
+              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+            ]
+          ]
+        },
+        {
+          "match_type": "semgrep",
+          "start_line": 29,
+          "end_line": 29,
+          "match": "aead, err := chacha20poly1305.New(key)",
+          "rules": [{"id": "go.xcrypto.chacha20poly1305.aead", "message": "Detected ChaCha20-Poly1305 AEAD usage", "severity": "INFO"}],
+          "status": "pending",
+          "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
+          "source": "direct",
+          "call_chains": [
+            [
+              {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
+              {"function": "example.com/crypto-test/mypkg.SecureDecrypt","file": "mypkg/crypto.go","line": 28}
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Visual Summary
+
+```
+main.go:14  ──calls──→  mypkg/crypto.go:13  ──calls──→  x/crypto/chacha20poly1305.New
+  (main)                  (SecureEncrypt)                   (dependency function)
+                                │
+                                ├── Finding: chacha20poly1305.New at L13
+                                │   source: "direct" (it's in user code)
+                                │   call_chains: [[main@L14 → SecureEncrypt@L12]]
+                                │
+                                └── Finding: rand.Read at L19
+                                    source: "direct"
+                                    call_chains: [[main@L14 → SecureEncrypt@L12]]
+
+main.go:19  ──calls──→  mypkg/crypto.go:29  ──calls──→  x/crypto/chacha20poly1305.New
+  (main)                  (SecureDecrypt)
+                                │
+                                └── Finding: chacha20poly1305.New at L29
+                                    source: "direct"
+                                    call_chains: [[main@L19 → SecureDecrypt@L28]]
+
+golang.org/x/crypto/ssh/cipher.go:N  (internal SSH functions)
+                                │
+                                └── 870 findings with NO call chain
+                                    source: "dependency"
+                                    → DROPPED by reachability filter (unless --dep-include-unreachable)
+```
+
+---
+
+## Walkthrough 2: Multi-Hop Dependency Chain
+
+The first walkthrough showed a case where user code calls crypto directly — all findings were `source: "direct"` and no dependency findings survived the reachability filter. This second walkthrough uses `testdata/projects/go_with_dep_chain/` to demonstrate a **multi-hop chain** where crypto usage is buried inside a dependency and dependency findings DO survive.
+
+### The Source Code
+
+The key difference: user code never touches `chacha20poly1305` directly. Instead, it calls through a wrapper dependency (`cryptowrapper_dep/`), which has an internal function layer.
+
+**`main.go`** — entry point, calls `mypkg`:
+```go
+func main() {
+    encrypted, err := mypkg.SecureEncrypt(key, message)  // line 14
+    decrypted, err := mypkg.SecureDecrypt(key, encrypted) // line 19
+}
+```
+
+**`mypkg/crypto.go`** — user code, delegates to the dependency. **No crypto imports.**
+```go
+import "example.com/cryptowrapper"
+
+func SecureEncrypt(key, plaintext []byte) ([]byte, error) {   // line 15
+    encrypted, err := cryptowrapper.Encrypt(key, plaintext)    // line 16
+    return encrypted, nil
+}
+
+func SecureDecrypt(key, ciphertext []byte) ([]byte, error) {   // line 24
+    decrypted, err := cryptowrapper.Decrypt(key, ciphertext)   // line 25
+    return decrypted, nil
+}
+```
+
+**`../cryptowrapper_dep/wrapper.go`** — the dependency (separate module). Has a public API and an internal function:
+```go
+// Public: called by user code
+func Encrypt(key, plaintext []byte) ([]byte, error) {  // line 19
+    aead, err := newAEAD(key)                            // line 20 — calls internal fn
+    nonce := make([]byte, aead.NonceSize())
+    rand.Read(nonce)                                     // line 26 — crypto!
+    return aead.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+func Decrypt(key, ciphertext []byte) ([]byte, error) {  // line 36
+    aead, err := newAEAD(key)                            // line 37 — calls internal fn
+    // ...
+}
+
+// Internal: adds depth to the call chain
+func newAEAD(key []byte) (cipher.AEAD, error) {          // line 58
+    return chacha20poly1305.New(key)                      // line 59 — crypto!
+}
+```
+
+The intended call chains:
+```
+main → mypkg.SecureEncrypt → cryptowrapper.Encrypt → cryptowrapper.newAEAD → chacha20poly1305.New
+main → mypkg.SecureDecrypt → cryptowrapper.Decrypt → cryptowrapper.newAEAD → chacha20poly1305.New
+```
+
+### What the Scan Produces
+
+Running with `--scan-dependencies`:
+
+```
+Finding groups: 1    (wrapper.go in the dependency)
+Total assets:   2    (both from the dependency, both reachable)
+```
+
+Compare with `--dep-include-unreachable`:
+
+```
+Total assets:        494
+  Reachable:           2   (traced back to user code)
+  Unreachable:       492   (deep x/crypto internals, no path to user code)
+```
+
+**The reachability filter eliminates 99.6% of noise** — 492 findings from `golang.org/x/crypto` and `golang.org/x/sys` internals are dropped because no user code ever calls them.
+
+### Tracing the 3-Step Chain
+
+The finding at `chacha20poly1305.New` (line 59 of `wrapper.go`) produces a **3-step chain**. Here's the BFS trace:
+
+```
+FindContainingFunction("wrapper.go", 59) → cryptowrapper.newAEAD (lines 58–59)
+
+TraceBack(newAEAD, userPackages={"example.com/dep-chain-test"}):
+
+BFS queue: [ [newAEAD] ]
+
+Iteration 1:
+  chain = [newAEAD]
+  head  = newAEAD
+  Is "example.com/cryptowrapper" a user package?
+    → Does it start with "example.com/dep-chain-test/"? NO
+  Look up Callers["example.com/cryptowrapper.newAEAD"]
+    → ["example.com/cryptowrapper.Encrypt", "example.com/cryptowrapper.Decrypt"]
+  Prepend each: push [Encrypt, newAEAD] and [Decrypt, newAEAD] to queue
+
+Iteration 2a:
+  chain = [Encrypt, newAEAD]
+  head  = Encrypt
+  Is "example.com/cryptowrapper" a user package? NO
+  Look up Callers["example.com/cryptowrapper.Encrypt"]
+    → ["example.com/dep-chain-test/mypkg.SecureEncrypt"]
+  Prepend: push [SecureEncrypt, Encrypt, newAEAD]
+
+Iteration 2b:
+  chain = [Decrypt, newAEAD]
+  head  = Decrypt
+  Is "example.com/cryptowrapper" a user package? NO
+  Look up Callers["example.com/cryptowrapper.Decrypt"]
+    → ["example.com/dep-chain-test/mypkg.SecureDecrypt"]
+  Prepend: push [SecureDecrypt, Decrypt, newAEAD]
+
+Iteration 3a:
+  chain = [SecureEncrypt, Encrypt, newAEAD]
+  head  = SecureEncrypt
+  Look up Callers["...mypkg.SecureEncrypt"] → ["...main"]
+  Prepend: push [main, SecureEncrypt, Encrypt, newAEAD]
+
+Iteration 3b:
+  chain = [SecureDecrypt, Decrypt, newAEAD]
+  head  = SecureDecrypt
+  Look up Callers["...mypkg.SecureDecrypt"] → ["...main"]
+  Prepend: push [main, SecureDecrypt, Decrypt, newAEAD]
+
+Iteration 4a:
+  chain = [main, SecureEncrypt, Encrypt, newAEAD]
+  head  = main
+  Look up Callers["...main"] → [] (no callers — root function)
+  Chain reaches user code? YES
+  → CHAIN COMPLETE! (4 steps)
+
+Iteration 4b:
+  chain = [main, SecureDecrypt, Decrypt, newAEAD]
+  head  = main
+  → Also a complete chain! (4 steps)
+```
+
+BFS found **two** complete chains. Both are stored in `call_chains`:
+
+```json
+{
+  "source": "dependency",
+  "dependency_info": {
+    "module": "example.com/cryptowrapper",
+    "version": "v0.0.0",
+    "function": "example.com/cryptowrapper.newAEAD"
+  },
+  "call_chains": [
+    [
+      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 14},
+      {"function": "example.com/dep-chain-test/mypkg.SecureEncrypt", "file": "mypkg/crypto.go", "line": 16},
+      {"function": "example.com/cryptowrapper.Encrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 20},
+      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+    ],
+    [
+      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 19},
+      {"function": "example.com/dep-chain-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go", "line": 25},
+      {"function": "example.com/cryptowrapper.Decrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 37},
+      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+    ]
+  ]
+}
+```
+
+### Full Trace to `main`
+
+The BFS walks all the way to **root functions** (functions with no callers, like `main`). This means the full chain `main → SecureEncrypt → Encrypt → newAEAD` is preserved. A chain is valid if it passes through at least one user-package function, so chains that only traverse dependency code are discarded.
+
+### Visual Summary
+
+```
+main.go:14 → mypkg/crypto.go:16 → wrapper.go:20 → wrapper.go:59
+  (main)       (SecureEncrypt)       (Encrypt)        (newAEAD)
+     │                │                    │                │
+     │ user code      │ user code          │ dependency     │ dependency
+     │                │                    │                │
+     └── chain starts here (root fn)       │                └── finding: chacha20poly1305.New
+                                           │                    source: "dependency"
+                                           └── intermediate hop in chain
+
+main.go:19 → mypkg/crypto.go:25 → wrapper.go:37 → wrapper.go:59
+  (main)       (SecureDecrypt)       (Decrypt)        (newAEAD)
+     │                │                    │                │
+     └── chain starts here (root fn)       │                └── same finding, alternate path
+                                           └── intermediate hop
+```
+
+Key observations:
+- **User code has 0 crypto findings** — `mypkg` has no crypto imports
+- **2 dependency findings survive** reachability because the call graph proves user code reaches them
+- **492 dependency findings dropped** — deep `x/crypto` internals unreachable from user code
+- **`main` appears at the head of each chain** — BFS walks to root functions (no callers)
+- **Both Encrypt and Decrypt paths preserved** — all chains stored in `call_chains`
+
+---
+
+## Schema (v1.2)
+
+Version 1.2 promotes attribution data from flat `metadata` strings to first-class structured fields:
+
+| Field | Type | When Present | Description |
+|-------|------|--------------|-------------|
+| `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
+| `dependency_info` | `object` | Dependency findings only | `{module, version, function}` |
+| `call_chains` | `array of arrays` | When traceable to user code | All paths from entry-point → crypto-site |
+
+### Call Chains Ordering
+
+The `call_chains` field contains all traced paths from program entry points to the crypto call site. Each inner array is one complete path, ordered from **program entry point** (index 0) to **crypto call site** (last index). Entry `[i]` calls entry `[i+1]`:
+
+```json
+{
+  "call_chains": [
+    [
+      {"function": "example.com/app.main",                    "file": "main.go",       "line": 15},
+      {"function": "example.com/app/mypkg.SecureEncrypt",     "file": "mypkg/crypto.go","line": 8},
+      {"function": "golang.org/x/crypto/chacha20poly1305.New","file": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
+    ]
+  ]
+}
+```
+
+Reading this: `main()` at line 15 calls `SecureEncrypt()` at line 8, which calls `chacha20poly1305.New()` at line 42.
+
+## Findings Cache
+
+Dependency scanning is dominated by opengrep execution time (~93% of pipeline time). Since `module@version` produces identical scan results with the same ruleset, caching eliminates redundant work entirely. On a second scan with the same dependencies and rules, the dependency scanning phase drops from minutes to near-zero.
+
+### How It Works
+
+The cache sits between Step 2 (rule loading) and Step 3 (parallel scanning) in the pipeline. Before scanning each dependency, `scanSingleDep` checks for a cached result. On a cache miss, the scan runs normally and the result is stored.
+
+```mermaid
+flowchart LR
+    Dep["module@version"] --> Check{"Cache hit?"}
+    Check -->|Yes| Report["Cached InterimReport"]
+    Check -->|No| Scan["orchestrator.Scan()"]
+    Scan --> Store["Store in cache"]
+    Store --> Report
+```
+
+### Cache Key Design
+
+The key captures everything that affects scan output:
+
+```
+<module>@<version>:<rulesHash>
+```
+
+- **Module + version**: e.g., `org.bouncycastle:bcprov-jdk18on@1.78`
+- **Rules hash**: First 16 hex chars of SHA-256 over sorted rule file **contents** — if any rule is edited, the cache invalidates automatically
+
+Example: `org.bouncycastle:bcprov-jdk18on@1.78:a3f8b2c1d4e5f678`
+
+The `rulesHash` is computed once per scan (not per-dep), so I/O cost is negligible.
+
+### Storage Layout
+
+The default implementation (`DiskFindingsCache`) stores results as JSON files:
+
+```
+~/.scanoss/crypto-finder/cache/findings/
+  org.bouncycastle:bcprov-jdk18on@1.78:a3f8b2c1d4e5f678.json
+  com.google.guava:guava@33.0.0-jre:a3f8b2c1d4e5f678.json
+  golang.org_x_crypto@v0.31.0:a3f8b2c1d4e5f678.json
+```
+
+Forward slashes in module paths (e.g., `golang.org/x/crypto`) are replaced with `_` for filesystem safety. Writes use temp file + atomic rename to prevent corruption from interrupted scans.
+
+### `FindingsCache` Interface
+
+```go
+type FindingsCache interface {
+    Get(ctx context.Context, key string) (*entities.InterimReport, bool, error)
+    Put(ctx context.Context, key string, report *entities.InterimReport) error
+}
+```
+
+The interface accepts `context.Context` on both methods to support network-backed implementations with timeouts and cancellation. The pipeline doesn't know or care which backend is behind the interface.
+
+### Distributed Extensibility
+
+The `FindingsCache` interface is the extension point for multi-node scanning:
+
+| Backend | Implementation | Use Case |
+|---------|---------------|----------|
+| **Disk** | `DiskFindingsCache` | Single-node, dev workflow |
+| **Redis** | `RedisFindingsCache` | Multi-node cluster, shared LAN |
+| **S3/GCS** | `S3FindingsCache` | Global fleet, persist across deploys |
+| **Two-tier** | `TieredCache{L1: memory, L2: redis}` | Hot + warm layers |
+
+Each just implements `Get`/`Put`. The scanning pipeline is completely agnostic about the storage backend.
+
+---
+
+## Architecture Map
+
+```
+internal/
+├── cli/scan.go                    # CLI wiring: ecosystem detection, registry setup, pipeline invocation
+├── dependency/
+│   ├── resolver.go                # Resolver interface + Dependency/ResolveResult types
+│   ├── registry.go                # Ecosystem → Resolver registry
+│   ├── go_resolver.go             # Go: `go list -m -json all`
+│   ├── maven_resolver.go          # Java: `mvn dependency:list/sources/tree`
+│   └── source_cache.go            # Shared: ZIP/JAR extraction to ~/.crypto-finder/cache/sources/
+├── callgraph/
+│   ├── types.go                   # FunctionID, FunctionDecl, FileAnalysis, CallGraph types
+│   ├── builder.go                 # Parser interface + language-agnostic CallGraph construction
+│   ├── parser_registry.go         # Ecosystem → Parser factory (NewParserForEcosystem)
+│   ├── go_parser.go               # Go: tree-sitter Go grammar parser
+│   ├── java_parser.go             # Java: tree-sitter Java grammar parser
+│   └── tracer.go                  # BFS backward tracer with configurable package separator
+└── engine/
+    ├── dependency_scanner.go      # DependencyScanner: the 6-step pipeline (language-agnostic)
+    └── findings_cache.go          # FindingsCache interface + DiskFindingsCache implementation
+```
+
+## Supported Ecosystems
+
+The extensible architecture makes adding a new language a matter of implementing two interfaces and registering them. Currently supported:
+
+### Go
+
+- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json all` to resolve modules
+- **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — tree-sitter Go grammar
+- **Manifest**: `go.mod`
+- **Module format**: Go import path (e.g., `golang.org/x/crypto`)
+- **Package separator**: `/`
+- **Source location**: Go module cache (`$GOPATH/pkg/mod/`)
+
+### Java (Maven)
+
+- **Resolver**: [`MavenResolver`](../internal/dependency/maven_resolver.go) — uses Maven CLI
+- **Parser**: [`JavaParser`](../internal/callgraph/java_parser.go) — tree-sitter Java grammar
+- **Manifest**: `pom.xml`
+- **Module format**: `groupId:artifactId` (e.g., `org.bouncycastle:bcprov-jdk18on`)
+- **Package separator**: `.`
+- **Source location**: Source JARs extracted from `~/.m2/repository/` to `~/.crypto-finder/cache/sources/`
+
+#### Maven Resolution Details
+
+The `MavenResolver` executes three Maven commands:
+
+1. **`mvn dependency:list -DincludeScope=compile`** — lists all compile+provided+system scope dependencies (excludes test-only). Output format: `groupId:artifactId:type:version:scope`
+2. **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
+3. **`mvn dependency:tree`** — builds the dependency graph adjacency list (best-effort)
+
+Dependencies without source JARs are skipped — they appear in logs as warnings but are excluded from scanning.
+
+#### Java Call Resolution
+
+The `JavaParser` resolves method calls through import analysis:
+
+1. **Explicit imports**: `import javax.crypto.Cipher;` → `Cipher.getInstance(...)` resolves to package `javax.crypto`
+2. **Wildcard imports**: `import java.security.*;` → class names matched against wildcard packages
+3. **Local variable types**: `Cipher c = Cipher.getInstance(...)` → `c.doFinal()` resolves `c` to type `Cipher` via local variable tracking
+4. **Field types**: Class fields are tracked similarly to local variables
+5. **Fallback**: Unresolved calls default to the current package (same as Go's behavior for unresolved variables)
+
+### Adding a New Language
+
+To add support for a new ecosystem (e.g., Python):
+
+1. **Implement `callgraph.Parser`** — e.g., `python_parser.go` with tree-sitter Python grammar
+2. **Implement `dependency.Resolver`** — e.g., `pip_resolver.go`, shells out to `pip`
+3. **Register the parser** in [`parser_registry.go`](../internal/callgraph/parser_registry.go) — add one `case`
+4. **Register the resolver** in [`scan.go`](../internal/cli/scan.go) — add one `depRegistry.Register()` call
+5. **Add manifest detection** in `detectEcosystem()` — add one `if` checking for the manifest file (e.g., `requirements.txt`)
+
+No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entities, or schemas.
+
+## Limitations
+
+### General
+- **Static analysis** — The call graph is built from syntactic call expressions. It cannot resolve interface dispatch, reflection-based calls, or function values passed as arguments.
+- **All paths stored** — When multiple call chains exist (BFS finds all paths), all are stored in `call_chains`. This ensures no reachability information is lost.
+
+### Go-specific
+- **No cross-module method resolution** — Method calls on variables (e.g., `cipher.Encrypt()`) are recorded with the variable name as the type, not the resolved type. Cross-package type resolution would require full type analysis.
+
+### Java-specific
+- **Maven only** — Gradle projects are not supported. A `GradleResolver` could be added in the future.
+- **Missing source JARs** — ~35% of Java libraries don't publish source JARs; these dependencies are skipped with a warning. Bytecode analysis could be a future fallback.
+- **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
+- **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.
+- **Single-module Maven only** — Multi-module Maven projects (parent POM with `<modules>`) are not yet supported.

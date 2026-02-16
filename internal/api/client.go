@@ -139,6 +139,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	req.Header.Set(headerAPIKey, c.apiKey)
 	req.Header.Set(headerUserAgent, userAgentValue)
 
+	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

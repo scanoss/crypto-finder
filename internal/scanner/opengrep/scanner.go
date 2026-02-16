@@ -80,7 +80,7 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	// Detect opengrep in PATH
 	path, err := lookPath(s.executablePath)
 	if err != nil {
-		return fmt.Errorf("opengrep not found in PATH: %w (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash)", err)
+		return fmt.Errorf("opengrep not found in PATH: %w (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)", err)
 	}
 	s.executablePath = path
 
@@ -196,7 +196,7 @@ func (s *Scanner) validateVersion() error {
 	}
 
 	if currentVer.LessThan(minVer) {
-		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash)", s.version, MinimumVersion)
+		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)", s.version, MinimumVersion)
 	}
 
 	return nil

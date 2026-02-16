@@ -22,7 +22,31 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	scanutil "github.com/scanoss/crypto-finder/internal/scan"
+	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
+
+func validateScanFlags(target string) error {
+	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
+		RuleFiles:        scanRules,
+		RuleDirs:         scanRuleDirs,
+		NoRemoteRules:    scanNoRemoteRules,
+		Scanner:          scanScanner,
+		AllowedScanners:  AllowedScanners,
+		Interfile:        scanInterfile,
+		InterfileScanner: semgrep.ScannerName,
+		Format:           scanFormat,
+		SupportedFormats: SupportedFormats,
+		Languages:        scanLanguages,
+		ScanDependencies: scanDependencies,
+		ExportCallgraph:  scanExportCallgraph,
+	})
+	if err != nil {
+		return err
+	}
+	scanLanguages = normalizedLanguages
+	return nil
+}
 
 func TestValidateScanFlags(t *testing.T) {
 	// Save original values
@@ -33,6 +57,8 @@ func TestValidateScanFlags(t *testing.T) {
 	origFormat := scanFormat
 	origLanguages := scanLanguages
 	origInterfile := scanInterfile
+	origScanDependencies := scanDependencies
+	origScanExportCallgraph := scanExportCallgraph
 
 	defer func() {
 		// Restore original values
@@ -43,6 +69,8 @@ func TestValidateScanFlags(t *testing.T) {
 		scanFormat = origFormat
 		scanLanguages = origLanguages
 		scanInterfile = origInterfile
+		scanDependencies = origScanDependencies
+		scanExportCallgraph = origScanExportCallgraph
 	}()
 
 	t.Run("valid target with rules", func(t *testing.T) {
@@ -203,11 +231,27 @@ func TestValidateScanFlags(t *testing.T) {
 			t.Errorf("Expected no error with --interfile and semgrep scanner, got: %v", err)
 		}
 	})
+
+	t.Run("export callgraph requires dependency scanning", func(t *testing.T) {
+		tempDir := t.TempDir()
+		scanRules = []string{"rule.yaml"}
+		scanRuleDirs = []string{}
+		scanNoRemoteRules = false
+		scanScanner = "semgrep"
+		scanFormat = "json"
+		scanDependencies = false
+		scanExportCallgraph = filepath.Join(tempDir, "cg.json")
+
+		err := validateScanFlags(tempDir)
+		if err == nil {
+			t.Error("Expected error when --export-callgraph is used without --scan-dependencies")
+		}
+	})
 }
 
 func TestCountFindings(t *testing.T) {
 	t.Run("nil report", func(t *testing.T) {
-		count := countFindings(nil)
+		count := scanutil.CountFindings(nil)
 		if count != 0 {
 			t.Errorf("Expected count 0 for nil report, got %d", count)
 		}
@@ -217,7 +261,7 @@ func TestCountFindings(t *testing.T) {
 		report := &entities.InterimReport{
 			Findings: []entities.Finding{},
 		}
-		count := countFindings(report)
+		count := scanutil.CountFindings(report)
 		if count != 0 {
 			t.Errorf("Expected count 0 for empty report, got %d", count)
 		}
@@ -236,7 +280,7 @@ func TestCountFindings(t *testing.T) {
 				},
 			},
 		}
-		count := countFindings(report)
+		count := scanutil.CountFindings(report)
 		if count != 1 {
 			t.Errorf("Expected count 1, got %d", count)
 		}
@@ -260,7 +304,7 @@ func TestCountFindings(t *testing.T) {
 				},
 			},
 		}
-		count := countFindings(report)
+		count := scanutil.CountFindings(report)
 		if count != 3 {
 			t.Errorf("Expected count 3, got %d", count)
 		}
@@ -275,7 +319,7 @@ func TestCountFindings(t *testing.T) {
 				},
 			},
 		}
-		count := countFindings(report)
+		count := scanutil.CountFindings(report)
 		if count != 0 {
 			t.Errorf("Expected count 0 for findings with no assets, got %d", count)
 		}
@@ -358,7 +402,7 @@ func TestParseDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			duration, err := parseDuration(tt.input)
+			duration, err := scanutil.ParseDuration(tt.input)
 
 			if tt.expectError {
 				if err == nil {

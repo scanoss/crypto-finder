@@ -164,6 +164,39 @@ dockers:
       - "--build-arg=BUILD_DATE={{.Date}}"
     goarch: arm64
 
+  # Deps Docker image with all language toolchains for dependency scanning
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-amd64"
+    use: buildx
+    dockerfile: Dockerfile.goreleaser.deps
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: amd64
+
+  - image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-arm64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-arm64"
+    use: buildx
+    dockerfile: Dockerfile.goreleaser.deps
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--build-arg=GIT_COMMIT={{.Commit}}"
+      - "--build-arg=BUILD_DATE={{.Date}}"
+    goarch: arm64
+
 # Docker manifest for multi-arch support
 docker_manifests:
   # Standard image manifest
@@ -187,6 +220,17 @@ docker_manifests:
     image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-arm64"
+
+  # Deps image manifest
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-arm64"
+
+  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps"
+    image_templates:
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-amd64"
+      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-arm64"
 
 # GitHub release configuration
 release:
@@ -214,6 +258,9 @@ release:
 
     # Slim image (binary only, no scanners)
     docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-slim
+
+    # Deps image (all language toolchains for dependency scanning)
+    docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-deps
     ```
 
     ## Installation

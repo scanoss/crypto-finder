@@ -19,30 +19,27 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"slices"
-	"strings"
-	"time"
 
-	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/cache"
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
+	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
@@ -61,22 +58,29 @@ var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
 
 var (
-	scanRules         []string
-	scanRuleDirs      []string
-	scanScanner       string
-	scanFormat        string
-	scanOutput        string
-	scanLanguages     []string
-	scanFailOnFind    bool
-	scanTimeout       string
-	scanNoRemoteRules bool
-	scanNoCache       bool
-	scanAPIKey        string
-	scanAPIURL        string
-	scanStrict        bool
-	scanMaxStaleAge   string
-	scanNoDedup       bool
-	scanInterfile     bool
+	scanRules           []string
+	scanRuleDirs        []string
+	scanScanner         string
+	scanFormat          string
+	scanOutput          string
+	scanLanguages       []string
+	scanFailOnFind      bool
+	scanTimeout         string
+	scanNoRemoteRules   bool
+	scanNoCache         bool
+	scanAPIKey          string
+	scanAPIURL          string
+	scanStrict          bool
+	scanMaxStaleAge     string
+	scanNoDedup         bool
+	scanInterfile       bool
+	scanDependencies    bool
+	scanDepMaxDepth     int
+	scanDepEcosystem    string
+	scanDepUnreachable  bool
+	scanExportCallgraph string
+	scanExportCgFormat  string
+	scanDepWorkers      int
 )
 
 var scanCmd = &cobra.Command{
@@ -133,6 +137,13 @@ func init() {
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
+	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
+	scanCmd.Flags().IntVar(&scanDepMaxDepth, "dep-max-depth", 3, "Maximum depth for recursive dependency resolution")
+	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
+	scanCmd.Flags().BoolVar(&scanDepUnreachable, "dep-include-unreachable", false, "Include crypto findings in dependencies not reachable from user code call graph")
+	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
+	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file (requires --scan-dependencies)")
+	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format: json, dot, text")
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -140,12 +151,27 @@ func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
 	// Validate flags
-	if err := validateScanFlags(target); err != nil {
+	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
+		RuleFiles:        scanRules,
+		RuleDirs:         scanRuleDirs,
+		NoRemoteRules:    scanNoRemoteRules,
+		Scanner:          scanScanner,
+		AllowedScanners:  AllowedScanners,
+		Interfile:        scanInterfile,
+		InterfileScanner: semgrep.ScannerName,
+		Format:           scanFormat,
+		SupportedFormats: SupportedFormats,
+		Languages:        scanLanguages,
+		ScanDependencies: scanDependencies,
+		ExportCallgraph:  scanExportCallgraph,
+	})
+	if err != nil {
 		return err
 	}
+	scanLanguages = normalizedLanguages
 
 	// Parse timeout
-	timeout, err := parseDuration(scanTimeout)
+	timeout, err := scanutil.ParseDuration(scanTimeout)
 	if err != nil {
 		return fmt.Errorf("invalid timeout format '%s': %w (use format like '10m', '1h', '30d', or '2w')", scanTimeout, err)
 	}
@@ -201,7 +227,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		cacheManager.SetStrictMode(scanStrict)
 
 		// Parse and validate max stale age
-		maxStaleAge, err := parseDuration(scanMaxStaleAge)
+		maxStaleAge, err := scanutil.ParseDuration(scanMaxStaleAge)
 		if err != nil {
 			return fmt.Errorf("invalid --max-stale-age format '%s': %w (use format like '30d', '720h', or '2w')", scanMaxStaleAge, err)
 		}
@@ -269,6 +295,64 @@ func runScan(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Dependency scanning phase.
+	//nolint:nestif // This orchestration intentionally branches by ecosystem/resolver/parser/caching availability.
+	if scanDependencies {
+		ecosystem := scanDepEcosystem
+		if ecosystem == "auto" {
+			ecosystem = scanutil.DetectEcosystem(target)
+		}
+
+		if ecosystem != "" {
+			depRegistry := dependency.NewRegistry()
+			depRegistry.Register("go", dependency.NewGoResolver())
+			depRegistry.Register("java", dependency.NewMavenResolver())
+			depRegistry.Register("python", dependency.NewPipResolver())
+			depRegistry.Register("rust", dependency.NewCargoResolver())
+
+			resolver, resolverErr := depRegistry.Get(ecosystem)
+			if resolverErr != nil {
+				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
+			} else {
+				cgParser := callgraph.NewParserForEcosystem(ecosystem)
+				if cgParser == nil {
+					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
+				} else {
+					cgBuilder := callgraph.NewBuilder(cgParser)
+
+					var findingsCache engine.FindingsCache
+					fc, cacheErr := engine.NewDiskFindingsCache()
+					if cacheErr != nil {
+						log.Warn().Err(cacheErr).Msg("Failed to create findings cache, dependency scans will not be cached")
+					} else {
+						findingsCache = fc
+					}
+
+					depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
+					depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
+						MaxDepth:           scanDepMaxDepth,
+						IncludeUnreachable: scanDepUnreachable,
+						Workers:            scanDepWorkers,
+						ScanOptions:        scanOpts,
+					})
+					if depErr != nil {
+						return fmt.Errorf("dependency scan failed: %w", depErr)
+					}
+					report = depResult.Report
+
+					// Export call graph if requested
+					if scanExportCallgraph != "" && depResult.CallGraph != nil {
+						if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, depResult); exportErr != nil {
+							return fmt.Errorf("failed to export call graph: %w", exportErr)
+						}
+					}
+				}
+			}
+		} else {
+			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
+		}
+	}
+
 	report.Version = entities.InterimFormatVersion
 
 	oidEnricher := enricher.NewOIDEnricher()
@@ -285,10 +369,10 @@ func runScan(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 
-	findingsCount := countFindings(report)
+	findingsCount := scanutil.CountFindings(report)
 	filesCount := len(report.Findings)
 
-	err = printScanSummary(filesCount, findingsCount)
+	err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to render scan summary")
 	}
@@ -299,121 +383,4 @@ func runScan(_ *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func validateScanFlags(target string) error {
-	// Validate target exists
-	if _, err := os.Stat(target); os.IsNotExist(err) {
-		return fmt.Errorf("target path does not exist: %s", target)
-	}
-
-	// Validate that at least one rule source is specified
-	// Either local rules OR remote rules (unless --no-remote-rules is set)
-	if len(scanRules) == 0 && len(scanRuleDirs) == 0 && scanNoRemoteRules {
-		return fmt.Errorf("no rules specified: use --rules <file>, --rules-dir <directory>, or enable remote rules")
-	}
-
-	for _, ruleDir := range scanRuleDirs {
-		if err := utils.ValidateRuleDirNotEmpty(ruleDir); err != nil {
-			return err
-		}
-	}
-
-	// Validate scanner
-	if !slices.Contains(AllowedScanners, scanScanner) {
-		return fmt.Errorf("invalid scanner name: %s", scanScanner)
-	}
-
-	// Validate interfile flag is only used with semgrep
-	if scanInterfile && scanScanner != semgrep.ScannerName {
-		return fmt.Errorf("--interfile flag is only supported with --scanner semgrep")
-	}
-
-	// Validate output format
-	if !slices.Contains(SupportedFormats, scanFormat) {
-		return fmt.Errorf("unsupported output format '%s' (supported: %v)", scanFormat, SupportedFormats)
-	}
-
-	// Normalize language hints to lowercase
-	for i, lang := range scanLanguages {
-		scanLanguages[i] = strings.ToLower(strings.TrimSpace(lang))
-	}
-
-	return nil
-}
-
-func countFindings(report *entities.InterimReport) int {
-	if report == nil {
-		return 0
-	}
-
-	count := 0
-	for _, finding := range report.Findings {
-		count += len(finding.CryptographicAssets)
-	}
-	return count
-}
-
-// printScanSummary displays scan summary in a user-friendly format.
-func printScanSummary(filesCount, findingsCount int) error {
-	stats := make([]pterm.BulletListItem, 0, 3)
-	stats = append(stats,
-		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Files with findings: %d", filesCount)},
-		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Total crypto assets: %d", findingsCount)},
-	)
-
-	var scanOutputLocation string
-	if scanOutput != "" && scanOutput != "-" {
-		scanOutputLocation = scanOutput
-	} else {
-		scanOutputLocation = "<stdout>"
-	}
-
-	stats = append(stats, pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Output: %s", scanOutputLocation)})
-
-	pterm.DefaultSection.WithWriter(os.Stderr).Println("Scan Summary")
-	err := pterm.DefaultBulletList.WithItems(stats).WithWriter(os.Stderr).Render()
-	if err != nil {
-		return fmt.Errorf("failed to render scan summary: %w", err)
-	}
-
-	return nil
-}
-
-// parseDuration parses a duration string supporting standard Go formats plus:
-//   - "d" for days (e.g., "30d" = 720 hours)
-//   - "w" for weeks (e.g., "2w" = 336 hours)
-//
-// Standard formats (ns, us, ms, s, m, h) are parsed by time.ParseDuration.
-func parseDuration(s string) (time.Duration, error) {
-	// Try standard parsing first (supports: ns, us, ms, s, m, h)
-	d, err := time.ParseDuration(s)
-	if err == nil {
-		return d, nil
-	}
-
-	// Check for "d" (days) suffix
-	if strings.HasSuffix(s, "d") {
-		days := strings.TrimSuffix(s, "d")
-		var value float64
-		n, parseErr := fmt.Sscanf(days, "%f", &value)
-		if parseErr != nil || n != 1 {
-			return 0, fmt.Errorf("invalid duration format: %s", s)
-		}
-		return time.Duration(value*24) * time.Hour, nil
-	}
-
-	// Check for "w" (weeks) suffix
-	if strings.HasSuffix(s, "w") {
-		weeks := strings.TrimSuffix(s, "w")
-		var value float64
-		n, parseErr := fmt.Sscanf(weeks, "%f", &value)
-		if parseErr != nil || n != 1 {
-			return 0, fmt.Errorf("invalid duration format: %s", s)
-		}
-		return time.Duration(value*24*7) * time.Hour, nil
-	}
-
-	// Return original error if no custom suffix matched
-	return 0, fmt.Errorf("invalid duration format: %s", s)
 }

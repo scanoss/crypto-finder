@@ -32,7 +32,7 @@ func checkOpengrepAvailable(t *testing.T) {
 	t.Helper()
 	_, err := exec.LookPath("opengrep")
 	if err != nil {
-		t.Skip("opengrep not found in PATH - skipping integration test (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash)")
+		t.Skip("opengrep not found in PATH - skipping integration test (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)")
 	}
 }
 

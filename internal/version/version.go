@@ -16,6 +16,8 @@
 
 // Package version provides version information for the crypto-finder tool.
 // This package is separate to avoid circular dependencies between cli and engine packages.
+//
+//revive:disable:var-naming // version is the conventional package name for build metadata.
 package version
 
 var (
