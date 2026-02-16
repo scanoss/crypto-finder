@@ -86,12 +86,12 @@ func FormatMultiError(context string, errors []error) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("multiple errors during %s:\n", context))
+	fmt.Fprintf(&sb, "multiple errors during %s:\n", context)
 	for i, err := range errors {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("  - %v", err))
+		fmt.Fprintf(&sb, "  - %v", err)
 	}
 
 	return fmt.Errorf("%s", sb.String())

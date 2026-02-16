@@ -2,7 +2,7 @@
   "settings": {
     "skip": {
       "patterns": {
-        "scanning": ["target/"]
+        "scanning": ["target/", "testdata/", "*_test.go"]
       },
       "sizes": {}
     }

@@ -17,6 +17,8 @@
 // Package scanner provides the core abstraction for cryptographic scanner implementations.
 // It defines the Scanner interface that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit)
 // must implement, along with configuration and metadata types.
+//
+//revive:disable:var-naming // scanner is a domain package name and intentionally matches CLI/config terminology.
 package scanner
 
 import (
@@ -28,6 +30,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // Scanner defines the contract that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit) must implement,
@@ -147,5 +150,15 @@ func ShouldUseSpinner() bool {
 	if flag.Lookup("test.v") != nil {
 		return false
 	}
-	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
+
+	stdoutFD, ok := utils.FDToInt(os.Stdout.Fd())
+	if !ok {
+		return false
+	}
+	stderrFD, ok := utils.FDToInt(os.Stderr.Fd())
+	if !ok {
+		return false
+	}
+
+	return term.IsTerminal(stdoutFD) && term.IsTerminal(stderrFD)
 }

@@ -70,6 +70,9 @@ docker pull ghcr.io/scanoss/crypto-finder:latest
 
 # Slim image (bring your own scanner)
 docker pull ghcr.io/scanoss/crypto-finder:latest-slim
+
+# Deps image (all language toolchains for dependency scanning)
+docker pull ghcr.io/scanoss/crypto-finder:latest-deps
 ```
 
 ## Usage
@@ -180,6 +183,8 @@ crypto-finder scan [flags] <target>
 - `--languages <langs>` - Override language detection (comma-separated)
 - `--fail-on-findings` - Exit with error if findings detected
 - `--timeout <duration>` - Scan timeout (default: 10m)
+- `--scan-dependencies` - Scan third-party dependencies for cryptographic usage (requires deps image or local toolchains)
+- `--export-callgraph` - Export call graph to JSON for debugging
 - `--interfile` - Enable cross-file analysis (Semgrep Pro only)
 - `--verbose`, `-v` - Enable verbose logging
 - `--help` - Display help information
@@ -195,6 +200,7 @@ For a complete list of commands and options, run `crypto-finder --help`.
 - **Flexible Configuration** - Combine remote and local rules, configure via CLI, env vars, or config files
 - **Multiple Output Formats** - Interim JSON and CycloneDX 1.6 CBOM formats
 - **CI/CD Ready** - Docker images for GitHub Actions, GitLab CI, Jenkins, and more
+- **Dependency Scanning** - Detect cryptographic usage in third-party dependencies with call chain tracing (Go, Java, Python, Rust)
 - **Smart Caching** - TTL-based cache with automatic stale cache fallback (opt-out with `--strict`)
 
 ### Documentation
@@ -202,6 +208,7 @@ For a complete list of commands and options, run `crypto-finder --help`.
 - **[Remote Rulesets](docs/REMOTE_RULESETS.md)** - API configuration, caching strategies, and troubleshooting
 - **[Output Formats](docs/OUTPUT_FORMATS.md)** - Interim JSON and CycloneDX CBOM format specifications
 - **[Docker Usage](docs/DOCKER_USAGE.md)** - Container usage and CI/CD integration examples
+- **[Dependency Scanning](docs/DEPENDENCY_SCANNING.md)** - Scanning third-party dependencies for cryptographic usage
 - **[Configuration](docs/CONFIGURATION.md)** - Detailed configuration guide and skip patterns
 
 ## Contributing
@@ -214,10 +221,11 @@ We welcome contributions! For more details, see [CONTRIBUTING.md](CONTRIBUTING.m
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run tests (`make test`)
-5. Run linter (`make lint`)
-6. Commit your changes (`git commit -m 'feat: add an amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
+5. Install pinned linter (`make lint-install`)
+6. Run linter (`make lint`)
+7. Commit your changes (`git commit -m 'feat: add an amazing feature'`)
+8. Push to the branch (`git push origin feature/amazing-feature`)
+9. Open a Pull Request
 
 ## Changelog
 

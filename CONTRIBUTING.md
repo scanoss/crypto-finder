@@ -129,8 +129,11 @@ This project follows standard Go conventions and uses automated linting:
 The project uses `golangci-lint` with configuration in `.golangci.yml`. Run the linter before submitting:
 
 ```bash
+make lint-install
 make lint
 ```
+
+`make lint-install` installs the pinned golangci-lint version from `.golangci-lint-version` into `./bin`. `make lint` then uses that same pinned binary, matching CI.
 
 Fix any issues reported by the linter. Common rules include:
 - No unused variables or imports

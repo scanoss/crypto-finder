@@ -14,6 +14,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+//revive:disable:var-naming // scanner is a domain package name and intentionally matches CLI/config terminology.
 package scanner
 
 import (

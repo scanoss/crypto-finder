@@ -1,0 +1,228 @@
+package callgraph
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestPythonParser_PackageSeparator(t *testing.T) {
+	p := NewPythonParser()
+	if got := p.PackageSeparator(); got != "." {
+		t.Errorf("PackageSeparator() = %q, want %q", got, ".")
+	}
+}
+
+func TestPythonParser_SkipDirs(t *testing.T) {
+	p := NewPythonParser()
+	skip := p.SkipDirs()
+	expected := []string{"__pycache__", ".venv", "venv", "test", "tests", ".tox"}
+	for _, dir := range expected {
+		if !skip[dir] {
+			t.Errorf("SkipDirs() missing %q", dir)
+		}
+	}
+}
+
+func TestPythonParser_SubPackagePath(t *testing.T) {
+	p := NewPythonParser()
+	tests := []struct {
+		parent, dir, want string
+	}{
+		{"cryptography", "hazmat", "cryptography.hazmat"},
+		{"", "cryptography", "cryptography"},
+		{"cryptography.hazmat", "primitives", "cryptography.hazmat.primitives"},
+	}
+	for _, tt := range tests {
+		got := p.SubPackagePath(tt.parent, tt.dir)
+		if got != tt.want {
+			t.Errorf("SubPackagePath(%q, %q) = %q, want %q", tt.parent, tt.dir, got, tt.want)
+		}
+	}
+}
+
+func TestPythonParser_ParseFile(t *testing.T) {
+	src := `import hashlib
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from os import urandom
+
+def generate_key(size):
+    return urandom(size)
+
+def encrypt(key, data):
+    algo = algorithms.AES(key)
+    cipher = Cipher(algo, None)
+    encryptor = cipher.encryptor()
+    return encryptor.update(data)
+
+class CryptoHelper:
+    def __init__(self, key):
+        self.key = key
+
+    def hash_data(self, data):
+        return hashlib.sha256(data).hexdigest()
+
+    def encrypt_data(self, data):
+        return encrypt(self.key, data)
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "crypto_utils.py")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "myproject")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	analysis := analyses[0]
+
+	// Check imports
+	expectedImports := map[string]string{
+		"hashlib":    "hashlib",
+		"Cipher":     "cryptography.hazmat.primitives.ciphers",
+		"algorithms": "cryptography.hazmat.primitives.ciphers",
+		"urandom":    "os",
+	}
+	for name, pkg := range expectedImports {
+		if analysis.Imports[name] != pkg {
+			t.Errorf("import %q = %q, want %q", name, analysis.Imports[name], pkg)
+		}
+	}
+
+	// Check functions
+	funcNames := make(map[string]bool)
+	for _, fn := range analysis.Functions {
+		key := fn.ID.Type + "." + fn.ID.Name
+		funcNames[key] = true
+	}
+
+	if !funcNames[".generate_key"] {
+		t.Error("missing function 'generate_key'")
+	}
+	if !funcNames[".encrypt"] {
+		t.Error("missing function 'encrypt'")
+	}
+	if !funcNames["CryptoHelper.<init>"] {
+		t.Error("missing method 'CryptoHelper.__init__' (mapped to <init>)")
+	}
+	if !funcNames["CryptoHelper.hash_data"] {
+		t.Error("missing method 'CryptoHelper.hash_data'")
+	}
+	if !funcNames["CryptoHelper.encrypt_data"] {
+		t.Error("missing method 'CryptoHelper.encrypt_data'")
+	}
+
+	// Check that encrypt function has calls
+	for _, fn := range analysis.Functions {
+		if fn.ID.Name != "encrypt" || fn.ID.Type != "" {
+			continue
+		}
+		if len(fn.Calls) == 0 {
+			t.Error("encrypt function should have calls")
+		}
+		// Verify Cipher constructor call resolves through imports
+		foundCipherCall := false
+		for _, call := range fn.Calls {
+			if call.Callee.Type == "Cipher" && call.Callee.Name == "<init>" {
+				foundCipherCall = true
+				if call.Callee.Package != "cryptography.hazmat.primitives.ciphers" {
+					t.Errorf("Cipher call package = %q, want %q", call.Callee.Package, "cryptography.hazmat.primitives.ciphers")
+				}
+			}
+		}
+		if !foundCipherCall {
+			t.Error("encrypt function should have a Cipher() constructor call")
+		}
+		break
+	}
+
+	// Check that hash_data method resolves hashlib.sha256
+	for _, fn := range analysis.Functions {
+		if fn.ID.Name == "hash_data" {
+			foundHashCall := false
+			for _, call := range fn.Calls {
+				if call.Callee.Package == "hashlib" && call.Callee.Name == "sha256" {
+					foundHashCall = true
+				}
+			}
+			if !foundHashCall {
+				t.Error("hash_data should have a hashlib.sha256 call")
+			}
+			break
+		}
+	}
+}
+
+func TestPythonParser_SkipTestFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Regular file
+	os.WriteFile(filepath.Join(dir, "crypto.py"), []byte("def foo(): pass"), 0o644)
+	// Test files — should be skipped
+	os.WriteFile(filepath.Join(dir, "test_crypto.py"), []byte("def test_foo(): pass"), 0o644)
+	os.WriteFile(filepath.Join(dir, "crypto_test.py"), []byte("def test_bar(): pass"), 0o644)
+
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "test_pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	if len(analyses) != 1 {
+		t.Errorf("expected 1 analysis (only crypto.py), got %d", len(analyses))
+	}
+}
+
+func TestPythonParser_DunderMethodSkip(t *testing.T) {
+	src := `class MyClass:
+    def __init__(self, x):
+        self.x = x
+
+    def __repr__(self):
+        return f"MyClass({self.x})"
+
+    def __str__(self):
+        return str(self.x)
+
+    def real_method(self):
+        return self.x
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "myclass.py")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "myproject")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	analysis := analyses[0]
+
+	// Should have __init__ (as <init>) and real_method, but NOT __repr__ or __str__
+	funcNames := make(map[string]bool)
+	for _, fn := range analysis.Functions {
+		funcNames[fn.ID.Name] = true
+	}
+
+	if !funcNames["<init>"] {
+		t.Error("missing __init__ (mapped to <init>)")
+	}
+	if !funcNames["real_method"] {
+		t.Error("missing real_method")
+	}
+	if funcNames["__repr__"] {
+		t.Error("__repr__ should be skipped")
+	}
+	if funcNames["__str__"] {
+		t.Error("__str__ should be skipped")
+	}
+}

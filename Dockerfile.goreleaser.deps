@@ -1,0 +1,72 @@
+# ============================================================================
+# GoReleaser Dockerfile.deps - Full image with all language toolchains
+# ============================================================================
+# This Dockerfile is used by GoReleaser and expects a pre-built binary.
+# For manual builds from source, use the regular Dockerfile.deps instead.
+# ============================================================================
+
+FROM python:3.11-slim
+
+# Build arguments for version injection
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# Install system dependencies for OpenGrep installer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Semgrep 1.145.0
+RUN pip install --no-cache-dir semgrep==1.145.0
+
+# Install OpenGrep (minimum version 1.12.1)
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash
+
+# Copy the pre-built crypto-finder binary from GoReleaser's build context
+COPY crypto-finder /usr/local/bin/crypto-finder
+
+# Make binary executable
+RUN chmod +x /usr/local/bin/crypto-finder
+
+# ── Go toolchain ──
+COPY --from=golang:1.26-alpine /usr/local/go /usr/local/go
+ENV GOROOT=/usr/local/go
+
+# ── Java + Maven (for dependency resolution) ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jdk-headless \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Rust/Cargo (for dependency resolution only, not compilation) ──
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --profile minimal
+
+# ── Python: isolated virtualenv for target project deps ──
+RUN python -m venv /opt/target-venv
+
+# ── Unified PATH ──
+ENV PATH="/opt/target-venv/bin:/usr/local/go/bin:/root/.cargo/bin:$PATH:/root/.opengrep/cli/latest"
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Add labels for metadata
+LABEL org.opencontainers.image.title="SCANOSS Crypto Finder (Deps)"
+LABEL org.opencontainers.image.description="A tool to scan source code for cryptographic algorithm usage with all language toolchains for dependency scanning"
+LABEL org.opencontainers.image.vendor="SCANOSS"
+LABEL org.opencontainers.image.source="https://github.com/scanoss/crypto-finder"
+LABEL org.opencontainers.image.licenses="GPL-2.0"
+LABEL org.opencontainers.image.version="${VERSION}"
+
+# Verify installations
+RUN crypto-finder version && semgrep --version && opengrep --version && \
+    go version && mvn --version && cargo --version && pip --version
+
+# Set entrypoint
+ENTRYPOINT ["crypto-finder"]
+
+# Default command shows help
+CMD ["--help"]

@@ -22,10 +22,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.1"
+const InterimFormatVersion = "1.2"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -94,6 +96,27 @@ type CryptographicAsset struct {
 	// Sources: NIST CSOR, PKCS#1, ANSI X9.62, etc.
 	// Example: "2.16.840.1.101.3.4.1.2" for AES-128-CBC
 	OID string `json:"oid,omitempty"`
+
+	// Source indicates how this finding was discovered.
+	// Values: "direct" (found in user code), "dependency" (found in a dependency).
+	Source string `json:"source,omitempty"`
+
+	// DependencyInfo contains attribution data when the finding originates from a dependency.
+	DependencyInfo *DependencyInfo `json:"dependency_info,omitempty"`
+
+	// CallChains contains all traced call paths from user code to the crypto call site.
+	// Each inner slice is one complete path, ordered from program entry point (first) to crypto call site (last).
+	CallChains [][]callgraph.CallChainEntry `json:"call_chains,omitempty"`
+}
+
+// DependencyInfo contains attribution metadata for findings originating from dependencies.
+type DependencyInfo struct {
+	// Module is the dependency module path (e.g., "golang.org/x/crypto").
+	Module string `json:"module"`
+	// Version is the dependency version (e.g., "v0.17.0").
+	Version string `json:"version"`
+	// Function is the specific function in the dependency where the crypto usage was found.
+	Function string `json:"function,omitempty"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

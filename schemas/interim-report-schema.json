@@ -9,7 +9,7 @@
     "version": {
       "type": "string",
       "description": "Version of the interim report schema (e.g., \"1.1\")",
-      "examples": ["1.1", "1.0"]
+      "examples": ["1.2", "1.1", "1.0"]
     },
     "tool": {
       "$ref": "#/$defs/ToolInfo"
@@ -114,12 +114,70 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "source": {
+          "type": "string",
+          "description": "How this finding was discovered (v1.2+)",
+          "enum": ["direct", "dependency"]
+        },
+        "dependency_info": {
+          "$ref": "#/$defs/DependencyInfo",
+          "description": "Attribution data when the finding originates from a dependency (v1.2+)"
+        },
+        "call_chains": {
+          "type": "array",
+          "description": "All traced call paths from user code to crypto call site. Each inner array is one complete path, ordered from program entry point (first) to crypto call site (last). Entry [i] calls entry [i+1]. (v1.2+)",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CallChainEntry"
+            }
+          }
         }
       },
       "oneOf": [
         {"required": ["rules"]},
         {"required": ["rule"]}
       ]
+    },
+    "DependencyInfo": {
+      "type": "object",
+      "description": "Attribution metadata for findings originating from dependencies",
+      "required": ["module", "version"],
+      "properties": {
+        "module": {
+          "type": "string",
+          "description": "Dependency module path (e.g., \"golang.org/x/crypto\")"
+        },
+        "version": {
+          "type": "string",
+          "description": "Dependency version (e.g., \"v0.17.0\")"
+        },
+        "function": {
+          "type": "string",
+          "description": "Specific function in the dependency where crypto usage was found"
+        }
+      }
+    },
+    "CallChainEntry": {
+      "type": "object",
+      "description": "A single step in a call chain trace",
+      "required": ["function", "file", "line"],
+      "properties": {
+        "function": {
+          "type": "string",
+          "description": "Fully qualified function name"
+        },
+        "file": {
+          "type": "string",
+          "description": "File path containing the function"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number of the call",
+          "minimum": 1
+        }
+      }
     },
     "RuleInfo": {
       "type": "object",

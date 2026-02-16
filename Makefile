@@ -7,6 +7,8 @@ BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 BUILD_DIR := ./target
 BINARY_NAME := crypto-finder
 DOCKER_IMAGE := ghcr.io/scanoss/crypto-finder
+GOLANGCI_LINT_VERSION := $(shell cat .golangci-lint-version)
+GOLANGCI_LINT_BIN := ./bin/golangci-lint
 LDFLAGS := -ldflags="-s -w \
 	-X github.com/scanoss/crypto-finder/internal/version.Version=$(VERSION) \
 	-X github.com/scanoss/crypto-finder/internal/version.GitCommit=$(GIT_COMMIT) \
@@ -24,7 +26,18 @@ help: ## This help
 
 
 lint: ## Lints the code
-	@golangci-lint run ./...
+	@if [ ! -x "$(GOLANGCI_LINT_BIN)" ]; then \
+		echo "golangci-lint $(GOLANGCI_LINT_VERSION) is required at $(GOLANGCI_LINT_BIN)"; \
+		echo "Run: make lint-install"; \
+		exit 1; \
+	fi
+	@mkdir -p .cache/go-build .cache/golangci
+	@GOCACHE=$(PWD)/.cache/go-build GOLANGCI_LINT_CACHE=$(PWD)/.cache/golangci \
+		$(GOLANGCI_LINT_BIN) run ./...
+
+lint-install: ## Install pinned golangci-lint version
+	@mkdir -p ./bin
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./bin $(GOLANGCI_LINT_VERSION)
 
 build: ## Builds the CLI with version info
 	@echo "Building SCANOSS Crypto Finder CLI ($(VERSION))..."
@@ -83,6 +96,17 @@ docker-build: ## Build Docker image with Semgrep
 		-f Dockerfile .
 	@echo "Docker image built: $(DOCKER_IMAGE):$(VERSION)"
 
+docker-build-deps: ## Build Docker image with all language toolchains for dependency scanning
+	@echo "Building deps Docker image ($(VERSION))..."
+	@docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(DOCKER_IMAGE):$(VERSION)-deps \
+		-t $(DOCKER_IMAGE):latest-deps \
+		-f Dockerfile.deps .
+	@echo "Deps Docker image built: $(DOCKER_IMAGE):$(VERSION)-deps"
+
 docker-build-slim: ## Build slim Docker image without Semgrep
 	@echo "Building slim Docker image ($(VERSION))..."
 	@docker build \
@@ -114,6 +138,14 @@ docker-shell: ## Open a shell in the Docker container for debugging
 		--entrypoint /bin/sh \
 		$(DOCKER_IMAGE):latest
 
+docker-scan-deps: ## Scan with dependency resolution (PROJ=path/to/project)
+	@echo "Scanning with dependency resolution..."
+	@docker run --rm \
+		-v $(PROJ):/workspace/code:ro \
+		--entrypoint sh $(DOCKER_IMAGE):latest-deps -c \
+		"if [ -f /workspace/code/requirements.txt ]; then pip install -r /workspace/code/requirements.txt 2>/dev/null; fi; \
+		 crypto-finder scan /workspace/code --scan-dependencies $(ARGS)"
+
 docker-scan: docker-build ## Quick test: build and scan current directory
 	@echo "Running quick scan on current directory..."
 	@docker run --rm \
@@ -130,6 +162,8 @@ docker-push: ## Push Docker images to GHCR (requires authentication)
 	@docker push $(DOCKER_IMAGE):latest
 	@docker push $(DOCKER_IMAGE):$(VERSION)-slim
 	@docker push $(DOCKER_IMAGE):latest-slim
+	@docker push $(DOCKER_IMAGE):$(VERSION)-deps
+	@docker push $(DOCKER_IMAGE):latest-deps
 	@echo "✅ Docker images pushed successfully!"
 
 docker-login: ## Login to GitHub Container Registry
