@@ -207,12 +207,15 @@ func (p *RustParser) extractDeclarations(root *sitter.Node, src []byte, filePath
 func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, packagePath, typeName string, analysis *FileAnalysis) *FunctionDecl {
 	var name string
 	var body *sitter.Node
+	var paramsNode *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
 		case goNodeIdentifier:
 			name = child.Content(src)
+		case "parameters":
+			paramsNode = child
 		case goNodeBlock:
 			body = child
 		}
@@ -222,15 +225,34 @@ func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, 
 		return nil
 	}
 
+	parameters, hasSelf := parseRustParameters(paramsNode, src)
+	ownerType := "module"
+	ownerName := packagePath
+	functionType := "function"
+	if typeName != "" {
+		ownerType = "type"
+		ownerName = typeName
+		if hasSelf {
+			functionType = "method"
+		} else {
+			functionType = "associated_function"
+		}
+	}
+
 	decl := &FunctionDecl{
 		ID: FunctionID{
 			Package: packagePath,
 			Type:    typeName,
 			Name:    name,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    ownerType,
+		OwnerName:    ownerName,
+		FunctionType: functionType,
+		ReturnType:   parseRustReturnType(node.Content(src)),
+		Parameters:   parameters,
 	}
 
 	if body != nil {
@@ -325,39 +347,42 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 	funcNode := node.Child(0)
 	line := int(node.StartPoint().Row) + 1
 	raw := funcNode.Content(src)
+	args := p.extractRustCallArguments(node, src)
 
 	switch funcNode.Type() {
 	case javaNodeScopedIdentifier:
 		// e.g., `ring::aead::Aead::new(...)` or `Aead::new(...)`
-		return p.parseScopedCall(funcNode, src, filePath, line, analysis)
+		return p.parseScopedCall(funcNode, src, filePath, line, args, analysis)
 	case goNodeIdentifier:
 		// Simple call like `encrypt(...)`
 		name := funcNode.Content(src)
 		// Check if this identifier was imported
 		if pkg, ok := analysis.Imports[name]; ok {
 			return &FunctionCall{
-				Callee:   FunctionID{Package: pkg, Name: name},
-				Raw:      raw,
-				FilePath: filePath,
-				Line:     line,
+				Callee:    FunctionID{Package: pkg, Name: name},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
 			}
 		}
 		return &FunctionCall{
-			Callee:   FunctionID{Package: analysis.PackagePath, Name: name},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	case "field_expression":
 		// Method call like `self.encrypt(...)` or `obj.method(...)`
-		return p.parseFieldCall(funcNode, src, filePath, line, analysis)
+		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis)
 	}
 
 	return nil
 }
 
 // parseScopedCall handles calls like `Type::method()` or `module::func()`.
-func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath string, line int, analysis *FileAnalysis) *FunctionCall {
+func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
 	content := node.Content(src)
 	lastSep := strings.LastIndex(content, "::")
 	if lastSep <= 0 {
@@ -371,10 +396,11 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 	// Case 1: prefix is a single identifier that was imported (e.g., `Aead::new`)
 	if pkg, ok := analysis.Imports[prefix]; ok {
 		return &FunctionCall{
-			Callee:   FunctionID{Package: pkg, Type: prefix, Name: name},
-			Raw:      content,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: pkg, Type: prefix, Name: name},
+			Raw:       content,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
@@ -386,25 +412,27 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 		if pkg, ok := analysis.Imports[firstSegment]; ok {
 			fullPath := pkg + "::" + prefix[firstSep+2:]
 			return &FunctionCall{
-				Callee:   FunctionID{Package: fullPath, Name: name},
-				Raw:      content,
-				FilePath: filePath,
-				Line:     line,
+				Callee:    FunctionID{Package: fullPath, Name: name},
+				Raw:       content,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
 			}
 		}
 	}
 
 	// Fallback: treat the full prefix as the package path
 	return &FunctionCall{
-		Callee:   FunctionID{Package: prefix, Name: name},
-		Raw:      content,
-		FilePath: filePath,
-		Line:     line,
+		Callee:    FunctionID{Package: prefix, Name: name},
+		Raw:       content,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
 }
 
 // parseFieldCall handles method calls like `obj.method()` or `self.method()`.
-func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath string, line int, analysis *FileAnalysis) *FunctionCall {
+func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
 	var object, field string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -428,27 +456,82 @@ func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath stri
 	// "self" calls are local method calls
 	if object == "self" {
 		return &FunctionCall{
-			Callee:   FunctionID{Package: analysis.PackagePath, Name: field},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: analysis.PackagePath, Name: field},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
 	// Try to resolve through imports
 	if pkg, ok := analysis.Imports[object]; ok {
 		return &FunctionCall{
-			Callee:   FunctionID{Package: pkg, Type: object, Name: field},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: pkg, Type: object, Name: field},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
 	return &FunctionCall{
-		Callee:   FunctionID{Package: analysis.PackagePath, Type: object, Name: field},
-		Raw:      raw,
-		FilePath: filePath,
-		Line:     line,
+		Callee:    FunctionID{Package: analysis.PackagePath, Type: object, Name: field},
+		Raw:       raw,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
+}
+
+func (p *RustParser) extractRustCallArguments(node *sitter.Node, src []byte) []string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "arguments" {
+			return parseArgumentsFromDelimitedContent(child.Content(src))
+		}
+	}
+	return nil
+}
+
+func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bool) {
+	if node == nil {
+		return nil, false
+	}
+	content := trimOuterDelimiters(node.Content(src), '(', ')')
+	if content == "" {
+		return nil, false
+	}
+
+	parts := splitTopLevelCommaList(content)
+	params := make([]FunctionParameter, 0, len(parts))
+	hasSelf := false
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean == "" {
+			continue
+		}
+		if strings.Contains(clean, "self") {
+			hasSelf = true
+		}
+
+		typ := ""
+		if idx := strings.Index(clean, ":"); idx >= 0 {
+			typ = strings.TrimSpace(clean[idx+1:])
+		}
+		params = append(params, FunctionParameter{Type: typ})
+	}
+
+	return params, hasSelf
+}
+
+func parseRustReturnType(funcContent string) string {
+	header := funcContent
+	if idx := strings.Index(header, "{"); idx >= 0 {
+		header = header[:idx]
+	}
+	if idx := strings.Index(header, "->"); idx >= 0 {
+		return strings.TrimSpace(header[idx+2:])
+	}
+	return ""
 }

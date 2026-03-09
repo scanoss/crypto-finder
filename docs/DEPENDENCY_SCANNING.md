@@ -47,11 +47,11 @@ flowchart LR
 
 The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dependencies and locates their source code on disk. Each ecosystem has its own resolver implementation (see [Supported Ecosystems](#supported-ecosystems) below). Each `Dependency` carries:
 
-| Field     | Go Example                          | Java Example                     | Purpose                          |
-|-----------|-------------------------------------|----------------------------------|----------------------------------|
-| `Module`  | `golang.org/x/crypto`              | `org.bouncycastle:bcprov-jdk18on`| Import path / coordinate         |
-| `Version` | `v0.17.0`                           | `1.77`                           | Resolved version                 |
-| `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | Filesystem path to scan |
+| Field     | Go Example                          | Java Example                     | Python Example                   | Rust Example                     | Purpose                          |
+|-----------|-------------------------------------|----------------------------------|----------------------------------|----------------------------------|----------------------------------|
+| `Module`  | `golang.org/x/crypto`              | `org.bouncycastle:bcprov-jdk18on`| `cryptography`                   | `ring`                           | Import path / coordinate         |
+| `Version` | `v0.17.0`                           | `1.77`                           | `42.0.5`                         | `0.17.8`                         | Resolved version                 |
+| `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | `~/.local/lib/python3.x/site-packages/cryptography/` | `~/.cargo/registry/src/.../ring-0.17.8/` | Filesystem path to scan |
 
 The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is used later to determine which packages are "user code" vs. "dependency code".
 
@@ -76,18 +76,18 @@ Only dependencies **with findings** proceed to step 4 — this keeps the call gr
 
 ### Step 4: Build the Call Graph
 
-This is where the architecture gets interesting. The call graph builder uses **tree-sitter** to parse source files, which means it works on raw source without needing a full Go toolchain or Java compiler. The [`Parser` interface](../internal/callgraph/builder.go) abstracts all language-specific behavior:
+This is where the architecture gets interesting. The call graph builder uses **syntactic parsing** to process source files, which means it works on raw source without needing a full Go toolchain, Java compiler, Python interpreter, or Rust toolchain. The [`Parser` interface](../internal/callgraph/builder.go) abstracts all language-specific behavior:
 
 ```go
 type Parser interface {
     ParseDirectory(dir string, packagePath string) ([]*FileAnalysis, error)
     SkipDirs() map[string]bool
     SubPackagePath(parentPath, dirName string) string
-    PackageSeparator() string  // "/" for Go, "." for Java
+    PackageSeparator() string  // "/" for Go, "." for Java/Python, "::" for Rust
 }
 ```
 
-The [`NewParserForEcosystem()`](../internal/callgraph/parser_registry.go) factory selects the right parser (`GoParser` or `JavaParser`) based on the detected ecosystem.
+The [`NewParserForEcosystem()`](../internal/callgraph/parser_registry.go) factory selects the right parser (`GoParser`, `JavaParser`, `PythonParser`, or `RustParser`) based on the detected ecosystem.
 
 ```mermaid
 flowchart TB
@@ -99,7 +99,7 @@ flowchart TB
 
     subgraph "Builder.BuildFromDirectories()"
         direction TB
-        Parse["Parser.ParseDirectory()<br/><i>tree-sitter per source file</i>"]
+        Parse["Parser.ParseDirectory()<br/><i>syntactic parsing per source file</i>"]
         FnMap["Functions map<br/><i>FunctionID → FunctionDecl</i>"]
         RevIdx["Callers reverse index<br/><i>callee → []callerID</i>"]
 
@@ -136,6 +136,32 @@ For Java (`.java` files):
 | Constructors | `new SecretKeySpec(...)` | Call to `FunctionID{..., Type: "SecretKeySpec", Name: "<init>"}` |
 | Method invocations | `Cipher.getInstance("AES")` | Resolved via imports → `FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance"}` |
 | Local variable types | `Cipher cipher = Cipher.getInstance(...)` | Enables `cipher.doFinal()` → resolves `cipher` to `Cipher` type |
+
+For Python (`.py` files, excluding `test_*.py` and `*_test.py`):
+
+| Extracted | Example | Stored As |
+|-----------|---------|-----------|
+| Import statements | `import hashlib` | `Imports["hashlib"] = "hashlib"` |
+| From imports | `from cryptography.hazmat.primitives import Cipher` | `Imports["Cipher"] = "cryptography.hazmat.primitives"` |
+| Wildcard imports | `from hashlib import *` | `WildcardImports = ["hashlib"]` |
+| Aliased imports | `import hashlib as hl` | `Imports["hl"] = "hashlib"` |
+| Function definitions | `def encrypt(key, data):` | `FunctionDecl{ID, FilePath, StartLine, EndLine, Calls}` |
+| Class methods | `class Cipher: def __init__(self):` | `FunctionDecl{..., Type: "Cipher", Name: "<init>"}` |
+| Attribute calls | `hashlib.sha256()` | Resolved via imports → `FunctionID{Package: "hashlib", Name: "sha256"}` |
+| Chained calls | `cryptography.hazmat.primitives.hashes.SHA256()` | Resolved via first segment import |
+| `self` calls | `self.encrypt()` | `FunctionID{Package: current_package, Name: "encrypt"}` |
+
+For Rust (`.rs` files, excluding `*_test.rs` and `tests.rs`):
+
+| Extracted | Example | Stored As |
+|-----------|---------|-----------|
+| Use declarations | `use ring::aead::Aead;` | `Imports["Aead"] = "ring::aead"` |
+| Scoped use lists | `use ring::aead::{Aead, AeadCore};` | `Imports["Aead"] = "ring::aead"`, `Imports["AeadCore"] = "ring::aead"` |
+| Wildcard use | `use ring::aead::*;` | `WildcardImports = ["ring::aead"]` |
+| Free functions | `fn encrypt(key: &[u8]) {...}` | `FunctionDecl{ID, FilePath, StartLine, EndLine, Calls}` |
+| Impl methods | `impl Aead { fn new(...) {...} }` | `FunctionDecl{..., Type: "Aead", Name: "new"}` |
+| Scoped calls | `Aead::new(...)` | Resolved via imports → `FunctionID{Package: "ring::aead", Type: "Aead", Name: "new"}` |
+| Field calls | `self.encrypt(...)` | `FunctionID{Package: current_module, Name: "encrypt"}` |
 
 #### The two data structures
 
@@ -352,7 +378,7 @@ PackageDirs = [
 ]
 ```
 
-The tree-sitter parser processes every `.go` file and extracts function declarations with their calls.
+The syntactic parsing parser processes every `.go` file and extracts function declarations with their calls.
 
 **From `main.go`:**
 ```
@@ -795,15 +821,15 @@ Key observations:
 
 ---
 
-## Schema (v1.2)
+## Schema (v1.3)
 
-Version 1.2 promotes attribution data from flat `metadata` strings to first-class structured fields:
+Version 1.3 keeps v1.2 attribution fields and enriches each `call_chains` step with structured function metadata.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
 | `dependency_info` | `object` | Dependency findings only | `{module, version, function}` |
-| `call_chains` | `array of arrays` | When traceable to user code | All paths from entry-point → crypto-site |
+| `call_chains` | `array of arrays` | When traceable to user code | Ordered call path steps enriched with function metadata and optional parameter argument bindings |
 
 ### Call Chains Ordering
 
@@ -813,9 +839,15 @@ The `call_chains` field contains all traced paths from program entry points to t
 {
   "call_chains": [
     [
-      {"function": "example.com/app.main",                    "file": "main.go",       "line": 15},
-      {"function": "example.com/app/mypkg.SecureEncrypt",     "file": "mypkg/crypto.go","line": 8},
-      {"function": "golang.org/x/crypto/chacha20poly1305.New","file": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
+      {"function_name": "main", "file": "main.go", "line": 15},
+      {"function_name": "SecureEncrypt", "file": "mypkg/crypto.go", "line": 8},
+      {
+        "function_name": "New",
+        "namespace": "golang.org/x/crypto/chacha20poly1305",
+        "file": "golang.org/x/crypto@v0.17.0/chacha20.go",
+        "line": 42,
+        "parameters": [{"type": "[]byte", "argument_value": "key"}]
+      }
     ]
   ]
 }
@@ -904,13 +936,17 @@ internal/
 │   ├── registry.go                # Ecosystem → Resolver registry
 │   ├── go_resolver.go             # Go: `go list -m -json all`
 │   ├── maven_resolver.go          # Java: `mvn dependency:list/sources/tree`
+│   ├── pip_resolver.go            # Python: `pip list` + `pip show`
+│   ├── cargo_resolver.go          # Rust: `cargo metadata --format-version=1`
 │   └── source_cache.go            # Shared: ZIP/JAR extraction to ~/.crypto-finder/cache/sources/
 ├── callgraph/
 │   ├── types.go                   # FunctionID, FunctionDecl, FileAnalysis, CallGraph types
 │   ├── builder.go                 # Parser interface + language-agnostic CallGraph construction
 │   ├── parser_registry.go         # Ecosystem → Parser factory (NewParserForEcosystem)
-│   ├── go_parser.go               # Go: tree-sitter Go grammar parser
-│   ├── java_parser.go             # Java: tree-sitter Java grammar parser
+│   ├── go_parser.go               # Go: syntactic parsing of Go source
+│   ├── java_parser.go             # Java: syntactic parsing of Java source
+│   ├── python_parser.go           # Python: syntactic parsing of Python source
+│   ├── rust_parser.go             # Rust: syntactic parsing of Rust source
 │   └── tracer.go                  # BFS backward tracer with configurable package separator
 └── engine/
     ├── dependency_scanner.go      # DependencyScanner: the 6-step pipeline (language-agnostic)
@@ -924,7 +960,7 @@ The extensible architecture makes adding a new language a matter of implementing
 ### Go
 
 - **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json all` to resolve modules
-- **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — tree-sitter Go grammar
+- **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — syntactic parsing of Go source
 - **Manifest**: `go.mod`
 - **Module format**: Go import path (e.g., `golang.org/x/crypto`)
 - **Package separator**: `/`
@@ -933,7 +969,7 @@ The extensible architecture makes adding a new language a matter of implementing
 ### Java (Maven)
 
 - **Resolver**: [`MavenResolver`](../internal/dependency/maven_resolver.go) — uses Maven CLI
-- **Parser**: [`JavaParser`](../internal/callgraph/java_parser.go) — tree-sitter Java grammar
+- **Parser**: [`JavaParser`](../internal/callgraph/java_parser.go) — syntactic parsing of Java source
 - **Manifest**: `pom.xml`
 - **Module format**: `groupId:artifactId` (e.g., `org.bouncycastle:bcprov-jdk18on`)
 - **Package separator**: `.`
@@ -959,15 +995,78 @@ The `JavaParser` resolves method calls through import analysis:
 4. **Field types**: Class fields are tracked similarly to local variables
 5. **Fallback**: Unresolved calls default to the current package (same as Go's behavior for unresolved variables)
 
+### Python (pip)
+
+- **Resolver**: [`PipResolver`](../internal/dependency/pip_resolver.go) — uses `pip list --format=json` + `pip show` to resolve packages
+- **Parser**: [`PythonParser`](../internal/callgraph/python_parser.go) — syntactic parsing of Python source
+- **Manifests**: `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py`
+- **Module format**: Python package name (e.g., `cryptography`)
+- **Package separator**: `.`
+- **Source location**: Site-packages directory (e.g., `~/.local/lib/python3.x/site-packages/`)
+
+#### Python Resolution Details
+
+The `PipResolver` executes the following steps:
+
+1. **Root module detection** — reads `pyproject.toml` for `[project] name`, falls back to directory name
+2. **`pip list --format=json`** — lists all installed packages with versions
+3. **`pip show <packages>`** — gets location and dependency info for each package (batched in groups of 50)
+4. **Distribution-to-import mapping** — uses `importlib.metadata.packages_distributions()` (Python 3.10+) to map distribution names to import names. Falls back to scanning `*.dist-info` directories (`top_level.txt` → `RECORD` file) for older Python versions
+5. **Package directory resolution** — uses the import mapping, then heuristic name normalization, to find the source directory. Single-file modules (e.g., `six.py`) and C-extension packages are skipped
+
+#### Python Call Resolution
+
+The `PythonParser` resolves calls through import analysis:
+
+1. **`import X`**: `X.func()` resolves `X` via imports
+2. **`from X import Y`**: `Y()` resolves to package `X`, treated as constructor `Y.<init>()`
+3. **Chained attributes**: `a.b.c.func()` — first segment resolved via imports, rest chained
+4. **`self` calls**: `self.method()` resolves to the current package
+5. **Wildcard imports**: `from X import *` recorded for fallback resolution
+6. **Aliased imports**: `import X as Y` — `Y` maps to `X`
+7. **Fallback**: Unresolved calls default to the current package
+
+### Rust (Cargo)
+
+- **Resolver**: [`CargoResolver`](../internal/dependency/cargo_resolver.go) — uses `cargo metadata --format-version=1`
+- **Parser**: [`RustParser`](../internal/callgraph/rust_parser.go) — syntactic parsing of Rust source
+- **Manifest**: `Cargo.toml`
+- **Module format**: Crate name (e.g., `ring`)
+- **Package separator**: `::`
+- **Source location**: Cargo registry cache (e.g., `~/.cargo/registry/src/.../<crate>-<version>/`)
+
+#### Rust Resolution Details
+
+The `CargoResolver` runs `cargo metadata --format-version=1` which provides:
+
+1. **All packages** with name, version, and manifest path
+2. **Resolve graph** with dependency edges between packages
+3. **Workspace detection** — packages with `source: null` (local/workspace crates) are treated as user code; all others are dependencies
+
+Workspace members are identified as user code, so multi-crate workspaces are handled correctly — all workspace crates are considered "user code" for reachability analysis.
+
+#### Rust Call Resolution
+
+The `RustParser` resolves calls through `use` declaration analysis:
+
+1. **Scoped identifiers**: `Aead::new(...)` — resolves `Aead` through `use` imports
+2. **Qualified paths**: `ring::aead::new(...)` — first segment resolved via imports
+3. **Scoped use lists**: `use ring::aead::{Aead, AeadCore}` — each item registered separately
+4. **Wildcard use**: `use ring::aead::*` recorded for fallback resolution
+5. **`self` calls**: `self.method()` resolves to the current module
+6. **`src/` transparency**: The `src/` directory is transparent in module paths (e.g., `ring/src/aead/` → `ring::aead`, not `ring::src::aead`)
+7. **Impl blocks**: Methods in `impl Type { fn method() {} }` are extracted with their type association
+8. **Fallback**: Unresolved calls default to the current module
+
 ### Adding a New Language
 
-To add support for a new ecosystem (e.g., Python):
+To add support for a new ecosystem:
 
-1. **Implement `callgraph.Parser`** — e.g., `python_parser.go` with tree-sitter Python grammar
-2. **Implement `dependency.Resolver`** — e.g., `pip_resolver.go`, shells out to `pip`
+1. **Implement `callgraph.Parser`** — with syntactic parsing for the target language
+2. **Implement `dependency.Resolver`** — shells out to the ecosystem's package manager
 3. **Register the parser** in [`parser_registry.go`](../internal/callgraph/parser_registry.go) — add one `case`
 4. **Register the resolver** in [`scan.go`](../internal/cli/scan.go) — add one `depRegistry.Register()` call
-5. **Add manifest detection** in `detectEcosystem()` — add one `if` checking for the manifest file (e.g., `requirements.txt`)
+5. **Add manifest detection** in `detectEcosystem()` — add one `if` checking for the manifest file
 
 No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entities, or schemas.
 
@@ -986,3 +1085,16 @@ No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entiti
 - **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
 - **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.
 - **Single-module Maven only** — Multi-module Maven projects (parent POM with `<modules>`) are not yet supported.
+
+### Python-specific
+- **Requires `pip` in PATH** — The resolver shells out to `pip list` and `pip show`; the correct virtual environment must be activated.
+- **Single-file modules skipped** — Packages distributed as a single `.py` file (e.g., `six.py`) are skipped since there is no directory to scan.
+- **C-extension packages skipped** — Packages without Python source on disk (compiled C extensions) cannot be scanned.
+- **Distribution-to-import mapping** — Relies on `importlib.metadata` (Python 3.10+) or `*.dist-info` fallback; packages with non-standard layouts may not be resolved.
+- **No dynamic dispatch** — Calls resolved through `getattr`, `__getattr__`, or metaclass magic are not tracked.
+
+### Rust-specific
+- **Requires `cargo` in PATH** — The resolver shells out to `cargo metadata`.
+- **No trait dispatch** — Method calls on trait objects (e.g., `dyn Cipher`) are resolved syntactically by type name; trait implementations are not followed.
+- **Macro-generated code** — Functions generated by macros (e.g., `proc_macro`) are invisible to syntactic parsing.
+- **`src/` transparency assumption** — The parser assumes `src/` is the crate root; non-standard `[lib] path` configurations may produce incorrect module paths.

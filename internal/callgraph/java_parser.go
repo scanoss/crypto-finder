@@ -255,9 +255,14 @@ func (p *JavaParser) parseMethodDecl(node *sitter.Node, src []byte, filePath str
 			Type:    className,
 			Name:    name,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    "class",
+		OwnerName:    className,
+		FunctionType: "method",
+		ReturnType:   p.extractMethodReturnType(node, src),
+		Parameters:   p.extractJavaParameterTypes(node, src),
 	}
 
 	if body != nil {
@@ -284,9 +289,14 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 			Type:    className,
 			Name:    constructorMethodName,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    "class",
+		OwnerName:    className,
+		FunctionType: "constructor",
+		ReturnType:   className,
+		Parameters:   p.extractJavaParameterTypes(node, src),
 	}
 
 	if body != nil {
@@ -426,12 +436,14 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 
 	callee := p.resolveCallee(object, method, analysis, varTypes)
+	args := p.extractJavaCallArguments(node, src)
 
 	return &FunctionCall{
-		Callee:   callee,
-		Raw:      raw,
-		FilePath: filePath,
-		Line:     line,
+		Callee:    callee,
+		Raw:       raw,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
 }
 
@@ -464,13 +476,88 @@ func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath
 	}
 
 	callee := p.resolveCallee(typeName, constructorMethodName, analysis, nil)
+	args := p.extractJavaCallArguments(node, src)
 
 	return &FunctionCall{
-		Callee:   callee,
-		Raw:      "new " + typeName,
-		FilePath: filePath,
-		Line:     line,
+		Callee:    callee,
+		Raw:       "new " + typeName,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
+}
+
+func (p *JavaParser) extractJavaCallArguments(node *sitter.Node, src []byte) []string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "argument_list" {
+			return parseArgumentsFromDelimitedContent(child.Content(src))
+		}
+	}
+	return nil
+}
+
+func (p *JavaParser) extractJavaParameterTypes(node *sitter.Node, src []byte) []FunctionParameter {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != "formal_parameters" {
+			continue
+		}
+		return parseJavaParameterTypesFromList(child.Content(src))
+	}
+	return nil
+}
+
+func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
+	inner := trimOuterDelimiters(listContent, '(', ')')
+	if inner == "" {
+		return nil
+	}
+
+	parts := splitTopLevelCommaList(inner)
+	params := make([]FunctionParameter, 0, len(parts))
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean == "" {
+			continue
+		}
+
+		// Strip common modifiers.
+		clean = strings.TrimSpace(strings.ReplaceAll(clean, "final ", ""))
+		if strings.HasPrefix(clean, "@") {
+			segments := strings.Fields(clean)
+			if len(segments) > 1 {
+				clean = strings.Join(segments[1:], " ")
+			}
+		}
+
+		typeText := clean
+		if idx := strings.LastIndex(clean, " "); idx > 0 {
+			typeText = strings.TrimSpace(clean[:idx])
+		}
+		params = append(params, FunctionParameter{Type: typeText})
+	}
+
+	return params
+}
+
+func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case goNodeTypeIdentifier,
+			javaNodeGenericType,
+			javaNodeScopedTypeIdentifier,
+			javaNodeScopedIdentifier,
+			"integral_type",
+			"floating_point_type",
+			"boolean_type",
+			"void_type",
+			"array_type":
+			return strings.TrimSpace(child.Content(src))
+		}
+	}
+	return ""
 }
 
 // resolveCallee resolves a class/method pair against imports and local variable types.

@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -48,8 +51,10 @@ func ruleLanguages(path string) []string {
 // `languages:` field matches at least one of the detected languages.
 // If filtering would result in zero rules, returns all rules unchanged.
 func filterRulesByLanguages(allRules, languages []string) []string {
+	candidateRules := expandRulePaths(allRules)
+
 	if len(languages) == 0 {
-		return allRules
+		return candidateRules
 	}
 
 	// Build lookup set from detected languages (normalized to lowercase)
@@ -58,8 +63,8 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 		wanted[strings.ToLower(lang)] = true
 	}
 
-	filtered := make([]string, 0, len(allRules))
-	for _, rulePath := range allRules {
+	filtered := make([]string, 0, len(candidateRules))
+	for _, rulePath := range candidateRules {
 		ruleLangs := ruleLanguages(rulePath)
 		if len(ruleLangs) == 0 {
 			// Can't determine language — include to be safe
@@ -78,14 +83,56 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 		log.Warn().
 			Strs("languages", languages).
 			Msg("No rules matched language filter, falling back to all rules")
-		return allRules
+		return candidateRules
 	}
 
 	log.Info().
-		Int("total", len(allRules)).
+		Int("total", len(candidateRules)).
 		Int("filtered", len(filtered)).
 		Strs("languages", languages).
 		Msg("Filtered rules by detected languages")
 
 	return filtered
+}
+
+func expandRulePaths(paths []string) []string {
+	expanded := make([]string, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			expanded = append(expanded, path)
+			continue
+		}
+		if !info.IsDir() {
+			expanded = append(expanded, path)
+			continue
+		}
+
+		dirRules := collectRuleFiles(path)
+		if len(dirRules) == 0 {
+			expanded = append(expanded, path)
+			continue
+		}
+		expanded = append(expanded, dirRules...)
+	}
+	return expanded
+}
+
+func collectRuleFiles(root string) []string {
+	var files []string
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".yaml" || ext == ".yml" {
+			files = append(files, path)
+		}
+		return nil
+	})
+	sort.Strings(files)
+	return files
 }

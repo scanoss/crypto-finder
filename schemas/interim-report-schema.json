@@ -8,8 +8,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.1\")",
-      "examples": ["1.2", "1.1", "1.0"]
+      "description": "Version of the interim report schema (e.g., \"1.3\")",
+      "examples": ["1.3", "1.2", "1.1", "1.0"]
     },
     "tool": {
       "$ref": "#/$defs/ToolInfo"
@@ -72,7 +72,8 @@
       "description": "A single detected cryptographic element",
       "required": [
         "match_type",
-        "line_number",
+        "start_line",
+        "end_line",
         "match",
         "status",
         "metadata"
@@ -83,10 +84,15 @@
           "description": "Detection method used",
           "examples": ["semgrep", "cbom_toolkit", "keyword_search"]
         },
-        "line_number": {
+        "start_line": {
           "type": "integer",
           "minimum": 1,
-          "description": "Line number where the asset was detected"
+          "description": "First line number where the asset was detected"
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Last line number where the asset was detected"
         },
         "match": {
           "type": "string",
@@ -126,7 +132,7 @@
         },
         "call_chains": {
           "type": "array",
-          "description": "All traced call paths from user code to crypto call site. Each inner array is one complete path, ordered from program entry point (first) to crypto call site (last). Entry [i] calls entry [i+1]. (v1.2+)",
+          "description": "All traced call paths from user code to crypto call site. Each inner array is one complete path, ordered from program entry point (first) to crypto call site (last). Entry [i] calls entry [i+1]. (v1.2+, enriched in v1.3)",
           "items": {
             "type": "array",
             "items": {
@@ -162,11 +168,15 @@
     "CallChainEntry": {
       "type": "object",
       "description": "A single step in a call chain trace",
-      "required": ["function", "file", "line"],
+      "required": ["function_name", "file", "line"],
       "properties": {
-        "function": {
+        "function_name": {
           "type": "string",
-          "description": "Fully qualified function name"
+          "description": "Function/method name only (without namespace/package)"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Package/module namespace. Usually present for dependency nodes and omitted for first-party user-code nodes."
         },
         "file": {
           "type": "string",
@@ -174,8 +184,45 @@
         },
         "line": {
           "type": "integer",
-          "description": "Line number of the call",
+          "description": "Line number associated with this call-chain step",
           "minimum": 1
+        },
+        "owner_type": {
+          "type": "string",
+          "description": "Owning symbol type, language-specific (e.g., class, module, type)"
+        },
+        "owner_name": {
+          "type": "string",
+          "description": "Owning symbol name"
+        },
+        "function_type": {
+          "type": "string",
+          "description": "Function category (e.g., function, method, constructor, associated_function)"
+        },
+        "return_type": {
+          "type": "string",
+          "description": "Declared return type when statically available"
+        },
+        "parameters": {
+          "type": "array",
+          "description": "Parameter list for this function. Argument values are populated when known from the previous call-chain hop.",
+          "items": {
+            "$ref": "#/$defs/CallChainParameter"
+          }
+        }
+      }
+    },
+    "CallChainParameter": {
+      "type": "object",
+      "description": "Parameter details for a call chain step",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Declared parameter type when statically available"
+        },
+        "argument_value": {
+          "type": "string",
+          "description": "Argument expression passed to this parameter from the previous call-chain step"
         }
       }
     },

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -121,18 +122,79 @@ func cacheKeyToFilename(key string) string {
 // The hash is truncated to 16 hex characters. This captures rule content changes
 // so the cache invalidates when rules are edited even if filenames stay the same.
 func ComputeRulesHash(rulePaths []string) (string, error) {
-	sorted := make([]string, len(rulePaths))
-	copy(sorted, rulePaths)
-	sort.Strings(sorted)
+	expandedRulePaths, err := expandRulePathsForHash(rulePaths)
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(expandedRulePaths)
 
 	h := sha256.New()
-	for _, p := range sorted {
+	for _, p := range expandedRulePaths {
 		content, err := os.ReadFile(p)
 		if err != nil {
 			return "", fmt.Errorf("failed to read rule file %s: %w", p, err)
 		}
-		h.Write(content)
+		if _, err := h.Write(content); err != nil {
+			return "", fmt.Errorf("failed to hash rule file %s: %w", p, err)
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
+}
+
+// expandRulePathsForHash normalizes rule paths for hashing.
+// Directory paths are expanded recursively to .yaml/.yml files, while file paths
+// are kept as-is so direct rule file usage remains backward-compatible.
+func expandRulePathsForHash(rulePaths []string) ([]string, error) {
+	files := make([]string, 0, len(rulePaths))
+	seen := make(map[string]struct{})
+
+	for _, p := range rulePaths {
+		info, err := os.Stat(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat rule path %s: %w", p, err)
+		}
+
+		if !info.IsDir() {
+			if _, exists := seen[p]; !exists {
+				seen[p] = struct{}{}
+				files = append(files, p)
+			}
+			continue
+		}
+
+		foundRuleInDir := false
+		walkErr := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !isRuleFile(path) {
+				return nil
+			}
+			if _, exists := seen[path]; exists {
+				return nil
+			}
+			seen[path] = struct{}{}
+			files = append(files, path)
+			foundRuleInDir = true
+			return nil
+		})
+		if walkErr != nil {
+			return nil, fmt.Errorf("failed to walk rule directory %s: %w", p, walkErr)
+		}
+		if !foundRuleInDir {
+			return nil, fmt.Errorf("no rule files found in directory %s", p)
+		}
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no rule files provided")
+	}
+
+	return files, nil
+}
+
+func isRuleFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yaml" || ext == ".yml"
 }
