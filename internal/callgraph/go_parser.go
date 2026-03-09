@@ -199,12 +199,20 @@ func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, pac
 func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) *FunctionDecl {
 	var name string
 	var body *sitter.Node
+	var params *sitter.Node
+	var result *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
 		case goNodeIdentifier:
 			name = child.Content(src)
+		case "parameter_list":
+			if params == nil {
+				params = child
+			}
+		case "result":
+			result = child
 		case goNodeBlock:
 			body = child
 		}
@@ -219,10 +227,15 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 			Package: packagePath,
 			Name:    name,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    "package",
+		OwnerName:    analysis.PackageName,
+		FunctionType: "function",
+		Parameters:   p.extractParameterTypes(params, src),
 	}
+	decl.ReturnType = p.extractReturnType(result, src)
 
 	if body != nil {
 		decl.Calls = p.extractCalls(body, src, filePath, analysis)
@@ -234,6 +247,8 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) *FunctionDecl {
 	var name, receiver string
 	var body *sitter.Node
+	var params *sitter.Node
+	var result *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -241,8 +256,14 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 		case goNodeFieldIdentifier:
 			name = child.Content(src)
 		case "parameter_list":
-			// This is the receiver parameter list
-			receiver = p.extractReceiverType(child, src)
+			// In method declarations the first parameter_list is the receiver.
+			if receiver == "" {
+				receiver = p.extractReceiverType(child, src)
+			} else if params == nil {
+				params = child
+			}
+		case "result":
+			result = child
 		case goNodeBlock:
 			body = child
 		}
@@ -258,10 +279,15 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 			Type:    receiver,
 			Name:    name,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    "type",
+		OwnerName:    receiver,
+		FunctionType: "method",
+		Parameters:   p.extractParameterTypes(params, src),
 	}
+	decl.ReturnType = p.extractReturnType(result, src)
 
 	if body != nil {
 		decl.Calls = p.extractCalls(body, src, filePath, analysis)
@@ -313,10 +339,11 @@ func (p *GoParser) parseCallExpr(node *sitter.Node, src []byte, filePath string,
 
 	funcNode := node.Child(0)
 	line := int(node.StartPoint().Row) + 1
+	args := p.extractCallArguments(node, src)
 
 	switch funcNode.Type() {
 	case "selector_expression":
-		return p.parseSelectorCall(funcNode, src, filePath, line, analysis)
+		return p.parseSelectorCall(funcNode, src, filePath, line, args, analysis)
 	case goNodeIdentifier:
 		// Simple call like `doSomething()`
 		name := funcNode.Content(src)
@@ -325,16 +352,17 @@ func (p *GoParser) parseCallExpr(node *sitter.Node, src []byte, filePath string,
 				Package: analysis.PackagePath,
 				Name:    name,
 			},
-			Raw:      name,
-			FilePath: filePath,
-			Line:     line,
+			Raw:       name,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
 	return nil
 }
 
-func (p *GoParser) parseSelectorCall(node *sitter.Node, src []byte, filePath string, line int, analysis *FileAnalysis) *FunctionCall {
+func (p *GoParser) parseSelectorCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
 	var operand, field string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -360,9 +388,10 @@ func (p *GoParser) parseSelectorCall(node *sitter.Node, src []byte, filePath str
 				Package: importPath,
 				Name:    field,
 			},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
@@ -374,8 +403,61 @@ func (p *GoParser) parseSelectorCall(node *sitter.Node, src []byte, filePath str
 			Type:    operand,
 			Name:    field,
 		},
-		Raw:      raw,
-		FilePath: filePath,
-		Line:     line,
+		Raw:       raw,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
+}
+
+func (p *GoParser) extractParameterTypes(node *sitter.Node, src []byte) []FunctionParameter {
+	if node == nil {
+		return nil
+	}
+
+	var params []FunctionParameter
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != "parameter_declaration" {
+			continue
+		}
+
+		namedCount := int(child.NamedChildCount())
+		if namedCount == 0 {
+			continue
+		}
+
+		typeNode := child.NamedChild(namedCount - 1)
+		typeText := strings.TrimSpace(typeNode.Content(src))
+		if typeText == "" {
+			continue
+		}
+
+		paramCount := 1
+		if namedCount > 1 {
+			paramCount = namedCount - 1
+		}
+		for j := 0; j < paramCount; j++ {
+			params = append(params, FunctionParameter{Type: typeText})
+		}
+	}
+
+	return params
+}
+
+func (p *GoParser) extractReturnType(node *sitter.Node, src []byte) string {
+	if node == nil {
+		return ""
+	}
+	return strings.TrimSpace(node.Content(src))
+}
+
+func (p *GoParser) extractCallArguments(node *sitter.Node, src []byte) []string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "argument_list" {
+			return parseArgumentsFromDelimitedContent(child.Content(src))
+		}
+	}
+	return nil
 }

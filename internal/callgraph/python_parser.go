@@ -218,12 +218,15 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis) *FunctionDecl {
 	var name string
 	var body *sitter.Node
+	var paramNode *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
 		case goNodeIdentifier:
 			name = child.Content(src)
+		case "parameters":
+			paramNode = child
 		case "block":
 			body = child
 		}
@@ -244,15 +247,32 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		funcName = constructorMethodName
 	}
 
+	ownerType := "module"
+	ownerName := packagePath
+	functionType := "function"
+	if className != "" {
+		ownerType = "class"
+		ownerName = className
+		functionType = "method"
+	}
+	if funcName == constructorMethodName {
+		functionType = "constructor"
+	}
+
 	decl := &FunctionDecl{
 		ID: FunctionID{
 			Package: packagePath,
 			Type:    className,
 			Name:    funcName,
 		},
-		FilePath:  filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
+		FilePath:     filePath,
+		StartLine:    int(node.StartPoint().Row) + 1,
+		EndLine:      int(node.EndPoint().Row) + 1,
+		OwnerType:    ownerType,
+		OwnerName:    ownerName,
+		FunctionType: functionType,
+		ReturnType:   parsePythonReturnType(node.Content(src)),
+		Parameters:   parsePythonParameters(paramNode, src),
 	}
 
 	if body != nil {
@@ -359,6 +379,7 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	funcNode := node.Child(0)
 	line := int(node.StartPoint().Row) + 1
 	raw := funcNode.Content(src)
+	args := p.extractPythonCallArguments(node, src)
 
 	switch funcNode.Type() {
 	case goNodeIdentifier:
@@ -367,28 +388,30 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		if pkg, ok := analysis.Imports[name]; ok {
 			// Imported name — could be a class constructor
 			return &FunctionCall{
-				Callee:   FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
-				Raw:      raw,
-				FilePath: filePath,
-				Line:     line,
+				Callee:    FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
 			}
 		}
 		return &FunctionCall{
-			Callee:   FunctionID{Package: analysis.PackagePath, Name: name},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	case "attribute":
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
-		return p.parseAttributeCall(funcNode, src, filePath, line, analysis)
+		return p.parseAttributeCall(funcNode, src, filePath, line, args, analysis)
 	}
 
 	return nil
 }
 
 // parseAttributeCall handles calls on attributes like `module.func()` or `obj.method()`.
-func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line int, analysis *FileAnalysis) *FunctionCall {
+func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
 	var object, method string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -415,20 +438,22 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	// "self" calls are local method calls
 	if object == pythonSelfObjectName {
 		return &FunctionCall{
-			Callee:   FunctionID{Package: analysis.PackagePath, Name: method},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: analysis.PackagePath, Name: method},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
 	// Try to resolve the object through imports
 	if pkg, ok := analysis.Imports[object]; ok {
 		return &FunctionCall{
-			Callee:   FunctionID{Package: pkg, Name: method},
-			Raw:      raw,
-			FilePath: filePath,
-			Line:     line,
+			Callee:    FunctionID{Package: pkg, Name: method},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
@@ -439,19 +464,79 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		if pkg, ok := analysis.Imports[firstSegment]; ok {
 			fullPath := pkg + "." + object[dotIdx+1:]
 			return &FunctionCall{
-				Callee:   FunctionID{Package: fullPath, Name: method},
-				Raw:      raw,
-				FilePath: filePath,
-				Line:     line,
+				Callee:    FunctionID{Package: fullPath, Name: method},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
 			}
 		}
 	}
 
 	// Fallback: assume same package
 	return &FunctionCall{
-		Callee:   FunctionID{Package: analysis.PackagePath, Type: object, Name: method},
-		Raw:      raw,
-		FilePath: filePath,
-		Line:     line,
+		Callee:    FunctionID{Package: analysis.PackagePath, Type: object, Name: method},
+		Raw:       raw,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
 	}
+}
+
+func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "argument_list" {
+			return parseArgumentsFromDelimitedContent(child.Content(src))
+		}
+	}
+	return nil
+}
+
+func parsePythonParameters(node *sitter.Node, src []byte) []FunctionParameter {
+	if node == nil {
+		return nil
+	}
+
+	content := trimOuterDelimiters(node.Content(src), '(', ')')
+	if content == "" {
+		return nil
+	}
+
+	parts := splitTopLevelCommaList(content)
+	params := make([]FunctionParameter, 0, len(parts))
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean == "" || clean == "/" || clean == "*" {
+			continue
+		}
+		clean = strings.TrimPrefix(clean, "*")
+		clean = strings.TrimPrefix(clean, "*")
+
+		if eq := strings.Index(clean, "="); eq >= 0 {
+			clean = strings.TrimSpace(clean[:eq])
+		}
+
+		paramType := ""
+		if colon := strings.Index(clean, ":"); colon >= 0 {
+			paramType = strings.TrimSpace(clean[colon+1:])
+		}
+		params = append(params, FunctionParameter{Type: paramType})
+	}
+
+	return params
+}
+
+func parsePythonReturnType(defContent string) string {
+	header := defContent
+	if idx := strings.Index(header, "\n"); idx >= 0 {
+		header = header[:idx]
+	}
+	if idx := strings.LastIndex(header, ":"); idx >= 0 {
+		header = header[:idx]
+	}
+	if idx := strings.LastIndex(header, "->"); idx >= 0 {
+		return strings.TrimSpace(header[idx+2:])
+	}
+	return ""
 }

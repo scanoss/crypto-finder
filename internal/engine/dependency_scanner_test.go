@@ -152,17 +152,23 @@ func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
 	depDir := t.TempDir()
 
 	entries := []callgraph.CallChainEntry{
-		{Function: "app.Entry", FilePath: filepath.Join(userTarget, "main.go"), Line: 10},
-		{Function: "dep.Crypto", FilePath: filepath.Join(depDir, "lib.go"), Line: 20},
-		{Function: "other.X", FilePath: "/outside/path.go", Line: 30},
+		{FunctionName: "Entry", Namespace: "app", FilePath: filepath.Join(userTarget, "main.go"), Line: 10},
+		{FunctionName: "Crypto", Namespace: "dep", FilePath: filepath.Join(depDir, "lib.go"), Line: 20},
+		{FunctionName: "X", Namespace: "other", FilePath: "/outside/path.go", Line: 30},
 	}
 
 	normalized := normalizeCallChainPaths(entries, userTarget, &dependency.Dependency{Module: "github.com/acme/dep", Version: "v1", Dir: depDir})
 	if normalized[0].FilePath != "main.go" {
 		t.Fatalf("expected user path to be normalized, got %q", normalized[0].FilePath)
 	}
+	if normalized[0].Namespace != "" {
+		t.Fatalf("expected user namespace to be cleared, got %q", normalized[0].Namespace)
+	}
 	if !strings.HasPrefix(normalized[1].FilePath, "github.com/acme/dep@v1/") {
 		t.Fatalf("expected dependency path prefix, got %q", normalized[1].FilePath)
+	}
+	if normalized[1].Namespace != "dep" {
+		t.Fatalf("expected dependency namespace to be preserved, got %q", normalized[1].Namespace)
 	}
 	if normalized[2].FilePath != "/outside/path.go" {
 		t.Fatalf("outside path should remain unchanged, got %q", normalized[2].FilePath)
@@ -180,7 +186,7 @@ func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
 		"reachable": {
 			Findings: []entities.Finding{{
 				FilePath:            "dep/a.go",
-				CryptographicAssets: []entities.CryptographicAsset{{CallChains: [][]callgraph.CallChainEntry{{{Function: "app.Entry", FilePath: "main.go", Line: 1}}}}},
+				CryptographicAssets: []entities.CryptographicAsset{{CallChains: [][]callgraph.CallChainEntry{{{FunctionName: "Entry", Namespace: "app", FilePath: "main.go", Line: 1}}}}},
 			}},
 		},
 		"unreachable": {

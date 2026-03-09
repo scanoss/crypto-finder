@@ -266,9 +266,37 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		{Function: FunctionID{Package: "app", Name: "main"}, FilePath: "main.go", Line: 1},
 		{Function: FunctionID{Package: "crypto/aes", Name: "NewCipher"}, FilePath: "a.go", Line: 9},
 	}}
-	entries := chain.Entries()
-	if len(entries) != 2 || entries[0].Function != "app.main" {
+	graph := &CallGraph{
+		Functions: map[string]*FunctionDecl{
+			"app.main": {
+				ID:           FunctionID{Package: "app", Name: "main"},
+				FunctionType: "function",
+				OwnerType:    "module",
+				OwnerName:    "app",
+				Calls: []FunctionCall{{
+					Callee:    FunctionID{Package: "crypto/aes", Name: "NewCipher"},
+					Line:      1,
+					Arguments: []string{"\"AES\""},
+				}},
+			},
+			"crypto/aes.NewCipher": {
+				ID:           FunctionID{Package: "crypto/aes", Name: "NewCipher"},
+				FunctionType: "function",
+				OwnerType:    "module",
+				OwnerName:    "crypto/aes",
+				Parameters:   []FunctionParameter{{Type: "string"}},
+			},
+		},
+	}
+	entries := chain.Entries(graph)
+	if len(entries) != 2 || entries[0].FunctionName != "main" {
 		t.Fatalf("unexpected entries: %#v", entries)
+	}
+	if got := entries[1].Parameters[0].Type; got != "string" {
+		t.Fatalf("unexpected parameter type: %q", got)
+	}
+	if got := entries[1].Parameters[0].ArgumentValue; got != "\"AES\"" {
+		t.Fatalf("unexpected argument value: %q", got)
 	}
 	if got := chain.String(); got != "app.main() -> crypto/aes.NewCipher()" {
 		t.Fatalf("unexpected chain string: %s", got)

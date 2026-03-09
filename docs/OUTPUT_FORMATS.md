@@ -10,7 +10,7 @@ The default output format containing detailed cryptographic asset information op
 
 ```json
 {
-  "version": "1.2",
+  "version": "1.3",
   "tool": {
     "name": "crypto-finder",
     "version": "0.1.0"
@@ -48,8 +48,27 @@ The default output format containing detailed cryptographic asset information op
           },
           "call_chains": [
             [
-              {"function": "example.com/app.main", "file": "main.go", "line": 15},
-              {"function": "golang.org/x/crypto/chacha20poly1305.New", "file": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
+              {
+                "function_name": "main",
+                "file": "main.go",
+                "line": 15,
+                "owner_type": "module",
+                "owner_name": "app"
+              },
+              {
+                "function_name": "New",
+                "namespace": "golang.org/x/crypto/chacha20poly1305",
+                "file": "golang.org/x/crypto@v0.17.0/chacha20.go",
+                "line": 42,
+                "owner_type": "type",
+                "owner_name": "chacha20poly1305",
+                "function_type": "function",
+                "return_type": "*Cipher",
+                "parameters": [
+                  {"type": "[]byte", "argument_value": "key"},
+                  {"type": "[]byte", "argument_value": "nonce"}
+                ]
+              }
             ]
           ]
         }
@@ -59,13 +78,13 @@ The default output format containing detailed cryptographic asset information op
 }
 ```
 
-> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 adds `source`, `dependency_info`, and `call_chains` as structured fields for dependency scanning attribution. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
+> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source`, `dependency_info`, and `call_chains` for dependency scanning attribution. Version 1.3 enriches each `call_chains` step with split symbol fields and optional parameter argument bindings. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
 
 ### Field Descriptions
 
 | Field | Description |
 |-------|-------------|
-| `version` | Format version (currently "1.2") |
+| `version` | Format version (currently "1.3") |
 | `tool.name` | Scanner used (crypto-finder) |
 | `tool.version` | Scanner version |
 | `findings` | Array of file-level findings |
@@ -89,7 +108,7 @@ The default output format containing detailed cryptographic asset information op
 | `metadata.algorithmPadding` | Padding scheme used |
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
 | `dependency_info` | Attribution for dependency findings: `module`, `version`, `function` (v1.2+) |
-| `call_chains` | Array of arrays of `{function, file, line}` — all paths from entry point to crypto site (v1.2+) |
+| `call_chains` | Array of arrays of call-chain steps (ordered path from entry point to crypto site) |
 
 ### Example Output
 

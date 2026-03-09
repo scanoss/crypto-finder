@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -208,5 +209,57 @@ func TestComputeRulesHash_ChangesWithContent(t *testing.T) {
 
 	if hash1 == hash2 {
 		t.Error("hash should change when rule content changes")
+	}
+}
+
+func TestComputeRulesHash_DirectoryPath(t *testing.T) {
+	dir := t.TempDir()
+	rulesDir := filepath.Join(dir, "rules")
+	nestedDir := filepath.Join(rulesDir, "go")
+
+	if err := os.MkdirAll(nestedDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	rule1 := filepath.Join(rulesDir, "base.yaml")
+	rule2 := filepath.Join(nestedDir, "crypto.yml")
+	nonRuleFile := filepath.Join(rulesDir, "manifest.json")
+
+	if err := os.WriteFile(rule1, []byte("rule: base"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rule2, []byte("rule: nested"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nonRuleFile, []byte(`{"checksum":"abc"}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	hashFromDir, err := ComputeRulesHash([]string{rulesDir})
+	if err != nil {
+		t.Fatalf("ComputeRulesHash directory: %v", err)
+	}
+	hashFromFiles, err := ComputeRulesHash([]string{rule1, rule2})
+	if err != nil {
+		t.Fatalf("ComputeRulesHash files: %v", err)
+	}
+
+	if hashFromDir != hashFromFiles {
+		t.Errorf("directory hash should match explicit rule file hash: %q != %q", hashFromDir, hashFromFiles)
+	}
+}
+
+func TestComputeRulesHash_DirectoryWithoutRuleFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{}"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ComputeRulesHash([]string{dir})
+	if err == nil {
+		t.Fatal("expected error for directory without rule files")
+	}
+	if !strings.Contains(err.Error(), "no rule files found in directory") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

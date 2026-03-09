@@ -81,3 +81,31 @@ func TestFilterRulesByLanguages(t *testing.T) {
 		t.Fatalf("expected fallback to all rules, got %#v", fallback)
 	}
 }
+
+func TestFilterRulesByLanguages_DirectoryInput(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	rulesDir := filepath.Join(root, "rules")
+	if err := os.MkdirAll(filepath.Join(rulesDir, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	goRule := writeRuleFile(t, rulesDir, "go.yaml", `rules:
+  - id: go-rule
+    languages: [go]
+`)
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "nested"), "python.yaml", `rules:
+  - id: py-rule
+    languages: [python]
+`)
+	_ = writeRuleFile(t, rulesDir, "README.txt", "not-a-rule")
+
+	filtered := filterRulesByLanguages([]string{rulesDir}, []string{"go"})
+	if len(filtered) != 1 {
+		t.Fatalf("filtered len = %d, want 1", len(filtered))
+	}
+	if filtered[0] != goRule {
+		t.Fatalf("expected go rule path, got %#v", filtered)
+	}
+}

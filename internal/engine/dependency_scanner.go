@@ -434,7 +434,7 @@ func (ds *DependencyScanner) attributeFindings(
 				if len(chains) > 0 {
 					asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
 					for k, chain := range chains {
-						asset.CallChains[k] = normalizeCallChainPaths(chain.Entries(), userTarget, dep)
+						asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, dep)
 					}
 				}
 			}
@@ -473,7 +473,7 @@ func (ds *DependencyScanner) enrichUserFindings(
 			if len(chains) > 0 {
 				asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
 				for k, chain := range chains {
-					asset.CallChains[k] = normalizeCallChainPaths(chain.Entries(), userTarget, nil)
+					asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, nil)
 				}
 			}
 		}
@@ -548,6 +548,7 @@ func normalizeCallChainPaths(entries []callgraph.CallChainEntry, userTarget stri
 		// Try user target first
 		if rel, err := filepath.Rel(absUserTarget, absPath); err == nil && !strings.HasPrefix(rel, "..") {
 			result[i].FilePath = rel
+			result[i].Namespace = ""
 			continue
 		}
 

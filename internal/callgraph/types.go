@@ -31,11 +31,21 @@ func (f FunctionID) String() string {
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
-	ID        FunctionID
-	FilePath  string
-	StartLine int
-	EndLine   int
-	Calls     []FunctionCall
+	ID           FunctionID
+	FilePath     string
+	StartLine    int
+	EndLine      int
+	OwnerType    string
+	OwnerName    string
+	FunctionType string
+	ReturnType   string
+	Parameters   []FunctionParameter
+	Calls        []FunctionCall
+}
+
+// FunctionParameter describes a declared function parameter.
+type FunctionParameter struct {
+	Type string
 }
 
 // FunctionCall represents a call expression within a function body.
@@ -48,6 +58,8 @@ type FunctionCall struct {
 	FilePath string
 	// Line is the line number of the call
 	Line int
+	// Arguments are the raw argument expressions passed in this invocation.
+	Arguments []string
 }
 
 // FileAnalysis contains all extracted information from a single source file.
@@ -118,25 +130,155 @@ func ParseFunctionID(s, _ string) (FunctionID, error) {
 }
 
 // CallChainEntry is a JSON-serializable representation of a single call chain step.
-// Unlike CallChainStep (which carries a FunctionID), this type uses a flat function
-// string suitable for structured output in reports.
+// It exposes split symbol fields and optional parameter/argument bindings suitable
+// for downstream ingestion.
 type CallChainEntry struct {
-	Function string `json:"function"`
-	FilePath string `json:"file"`
-	Line     int    `json:"line"`
+	FunctionName string               `json:"function_name"`
+	Namespace    string               `json:"namespace,omitempty"`
+	FilePath     string               `json:"file"`
+	Line         int                  `json:"line"`
+	OwnerType    string               `json:"owner_type,omitempty"`
+	OwnerName    string               `json:"owner_name,omitempty"`
+	FunctionType string               `json:"function_type,omitempty"`
+	ReturnType   string               `json:"return_type,omitempty"`
+	Parameters   []CallChainParameter `json:"parameters,omitempty"`
+}
+
+// CallChainParameter represents a parameter in a call chain node.
+type CallChainParameter struct {
+	Type          string `json:"type,omitempty"`
+	ArgumentValue string `json:"argument_value,omitempty"`
 }
 
 // Entries converts the call chain steps into JSON-serializable CallChainEntry values.
-func (cc CallChain) Entries() []CallChainEntry {
+func (cc CallChain) Entries(graph *CallGraph) []CallChainEntry {
 	entries := make([]CallChainEntry, len(cc.Steps))
 	for i, step := range cc.Steps {
+		entry := CallChainEntry{
+			FunctionName: step.Function.Name,
+			Namespace:    step.Function.Package,
+			FilePath:     step.FilePath,
+			Line:         step.Line,
+		}
+
+		if graph != nil {
+			if fn, ok := graph.Functions[step.Function.String()]; ok {
+				entry.OwnerType = fn.OwnerType
+				entry.OwnerName = fn.OwnerName
+				if entry.OwnerName == "" {
+					entry.OwnerName = fn.ID.Type
+				}
+				entry.FunctionType = fn.FunctionType
+				entry.ReturnType = fn.ReturnType
+				entry.Parameters = mergeDeclAndCallParameters(fn.Parameters, nil)
+			}
+		}
+
+		// Fallback owner metadata when declaration data isn't available.
+		if entry.OwnerName == "" && step.Function.Type != "" {
+			entry.OwnerName = step.Function.Type
+		}
+
+		if i > 0 {
+			args := cc.findInvocationArgs(graph, i)
+			entry.Parameters = mergeDeclAndCallParameters(toDeclaredParameters(entry.Parameters), args)
+		}
+
+		entry.Parameters = compactParameters(entry.Parameters)
 		entries[i] = CallChainEntry{
-			Function: step.Function.String(),
-			FilePath: step.FilePath,
-			Line:     step.Line,
+			FunctionName: entry.FunctionName,
+			Namespace:    entry.Namespace,
+			FilePath:     entry.FilePath,
+			Line:         entry.Line,
+			OwnerType:    entry.OwnerType,
+			OwnerName:    entry.OwnerName,
+			FunctionType: entry.FunctionType,
+			ReturnType:   entry.ReturnType,
+			Parameters:   entry.Parameters,
 		}
 	}
 	return entries
+}
+
+func (cc CallChain) findInvocationArgs(graph *CallGraph, index int) []string {
+	if graph == nil || index <= 0 || index >= len(cc.Steps) {
+		return nil
+	}
+
+	prevStep := cc.Steps[index-1]
+	currStep := cc.Steps[index]
+
+	prevFn, ok := graph.Functions[prevStep.Function.String()]
+	if !ok {
+		return nil
+	}
+
+	calleeKey := currStep.Function.String()
+	var fallback []string
+	for _, call := range prevFn.Calls {
+		if call.Callee.String() != calleeKey {
+			continue
+		}
+		if call.Line == prevStep.Line {
+			return call.Arguments
+		}
+		if fallback == nil {
+			fallback = call.Arguments
+		}
+	}
+
+	return fallback
+}
+
+func mergeDeclAndCallParameters(declared []FunctionParameter, args []string) []CallChainParameter {
+	size := len(declared)
+	if len(args) > size {
+		size = len(args)
+	}
+	if size == 0 {
+		return nil
+	}
+
+	result := make([]CallChainParameter, size)
+	for i := range declared {
+		result[i].Type = strings.TrimSpace(declared[i].Type)
+	}
+	for i := range args {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		result[i].ArgumentValue = arg
+	}
+	return result
+}
+
+func toDeclaredParameters(params []CallChainParameter) []FunctionParameter {
+	if len(params) == 0 {
+		return nil
+	}
+	declared := make([]FunctionParameter, len(params))
+	for i, p := range params {
+		declared[i] = FunctionParameter{Type: p.Type}
+	}
+	return declared
+}
+
+func compactParameters(params []CallChainParameter) []CallChainParameter {
+	if len(params) == 0 {
+		return nil
+	}
+	compacted := make([]CallChainParameter, 0, len(params))
+	for _, p := range params {
+		if strings.TrimSpace(p.Type) == "" && strings.TrimSpace(p.ArgumentValue) == "" {
+			continue
+		}
+		compacted = append(compacted, p)
+	}
+	if len(compacted) == 0 {
+		return nil
+	}
+	return compacted
 }
 
 // String returns a human-readable representation of the call chain.
