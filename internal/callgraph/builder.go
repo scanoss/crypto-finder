@@ -3,6 +3,8 @@ package callgraph
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -119,10 +121,222 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.
 func (b *Builder) buildCallerIndex(graph *CallGraph) {
+	methodsByName := indexMethodsByName(graph)
+
 	for callerKey, fn := range graph.Functions {
 		for _, call := range fn.Calls {
 			calleeKey := call.Callee.String()
-			graph.Callers[calleeKey] = append(graph.Callers[calleeKey], callerKey)
+			addCaller(graph.Callers, calleeKey, callerKey)
+
+			for _, alias := range b.expandInterfaceDispatch(calleeKey, graph, methodsByName) {
+				addCaller(graph.Callers, alias, callerKey)
+			}
+
+			for _, alias := range b.expandFluentFallback(call, graph, methodsByName) {
+				addCaller(graph.Callers, alias, callerKey)
+			}
 		}
 	}
+}
+
+func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
+	index := make(map[string][]*FunctionDecl)
+	for _, fn := range graph.Functions {
+		baseName := methodLookupName(fn.ID.Name)
+		index[baseName] = append(index[baseName], fn)
+	}
+	return index
+}
+
+func addCaller(callers map[string][]string, calleeKey, callerKey string) {
+	existing := callers[calleeKey]
+	for _, candidate := range existing {
+		if candidate == callerKey {
+			return
+		}
+	}
+	callers[calleeKey] = append(existing, callerKey)
+}
+
+// expandInterfaceDispatch links interface method call-sites to concrete implementations
+// with matching method name/arity in the same namespace root.
+func (b *Builder) expandInterfaceDispatch(
+	calleeKey string,
+	graph *CallGraph,
+	methodsByName map[string][]*FunctionDecl,
+) []string {
+	calleeDecl, ok := graph.Functions[calleeKey]
+	if !ok || calleeDecl.OwnerType != "interface" {
+		return nil
+	}
+
+	targets := methodsByName[methodLookupName(calleeDecl.ID.Name)]
+	if len(targets) == 0 {
+		return nil
+	}
+
+	baseRoot := namespaceRoot(calleeDecl.ID.Package)
+	results := make([]string, 0, len(targets))
+	for _, candidate := range targets {
+		if candidate.OwnerType == "interface" {
+			continue
+		}
+		if len(candidate.Parameters) != len(calleeDecl.Parameters) {
+			continue
+		}
+		if namespaceRoot(candidate.ID.Package) != baseRoot {
+			continue
+		}
+		results = append(results, candidate.ID.String())
+	}
+
+	sort.Strings(results)
+	if len(results) > 8 {
+		return results[:8]
+	}
+	return results
+}
+
+// expandFluentFallback links unresolved fluent-chain calls (foo().bar().baz()) to
+// candidate methods by deriving namespace root from the chain's root static call.
+func (b *Builder) expandFluentFallback(
+	call FunctionCall,
+	graph *CallGraph,
+	methodsByName map[string][]*FunctionDecl,
+) []string {
+	calleeKey := call.Callee.String()
+	if _, ok := graph.Functions[calleeKey]; ok {
+		return nil
+	}
+	if !strings.Contains(call.Raw, ").") {
+		return nil
+	}
+
+	rootType, rootMethod, ok := parseFluentRoot(call.Raw)
+	if !ok {
+		return nil
+	}
+	rootPkg := resolveRootPackage(rootType, rootMethod, methodsByName)
+	if rootPkg == "" {
+		return nil
+	}
+
+	targets := methodsByName[methodLookupName(call.Callee.Name)]
+	if len(targets) == 0 {
+		return nil
+	}
+
+	rootNS := namespaceRoot(rootPkg)
+	type scored struct {
+		key   string
+		score int
+	}
+	scoredTargets := make([]scored, 0, len(targets))
+	for _, candidate := range targets {
+		if len(call.Arguments) > 0 && len(candidate.Parameters) != len(call.Arguments) {
+			continue
+		}
+		candidateNS := namespaceRoot(candidate.ID.Package)
+		if candidateNS != rootNS {
+			continue
+		}
+
+		score := 1
+		if candidate.ID.Package == rootPkg {
+			score += 2
+		}
+		if strings.HasSuffix(candidate.ID.Type, "Builder") {
+			score += 1
+		}
+		if strings.Contains(call.Raw, "SignatureAlgorithm.") && strings.Contains(candidate.ID.Package, "io.jsonwebtoken") {
+			score += 2
+		}
+		scoredTargets = append(scoredTargets, scored{
+			key:   candidate.ID.String(),
+			score: score,
+		})
+	}
+
+	if len(scoredTargets) == 0 {
+		return nil
+	}
+
+	sort.SliceStable(scoredTargets, func(i, j int) bool {
+		if scoredTargets[i].score == scoredTargets[j].score {
+			return scoredTargets[i].key < scoredTargets[j].key
+		}
+		return scoredTargets[i].score > scoredTargets[j].score
+	})
+
+	limit := min(6, len(scoredTargets))
+	results := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		results = append(results, scoredTargets[i].key)
+	}
+	return results
+}
+
+func parseFluentRoot(raw string) (rootType, rootMethod string, ok bool) {
+	firstDot := strings.Index(raw, ".")
+	if firstDot <= 0 || firstDot >= len(raw)-1 {
+		return "", "", false
+	}
+	rootType = strings.TrimSpace(raw[:firstDot])
+	rest := raw[firstDot+1:]
+	openParen := strings.Index(rest, "(")
+	if openParen <= 0 {
+		return "", "", false
+	}
+	rootMethod = strings.TrimSpace(rest[:openParen])
+	if rootType == "" || rootMethod == "" || strings.Contains(rootType, "(") {
+		return "", "", false
+	}
+	return rootType, rootMethod, true
+}
+
+func resolveRootPackage(rootType, rootMethod string, methodsByName map[string][]*FunctionDecl) string {
+	candidates := methodsByName[rootMethod]
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	var pkg string
+	for _, fn := range candidates {
+		if methodLookupName(fn.ID.Name) != rootMethod || fn.ID.Type != rootType {
+			continue
+		}
+		if pkg == "" {
+			pkg = fn.ID.Package
+			continue
+		}
+		if pkg != fn.ID.Package {
+			// Ambiguous root package, skip fallback.
+			return ""
+		}
+	}
+	return pkg
+}
+
+func namespaceRoot(pkg string) string {
+	sep := "."
+	if strings.Contains(pkg, "/") && !strings.Contains(pkg, ".") {
+		sep = "/"
+	}
+
+	parts := strings.Split(pkg, sep)
+	if len(parts) >= 2 {
+		return parts[0] + sep + parts[1]
+	}
+	return pkg
+}
+
+func methodLookupName(name string) string {
+	idx := strings.LastIndex(name, "#")
+	if idx <= 0 || idx >= len(name)-1 {
+		return name
+	}
+	if _, err := strconv.Atoi(name[idx+1:]); err != nil {
+		return name
+	}
+	return name[:idx]
 }
