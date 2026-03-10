@@ -166,12 +166,15 @@ func (p *JavaParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 	}
 }
 
-// extractClasses walks top-level class declarations.
+// extractClasses walks top-level class and interface declarations.
 func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
-		if child.Type() == "class_declaration" {
+		switch child.Type() {
+		case "class_declaration":
 			p.processClass(child, src, filePath, analysis, "")
+		case "interface_declaration":
+			p.processInterface(child, src, filePath, analysis, "")
 		}
 	}
 }
@@ -210,12 +213,12 @@ func (p *JavaParser) processClass(node *sitter.Node, src []byte, filePath string
 		}
 	}
 
-	// Walk class body for methods, constructors, and inner classes
+		// Walk class body for methods, constructors, and inner classes
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
 		case "method_declaration":
-			decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, fieldTypes)
+			decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", fieldTypes)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
@@ -226,12 +229,62 @@ func (p *JavaParser) processClass(node *sitter.Node, src []byte, filePath string
 			}
 		case "class_declaration":
 			p.processClass(child, src, filePath, analysis, fullClassName)
+		case "interface_declaration":
+			p.processInterface(child, src, filePath, analysis, fullClassName)
+		}
+	}
+}
+
+// processInterface processes an interface declaration and its methods.
+func (p *JavaParser) processInterface(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, outerType string) {
+	var interfaceName string
+	var body *sitter.Node
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case javaNodeIdentifier:
+			interfaceName = child.Content(src)
+		case "interface_body":
+			body = child
+		}
+	}
+
+	if interfaceName == "" || body == nil {
+		return
+	}
+
+	fullInterfaceName := interfaceName
+	if outerType != "" {
+		fullInterfaceName = outerType + "." + interfaceName
+	}
+
+	for i := 0; i < int(body.ChildCount()); i++ {
+		child := body.Child(i)
+		switch child.Type() {
+		case "method_declaration":
+			decl := p.parseMethodDecl(child, src, filePath, analysis, fullInterfaceName, "interface", nil)
+			if decl != nil {
+				analysis.Functions = append(analysis.Functions, *decl)
+			}
+		case "class_declaration":
+			p.processClass(child, src, filePath, analysis, fullInterfaceName)
+		case "interface_declaration":
+			p.processInterface(child, src, filePath, analysis, fullInterfaceName)
 		}
 	}
 }
 
 // parseMethodDecl parses a Java method declaration.
-func (p *JavaParser) parseMethodDecl(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, className string, fieldTypes map[string]string) *FunctionDecl {
+func (p *JavaParser) parseMethodDecl(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	ownerName string,
+	ownerType string,
+	fieldTypes map[string]string,
+) *FunctionDecl {
 	var name string
 	var body *sitter.Node
 
@@ -249,24 +302,26 @@ func (p *JavaParser) parseMethodDecl(node *sitter.Node, src []byte, filePath str
 		return nil
 	}
 
+	params := p.extractJavaParameterTypes(node, src)
+
 	decl := &FunctionDecl{
 		ID: FunctionID{
 			Package: analysis.PackagePath,
-			Type:    className,
-			Name:    name,
+			Type:    ownerName,
+			Name:    javaMethodWithArity(name, len(params)),
 		},
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
-		OwnerType:    "class",
-		OwnerName:    className,
+		OwnerType:    ownerType,
+		OwnerName:    ownerName,
 		FunctionType: "method",
 		ReturnType:   p.extractMethodReturnType(node, src),
-		Parameters:   p.extractJavaParameterTypes(node, src),
+		Parameters:   params,
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCallsWithFieldTypes(body, src, filePath, analysis, fieldTypes)
+		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, fieldTypes)
 	}
 
 	return decl
@@ -300,25 +355,55 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCallsWithFieldTypes(body, src, filePath, analysis, fieldTypes)
+		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, fieldTypes)
 	}
 
 	return decl
 }
 
 // extractCallsWithFieldTypes walks a method body to find all call expressions,
-// using both class field types and local variable types for resolution.
-func (p *JavaParser) extractCallsWithFieldTypes(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, fieldTypes map[string]string) []FunctionCall {
+// using class fields, method parameters, and local variable types for resolution.
+func (p *JavaParser) extractCallsWithFieldTypes(
+	methodNode *sitter.Node,
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	fieldTypes map[string]string,
+) []FunctionCall {
 	// Merge field types with local variable types (locals take precedence)
 	varTypes := make(map[string]string, len(fieldTypes))
 	for k, v := range fieldTypes {
 		varTypes[k] = v
 	}
+	p.collectParameterTypes(methodNode, src, varTypes)
 	p.collectVarTypes(body, src, varTypes)
 
 	var calls []FunctionCall
 	p.walkForCalls(body, src, filePath, analysis, varTypes, &calls)
 	return calls
+}
+
+// collectParameterTypes records method parameter name -> normalized type mappings.
+func (p *JavaParser) collectParameterTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
+	if varTypes == nil || node == nil {
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != "formal_parameters" {
+			continue
+		}
+
+		for name, typ := range parseJavaParameterMapFromList(child.Content(src)) {
+			if name == "" || typ == "" {
+				continue
+			}
+			varTypes[name] = typ
+		}
+		return
+	}
 }
 
 // collectVarTypes scans a block for local variable declarations and records
@@ -402,27 +487,20 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	var object, method string
 	line := int(node.StartPoint().Row) + 1
 
-	// Re-parse more carefully using the full node structure
-	// method_invocation children: [object, ".", identifier, argument_list]
-	// or: [identifier, argument_list] for simple calls
-	object = ""
-	method = ""
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		switch child.Type() {
-		case javaNodeIdentifier:
-			if method == "" {
-				method = child.Content(src)
-			} else {
-				// Previous "method" was actually the object
-				object = method
-				method = child.Content(src)
+	if objectNode := node.ChildByFieldName("object"); objectNode != nil {
+		object = strings.TrimSpace(objectNode.Content(src))
+	}
+	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
+		method = strings.TrimSpace(nameNode.Content(src))
+	}
+
+	// Fallback for older grammar variants where field names may be absent.
+	if method == "" {
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child.Type() == javaNodeIdentifier {
+				method = strings.TrimSpace(child.Content(src))
 			}
-		case "field_access":
-			object = child.Content(src)
-		case "method_invocation":
-			// Chained call: foo.bar().baz() — the inner call is the object
-			object = child.Content(src)
 		}
 	}
 
@@ -435,8 +513,13 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		raw = object + "." + method
 	}
 
-	callee := p.resolveCallee(object, method, analysis, varTypes)
 	args := p.extractJavaCallArguments(node, src)
+	callee := p.resolveCallee(object, javaMethodWithArity(method, len(args)), analysis, varTypes)
+	if method == "newInstance" {
+		if target, ok := parseReflectionTargetFromArgs(args); ok {
+			callee = target
+		}
+	}
 
 	return &FunctionCall{
 		Callee:    callee,
@@ -541,6 +624,70 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 	return params
 }
 
+func parseJavaParameterMapFromList(listContent string) map[string]string {
+	inner := trimOuterDelimiters(listContent, '(', ')')
+	if inner == "" {
+		return nil
+	}
+
+	parts := splitTopLevelCommaList(inner)
+	params := make(map[string]string, len(parts))
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean == "" {
+			continue
+		}
+
+		clean = strings.TrimSpace(strings.ReplaceAll(clean, "final ", ""))
+		tokens := strings.Fields(clean)
+		if len(tokens) < 2 {
+			continue
+		}
+
+		filtered := make([]string, 0, len(tokens))
+		for _, token := range tokens {
+			if strings.HasPrefix(token, "@") {
+				continue
+			}
+			filtered = append(filtered, token)
+		}
+		if len(filtered) < 2 {
+			continue
+		}
+
+		name := strings.TrimSpace(filtered[len(filtered)-1])
+		typeText := strings.TrimSpace(strings.Join(filtered[:len(filtered)-1], " "))
+		if strings.HasPrefix(name, "...") {
+			name = strings.TrimPrefix(name, "...")
+		}
+		normalizedType := normalizeJavaTypeName(typeText)
+		if name == "" || normalizedType == "" {
+			continue
+		}
+		params[name] = normalizedType
+	}
+
+	if len(params) == 0 {
+		return nil
+	}
+	return params
+}
+
+func normalizeJavaTypeName(typeText string) string {
+	normalized := strings.TrimSpace(typeText)
+	normalized = strings.TrimSuffix(normalized, "...")
+	for strings.HasSuffix(normalized, "[]") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "[]"))
+	}
+	if idx := strings.Index(normalized, "<"); idx > 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	if dot := strings.LastIndex(normalized, "."); dot >= 0 {
+		normalized = normalized[dot+1:]
+	}
+	return strings.TrimSpace(normalized)
+}
+
 func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -629,4 +776,48 @@ func (p *JavaParser) resolveCallee(object, method string, analysis *FileAnalysis
 		Type:    object,
 		Name:    method,
 	}
+}
+
+func parseReflectionTargetFromArgs(args []string) (FunctionID, bool) {
+	if len(args) == 0 {
+		return FunctionID{}, false
+	}
+	className, ok := parseJavaStringLiteral(args[0])
+	if !ok {
+		return FunctionID{}, false
+	}
+	return functionIDFromQualifiedClass(className)
+}
+
+func parseJavaStringLiteral(value string) (string, bool) {
+	clean := strings.TrimSpace(value)
+	if len(clean) < 2 || clean[0] != '"' || clean[len(clean)-1] != '"' {
+		return "", false
+	}
+	unquoted := strings.Trim(clean, "\"")
+	unquoted = strings.TrimSpace(unquoted)
+	if unquoted == "" {
+		return "", false
+	}
+	return unquoted, true
+}
+
+func functionIDFromQualifiedClass(className string) (FunctionID, bool) {
+	lastDot := strings.LastIndex(className, ".")
+	if lastDot <= 0 || lastDot >= len(className)-1 {
+		return FunctionID{}, false
+	}
+
+	return FunctionID{
+		Package: className[:lastDot],
+		Type:    className[lastDot+1:],
+		Name:    constructorMethodName,
+	}, true
+}
+
+func javaMethodWithArity(name string, arity int) string {
+	if name == "" || name == constructorMethodName {
+		return name
+	}
+	return fmt.Sprintf("%s#%d", name, arity)
 }

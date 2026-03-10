@@ -109,18 +109,18 @@ class Outer {
 		if fn.ID.Type == "Outer" && fn.ID.Name == "<init>" {
 			foundCtor = true
 		}
-		if fn.ID.Type == "Outer.Inner" && fn.ID.Name == "run" {
+		if fn.ID.Type == "Outer.Inner" && fn.ID.Name == "run#0" {
 			foundInnerMethod = true
 		}
-		if fn.ID.Type == "Outer" && fn.ID.Name == "encrypt" {
+		if fn.ID.Type == "Outer" && fn.ID.Name == "encrypt#1" {
 			for _, c := range fn.Calls {
-				if c.Callee.Package == "javax.crypto" && c.Callee.Type == "Cipher" && c.Callee.Name == "getInstance" {
+				if c.Callee.Package == "javax.crypto" && c.Callee.Type == "Cipher" && c.Callee.Name == "getInstance#1" {
 					foundStaticCall = true
 				}
-				if c.Callee.Package == "com.example.crypto" && c.Callee.Type == "CryptoService" && c.Callee.Name == "encrypt" {
+				if c.Callee.Package == "com.example.crypto" && c.Callee.Type == "CryptoService" && c.Callee.Name == "encrypt#1" {
 					foundVarTypeCall = true
 				}
-				if c.Callee.Package == "java.security" && c.Callee.Name == "getInstance" {
+				if c.Callee.Package == "java.security" && c.Callee.Name == "getInstance#1" {
 					foundWildcardCall = true
 				}
 				if c.Callee.Name == "<init>" {
@@ -198,5 +198,72 @@ func TestJavaParser_ResolveCalleePaths(t *testing.T) {
 	callee = p.resolveCallee("obj", "call", analysis, nil)
 	if callee.Package != "com.example" || callee.Type != "obj" {
 		t.Fatalf("unexpected fallback callee: %#v", callee)
+	}
+}
+
+func TestJavaParser_InterfaceAndReflectionHandling(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example.crypto;
+
+import io.jsonwebtoken.impl.lang.Classes;
+
+interface Signer {
+    byte[] apply(byte[] in);
+}
+
+class CryptoFlow {
+    byte[] useSigner(Signer signer, byte[] data) {
+        Object builder = Classes.newInstance("io.jsonwebtoken.impl.DefaultJwtBuilder");
+        return signer.apply(data);
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "CryptoFlow.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	var foundInterfaceMethod bool
+	var foundReflectionCtor bool
+	var foundParamTypeResolution bool
+
+	for _, fn := range analyses[0].Functions {
+		if fn.ID.Type == "Signer" && fn.ID.Name == "apply#1" && fn.OwnerType == "interface" {
+			foundInterfaceMethod = true
+		}
+
+		if fn.ID.Type == "CryptoFlow" && fn.ID.Name == "useSigner#2" {
+			for _, c := range fn.Calls {
+				if c.Callee.Package == "io.jsonwebtoken.impl" &&
+					c.Callee.Type == "DefaultJwtBuilder" &&
+					c.Callee.Name == "<init>" {
+					foundReflectionCtor = true
+				}
+				if c.Callee.Package == "com.example.crypto" &&
+					c.Callee.Type == "Signer" &&
+					c.Callee.Name == "apply#1" {
+					foundParamTypeResolution = true
+				}
+			}
+		}
+	}
+
+	if !foundInterfaceMethod {
+		t.Fatal("expected interface method declaration to be parsed")
+	}
+	if !foundReflectionCtor {
+		t.Fatal("expected reflective newInstance string literal to resolve to constructor call")
+	}
+	if !foundParamTypeResolution {
+		t.Fatal("expected method parameter type to resolve interface call target")
 	}
 }

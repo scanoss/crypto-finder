@@ -302,3 +302,101 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatalf("unexpected chain string: %s", got)
 	}
 }
+
+func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {
+	root := t.TempDir()
+
+	callerFn := FunctionDecl{
+		ID:        FunctionID{Package: "app", Type: "Controller", Name: "issue"},
+		FilePath:  filepath.Join(root, "controller.java"),
+		StartLine: 1,
+		EndLine:   20,
+		Calls: []FunctionCall{
+			{
+				Callee:    FunctionID{Package: "io.jsonwebtoken", Type: "JwtBuilder", Name: "signWith"},
+				Raw:       "builder.signWith",
+				FilePath:  filepath.Join(root, "controller.java"),
+				Line:      8,
+				Arguments: []string{"SignatureAlgorithm.HS256", "secret"},
+			},
+			{
+				Callee:    FunctionID{Package: "app", Type: "Jwts.builder().setId(id)", Name: "signWith"},
+				Raw:       "Jwts.builder().setId(id).signWith",
+				FilePath:  filepath.Join(root, "controller.java"),
+				Line:      9,
+				Arguments: []string{"SignatureAlgorithm.HS256", "secret"},
+			},
+		},
+	}
+
+	jwtsBuilder := FunctionDecl{
+		ID:        FunctionID{Package: "io.jsonwebtoken", Type: "Jwts", Name: "builder"},
+		FilePath:  filepath.Join(root, "Jwts.java"),
+		StartLine: 1,
+		EndLine:   5,
+		OwnerType: "class",
+		OwnerName: "Jwts",
+		Parameters: []FunctionParameter{},
+	}
+
+	ifaceSignWith := FunctionDecl{
+		ID:        FunctionID{Package: "io.jsonwebtoken", Type: "JwtBuilder", Name: "signWith"},
+		FilePath:  filepath.Join(root, "JwtBuilder.java"),
+		StartLine: 1,
+		EndLine:   5,
+		OwnerType: "interface",
+		OwnerName: "JwtBuilder",
+		Parameters: []FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
+	}
+
+	implSignWith := FunctionDecl{
+		ID:        FunctionID{Package: "io.jsonwebtoken.impl", Type: "DefaultJwtBuilder", Name: "signWith"},
+		FilePath:  filepath.Join(root, "DefaultJwtBuilder.java"),
+		StartLine: 1,
+		EndLine:   8,
+		OwnerType: "class",
+		OwnerName: "DefaultJwtBuilder",
+		Parameters: []FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
+	}
+
+	parser := &stubParser{
+		sep: ".",
+		analyses: map[string][]*FileAnalysis{
+			root: {
+				{
+					Functions: []FunctionDecl{
+						callerFn,
+						jwtsBuilder,
+						ifaceSignWith,
+						implSignWith,
+					},
+				},
+			},
+		},
+	}
+
+	builder := NewBuilder(parser)
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}})
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	callerKey := callerFn.ID.String()
+	ifaceKey := ifaceSignWith.ID.String()
+	implKey := implSignWith.ID.String()
+
+	if callers := graph.Callers[ifaceKey]; len(callers) == 0 || callers[0] != callerKey {
+		t.Fatalf("expected interface callsite to be indexed, got %#v", callers)
+	}
+
+	foundImplCaller := false
+	for _, caller := range graph.Callers[implKey] {
+		if caller == callerKey {
+			foundImplCaller = true
+			break
+		}
+	}
+	if !foundImplCaller {
+		t.Fatalf("expected interface/fluent fallback to add caller %q for impl method, got %#v", callerKey, graph.Callers[implKey])
+	}
+}
