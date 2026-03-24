@@ -64,7 +64,7 @@ exit 1
 	prependPath(t, binDir)
 
 	r := NewCargoResolver()
-	result, err := r.Resolve(context.Background(), t.TempDir(), -1)
+	result, err := r.Resolve(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -124,7 +124,7 @@ exit 1
 `)
 		prependPath(t, binDir)
 
-		_, err := r.Resolve(context.Background(), t.TempDir(), -1)
+		_, err := r.Resolve(context.Background(), t.TempDir())
 		if err == nil || !strings.Contains(err.Error(), "failed to get cargo metadata") {
 			t.Fatalf("expected wrapped resolve error, got %v", err)
 		}

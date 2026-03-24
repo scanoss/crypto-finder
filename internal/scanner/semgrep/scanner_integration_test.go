@@ -18,8 +18,10 @@ package semgrep
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,24 +32,70 @@ import (
 // checkSemgrepAvailable checks if semgrep is installed.
 func checkSemgrepAvailable(t *testing.T) {
 	t.Helper()
-	_, err := exec.LookPath("semgrep")
+	path, err := exec.LookPath("semgrep")
 	if err != nil {
 		t.Skip("semgrep not found in PATH - skipping integration test (install with: pip install semgrep)")
 	}
+
+	tempDir := t.TempDir()
+	ruleFile := filepath.Join(tempDir, "rule.yaml")
+	targetFile := filepath.Join(tempDir, "main.go")
+
+	if err := os.WriteFile(ruleFile, []byte("rules:\n- id: semgrep-preflight\n  languages: [go]\n  message: preflight\n  severity: INFO\n  pattern: package main\n"), 0o600); err != nil {
+		t.Fatalf("Failed to write semgrep preflight rule: %v", err)
+	}
+	if err := os.WriteFile(targetFile, []byte("package main\n"), 0o600); err != nil {
+		t.Fatalf("Failed to write semgrep preflight target: %v", err)
+	}
+
+	cmd := exec.CommandContext(context.Background(), path, "--json", "--no-git-ignore", "--metrics", "off", "--config", ruleFile, tempDir)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return
+	}
+
+	outputText := string(output)
+	if strings.Contains(outputText, "empty trust anchors") ||
+		strings.Contains(outputText, "X509 authenticator") ||
+		strings.Contains(outputText, "operation not permitted") ||
+		strings.Contains(outputText, "permission denied") {
+		t.Skipf("semgrep is present but unusable in this environment: %s", strings.TrimSpace(outputText))
+	}
+}
+
+func skipIfSemgrepEnvironmentIssue(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "empty trust anchors") ||
+		strings.Contains(errMsg, "X509 authenticator") ||
+		strings.Contains(errMsg, "operation not permitted") ||
+		strings.Contains(errMsg, "permission denied") {
+		t.Skipf("semgrep is present but unusable in this environment: %v", err)
+	}
+}
+
+func initializeScannerOrFail(t *testing.T, config scanner.Config) *Scanner {
+	t.Helper()
+
+	s := NewScanner()
+	if err := s.Initialize(config); err != nil {
+		t.Fatalf("Initialize() failed: %v", err)
+	}
+
+	return s
 }
 
 func TestScanner_Integration_Initialize(t *testing.T) {
 	checkSemgrepAvailable(t)
 
-	s := NewScanner()
 	config := scanner.Config{
 		Timeout: 30 * time.Second,
 	}
-
-	err := s.Initialize(config)
-	if err != nil {
-		t.Fatalf("Initialize() failed: %v", err)
-	}
+	s := initializeScannerOrFail(t, config)
 
 	if s.executablePath == "" {
 		t.Error("Executable path should be set after initialization")
@@ -61,15 +109,10 @@ func TestScanner_Integration_Initialize(t *testing.T) {
 func TestScanner_Integration_Scan(t *testing.T) {
 	checkSemgrepAvailable(t)
 
-	s := NewScanner()
 	config := scanner.Config{
 		Timeout: 30 * time.Second,
 	}
-
-	err := s.Initialize(config)
-	if err != nil {
-		t.Fatalf("Initialize() failed: %v", err)
-	}
+	s := initializeScannerOrFail(t, config)
 
 	// Use our testdata
 	target, err := filepath.Abs("../../../testdata/code/go")
@@ -91,6 +134,7 @@ func TestScanner_Integration_Scan(t *testing.T) {
 	defer cancel()
 
 	report, err := s.Scan(ctx, target, []string{ruleFile}, toolInfo)
+	skipIfSemgrepEnvironmentIssue(t, err)
 	if err != nil {
 		t.Fatalf("Scan() failed: %v", err)
 	}
@@ -142,15 +186,10 @@ func TestScanner_Integration_Scan(t *testing.T) {
 func TestScanner_Integration_GetInfo(t *testing.T) {
 	checkSemgrepAvailable(t)
 
-	s := NewScanner()
 	config := scanner.Config{
 		Timeout: 30 * time.Second,
 	}
-
-	err := s.Initialize(config)
-	if err != nil {
-		t.Fatalf("Initialize() failed: %v", err)
-	}
+	s := initializeScannerOrFail(t, config)
 
 	info := s.GetInfo()
 
@@ -166,15 +205,10 @@ func TestScanner_Integration_GetInfo(t *testing.T) {
 func TestScanner_Integration_Scan_EmptyRules(t *testing.T) {
 	checkSemgrepAvailable(t)
 
-	s := NewScanner()
 	config := scanner.Config{
 		Timeout: 30 * time.Second,
 	}
-
-	err := s.Initialize(config)
-	if err != nil {
-		t.Fatalf("Initialize() failed: %v", err)
-	}
+	s := initializeScannerOrFail(t, config)
 
 	target, err := filepath.Abs("../../../testdata/code")
 	if err != nil {
@@ -187,6 +221,7 @@ func TestScanner_Integration_Scan_EmptyRules(t *testing.T) {
 
 	// Should error with empty rules
 	_, err = s.Scan(ctx, target, []string{}, toolInfo)
+	skipIfSemgrepEnvironmentIssue(t, err)
 
 	if err == nil {
 		t.Error("Expected error when scanning with empty rules")
@@ -196,15 +231,10 @@ func TestScanner_Integration_Scan_EmptyRules(t *testing.T) {
 func TestScanner_Integration_Scan_Timeout(t *testing.T) {
 	checkSemgrepAvailable(t)
 
-	s := NewScanner()
 	config := scanner.Config{
 		Timeout: 1 * time.Nanosecond, // Very short timeout
 	}
-
-	err := s.Initialize(config)
-	if err != nil {
-		t.Fatalf("Initialize() failed: %v", err)
-	}
+	s := initializeScannerOrFail(t, config)
 
 	target, err := filepath.Abs("../../../testdata/code")
 	if err != nil {
@@ -222,6 +252,7 @@ func TestScanner_Integration_Scan_Timeout(t *testing.T) {
 	defer cancel()
 
 	_, err = s.Scan(ctx, target, []string{ruleFile}, toolInfo)
+	skipIfSemgrepEnvironmentIssue(t, err)
 
 	// Should timeout
 	if err == nil {

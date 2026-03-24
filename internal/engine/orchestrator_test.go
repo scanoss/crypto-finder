@@ -125,7 +125,6 @@ func TestOrchestrator_Scan_Success(t *testing.T) {
 						Language: "go",
 						CryptographicAssets: []entities.CryptographicAsset{
 							{
-								MatchType: "semgrep",
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",

@@ -35,10 +35,15 @@ COPY --from=golang:1.26-alpine /usr/local/go /usr/local/go
 ENV GOROOT=/usr/local/go
 
 # ── Java + Maven (for dependency resolution) ──
+COPY --from=eclipse-temurin:8-jdk /opt/java/openjdk /opt/jdks/jdk8
+COPY --from=eclipse-temurin:11-jdk /opt/java/openjdk /opt/jdks/jdk11
+COPY --from=eclipse-temurin:17-jdk /opt/java/openjdk /opt/jdks/jdk17
+COPY --from=eclipse-temurin:21-jdk /opt/java/openjdk /opt/jdks/jdk21
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    default-jdk-headless \
     maven \
     && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/opt/jdks/jdk21
+ENV SCANOSS_JAVA_JDK_HOMES=8=/opt/jdks/jdk8,11=/opt/jdks/jdk11,17=/opt/jdks/jdk17,21=/opt/jdks/jdk21
 
 # ── Rust/Cargo (for dependency resolution only, not compilation) ──
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
@@ -48,7 +53,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 RUN python -m venv /opt/target-venv
 
 # ── Unified PATH ──
-ENV PATH="/opt/target-venv/bin:/usr/local/go/bin:/root/.cargo/bin:$PATH:/root/.opengrep/cli/latest"
+ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/root/.cargo/bin:$PATH:/root/.opengrep/cli/latest"
 
 # Create workspace directory
 WORKDIR /workspace

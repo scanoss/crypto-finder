@@ -19,6 +19,10 @@ type SourceCache struct {
 	baseDir string
 }
 
+func sanitizeSourceCacheKey(key string) string {
+	return strings.ReplaceAll(key, ":", "-")
+}
+
 // NewSourceCache creates a new source cache under ~/.crypto-finder/cache/sources/.
 func NewSourceCache() (*SourceCache, error) {
 	home, err := os.UserHomeDir()
@@ -34,7 +38,7 @@ func NewSourceCache() (*SourceCache, error) {
 
 // CachedDir returns the cached directory for a dependency, or "" if not cached.
 func (c *SourceCache) CachedDir(key, version string) string {
-	dir := filepath.Join(c.baseDir, key, version)
+	dir := filepath.Join(c.baseDir, sanitizeSourceCacheKey(key), version)
 	if info, err := os.Stat(dir); err == nil && info.IsDir() {
 		return dir
 	}
@@ -46,7 +50,7 @@ func (c *SourceCache) CachedDir(key, version string) string {
 // all files are extracted.
 // Returns the extracted directory path, or error.
 func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []string) (string, error) {
-	destDir := filepath.Join(c.baseDir, key, version)
+	destDir := filepath.Join(c.baseDir, sanitizeSourceCacheKey(key), version)
 
 	// If already extracted, return immediately
 	if info, err := os.Stat(destDir); err == nil && info.IsDir() {

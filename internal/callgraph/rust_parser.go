@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/rust"
@@ -14,19 +15,25 @@ import (
 // RustParser extracts function declarations, calls, and imports from Rust source files
 // using tree-sitter for fast, accurate parsing.
 type RustParser struct {
-	parser *sitter.Parser
+	parser       *sitter.Parser
+	includeTests bool
 }
 
 // NewRustParser creates a new Rust source parser backed by tree-sitter.
-func NewRustParser() *RustParser {
+func NewRustParser(opts ...ParserOption) *RustParser {
+	cfg := newParserConfig(opts)
 	p := sitter.NewParser()
 	p.SetLanguage(rust.GetLanguage())
-	return &RustParser{parser: p}
+	return &RustParser{parser: p, includeTests: cfg.includeTests}
 }
 
 // SkipDirs returns directory names to skip during Rust source traversal.
 func (p *RustParser) SkipDirs() map[string]bool {
-	return map[string]bool{"target": true, "tests": true, "benches": true, "examples": true}
+	skip := map[string]bool{"target": true, "benches": true, "examples": true}
+	if !p.includeTests {
+		skip["tests"] = true
+	}
+	return skip
 }
 
 // SubPackagePath constructs a child module path using "::" separator.
@@ -48,7 +55,7 @@ func (p *RustParser) PackageSeparator() string {
 	return "::"
 }
 
-// ParseDirectory parses all .rs files in a directory (excluding test files).
+// ParseDirectory parses all .rs files in a directory.
 func (p *RustParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -64,8 +71,7 @@ func (p *RustParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, e
 		if !strings.HasSuffix(name, ".rs") {
 			continue
 		}
-		// Skip test files
-		if strings.HasSuffix(name, "_test.rs") || name == "tests.rs" {
+		if !p.includeTests && (strings.HasSuffix(name, "_test.rs") || name == "tests.rs") {
 			continue
 		}
 
@@ -144,7 +150,7 @@ func (p *RustParser) processUseDecl(node *sitter.Node, src []byte, analysis *Fil
 			}
 		case "scoped_use_list":
 			// e.g., `use ring::aead::{Aead, AeadCore};`
-			p.processScopedUseList(child, src, analysis)
+			p.processScopedUseList(child, src, analysis, "")
 		case "use_wildcard":
 			// e.g., `use ring::aead::*;` — record as wildcard import
 			if prefix != "" {
@@ -155,7 +161,7 @@ func (p *RustParser) processUseDecl(node *sitter.Node, src []byte, analysis *Fil
 }
 
 // processScopedUseList handles `path::{item1, item2}` patterns.
-func (p *RustParser) processScopedUseList(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+func (p *RustParser) processScopedUseList(node *sitter.Node, src []byte, analysis *FileAnalysis, prefix string) {
 	var basePath string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -164,27 +170,50 @@ func (p *RustParser) processScopedUseList(node *sitter.Node, src []byte, analysi
 		case javaNodeScopedIdentifier, goNodeIdentifier:
 			basePath = child.Content(src)
 		case "use_list":
-			// Process each item in the list
-			for j := 0; j < int(child.ChildCount()); j++ {
-				item := child.Child(j)
-				switch item.Type() {
-				case goNodeIdentifier:
-					name := item.Content(src)
-					analysis.Imports[name] = basePath
-				case javaNodeScopedIdentifier:
-					fullPath := item.Content(src)
-					lastSep := strings.LastIndex(fullPath, "::")
-					if lastSep > 0 {
-						name := fullPath[lastSep+2:]
-						analysis.Imports[name] = basePath + "::" + fullPath[:lastSep]
-					}
-				case "scoped_use_list":
-					// Nested use list
-					p.processScopedUseList(item, src, analysis)
-				}
-			}
+			combinedPrefix := combineRustUsePrefix(prefix, basePath)
+			p.processRustUseList(child, src, analysis, combinedPrefix)
 		}
 	}
+}
+
+func combineRustUsePrefix(prefix, basePath string) string {
+	if prefix == "" {
+		return basePath
+	}
+	if basePath == "" {
+		return prefix
+	}
+	return prefix + "::" + basePath
+}
+
+func (p *RustParser) processRustUseList(node *sitter.Node, src []byte, analysis *FileAnalysis, combinedPrefix string) {
+	for j := 0; j < int(node.ChildCount()); j++ {
+		p.processRustUseListItem(node.Child(j), src, analysis, combinedPrefix)
+	}
+}
+
+func (p *RustParser) processRustUseListItem(item *sitter.Node, src []byte, analysis *FileAnalysis, combinedPrefix string) {
+	switch item.Type() {
+	case goNodeIdentifier:
+		analysis.Imports[item.Content(src)] = combinedPrefix
+	case javaNodeScopedIdentifier:
+		p.recordRustScopedImport(item.Content(src), analysis, combinedPrefix)
+	case "scoped_use_list":
+		p.processScopedUseList(item, src, analysis, combinedPrefix)
+	}
+}
+
+func (p *RustParser) recordRustScopedImport(fullPath string, analysis *FileAnalysis, combinedPrefix string) {
+	lastSep := strings.LastIndex(fullPath, "::")
+	if lastSep <= 0 {
+		return
+	}
+	name := fullPath[lastSep+2:]
+	importPath := fullPath[:lastSep]
+	if combinedPrefix != "" {
+		importPath = combinedPrefix + "::" + importPath
+	}
+	analysis.Imports[name] = importPath
 }
 
 // extractDeclarations walks top-level items for functions and impl blocks.
@@ -256,7 +285,8 @@ func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, 
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, src, filePath, analysis)
+		varTypes := collectRustVarTypes(paramsNode, body, src)
+		decl.Calls = p.extractCalls(body, src, filePath, analysis, typeName, varTypes)
 	}
 
 	return decl
@@ -320,26 +350,26 @@ func (p *RustParser) extractTypeName(node *sitter.Node, src []byte) string {
 }
 
 // extractCalls walks a function body to find all call expressions.
-func (p *RustParser) extractCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) []FunctionCall {
+func (p *RustParser) extractCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) []FunctionCall {
 	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, &calls)
+	p.walkForCalls(body, src, filePath, analysis, currentReceiverType, varTypes, &calls)
 	return calls
 }
 
-func (p *RustParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, calls *[]FunctionCall) {
+func (p *RustParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, calls *[]FunctionCall) {
 	if node.Type() == "call_expression" {
-		if call := p.parseCallExpr(node, src, filePath, analysis); call != nil {
+		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, varTypes); call != nil {
 			*calls = append(*calls, *call)
 		}
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, calls)
+		p.walkForCalls(node.Child(i), src, filePath, analysis, currentReceiverType, varTypes, calls)
 	}
 }
 
 // parseCallExpr parses a call_expression into a FunctionCall.
-func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) *FunctionCall {
+func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) *FunctionCall {
 	if node.ChildCount() == 0 {
 		return nil
 	}
@@ -375,7 +405,7 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 		}
 	case "field_expression":
 		// Method call like `self.encrypt(...)` or `obj.method(...)`
-		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis)
+		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, varTypes)
 	}
 
 	return nil
@@ -422,6 +452,32 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 	}
 
 	// Fallback: treat the full prefix as the package path
+	if lastTypeSep := strings.LastIndex(prefix, "::"); lastTypeSep > 0 {
+		typeName := prefix[lastTypeSep+2:]
+		if looksLikeRustTypeName(typeName) {
+			return &FunctionCall{
+				Callee: FunctionID{
+					Package: prefix[:lastTypeSep],
+					Type:    typeName,
+					Name:    name,
+				},
+				Raw:       content,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
+		}
+
+		return &FunctionCall{
+			Callee:    FunctionID{Package: prefix, Name: name},
+			Raw:       content,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
+		}
+	}
+
+	// Fallback: treat the full prefix as the package path
 	return &FunctionCall{
 		Callee:    FunctionID{Package: prefix, Name: name},
 		Raw:       content,
@@ -431,8 +487,20 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 	}
 }
 
+func looksLikeRustTypeName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+
+	for _, r := range name {
+		return unicode.IsUpper(r)
+	}
+	return false
+}
+
 // parseFieldCall handles method calls like `obj.method()` or `self.method()`.
-func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
+func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) *FunctionCall {
 	var object, field string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -456,7 +524,36 @@ func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath stri
 	// "self" calls are local method calls
 	if object == "self" {
 		return &FunctionCall{
-			Callee:    FunctionID{Package: analysis.PackagePath, Name: field},
+			Callee:    FunctionID{Package: analysis.PackagePath, Type: currentReceiverType, Name: field},
+			Raw:       raw,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
+		}
+	}
+
+	if inferredType, ok := varTypes[object]; ok && inferredType != "" {
+		if pkg, typ, ok := splitQualifiedRustType(inferredType); ok {
+			pkg = resolveRustTypePackage(pkg, analysis)
+			return &FunctionCall{
+				Callee:    FunctionID{Package: pkg, Type: typ, Name: field},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
+		}
+		if pkg, ok := analysis.Imports[inferredType]; ok {
+			return &FunctionCall{
+				Callee:    FunctionID{Package: pkg, Type: inferredType, Name: field},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
+		}
+		return &FunctionCall{
+			Callee:    FunctionID{Package: analysis.PackagePath, Type: inferredType, Name: field},
 			Raw:       raw,
 			FilePath:  filePath,
 			Line:      line,
@@ -494,11 +591,176 @@ func (p *RustParser) extractRustCallArguments(node *sitter.Node, src []byte) []s
 	return nil
 }
 
+func collectRustVarTypes(paramsNode, body *sitter.Node, src []byte) map[string]string {
+	varTypes := collectRustParameterTypes(paramsNode, src)
+	collectRustLocalVarTypes(body, src, varTypes)
+	return varTypes
+}
+
+func collectRustParameterTypes(node *sitter.Node, src []byte) map[string]string {
+	if node == nil {
+		return map[string]string{}
+	}
+	content := trimOuterParens(node.Content(src))
+	if content == "" {
+		return map[string]string{}
+	}
+
+	varTypes := make(map[string]string)
+	for _, part := range splitTopLevelCommaList(content) {
+		name, typ, isSelf := parseRustParameterBinding(part)
+		if isSelf || name == "" || typ == "" {
+			continue
+		}
+		varTypes[name] = typ
+	}
+	return varTypes
+}
+
+func parseRustParameterBinding(part string) (name, typ string, isSelf bool) {
+	clean := strings.TrimSpace(part)
+	if clean == "" {
+		return "", "", false
+	}
+	if strings.Contains(clean, "self") {
+		return "", "", true
+	}
+	idx := strings.Index(clean, ":")
+	if idx <= 0 {
+		return "", "", false
+	}
+	name = strings.TrimSpace(clean[:idx])
+	name = strings.TrimPrefix(name, "mut ")
+	name = strings.TrimPrefix(name, "ref ")
+	name = strings.TrimPrefix(name, "&")
+	name = strings.TrimSpace(name)
+	typ = strings.TrimSpace(clean[idx+1:])
+	return name, normalizeRustTypeText(typ), false
+}
+
+func collectRustLocalVarTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
+	if node == nil {
+		return
+	}
+	if node.Type() == "let_declaration" {
+		name, typ := parseRustLetBinding(node.Content(src))
+		if name != "" && typ != "" {
+			varTypes[name] = typ
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectRustLocalVarTypes(node.Child(i), src, varTypes)
+	}
+}
+
+func parseRustLetBinding(content string) (name, typ string) {
+	clean := strings.TrimSpace(strings.TrimSuffix(content, ";"))
+	clean = strings.TrimPrefix(clean, "let ")
+	clean = strings.TrimSpace(clean)
+	if clean == "" {
+		return "", ""
+	}
+	if idx := strings.Index(clean, "="); idx >= 0 {
+		left := strings.TrimSpace(clean[:idx])
+		right := strings.TrimSpace(clean[idx+1:])
+		name, typ = parseRustTypedBinding(left)
+		if name != "" && typ != "" {
+			return name, typ
+		}
+		name = sanitizeRustBindingName(left)
+		return name, inferRustTypeFromExpr(right)
+	}
+	name, typ = parseRustTypedBinding(clean)
+	return name, typ
+}
+
+func parseRustTypedBinding(left string) (name, typ string) {
+	idx := strings.Index(left, ":")
+	if idx < 0 {
+		return "", ""
+	}
+	name = sanitizeRustBindingName(left[:idx])
+	typ = normalizeRustTypeText(left[idx+1:])
+	return name, typ
+}
+
+func sanitizeRustBindingName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "mut ")
+	name = strings.TrimPrefix(name, "ref ")
+	name = strings.TrimPrefix(name, "&")
+	name = strings.TrimSpace(name)
+	return name
+}
+
+func inferRustTypeFromExpr(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return ""
+	}
+	if idx := strings.Index(expr, "."); idx >= 0 {
+		expr = strings.TrimSpace(expr[:idx])
+	}
+	if idx := strings.Index(expr, "("); idx >= 0 {
+		expr = strings.TrimSpace(expr[:idx])
+	}
+	lastSep := strings.LastIndex(expr, "::")
+	if lastSep <= 0 {
+		return ""
+	}
+	return normalizeRustTypeText(expr[:lastSep])
+}
+
+func normalizeRustTypeText(typeText string) string {
+	typeText = strings.TrimSpace(typeText)
+	if typeText == "" {
+		return ""
+	}
+	typeText = strings.TrimPrefix(typeText, "&")
+	typeText = strings.TrimPrefix(typeText, "mut ")
+	typeText = strings.TrimSpace(typeText)
+	if strings.HasPrefix(typeText, "(") && strings.HasSuffix(typeText, ")") {
+		typeText = strings.TrimSpace(typeText[1 : len(typeText)-1])
+	}
+	if idx := strings.Index(typeText, "<"); idx >= 0 {
+		typeText = strings.TrimSpace(typeText[:idx])
+	}
+	return strings.TrimSpace(typeText)
+}
+
+func splitQualifiedRustType(typeName string) (pkg, typ string, ok bool) {
+	typeName = strings.TrimSpace(typeName)
+	lastSep := strings.LastIndex(typeName, "::")
+	if lastSep <= 0 || lastSep >= len(typeName)-2 {
+		return "", "", false
+	}
+	return typeName[:lastSep], typeName[lastSep+2:], true
+}
+
+func resolveRustTypePackage(pkg string, analysis *FileAnalysis) string {
+	if pkg == "" {
+		return pkg
+	}
+	if importedPkg, ok := analysis.Imports[pkg]; ok {
+		if strings.Contains(importedPkg, "::") {
+			return importedPkg
+		}
+		return importedPkg + "::" + pkg
+	}
+	if firstSep := strings.Index(pkg, "::"); firstSep > 0 {
+		firstSegment := pkg[:firstSep]
+		if importedPkg, ok := analysis.Imports[firstSegment]; ok {
+			return importedPkg + "::" + pkg[firstSep+2:]
+		}
+	}
+	return pkg
+}
+
 func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bool) {
 	if node == nil {
 		return nil, false
 	}
-	content := trimOuterDelimiters(node.Content(src), '(', ')')
+	content := trimOuterParens(node.Content(src))
 	if content == "" {
 		return nil, false
 	}

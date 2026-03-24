@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"runtime"
-	"strings"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,18 +16,21 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/skip"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // maxWorkers caps the number of concurrent dependency scans to avoid
 // overwhelming the system with too many opengrep processes.
 const maxWorkers = 8
 
+const (
+	findingSourceDependency = "dependency"
+	findingSourceDirect     = "direct"
+)
+
 // DepScanOptions configures the dependency scanning behavior.
 type DepScanOptions struct {
-	// MaxDepth limits recursive dependency resolution (-1 for unlimited).
-	MaxDepth int
-	// IncludeUnreachable includes crypto findings in deps not reachable from user code call graph.
-	IncludeUnreachable bool
 	// ScanOptions are the base scan options to reuse for each dependency scan.
 	ScanOptions ScanOptions
 	// Workers is the number of concurrent dependency scans (0 = default to NumCPU/2, capped at 8).
@@ -61,17 +66,29 @@ func NewDependencyScanner(
 // DepScanResult holds the aggregated result of the dependency scanning pipeline.
 // It surfaces the crypto-scoped call graph so callers can export or inspect it.
 type DepScanResult struct {
-	Report     *entities.InterimReport
-	CallGraph  *callgraph.CallGraph
-	RootModule string
-	Ecosystem  string
+	Report       *entities.InterimReport
+	CallGraph    *callgraph.CallGraph
+	RootModule   string
+	Ecosystem    string
+	ProjectRoot  string
+	Dependencies []dependency.Dependency
 }
 
-// depScanResult holds the result of scanning a single dependency.
+type depScanStatus int
+
+const (
+	depScanStatusScanned depScanStatus = iota
+	depScanStatusSkippedNoSource
+	depScanStatusFailed
+)
+
+// depScanResult holds the result of handling a single dependency.
 type depScanResult struct {
+	index  int
 	key    string
-	dep    *dependency.Dependency
+	dep    dependency.Dependency
 	report *entities.InterimReport
+	status depScanStatus
 	err    error
 }
 
@@ -89,98 +106,156 @@ func (ds *DependencyScanner) ScanWithDependencies(
 ) (*DepScanResult, error) {
 	pipelineStart := time.Now()
 
-	// Step 1: Resolve dependencies
-	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
-	resolved, err := ds.resolver.Resolve(ctx, opts.ScanOptions.Target, opts.MaxDepth)
+	resolved, filteredRulePaths, rulesHash, err := ds.prepareDependencyScan(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("dependency resolution failed: %w", err)
+		return nil, err
 	}
-	log.Info().
-		Int("deps", len(resolved.Dependencies)).
-		Msg("Resolved dependencies")
-
 	if len(resolved.Dependencies) == 0 {
-		log.Info().Msg("No dependencies found, skipping dependency scan")
-		return &DepScanResult{
-			Report:     userReport,
-			RootModule: resolved.RootModule,
-			Ecosystem:  ds.resolver.Ecosystem(),
-		}, nil
+		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
 
-	// Step 2: Pre-load rules once and filter by ecosystem language
+	depResults := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
+	logDependencyScanSummary(summarizeDependencyResults(depResults))
+
+	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build call graph: %w", err)
+	}
+
+	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
+	userPackages := ds.buildUserPackages(resolved)
+	ds.attributeDependencyResults(depResults, opts.ScanOptions.Target, tracer, userPackages)
+	result := ds.mergeReports(userReport, depResults)
+
+	pipelineDuration := time.Since(pipelineStart)
+	log.Info().
+		Str("duration", utils.HumanDuration(pipelineDuration)).
+		Int64("duration_ms", pipelineDuration.Milliseconds()).
+		Msg("Total dependency scan pipeline")
+
+	return &DepScanResult{
+		Report:       result,
+		CallGraph:    graph,
+		RootModule:   resolved.RootModule,
+		Ecosystem:    ds.resolver.Ecosystem(),
+		ProjectRoot:  opts.ScanOptions.Target,
+		Dependencies: canonicalDependencies(resolved.Dependencies),
+	}, nil
+}
+
+func (ds *DependencyScanner) prepareDependencyScan(
+	ctx context.Context,
+	opts DepScanOptions,
+) (*dependency.ResolveResult, []string, string, error) {
+	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
+	resolved, err := ds.resolver.Resolve(ctx, opts.ScanOptions.Target)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("dependency resolution failed: %w", err)
+	}
+	log.Info().Int("deps", len(resolved.Dependencies)).Msg("Resolved dependencies")
+	if len(resolved.Dependencies) == 0 {
+		return resolved, nil, "", nil
+	}
+
 	filteredRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem())
 	if err != nil {
-		return nil, fmt.Errorf("failed to load rules for dependency scanning: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to load rules for dependency scanning: %w", err)
 	}
 	log.Info().
 		Int("rules", len(filteredRulePaths)).
 		Str("ecosystem", ds.resolver.Ecosystem()).
 		Msg("Filtered rules by language")
 
-	// Compute rules hash for cache keying (once per scan, not per-dep)
-	var rulesHash string
-	if ds.findingsCache != nil {
-		rulesHash, err = ComputeRulesHash(filteredRulePaths)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to compute rules hash, findings cache disabled for this scan")
-			rulesHash = ""
-		}
+	return resolved, filteredRulePaths, ds.computeRulesHash(filteredRulePaths), nil
+}
+
+func (ds *DependencyScanner) computeRulesHash(rulePaths []string) string {
+	if ds.findingsCache == nil {
+		return ""
 	}
+	rulesHash, err := ComputeRulesHash(rulePaths)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to compute rules hash, findings cache disabled for this scan")
+		return ""
+	}
+	return rulesHash
+}
 
-	// Step 3: Scan dependencies in parallel
-	depReports, depMap := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
+func (ds *DependencyScanner) emptyDependencyScanResult(
+	userReport *entities.InterimReport,
+	resolved *dependency.ResolveResult,
+	opts DepScanOptions,
+) *DepScanResult {
+	log.Info().Msg("No dependencies found, skipping dependency scan")
+	return &DepScanResult{
+		Report:      userReport,
+		RootModule:  resolved.RootModule,
+		Ecosystem:   ds.resolver.Ecosystem(),
+		ProjectRoot: opts.ScanOptions.Target,
+	}
+}
 
-	// Count findings across all deps
-	depsWithFindings := 0
-	totalDepFindings := 0
-	for _, report := range depReports {
-		if hasFindings(report) {
-			depsWithFindings++
-			for _, f := range report.Findings {
-				totalDepFindings += len(f.CryptographicAssets)
+type dependencyScanSummary struct {
+	depsWithFindings  int
+	totalDepFindings  int
+	depsScanned       int
+	depsSkippedSource int
+	depsFailed        int
+}
+
+func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummary {
+	summary := dependencyScanSummary{}
+	for _, result := range depResults {
+		switch result.status {
+		case depScanStatusScanned:
+			summary.depsScanned++
+		case depScanStatusSkippedNoSource:
+			summary.depsSkippedSource++
+		case depScanStatusFailed:
+			summary.depsFailed++
+		}
+		if result.report != nil && hasFindings(result.report) {
+			summary.depsWithFindings++
+			for _, f := range result.report.Findings {
+				summary.totalDepFindings += len(f.CryptographicAssets)
 			}
 		}
 	}
+	return summary
+}
 
+func logDependencyScanSummary(summary dependencyScanSummary) {
 	log.Info().
-		Int("depsScanned", len(depReports)).
-		Int("depsWithFindings", depsWithFindings).
-		Int("totalDepFindings", totalDepFindings).
+		Int("depsScanned", summary.depsScanned).
+		Int("depsSkippedNoSource", summary.depsSkippedSource).
+		Int("depsFailed", summary.depsFailed).
+		Int("depsWithFindings", summary.depsWithFindings).
+		Int("totalDepFindings", summary.totalDepFindings).
 		Msg("Dependency scanning complete")
+}
 
-	// Step 4: Build call graph (user code + deps with findings)
-	// Always build the graph when dependency scanning is enabled — even with zero
-	// dependency findings, call chain enrichment of user code findings is valuable.
-	packages := ds.collectPackageDirs(opts.ScanOptions.Target, resolved, depReports, depMap)
-	graph, err := ds.cgBuilder.BuildFromDirectories(packages)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build call graph: %w", err)
+func (ds *DependencyScanner) buildDependencyCallGraph(
+	userTarget string,
+	resolved *dependency.ResolveResult,
+	depResults []depScanResult,
+) (*callgraph.CallGraph, error) {
+	sets := ds.collectPackageSets(userTarget, resolved, depResults)
+	return ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
+}
+
+func (ds *DependencyScanner) attributeDependencyResults(
+	depResults []depScanResult,
+	target string,
+	tracer *callgraph.Tracer,
+	userPackages map[string]bool,
+) {
+	for _, result := range depResults {
+		if result.status != depScanStatusScanned || result.report == nil {
+			continue
+		}
+		dep := result.dep
+		ds.attributeFindings(result.report, &dep, target, tracer, userPackages)
 	}
-
-	// Step 5: Trace findings and add attribution metadata
-	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
-	userPackages := ds.buildUserPackages(resolved)
-
-	for key, report := range depReports {
-		dep := depMap[key]
-		ds.attributeFindings(report, dep, opts.ScanOptions.Target, tracer, userPackages)
-	}
-
-	// Also enrich user code findings with call chain info
-	ds.enrichUserFindings(userReport, opts.ScanOptions.Target, tracer, userPackages)
-
-	// Step 6: Merge dependency findings into user report
-	result := ds.mergeReports(userReport, depReports, opts.IncludeUnreachable)
-
-	log.Info().Dur("duration", time.Since(pipelineStart)).Msg("Total dependency scan pipeline")
-
-	return &DepScanResult{
-		Report:     result,
-		CallGraph:  graph,
-		RootModule: resolved.RootModule,
-		Ecosystem:  ds.resolver.Ecosystem(),
-	}, nil
 }
 
 // loadFilteredRules loads all rules from the manager and filters them to only
@@ -207,29 +282,49 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
-) (map[string]*entities.InterimReport, map[string]*dependency.Dependency) {
+) []depScanResult {
 	workers := opts.Workers
 	if workers <= 0 {
 		workers = min(max(runtime.NumCPU()/2, 1), maxWorkers)
 	}
 
-	// Deduplicate deps by module@version
+	orderedDeps := canonicalDependencies(deps)
+
 	type depWork struct {
-		key string
-		dep *dependency.Dependency
+		index int
+		key   string
+		dep   dependency.Dependency
 	}
-	seen := make(map[string]bool)
-	work := make([]depWork, 0, len(deps))
-	for i := range deps {
-		key := deps[i].Module + "@" + deps[i].Version
-		if seen[key] {
+	outcomes := make([]depScanResult, len(orderedDeps))
+	work := make([]depWork, 0, len(orderedDeps))
+	for i, dep := range orderedDeps {
+		key := dependencyKey(dep)
+		if dep.Dir == "" {
+			outcomes[i] = depScanResult{
+				index:  i,
+				key:    key,
+				dep:    dep,
+				status: depScanStatusSkippedNoSource,
+			}
+			log.Info().
+				Str("module", dep.Module).
+				Str("version", dep.Version).
+				Msg("Skipping dependency source scan: no local source directory")
 			continue
 		}
-		seen[key] = true
-		work = append(work, depWork{key: key, dep: &deps[i]})
+
+		work = append(work, depWork{index: i, key: key, dep: dep})
 	}
 
-	log.Info().Int("deps", len(work)).Int("workers", workers).Msg("Starting parallel dependency scanning")
+	log.Info().
+		Int("deps", len(orderedDeps)).
+		Int("scannableDeps", len(work)).
+		Int("workers", workers).
+		Msg("Starting parallel dependency scanning")
+
+	if len(work) == 0 {
+		return outcomes
+	}
 
 	// Worker pool
 	workCh := make(chan depWork, len(work))
@@ -242,6 +337,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 			defer wg.Done()
 			for item := range workCh {
 				result := ds.scanSingleDep(ctx, item.dep, item.key, rulePaths, rulesHash, opts)
+				result.index = item.index
 				resultCh <- result
 			}
 		}()
@@ -260,18 +356,14 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	}()
 
 	// Collect results
-	depReports := make(map[string]*entities.InterimReport, len(work))
-	depMap := make(map[string]*dependency.Dependency, len(work))
 	for result := range resultCh {
 		if result.err != nil {
-			log.Warn().Err(result.err).Str("module", result.dep.Module).Msg("Failed to scan dependency, skipping")
-			continue
+			log.Warn().Err(result.err).Str("module", result.dep.Module).Msg("Failed to scan dependency source")
 		}
-		depReports[result.key] = result.report
-		depMap[result.key] = result.dep
+		outcomes[result.index] = result
 	}
 
-	return depReports, depMap
+	return outcomes
 }
 
 // scanSingleDep scans a single dependency using the orchestrator.
@@ -279,13 +371,16 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 // before scanning and stores the result after a successful scan.
 func (ds *DependencyScanner) scanSingleDep(
 	ctx context.Context,
-	dep *dependency.Dependency,
+	dep dependency.Dependency,
 	key string,
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
 ) depScanResult {
 	cacheKey := key + ":" + rulesHash
+	if opts.ScanOptions.JavaRuntimeCacheToken != "" {
+		cacheKey += ":" + opts.ScanOptions.JavaRuntimeCacheToken
+	}
 
 	// Check cache
 	if ds.findingsCache != nil && rulesHash != "" {
@@ -294,7 +389,7 @@ func (ds *DependencyScanner) scanSingleDep(
 				Str("module", dep.Module).
 				Str("version", dep.Version).
 				Msg("Cache hit for dependency scan")
-			return depScanResult{key: key, dep: dep, report: report}
+			return depScanResult{key: key, dep: dep, report: report, status: depScanStatusScanned}
 		} else if err != nil {
 			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
 		}
@@ -302,7 +397,7 @@ func (ds *DependencyScanner) scanSingleDep(
 
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	depOpts := ds.buildDepScanOptions(dep, rulePaths, opts)
+	depOpts := ds.buildDepScanOptions(&dep, rulePaths, opts)
 	report, err := ds.orchestrator.Scan(ctx, depOpts)
 	log.Info().
 		Str("module", dep.Module).
@@ -320,8 +415,16 @@ func (ds *DependencyScanner) scanSingleDep(
 		key:    key,
 		dep:    dep,
 		report: report,
+		status: scanStatusForError(err),
 		err:    err,
 	}
+}
+
+func scanStatusForError(err error) depScanStatus {
+	if err != nil {
+		return depScanStatusFailed
+	}
+	return depScanStatusScanned
 }
 
 // buildDepScanOptions creates ScanOptions for scanning a specific dependency.
@@ -332,54 +435,66 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	depOpts.RulePaths = rulePaths
 	// Set language hint so the orchestrator skips language detection
 	depOpts.LanguageHint = ecosystemToLanguages(ds.resolver.Ecosystem())
-	// Clear skip patterns for dependency scanning — we want to scan everything
-	depOpts.ScannerConfig.SkipPatterns = nil
+	// Preserve only built-in test exclusions for dependency scans. Other user/project
+	// skip patterns should not hide dependency source files.
+	depOpts.ScannerConfig.SkipPatterns = skip.OnlyDefaultTestPatterns(depOpts.ScannerConfig.SkipPatterns)
 	return depOpts
 }
 
-// collectPackageDirs builds the list of PackageDirs for call graph construction.
-// For workspace projects (e.g., Cargo workspaces), each member gets its own entry
-// so that functions are assigned the correct package paths.
-func (ds *DependencyScanner) collectPackageDirs(
+// packageSets separates dependencies into two groups for the two-phase callgraph build.
+type packageSets struct {
+	// graphPackages get full source parsing: user code + deps with crypto findings.
+	graphPackages []callgraph.PackageDir
+	// typeOnlyPackages are used only for bytecode type indexing (no source parsing).
+	// This preserves type resolution accuracy while avoiding expensive parsing of
+	// deps that have no crypto findings.
+	typeOnlyPackages []callgraph.PackageDir
+}
+
+// collectPackageSets builds two lists of PackageDirs for the two-phase callgraph build.
+// graphPackages: user code + deps with findings (full source parsing).
+// typeOnlyPackages: deps without findings (bytecode type index only).
+func (ds *DependencyScanner) collectPackageSets(
 	userTarget string,
 	resolved *dependency.ResolveResult,
-	depReports map[string]*entities.InterimReport,
-	depMap map[string]*dependency.Dependency,
-) []callgraph.PackageDir {
-	baseCap := 1
-	if len(resolved.WorkspaceMembers) > 0 {
-		baseCap = len(resolved.WorkspaceMembers)
-	}
-	packages := make([]callgraph.PackageDir, 0, baseCap+len(depReports))
+	depResults []depScanResult,
+) packageSets {
+	sets := packageSets{}
 
 	if len(resolved.WorkspaceMembers) > 0 {
 		// Workspace project: each member is a separate package root
 		for _, member := range resolved.WorkspaceMembers {
-			packages = append(packages, callgraph.PackageDir{
+			sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 				Dir:        member.Dir,
 				ImportPath: member.Name,
 			})
 		}
 	} else {
 		// Single-project: the target directory is the package root
-		packages = append(packages, callgraph.PackageDir{
+		sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 			Dir:        userTarget,
 			ImportPath: resolved.RootModule,
 		})
 	}
 
-	for key, report := range depReports {
-		if !hasFindings(report) {
+	// Split deps: findings deps get full source parsing; others get bytecode-only type index.
+	for _, result := range depResults {
+		pkg := callgraph.PackageDir{
+			Dir:        result.dep.Dir,
+			ImportPath: result.dep.Module,
+			Version:    result.dep.Version,
+		}
+		if result.status == depScanStatusScanned && result.report != nil && hasFindings(result.report) && result.dep.Dir != "" {
+			sets.graphPackages = append(sets.graphPackages, pkg)
 			continue
 		}
-		dep := depMap[key]
-		packages = append(packages, callgraph.PackageDir{
-			Dir:        dep.Dir,
-			ImportPath: dep.Module,
-		})
+
+		if ds.resolver.Ecosystem() == "java" && result.dep.Module != "" && result.dep.Version != "" {
+			sets.typeOnlyPackages = append(sets.typeOnlyPackages, pkg)
+		}
 	}
 
-	return packages
+	return sets
 }
 
 // buildUserPackages returns the set of package names that constitute user code.
@@ -401,12 +516,10 @@ func (ds *DependencyScanner) buildUserPackages(resolved *dependency.ResolveResul
 func (ds *DependencyScanner) attributeFindings(
 	report *entities.InterimReport,
 	dep *dependency.Dependency,
-	userTarget string,
-	tracer *callgraph.Tracer,
-	userPackages map[string]bool,
+	_ string,
+	_ *callgraph.Tracer,
+	_ map[string]bool,
 ) {
-	depPrefix := dep.Module + "@" + dep.Version + "/"
-
 	for i := range report.Findings {
 		finding := &report.Findings[i]
 
@@ -414,80 +527,21 @@ func (ds *DependencyScanner) attributeFindings(
 			asset := &finding.CryptographicAssets[j]
 
 			// Add dependency attribution as structured fields
-			asset.Source = "dependency"
+			asset.Source = findingSourceDependency
 			asset.DependencyInfo = &entities.DependencyInfo{
 				Module:  dep.Module,
 				Version: dep.Version,
 			}
-
-			// Try to trace back to user code
-			// Finding file paths are relative to the dep dir; the call graph uses absolute paths
-			absFilePath := finding.FilePath
-			if !filepath.IsAbs(absFilePath) {
-				absFilePath = filepath.Join(dep.Dir, absFilePath)
-			}
-			containingFn := tracer.FindContainingFunction(absFilePath, asset.StartLine)
-			if containingFn != nil {
-				asset.DependencyInfo.Function = containingFn.ID.String()
-
-				chains := tracer.TraceBack(containingFn.ID, userPackages, 0)
-				if len(chains) > 0 {
-					asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
-					for k, chain := range chains {
-						asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, dep)
-					}
-				}
-			}
-		}
-
-		// Rewrite finding file path to module@version/relative format
-		finding.FilePath = depPrefix + finding.FilePath
-	}
-}
-
-// enrichUserFindings traces user code findings back through the call graph to
-// add call chain metadata. This captures inter-file call paths within the same
-// project (e.g., main.main() → mypkg.SecureEncrypt() → crypto call).
-func (ds *DependencyScanner) enrichUserFindings(
-	userReport *entities.InterimReport,
-	userTarget string,
-	tracer *callgraph.Tracer,
-	userPackages map[string]bool,
-) {
-	for i := range userReport.Findings {
-		finding := &userReport.Findings[i]
-		for j := range finding.CryptographicAssets {
-			asset := &finding.CryptographicAssets[j]
-
-			absFilePath := finding.FilePath
-			if !filepath.IsAbs(absFilePath) {
-				absFilePath = filepath.Join(userTarget, absFilePath)
-			}
-
-			containingFn := tracer.FindContainingFunction(absFilePath, asset.StartLine)
-			if containingFn == nil {
-				continue
-			}
-
-			chains := tracer.TraceBack(containingFn.ID, userPackages, 0)
-			if len(chains) > 0 {
-				asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
-				for k, chain := range chains {
-					asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, nil)
-				}
-			}
 		}
 	}
 }
 
-// mergeReports combines the user report with reachable dependency findings.
-// When includeUnreachable is false, only dependency findings whose assets have a
-// "callChain" metadata key (traced back to user code) are included. When true,
-// all dependency findings are included regardless of reachability.
+// mergeReports combines the user report with all dependency findings.
+// Reachability filtering is handled by the callgraph export (backward_paths),
+// not by the interim report.
 func (ds *DependencyScanner) mergeReports(
 	userReport *entities.InterimReport,
-	depReports map[string]*entities.InterimReport,
-	includeUnreachable bool,
+	depResults []depScanResult,
 ) *entities.InterimReport {
 	merged := &entities.InterimReport{
 		Version:  userReport.Version,
@@ -496,77 +550,74 @@ func (ds *DependencyScanner) mergeReports(
 	}
 
 	// Mark user code findings as direct
-	for _, finding := range userReport.Findings {
-		for j := range finding.CryptographicAssets {
-			if finding.CryptographicAssets[j].Source == "" {
-				finding.CryptographicAssets[j].Source = "direct"
-			}
+	merged.Findings = append(merged.Findings, userReport.Findings...)
+
+	// Include all dependency findings
+	for _, result := range depResults {
+		if result.status != depScanStatusScanned || result.report == nil {
+			continue
 		}
-		merged.Findings = append(merged.Findings, finding)
+		merged.Findings = append(merged.Findings, result.report.Findings...)
 	}
 
-	// Add only reachable dependency findings (those with call chains back to user code)
-	for _, report := range depReports {
-		for _, finding := range report.Findings {
-			var reachableAssets []entities.CryptographicAsset
-			for j := range finding.CryptographicAssets {
-				asset := &finding.CryptographicAssets[j]
-				if len(asset.CallChains) > 0 || includeUnreachable {
-					reachableAssets = append(reachableAssets, *asset)
-				}
-			}
-			if len(reachableAssets) > 0 {
-				f := finding
-				f.CryptographicAssets = reachableAssets
-				merged.Findings = append(merged.Findings, f)
-			}
-		}
-	}
+	EnsureFindingSources(merged)
+
+	// Generate stable finding IDs for all assets
+	AssignFindingIDs(merged)
 
 	return merged
 }
 
-// normalizeCallChainPaths rewrites absolute file paths in call chain entries to
-// user-friendly relative paths. User code paths become relative to userTarget,
-// dependency code paths become module@version/relative. When dep is nil (user
-// code enrichment), only user-target normalization is applied.
-func normalizeCallChainPaths(entries []callgraph.CallChainEntry, userTarget string, dep *dependency.Dependency) []callgraph.CallChainEntry {
-	absUserTarget := userTarget
-	if absUserTargetResolved, err := filepath.Abs(userTarget); err == nil {
-		absUserTarget = absUserTargetResolved
+// EnsureFindingSources normalizes finding source attribution by defaulting any
+// un-attributed finding asset to direct source.
+func EnsureFindingSources(report *entities.InterimReport) {
+	if report == nil {
+		return
 	}
 
-	result := make([]callgraph.CallChainEntry, len(entries))
-
-	for i, entry := range entries {
-		result[i] = entry
-		absPath := entry.FilePath
-		if !filepath.IsAbs(absPath) {
-			continue
-		}
-
-		// Try user target first
-		if rel, err := filepath.Rel(absUserTarget, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-			result[i].FilePath = rel
-			result[i].Namespace = ""
-			continue
-		}
-
-		// Try dependency dir
-		if dep != nil {
-			absDepDir := dep.Dir
-			if absDepDirResolved, err := filepath.Abs(dep.Dir); err == nil {
-				absDepDir = absDepDirResolved
-			}
-
-			if rel, err := filepath.Rel(absDepDir, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-				result[i].FilePath = dep.Module + "@" + dep.Version + "/" + rel
-				continue
+	for i := range report.Findings {
+		finding := &report.Findings[i]
+		for j := range finding.CryptographicAssets {
+			if finding.CryptographicAssets[j].Source == "" {
+				finding.CryptographicAssets[j].Source = findingSourceDirect
 			}
 		}
 	}
+}
 
-	return result
+// AssignFindingIDs ensures every finding asset in the report has a stable short hash
+// suitable for joining the main report to the callgraph export.
+func AssignFindingIDs(report *entities.InterimReport) {
+	if report == nil {
+		return
+	}
+
+	for i := range report.Findings {
+		finding := &report.Findings[i]
+		for j := range finding.CryptographicAssets {
+			asset := &finding.CryptographicAssets[j]
+			asset.FindingID = generateFindingID(findingIDPath(*finding, *asset), asset.StartLine, asset.Rules)
+		}
+	}
+}
+
+// generateFindingID produces a stable short hash for a finding.
+// It hashes file_path + start_line + first_rule_id and returns the first 8 hex chars.
+func generateFindingID(filePath string, startLine int, rules []entities.RuleInfo) string {
+	ruleID := ""
+	if len(rules) > 0 {
+		ruleID = rules[0].ID
+	}
+	input := filePath + ":" + strconv.Itoa(startLine) + ":" + ruleID
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])[:8]
+}
+
+func findingIDPath(finding entities.Finding, asset entities.CryptographicAsset) string {
+	if asset.DependencyInfo != nil && asset.DependencyInfo.Module != "" && asset.DependencyInfo.Version != "" {
+		return asset.DependencyInfo.Module + "@" + asset.DependencyInfo.Version + "/" + finding.FilePath
+	}
+	return finding.FilePath
 }
 
 // ecosystemToLanguages maps an ecosystem name to language hints for the orchestrator.
@@ -585,6 +636,45 @@ func ecosystemToLanguages(ecosystem string) []string {
 	default:
 		return nil
 	}
+}
+
+func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency {
+	ordered := append([]dependency.Dependency(nil), deps...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return dependencyLess(ordered[i], ordered[j])
+	})
+
+	unique := make(map[string]dependency.Dependency, len(ordered))
+	for _, dep := range ordered {
+		key := dependencyKey(dep)
+		existing, ok := unique[key]
+		if !ok || (existing.Dir == "" && dep.Dir != "") {
+			unique[key] = dep
+		}
+	}
+
+	result := make([]dependency.Dependency, 0, len(unique))
+	for _, dep := range unique {
+		result = append(result, dep)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return dependencyLess(result[i], result[j])
+	})
+	return result
+}
+
+func dependencyKey(dep dependency.Dependency) string {
+	return dep.Module + "@" + dep.Version
+}
+
+func dependencyLess(a, b dependency.Dependency) bool {
+	if a.Module != b.Module {
+		return a.Module < b.Module
+	}
+	if a.Version != b.Version {
+		return a.Version < b.Version
+	}
+	return a.Dir < b.Dir
 }
 
 func hasFindings(report *entities.InterimReport) bool {

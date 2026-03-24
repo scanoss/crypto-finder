@@ -45,11 +45,12 @@ func TestRustParser_SubPackagePath(t *testing.T) {
 }
 
 func TestRustParser_ParseFile(t *testing.T) {
-	src := `use ring::aead::{Aead, UnboundKey};
+	src := `use ring::aead::{Aead, UnboundKey, quic::{HeaderKey, PacketKey}};
 use ring::aead;
 
 fn encrypt(key: &[u8], data: &[u8]) -> Vec<u8> {
     let unbound = UnboundKey::new(&aead::AES_256_GCM, key).unwrap();
+    let _associated = ring::aead::Aead::new();
     let sealing_key = aead::LessSafeKey::new(unbound);
     sealing_key.seal_in_place_append_tag(aead::Nonce::assume_unique_for_key([0u8; 12]), aead::Aad::empty(), &mut data.to_vec()).unwrap();
     data.to_vec()
@@ -64,7 +65,12 @@ impl MyCrypto {
         MyCrypto { key }
     }
 
+    fn helper(&self, data: &[u8]) -> usize {
+        data.len()
+    }
+
     fn do_encrypt(&self, data: &[u8]) -> Vec<u8> {
+        self.helper(data);
         encrypt(&self.key, data)
     }
 }
@@ -93,6 +99,12 @@ impl MyCrypto {
 	if analysis.Imports["UnboundKey"] != "ring::aead" {
 		t.Errorf("import UnboundKey = %q, want %q", analysis.Imports["UnboundKey"], "ring::aead")
 	}
+	if analysis.Imports["HeaderKey"] != "ring::aead::quic" {
+		t.Errorf("import HeaderKey = %q, want %q", analysis.Imports["HeaderKey"], "ring::aead::quic")
+	}
+	if analysis.Imports["PacketKey"] != "ring::aead::quic" {
+		t.Errorf("import PacketKey = %q, want %q", analysis.Imports["PacketKey"], "ring::aead::quic")
+	}
 
 	// Check functions
 	funcNames := make(map[string]bool)
@@ -114,11 +126,71 @@ impl MyCrypto {
 	// Check that encrypt has calls
 	for _, fn := range analysis.Functions {
 		if fn.ID.Name == "encrypt" && fn.ID.Type == "" {
-			if len(fn.Calls) == 0 {
-				t.Error("encrypt function should have calls")
-			}
-			break
+			assertRustEncryptCalls(t, fn)
+			continue
 		}
+		if fn.ID.Name != "do_encrypt" || fn.ID.Type != "MyCrypto" {
+			continue
+		}
+		foundSelfCall := false
+		for _, call := range fn.Calls {
+			if call.Callee.Package == "myproject" && call.Callee.Type == "MyCrypto" && call.Callee.Name == "helper" {
+				foundSelfCall = true
+				break
+			}
+		}
+		if !foundSelfCall {
+			t.Error("expected self method call to resolve to impl receiver type MyCrypto")
+		}
+	}
+}
+
+func TestRustParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
+	p := NewRustParser(WithIncludeTests(true))
+	dir := t.TempDir()
+
+	testDir := filepath.Join(dir, "tests")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "tests.rs"), []byte("fn test_crypto() {}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(testDir, "myproject::tests")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis (test file included), got %d", len(analyses))
+	}
+	if p.SkipDirs()["tests"] {
+		t.Fatal("expected tests dir not to be skipped when includeTests is enabled")
+	}
+}
+
+func assertRustEncryptCalls(t *testing.T, fn FunctionDecl) {
+	t.Helper()
+
+	if len(fn.Calls) == 0 {
+		t.Error("encrypt function should have calls")
+	}
+	foundAssociatedCall := false
+	foundInferredReceiverCall := false
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.Callee.Package == "ring::aead" && call.Callee.Type == "Aead" && call.Callee.Name == "new" {
+			foundAssociatedCall = true
+		}
+		if call.Callee.Package == "ring::aead" && call.Callee.Type == "LessSafeKey" && call.Callee.Name == "seal_in_place_append_tag" {
+			foundInferredReceiverCall = true
+		}
+	}
+	if !foundAssociatedCall {
+		t.Error("expected fully qualified associated call ring::aead::Aead::new to preserve package and type")
+	}
+	if !foundInferredReceiverCall {
+		t.Error("expected sealing_key method call to use inferred receiver type LessSafeKey")
 	}
 }
 

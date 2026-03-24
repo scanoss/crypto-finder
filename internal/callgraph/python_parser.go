@@ -14,7 +14,8 @@ import (
 // PythonParser extracts function declarations, calls, and imports from Python source files
 // using tree-sitter for fast, accurate parsing.
 type PythonParser struct {
-	parser *sitter.Parser
+	parser       *sitter.Parser
+	includeTests bool
 }
 
 const (
@@ -24,22 +25,26 @@ const (
 )
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
-func NewPythonParser() *PythonParser {
+func NewPythonParser(opts ...ParserOption) *PythonParser {
+	cfg := newParserConfig(opts)
 	p := sitter.NewParser()
 	p.SetLanguage(python.GetLanguage())
-	return &PythonParser{parser: p}
+	return &PythonParser{parser: p, includeTests: cfg.includeTests}
 }
 
 // SkipDirs returns directory names to skip during Python source traversal.
 func (p *PythonParser) SkipDirs() map[string]bool {
-	return map[string]bool{
+	skip := map[string]bool{
 		"__pycache__": true,
 		".venv":       true,
 		"venv":        true,
-		"test":        true,
-		"tests":       true,
 		".tox":        true,
 	}
+	if !p.includeTests {
+		skip["test"] = true
+		skip["tests"] = true
+	}
+	return skip
 }
 
 // SubPackagePath constructs a child module path using "." separator.
@@ -55,7 +60,7 @@ func (p *PythonParser) PackageSeparator() string {
 	return "."
 }
 
-// ParseDirectory parses all .py files in a directory (excluding test files).
+// ParseDirectory parses all .py files in a directory.
 func (p *PythonParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -71,8 +76,7 @@ func (p *PythonParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis,
 		if !strings.HasSuffix(name, ".py") {
 			continue
 		}
-		// Skip test files
-		if strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") {
+		if !p.includeTests && (strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py")) {
 			continue
 		}
 
@@ -103,9 +107,10 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	root := tree.RootNode()
 
 	analysis := &FileAnalysis{
-		FilePath:    filePath,
-		PackagePath: packagePath,
-		Imports:     make(map[string]string),
+		FilePath:      filePath,
+		PackagePath:   packagePath,
+		Imports:       make(map[string]string),
+		ImportedTypes: make(map[string]bool),
 	}
 
 	// Extract imports
@@ -174,14 +179,13 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 				modulePath = child.Content(src)
 			} else {
 				// This is a name being imported: `from X import name`
-				name := child.Content(src)
-				analysis.Imports[name] = modulePath
+				recordImportedPythonSymbol(analysis, child.Content(src), modulePath)
 			}
 		case goNodeIdentifier:
 			// Single name import: `from X import name`
 			name := child.Content(src)
 			if name != "import" && name != "from" && modulePath != "" {
-				analysis.Imports[name] = modulePath
+				recordImportedPythonSymbol(analysis, name, modulePath)
 			}
 		case "wildcard_import":
 			// `from X import *`
@@ -192,6 +196,13 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 			// Relative import dots — skip these
 			continue
 		}
+	}
+}
+
+func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string) {
+	analysis.Imports[name] = modulePath
+	if looksLikePythonTypeName(name) {
+		analysis.ImportedTypes[name] = true
 	}
 }
 
@@ -386,9 +397,18 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		// Simple call like `sha256()` or imported class constructor like `Cipher()`
 		name := funcNode.Content(src)
 		if pkg, ok := analysis.Imports[name]; ok {
-			// Imported name — could be a class constructor
+			if analysis.ImportedTypes[name] {
+				return &FunctionCall{
+					Callee:    FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
+					Raw:       raw,
+					FilePath:  filePath,
+					Line:      line,
+					Arguments: args,
+				}
+			}
+
 			return &FunctionCall{
-				Callee:    FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
+				Callee:    FunctionID{Package: pkg, Name: name},
 				Raw:       raw,
 				FilePath:  filePath,
 				Line:      line,
@@ -408,6 +428,15 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	}
 
 	return nil
+}
+
+func looksLikePythonTypeName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	first := rune(name[0])
+	return first >= 'A' && first <= 'Z'
 }
 
 // parseAttributeCall handles calls on attributes like `module.func()` or `obj.method()`.
@@ -498,7 +527,7 @@ func parsePythonParameters(node *sitter.Node, src []byte) []FunctionParameter {
 		return nil
 	}
 
-	content := trimOuterDelimiters(node.Content(src), '(', ')')
+	content := trimOuterParens(node.Content(src))
 	if content == "" {
 		return nil
 	}

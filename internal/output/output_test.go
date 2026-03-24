@@ -38,7 +38,6 @@ func createTestReport() *entities.InterimReport {
 				Language: "go",
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
-						MatchType: "semgrep",
 						StartLine: 10,
 						EndLine:   10,
 						Match:     "AES.encrypt",

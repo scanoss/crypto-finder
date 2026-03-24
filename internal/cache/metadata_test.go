@@ -132,6 +132,37 @@ func TestMetadata_SaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestLoadMetadata_Errors(t *testing.T) {
+	t.Run("missing file", func(t *testing.T) {
+		if _, err := LoadMetadata(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+			t.Fatal("expected missing metadata file error")
+		}
+	})
+
+	t.Run("invalid json", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "broken.json")
+		if err := os.WriteFile(path, []byte("{invalid"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := LoadMetadata(path); err == nil {
+			t.Fatal("expected invalid metadata JSON error")
+		}
+	})
+}
+
+func TestMetadata_SaveError(t *testing.T) {
+	meta := NewMetadata("dca", "latest", "checksum", 60)
+	dir := filepath.Join(t.TempDir(), "dir")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := meta.Save(dir); err == nil {
+		t.Fatal("expected Save to fail when target path is a directory")
+	}
+}
+
 func TestNewMetadata(t *testing.T) {
 	before := time.Now()
 	meta := NewMetadata("dca", "v1.0.0", "checksum123", 604800)

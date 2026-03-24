@@ -83,7 +83,7 @@ func TestBuilder_BuildFromDirectories(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestBuilder_AnalyzePackageErrorContinues(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: dir1, ImportPath: "bad"}, {Dir: dir2, ImportPath: "ok"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: dir1, ImportPath: "bad"}, {Dir: dir2, ImportPath: "ok"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -189,14 +189,28 @@ func TestTracerAndHelpers(t *testing.T) {
 	if len(chains) != 1 {
 		t.Fatalf("TraceBack chains len = %d, want 1", len(chains))
 	}
-	if got := chains[0].String(); !strings.Contains(got, "app.Entry") || !strings.Contains(got, "dep.Crypto") {
-		t.Fatalf("unexpected chain string: %s", got)
+	if len(chains[0].Steps) != 2 {
+		t.Fatalf("expected trace to stop at first user boundary, got %+v", chains[0].Steps)
+	}
+	lastStep := chains[0].Steps[len(chains[0].Steps)-1]
+	if chains[0].Steps[0].Function.Package != "app" || chains[0].Steps[0].Function.Name != "Helper" || lastStep.Function.Package != "dep" {
+		t.Fatalf("unexpected chain steps: %+v", chains[0].Steps)
 	}
 
 	limited := tracer.TraceBack(depCrypto.ID, map[string]bool{"app": true}, 2)
-	if len(limited) != 0 {
-		t.Fatalf("expected no chains with depth=2, got %#v", limited)
+	if len(limited) != 1 {
+		t.Fatalf("expected one chain with depth=2, got %#v", limited)
 	}
+
+	graph.Callers[depCrypto.ID.String()] = []string{userHelper.ID.String(), userEntry.ID.String()}
+	chainsLimited, truncated := tracer.TraceBackLimited(depCrypto.ID, map[string]bool{"app": true}, 0, 1)
+	if !truncated {
+		t.Fatal("expected TraceBackLimited to report truncation")
+	}
+	if len(chainsLimited) != 1 {
+		t.Fatalf("TraceBackLimited chains len = %d, want 1", len(chainsLimited))
+	}
+	graph.Callers[depCrypto.ID.String()] = []string{userHelper.ID.String()}
 
 	missing := tracer.TraceBack(FunctionID{Package: "x", Name: "Missing"}, map[string]bool{"app": true}, 0)
 	if len(missing) != 0 {
@@ -219,6 +233,21 @@ func TestTracerAndHelpers(t *testing.T) {
 	if line := findCallLine(&depCrypto, "missing"); line != depCrypto.StartLine {
 		t.Fatalf("findCallLine fallback = %d, want %d", line, depCrypto.StartLine)
 	}
+
+	overloadedCaller := FunctionDecl{
+		ID:        FunctionID{Package: "app", Type: "Controller", Name: "issue#0"},
+		FilePath:  "/repo/controller.java",
+		StartLine: 1,
+		EndLine:   20,
+		Calls: []FunctionCall{{
+			Callee:   FunctionID{Package: "io.jsonwebtoken.impl", Type: "DefaultJwtBuilder", Name: "signWith#2"},
+			FilePath: "/repo/controller.java",
+			Line:     12,
+		}},
+	}
+	if line := findCallLine(&overloadedCaller, "io.jsonwebtoken.impl.(DefaultJwtBuilder).signWith#2$SignatureAlgorithm,byte"); line != 12 {
+		t.Fatalf("findCallLine overload fallback = %d, want 12", line)
+	}
 }
 
 func TestTypesAndParserRegistry(t *testing.T) {
@@ -239,7 +268,7 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatalf("FunctionID.String method = %q", got)
 	}
 
-	parsedMethod, err := ParseFunctionID("crypto/aes.(*Block).Encrypt", "/")
+	parsedMethod, err := ParseFunctionID("crypto/aes.(*Block).Encrypt")
 	if err != nil {
 		t.Fatalf("ParseFunctionID method: %v", err)
 	}
@@ -247,7 +276,7 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatalf("unexpected parsed method: %#v", parsedMethod)
 	}
 
-	parsedFn, err := ParseFunctionID("crypto/aes.NewCipher", "/")
+	parsedFn, err := ParseFunctionID("crypto/aes.NewCipher")
 	if err != nil {
 		t.Fatalf("ParseFunctionID function: %v", err)
 	}
@@ -255,51 +284,16 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatalf("unexpected parsed function: %#v", parsedFn)
 	}
 
-	if _, err := ParseFunctionID("invalid", "/"); err == nil {
+	if _, err := ParseFunctionID("invalid"); err == nil {
 		t.Fatal("expected parse error for invalid function id")
 	}
-	if _, err := ParseFunctionID("crypto/aes.(*Block", "/"); err == nil {
+	if _, err := ParseFunctionID("crypto/aes.(*Block"); err == nil {
 		t.Fatal("expected parse error for unmatched method syntax")
 	}
-
-	chain := CallChain{Steps: []CallChainStep{
-		{Function: FunctionID{Package: "app", Name: "main"}, FilePath: "main.go", Line: 1},
-		{Function: FunctionID{Package: "crypto/aes", Name: "NewCipher"}, FilePath: "a.go", Line: 9},
-	}}
-	graph := &CallGraph{
-		Functions: map[string]*FunctionDecl{
-			"app.main": {
-				ID:           FunctionID{Package: "app", Name: "main"},
-				FunctionType: "function",
-				OwnerType:    "module",
-				OwnerName:    "app",
-				Calls: []FunctionCall{{
-					Callee:    FunctionID{Package: "crypto/aes", Name: "NewCipher"},
-					Line:      1,
-					Arguments: []string{"\"AES\""},
-				}},
-			},
-			"crypto/aes.NewCipher": {
-				ID:           FunctionID{Package: "crypto/aes", Name: "NewCipher"},
-				FunctionType: "function",
-				OwnerType:    "module",
-				OwnerName:    "crypto/aes",
-				Parameters:   []FunctionParameter{{Type: "string"}},
-			},
-		},
-	}
-	entries := chain.Entries(graph)
-	if len(entries) != 2 || entries[0].FunctionName != "main" {
-		t.Fatalf("unexpected entries: %#v", entries)
-	}
-	if got := entries[1].Parameters[0].Type; got != "string" {
-		t.Fatalf("unexpected parameter type: %q", got)
-	}
-	if got := entries[1].Parameters[0].ArgumentValue; got != "\"AES\"" {
-		t.Fatalf("unexpected argument value: %q", got)
-	}
-	if got := chain.String(); got != "app.main() -> crypto/aes.NewCipher()" {
-		t.Fatalf("unexpected chain string: %s", got)
+	for _, malformed := range []string{".(Cipher).getInstance", "pkg.().m", "pkg.(Type)."} {
+		if _, err := ParseFunctionID(malformed); err == nil {
+			t.Fatalf("expected parse error for malformed method id %q", malformed)
+		}
 	}
 }
 
@@ -330,32 +324,32 @@ func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {
 	}
 
 	jwtsBuilder := FunctionDecl{
-		ID:        FunctionID{Package: "io.jsonwebtoken", Type: "Jwts", Name: "builder"},
-		FilePath:  filepath.Join(root, "Jwts.java"),
-		StartLine: 1,
-		EndLine:   5,
-		OwnerType: "class",
-		OwnerName: "Jwts",
+		ID:         FunctionID{Package: "io.jsonwebtoken", Type: "Jwts", Name: "builder"},
+		FilePath:   filepath.Join(root, "Jwts.java"),
+		StartLine:  1,
+		EndLine:    5,
+		OwnerType:  "class",
+		OwnerName:  "Jwts",
 		Parameters: []FunctionParameter{},
 	}
 
 	ifaceSignWith := FunctionDecl{
-		ID:        FunctionID{Package: "io.jsonwebtoken", Type: "JwtBuilder", Name: "signWith"},
-		FilePath:  filepath.Join(root, "JwtBuilder.java"),
-		StartLine: 1,
-		EndLine:   5,
-		OwnerType: "interface",
-		OwnerName: "JwtBuilder",
+		ID:         FunctionID{Package: "io.jsonwebtoken", Type: "JwtBuilder", Name: "signWith"},
+		FilePath:   filepath.Join(root, "JwtBuilder.java"),
+		StartLine:  1,
+		EndLine:    5,
+		OwnerType:  "interface",
+		OwnerName:  "JwtBuilder",
 		Parameters: []FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
 	}
 
 	implSignWith := FunctionDecl{
-		ID:        FunctionID{Package: "io.jsonwebtoken.impl", Type: "DefaultJwtBuilder", Name: "signWith"},
-		FilePath:  filepath.Join(root, "DefaultJwtBuilder.java"),
-		StartLine: 1,
-		EndLine:   8,
-		OwnerType: "class",
-		OwnerName: "DefaultJwtBuilder",
+		ID:         FunctionID{Package: "io.jsonwebtoken.impl", Type: "DefaultJwtBuilder", Name: "signWith"},
+		FilePath:   filepath.Join(root, "DefaultJwtBuilder.java"),
+		StartLine:  1,
+		EndLine:    8,
+		OwnerType:  "class",
+		OwnerName:  "DefaultJwtBuilder",
 		Parameters: []FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
 	}
 
@@ -376,7 +370,7 @@ func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}

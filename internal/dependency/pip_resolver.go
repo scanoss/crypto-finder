@@ -48,7 +48,7 @@ func (r *PipResolver) Ecosystem() string {
 // for the environment associated with the project at targetDir.
 //
 //nolint:gocognit,gocyclo // This workflow intentionally keeps fallback resolution logic together.
-func (r *PipResolver) Resolve(ctx context.Context, targetDir string, _ int) (*ResolveResult, error) {
+func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
 

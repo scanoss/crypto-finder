@@ -37,6 +37,23 @@ func helper() {
 	fmt.Println("ok")
 }
 
+func TestGoParser_ParseDirectoryIncludesTestsWhenConfigured(t *testing.T) {
+	p := NewGoParser(WithIncludeTests(true))
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "crypto_test.go"), []byte("package mypkg\nfunc TestX(){}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "example.com/project/mypkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis (test file included), got %d", len(analyses))
+	}
+}
+
 type S struct{}
 
 func (s *S) Encrypt(data []byte) {

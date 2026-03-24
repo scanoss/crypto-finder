@@ -17,11 +17,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
@@ -59,6 +62,8 @@ func TestValidateScanFlags(t *testing.T) {
 	origInterfile := scanInterfile
 	origScanDependencies := scanDependencies
 	origScanExportCallgraph := scanExportCallgraph
+	origJavaJDKMajor := scanJavaJDKMajor
+	origJavaJDKHomes := scanJavaJDKHomes
 
 	defer func() {
 		// Restore original values
@@ -71,6 +76,8 @@ func TestValidateScanFlags(t *testing.T) {
 		scanInterfile = origInterfile
 		scanDependencies = origScanDependencies
 		scanExportCallgraph = origScanExportCallgraph
+		scanJavaJDKMajor = origJavaJDKMajor
+		scanJavaJDKHomes = origJavaJDKHomes
 	}()
 
 	t.Run("valid target with rules", func(t *testing.T) {
@@ -232,7 +239,7 @@ func TestValidateScanFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("export callgraph requires dependency scanning", func(t *testing.T) {
+	t.Run("export callgraph allowed without dependency scanning", func(t *testing.T) {
 		tempDir := t.TempDir()
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
@@ -243,10 +250,197 @@ func TestValidateScanFlags(t *testing.T) {
 		scanExportCallgraph = filepath.Join(tempDir, "cg.json")
 
 		err := validateScanFlags(tempDir)
-		if err == nil {
-			t.Error("Expected error when --export-callgraph is used without --scan-dependencies")
+		if err != nil {
+			t.Errorf("Expected no error when --export-callgraph is used without --scan-dependencies, got: %v", err)
 		}
 	})
+}
+
+func TestApplyTestSkipPatterns(t *testing.T) {
+	base := []string{"vendor", "custom/"}
+
+	withTestsExcluded := applyTestSkipPatterns(base, false)
+	if !sliceContains(withTestsExcluded, "vendor") || !sliceContains(withTestsExcluded, "src/test/") || !sliceContains(withTestsExcluded, "**/*Test.java") {
+		t.Fatalf("applyTestSkipPatterns(false) = %#v, want base + test patterns", withTestsExcluded)
+	}
+
+	withTestsIncluded := applyTestSkipPatterns(base, true)
+	if sliceContains(withTestsIncluded, "src/test/") || sliceContains(withTestsIncluded, "**/*Test.java") {
+		t.Fatalf("applyTestSkipPatterns(true) = %#v, should not append test patterns", withTestsIncluded)
+	}
+}
+
+func sliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildStandaloneCallGraphResult_GoDirectChain(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/app\n\ngo 1.22\n"), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tempDir, "helper"), 0o755); err != nil {
+		t.Fatalf("mkdir helper: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(`package main
+
+import "example.com/app/helper"
+
+func main() {
+	_ = helper.Encrypt(nil)
+}
+`), 0o600); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "helper", "helper.go"), []byte(`package helper
+
+import "crypto/aes"
+
+func Encrypt(key []byte) error {
+	_, err := aes.NewCipher(key)
+	return err
+}
+`), 0o600); err != nil {
+		t.Fatalf("write helper.go: %v", err)
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "helper/helper.go",
+			Language: "go",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 6,
+				EndLine:   6,
+				Match:     "aes.NewCipher(key)",
+				Rules:     []entities.RuleInfo{{ID: "go.crypto.aes.newcipher", Message: "AES usage", Severity: "INFO"}},
+				Status:    "pending",
+				Metadata:  map[string]string{"api": "aes.NewCipher", "algorithmName": "AES"},
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, false)
+	if err != nil {
+		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
+	}
+
+	engine.AssignFindingIDs(report)
+
+	out := filepath.Join(t.TempDir(), "callgraph.json")
+	if err := scanutil.ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph: %v", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+
+	var payload struct {
+		FindingGraphs []struct {
+			FindingID  string `json:"finding_id"`
+			CallChains [][]struct {
+				FunctionName string `json:"function_name"`
+				FilePath     string `json:"file_path"`
+				CryptoCall   *struct {
+					FunctionName string `json:"function_name"`
+				} `json:"crypto_call,omitempty"`
+			} `json:"call_chains"`
+		} `json:"finding_graphs"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(payload.FindingGraphs) != 1 {
+		t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
+	}
+	if report.Findings[0].CryptographicAssets[0].FindingID == "" {
+		t.Fatal("expected direct finding_id to be assigned")
+	}
+	if payload.FindingGraphs[0].FindingID != report.Findings[0].CryptographicAssets[0].FindingID {
+		t.Fatalf("finding_id mismatch: export=%q report=%q", payload.FindingGraphs[0].FindingID, report.Findings[0].CryptographicAssets[0].FindingID)
+	}
+	if len(payload.FindingGraphs[0].CallChains) != 1 {
+		t.Fatalf("call_chains count = %d, want 1", len(payload.FindingGraphs[0].CallChains))
+	}
+	chain := payload.FindingGraphs[0].CallChains[0]
+	if len(chain) != 2 {
+		t.Fatalf("chain length = %d, want 2", len(chain))
+	}
+	if chain[0].FunctionName != "example.com/app.main" {
+		t.Fatalf("chain[0].function_name = %q, want example.com/app.main", chain[0].FunctionName)
+	}
+	if chain[1].FunctionName != "example.com/app/helper.Encrypt" {
+		t.Fatalf("chain[1].function_name = %q, want example.com/app/helper.Encrypt", chain[1].FunctionName)
+	}
+	if chain[1].CryptoCall == nil || chain[1].CryptoCall.FunctionName != "crypto/aes.NewCipher" {
+		t.Fatalf("unexpected crypto_call: %#v", chain[1].CryptoCall)
+	}
+}
+
+func TestBuildStandaloneCallGraphResult_IncludesGoTestsWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module example.com/app\n\ngo 1.22\n"), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "main_test.go"), []byte(`package main
+
+import "crypto/aes"
+
+func TestEncrypt() {
+	_, _ = aes.NewCipher(nil)
+}
+`), 0o600); err != nil {
+		t.Fatalf("write main_test.go: %v", err)
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "main_test.go",
+			Language: "go",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 6,
+				EndLine:   6,
+				Match:     "aes.NewCipher(nil)",
+				Rules:     []entities.RuleInfo{{ID: "go.crypto.aes.newcipher", Message: "AES usage", Severity: "INFO"}},
+				Status:    "pending",
+				Metadata:  map[string]string{"api": "aes.NewCipher", "algorithmName": "AES"},
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, true)
+	if err != nil {
+		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
+	}
+
+	if result.CallGraph == nil {
+		t.Fatal("expected call graph to be built")
+	}
+	if _, ok := result.CallGraph.Functions["example.com/app.TestEncrypt"]; !ok {
+		t.Fatalf("expected test function to be present in call graph, got keys %#v", result.CallGraph.Functions)
+	}
+}
+
+func TestScanCommand_DepMaxDepthFlagRemoved(t *testing.T) {
+	if scanCmd.Flags().Lookup("dep-max-depth") != nil {
+		t.Fatal("expected dep-max-depth flag to be removed")
+	}
 }
 
 func TestCountFindings(t *testing.T) {

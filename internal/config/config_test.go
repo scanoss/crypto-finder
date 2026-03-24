@@ -42,6 +42,8 @@ func setupTest(t *testing.T) func() {
 	// Clear environment variables
 	os.Unsetenv("SCANOSS_API_KEY")
 	os.Unsetenv("SCANOSS_API_URL")
+	os.Unsetenv("SCANOSS_JAVA_JDK_MAJOR")
+	os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
 
 	// Reset viper
 	viper.Reset()
@@ -196,6 +198,12 @@ func TestInitialize_Priority_Defaults(t *testing.T) {
 	if cfg.GetAPIKey() != "" {
 		t.Errorf("Expected empty API key, got '%s'", cfg.GetAPIKey())
 	}
+	if cfg.GetJavaJDKMajor() != "auto" {
+		t.Errorf("Expected default Java JDK major 'auto', got '%s'", cfg.GetJavaJDKMajor())
+	}
+	if len(cfg.GetJavaJDKHomes()) != 0 {
+		t.Errorf("Expected no Java JDK homes, got %#v", cfg.GetJavaJDKHomes())
+	}
 }
 
 func TestInitialize_Priority_FullChain(t *testing.T) {
@@ -238,6 +246,51 @@ func TestInitialize_Priority_FullChain(t *testing.T) {
 	// (but we provided CLI flag for key, so URL should come from file)
 	if cfg.GetAPIURL() != "https://file.example.com" {
 		t.Errorf("Expected API URL 'https://file.example.com' (file), got '%s'", cfg.GetAPIURL())
+	}
+}
+
+func TestInitialize_JavaRuntime_FromEnvAndConfig(t *testing.T) {
+	defer setupTest(t)()
+
+	configFile := viper.ConfigFileUsed()
+	viper.Set("java_jdk_major", "17")
+	viper.Set("java_jdk_homes", map[string]string{"17": "/config/jdk17"})
+	if err := viper.WriteConfigAs(configFile); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	viper.Reset()
+	viper.SetConfigFile(configFile)
+	viper.SetConfigType("json")
+
+	os.Setenv("SCANOSS_JAVA_JDK_MAJOR", "21")
+	os.Setenv("SCANOSS_JAVA_JDK_HOMES", "17=/env/jdk17,21=/env/jdk21")
+	defer os.Unsetenv("SCANOSS_JAVA_JDK_MAJOR")
+	defer os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
+
+	cfg := GetInstance()
+	if err := cfg.Initialize("", ""); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	if cfg.GetJavaJDKMajor() != "21" {
+		t.Fatalf("GetJavaJDKMajor() = %q, want 21", cfg.GetJavaJDKMajor())
+	}
+	homes := cfg.GetJavaJDKHomes()
+	if len(homes) != 2 || homes["17"] != "/env/jdk17" || homes["21"] != "/env/jdk21" {
+		t.Fatalf("GetJavaJDKHomes() = %#v, want env mappings", homes)
+	}
+}
+
+func TestInitialize_JavaRuntime_InvalidEnvHomeMapping(t *testing.T) {
+	defer setupTest(t)()
+
+	os.Setenv("SCANOSS_JAVA_JDK_HOMES", "bad-mapping")
+	defer os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
+
+	cfg := GetInstance()
+	if err := cfg.Initialize("", ""); err == nil {
+		t.Fatal("expected invalid Java JDK home mapping error")
 	}
 }
 

@@ -170,6 +170,26 @@ func TestDefaultsSource(t *testing.T) {
 	}
 }
 
+func TestDefaultTestPatternsHelpers(t *testing.T) {
+	patterns := []string{"vendor", "src/test/", "custom/"}
+
+	withTestsExcluded := WithDefaultTestPatterns(patterns)
+	if !containsPattern(withTestsExcluded, "vendor") || !containsPattern(withTestsExcluded, "src/test/") {
+		t.Fatalf("WithDefaultTestPatterns lost expected patterns: %#v", withTestsExcluded)
+	}
+	if !containsPattern(withTestsExcluded, "**/*Test.java") {
+		t.Fatalf("WithDefaultTestPatterns did not append default test patterns: %#v", withTestsExcluded)
+	}
+
+	onlyTests := OnlyDefaultTestPatterns(withTestsExcluded)
+	if containsPattern(onlyTests, "vendor") || containsPattern(onlyTests, "custom/") {
+		t.Fatalf("OnlyDefaultTestPatterns kept non-test patterns: %#v", onlyTests)
+	}
+	if !containsPattern(onlyTests, "src/test/") || !containsPattern(onlyTests, "**/*Test.java") {
+		t.Fatalf("OnlyDefaultTestPatterns lost test patterns: %#v", onlyTests)
+	}
+}
+
 func TestMultiSource_Name(t *testing.T) {
 	t.Parallel()
 
@@ -196,4 +216,13 @@ func TestMultiSource_Name(t *testing.T) {
 	if multiName == "" {
 		t.Error("MultiSource name should not be empty")
 	}
+}
+
+func containsPattern(patterns []string, want string) bool {
+	for _, pattern := range patterns {
+		if pattern == want {
+			return true
+		}
+	}
+	return false
 }

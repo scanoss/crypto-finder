@@ -14,6 +14,25 @@ type Dependency struct {
 	Dir string
 }
 
+// Ref identifies a dependency edge target without requiring a source directory.
+type Ref struct {
+	// Module is the dependency coordinate without version (e.g., "org.example:lib").
+	Module string
+	// Version is the resolved version for this edge target.
+	Version string
+}
+
+// Key returns the canonical coordinate for this dependency reference.
+func (d Ref) Key() string {
+	if d.Module == "" {
+		return ""
+	}
+	if d.Version == "" {
+		return d.Module
+	}
+	return d.Module + "@" + d.Version
+}
+
 // WorkspaceMember represents a local/workspace crate or module that is part of the
 // user's project (not an external dependency).
 type WorkspaceMember struct {
@@ -34,13 +53,15 @@ type ResolveResult struct {
 	Dependencies []Dependency
 	// Graph maps each module path to its direct dependency module paths (adjacency list)
 	Graph map[string][]string
+	// VersionedGraph maps each parent node key to its direct dependency targets with versions preserved.
+	// Parent keys should use the same canonical coordinate form as Ref.Key() when a version is known.
+	VersionedGraph map[string][]Ref
 }
 
 // Resolver resolves a project's dependencies to filesystem paths.
 type Resolver interface {
-	// Resolve returns all dependencies for the project at targetDir, up to maxDepth.
-	// A maxDepth of 0 means only direct dependencies; -1 means unlimited.
-	Resolve(ctx context.Context, targetDir string, maxDepth int) (*ResolveResult, error)
+	// Resolve returns all dependencies for the project at targetDir.
+	Resolve(ctx context.Context, targetDir string) (*ResolveResult, error)
 	// Ecosystem returns the name of the ecosystem (e.g., "go", "python", "rust")
 	Ecosystem() string
 }

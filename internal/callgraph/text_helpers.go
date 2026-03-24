@@ -5,16 +5,7 @@ import "strings"
 func splitTopLevelCommaList(s string) []string {
 	var parts []string
 	var current strings.Builder
-
-	parenDepth := 0
-	bracketDepth := 0
-	braceDepth := 0
-	angleDepth := 0
-
-	inSingle := false
-	inDouble := false
-	inBacktick := false
-	escapeNext := false
+	state := commaSplitState{}
 
 	flush := func() {
 		part := strings.TrimSpace(current.String())
@@ -25,68 +16,31 @@ func splitTopLevelCommaList(s string) []string {
 	}
 
 	for _, r := range s {
-		if escapeNext {
+		if state.escapeNext {
 			current.WriteRune(r)
-			escapeNext = false
+			state.escapeNext = false
 			continue
 		}
 
-		if (inSingle || inDouble || inBacktick) && r == '\\' {
+		if state.inQuotedString() && r == '\\' {
 			current.WriteRune(r)
-			escapeNext = true
+			state.escapeNext = true
 			continue
 		}
 
-		switch r {
-		case '\'':
-			if !inDouble && !inBacktick {
-				inSingle = !inSingle
-			}
-		case '"':
-			if !inSingle && !inBacktick {
-				inDouble = !inDouble
-			}
-		case '`':
-			if !inSingle && !inDouble {
-				inBacktick = !inBacktick
-			}
-		}
-
-		if inSingle || inDouble || inBacktick {
+		state.toggleQuotes(r)
+		if state.inQuotedString() {
 			current.WriteRune(r)
 			continue
 		}
 
-		switch r {
-		case '(':
-			parenDepth++
-		case ')':
-			if parenDepth > 0 {
-				parenDepth--
-			}
-		case '[':
-			bracketDepth++
-		case ']':
-			if bracketDepth > 0 {
-				bracketDepth--
-			}
-		case '{':
-			braceDepth++
-		case '}':
-			if braceDepth > 0 {
-				braceDepth--
-			}
-		case '<':
-			angleDepth++
-		case '>':
-			if angleDepth > 0 {
-				angleDepth--
-			}
-		case ',':
-			if parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0 {
-				flush()
-				continue
-			}
+		if state.handleDelimiter(r) {
+			current.WriteRune(r)
+			continue
+		}
+		if r == ',' && state.atTopLevel() {
+			flush()
+			continue
 		}
 
 		current.WriteRune(r)
@@ -96,16 +50,76 @@ func splitTopLevelCommaList(s string) []string {
 	return parts
 }
 
-func trimOuterDelimiters(s string, open, close rune) string {
+type commaSplitState struct {
+	parenDepth   int
+	bracketDepth int
+	braceDepth   int
+	angleDepth   int
+	inSingle     bool
+	inDouble     bool
+	inBacktick   bool
+	escapeNext   bool
+}
+
+func (s *commaSplitState) inQuotedString() bool {
+	return s.inSingle || s.inDouble || s.inBacktick
+}
+
+func (s *commaSplitState) toggleQuotes(r rune) {
+	switch r {
+	case '\'':
+		if !s.inDouble && !s.inBacktick {
+			s.inSingle = !s.inSingle
+		}
+	case '"':
+		if !s.inSingle && !s.inBacktick {
+			s.inDouble = !s.inDouble
+		}
+	case '`':
+		if !s.inSingle && !s.inDouble {
+			s.inBacktick = !s.inBacktick
+		}
+	}
+}
+
+func (s *commaSplitState) handleDelimiter(r rune) bool {
+	switch r {
+	case '(':
+		s.parenDepth++
+	case ')':
+		s.parenDepth = max(s.parenDepth-1, 0)
+	case '[':
+		s.bracketDepth++
+	case ']':
+		s.bracketDepth = max(s.bracketDepth-1, 0)
+	case '{':
+		s.braceDepth++
+	case '}':
+		s.braceDepth = max(s.braceDepth-1, 0)
+	case '<':
+		s.angleDepth++
+	case '>':
+		s.angleDepth = max(s.angleDepth-1, 0)
+	default:
+		return false
+	}
+	return true
+}
+
+func (s *commaSplitState) atTopLevel() bool {
+	return s.parenDepth == 0 && s.bracketDepth == 0 && s.braceDepth == 0 && s.angleDepth == 0
+}
+
+func trimOuterParens(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) >= 2 && rune(s[0]) == open && rune(s[len(s)-1]) == close {
+	if len(s) >= 2 && rune(s[0]) == '(' && rune(s[len(s)-1]) == ')' {
 		return strings.TrimSpace(s[1 : len(s)-1])
 	}
 	return s
 }
 
 func parseArgumentsFromDelimitedContent(content string) []string {
-	inner := trimOuterDelimiters(content, '(', ')')
+	inner := trimOuterParens(content)
 	if inner == "" {
 		return nil
 	}

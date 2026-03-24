@@ -45,7 +45,7 @@ exit 1
 	prependPath(t, tmpBin)
 
 	r := NewGoResolver()
-	result, err := r.Resolve(context.Background(), t.TempDir(), -1)
+	result, err := r.Resolve(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -84,7 +84,7 @@ exit 1
 	prependPath(t, tmpBin)
 
 	r := NewGoResolver()
-	result, err := r.Resolve(context.Background(), t.TempDir(), -1)
+	result, err := r.Resolve(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Resolve should not fail when graph fails: %v", err)
 	}

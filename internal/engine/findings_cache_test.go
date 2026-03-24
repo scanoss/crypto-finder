@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +31,6 @@ func TestDiskFindingsCache_GetPut_RoundTrip(t *testing.T) {
 				Language: "java",
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
-						MatchType: "semgrep",
 						StartLine: 10,
 						EndLine:   12,
 						Match:     "Cipher.getInstance(\"AES\")",
@@ -127,6 +128,229 @@ func TestDiskFindingsCache_CorruptedFile(t *testing.T) {
 	}
 }
 
+func TestDiskFindingsCache_VersionMismatch(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskFindingsCacheWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewDiskFindingsCacheWithDir: %v", err)
+	}
+
+	key := "stale@1.0:abc123"
+	path := filepath.Join(dir, cacheKeyToFilename(key))
+	payload, err := json.Marshal(findingsCacheEnvelope{
+		Version: findingsCacheVersion + 1,
+		Report:  &entities.InterimReport{Version: "1.2"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal stale envelope: %v", err)
+	}
+	if err := os.WriteFile(path, payload, 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, ok, err := cache.Get(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cache miss for version-mismatched file")
+	}
+	if got != nil {
+		t.Fatal("expected nil report for version-mismatched file")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("expected version-mismatched cache file to be removed")
+	}
+}
+
+func TestNewDiskFindingsCache_UsesConfiguredCacheDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cache, err := NewDiskFindingsCache()
+	if err != nil {
+		t.Fatalf("NewDiskFindingsCache: %v", err)
+	}
+
+	want := filepath.Join(home, ".scanoss", "crypto-finder", "cache", findingsCacheDirName)
+	if cache.dir != want {
+		t.Fatalf("cache.dir = %q, want %q", cache.dir, want)
+	}
+	if info, err := os.Stat(cache.dir); err != nil || !info.IsDir() {
+		t.Fatalf("expected cache dir to exist, stat err=%v info=%v", err, info)
+	}
+}
+
+func TestNewDiskFindingsCacheWithDir_ErrorWhenPathIsFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "cache-file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewDiskFindingsCacheWithDir(file); err == nil {
+		t.Fatal("expected error when cache dir path is a file")
+	}
+}
+
+func TestNewDiskFindingsCache_ErrorPaths(t *testing.T) {
+	t.Run("cache dir lookup fails", func(t *testing.T) {
+		homeFile := filepath.Join(t.TempDir(), "home-file")
+		if err := os.WriteFile(homeFile, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", homeFile)
+
+		if _, err := NewDiskFindingsCache(); err == nil {
+			t.Fatal("expected cache dir lookup error")
+		}
+	})
+
+	t.Run("findings dir create fails", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		cacheDir := filepath.Join(homeDir, ".scanoss", "crypto-finder", "cache")
+		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cacheDir, findingsCacheDirName), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := NewDiskFindingsCache(); err == nil {
+			t.Fatal("expected findings dir create error")
+		}
+	})
+}
+
+func TestDiskFindingsCache_Get_ReadError(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskFindingsCacheWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewDiskFindingsCacheWithDir: %v", err)
+	}
+
+	key := "read-error@1.0:abc"
+	path := filepath.Join(dir, cacheKeyToFilename(key))
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok, err := cache.Get(context.Background(), key); err == nil || ok {
+		t.Fatalf("expected read error and miss, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestDiskFindingsCache_Get_RemoveCorruptedFileFailure(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskFindingsCacheWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewDiskFindingsCacheWithDir: %v", err)
+	}
+
+	key := "remove-error@1.0:abc"
+	path := filepath.Join(dir, cacheKeyToFilename(key))
+	if err := os.WriteFile(path, []byte("{invalid json"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRemove := removeFindingsCacheFile
+	removeFindingsCacheFile = func(removePath string) error {
+		if removePath == path {
+			return errors.New("simulated remove failure")
+		}
+		return originalRemove(removePath)
+	}
+	t.Cleanup(func() {
+		removeFindingsCacheFile = originalRemove
+	})
+
+	if _, _, err := cache.Get(context.Background(), key); err == nil || !strings.Contains(err.Error(), "failed to remove corrupted cache file") {
+		t.Fatalf("expected remove failure, got %v", err)
+	}
+}
+
+func TestDiskFindingsCache_Get_VersionMismatchAndNilReportAreRemoved(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "version mismatch",
+			payload: `{"version":999,"report":{"version":"1.0","findings":[]}}`,
+		},
+		{
+			name:    "nil report",
+			payload: `{"version":1,"report":null}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cache, err := NewDiskFindingsCacheWithDir(dir)
+			if err != nil {
+				t.Fatalf("NewDiskFindingsCacheWithDir: %v", err)
+			}
+
+			key := "invalid-envelope@1.0:abc"
+			path := filepath.Join(dir, cacheKeyToFilename(key))
+			if err := os.WriteFile(path, []byte(tt.payload), 0o640); err != nil {
+				t.Fatal(err)
+			}
+
+			report, ok, err := cache.Get(context.Background(), key)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if ok || report != nil {
+				t.Fatalf("expected cache miss for invalid envelope, got ok=%v report=%#v", ok, report)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("expected invalid cache file to be removed, stat err=%v", err)
+			}
+		})
+	}
+}
+
+func TestDiskFindingsCache_Put_CreateTempFailure(t *testing.T) {
+	cache := &DiskFindingsCache{dir: filepath.Join(t.TempDir(), "missing")}
+
+	err := cache.Put(context.Background(), "key", &entities.InterimReport{Version: "1.0"})
+	if err == nil || !strings.Contains(err.Error(), "failed to create temp cache file") {
+		t.Fatalf("expected create temp error, got %v", err)
+	}
+}
+
+func TestDiskFindingsCache_Put_RenameFailureCleansTemp(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskFindingsCacheWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewDiskFindingsCacheWithDir: %v", err)
+	}
+
+	key := "rename-error@1.0:abc"
+	path := filepath.Join(dir, cacheKeyToFilename(key))
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err = cache.Put(context.Background(), key, &entities.InterimReport{Version: "1.0"})
+	if err == nil || !strings.Contains(err.Error(), "failed to rename cache file") {
+		t.Fatalf("expected rename error, got %v", err)
+	}
+
+	matches, globErr := filepath.Glob(filepath.Join(dir, filepath.Base(path)+".*.tmp"))
+	if globErr != nil {
+		t.Fatalf("Glob: %v", globErr)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected temp files to be cleaned up, found %v", matches)
+	}
+}
+
 func TestCacheKeyToFilename(t *testing.T) {
 	tests := []struct {
 		key  string
@@ -134,15 +358,19 @@ func TestCacheKeyToFilename(t *testing.T) {
 	}{
 		{
 			key:  "org.bouncycastle:bcprov-jdk18on@1.78:abcd1234",
-			want: "org.bouncycastle:bcprov-jdk18on@1.78:abcd1234.json",
+			want: "org.bouncycastle_bcprov-jdk18on_1.78_abcd1234.json",
 		},
 		{
 			key:  "golang.org/x/crypto@v0.17.0:abcd1234",
-			want: "golang.org_x_crypto@v0.17.0:abcd1234.json",
+			want: "golang.org_x_crypto_v0.17.0_abcd1234.json",
 		},
 		{
 			key:  "github.com/foo/bar@v1.0.0:abcd1234",
-			want: "github.com_foo_bar@v1.0.0:abcd1234.json",
+			want: "github.com_foo_bar_v1.0.0_abcd1234.json",
+		},
+		{
+			key:  `group:artifact@1.0.0:rules<>:"/\\|?*hash`,
+			want: "group_artifact_1.0.0_rules__________hash.json",
 		},
 	}
 
@@ -261,5 +489,99 @@ func TestComputeRulesHash_DirectoryWithoutRuleFiles(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no rule files found in directory") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestComputeRulesHash_AllowsOverlappingRulePaths(t *testing.T) {
+	rulesDir := t.TempDir()
+	nestedDir := filepath.Join(rulesDir, "nested")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	rule1 := filepath.Join(rulesDir, "base.yaml")
+	rule2 := filepath.Join(nestedDir, "crypto.yml")
+	if err := os.WriteFile(rule1, []byte("rule: base"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rule2, []byte("rule: nested"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	hashFromOverlappingPaths, err := ComputeRulesHash([]string{rulesDir, nestedDir})
+	if err != nil {
+		t.Fatalf("ComputeRulesHash overlapping paths: %v", err)
+	}
+	hashFromDir, err := ComputeRulesHash([]string{rulesDir})
+	if err != nil {
+		t.Fatalf("ComputeRulesHash directory: %v", err)
+	}
+
+	if hashFromOverlappingPaths != hashFromDir {
+		t.Fatalf("overlapping path hash = %q, want %q", hashFromOverlappingPaths, hashFromDir)
+	}
+}
+
+func TestComputeRulesHash_EmptyPaths(t *testing.T) {
+	if _, err := ComputeRulesHash(nil); err == nil || !strings.Contains(err.Error(), "no rule files provided") {
+		t.Fatalf("expected no rule files provided error, got %v", err)
+	}
+}
+
+func TestExpandRulePathForHash_MissingPath(t *testing.T) {
+	var files []string
+	seen := map[string]struct{}{}
+
+	if _, _, err := expandRulePathForHash(filepath.Join(t.TempDir(), "missing"), &files, seen); err == nil || !strings.Contains(err.Error(), "failed to stat rule path") {
+		t.Fatalf("expected stat error, got %v", err)
+	}
+}
+
+func TestExpandRulePathForHash_DirectFileAndDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte("rule: x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var files []string
+	seen := map[string]struct{}{}
+
+	found, added, err := expandRulePathForHash(rule, &files, seen)
+	if err != nil {
+		t.Fatalf("expandRulePathForHash first call: %v", err)
+	}
+	if !found || !added {
+		t.Fatalf("expected first file call to be found+added, got found=%v added=%v", found, added)
+	}
+
+	found, added, err = expandRulePathForHash(rule, &files, seen)
+	if err != nil {
+		t.Fatalf("expandRulePathForHash second call: %v", err)
+	}
+	if !found || added {
+		t.Fatalf("expected duplicate file call to be found without add, got found=%v added=%v", found, added)
+	}
+}
+
+func TestAddUniqueRulePathAndIsRuleFile(t *testing.T) {
+	var files []string
+	seen := map[string]struct{}{}
+
+	if !addUniqueRulePath("a.yaml", &files, seen) {
+		t.Fatal("expected first addUniqueRulePath call to add file")
+	}
+	if addUniqueRulePath("a.yaml", &files, seen) {
+		t.Fatal("expected duplicate addUniqueRulePath call to return false")
+	}
+	if len(files) != 1 || files[0] != "a.yaml" {
+		t.Fatalf("files = %#v, want [a.yaml]", files)
+	}
+
+	if !isRuleFile("rule.yaml") || !isRuleFile("rule.YML") {
+		t.Fatal("expected yaml/yml files to be recognized")
+	}
+	if isRuleFile("rule.json") {
+		t.Fatal("expected non-yaml file to be rejected")
 	}
 }

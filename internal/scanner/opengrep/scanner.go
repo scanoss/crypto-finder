@@ -22,13 +22,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/go-version"
-	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -229,17 +227,6 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the opengrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	var spinner *pterm.SpinnerPrinter
-	if scanner.ShouldUseSpinner() {
-		spinner, err = pterm.DefaultSpinner.
-			WithRemoveWhenDone(true).
-			WithWriter(os.Stderr).
-			Start("Running OpenGrep scan...")
-		if err != nil {
-			return nil, "", err
-		}
-	}
-
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
@@ -257,14 +244,6 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	stdout, err = cmd.Output()
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
-
-	if spinner != nil {
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("OpenGrep failed after %.2fs", duration.Seconds()))
-		} else {
-			spinner.Success(fmt.Sprintf("OpenGrep completed in %.2fs", duration.Seconds()))
-		}
-	}
 
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {

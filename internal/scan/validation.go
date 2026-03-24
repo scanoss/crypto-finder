@@ -59,11 +59,6 @@ func ValidateFlags(target string, opts ValidationOptions) ([]string, error) {
 		return nil, fmt.Errorf("unsupported output format '%s' (supported: %v)", opts.Format, opts.SupportedFormats)
 	}
 
-	// Validate that call graph export requires dependency scanning.
-	if opts.ExportCallgraph != "" && !opts.ScanDependencies {
-		return nil, fmt.Errorf("--export-callgraph requires --scan-dependencies")
-	}
-
 	// Normalize language hints to lowercase.
 	normalizedLanguages := make([]string, len(opts.Languages))
 	for i, lang := range opts.Languages {

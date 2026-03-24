@@ -40,7 +40,14 @@ crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
 ```json
 {
   "api_key": "your-scanoss-api-key",
-  "api_url": "https://api.scanoss.com"
+  "api_url": "https://api.scanoss.com",
+  "java_jdk_major": "auto",
+  "java_jdk_homes": {
+    "8": "/opt/jdks/jdk8",
+    "11": "/opt/jdks/jdk11",
+    "17": "/opt/jdks/jdk17",
+    "21": "/opt/jdks/jdk21"
+  }
 }
 ```
 
@@ -50,6 +57,28 @@ crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
 |----------|-------------|---------|
 | `SCANOSS_API_KEY` | SCANOSS API key for remote rulesets | `export SCANOSS_API_KEY=abc123` |
 | `SCANOSS_API_URL` | Custom API base URL | `export SCANOSS_API_URL=https://custom.com` |
+| `SCANOSS_JAVA_JDK_MAJOR` | Java JDK major for Java dependency resolution and type enrichment (`auto`, `8`, `11`, `17`, `21`) | `export SCANOSS_JAVA_JDK_MAJOR=21` |
+| `SCANOSS_JAVA_JDK_HOMES` | Comma-separated Java home mappings used for explicit JDK selection | `export SCANOSS_JAVA_JDK_HOMES=17=/opt/jdks/jdk17,21=/opt/jdks/jdk21` |
+
+### Java Runtime Selection
+
+For Java dependency scans and call graph export, Crypto Finder can select a specific JDK major per scan:
+
+- CLI: `--java-jdk-major` and repeatable `--java-jdk-home <major>=<path>`
+- Environment/config: `SCANOSS_JAVA_JDK_MAJOR`, `SCANOSS_JAVA_JDK_HOMES`, or the matching config file keys
+- Supported majors: `8`, `11`, `17`, `21`
+- Standalone CLI default: `auto` (use ambient `JAVA_HOME` when available)
+
+Example:
+
+```bash
+crypto-finder scan \
+  --scan-dependencies \
+  --java-jdk-major 21 \
+  --java-jdk-home 17=/opt/jdks/jdk17 \
+  --java-jdk-home 21=/opt/jdks/jdk21 \
+  /path/to/java-project
+```
 
 ## Project Configuration (scanoss.json)
 

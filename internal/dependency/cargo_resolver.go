@@ -58,7 +58,7 @@ func (r *CargoResolver) Ecosystem() string {
 
 // Resolve uses `cargo metadata --format-version=1` to resolve all dependencies
 // for the Rust project at targetDir.
-func (r *CargoResolver) Resolve(ctx context.Context, targetDir string, _ int) (*ResolveResult, error) {
+func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	meta, err := r.cargoMetadata(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cargo metadata in %s: %w", targetDir, err)

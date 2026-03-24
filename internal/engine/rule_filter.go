@@ -120,9 +120,9 @@ func expandRulePaths(paths []string) []string {
 
 func collectRuleFiles(root string) []string {
 	var files []string
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			return nil
@@ -132,7 +132,9 @@ func collectRuleFiles(root string) []string {
 			files = append(files, path)
 		}
 		return nil
-	})
+	}); err != nil {
+		log.Debug().Err(err).Str("root", root).Msg("Failed to walk rule directory")
+	}
 	sort.Strings(files)
 	return files
 }

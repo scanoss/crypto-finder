@@ -143,8 +143,31 @@ docker-scan-deps: ## Scan with dependency resolution (PROJ=path/to/project)
 	@docker run --rm \
 		-v $(PROJ):/workspace/code:ro \
 		--entrypoint sh $(DOCKER_IMAGE):latest-deps -c \
-		"if [ -f /workspace/code/requirements.txt ]; then pip install -r /workspace/code/requirements.txt 2>/dev/null; fi; \
-		 crypto-finder scan /workspace/code --scan-dependencies $(ARGS)"
+		"set -eu; \
+		if [ -f /workspace/code/requirements.txt ]; then \
+			echo 'Installing Python dependencies from requirements.txt'; \
+			python -m pip install -r /workspace/code/requirements.txt; \
+		fi; \
+		if [ -f /workspace/code/pyproject.toml ]; then \
+			echo 'Installing Python project from pyproject.toml'; \
+			python -m pip install /workspace/code; \
+		fi; \
+		if [ -f /workspace/code/Pipfile ]; then \
+			echo 'Installing Python dependencies from Pipfile'; \
+			python -m pip install pipenv; \
+			cd /workspace/code; \
+			if [ -f Pipfile.lock ]; then \
+				PIPENV_VENV_IN_PROJECT=0 pipenv install --system --deploy; \
+			else \
+				PIPENV_VENV_IN_PROJECT=0 pipenv install --system; \
+			fi; \
+			cd /; \
+		fi; \
+		if [ -f /workspace/code/setup.cfg ]; then \
+			echo 'Installing Python project from setup.cfg'; \
+			python -m pip install /workspace/code; \
+		fi; \
+		crypto-finder scan /workspace/code --scan-dependencies $(ARGS)"
 
 docker-scan: docker-build ## Quick test: build and scan current directory
 	@echo "Running quick scan on current directory..."

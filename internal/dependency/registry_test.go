@@ -8,7 +8,7 @@ import (
 
 type noopResolver struct{}
 
-func (n *noopResolver) Resolve(_ context.Context, _ string, _ int) (*ResolveResult, error) {
+func (n *noopResolver) Resolve(_ context.Context, _ string) (*ResolveResult, error) {
 	return &ResolveResult{}, nil
 }
 

@@ -29,6 +29,51 @@ import (
 	"time"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errReadCloser struct {
+	readErr  error
+	closeErr error
+	data     []byte
+	readOnce bool
+}
+
+func (r *errReadCloser) Read(p []byte) (int, error) {
+	if r.readErr != nil {
+		return 0, r.readErr
+	}
+	if r.readOnce {
+		return 0, io.EOF
+	}
+	r.readOnce = true
+	return copy(p, r.data), io.EOF
+}
+
+func (r *errReadCloser) Close() error {
+	return r.closeErr
+}
+
+func newTestClient(t *testing.T, apiKey string, handler func(http.ResponseWriter, *http.Request)) *Client {
+	t.Helper()
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler(recorder, req)
+			if err := req.Context().Err(); err != nil {
+				return nil, err
+			}
+			return recorder.Result(), nil
+		}),
+	}
+
+	return NewClientWithHTTPClient("https://api.example.com", apiKey, httpClient)
+}
+
 func TestNewClient(t *testing.T) {
 	t.Parallel()
 
@@ -62,8 +107,7 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 	_ = gzWriter.Close()
 	tarballData := buf.Bytes()
 
-	// Setup mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
 		// Verify request headers
 		if r.Header.Get("x-api-key") != "test-key" {
 			t.Error("Missing or incorrect API key header")
@@ -80,10 +124,7 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -121,13 +162,10 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 func TestClient_DownloadRuleset_404NotFound(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("ruleset not found"))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -147,13 +185,10 @@ func TestClient_DownloadRuleset_404NotFound(t *testing.T) {
 func TestClient_DownloadRuleset_401Unauthorized(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "invalid-key", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("invalid API key"))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "invalid-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -173,13 +208,10 @@ func TestClient_DownloadRuleset_401Unauthorized(t *testing.T) {
 func TestClient_DownloadRuleset_403Forbidden(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("access denied"))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -200,14 +232,11 @@ func TestClient_DownloadRuleset_500ServerError(t *testing.T) {
 	t.Parallel()
 
 	attemptCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		attemptCount++
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("server error"))
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -237,7 +266,7 @@ func TestClient_DownloadRuleset_RetrySuccess(t *testing.T) {
 	_ = gzWriter.Close()
 	tarballData := buf.Bytes()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		attemptCount++
 
 		// Fail first 2 attempts, succeed on 3rd
@@ -253,10 +282,7 @@ func TestClient_DownloadRuleset_RetrySuccess(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -284,15 +310,12 @@ func TestClient_DownloadRuleset_ContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		// Cancel context before responding
 		cancel()
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 
 	// Execute
 	_, _, err := client.DownloadRuleset(ctx, "dca", "latest")
@@ -300,6 +323,23 @@ func TestClient_DownloadRuleset_ContextCancellation(t *testing.T) {
 	// Assert
 	if err == nil {
 		t.Fatal("Expected error due to context cancellation")
+	}
+}
+
+func TestClient_DownloadRuleset_ContextCanceledDuringRetryBackoff(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("server error"))
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := client.DownloadRuleset(ctx, "dca", "latest")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled during retry backoff, got %v", err)
 	}
 }
 
@@ -313,14 +353,11 @@ func TestClient_DownloadRuleset_MissingHeaders(t *testing.T) {
 	_ = gzWriter.Close()
 	tarballData := buf.Bytes()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		// Return 200 but without required headers
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -380,7 +417,7 @@ func TestIsRetryable(t *testing.T) {
 func TestManifest_TimezoneParsing(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)
 		emptyTar := make([]byte, 1024)
@@ -393,10 +430,7 @@ func TestManifest_TimezoneParsing(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-created-at", "2024-12-25T10:30:00Z")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(buf.Bytes())
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "test-key")
+	})
 	ctx := context.Background()
 
 	// Execute
@@ -440,6 +474,30 @@ func TestClient_manifestFromHeaders_MissingHeaders(t *testing.T) {
 	}
 }
 
+func TestClient_manifestFromHeaders_MissingVersionAndChecksum(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+
+	versionHeaders := http.Header{}
+	versionHeaders.Set("scanoss-ruleset-name", "dca")
+	versionHeaders.Set("x-checksum-sha256", "abc123")
+	versionHeaders.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+
+	if _, err := client.manifestFromHeaders(versionHeaders); err == nil || !strings.Contains(err.Error(), "scanoss-ruleset-version") {
+		t.Fatalf("expected missing version header error, got %v", err)
+	}
+
+	checksumHeaders := http.Header{}
+	checksumHeaders.Set("scanoss-ruleset-name", "dca")
+	checksumHeaders.Set("scanoss-ruleset-version", "v1.0.0")
+	checksumHeaders.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+
+	if _, err := client.manifestFromHeaders(checksumHeaders); err == nil || !strings.Contains(err.Error(), "x-checksum-sha256") {
+		t.Fatalf("expected missing checksum header error, got %v", err)
+	}
+}
+
 func TestClient_manifestFromHeaders_InvalidTime(t *testing.T) {
 	t.Parallel()
 
@@ -478,5 +536,102 @@ func TestClient_handleHTTPError_Default(t *testing.T) {
 
 	if httpErr.Message != "418 I'm a teapot" {
 		t.Fatalf("Expected message fallback to status, got %q", httpErr.Message)
+	}
+}
+
+func TestClient_handleHTTPError_ReadBodyFailure(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Status:     "502 Bad Gateway",
+		Body: &errReadCloser{
+			readErr: errors.New("read failed"),
+		},
+	}
+
+	err := client.handleHTTPError(resp, "https://api.example.com/gateway")
+	if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
+		t.Fatalf("expected read body failure, got %v", err)
+	}
+}
+
+func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timeout", func(t *testing.T) {
+		httpClient := &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, context.DeadlineExceeded
+			}),
+		}
+		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer cancel()
+
+		_, _, err := client.doDownload(ctx, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		if !errors.Is(err, ErrTimeout) {
+			t.Fatalf("expected ErrTimeout, got %v", err)
+		}
+	})
+
+	t.Run("read body failure", func(t *testing.T) {
+		httpClient := &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				headers := http.Header{}
+				headers.Set("scanoss-ruleset-name", "dca")
+				headers.Set("scanoss-ruleset-version", "v1.0.0")
+				headers.Set("x-checksum-sha256", "abc123")
+				headers.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     headers,
+					Body:       &errReadCloser{readErr: errors.New("read failed")},
+				}, nil
+			}),
+		}
+		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
+			t.Fatalf("expected read body failure, got %v", err)
+		}
+	})
+
+	t.Run("close body failure", func(t *testing.T) {
+		httpClient := &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				headers := http.Header{}
+				headers.Set("scanoss-ruleset-name", "dca")
+				headers.Set("scanoss-ruleset-version", "v1.0.0")
+				headers.Set("x-checksum-sha256", "abc123")
+				headers.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     headers,
+					Body: &errReadCloser{
+						data:     []byte("tarball"),
+						closeErr: errors.New("close failed"),
+					},
+				}, nil
+			}),
+		}
+		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		if err == nil || !strings.Contains(err.Error(), "failed to close response body") {
+			t.Fatalf("expected close body failure, got %v", err)
+		}
+	})
+}
+
+func TestClient_doDownload_InvalidURL(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient("https://api.example.com", "test-key")
+	_, _, err := client.doDownload(context.Background(), "http://[::1")
+	if err == nil || !strings.Contains(err.Error(), "failed to create request") {
+		t.Fatalf("expected invalid URL request creation error, got %v", err)
 	}
 }

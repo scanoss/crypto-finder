@@ -14,7 +14,8 @@ import (
 // JavaParser extracts function declarations, calls, and imports from Java source files
 // using tree-sitter for fast, accurate parsing.
 type JavaParser struct {
-	parser *sitter.Parser
+	parser       *sitter.Parser
+	includeTests bool
 }
 
 const (
@@ -22,18 +23,32 @@ const (
 	javaNodeScopedIdentifier     = "scoped_identifier"
 	javaNodeGenericType          = "generic_type"
 	javaNodeScopedTypeIdentifier = "scoped_type_identifier"
+	javaNodeClassDeclaration     = "class_declaration"
+	javaNodeInterfaceDeclaration = "interface_declaration"
+	javaNodeFieldDeclaration     = "field_declaration"
+	javaNodeMethodDeclaration    = "method_declaration"
+	javaNodeFormalParameters     = "formal_parameters"
+	javaNodeArgumentList         = "argument_list"
+	javaSourceTypeParameter      = "PARAMETER"
+	javaVarOriginKindField       = "field"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
-func NewJavaParser() *JavaParser {
+func NewJavaParser(opts ...ParserOption) *JavaParser {
+	cfg := newParserConfig(opts)
 	p := sitter.NewParser()
 	p.SetLanguage(java.GetLanguage())
-	return &JavaParser{parser: p}
+	return &JavaParser{parser: p, includeTests: cfg.includeTests}
 }
 
 // SkipDirs returns directory names to skip during Java source traversal.
 func (p *JavaParser) SkipDirs() map[string]bool {
-	return map[string]bool{"test": true, "tests": true, "META-INF": true, "target": true}
+	skip := map[string]bool{"META-INF": true, "target": true}
+	if !p.includeTests {
+		skip["test"] = true
+		skip["tests"] = true
+	}
+	return skip
 }
 
 // SubPackagePath constructs a child package path using "." separator.
@@ -49,7 +64,7 @@ func (p *JavaParser) PackageSeparator() string {
 	return "."
 }
 
-// ParseDirectory parses all .java files in a directory (excluding test files).
+// ParseDirectory parses all .java files in a directory.
 func (p *JavaParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -65,8 +80,7 @@ func (p *JavaParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, e
 		if !strings.HasSuffix(name, ".java") {
 			continue
 		}
-		// Skip test files
-		if strings.HasSuffix(name, "Test.java") || strings.HasSuffix(name, "Tests.java") {
+		if !p.includeTests && (strings.HasSuffix(name, "Test.java") || strings.HasSuffix(name, "Tests.java")) {
 			continue
 		}
 
@@ -171,9 +185,9 @@ func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath stri
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		switch child.Type() {
-		case "class_declaration":
+		case javaNodeClassDeclaration:
 			p.processClass(child, src, filePath, analysis, "")
-		case "interface_declaration":
+		case javaNodeInterfaceDeclaration:
 			p.processInterface(child, src, filePath, analysis, "")
 		}
 	}
@@ -181,6 +195,20 @@ func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath stri
 
 // processClass processes a class declaration and its methods.
 func (p *JavaParser) processClass(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, outerClass string) {
+	className, body := parseJavaClass(node, src)
+	if className == "" || body == nil {
+		return
+	}
+
+	fullClassName := javaNestedTypeName(outerClass, className)
+	fieldTypes := p.collectJavaFieldTypes(body, src)
+	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
+	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, fieldTypes, fieldAssignments)
+	appendJavaDecls(analysis, constructorDecls)
+	appendJavaDecls(analysis, methodDecls)
+}
+
+func parseJavaClass(node *sitter.Node, src []byte) (string, *sitter.Node) {
 	var className string
 	var body *sitter.Node
 
@@ -194,45 +222,95 @@ func (p *JavaParser) processClass(node *sitter.Node, src []byte, filePath string
 		}
 	}
 
-	if className == "" || body == nil {
-		return
-	}
+	return className, body
+}
 
-	// For inner classes, use OuterClass.InnerClass format
-	fullClassName := className
-	if outerClass != "" {
-		fullClassName = outerClass + "." + className
+func javaNestedTypeName(outerType, typeName string) string {
+	if outerType == "" {
+		return typeName
 	}
+	return outerType + "." + typeName
+}
 
-	// Collect field-level variable types (e.g., "private final SecretKey key;")
+func (p *JavaParser) collectJavaFieldTypes(body *sitter.Node, src []byte) map[string]string {
 	fieldTypes := make(map[string]string)
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
-		if child.Type() == "field_declaration" {
+		if child.Type() == javaNodeFieldDeclaration {
 			p.collectVarTypes(child, src, fieldTypes)
 		}
 	}
+	return fieldTypes
+}
 
-		// Walk class body for methods, constructors, and inner classes
+func (p *JavaParser) collectJavaClassDecls(
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	fullClassName string,
+	fieldTypes map[string]string,
+	fieldAssignments map[string]fieldAssignment,
+) ([]*FunctionDecl, []*FunctionDecl) {
+	var methodDecls []*FunctionDecl
+	var constructorDecls []*FunctionDecl
+
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
-		case "method_declaration":
-			decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", fieldTypes)
-			if decl != nil {
-				analysis.Functions = append(analysis.Functions, *decl)
+		case javaNodeMethodDeclaration:
+			if decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", fieldTypes, fieldAssignments); decl != nil {
+				methodDecls = append(methodDecls, decl)
 			}
 		case "constructor_declaration":
-			decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, fieldTypes)
-			if decl != nil {
-				analysis.Functions = append(analysis.Functions, *decl)
+			if decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, fieldTypes, fieldAssignments); decl != nil {
+				constructorDecls = append(constructorDecls, decl)
 			}
-		case "class_declaration":
+		case javaNodeClassDeclaration:
 			p.processClass(child, src, filePath, analysis, fullClassName)
-		case "interface_declaration":
+		case javaNodeInterfaceDeclaration:
 			p.processInterface(child, src, filePath, analysis, fullClassName)
 		}
 	}
+
+	disambiguateJavaMethodOverloads(methodDecls)
+	disambiguateJavaMethodOverloads(constructorDecls)
+	return methodDecls, constructorDecls
+}
+
+func appendJavaDecls(analysis *FileAnalysis, decls []*FunctionDecl) {
+	for _, decl := range decls {
+		analysis.Functions = append(analysis.Functions, *decl)
+	}
+}
+
+func (p *JavaParser) collectClassFieldAssignments(
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	fieldTypes map[string]string,
+) map[string]fieldAssignment {
+	assignments := make(map[string]fieldAssignment)
+	for i := 0; i < int(body.ChildCount()); i++ {
+		child := body.Child(i)
+		if child.Type() != "constructor_declaration" {
+			continue
+		}
+		for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
+			assignments[key] = value
+		}
+	}
+	return assignments
+}
+
+func findConstructorBody(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "constructor_body" || child.Type() == goNodeBlock {
+			return child
+		}
+	}
+	return nil
 }
 
 // processInterface processes an interface declaration and its methods.
@@ -259,19 +337,25 @@ func (p *JavaParser) processInterface(node *sitter.Node, src []byte, filePath st
 		fullInterfaceName = outerType + "." + interfaceName
 	}
 
+	var methodDecls []*FunctionDecl
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
-		case "method_declaration":
-			decl := p.parseMethodDecl(child, src, filePath, analysis, fullInterfaceName, "interface", nil)
+		case javaNodeMethodDeclaration:
+			decl := p.parseMethodDecl(child, src, filePath, analysis, fullInterfaceName, "interface", nil, nil)
 			if decl != nil {
-				analysis.Functions = append(analysis.Functions, *decl)
+				methodDecls = append(methodDecls, decl)
 			}
-		case "class_declaration":
+		case javaNodeClassDeclaration:
 			p.processClass(child, src, filePath, analysis, fullInterfaceName)
-		case "interface_declaration":
+		case javaNodeInterfaceDeclaration:
 			p.processInterface(child, src, filePath, analysis, fullInterfaceName)
 		}
+	}
+
+	disambiguateJavaMethodOverloads(methodDecls)
+	for _, decl := range methodDecls {
+		analysis.Functions = append(analysis.Functions, *decl)
 	}
 }
 
@@ -284,6 +368,7 @@ func (p *JavaParser) parseMethodDecl(
 	ownerName string,
 	ownerType string,
 	fieldTypes map[string]string,
+	fieldAssignments map[string]fieldAssignment,
 ) *FunctionDecl {
 	var name string
 	var body *sitter.Node
@@ -321,14 +406,14 @@ func (p *JavaParser) parseMethodDecl(
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, fieldTypes)
+		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
 	}
 
 	return decl
 }
 
 // parseConstructorDecl parses a Java constructor declaration.
-func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, className string, fieldTypes map[string]string) *FunctionDecl {
+func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, className string, fieldTypes map[string]string, fieldAssignments map[string]fieldAssignment) *FunctionDecl {
 	var body *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -338,11 +423,13 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 		}
 	}
 
+	params := p.extractJavaParameterTypes(node, src)
+
 	decl := &FunctionDecl{
 		ID: FunctionID{
 			Package: analysis.PackagePath,
 			Type:    className,
-			Name:    constructorMethodName,
+			Name:    javaMethodWithArity(constructorMethodName, len(params)),
 		},
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
@@ -351,11 +438,11 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 		OwnerName:    className,
 		FunctionType: "constructor",
 		ReturnType:   className,
-		Parameters:   p.extractJavaParameterTypes(node, src),
+		Parameters:   params,
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, fieldTypes)
+		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, className, fieldTypes, fieldAssignments)
 	}
 
 	return decl
@@ -369,7 +456,9 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	src []byte,
 	filePath string,
 	analysis *FileAnalysis,
+	currentClass string,
 	fieldTypes map[string]string,
+	fieldAssignments map[string]fieldAssignment,
 ) []FunctionCall {
 	// Merge field types with local variable types (locals take precedence)
 	varTypes := make(map[string]string, len(fieldTypes))
@@ -379,9 +468,162 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	p.collectParameterTypes(methodNode, src, varTypes)
 	p.collectVarTypes(body, src, varTypes)
 
+	// Build variable origin map for data flow tracing
+	varOrigins := make(map[string]varOrigin)
+	// Add field origins with constructor parameter tracing
+	for k, v := range fieldTypes {
+		origin := varOrigin{typeName: v, kind: "field", filePath: filePath, paramIndex: -1}
+		if fa, ok := fieldAssignments[k]; ok {
+			origin.constructorParam = &fa
+		}
+		varOrigins[k] = origin
+	}
+	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
+	p.collectVarOrigins(body, src, filePath, varOrigins, false)
+
 	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, varTypes, &calls)
+	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
 	return calls
+}
+
+// fieldAssignment records that a class field was assigned from a constructor parameter.
+type fieldAssignment struct {
+	paramName  string // constructor parameter name
+	paramIndex int    // parameter index (0-based)
+	paramType  string // parameter type
+	line       int    // assignment line
+	filePath   string
+}
+
+// varOrigin tracks where a variable's value comes from.
+type varOrigin struct {
+	typeName         string // declared type (e.g., "Cipher")
+	kind             string // "parameter", "field", "local_variable"
+	initializer      string // raw initializer expression (e.g., "Cipher.getInstance(\"AES\")")
+	line             int    // declaration line
+	filePath         string
+	paramIndex       int              // for parameters: which param (0-based), -1 otherwise
+	constructorParam *fieldAssignment // for fields: which constructor param assigned this field
+}
+
+// extractFieldAssignments scans a constructor body for `this.field = param` patterns
+// and returns a map of field name → constructor parameter source.
+func (p *JavaParser) extractFieldAssignments(
+	constructorNode *sitter.Node,
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	fieldTypes map[string]string,
+) map[string]fieldAssignment {
+	if body == nil {
+		return nil
+	}
+
+	// Build param name → (index, type) map from constructor parameters
+	paramMap := make(map[string]int)      // name → index
+	paramTypes := make(map[string]string) // name → type
+	idx := 0
+	for i := 0; i < int(constructorNode.ChildCount()); i++ {
+		child := constructorNode.Child(i)
+		if child.Type() != javaNodeFormalParameters {
+			continue
+		}
+		for _, param := range parseJavaParameterList(child.Content(src)) {
+			if param.Name != "" {
+				paramMap[param.Name] = idx
+				paramTypes[param.Name] = param.Type
+				idx++
+			}
+		}
+	}
+	if len(paramMap) == 0 {
+		return nil
+	}
+
+	result := make(map[string]fieldAssignment)
+	p.walkForFieldAssignments(body, src, filePath, fieldTypes, paramMap, paramTypes, result)
+	return result
+}
+
+// walkForFieldAssignments recursively walks an AST looking for `this.field = param` assignments.
+func (p *JavaParser) walkForFieldAssignments(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	fieldTypes map[string]string,
+	paramMap map[string]int,
+	paramTypes map[string]string,
+	result map[string]fieldAssignment,
+) {
+	if assignment := parseFieldAssignmentNode(node, src, filePath, fieldTypes, paramMap, paramTypes); assignment != nil {
+		result[assignment.fieldName] = assignment.assignment
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkForFieldAssignments(node.Child(i), src, filePath, fieldTypes, paramMap, paramTypes, result)
+	}
+}
+
+type parsedFieldAssignment struct {
+	fieldName  string
+	assignment fieldAssignment
+}
+
+func parseFieldAssignmentNode(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	fieldTypes map[string]string,
+	paramMap map[string]int,
+	paramTypes map[string]string,
+) *parsedFieldAssignment {
+	if node.Type() != "assignment_expression" {
+		return nil
+	}
+	left := node.ChildByFieldName("left")
+	right := node.ChildByFieldName("right")
+	if left == nil || right == nil {
+		return nil
+	}
+
+	fieldName := assignedFieldName(left, src, fieldTypes)
+	if fieldName == "" {
+		return nil
+	}
+	rightExpr := strings.TrimSpace(right.Content(src))
+	paramIdx, ok := paramMap[rightExpr]
+	if !ok {
+		return nil
+	}
+
+	return &parsedFieldAssignment{
+		fieldName: fieldName,
+		assignment: fieldAssignment{
+			paramName:  rightExpr,
+			paramIndex: paramIdx,
+			paramType:  paramTypes[rightExpr],
+			line:       int(node.StartPoint().Row) + 1,
+			filePath:   filePath,
+		},
+	}
+}
+
+func assignedFieldName(left *sitter.Node, src []byte, fieldTypes map[string]string) string {
+	if left.Type() == "field_access" {
+		obj := left.ChildByFieldName("object")
+		field := left.ChildByFieldName("field")
+		if obj != nil && field != nil && obj.Content(src) == "this" {
+			return field.Content(src)
+		}
+	}
+	if left.Type() != javaNodeIdentifier {
+		return ""
+	}
+	name := left.Content(src)
+	if _, isField := fieldTypes[name]; isField {
+		return name
+	}
+	return ""
 }
 
 // collectParameterTypes records method parameter name -> normalized type mappings.
@@ -392,15 +634,15 @@ func (p *JavaParser) collectParameterTypes(node *sitter.Node, src []byte, varTyp
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() != "formal_parameters" {
+		if child.Type() != javaNodeFormalParameters {
 			continue
 		}
 
-		for name, typ := range parseJavaParameterMapFromList(child.Content(src)) {
-			if name == "" || typ == "" {
+		for _, param := range parseJavaParameterList(child.Content(src)) {
+			if param.Name == "" || param.Type == "" {
 				continue
 			}
-			varTypes[name] = typ
+			varTypes[param.Name] = param.Type
 		}
 		return
 	}
@@ -411,7 +653,16 @@ func (p *JavaParser) collectParameterTypes(node *sitter.Node, src []byte, varTyp
 //
 //nolint:gocognit,nestif // Variable/type collection traverses deeply nested Java declaration nodes.
 func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
-	if node.Type() == "local_variable_declaration" || node.Type() == "field_declaration" {
+	if node.Type() == javaNodeFormalParameters {
+		for _, param := range parseJavaParameterList(node.Content(src)) {
+			if param.Name == "" || param.Type == "" {
+				continue
+			}
+			varTypes[param.Name] = param.Type
+		}
+	}
+
+	if node.Type() == "local_variable_declaration" || node.Type() == javaNodeFieldDeclaration {
 		typeName := p.extractDeclTypeName(node, src)
 		if typeName != "" {
 			// Extract variable names from declarators
@@ -435,6 +686,333 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 	}
 }
 
+// collectParameterOrigins records method parameter origins for data flow tracing.
+func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, filePath string, origins map[string]varOrigin) {
+	if origins == nil || node == nil {
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeFormalParameters {
+			continue
+		}
+		paramIdx := 0
+		for _, param := range parseJavaParameterList(child.Content(src)) {
+			if param.Name == "" || param.Type == "" {
+				continue
+			}
+			origins[param.Name] = varOrigin{
+				typeName:   param.Type,
+				kind:       "parameter",
+				line:       int(child.StartPoint().Row) + 1,
+				filePath:   filePath,
+				paramIndex: paramIdx,
+			}
+			paramIdx++
+		}
+		return
+	}
+}
+
+// collectVarOrigins scans a block for variable declarations and records
+// variable name → origin info including initializer expressions.
+func (p *JavaParser) collectVarOrigins(node *sitter.Node, src []byte, filePath string, origins map[string]varOrigin, isField bool) {
+	nodeType := node.Type()
+	if nodeType == "local_variable_declaration" || nodeType == javaNodeFieldDeclaration {
+		p.collectDeclarationOrigins(node, src, filePath, origins, isField || nodeType == javaNodeFieldDeclaration)
+	}
+
+	fieldChild := isField || nodeType == javaNodeFieldDeclaration
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.collectVarOrigins(node.Child(i), src, filePath, origins, fieldChild)
+	}
+}
+
+func (p *JavaParser) collectDeclarationOrigins(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	origins map[string]varOrigin,
+	isField bool,
+) {
+	typeName := p.extractDeclTypeName(node, src)
+	if typeName == "" {
+		return
+	}
+
+	kind := "local_variable"
+	if isField {
+		kind = javaVarOriginKindField
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != "variable_declarator" {
+			continue
+		}
+		name, initializer := parseVariableDeclaratorOrigin(child, src)
+		if name == "" {
+			continue
+		}
+		origins[name] = varOrigin{
+			typeName:    typeName,
+			kind:        kind,
+			initializer: initializer,
+			line:        int(child.StartPoint().Row) + 1,
+			filePath:    filePath,
+			paramIndex:  -1,
+		}
+	}
+}
+
+func parseVariableDeclaratorOrigin(node *sitter.Node, src []byte) (string, string) {
+	name := ""
+	initializer := ""
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == javaNodeIdentifier && name == "" {
+			name = child.Content(src)
+			continue
+		}
+		if child.Type() == "=" && i+1 < int(node.ChildCount()) {
+			initializer = strings.TrimSpace(node.Child(i + 1).Content(src))
+		}
+	}
+	return name, initializer
+}
+
+// resolveArgumentSources traces where each argument value comes from.
+func (p *JavaParser) resolveArgumentSources(args []string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin) [][]SourceNode {
+	if len(args) == 0 {
+		return nil
+	}
+	sources := make([][]SourceNode, len(args))
+	for i, arg := range args {
+		sources[i] = p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, 0)
+	}
+	return sources
+}
+
+const maxTraceDepth = 5
+
+// traceExpression resolves a single expression to its source nodes.
+func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
+	if depth > maxTraceDepth || expr == "" {
+		return nil
+	}
+	if literal := traceLiteralExpression(expr); literal != nil {
+		return literal
+	}
+	if originNodes := p.traceOriginExpression(expr, analysis, currentClass, varTypes, origins, depth); originNodes != nil {
+		return originNodes
+	}
+	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
+		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr}}
+	}
+	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass); constructorNodes != nil {
+		return constructorNodes
+	}
+	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
+		return methodCallNodes
+	}
+	return []SourceNode{{Type: "EXPRESSION", Value: expr}}
+}
+
+func traceLiteralExpression(expr string) []SourceNode {
+	switch {
+	case strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\""):
+		return []SourceNode{{Type: "VALUE", Value: expr}}
+	case isNumericLiteral(expr):
+		return []SourceNode{{Type: "VALUE", Value: expr}}
+	case expr == "true" || expr == "false" || expr == "null":
+		return []SourceNode{{Type: "VALUE", Value: expr}}
+	default:
+		return nil
+	}
+}
+
+func (p *JavaParser) traceOriginExpression(
+	expr string,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	origins map[string]varOrigin,
+	depth int,
+) []SourceNode {
+	info, ok := origins[expr]
+	if !ok {
+		return nil
+	}
+
+	node := SourceNode{
+		Type:         kindToSourceType(info.kind),
+		Name:         expr,
+		DeclaredType: info.typeName,
+		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
+	}
+	if info.kind == "parameter" {
+		node.ParameterIndex = info.paramIndex
+	}
+	switch {
+	case info.kind == javaVarOriginKindField && info.constructorParam != nil:
+		node.SourceNodes = fieldConstructorSourceNodes(info.constructorParam)
+	case info.initializer != "":
+		node.SourceNodes = p.traceExpression(info.initializer, analysis, currentClass, varTypes, origins, depth+1)
+	}
+	return []SourceNode{node}
+}
+
+func fieldConstructorSourceNodes(fa *fieldAssignment) []SourceNode {
+	return []SourceNode{{
+		Type:           javaSourceTypeParameter,
+		Name:           fa.paramName,
+		DeclaredType:   fa.paramType,
+		ParameterIndex: fa.paramIndex,
+		Location:       &SourceLocation{FilePath: fa.filePath, Line: fa.line},
+	}}
+}
+
+func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnalysis, currentClass string) []SourceNode {
+	typeName, argc, ok := parseJavaConstructorExpression(expr)
+	if !ok {
+		return nil
+	}
+	node := SourceNode{Type: "CALL_RESULT", Value: expr}
+	if analysis != nil {
+		target := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, argc), analysis, currentClass, nil)
+		node.CallTarget = &target
+	}
+	return []SourceNode{node}
+}
+
+func (p *JavaParser) traceMethodCallExpression(
+	expr string,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	origins map[string]varOrigin,
+	depth int,
+) []SourceNode {
+	if !strings.Contains(expr, "(") {
+		return nil
+	}
+
+	node := SourceNode{Type: "CALL_RESULT", Value: expr}
+	object, method, argc, ok := parseJavaMethodCallExpression(expr)
+	if !ok {
+		return []SourceNode{node}
+	}
+	if receiverSources := p.traceMethodCallReceiverSources(object, analysis, currentClass, varTypes, origins, depth+1); len(receiverSources) > 0 {
+		node.SourceNodes = receiverSources
+	}
+	if analysis != nil {
+		target := p.resolveCallee(object, javaMethodWithArity(method, argc), analysis, currentClass, varTypes)
+		node.CallTarget = &target
+	}
+	return []SourceNode{node}
+}
+
+func (p *JavaParser) traceMethodCallReceiverSources(
+	object string,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	origins map[string]varOrigin,
+	depth int,
+) []SourceNode {
+	object = strings.TrimSpace(object)
+	if object == "" {
+		return nil
+	}
+	if _, ok := origins[object]; ok {
+		return p.traceExpression(object, analysis, currentClass, varTypes, origins, depth)
+	}
+	if strings.HasPrefix(object, "this.") {
+		fieldName := strings.TrimSpace(strings.TrimPrefix(object, "this."))
+		if _, ok := origins[fieldName]; ok {
+			return p.traceExpression(fieldName, analysis, currentClass, varTypes, origins, depth)
+		}
+	}
+	return nil
+}
+
+func parseJavaMethodCallExpression(expr string) (object, method string, argc int, ok bool) {
+	expr = strings.TrimSpace(expr)
+	open := strings.Index(expr, "(")
+	closeIdx := strings.LastIndex(expr, ")")
+	if open <= 0 || closeIdx <= open {
+		return "", "", 0, false
+	}
+	head := strings.TrimSpace(expr[:open])
+	if head == "" {
+		return "", "", 0, false
+	}
+	if dot := strings.LastIndex(head, "."); dot >= 0 {
+		object = strings.TrimSpace(head[:dot])
+		method = strings.TrimSpace(head[dot+1:])
+	} else {
+		method = head
+	}
+	if method == "" {
+		return "", "", 0, false
+	}
+	argc = len(parseArgumentsFromDelimitedContent(expr[open : closeIdx+1]))
+	return object, method, argc, true
+}
+
+func parseJavaConstructorExpression(expr string) (typeName string, argc int, ok bool) {
+	expr = strings.TrimSpace(expr)
+	if !strings.HasPrefix(expr, "new ") {
+		return "", 0, false
+	}
+	expr = strings.TrimSpace(strings.TrimPrefix(expr, "new "))
+	open := strings.Index(expr, "(")
+	closeIdx := strings.LastIndex(expr, ")")
+	if open <= 0 || closeIdx <= open {
+		return "", 0, false
+	}
+	typeName = strings.TrimSpace(expr[:open])
+	if typeName == "" {
+		return "", 0, false
+	}
+	argc = len(parseArgumentsFromDelimitedContent(expr[open : closeIdx+1]))
+	return typeName, argc, true
+}
+
+func isNumericLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, c := range s {
+		if !isNumericLiteralRune(i, c) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNumericLiteralRune(index int, c rune) bool {
+	if c >= '0' && c <= '9' {
+		return true
+	}
+	if index == 0 && c == '-' {
+		return true
+	}
+	return strings.ContainsRune(".LfdFDxXabcdefABCDEF", c)
+}
+
+func kindToSourceType(kind string) string {
+	switch kind {
+	case "parameter":
+		return javaSourceTypeParameter
+	case "field":
+		return "FIELD"
+	case "local_variable":
+		return "VARIABLE"
+	default:
+		return "VARIABLE"
+	}
+}
+
 // extractDeclTypeName extracts the type name from a variable/field declaration node.
 func (p *JavaParser) extractDeclTypeName(node *sitter.Node, src []byte) string {
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -443,39 +1021,34 @@ func (p *JavaParser) extractDeclTypeName(node *sitter.Node, src []byte) string {
 		case goNodeTypeIdentifier:
 			return child.Content(src)
 		case javaNodeGenericType:
-			// e.g., List<String> → "List"
-			for j := 0; j < int(child.ChildCount()); j++ {
-				gc := child.Child(j)
-				if gc.Type() == goNodeTypeIdentifier {
-					return gc.Content(src)
-				}
-			}
+			return child.Content(src)
 		case javaNodeScopedTypeIdentifier:
-			// e.g., java.util.Map → use last segment
-			content := child.Content(src)
-			if dot := strings.LastIndex(content, "."); dot >= 0 {
-				return content[dot+1:]
-			}
-			return content
+			return child.Content(src)
+		case "array_type":
+			// e.g., byte[] → "byte[]", String[] → "String[]"
+			return child.Content(src)
+		case "integral_type", "floating_point_type", "boolean_type", "void_type":
+			// Primitive types: int, long, float, double, boolean, void
+			return child.Content(src)
 		}
 	}
 	return ""
 }
 
-func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, varTypes map[string]string, calls *[]FunctionCall) {
+func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin, calls *[]FunctionCall) {
 	switch node.Type() {
 	case "method_invocation":
-		if call := p.parseMethodInvocation(node, src, filePath, analysis, varTypes); call != nil {
+		if call := p.parseMethodInvocation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
 			*calls = append(*calls, *call)
 		}
 	case "object_creation_expression":
-		if call := p.parseObjectCreation(node, src, filePath, analysis); call != nil {
+		if call := p.parseObjectCreation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
 			*calls = append(*calls, *call)
 		}
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, varTypes, calls)
+		p.walkForCalls(node.Child(i), src, filePath, analysis, currentClass, varTypes, varOrigins, calls)
 	}
 }
 
@@ -483,7 +1056,7 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 //   - Cipher.getInstance("AES")           → static call on class
 //   - cipher.doFinal(data)                → instance method call
 //   - doSomething()                       → local method call
-func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, varTypes map[string]string) *FunctionCall {
+func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin) *FunctionCall {
 	var object, method string
 	line := int(node.StartPoint().Row) + 1
 
@@ -514,7 +1087,7 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 
 	args := p.extractJavaCallArguments(node, src)
-	callee := p.resolveCallee(object, javaMethodWithArity(method, len(args)), analysis, varTypes)
+	callee := p.resolveCallee(object, javaMethodWithArity(method, len(args)), analysis, currentClass, varTypes)
 	if method == "newInstance" {
 		if target, ok := parseReflectionTargetFromArgs(args); ok {
 			callee = target
@@ -522,16 +1095,17 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 
 	return &FunctionCall{
-		Callee:    callee,
-		Raw:       raw,
-		FilePath:  filePath,
-		Line:      line,
-		Arguments: args,
+		Callee:          callee,
+		Raw:             raw,
+		FilePath:        filePath,
+		Line:            line,
+		Arguments:       args,
+		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
 }
 
 // parseObjectCreation handles `new ClassName(...)` expressions.
-func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) *FunctionCall {
+func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin) *FunctionCall {
 	line := int(node.StartPoint().Row) + 1
 	var typeName string
 
@@ -558,22 +1132,23 @@ func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath
 		return nil
 	}
 
-	callee := p.resolveCallee(typeName, constructorMethodName, analysis, nil)
 	args := p.extractJavaCallArguments(node, src)
+	callee := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, len(args)), analysis, currentClass, nil)
 
 	return &FunctionCall{
-		Callee:    callee,
-		Raw:       "new " + typeName,
-		FilePath:  filePath,
-		Line:      line,
-		Arguments: args,
+		Callee:          callee,
+		Raw:             "new " + typeName,
+		FilePath:        filePath,
+		Line:            line,
+		Arguments:       args,
+		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
 }
 
 func (p *JavaParser) extractJavaCallArguments(node *sitter.Node, src []byte) []string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() == "argument_list" {
+		if child.Type() == javaNodeArgumentList {
 			return parseArgumentsFromDelimitedContent(child.Content(src))
 		}
 	}
@@ -583,7 +1158,7 @@ func (p *JavaParser) extractJavaCallArguments(node *sitter.Node, src []byte) []s
 func (p *JavaParser) extractJavaParameterTypes(node *sitter.Node, src []byte) []FunctionParameter {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() != "formal_parameters" {
+		if child.Type() != javaNodeFormalParameters {
 			continue
 		}
 		return parseJavaParameterTypesFromList(child.Content(src))
@@ -592,46 +1167,31 @@ func (p *JavaParser) extractJavaParameterTypes(node *sitter.Node, src []byte) []
 }
 
 func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
-	inner := trimOuterDelimiters(listContent, '(', ')')
-	if inner == "" {
+	specs := parseJavaParameterList(listContent)
+	if len(specs) == 0 {
 		return nil
 	}
-
-	parts := splitTopLevelCommaList(inner)
-	params := make([]FunctionParameter, 0, len(parts))
-	for _, part := range parts {
-		clean := strings.TrimSpace(part)
-		if clean == "" {
-			continue
-		}
-
-		// Strip common modifiers.
-		clean = strings.TrimSpace(strings.ReplaceAll(clean, "final ", ""))
-		if strings.HasPrefix(clean, "@") {
-			segments := strings.Fields(clean)
-			if len(segments) > 1 {
-				clean = strings.Join(segments[1:], " ")
-			}
-		}
-
-		typeText := clean
-		if idx := strings.LastIndex(clean, " "); idx > 0 {
-			typeText = strings.TrimSpace(clean[:idx])
-		}
-		params = append(params, FunctionParameter{Type: typeText})
+	params := make([]FunctionParameter, 0, len(specs))
+	for _, spec := range specs {
+		params = append(params, FunctionParameter{Type: spec.RawType})
 	}
-
 	return params
 }
 
-func parseJavaParameterMapFromList(listContent string) map[string]string {
-	inner := trimOuterDelimiters(listContent, '(', ')')
+type javaParameterSpec struct {
+	Name    string
+	Type    string
+	RawType string
+}
+
+func parseJavaParameterList(listContent string) []javaParameterSpec {
+	inner := trimOuterParens(listContent)
 	if inner == "" {
 		return nil
 	}
 
 	parts := splitTopLevelCommaList(inner)
-	params := make(map[string]string, len(parts))
+	params := make([]javaParameterSpec, 0, len(parts))
 	for _, part := range parts {
 		clean := strings.TrimSpace(part)
 		if clean == "" {
@@ -657,14 +1217,16 @@ func parseJavaParameterMapFromList(listContent string) map[string]string {
 
 		name := strings.TrimSpace(filtered[len(filtered)-1])
 		typeText := strings.TrimSpace(strings.Join(filtered[:len(filtered)-1], " "))
-		if strings.HasPrefix(name, "...") {
-			name = strings.TrimPrefix(name, "...")
-		}
-		normalizedType := normalizeJavaTypeName(typeText)
+		name = strings.TrimPrefix(name, "...")
+		normalizedType := normalizeJavaReferenceType(typeText)
 		if name == "" || normalizedType == "" {
 			continue
 		}
-		params[name] = normalizedType
+		params = append(params, javaParameterSpec{
+			Name:    name,
+			Type:    normalizedType,
+			RawType: typeText,
+		})
 	}
 
 	if len(params) == 0 {
@@ -675,9 +1237,14 @@ func parseJavaParameterMapFromList(listContent string) map[string]string {
 
 func normalizeJavaTypeName(typeText string) string {
 	normalized := strings.TrimSpace(typeText)
-	normalized = strings.TrimSuffix(normalized, "...")
+	arraySuffix := ""
+	if strings.HasSuffix(normalized, "...") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "..."))
+		arraySuffix = "[]"
+	}
 	for strings.HasSuffix(normalized, "[]") {
 		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "[]"))
+		arraySuffix += "[]"
 	}
 	if idx := strings.Index(normalized, "<"); idx > 0 {
 		normalized = strings.TrimSpace(normalized[:idx])
@@ -685,7 +1252,28 @@ func normalizeJavaTypeName(typeText string) string {
 	if dot := strings.LastIndex(normalized, "."); dot >= 0 {
 		normalized = normalized[dot+1:]
 	}
-	return strings.TrimSpace(normalized)
+	return strings.TrimSpace(normalized) + arraySuffix
+}
+
+func normalizeJavaReferenceType(typeText string) string {
+	normalized := strings.TrimSpace(typeText)
+	arraySuffix := ""
+	if strings.HasSuffix(normalized, "...") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "..."))
+		arraySuffix = "[]"
+	}
+	for strings.HasSuffix(normalized, "[]") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "[]"))
+		arraySuffix += "[]"
+	}
+	if idx := strings.Index(normalized, "<"); idx > 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	normalized = strings.TrimSpace(normalized)
+	if normalized == "" {
+		return ""
+	}
+	return normalized + arraySuffix
 }
 
 func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) string {
@@ -708,74 +1296,206 @@ func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) stri
 }
 
 // resolveCallee resolves a class/method pair against imports and local variable types.
-func (p *JavaParser) resolveCallee(object, method string, analysis *FileAnalysis, varTypes map[string]string) FunctionID {
+func (p *JavaParser) resolveCallee(object, method string, analysis *FileAnalysis, currentClass string, varTypes map[string]string) FunctionID {
 	if object == "" {
-		// Simple local call like `doSomething()`
+		return resolveJavaLocalCallee(method, analysis, currentClass)
+	}
+
+	return resolveJavaObjectCallee(object, method, analysis, varTypes)
+}
+
+func resolveJavaLocalCallee(method string, analysis *FileAnalysis, currentClass string) FunctionID {
+	if target, ok := resolveImportedJavaLocalCallee(method, analysis); ok {
+		return target
+	}
+
+	packagePath := javaAnalysisPackagePath(analysis)
+	if currentClass != "" {
 		return FunctionID{
-			Package: analysis.PackagePath,
+			Package: packagePath,
+			Type:    currentClass,
 			Name:    method,
 		}
 	}
 
-	// Extract the simple class name (handle dotted objects like "System.out")
-	simpleClass := object
-	if dot := strings.LastIndex(object, "."); dot >= 0 {
-		simpleClass = object[dot+1:]
-	}
-
-	// 1. Check explicit imports: imports["Cipher"] → "javax.crypto"
-	if pkg, ok := analysis.Imports[simpleClass]; ok {
-		return FunctionID{
-			Package: pkg,
-			Type:    simpleClass,
-			Name:    method,
-		}
-	}
-
-	// Also check the full object name for imports (e.g., the object itself was imported)
-	if pkg, ok := analysis.Imports[object]; ok {
-		return FunctionID{
-			Package: pkg,
-			Type:    object,
-			Name:    method,
-		}
-	}
-
-	// 2. Check local variable types: service → CryptoService → resolve via imports
-	if typeName, ok := varTypes[object]; ok {
-		if pkg, ok := analysis.Imports[typeName]; ok {
-			return FunctionID{
-				Package: pkg,
-				Type:    typeName,
-				Name:    method,
-			}
-		}
-		// Type is from the same package (no import needed)
-		return FunctionID{
-			Package: analysis.PackagePath,
-			Type:    typeName,
-			Name:    method,
-		}
-	}
-
-	// 3. Check wildcard imports — try each prefix
-	for _, prefix := range analysis.WildcardImports {
-		// Best-effort: assume the class comes from this wildcard import
-		// For crypto detection, this works well since crypto classes are typically
-		// imported via wildcards (import java.security.*)
-		return FunctionID{
-			Package: prefix,
-			Type:    simpleClass,
-			Name:    method,
-		}
-	}
-
-	// 4. Fallback: assume same package (unresolved variable method call)
 	return FunctionID{
-		Package: analysis.PackagePath,
+		Package: packagePath,
+		Name:    method,
+	}
+}
+
+func resolveImportedJavaLocalCallee(method string, analysis *FileAnalysis) (FunctionID, bool) {
+	if analysis == nil {
+		return FunctionID{}, false
+	}
+
+	if target, ok := functionIDFromImportedJavaType(analysis.Imports[BaseFunctionName(method)], method, analysis.PackagePath); ok {
+		return target, true
+	}
+	if importedType, ok := resolveJavaStaticWildcardImport(BaseFunctionName(method), analysis.WildcardImports); ok {
+		if target, ok := functionIDFromImportedJavaType(importedType, method, analysis.PackagePath); ok {
+			return target, true
+		}
+	}
+	return FunctionID{}, false
+}
+
+func resolveJavaObjectCallee(object, method string, analysis *FileAnalysis, varTypes map[string]string) FunctionID {
+	simpleClass := simpleJavaObjectName(object)
+
+	if target, ok := resolveImportedJavaObjectCallee(object, simpleClass, method, analysis); ok {
+		return target
+	}
+	if target, ok := resolveJavaVariableTypeCallee(object, method, analysis, varTypes); ok {
+		return target
+	}
+	if target, ok := resolveWildcardJavaObjectCallee(simpleClass, method, analysis); ok {
+		return target
+	}
+	if target, ok := functionIDFromQualifiedJavaObject(object, method); ok {
+		return target
+	}
+
+	return FunctionID{
+		Package: javaAnalysisPackagePath(analysis),
 		Type:    object,
 		Name:    method,
 	}
+}
+
+func simpleJavaObjectName(object string) string {
+	if dot := strings.LastIndex(object, "."); dot >= 0 {
+		return object[dot+1:]
+	}
+	return object
+}
+
+func resolveImportedJavaObjectCallee(object, simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {
+	if analysis == nil {
+		return FunctionID{}, false
+	}
+	if pkg, ok := analysis.Imports[simpleClass]; ok {
+		return FunctionID{Package: pkg, Type: simpleClass, Name: method}, true
+	}
+	if pkg, ok := analysis.Imports[object]; ok {
+		return FunctionID{Package: pkg, Type: object, Name: method}, true
+	}
+	return FunctionID{}, false
+}
+
+func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis, varTypes map[string]string) (FunctionID, bool) {
+	typeName, ok := varTypes[object]
+	if !ok {
+		return FunctionID{}, false
+	}
+	if pkg, typ, ok := splitQualifiedJavaType(typeName); ok {
+		return FunctionID{Package: pkg, Type: typ, Name: method}, true
+	}
+	if analysis != nil {
+		if pkg, ok := analysis.Imports[typeName]; ok {
+			return FunctionID{Package: pkg, Type: typeName, Name: method}, true
+		}
+		if pkg, ok := knownWildcardImportPackage(typeName, analysis.WildcardImports); ok {
+			return FunctionID{Package: pkg, Type: typeName, Name: method}, true
+		}
+	}
+	return FunctionID{Package: javaAnalysisPackagePath(analysis), Type: typeName, Name: method}, true
+}
+
+func resolveWildcardJavaObjectCallee(simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {
+	if analysis == nil {
+		return FunctionID{}, false
+	}
+	if pkg, ok := preferredWildcardImportPackage(simpleClass, analysis.WildcardImports); ok {
+		return FunctionID{Package: pkg, Type: simpleClass, Name: method}, true
+	}
+	for _, prefix := range analysis.WildcardImports {
+		return FunctionID{Package: prefix, Type: simpleClass, Name: method}, true
+	}
+	return FunctionID{}, false
+}
+
+func functionIDFromImportedJavaType(importedType, method, packagePath string) (FunctionID, bool) {
+	if importedType == "" {
+		return FunctionID{}, false
+	}
+	if pkg, typ, ok := splitQualifiedJavaType(importedType); ok {
+		return FunctionID{Package: pkg, Type: typ, Name: method}, true
+	}
+	return FunctionID{Package: packagePath, Type: importedType, Name: method}, true
+}
+
+func functionIDFromQualifiedJavaObject(object, method string) (FunctionID, bool) {
+	if pkg, typ, ok := splitQualifiedJavaType(object); ok {
+		return FunctionID{Package: pkg, Type: typ, Name: method}, true
+	}
+	return FunctionID{}, false
+}
+
+func javaAnalysisPackagePath(analysis *FileAnalysis) string {
+	if analysis == nil {
+		return ""
+	}
+	return analysis.PackagePath
+}
+
+func preferredWildcardImportPackage(simpleClass string, wildcardImports []string) (string, bool) {
+	if len(wildcardImports) == 0 || simpleClass == "" {
+		return "", false
+	}
+
+	if pkg, ok := knownWildcardImportPackage(simpleClass, wildcardImports); ok {
+		return pkg, true
+	}
+
+	if len(wildcardImports) == 1 {
+		return wildcardImports[0], true
+	}
+
+	return "", false
+}
+
+func knownWildcardImportPackage(simpleClass string, wildcardImports []string) (string, bool) {
+	if len(wildcardImports) == 0 || simpleClass == "" {
+		return "", false
+	}
+
+	if preferred, ok := knownJavaWildcardTypePackages[simpleClass]; ok {
+		for _, wildcard := range wildcardImports {
+			if wildcard == preferred {
+				return wildcard, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+var knownJavaWildcardTypePackages = map[string]string{
+	"CertificateFactory": "java.security.cert",
+	"Cipher":             "javax.crypto",
+	"GCMParameterSpec":   "javax.crypto.spec",
+	"IvParameterSpec":    "javax.crypto.spec",
+	"KeyAgreement":       "javax.crypto",
+	"KeyFactory":         "java.security",
+	"KeyGenerator":       "javax.crypto",
+	"KeyPairGenerator":   "java.security",
+	"KeyStore":           "java.security",
+	"Mac":                "javax.crypto",
+	"MessageDigest":      "java.security",
+	"SecretKeyFactory":   "javax.crypto",
+	"SecretKeySpec":      "javax.crypto.spec",
+	"SecureRandom":       "java.security",
+	"Signature":          "java.security",
+}
+
+func splitQualifiedJavaType(typeName string) (pkg, typ string, ok bool) {
+	typeName = strings.TrimSpace(typeName)
+	dot := strings.LastIndex(typeName, ".")
+	if dot <= 0 || dot >= len(typeName)-1 {
+		return "", "", false
+	}
+	return typeName[:dot], typeName[dot+1:], true
 }
 
 func parseReflectionTargetFromArgs(args []string) (FunctionID, bool) {
@@ -811,13 +1531,88 @@ func functionIDFromQualifiedClass(className string) (FunctionID, bool) {
 	return FunctionID{
 		Package: className[:lastDot],
 		Type:    className[lastDot+1:],
-		Name:    constructorMethodName,
+		Name:    javaMethodWithArity(constructorMethodName, 0),
 	}, true
 }
 
 func javaMethodWithArity(name string, arity int) string {
-	if name == "" || name == constructorMethodName {
+	if name == "" {
 		return name
 	}
 	return fmt.Sprintf("%s#%d", name, arity)
+}
+
+func disambiguateJavaMethodOverloads(decls []*FunctionDecl) {
+	groups := make(map[string][]*FunctionDecl)
+	for _, decl := range decls {
+		if decl == nil {
+			continue
+		}
+		groups[decl.ID.Name] = append(groups[decl.ID.Name], decl)
+	}
+
+	for _, group := range groups {
+		if len(group) < 2 {
+			continue
+		}
+		for _, decl := range group {
+			decl.ID.Name = decorateJavaOverloadName(decl.ID.Name, decl.Parameters)
+		}
+	}
+}
+
+func decorateJavaOverloadName(name string, params []FunctionParameter) string {
+	if len(params) == 0 {
+		return name + "$"
+	}
+
+	parts := make([]string, 0, len(params))
+	for _, param := range params {
+		parts = append(parts, normalizeJavaTypeNameWithPackage(param.Type))
+	}
+	return name + "$" + strings.Join(parts, ",")
+}
+
+func resolveJavaStaticWildcardImport(baseMethod string, wildcardImports []string) (string, bool) {
+	if baseMethod == "" {
+		return "", false
+	}
+
+	for _, importedValue := range wildcardImports {
+		if pkg, typ, ok := splitQualifiedJavaType(importedValue); ok && looksLikeJavaTypeName(typ) {
+			return pkg + "." + typ, true
+		}
+	}
+
+	return "", false
+}
+
+func looksLikeJavaTypeName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+
+	for _, r := range name {
+		return r >= 'A' && r <= 'Z'
+	}
+	return false
+}
+
+func normalizeJavaTypeNameWithPackage(typeText string) string {
+	normalized := strings.TrimSpace(typeText)
+	arraySuffix := ""
+	if strings.HasSuffix(normalized, "...") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "..."))
+		arraySuffix = "[]"
+	}
+	for strings.HasSuffix(normalized, "[]") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "[]"))
+		arraySuffix += "[]"
+	}
+	if idx := strings.Index(normalized, "<"); idx > 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	replacer := strings.NewReplacer(".", "_", "$", "_")
+	return replacer.Replace(strings.TrimSpace(normalized)) + arraySuffix
 }

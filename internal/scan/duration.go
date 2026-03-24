@@ -2,6 +2,8 @@ package scan
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,23 +23,21 @@ func ParseDuration(s string) (time.Duration, error) {
 	// Check for "d" (days) suffix
 	if strings.HasSuffix(s, "d") {
 		days := strings.TrimSuffix(s, "d")
-		var value float64
-		n, parseErr := fmt.Sscanf(days, "%f", &value)
-		if parseErr != nil || n != 1 {
+		value, parseErr := strconv.ParseFloat(days, 64)
+		if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			return 0, fmt.Errorf("invalid duration format: %s", s)
 		}
-		return time.Duration(value*24) * time.Hour, nil
+		return time.Duration(value * 24 * float64(time.Hour)), nil
 	}
 
 	// Check for "w" (weeks) suffix
 	if strings.HasSuffix(s, "w") {
 		weeks := strings.TrimSuffix(s, "w")
-		var value float64
-		n, parseErr := fmt.Sscanf(weeks, "%f", &value)
-		if parseErr != nil || n != 1 {
+		value, parseErr := strconv.ParseFloat(weeks, 64)
+		if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			return 0, fmt.Errorf("invalid duration format: %s", s)
 		}
-		return time.Duration(value*24*7) * time.Hour, nil
+		return time.Duration(value * 24 * 7 * float64(time.Hour)), nil
 	}
 
 	// Return original error if no custom suffix matched

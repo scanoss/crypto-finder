@@ -14,16 +14,17 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 type fakeResolver struct {
 	ecosystem string
-	resolveFn func(ctx context.Context, targetDir string, maxDepth int) (*dependency.ResolveResult, error)
+	resolveFn func(ctx context.Context, targetDir string) (*dependency.ResolveResult, error)
 }
 
-func (f *fakeResolver) Resolve(ctx context.Context, targetDir string, maxDepth int) (*dependency.ResolveResult, error) {
+func (f *fakeResolver) Resolve(ctx context.Context, targetDir string) (*dependency.ResolveResult, error) {
 	if f.resolveFn != nil {
-		return f.resolveFn(ctx, targetDir, maxDepth)
+		return f.resolveFn(ctx, targetDir)
 	}
 	return &dependency.ResolveResult{}, nil
 }
@@ -86,7 +87,7 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	ds := &DependencyScanner{resolver: resolver}
 
 	dep := &dependency.Dependency{Module: "github.com/org/dep", Version: "v1.0.0", Dir: "/deps/dep"}
-	opts := DepScanOptions{ScanOptions: ScanOptions{Target: "/user/project", ScannerConfig: scanner.Config{SkipPatterns: []string{"vendor"}}}}
+	opts := DepScanOptions{ScanOptions: ScanOptions{Target: "/user/project", ScannerConfig: scanner.Config{SkipPatterns: skip.WithDefaultTestPatterns([]string{"vendor"})}}}
 	rulePaths := []string{"/rules/go.yaml"}
 
 	depOpts := ds.buildDepScanOptions(dep, rulePaths, opts)
@@ -99,8 +100,14 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	if len(depOpts.LanguageHint) != 1 || depOpts.LanguageHint[0] != "go" {
 		t.Fatalf("unexpected LanguageHint: %#v", depOpts.LanguageHint)
 	}
-	if depOpts.ScannerConfig.SkipPatterns != nil {
-		t.Fatalf("expected SkipPatterns to be cleared, got %#v", depOpts.ScannerConfig.SkipPatterns)
+	if len(depOpts.ScannerConfig.SkipPatterns) == 0 {
+		t.Fatal("expected test skip patterns to be preserved")
+	}
+	if containsString(depOpts.ScannerConfig.SkipPatterns, "vendor") {
+		t.Fatalf("expected non-test skip patterns to be cleared, got %#v", depOpts.ScannerConfig.SkipPatterns)
+	}
+	if !containsString(depOpts.ScannerConfig.SkipPatterns, "src/test/") {
+		t.Fatalf("expected test skip patterns to be preserved, got %#v", depOpts.ScannerConfig.SkipPatterns)
 	}
 
 	if !hasFindings(&entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}) {
@@ -121,18 +128,42 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 		WorkspaceMembers: []dependency.WorkspaceMember{{Name: "app", Dir: "/user/app"}, {Name: "lib", Dir: "/user/lib"}},
 		RootModule:       "ignored-in-workspace",
 	}
-	depReports := map[string]*entities.InterimReport{
-		"dep@1": {Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}},
-		"dep@2": {Findings: []entities.Finding{{}}},
-	}
-	depMap := map[string]*dependency.Dependency{
-		"dep@1": {Module: "github.com/acme/dep", Version: "v1", Dir: "/deps/dep1"},
-		"dep@2": {Module: "github.com/acme/dep2", Version: "v2", Dir: "/deps/dep2"},
+	javaDS := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "github.com/acme/dep", Version: "v1", Dir: "/deps/dep1"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}},
+		},
+		{
+			dep:    dependency.Dependency{Module: "github.com/acme/dep2", Version: "v2", Dir: "/deps/dep2"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{}}},
+		},
+		{
+			dep:    dependency.Dependency{Module: "github.com/acme/dep3", Version: "v3"},
+			status: depScanStatusSkippedNoSource,
+		},
+		{
+			dep:    dependency.Dependency{Module: "github.com/acme/dep4", Version: "v4", Dir: "/deps/dep4"},
+			status: depScanStatusFailed,
+			err:    errors.New("scan failed"),
+		},
 	}
 
-	pkgs := ds.collectPackageDirs("/user/project", resolvedWorkspace, depReports, depMap)
-	if len(pkgs) != 3 {
-		t.Fatalf("collectPackageDirs len = %d, want 3", len(pkgs))
+	sets := javaDS.collectPackageSets("/user/project", resolvedWorkspace, depResults)
+	// 2 workspace members + 1 dep with findings = 3 graphPackages; remaining Java deps stay type-only.
+	if len(sets.graphPackages) != 3 {
+		t.Fatalf("graphPackages len = %d, want 3 (2 workspace + 1 finding dep)", len(sets.graphPackages))
+	}
+	if len(sets.typeOnlyPackages) != 3 {
+		t.Fatalf("typeOnlyPackages len = %d, want 3", len(sets.typeOnlyPackages))
+	}
+	if sets.graphPackages[2].Version != "v1" {
+		t.Fatalf("graphPackages[2].Version = %q, want v1", sets.graphPackages[2].Version)
+	}
+	if sets.typeOnlyPackages[0].Version != "v2" || sets.typeOnlyPackages[1].Version != "v3" || sets.typeOnlyPackages[2].Version != "v4" {
+		t.Fatalf("unexpected typeOnlyPackages versions: %#v", sets.typeOnlyPackages)
 	}
 
 	workspaceUsers := ds.buildUserPackages(resolvedWorkspace)
@@ -147,33 +178,7 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 }
 
-func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
-	userTarget := t.TempDir()
-	depDir := t.TempDir()
-
-	entries := []callgraph.CallChainEntry{
-		{FunctionName: "Entry", Namespace: "app", FilePath: filepath.Join(userTarget, "main.go"), Line: 10},
-		{FunctionName: "Crypto", Namespace: "dep", FilePath: filepath.Join(depDir, "lib.go"), Line: 20},
-		{FunctionName: "X", Namespace: "other", FilePath: "/outside/path.go", Line: 30},
-	}
-
-	normalized := normalizeCallChainPaths(entries, userTarget, &dependency.Dependency{Module: "github.com/acme/dep", Version: "v1", Dir: depDir})
-	if normalized[0].FilePath != "main.go" {
-		t.Fatalf("expected user path to be normalized, got %q", normalized[0].FilePath)
-	}
-	if normalized[0].Namespace != "" {
-		t.Fatalf("expected user namespace to be cleared, got %q", normalized[0].Namespace)
-	}
-	if !strings.HasPrefix(normalized[1].FilePath, "github.com/acme/dep@v1/") {
-		t.Fatalf("expected dependency path prefix, got %q", normalized[1].FilePath)
-	}
-	if normalized[1].Namespace != "dep" {
-		t.Fatalf("expected dependency namespace to be preserved, got %q", normalized[1].Namespace)
-	}
-	if normalized[2].FilePath != "/outside/path.go" {
-		t.Fatalf("outside path should remain unchanged, got %q", normalized[2].FilePath)
-	}
-
+func TestDependencyScanner_MergeReports(t *testing.T) {
 	ds := &DependencyScanner{}
 	userReport := &entities.InterimReport{
 		Version: "1.2",
@@ -182,32 +187,59 @@ func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
 			{FilePath: "main.go", CryptographicAssets: []entities.CryptographicAsset{{Source: ""}}},
 		},
 	}
-	depReports := map[string]*entities.InterimReport{
-		"reachable": {
-			Findings: []entities.Finding{{
-				FilePath:            "dep/a.go",
-				CryptographicAssets: []entities.CryptographicAsset{{CallChains: [][]callgraph.CallChainEntry{{{FunctionName: "Entry", Namespace: "app", FilePath: "main.go", Line: 1}}}}},
-			}},
-		},
-		"unreachable": {
-			Findings: []entities.Finding{{
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "dep2", Version: "1"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{
 				FilePath:            "dep/b.go",
-				CryptographicAssets: []entities.CryptographicAsset{{}},
-			}},
+				CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
+			}}},
+		},
+		{
+			dep:    dependency.Dependency{Module: "dep1", Version: "1"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{
+				FilePath:            "dep/a.go",
+				CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
+			}}},
 		},
 	}
 
-	mergedReachable := ds.mergeReports(userReport, depReports, false)
-	if len(mergedReachable.Findings) != 2 {
-		t.Fatalf("reachable-only merge findings len = %d, want 2", len(mergedReachable.Findings))
+	merged := ds.mergeReports(userReport, depResults)
+	// All findings included: 1 user + 2 dependency
+	if len(merged.Findings) != 3 {
+		t.Fatalf("merge findings len = %d, want 3", len(merged.Findings))
 	}
-	if mergedReachable.Findings[0].CryptographicAssets[0].Source != "direct" {
+	if merged.Findings[0].CryptographicAssets[0].Source != "direct" {
 		t.Fatalf("expected user findings to default to direct source")
 	}
+	if merged.Findings[1].FilePath != "dep/b.go" || merged.Findings[2].FilePath != "dep/a.go" {
+		t.Fatalf("unexpected dependency finding order: %#v", merged.Findings)
+	}
+}
 
-	mergedAll := ds.mergeReports(userReport, depReports, true)
-	if len(mergedAll.Findings) != 3 {
-		t.Fatalf("include-unreachable merge findings len = %d, want 3", len(mergedAll.Findings))
+func TestEnsureFindingSources(t *testing.T) {
+	report := &entities.InterimReport{
+		Findings: []entities.Finding{
+			{
+				FilePath:            "direct.go",
+				CryptographicAssets: []entities.CryptographicAsset{{Source: ""}},
+			},
+			{
+				FilePath:            "dep.go",
+				CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
+			},
+		},
+	}
+
+	EnsureFindingSources(report)
+
+	if got := report.Findings[0].CryptographicAssets[0].Source; got != "direct" {
+		t.Fatalf("direct source = %q, want direct", got)
+	}
+	if got := report.Findings[1].CryptographicAssets[0].Source; got != "dependency" {
+		t.Fatalf("dependency source = %q, want dependency", got)
 	}
 }
 
@@ -271,23 +303,38 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	if asset.DependencyInfo == nil || asset.DependencyInfo.Module != "dep/mod" || asset.DependencyInfo.Version != "v1.0.0" {
 		t.Fatalf("unexpected dependency info: %#v", asset.DependencyInfo)
 	}
-	if asset.DependencyInfo.Function == "" {
-		t.Fatal("expected dependency function attribution to be set")
+	if depReport.Findings[0].FilePath != "lib.go" {
+		t.Fatalf("unexpected dependency file path: %s", depReport.Findings[0].FilePath)
 	}
-	if len(asset.CallChains) == 0 {
-		t.Fatal("expected dependency call chains to be populated")
+}
+
+func TestDependencyScanner_MergeReports_DependencyFindingIDUsesCanonicalPath(t *testing.T) {
+	ds := &DependencyScanner{}
+	userReport := &entities.InterimReport{
+		Version: "1.2",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
 	}
-	if !strings.HasPrefix(depReport.Findings[0].FilePath, "dep/mod@v1.0.0/") {
-		t.Fatalf("unexpected rewritten file path: %s", depReport.Findings[0].FilePath)
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "dep/mod", Version: "v1.0.0", Dir: "/deps/dep"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{
+				FilePath: "lib.go",
+				CryptographicAssets: []entities.CryptographicAsset{{
+					StartLine:      10,
+					Source:         "dependency",
+					DependencyInfo: &entities.DependencyInfo{Module: "dep/mod", Version: "v1.0.0"},
+					Rules:          []entities.RuleInfo{{ID: "rule.dep"}},
+				}},
+			}}},
+		},
 	}
 
-	userReport := &entities.InterimReport{Findings: []entities.Finding{{
-		FilePath:            "main.go",
-		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 30}},
-	}}}
-	ds.enrichUserFindings(userReport, userTarget, tracer, map[string]bool{"app": true})
-	if len(userReport.Findings[0].CryptographicAssets[0].CallChains) == 0 {
-		t.Fatal("expected user finding call chain enrichment")
+	merged := ds.mergeReports(userReport, depResults)
+	got := merged.Findings[0].CryptographicAssets[0].FindingID
+	want := generateFindingID("dep/mod@v1.0.0/lib.go", 10, []entities.RuleInfo{{ID: "rule.dep"}})
+	if got != want {
+		t.Fatalf("dependency finding_id = %q, want %q", got, want)
 	}
 }
 
@@ -337,7 +384,7 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	cachedReport := &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}
 	cache.getMap[cacheKey] = cachedReport
 
-	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep cache hit error: %v", res.err)
 	}
@@ -349,7 +396,7 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 
 	delete(cache.getMap, cacheKey)
-	res = ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep cache miss error: %v", res.err)
 	}
@@ -366,9 +413,13 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 
 func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 	var scanCalls atomic.Int32
+	var sawEmptyTarget atomic.Bool
 	mockScan := &mockScanner{
 		scanFunc: func(_ context.Context, target string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
 			scanCalls.Add(1)
+			if target == "" {
+				sawEmptyTarget.Store(true)
+			}
 			if strings.Contains(target, "bad") {
 				return nil, errors.New("scan failed")
 			}
@@ -381,21 +432,95 @@ func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 
 	ds := &DependencyScanner{orchestrator: orch, resolver: &fakeResolver{ecosystem: "go"}}
 	deps := []dependency.Dependency{
+		{Module: "c", Version: "1"},
 		{Module: "a", Version: "1", Dir: t.TempDir()},
-		{Module: "a", Version: "1", Dir: t.TempDir()}, // duplicate module@version
+		{Module: "a", Version: "1"}, // duplicate module@version; canonical dep should keep source dir
 		{Module: "b", Version: "1", Dir: filepath.Join(t.TempDir(), "bad")},
 	}
 
-	reports, depMap := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	outcomes := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 
-	if len(reports) != 1 {
-		t.Fatalf("reports len = %d, want 1", len(reports))
+	if len(outcomes) != 3 {
+		t.Fatalf("outcomes len = %d, want 3", len(outcomes))
 	}
-	if len(depMap) != 1 {
-		t.Fatalf("depMap len = %d, want 1", len(depMap))
+	if outcomes[0].dep.Module != "a" || outcomes[0].status != depScanStatusScanned {
+		t.Fatalf("unexpected first outcome: %#v", outcomes[0])
 	}
-	if calls := scanCalls.Load(); calls < 2 {
-		t.Fatalf("expected at least two scan attempts (dedup + failing dep), got %d", calls)
+	if outcomes[1].dep.Module != "b" || outcomes[1].status != depScanStatusFailed {
+		t.Fatalf("unexpected second outcome: %#v", outcomes[1])
+	}
+	if outcomes[2].dep.Module != "c" || outcomes[2].status != depScanStatusSkippedNoSource {
+		t.Fatalf("unexpected third outcome: %#v", outcomes[2])
+	}
+	if calls := scanCalls.Load(); calls != 2 {
+		t.Fatalf("expected two scan attempts (deduped success + failure), got %d", calls)
+	}
+	if sawEmptyTarget.Load() {
+		t.Fatal("scanner should never be called with an empty dependency target")
+	}
+}
+
+func TestDependencyScanner_ScanSingleDep_JavaRuntimePartitionsCacheKey(t *testing.T) {
+	mockScan := &mockScanner{
+		scanFunc: func(_ context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
+			return &entities.InterimReport{}, nil
+		},
+	}
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", mockScan)
+
+	ruleSource := &mockRuleSource{loadFunc: func() ([]string, error) {
+		return []string{"/rules/java.yaml"}, nil
+	}}
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(ruleSource), registry)
+	cache := &fakeFindingsCache{getMap: map[string]*entities.InterimReport{}}
+	ds := &DependencyScanner{
+		orchestrator:  orchestrator,
+		resolver:      &fakeResolver{ecosystem: "java"},
+		findingsCache: cache,
+	}
+
+	dep := dependency.Dependency{Module: "org.example:lib", Version: "1.2.3", Dir: t.TempDir()}
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/java.yaml"}, "hash", DepScanOptions{
+		ScanOptions: ScanOptions{
+			ScannerName:           "test-scanner",
+			JavaRuntimeCacheToken: "jdk-21",
+		},
+	})
+	if res.err != nil {
+		t.Fatalf("scanSingleDep: %v", res.err)
+	}
+	if cache.putLastKey != "org.example:lib@1.2.3:hash:jdk-21" {
+		t.Fatalf("putLastKey = %q, want org.example:lib@1.2.3:hash:jdk-21", cache.putLastKey)
+	}
+}
+
+func TestDependencyScanner_CollectPackageSets_NonJavaSkipsTypeOnlyWithoutCompiledFallback(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
+	resolved := &dependency.ResolveResult{RootModule: "example.com/root"}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "example.com/finding", Version: "v1", Dir: "/deps/finding"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}},
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/no-source", Version: "v2"},
+			status: depScanStatusSkippedNoSource,
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/failed", Version: "v3", Dir: "/deps/failed"},
+			status: depScanStatusFailed,
+			err:    errors.New("scan failed"),
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if len(sets.graphPackages) != 2 {
+		t.Fatalf("graphPackages len = %d, want 2", len(sets.graphPackages))
+	}
+	if len(sets.typeOnlyPackages) != 0 {
+		t.Fatalf("typeOnlyPackages len = %d, want 0", len(sets.typeOnlyPackages))
 	}
 }
 
@@ -404,7 +529,7 @@ func TestDependencyScanner_ScanWithDependencies_NoDepsAndErrors(t *testing.T) {
 
 	t.Run("no-dependencies", func(t *testing.T) {
 		ds := &DependencyScanner{
-			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string, _ int) (*dependency.ResolveResult, error) {
+			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string) (*dependency.ResolveResult, error) {
 				return &dependency.ResolveResult{RootModule: "example.com/root"}, nil
 			}},
 		}
@@ -423,7 +548,7 @@ func TestDependencyScanner_ScanWithDependencies_NoDepsAndErrors(t *testing.T) {
 
 	t.Run("resolver-error", func(t *testing.T) {
 		ds := &DependencyScanner{
-			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string, _ int) (*dependency.ResolveResult, error) {
+			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string) (*dependency.ResolveResult, error) {
 				return nil, errors.New("resolve failed")
 			}},
 		}
@@ -440,7 +565,7 @@ func TestDependencyScanner_ScanWithDependencies_NoDepsAndErrors(t *testing.T) {
 		}}), scanner.NewRegistry())
 		ds := &DependencyScanner{
 			orchestrator: orch,
-			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string, _ int) (*dependency.ResolveResult, error) {
+			resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string) (*dependency.ResolveResult, error) {
 				return &dependency.ResolveResult{RootModule: "root", Dependencies: []dependency.Dependency{{Module: "a", Version: "1", Dir: t.TempDir()}}}, nil
 			}},
 		}
@@ -450,4 +575,13 @@ func TestDependencyScanner_ScanWithDependencies_NoDepsAndErrors(t *testing.T) {
 			t.Fatalf("expected rules load error, got %v", err)
 		}
 	})
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

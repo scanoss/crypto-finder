@@ -71,7 +71,6 @@
       "type": "object",
       "description": "A single detected cryptographic element",
       "required": [
-        "match_type",
         "start_line",
         "end_line",
         "match",
@@ -79,11 +78,6 @@
         "metadata"
       ],
       "properties": {
-        "match_type": {
-          "type": "string",
-          "description": "Detection method used",
-          "examples": ["semgrep", "cbom_toolkit", "keyword_search"]
-        },
         "start_line": {
           "type": "integer",
           "minimum": 1,
@@ -129,16 +123,6 @@
         "dependency_info": {
           "$ref": "#/$defs/DependencyInfo",
           "description": "Attribution data when the finding originates from a dependency (v1.2+)"
-        },
-        "call_chains": {
-          "type": "array",
-          "description": "All traced call paths from user code to crypto call site. Each inner array is one complete path, ordered from program entry point (first) to crypto call site (last). Entry [i] calls entry [i+1]. (v1.2+, enriched in v1.3)",
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/CallChainEntry"
-            }
-          }
         }
       },
       "oneOf": [
@@ -158,71 +142,6 @@
         "version": {
           "type": "string",
           "description": "Dependency version (e.g., \"v0.17.0\")"
-        },
-        "function": {
-          "type": "string",
-          "description": "Specific function in the dependency where crypto usage was found"
-        }
-      }
-    },
-    "CallChainEntry": {
-      "type": "object",
-      "description": "A single step in a call chain trace",
-      "required": ["function_name", "file", "line"],
-      "properties": {
-        "function_name": {
-          "type": "string",
-          "description": "Function/method name only (without namespace/package)"
-        },
-        "namespace": {
-          "type": "string",
-          "description": "Package/module namespace. Usually present for dependency nodes and omitted for first-party user-code nodes."
-        },
-        "file": {
-          "type": "string",
-          "description": "File path containing the function"
-        },
-        "line": {
-          "type": "integer",
-          "description": "Line number associated with this call-chain step",
-          "minimum": 1
-        },
-        "owner_type": {
-          "type": "string",
-          "description": "Owning symbol type, language-specific (e.g., class, module, type)"
-        },
-        "owner_name": {
-          "type": "string",
-          "description": "Owning symbol name"
-        },
-        "function_type": {
-          "type": "string",
-          "description": "Function category (e.g., function, method, constructor, associated_function)"
-        },
-        "return_type": {
-          "type": "string",
-          "description": "Declared return type when statically available"
-        },
-        "parameters": {
-          "type": "array",
-          "description": "Parameter list for this function. Argument values are populated when known from the previous call-chain hop.",
-          "items": {
-            "$ref": "#/$defs/CallChainParameter"
-          }
-        }
-      }
-    },
-    "CallChainParameter": {
-      "type": "object",
-      "description": "Parameter details for a call chain step",
-      "properties": {
-        "type": {
-          "type": "string",
-          "description": "Declared parameter type when statically available"
-        },
-        "argument_value": {
-          "type": "string",
-          "description": "Argument expression passed to this parameter from the previous call-chain step"
         }
       }
     },

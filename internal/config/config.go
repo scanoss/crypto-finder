@@ -26,6 +26,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
+
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // Default configuration values.
@@ -42,9 +44,11 @@ const (
 
 // Config manages application configuration.
 type Config struct {
-	apiKey string
-	apiURL string
-	mu     sync.RWMutex
+	apiKey       string
+	apiURL       string
+	javaJDKMajor string
+	javaJDKHomes map[string]string
+	mu           sync.RWMutex
 }
 
 var (
@@ -84,6 +88,25 @@ func (c *Config) GetAPIURL() string {
 	return c.apiURL
 }
 
+// GetJavaJDKMajor returns the configured Java JDK major selector.
+func (c *Config) GetJavaJDKMajor() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.javaJDKMajor
+}
+
+// GetJavaJDKHomes returns the configured Java JDK homes keyed by major version.
+func (c *Config) GetJavaJDKHomes() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	homes := make(map[string]string, len(c.javaJDKHomes))
+	for major, path := range c.javaJDKHomes {
+		homes[major] = path
+	}
+	return homes
+}
+
 // SetAPIKey updates the API key and persists to config file.
 func (c *Config) SetAPIKey(key string) error {
 	c.mu.Lock()
@@ -115,7 +138,37 @@ func (c *Config) SetAPIURL(url string) error {
 //
 // The order of setup below doesn't affect priority - viper handles it automatically.
 func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
-	// Only setup config file path if not already set.
+	if err := c.setupViperConfig(); err != nil {
+		return err
+	}
+	if err := c.bindEnvVars(); err != nil {
+		return err
+	}
+	c.readConfigFile()
+	if err := c.applyRuntimeOverrides(apiKeyFlag, apiURLFlag); err != nil {
+		return err
+	}
+
+	javaJDKMajor, err := javaruntime.NormalizeMajor(viper.GetString("java_jdk_major"))
+	if err != nil {
+		return fmt.Errorf("invalid Java JDK major configuration: %w", err)
+	}
+	javaJDKHomes, err := javaruntime.NormalizeHomes(viper.GetStringMapString("java_jdk_homes"))
+	if err != nil {
+		return fmt.Errorf("invalid Java JDK homes configuration: %w", err)
+	}
+
+	c.mu.Lock()
+	c.apiKey = viper.GetString("api_key")
+	c.apiURL = viper.GetString("api_url")
+	c.javaJDKMajor = javaJDKMajor
+	c.javaJDKHomes = javaJDKHomes
+	c.mu.Unlock()
+
+	return nil
+}
+
+func (c *Config) setupViperConfig() error {
 	if viper.ConfigFileUsed() == "" {
 		configPath, err := GetConfigFilePath()
 		if err != nil {
@@ -131,33 +184,42 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 
-		// Setup viper
 		viper.SetConfigFile(configPath)
 		viper.SetConfigType("json")
 		viper.SetConfigPermissions(0o600)
 	}
 
-	// Set defaults (lowest priority)
 	viper.SetDefault("api_url", DefaultAPIURL)
+	viper.SetDefault("java_jdk_major", javaruntime.AutoMajor)
+	return nil
+}
 
-	// Bind environment variables (2nd priority)
+func (c *Config) bindEnvVars() error {
 	viper.SetEnvPrefix("SCANOSS")
-	if err := viper.BindEnv("api_key"); err != nil {
-		return fmt.Errorf("failed to bind API key env var: %w", err)
+	envBindings := map[string]string{
+		"api_key":        "API key",
+		"api_url":        "API URL",
+		"java_jdk_major": "Java JDK major",
+		"java_jdk_homes": "Java JDK homes",
 	}
-	if err := viper.BindEnv("api_url"); err != nil {
-		return fmt.Errorf("failed to bind API URL env var: %w", err)
+	for key, label := range envBindings {
+		if err := viper.BindEnv(key); err != nil {
+			return fmt.Errorf("failed to bind %s env var: %w", label, err)
+		}
 	}
+	return nil
+}
 
-	// Read config file (3rd priority)
-	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later
+func (c *Config) readConfigFile() {
+	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later.
 	_ = viper.ReadInConfig()
 
 	if err := c.ensureConfigPermissions(); err != nil {
 		log.Warn().Err(err).Msg("Failed to ensure config file permissions")
 	}
+}
 
-	// Apply CLI flags (highest priority)
+func (c *Config) applyRuntimeOverrides(apiKeyFlag, apiURLFlag string) error {
 	if apiKeyFlag != "" {
 		viper.Set("api_key", apiKeyFlag)
 	}
@@ -165,11 +227,16 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 		viper.Set("api_url", apiURLFlag)
 	}
 
-	c.mu.Lock()
-	c.apiKey = viper.GetString("api_key")
-	c.apiURL = viper.GetString("api_url")
-	c.mu.Unlock()
+	rawHomes := os.Getenv("SCANOSS_JAVA_JDK_HOMES")
+	if rawHomes == "" {
+		return nil
+	}
 
+	parsedHomes, err := javaruntime.ParseHomeEnv(rawHomes)
+	if err != nil {
+		return fmt.Errorf("invalid SCANOSS_JAVA_JDK_HOMES: %w", err)
+	}
+	viper.Set("java_jdk_homes", parsedHomes)
 	return nil
 }
 

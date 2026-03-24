@@ -25,6 +25,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
@@ -71,6 +72,12 @@ type ScanOptions struct {
 	// RulePaths, when non-nil, bypasses the rules manager and uses these paths directly.
 	// This is used by the dependency scanner to pass pre-loaded, language-filtered rules.
 	RulePaths []string
+
+	// JavaRuntime controls Java-specific dependency resolution and bytecode type enrichment.
+	JavaRuntime javaruntime.Config
+
+	// JavaRuntimeCacheToken partitions dependency scan caches by Java runtime selection.
+	JavaRuntimeCacheToken string
 }
 
 // Scan orchestrates the complete scanning workflow.

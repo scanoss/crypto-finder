@@ -19,7 +19,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -32,6 +34,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
@@ -48,6 +51,7 @@ const (
 	defaultTimeout        = "10m"
 	defaultRulesetName    = "dca"
 	defaultRulesetVersion = "latest"
+	ecosystemJava         = "java"
 )
 
 // AllowedScanners lists the scanners supported by the tool.
@@ -75,12 +79,13 @@ var (
 	scanNoDedup         bool
 	scanInterfile       bool
 	scanDependencies    bool
-	scanDepMaxDepth     int
+	scanIncludeTests    bool
 	scanDepEcosystem    string
-	scanDepUnreachable  bool
 	scanExportCallgraph string
 	scanExportCgFormat  string
 	scanDepWorkers      int
+	scanJavaJDKMajor    string
+	scanJavaJDKHomes    []string
 )
 
 var scanCmd = &cobra.Command{
@@ -138,12 +143,135 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
-	scanCmd.Flags().IntVar(&scanDepMaxDepth, "dep-max-depth", 3, "Maximum depth for recursive dependency resolution")
+	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
-	scanCmd.Flags().BoolVar(&scanDepUnreachable, "dep-include-unreachable", false, "Include crypto findings in dependencies not reachable from user code call graph")
+
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
-	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file (requires --scan-dependencies)")
-	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format: json, dot, text")
+	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
+	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
+	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
+	scanCmd.Flags().StringArrayVar(&scanJavaJDKHomes, "java-jdk-home", []string{}, "Java JDK home mapping in the form <major>=<path> (repeatable)")
+}
+
+func callGraphTargetDir(target string) (string, error) {
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return target, nil
+	}
+	return filepath.Dir(target), nil
+}
+
+func ecosystemFromHints(target string, languageHints []string) string {
+	if len(languageHints) > 0 {
+		switch languageHints[0] {
+		case "go", ecosystemJava, "python", "rust":
+			return languageHints[0]
+		}
+	}
+
+	targetDir, err := callGraphTargetDir(target)
+	if err == nil {
+		if ecosystem := scanutil.DetectEcosystem(targetDir); ecosystem != "" {
+			return ecosystem
+		}
+	}
+
+	switch filepath.Ext(target) {
+	case ".go":
+		return "go"
+	case ".java":
+		return ecosystemJava
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	default:
+		return ""
+	}
+}
+
+func resolveJavaRuntimeConfig(cfg *config.Config) (javaruntime.Config, error) {
+	major := cfg.GetJavaJDKMajor()
+	if scanJavaJDKMajor != "" {
+		major = scanJavaJDKMajor
+	}
+
+	homes := cfg.GetJavaJDKHomes()
+	if len(scanJavaJDKHomes) > 0 {
+		flagHomes, err := javaruntime.ParseHomeEntries(scanJavaJDKHomes)
+		if err != nil {
+			return javaruntime.Config{}, err
+		}
+		homes = javaruntime.MergeHomes(homes, flagHomes)
+	}
+
+	return javaruntime.NewConfig(major, homes)
+}
+
+func newCallGraphBuilder(ecosystem string, javaRuntime javaruntime.Config, includeTests bool) (*callgraph.Builder, error) {
+	cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(includeTests))
+	if cgParser == nil {
+		return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
+	}
+
+	cgBuilder := callgraph.NewBuilder(cgParser)
+	if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem, javaRuntime); typeResolver != nil {
+		if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
+			bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to create Java bytecode cache, bytecode indexing will not be cached")
+			} else {
+				javaResolver.SetBytecodeIndexCache(bytecodeCache)
+			}
+		}
+		cgBuilder.SetTypeResolver(typeResolver)
+	}
+
+	return cgBuilder, nil
+}
+
+func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
+	if includeTests {
+		return patterns
+	}
+	return skip.WithDefaultTestPatterns(patterns)
+}
+
+func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool) (*engine.DepScanResult, error) {
+	targetDir, err := callGraphTargetDir(target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve call graph target: %w", err)
+	}
+
+	ecosystem := ecosystemFromHints(target, languageHints)
+	if ecosystem == "" {
+		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
+	}
+
+	cgBuilder, err := newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
+	if err != nil {
+		return nil, err
+	}
+
+	rootModule := scanutil.DetectRootModule(targetDir, ecosystem)
+	graph, err := cgBuilder.BuildFromDirectories([]callgraph.PackageDir{{
+		Dir:        targetDir,
+		ImportPath: rootModule,
+	}}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build call graph: %w", err)
+	}
+
+	return &engine.DepScanResult{
+		Report:      report,
+		CallGraph:   graph,
+		RootModule:  rootModule,
+		Ecosystem:   ecosystem,
+		ProjectRoot: targetDir,
+	}, nil
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -195,6 +323,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		// Fallback to just use default skipped directories
 		skipPatterns = skip.DefaultSkippedDirs
 	}
+	skipPatterns = applyTestSkipPatterns(skipPatterns, scanIncludeTests)
 
 	if len(skipPatterns) > 0 {
 		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), multiSourceSkipPatterns.Name())
@@ -206,6 +335,24 @@ func runScan(_ *cobra.Command, args []string) error {
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(scanAPIKey, scanAPIURL); err != nil {
 		return fmt.Errorf("failed to initialize config: %w", err)
+	}
+	var (
+		javaRuntime         javaruntime.Config
+		javaRuntimeResolved bool
+	)
+	ensureJavaRuntime := func() error {
+		if javaRuntimeResolved {
+			return nil
+		}
+
+		resolvedRuntime, resolveErr := resolveJavaRuntimeConfig(cfg)
+		if resolveErr != nil {
+			return fmt.Errorf("failed to resolve Java runtime configuration: %w", resolveErr)
+		}
+
+		javaRuntime = resolvedRuntime
+		javaRuntimeResolved = true
+		return nil
 	}
 
 	ruleSources := make([]rules.RuleSource, 0)
@@ -277,9 +424,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
 	scanOpts := engine.ScanOptions{
-		Target:       target,
-		ScannerName:  scanScanner,
-		LanguageHint: scanLanguages,
+		Target:                target,
+		ScannerName:           scanScanner,
+		LanguageHint:          scanLanguages,
+		JavaRuntime:           javaRuntime,
+		JavaRuntimeCacheToken: javaRuntime.CacheKeyToken(),
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
@@ -294,13 +443,17 @@ func runScan(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	var callGraphResult *engine.DepScanResult
 
 	// Dependency scanning phase.
 	//nolint:nestif // This orchestration intentionally branches by ecosystem/resolver/parser/caching availability.
 	if scanDependencies {
 		ecosystem := scanDepEcosystem
 		if ecosystem == "auto" {
-			ecosystem = scanutil.DetectEcosystem(target)
+			ecosystem = ecosystemFromHints(target, scanLanguages)
+			if ecosystem == "" {
+				ecosystem = scanutil.DetectEcosystem(target)
+			}
 		}
 
 		if ecosystem != "" {
@@ -314,37 +467,42 @@ func runScan(_ *cobra.Command, args []string) error {
 			if resolverErr != nil {
 				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
 			} else {
-				cgParser := callgraph.NewParserForEcosystem(ecosystem)
+				if ecosystem == "java" {
+					if err := ensureJavaRuntime(); err != nil {
+						return err
+					}
+					scanOpts.JavaRuntime = javaRuntime
+					scanOpts.JavaRuntimeCacheToken = javaRuntime.CacheKeyToken()
+				}
+				if javaResolver, ok := resolver.(*dependency.MavenResolver); ok {
+					javaResolver.SetJavaRuntime(javaRuntime)
+				}
+				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
 				if cgParser == nil {
 					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
 				} else {
-					cgBuilder := callgraph.NewBuilder(cgParser)
-
-					var findingsCache engine.FindingsCache
-					fc, cacheErr := engine.NewDiskFindingsCache()
-					if cacheErr != nil {
-						log.Warn().Err(cacheErr).Msg("Failed to create findings cache, dependency scans will not be cached")
+					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests)
+					if builderErr != nil {
+						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
 					} else {
-						findingsCache = fc
-					}
-
-					depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
-					depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
-						MaxDepth:           scanDepMaxDepth,
-						IncludeUnreachable: scanDepUnreachable,
-						Workers:            scanDepWorkers,
-						ScanOptions:        scanOpts,
-					})
-					if depErr != nil {
-						return fmt.Errorf("dependency scan failed: %w", depErr)
-					}
-					report = depResult.Report
-
-					// Export call graph if requested
-					if scanExportCallgraph != "" && depResult.CallGraph != nil {
-						if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, depResult); exportErr != nil {
-							return fmt.Errorf("failed to export call graph: %w", exportErr)
+						var findingsCache engine.FindingsCache
+						fc, cacheErr := engine.NewDiskFindingsCache()
+						if cacheErr != nil {
+							log.Warn().Err(cacheErr).Msg("Failed to create findings cache, dependency scans will not be cached")
+						} else {
+							findingsCache = fc
 						}
+
+						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
+						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
+							Workers:     scanDepWorkers,
+							ScanOptions: scanOpts,
+						})
+						if depErr != nil {
+							return fmt.Errorf("dependency scan failed: %w", depErr)
+						}
+						report = depResult.Report
+						callGraphResult = depResult
 					}
 				}
 			}
@@ -353,10 +511,48 @@ func runScan(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	engine.EnsureFindingSources(report)
+
+	if scanExportCallgraph != "" && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
+		if ecosystemFromHints(target, scanLanguages) == "java" {
+			if err := ensureJavaRuntime(); err != nil {
+				return err
+			}
+		}
+		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests)
+		if err != nil {
+			return fmt.Errorf("failed to build call graph for export: %w", err)
+		}
+	}
+
+	if scanExportCallgraph != "" {
+		exportStart := time.Now()
+		log.Info().
+			Str("file", scanExportCallgraph).
+			Str("format", scanExportCgFormat).
+			Msg("Starting call graph export")
+		engine.AssignFindingIDs(report)
+		if callGraphResult != nil {
+			callGraphResult.Report = report
+		}
+		if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult); exportErr != nil {
+			return fmt.Errorf("failed to export call graph: %w", exportErr)
+		}
+		log.Info().
+			Str("file", scanExportCallgraph).
+			Dur("duration", time.Since(exportStart)).
+			Msg("Call graph export complete")
+	}
+
 	report.Version = entities.InterimFormatVersion
 
 	oidEnricher := enricher.NewOIDEnricher()
+	oidStart := time.Now()
+	log.Info().Msg("Starting OID enrichment")
 	oidEnricher.EnrichReport(report)
+	log.Info().
+		Dur("duration", time.Since(oidStart)).
+		Msg("OID enrichment finished")
 
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
@@ -365,9 +561,18 @@ func runScan(_ *cobra.Command, args []string) error {
 	}
 
 	// Write output (to stdout or file)
+	writeStart := time.Now()
+	log.Info().
+		Str("destination", scanOutput).
+		Str("format", scanFormat).
+		Msg("Writing scan output")
 	if err := writer.Write(report, scanOutput); err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
+	log.Info().
+		Str("destination", scanOutput).
+		Dur("duration", time.Since(writeStart)).
+		Msg("Scan output write complete")
 
 	findingsCount := scanutil.CountFindings(report)
 	filesCount := len(report.Findings)

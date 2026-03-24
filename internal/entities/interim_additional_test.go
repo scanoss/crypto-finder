@@ -132,7 +132,7 @@ func TestCryptographicAsset_MetadataSuffixSortingAndExclusions(t *testing.T) {
 
 func TestCryptographicAsset_UnmarshalJSON_CompatAndErrors(t *testing.T) {
 	var oldFormat CryptographicAsset
-	oldJSON := []byte(`{"match_type":"semgrep","start_line":1,"end_line":1,"rule":{"id":"r1","message":"m","severity":"INFO"}}`)
+	oldJSON := []byte(`{"start_line":1,"end_line":1,"rule":{"id":"r1","message":"m","severity":"INFO"}}`)
 	if err := json.Unmarshal(oldJSON, &oldFormat); err != nil {
 		t.Fatalf("unmarshal old format: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestCryptographicAsset_UnmarshalJSON_CompatAndErrors(t *testing.T) {
 	}
 
 	var newFormat CryptographicAsset
-	newJSON := []byte(`{"match_type":"semgrep","start_line":1,"end_line":1,"rules":[{"id":"r2","message":"m2","severity":"WARNING"}],"rule":{"id":"r1","message":"m","severity":"INFO"}}`)
+	newJSON := []byte(`{"start_line":1,"end_line":1,"rules":[{"id":"r2","message":"m2","severity":"WARNING"}],"rule":{"id":"r1","message":"m","severity":"INFO"}}`)
 	if err := json.Unmarshal(newJSON, &newFormat); err != nil {
 		t.Fatalf("unmarshal new format: %v", err)
 	}

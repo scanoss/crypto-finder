@@ -2,7 +2,12 @@
   "settings": {
     "skip": {
       "patterns": {
-        "scanning": ["target/", "testdata/", "*_test.go"]
+        "scanning": [
+          "target/",
+          "testdata/",
+          "*_test.go",
+          "node_modules/"
+        ]
       },
       "sizes": {}
     }
@@ -14,6 +19,9 @@
       }
     ],
     "remove": [
+      {
+        "purl": "pkg:github/zaparooproject/zaparoo-core"
+      },
       {
         "purl": "pkg:github/ibrahmsql/gocat"
       },
@@ -31,6 +39,13 @@
       },
       {
         "purl": "pkg:github/lipkau/mealie_translate"
+      },
+      {
+        "purl": "pkg:deb/debian/libkdegames"
+      },
+      {
+        "path": "internal/scan/root_module.go",
+        "purl": "pkg:github/simplyliz/codemcp"
       }
     ]
   }

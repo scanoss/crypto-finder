@@ -54,13 +54,25 @@ func TestNewSourceCacheAndCachedDir(t *testing.T) {
 		t.Fatal("expected cache miss for missing dir")
 	}
 
-	existing := filepath.Join(cache.baseDir, "org.example:lib", "1.0.0")
+	existing := filepath.Join(cache.baseDir, "org.example-lib", "1.0.0")
 	if err := os.MkdirAll(existing, 0o750); err != nil {
 		t.Fatalf("mkdir existing cache dir: %v", err)
 	}
 
 	if got := cache.CachedDir("org.example:lib", "1.0.0"); got != existing {
 		t.Fatalf("CachedDir() = %q, want %q", got, existing)
+	}
+}
+
+func TestNewSourceCache_ErrorWhenHomeIsNotUsable(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(home, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setTestHome(t, home)
+
+	if _, err := NewSourceCache(); err == nil || !strings.Contains(err.Error(), "cannot create source cache dir") {
+		t.Fatalf("expected source cache dir creation error, got %v", err)
 	}
 }
 
@@ -94,7 +106,7 @@ func TestSourceCache_ExtractZip(t *testing.T) {
 		t.Fatalf("expected non-java file to be skipped")
 	}
 
-	zipSlip := filepath.Join(cache.baseDir, "org.example:lib", "evil", "attack.java")
+	zipSlip := filepath.Join(cache.baseDir, "org.example-lib", "evil", "attack.java")
 	if _, err := os.Stat(zipSlip); !os.IsNotExist(err) {
 		t.Fatalf("expected zip slip path not to be extracted")
 	}
@@ -129,6 +141,73 @@ func TestSourceCache_ExtractZip_InvalidArchive(t *testing.T) {
 
 	if got := cache.CachedDir("org.example:broken", "0.0.1"); got != "" {
 		t.Fatalf("expected no cached dir after failed extraction, got %q", got)
+	}
+}
+
+func TestSourceCache_ExtractZip_AllFilesWhenExtensionsEmpty(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+
+	archive := filepath.Join(t.TempDir(), "sources-all.jar")
+	createZipArchive(t, archive, map[string]string{
+		"src/Main.java":  "class Main {}",
+		"src/readme.txt": "keep me",
+	})
+
+	dir, err := cache.ExtractZip(archive, "org.example:all", "1.0.0", nil)
+	if err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+
+	for _, rel := range []string{"src/Main.java", "src/readme.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Fatalf("expected %s to be extracted: %v", rel, err)
+		}
+	}
+}
+
+func TestSourceCache_ExtractZip_CreateDirError(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "cache-file")
+	if err := os.WriteFile(base, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache := &SourceCache{baseDir: base}
+
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{"Main.java": "class Main {}"})
+
+	if _, err := cache.ExtractZip(archive, "org.example:lib", "1.0.0", []string{".java"}); err == nil || !strings.Contains(err.Error(), "create extraction dir") {
+		t.Fatalf("expected extraction dir creation error, got %v", err)
+	}
+}
+
+func TestExtractZipFile_CreateDestinationError(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{"src/Main.java": "class Main {}"})
+
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatalf("OpenReader: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	destPath := filepath.Join(t.TempDir(), "dest-dir")
+	if err := os.Mkdir(destPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := extractZipFile(reader.File[0], destPath); err == nil {
+		t.Fatal("expected extractZipFile to fail when destination path is a directory")
+	}
+}
+
+func TestSanitizeSourceCacheKey(t *testing.T) {
+	if got := sanitizeSourceCacheKey("org.example:lib:extra"); got != "org.example-lib-extra" {
+		t.Fatalf("sanitizeSourceCacheKey() = %q", got)
 	}
 }
 

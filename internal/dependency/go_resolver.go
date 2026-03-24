@@ -33,9 +33,8 @@ func (r *GoResolver) Ecosystem() string {
 }
 
 // Resolve uses `go list -m -json all` to resolve all transitive dependencies
-// for the Go project at targetDir. The maxDepth parameter limits how deep to
-// traverse transitive dependencies (-1 for unlimited).
-func (r *GoResolver) Resolve(ctx context.Context, targetDir string, _ int) (*ResolveResult, error) {
+// for the Go project at targetDir.
+func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	modules, err := r.goListModules(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Go modules in %s: %w", targetDir, err)

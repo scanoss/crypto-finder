@@ -185,6 +185,8 @@ crypto-finder scan [flags] <target>
 - `--timeout <duration>` - Scan timeout (default: 10m)
 - `--scan-dependencies` - Scan third-party dependencies for cryptographic usage (requires deps image or local toolchains)
 - `--export-callgraph` - Export call graph to JSON for debugging
+- `--java-jdk-major <major>` - Java JDK major for Java dependency resolution/type enrichment: `auto`, `8`, `11`, `17`, `21`
+- `--java-jdk-home <major=path>` - Java JDK home mapping for explicit Java runtime selection (repeatable)
 - `--interfile` - Enable cross-file analysis (Semgrep Pro only)
 - `--verbose`, `-v` - Enable verbose logging
 - `--help` - Display help information

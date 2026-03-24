@@ -62,12 +62,21 @@ type Client struct {
 
 // NewClient creates a new API client.
 func NewClient(baseURL, apiKey string) *Client {
-	return &Client{
-		httpClient: &http.Client{
+	return NewClientWithHTTPClient(baseURL, apiKey, nil)
+}
+
+// NewClientWithHTTPClient creates a new API client with an optional custom HTTP client.
+func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{
 			Timeout: config.DefaultTimeout,
-		},
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		}
+	}
+
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    baseURL,
+		apiKey:     apiKey,
 	}
 }
 

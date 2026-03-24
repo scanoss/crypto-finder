@@ -22,12 +22,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -190,17 +188,6 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the semgrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	var spinner *pterm.SpinnerPrinter
-	if scanner.ShouldUseSpinner() {
-		spinner, err = pterm.DefaultSpinner.
-			WithRemoveWhenDone(true).
-			WithWriter(os.Stderr).
-			Start("Running Semgrep scan...")
-		if err != nil {
-			return nil, "", err
-		}
-	}
-
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	// Set working directory if specified
@@ -219,14 +206,6 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	stdout, err = cmd.Output()
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
-
-	if spinner != nil {
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("Semgrep failed after %.2fs", duration.Seconds()))
-		} else {
-			spinner.Success(fmt.Sprintf("Semgrep completed in %.2fs", duration.Seconds()))
-		}
-	}
 
 	// Check for context cancellation/timeout
 	if ctx.Err() != nil {

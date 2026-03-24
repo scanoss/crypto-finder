@@ -94,6 +94,12 @@ class CryptoHelper:
 			t.Errorf("import %q = %q, want %q", name, analysis.Imports[name], pkg)
 		}
 	}
+	if !analysis.ImportedTypes["Cipher"] {
+		t.Error("expected Cipher import to be classified as a type")
+	}
+	if analysis.ImportedTypes["urandom"] {
+		t.Error("expected urandom import to remain classified as a function")
+	}
 
 	// Check functions
 	funcNames := make(map[string]bool)
@@ -156,6 +162,74 @@ class CryptoHelper:
 			}
 			break
 		}
+	}
+}
+
+func TestPythonParser_ImportedFunctionCallIsNotConstructor(t *testing.T) {
+	src := `from hashlib import sha256
+
+def digest(data):
+    return sha256(data)
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "digest.py")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "myproject")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	analysis := analyses[0]
+	if analysis.ImportedTypes["sha256"] {
+		t.Fatal("expected sha256 import not to be classified as a type")
+	}
+
+	for _, fn := range analysis.Functions {
+		if fn.ID.Name != "digest" || fn.ID.Type != "" {
+			continue
+		}
+		for _, call := range fn.Calls {
+			if call.Callee.Package == "hashlib" && call.Callee.Name == "sha256" {
+				if call.Callee.Type != "" {
+					t.Fatalf("sha256 call type = %q, want empty", call.Callee.Type)
+				}
+				return
+			}
+		}
+		t.Fatal("expected digest to contain hashlib.sha256 call")
+	}
+
+	t.Fatal("expected digest function analysis")
+}
+
+func TestPythonParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
+	p := NewPythonParser(WithIncludeTests(true))
+	dir := t.TempDir()
+
+	testDir := filepath.Join(dir, "tests")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "test_crypto.py"), []byte("def test_encrypt():\n    return None\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(testDir, "myproject.tests")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis (test file included), got %d", len(analyses))
+	}
+	if p.SkipDirs()["tests"] {
+		t.Fatal("expected tests dir not to be skipped when includeTests is enabled")
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -17,7 +18,20 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-const findingsCacheDirName = "findings"
+const (
+	findingsCacheDirName = "findings"
+	findingsCacheVersion = 1
+)
+
+var (
+	findingsCacheFilenameUnsafeChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+	removeFindingsCacheFile          = os.Remove
+)
+
+type findingsCacheEnvelope struct {
+	Version int                     `json:"version"`
+	Report  *entities.InterimReport `json:"report"`
+}
 
 // FindingsCache stores and retrieves scan results for dependencies.
 // Implementations can back this with disk, memory, Redis, S3, etc.
@@ -73,35 +87,55 @@ func (c *DiskFindingsCache) Get(_ context.Context, key string) (*entities.Interi
 		return nil, false, fmt.Errorf("failed to read cache file: %w", err)
 	}
 
-	var report entities.InterimReport
-	if json.Unmarshal(data, &report) != nil {
+	var envelope findingsCacheEnvelope
+	if json.Unmarshal(data, &envelope) != nil || envelope.Version != findingsCacheVersion || envelope.Report == nil {
 		// Corrupted cache file — treat as miss and remove it
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := removeFindingsCacheFile(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			return nil, false, fmt.Errorf("failed to remove corrupted cache file: %w", removeErr)
 		}
 		return nil, false, nil
 	}
 
-	return &report, true, nil
+	return envelope.Report, true, nil
 }
 
 // Put stores a report in the cache using an atomic write-then-rename flow.
 func (c *DiskFindingsCache) Put(_ context.Context, key string, report *entities.InterimReport) error {
-	data, err := json.Marshal(report)
+	data, err := json.Marshal(findingsCacheEnvelope{
+		Version: findingsCacheVersion,
+		Report:  report,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal report: %w", err)
 	}
 
 	path := filepath.Join(c.dir, cacheKeyToFilename(key))
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp cache file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
 
-	// Write to temp file + rename for atomicity
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
+	// Write to a unique temp file in the same directory, then rename atomically.
+	if _, err := tmpFile.Write(data); err != nil {
+		return findingsCacheTempFileError("failed to write cache file", err, tmpFile, tmpPath)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return findingsCacheTempFileError("failed to sync cache file", err, tmpFile, tmpPath)
+	}
+	if err := tmpFile.Close(); err != nil {
+		// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			joinedErr := errors.Join(err, fmt.Errorf("cleanup failed: %w", removeErr))
+			return fmt.Errorf("failed to close temp cache file: %w", joinedErr)
+		}
+		return fmt.Errorf("failed to close temp cache file: %w", err)
 	}
 
-	if err := os.Rename(tmp, path); err != nil {
-		if removeErr := os.Remove(tmp); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+	if err := os.Rename(tmpPath, path); err != nil {
+		// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			joinedErr := errors.Join(err, fmt.Errorf("cleanup failed: %w", removeErr))
 			return fmt.Errorf("failed to rename cache file: %w", joinedErr)
 		}
@@ -111,10 +145,22 @@ func (c *DiskFindingsCache) Put(_ context.Context, key string, report *entities.
 	return nil
 }
 
+func findingsCacheTempFileError(message string, baseErr error, tmpFile *os.File, tmpPath string) error {
+	joinedErr := baseErr
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		joinedErr = errors.Join(joinedErr, fmt.Errorf("close temp file: %w", closeErr))
+	}
+	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+	if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		joinedErr = errors.Join(joinedErr, fmt.Errorf("cleanup failed: %w", removeErr))
+	}
+	return fmt.Errorf("%s: %w", message, joinedErr)
+}
+
 // cacheKeyToFilename converts a cache key to a filesystem-safe filename.
-// Replaces "/" with "_" and appends ".json".
+// Replaces characters outside [A-Za-z0-9._-] with "_" and appends ".json".
 func cacheKeyToFilename(key string) string {
-	safe := strings.ReplaceAll(key, "/", "_")
+	safe := findingsCacheFilenameUnsafeChars.ReplaceAllString(key, "_")
 	return safe + ".json"
 }
 
@@ -150,39 +196,11 @@ func expandRulePathsForHash(rulePaths []string) ([]string, error) {
 	seen := make(map[string]struct{})
 
 	for _, p := range rulePaths {
-		info, err := os.Stat(p)
+		found, _, err := expandRulePathForHash(p, &files, seen)
 		if err != nil {
-			return nil, fmt.Errorf("failed to stat rule path %s: %w", p, err)
+			return nil, err
 		}
-
-		if !info.IsDir() {
-			if _, exists := seen[p]; !exists {
-				seen[p] = struct{}{}
-				files = append(files, p)
-			}
-			continue
-		}
-
-		foundRuleInDir := false
-		walkErr := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || !isRuleFile(path) {
-				return nil
-			}
-			if _, exists := seen[path]; exists {
-				return nil
-			}
-			seen[path] = struct{}{}
-			files = append(files, path)
-			foundRuleInDir = true
-			return nil
-		})
-		if walkErr != nil {
-			return nil, fmt.Errorf("failed to walk rule directory %s: %w", p, walkErr)
-		}
-		if !foundRuleInDir {
+		if !found {
 			return nil, fmt.Errorf("no rule files found in directory %s", p)
 		}
 	}
@@ -192,6 +210,46 @@ func expandRulePathsForHash(rulePaths []string) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+func expandRulePathForHash(path string, files *[]string, seen map[string]struct{}) (bool, bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, false, fmt.Errorf("failed to stat rule path %s: %w", path, err)
+	}
+
+	if !info.IsDir() {
+		return true, addUniqueRulePath(path, files, seen), nil
+	}
+
+	found := false
+	added := false
+	walkErr := filepath.WalkDir(path, func(walkPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !isRuleFile(walkPath) {
+			return nil
+		}
+		found = true
+		if addUniqueRulePath(walkPath, files, seen) {
+			added = true
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return false, false, fmt.Errorf("failed to walk rule directory %s: %w", path, walkErr)
+	}
+	return found, added, nil
+}
+
+func addUniqueRulePath(path string, files *[]string, seen map[string]struct{}) bool {
+	if _, exists := seen[path]; exists {
+		return false
+	}
+	seen[path] = struct{}{}
+	*files = append(*files, path)
+	return true
 }
 
 func isRuleFile(path string) bool {

@@ -2,6 +2,8 @@
 
 This document explains how crypto-finder discovers cryptographic usage in project dependencies and traces it back to user code through call graph analysis.
 
+Contract note: the current implementation keeps the interim report focused on findings metadata (`source`, `dependency_info`, `finding_id`). The finding-centric reachability slices such as `call_chains`, `entry_call`, and `crypto_call` are emitted by the dedicated `--export-callgraph` artifact rather than embedded in the interim report.
+
 ## Overview
 
 When `--scan-dependencies` is enabled, crypto-finder goes beyond scanning the user's source code. It resolves the project's dependency tree, scans each dependency for cryptographic usage, builds a cross-package call graph, and traces each finding back to the user's code to answer: **"Does my code actually reach this crypto function?"**
@@ -28,7 +30,7 @@ flowchart TB
     UC --> S1
     DEP --> S1
 
-    S6 --> OUT[Final Report<br/><i>with source, call_chains,<br/>dependency_info</i>]
+    S6 --> OUT[Final Report<br/><i>with source, finding_id,<br/>dependency_info</i>]
 ```
 
 ## The Six-Step Pipeline
@@ -70,9 +72,9 @@ flowchart TB
     Pool --> W4["Worker 4"] --> R4["Report D"]
 ```
 
-Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` to avoid scanning the same package twice.
+Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs.
 
-Only dependencies **with findings** proceed to step 4 — this keeps the call graph small and focused.
+Dependencies without a usable local source directory are **not** sent to the scanner. They are logged as `Skipping dependency source scan: no local source directory` instead of triggering empty-path scanner failures. For Java, those dependencies still proceed to step 4 as **type-only** inputs as long as `module@version` can be resolved to a compiled JAR.
 
 ### Step 4: Build the Call Graph
 
@@ -91,28 +93,44 @@ The [`NewParserForEcosystem()`](../internal/callgraph/parser_registry.go) factor
 
 ```mermaid
 flowchart TB
-    subgraph "Package Dirs (input)"
+    subgraph "Graph Packages (full source parsing)"
         U["User Code Dir<br/><i>+ import path</i>"]
         D1["Dep with findings<br/><i>golang.org/x/crypto</i>"]
         D2["Dep with findings<br/><i>org.bouncycastle:bcprov-jdk18on</i>"]
     end
 
+    subgraph "Type-Only Packages (bytecode index only)"
+        T1["Dep without findings<br/><i>org.springframework:spring-core</i>"]
+        T2["Dep without findings<br/><i>com.fasterxml.jackson:jackson-core</i>"]
+    end
+
     subgraph "Builder.BuildFromDirectories()"
         direction TB
-        Parse["Parser.ParseDirectory()<br/><i>syntactic parsing per source file</i>"]
+        Parse["Phase 1: Parser.ParseDirectory()<br/><i>syntactic parsing per source file</i>"]
         FnMap["Functions map<br/><i>FunctionID → FunctionDecl</i>"]
         RevIdx["Callers reverse index<br/><i>callee → []callerID</i>"]
+        TypeRes["Phase 2: Bytecode type index<br/><i>class names + method signatures + return types</i>"]
+        Fluent["Fluent chain resolution<br/><i>propagate return types</i>"]
 
         Parse --> FnMap
         FnMap --> RevIdx
+        RevIdx --> TypeRes
+        TypeRes --> Fluent
     end
 
     U --> Parse
     D1 --> Parse
     D2 --> Parse
+    T1 --> TypeRes
+    T2 --> TypeRes
 
-    RevIdx --> CG["CallGraph"]
+    Fluent --> CG["CallGraph"]
 ```
+
+> **Performance optimization**: Only dependencies with crypto findings get full source parsing.
+> Dependencies without findings contribute only their bytecode type signatures (class names,
+> method signatures, return types, interface hierarchy). This preserves 100% type resolution
+> accuracy for fluent chains while skipping expensive source parsing for ~80% of dependencies.
 
 #### What the parser extracts
 
@@ -181,6 +199,16 @@ Callers:    "crypto/aes.NewCipher"         → ["example.com/app.Encrypt"]
 
 The reverse index is what enables **backward tracing** — starting from a crypto finding and walking up to user code.
 
+#### Type resolution
+
+After building the caller index, the builder runs additional resolution passes to improve type accuracy:
+
+1. **`TypeResolver`** (language-specific): For Java, a bytecode-based resolver reads `.class` files from Maven-cached JARs plus the selected JDK platform archives to extract fully-qualified method signatures. JAR indexing runs in parallel and uses a per-artifact bytecode cache under `~/.scanoss/crypto-finder/cache/bytecode/`, keyed by exact artifact identity. This provides accurate parameter types (e.g., `io.jsonwebtoken.SignatureAlgorithm` instead of generic `K`) and return types for fluent chain resolution. The Java resolver can be configured per scan with `java_jdk_major` (`auto`, `8`, `11`, `17`, `21`) and `java_jdk_homes`, which also makes Maven dependency resolution JDK-aware. The `TypeResolver` interface is extensible — each language can implement its own approach (Go: `go/types`, Python: `.pyi` stubs, Rust: `rust-analyzer`).
+
+2. **Fluent chain resolution**: For chained calls like `Jwts.builder().setId(id).signWith(algo, key)`, return types are propagated through the chain. If `builder()` returns `JwtBuilder`, then `setId()` is resolved as `JwtBuilder.setId`. Interface inheritance is also followed (e.g., `JwtBuilder` extends `ClaimsMutator`, so `setId` resolves to `ClaimsMutator.setId`).
+
+3. **Argument source tracing**: For each function call, the parser traces where argument values come from — literal constants, local variables, class fields, method parameters, or call results. This produces recursive `source_nodes` showing the data flow into each argument.
+
 ### Step 5: Trace & Attribute Findings
 
 This is the core of the attribution system. For each crypto finding in a dependency:
@@ -219,33 +247,53 @@ The result is an ordered array: **`[program_entry_point, ..., intermediate, ...,
 
 #### Attribution output
 
-After tracing, each finding gets structured fields:
+After tracing, each finding gets structured attribution metadata in the interim report, and the detailed reachability slices are emitted by the separate call graph export.
 
 **Dependency finding:**
-```go
-asset.Source = "dependency"
-asset.DependencyInfo = &DependencyInfo{
-    Module:   "golang.org/x/crypto",
-    Version:  "v0.17.0",
-    Function: "golang.org/x/crypto/chacha20poly1305.New",
-}
-asset.CallChains = [][]CallChainEntry{
-    {
-        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
-        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
-        {Function: "golang.org/x/crypto/chacha20poly1305.New", File: "golang.org/x/crypto@v0.17.0/chacha20.go", Line: 42},
-    },
+```json
+{
+  "source": "dependency",
+  "finding_id": "a1b2c3d4",
+  "dependency_info": {
+    "module": "golang.org/x/crypto",
+    "version": "v0.17.0"
+  }
 }
 ```
 
-**User code finding** (enriched with intra-project call chain):
-```go
-asset.Source = "direct"
-asset.CallChains = [][]CallChainEntry{
-    {
-        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
-        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
-    },
+Dependency finding `file_path` values are relative to the dependency root. The artifact identity stays in `dependency_info`, so consumers do not need to parse `module@version` back out of the path string.
+
+**User code finding**:
+```json
+{
+  "source": "direct",
+  "finding_id": "e5f6a7b8"
+}
+```
+
+**Call graph export slice**:
+```json
+{
+  "finding_id": "a1b2c3d4",
+  "call_chains": [
+    [
+      {"function_name": "main", "file_path": "main.go", "start_line": 15},
+      {
+        "function_name": "example.com/app/mypkg.SecureEncrypt",
+        "file_path": "mypkg/crypto.go",
+        "start_line": 8
+      },
+      {
+        "function_name": "golang.org/x/crypto/chacha20poly1305.New",
+        "file_path": "chacha20.go",
+        "start_line": 42,
+        "dependency_info": {
+          "module": "golang.org/x/crypto",
+          "version": "v0.17.0"
+        }
+      }
+    ]
+  ]
 }
 ```
 
@@ -257,18 +305,12 @@ flowchart TB
     DR1["Dep Report 1"]
     DR2["Dep Report 2"]
 
-    DR1 --> Filter{"Has call_chains?<br/><i>(reachable from user code)</i>"}
-    DR2 --> Filter
-
-    Filter -->|Yes| Reachable["Include in merged report"]
-    Filter -->|No, --dep-include-unreachable| Reachable
-    Filter -->|No| Drop["Excluded"]
-
     UR --> Merged["Merged Report"]
-    Reachable --> Merged
+    DR1 --> Merged
+    DR2 --> Merged
 ```
 
-By default, only **reachable** dependency findings (those with a non-empty `call_chains`) are included. The `--dep-include-unreachable` flag overrides this to include all dependency findings regardless of traceability.
+The current implementation merges dependency findings into the interim report and defers reachability slicing to the call graph export. In other words, interim-report inclusion is not gated on whether a finding later produces one or more exported call chains.
 
 User code findings are always included and marked with `source: "direct"`.
 
@@ -456,14 +498,15 @@ Iteration 2:
   → CHAIN COMPLETE! Add to results.
 ```
 
-**5a-3. Result:**
+**5a-3. Exported slice:**
 
 ```json
 "source": "direct",
+"finding_id": "a1b2c3d4",
 "call_chains": [
     [
-        {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-        {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+        {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 14},
+        {"function_name": "SecureEncrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 12}
     ]
 ]
 ```
@@ -485,10 +528,11 @@ TraceBack(SecureDecrypt):
 
 ```json
 "source": "direct",
+"finding_id": "b2c3d4e5",
 "call_chains": [
     [
-        {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
-        {"function": "example.com/crypto-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go","line": 28}
+        {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 19},
+        {"function_name": "SecureDecrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 28}
     ]
 ]
 ```
@@ -510,30 +554,32 @@ TraceBack(ssh.newAESCTR):
   → All chains discarded (no user code reached).
 ```
 
-Result: `call_chains` is **empty**. Without `--dep-include-unreachable`, this finding gets **dropped** from the merged report.
+Result: `call_chains` is **empty**.
 
-This is why the default scan shows only **3 findings** (all user code), while `--dep-include-unreachable` shows **~873**. The vast majority of `golang.org/x/crypto`'s internal crypto usage is not reachable from the user's `main()`.
+In the current implementation, this means the finding may still exist in the interim report, but it will not contribute a useful reachability slice to the call graph export.
+
+This is why the interesting downstream signal stays narrow even when a dependency contains a large amount of internal crypto usage. The vast majority of `golang.org/x/crypto`'s internal crypto usage is not reachable from the user's `main()`.
 
 ### Step 6: Merge
 
 ```
-User report (3 findings, source="direct")
-  + Dependency reports (filtered by reachability)
+User report (findings metadata)
+  + Dependency reports (findings metadata)
   ─────────────────────────────────────
-  = Merged report (3 findings by default, ~873 with --dep-include-unreachable)
+  = Merged interim report
 ```
 
-In this test project, no dependency findings survived the reachability filter. Why? Because the user code calls `chacha20poly1305.New` **directly** inside `mypkg/crypto.go` — a file in the user's own module. The crypto usage is already captured as `source: "direct"`. There's no intermediate dependency wrapper that the user calls which *then* reaches crypto.
+In this test project, the interesting reachability slices are all rooted in user code findings. Why? Because the user code calls `chacha20poly1305.New` **directly** inside `mypkg/crypto.go` — a file in the user's own module. The crypto usage is already captured as `source: "direct"`. There's no intermediate dependency wrapper that the user calls which *then* reaches crypto.
 
-If the project had a longer chain — e.g. `main → mypkg.Encrypt → someMiddleware.Process → chacha20poly1305.New` where `someMiddleware` is a dependency — then we'd see a dependency finding with a 3-step call chain survive the filter.
+If the project had a longer chain — e.g. `main → mypkg.Encrypt → someMiddleware.Process → chacha20poly1305.New` where `someMiddleware` is a dependency — then we'd expect a dependency-backed reachability slice to appear in the call graph export.
 
-### Actual JSON Output
+### Actual Interim Report Output
 
-The final output (default mode, no `--dep-include-unreachable`):
+The final interim report looks like this:
 
 ```json
 {
-  "version": "1.2",
+  "version": "1.3",
   "tool": {"name": "crypto-finder", "version": "dev"},
   "findings": [
     {
@@ -541,7 +587,6 @@ The final output (default mode, no `--dep-include-unreachable`):
       "language": "go",
       "cryptographic_assets": [
         {
-          "match_type": "semgrep",
           "start_line": 13,
           "end_line": 13,
           "match": "aead, err := chacha20poly1305.New(key)",
@@ -549,15 +594,9 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
           "source": "direct",
-          "call_chains": [
-            [
-              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
-            ]
-          ]
+          "finding_id": "a1b2c3d4"
         },
         {
-          "match_type": "semgrep",
           "start_line": 19,
           "end_line": 19,
           "match": "if _, err := rand.Read(nonce); err != nil {",
@@ -565,15 +604,9 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "CSPRNG", "assetType": "algorithm", "...": "..."},
           "source": "direct",
-          "call_chains": [
-            [
-              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
-            ]
-          ]
+          "finding_id": "a1b2c3d4"
         },
         {
-          "match_type": "semgrep",
           "start_line": 29,
           "end_line": 29,
           "match": "aead, err := chacha20poly1305.New(key)",
@@ -581,18 +614,15 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
           "source": "direct",
-          "call_chains": [
-            [
-              {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
-              {"function": "example.com/crypto-test/mypkg.SecureDecrypt","file": "mypkg/crypto.go","line": 28}
-            ]
-          ]
+          "finding_id": "b2c3d4e5"
         }
       ]
     }
   ]
 }
 ```
+
+The corresponding reachability slices are emitted by the separate call graph export and joined through `finding_id`.
 
 ### Visual Summary
 
@@ -602,31 +632,31 @@ main.go:14  ──calls──→  mypkg/crypto.go:13  ──calls──→  x/cr
                                 │
                                 ├── Finding: chacha20poly1305.New at L13
                                 │   source: "direct" (it's in user code)
-                                │   call_chains: [[main@L14 → SecureEncrypt@L12]]
+                                │   exported slice: [[main@L14 → SecureEncrypt@L12]]
                                 │
                                 └── Finding: rand.Read at L19
                                     source: "direct"
-                                    call_chains: [[main@L14 → SecureEncrypt@L12]]
+                                    exported slice: [[main@L14 → SecureEncrypt@L12]]
 
 main.go:19  ──calls──→  mypkg/crypto.go:29  ──calls──→  x/crypto/chacha20poly1305.New
   (main)                  (SecureDecrypt)
                                 │
                                 └── Finding: chacha20poly1305.New at L29
                                     source: "direct"
-                                    call_chains: [[main@L19 → SecureDecrypt@L28]]
+                                    exported slice: [[main@L19 → SecureDecrypt@L28]]
 
 golang.org/x/crypto/ssh/cipher.go:N  (internal SSH functions)
                                 │
                                 └── 870 findings with NO call chain
                                     source: "dependency"
-                                    → DROPPED by reachability filter (unless --dep-include-unreachable)
+                                    → no exported reachability slice
 ```
 
 ---
 
 ## Walkthrough 2: Multi-Hop Dependency Chain
 
-The first walkthrough showed a case where user code calls crypto directly — all findings were `source: "direct"` and no dependency findings survived the reachability filter. This second walkthrough uses `testdata/projects/go_with_dep_chain/` to demonstrate a **multi-hop chain** where crypto usage is buried inside a dependency and dependency findings DO survive.
+The first walkthrough showed a case where user code calls crypto directly, so the useful reachability slices are anchored to direct findings. This second walkthrough uses `testdata/projects/go_with_dep_chain/` to demonstrate a **multi-hop chain** where crypto usage is buried inside a dependency and dependency-backed reachability slices become the interesting artifact.
 
 ### The Source Code
 
@@ -691,15 +721,7 @@ Finding groups: 1    (wrapper.go in the dependency)
 Total assets:   2    (both from the dependency, both reachable)
 ```
 
-Compare with `--dep-include-unreachable`:
-
-```
-Total assets:        494
-  Reachable:           2   (traced back to user code)
-  Unreachable:       492   (deep x/crypto internals, no path to user code)
-```
-
-**The reachability filter eliminates 99.6% of noise** — 492 findings from `golang.org/x/crypto` and `golang.org/x/sys` internals are dropped because no user code ever calls them.
+Only a small subset of the traced findings produce meaningful exported slices. Deep `x/crypto` and `x/sys` internals may still be scanned and identified, but they do not help downstream stitching unless the graph can connect them back to component-owned or user-owned entry points.
 
 ### Tracing the 3-Step Chain
 
@@ -769,21 +791,21 @@ BFS found **two** complete chains. Both are stored in `call_chains`:
   "source": "dependency",
   "dependency_info": {
     "module": "example.com/cryptowrapper",
-    "version": "v0.0.0",
-    "function": "example.com/cryptowrapper.newAEAD"
+    "version": "v0.0.0"
   },
+  "finding_id": "c3d4e5f6",
   "call_chains": [
     [
-      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 14},
-      {"function": "example.com/dep-chain-test/mypkg.SecureEncrypt", "file": "mypkg/crypto.go", "line": 16},
-      {"function": "example.com/cryptowrapper.Encrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 20},
-      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+      {"function_name": "main", "namespace": "example.com/dep-chain-test", "file_path": "main.go", "line": 14},
+      {"function_name": "SecureEncrypt", "namespace": "example.com/dep-chain-test/mypkg", "file_path": "mypkg/crypto.go", "line": 16},
+      {"function_name": "Encrypt", "namespace": "example.com/cryptowrapper", "file_path": "wrapper.go", "line": 20},
+      {"function_name": "newAEAD", "namespace": "example.com/cryptowrapper", "file_path": "wrapper.go", "line": 58}
     ],
     [
-      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 19},
-      {"function": "example.com/dep-chain-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go", "line": 25},
-      {"function": "example.com/cryptowrapper.Decrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 37},
-      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+      {"function_name": "main", "namespace": "example.com/dep-chain-test", "file_path": "main.go", "line": 19},
+      {"function_name": "SecureDecrypt", "namespace": "example.com/dep-chain-test/mypkg", "file_path": "mypkg/crypto.go", "line": 25},
+      {"function_name": "Decrypt", "namespace": "example.com/cryptowrapper", "file_path": "wrapper.go", "line": 37},
+      {"function_name": "newAEAD", "namespace": "example.com/cryptowrapper", "file_path": "wrapper.go", "line": 58}
     ]
   ]
 }
@@ -821,39 +843,91 @@ Key observations:
 
 ---
 
-## Schema (v1.3)
+## Interim Report Contract (v1.3)
 
-Version 1.3 keeps v1.2 attribution fields and enriches each `call_chains` step with structured function metadata.
+Version 1.3 keeps the attribution fields needed to join findings to the separate reachability export. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module and version.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
-| `dependency_info` | `object` | Dependency findings only | `{module, version, function}` |
-| `call_chains` | `array of arrays` | When traceable to user code | Ordered call path steps enriched with function metadata and optional parameter argument bindings |
+| `dependency_info` | `object` | Dependency findings only | `{module, version}` |
+| `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
+
+## Call Graph Export
+
+When `--export-callgraph` is enabled, Crypto Finder emits a finding-centric JSON export that uses the same relative-path convention as the main report.
+
+Schema note: call graph export version `4.3` adds Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
+
+- Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
+- `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
+- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info`, and optional `entry_call`.
+- `entry_call` describes how execution entered the current function from the previous step. Its `file_path` and `line` are the call-site location in the previous node's source file.
+- The last node in a chain carries `crypto_call`, which is the matched crypto-relevant call that triggered the finding.
+- `entry_call.parameters[]` and `crypto_call.parameters[]` both export `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
+- For Java scans, `scan_metadata` may also include `java_requested_jdk_major`, `java_runtime_version`, `java_platform_signatures_used`, `java_platform_signature_source`, and `java_platform_signature_unavailable_reason` to show which JDK major was requested and whether JDK platform signatures were available for enrichment.
+- `source_nodes` can now carry interprocedural provenance across wrapper hops, for example `PARAMETER -> PARAMETER -> VALUE`, and propagated nested nodes keep `location.file_path` plus `location.line` when known.
+- Method-call expressions are preserved as `CALL_RESULT` nodes instead of flattening away their receivers. When the invoked method can be resolved, the node also exports `call_target`, and receiver provenance stays nested under the `CALL_RESULT` (for example `CALL_RESULT -> PARAMETER alg -> VALUE SignatureAlgorithm.HS256`).
+- Findings that cannot be resolved to a containing function or a specific crypto call remain in the export with `finding_location` and `unresolved_reason`.
 
 ### Call Chains Ordering
 
-The `call_chains` field contains all traced paths from program entry points to the crypto call site. Each inner array is one complete path, ordered from **program entry point** (index 0) to **crypto call site** (last index). Entry `[i]` calls entry `[i+1]`:
+The `call_chains` field in the call graph export contains all traced paths from program entry points to the crypto call site. Each inner array is one complete path, ordered from **program entry point** (index 0) to **crypto call site** (last index). Entry `[i]` calls entry `[i+1]`.
+
+Example:
 
 ```json
 {
+  "finding_id": "69669f02",
   "call_chains": [
     [
-      {"function_name": "main", "file": "main.go", "line": 15},
-      {"function_name": "SecureEncrypt", "file": "mypkg/crypto.go", "line": 8},
       {
-        "function_name": "New",
-        "namespace": "golang.org/x/crypto/chacha20poly1305",
-        "file": "golang.org/x/crypto@v0.17.0/chacha20.go",
-        "line": 42,
-        "parameters": [{"type": "[]byte", "argument_value": "key"}]
+        "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
+        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+        "start_line": 33
+      },
+      {
+        "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
+        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
+        "start_line": 72,
+        "entry_call": {
+          "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+          "line": 34,
+          "parameters": [
+            {
+              "parameter_index": 0,
+              "type": "io.jsonwebtoken.SignatureAlgorithm",
+              "argument_expression": "SignatureAlgorithm.HS256",
+              "resolved_value": "SignatureAlgorithm.HS256"
+            }
+          ]
+        }
+      },
+      {
+        "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
+        "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
+        "start_line": 43,
+        "dependency_info": {
+          "module": "org.springframework.security:spring-security-core",
+          "version": "5.7.11"
+        },
+        "crypto_call": {
+          "function_name": "java.security.MessageDigest.getInstance",
+          "line": 45,
+          "parameters": [
+            {
+              "parameter_index": 0,
+              "type": "String",
+              "argument_expression": "\"SHA-512\"",
+              "resolved_value": "\"SHA-512\""
+            }
+          ]
+        }
       }
     ]
   ]
 }
 ```
-
-Reading this: `main()` at line 15 calls `SecureEncrypt()` at line 8, which calls `chacha20poly1305.New()` at line 42.
 
 ## Findings Cache
 
@@ -945,6 +1019,7 @@ internal/
 │   ├── parser_registry.go         # Ecosystem → Parser factory (NewParserForEcosystem)
 │   ├── go_parser.go               # Go: syntactic parsing of Go source
 │   ├── java_parser.go             # Java: syntactic parsing of Java source
+│   ├── bytecode_cache.go          # Java: per-artifact bytecode index cache
 │   ├── python_parser.go           # Python: syntactic parsing of Python source
 │   ├── rust_parser.go             # Rust: syntactic parsing of Rust source
 │   └── tracer.go                  # BFS backward tracer with configurable package separator
@@ -977,13 +1052,38 @@ The extensible architecture makes adding a new language a matter of implementing
 
 #### Maven Resolution Details
 
-The `MavenResolver` executes three Maven commands:
+The `MavenResolver` uses a **three-tier fallback strategy** to maximize dependency recovery, especially for multi-module projects:
 
-1. **`mvn dependency:list -DincludeScope=compile`** — lists all compile+provided+system scope dependencies (excludes test-only). Output format: `groupId:artifactId:type:version:scope`
-2. **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
-3. **`mvn dependency:tree`** — builds the dependency graph adjacency list (best-effort)
+**Tier 1 — Reactor with `--fail-never`** (always attempted):
+- Runs `mvn dependency:list --fail-never -DappendOutput=true -DincludeScope=compile`
+- The `--fail-never` flag continues past module failures; `-DappendOutput=true` accumulates results from all succeeding modules into a single output file
+- If some modules resolve successfully, their dependencies are collected even if other modules fail
 
-Dependencies without source JARs are skipped — they appear in logs as warnings but are excluded from scanning.
+**Tier 2 — Per-module resolution** (if Tier 1 yields zero dependencies on a multi-module project):
+- Detects modules from `<modules>` in the parent `pom.xml`
+- Runs `mvn dependency:list -pl <module>` for each module independently
+- Modules that fail are skipped; dependencies from succeeding modules are deduplicated and collected
+
+**Tier 3 — Local install + retry** (if Tier 2 yields zero dependencies and inter-module failure is detected):
+- Runs `mvn install -DskipTests --fail-never` to build all modules locally, populating `~/.m2/repository` with inter-module artifacts
+- Retries Tier 1 after install
+- This is expensive (requires compilation) but is the only way to resolve inter-module transitive dependencies
+
+After dependency listing, the resolver also runs:
+- **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
+- **`mvn dependency:tree --fail-never -DappendOutput=true`** — builds the dependency graph adjacency list (best-effort)
+
+Dependencies without source JARs are included in the resolution results but without a source directory. They are skipped for source scanning and logged explicitly; if the compiled artifact is present in `~/.m2/repository`, Java bytecode indexing can still use it as a type-only dependency.
+
+#### Multi-Module Project Support
+
+Multi-module Maven projects (parent POM with `<modules>`) are automatically detected. When detected:
+- All modules are registered as `WorkspaceMembers`, meaning they are treated as **user code** for call chain tracing (same as Cargo workspace members)
+- The `WorkspaceMember.Name` follows the format `groupId:moduleDirName`
+- The three-tier fallback strategy handles common multi-module failures:
+  - **Inter-module dependencies** (e.g., `eladmin-logging` depends on `eladmin-common`) — resolved via Tier 3
+  - **HTTP mirror blocks** (Maven 3.8.1+ blocks insecure HTTP repositories) — partial results collected via Tier 1
+  - **Missing parent POMs** or private repositories — gracefully degraded via Tier 1/2
 
 #### Java Call Resolution
 
@@ -1070,6 +1170,72 @@ To add support for a new ecosystem:
 
 No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entities, or schemas.
 
+## Performance
+
+### Two-Phase Call Graph Build
+
+The call graph build is the most expensive step in the dependency scanning pipeline. To minimize cost while preserving 100% type resolution accuracy, the builder uses a **two-phase approach**:
+
+**Phase 1 — Source parsing (targeted):** Only dependencies with crypto findings + user code modules get full source parsing via `Parser.ParseDirectory()`. This builds `FunctionDecl` entries with call sites, parameters, and return types.
+
+**Phase 2 — Bytecode type indexing (comprehensive):** ALL dependencies (including those without findings) are indexed via `JavaBytecodeTypeResolver`. This reads `.class` files from Maven JARs to extract class names, method signatures, return types, and interface hierarchy. The type index is used to resolve fluent chains and enrich parameter types across dependency boundaries.
+
+**Why both phases are needed:** Java fluent APIs (e.g., `Jwts.builder().signWith(key)`) require knowing return types from one dependency to resolve calls in another. A dependency without crypto findings may define the return type that bridges a call chain from user code to a crypto finding. Skipping its type information would break backward tracing.
+
+#### Benchmarks (eladmin — 160 deps, 27 with findings, 269 crypto assets)
+
+Current warm-run numbers with findings cache + Java bytecode cache enabled:
+
+| Metric | Current |
+|--------|---------|
+| Packages source-parsed | 32 |
+| Functions in graph | 168,386 |
+| Caller index entries | 190,688 |
+| Bytecode type packages | 165 |
+| JARs indexed | 160 |
+| Bytecode cache hits | 157 |
+| Bytecode resolution duration | ~1.27s |
+| Full dependency pipeline | ~33.0s |
+| Wall time | ~44.0s |
+| Findings | 269 |
+| Exported call graph edges | 498,271 |
+
+The largest recent improvements came from three changes:
+
+- **Two-phase call graph build**: only findings-bearing dependencies get full source parsing
+- **Parallel Java JAR indexing**: exact-version JARs are indexed concurrently
+- **Per-artifact bytecode cache**: repeated scans avoid reparsing unchanged JARs
+
+### Current Bottlenecks
+
+The pipeline has three main time consumers:
+
+1. **Source parsing for graph packages** (~23s on warm `eladmin`): Parses `.java` files from 32 packages (user code + 27 deps with findings) to build 168K function declarations with call sites.
+
+2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`).
+
+3. **Call graph post-processing** (~2-3s): Caller index construction, bytecode merge/rewrite, and fluent-chain resolution are no longer dominant but still scale with graph size.
+
+### Future Optimization Opportunities
+
+#### Source parsing and graph size reduction
+
+The bytecode resolution bottleneck has largely been removed. Remaining performance opportunities are now upstream:
+
+- **Reduce graph packages further**: Keep shrinking the set of dependencies that require full source parsing without breaking attribution accuracy.
+- **Smarter pre-scan eligibility**: Skip dependencies that have source directories but no scannable files before invoking opengrep.
+- **Containing-function lookup index**: `Tracer.FindContainingFunction()` still scans functions linearly; indexing by file could cut repeated lookups on large reports.
+- **Selective bytecode indexing**: Only index JARs whose types appear in unresolved calls from graph packages. More complex, but now one of the few remaining bytecode-side wins.
+
+#### Opengrep scanning
+
+- **Result caching**: The existing `DiskFindingsCache` caches dependency scan results by `module@version:rulesHash`. On repeated scans of the same project, most dependencies hit the cache.
+- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources.
+
+#### Call graph export
+
+- **Export is fast** (~10-15s for 269 findings) and not currently a bottleneck. The finding-centric export only traces paths reachable from findings, producing a compact JSON (~9.5K lines for eladmin) regardless of full graph size.
+
 ## Limitations
 
 ### General
@@ -1081,10 +1247,10 @@ No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entiti
 
 ### Java-specific
 - **Maven only** — Gradle projects are not supported. A `GradleResolver` could be added in the future.
-- **Missing source JARs** — ~35% of Java libraries don't publish source JARs; these dependencies are skipped with a warning. Bytecode analysis could be a future fallback.
+- **Missing source JARs** — Dependencies without sources are skipped for source scanning, but they can still contribute Java bytecode types if the compiled JAR is present locally. They cannot produce source-level findings until sources are available.
 - **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
 - **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.
-- **Single-module Maven only** — Multi-module Maven projects (parent POM with `<modules>`) are not yet supported.
+- **Multi-module Maven partial resolution** — Multi-module Maven projects are supported via a three-tier fallback strategy. Tier 3 (`mvn install -DskipTests`) requires compilation and may fail if the project needs specific JDK versions or build tools not available in the scan environment.
 
 ### Python-specific
 - **Requires `pip` in PATH** — The resolver shells out to `pip list` and `pip show`; the correct virtual environment must be activated.

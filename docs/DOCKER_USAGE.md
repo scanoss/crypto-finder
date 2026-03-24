@@ -50,7 +50,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest-deps
 **Features:**
 - Everything in the standard image, plus:
 - **Go** toolchain for `go list` / `go mod graph` dependency resolution
-- **Java** (JDK + Maven) for Maven dependency resolution
+- **Java** (JDK 8, 11, 17, and 21 + Maven) for JDK-aware Maven dependency resolution and deterministic platform signature indexing
 - **Rust** (Cargo) for `cargo metadata` dependency resolution
 - **Python** (isolated virtualenv) for pip dependency resolution
 - Detects cryptographic usage in third-party dependencies with call chain tracing
