@@ -127,36 +127,74 @@ func TestExportCallGraph(t *testing.T) {
 		Callers: map[string][]string{"crypto/aes.NewCipher": {"app.main"}},
 	}
 
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "main.go",
+			Language: "go",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				MatchType: "semgrep",
+				StartLine: 5,
+				EndLine:   5,
+				Match:     "aes.NewCipher(key)",
+				Rules:     []entities.RuleInfo{{ID: "go.crypto.aes.newcipher", Message: "AES usage", Severity: "INFO"}},
+				Status:    "pending",
+				Metadata:  map[string]string{"api": "aes.NewCipher", "algorithmName": "AES"},
+				FindingID: "ab12cd34",
+				Source:    "direct",
+			}},
+		}},
+	}
+
 	result := &engine.DepScanResult{
 		CallGraph:  graph,
+		Report:     report,
 		RootModule: "example.com/app",
 		Ecosystem:  "go",
 	}
 
-	for _, format := range []string{"json", "dot", "text"} {
-		format := format
-		t.Run(format, func(t *testing.T) {
-			out := filepath.Join(t.TempDir(), "cg."+format)
-			if err := ExportCallGraph(out, format, result); err != nil {
-				t.Fatalf("ExportCallGraph(%s): %v", format, err)
-			}
+	t.Run("json", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "cg.json")
+		if err := ExportCallGraph(out, "json", result); err != nil {
+			t.Fatalf("ExportCallGraph(json): %v", err)
+		}
 
-			data, err := os.ReadFile(out)
-			if err != nil {
-				t.Fatalf("read output: %v", err)
-			}
-			if len(data) == 0 {
-				t.Fatal("export produced empty file")
-			}
+		data, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatalf("read output: %v", err)
+		}
+		if len(data) == 0 {
+			t.Fatal("export produced empty file")
+		}
 
-			if format == "json" {
-				var payload map[string]any
-				if err := json.Unmarshal(data, &payload); err != nil {
-					t.Fatalf("invalid json output: %v", err)
-				}
-			}
-		})
-	}
+		var payload callGraphExportV2
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatalf("invalid json output: %v", err)
+		}
+		if payload.SchemaVersion != "2.0" {
+			t.Fatalf("schema_version = %q, want 2.0", payload.SchemaVersion)
+		}
+		if len(payload.FindingGraphs) != 1 {
+			t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
+		}
+		fg := payload.FindingGraphs[0]
+		if fg.FindingID != "ab12cd34" {
+			t.Fatalf("finding_id = %q, want ab12cd34", fg.FindingID)
+		}
+		if fg.ContainingFunction == nil || fg.ContainingFunction.FunctionName == "" {
+			t.Fatal("containing_function should be set")
+		}
+		if fg.ContainingFunction.FunctionName != "main" {
+			t.Fatalf("containing_function.function_name = %q, want main", fg.ContainingFunction.FunctionName)
+		}
+		if fg.ContainingFunction.Namespace != "app" {
+			t.Fatalf("containing_function.namespace = %q, want app", fg.ContainingFunction.Namespace)
+		}
+		if len(fg.BackwardPaths) == 0 {
+			t.Fatal("backward_paths should have at least a self-chain")
+		}
+	})
 
 	t.Run("unsupported-format", func(t *testing.T) {
 		err := ExportCallGraph(filepath.Join(t.TempDir(), "x.out"), "yaml", result)
@@ -170,6 +208,19 @@ func TestExportCallGraph(t *testing.T) {
 		err := ExportCallGraph(out, "json", result)
 		if err == nil || !strings.Contains(err.Error(), "failed to write call graph") {
 			t.Fatalf("expected write error, got: %v", err)
+		}
+	})
+
+	t.Run("nil-report", func(t *testing.T) {
+		nilReportResult := &engine.DepScanResult{
+			CallGraph:  graph,
+			Report:     nil,
+			RootModule: "example.com/app",
+			Ecosystem:  "go",
+		}
+		err := ExportCallGraph(filepath.Join(t.TempDir(), "cg.json"), "json", nilReportResult)
+		if err == nil || !strings.Contains(err.Error(), "result.Report is nil") {
+			t.Fatalf("expected nil report error, got: %v", err)
 		}
 	})
 }

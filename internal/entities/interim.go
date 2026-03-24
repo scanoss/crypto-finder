@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/scanoss/crypto-finder/internal/callgraph"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
@@ -97,16 +95,16 @@ type CryptographicAsset struct {
 	// Example: "2.16.840.1.101.3.4.1.2" for AES-128-CBC
 	OID string `json:"oid,omitempty"`
 
+	// FindingID is a stable, short hash identifier for cross-referencing this finding
+	// with the callgraph export. Generated as SHA-256(file_path:start_line:rule_id)[:8].
+	FindingID string `json:"finding_id,omitempty"`
+
 	// Source indicates how this finding was discovered.
 	// Values: "direct" (found in user code), "dependency" (found in a dependency).
 	Source string `json:"source,omitempty"`
 
 	// DependencyInfo contains attribution data when the finding originates from a dependency.
 	DependencyInfo *DependencyInfo `json:"dependency_info,omitempty"`
-
-	// CallChains contains all traced call paths from user code to the crypto call site.
-	// Each inner slice is one complete path, ordered from program entry point (first) to crypto call site (last).
-	CallChains [][]callgraph.CallChainEntry `json:"call_chains,omitempty"`
 }
 
 // DependencyInfo contains attribution metadata for findings originating from dependencies.

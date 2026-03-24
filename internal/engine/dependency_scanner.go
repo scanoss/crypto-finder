@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"crypto/sha256"
+	"encoding/hex"
 	"runtime"
-	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,8 +26,6 @@ const maxWorkers = 8
 type DepScanOptions struct {
 	// MaxDepth limits recursive dependency resolution (-1 for unlimited).
 	MaxDepth int
-	// IncludeUnreachable includes crypto findings in deps not reachable from user code call graph.
-	IncludeUnreachable bool
 	// ScanOptions are the base scan options to reuse for each dependency scan.
 	ScanOptions ScanOptions
 	// Workers is the number of concurrent dependency scans (0 = default to NumCPU/2, capped at 8).
@@ -167,11 +167,8 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		ds.attributeFindings(report, dep, opts.ScanOptions.Target, tracer, userPackages)
 	}
 
-	// Also enrich user code findings with call chain info
-	ds.enrichUserFindings(userReport, opts.ScanOptions.Target, tracer, userPackages)
-
-	// Step 6: Merge dependency findings into user report
-	result := ds.mergeReports(userReport, depReports, opts.IncludeUnreachable)
+	// Step 6: Merge all findings into user report
+	result := ds.mergeReports(userReport, depReports)
 
 	log.Info().Dur("duration", time.Since(pipelineStart)).Msg("Total dependency scan pipeline")
 
@@ -368,10 +365,10 @@ func (ds *DependencyScanner) collectPackageDirs(
 		})
 	}
 
-	for key, report := range depReports {
-		if !hasFindings(report) {
-			continue
-		}
+	// Include ALL dependencies for complete type resolution.
+	// Even deps without crypto findings contribute type declarations
+	// (e.g., JwtBuilder interface) needed to resolve fluent chains.
+	for key := range depMap {
 		dep := depMap[key]
 		packages = append(packages, callgraph.PackageDir{
 			Dir:        dep.Dir,
@@ -429,14 +426,6 @@ func (ds *DependencyScanner) attributeFindings(
 			containingFn := tracer.FindContainingFunction(absFilePath, asset.StartLine)
 			if containingFn != nil {
 				asset.DependencyInfo.Function = containingFn.ID.String()
-
-				chains := tracer.TraceBack(containingFn.ID, userPackages, 0)
-				if len(chains) > 0 {
-					asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
-					for k, chain := range chains {
-						asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, dep)
-					}
-				}
 			}
 		}
 
@@ -445,49 +434,12 @@ func (ds *DependencyScanner) attributeFindings(
 	}
 }
 
-// enrichUserFindings traces user code findings back through the call graph to
-// add call chain metadata. This captures inter-file call paths within the same
-// project (e.g., main.main() → mypkg.SecureEncrypt() → crypto call).
-func (ds *DependencyScanner) enrichUserFindings(
-	userReport *entities.InterimReport,
-	userTarget string,
-	tracer *callgraph.Tracer,
-	userPackages map[string]bool,
-) {
-	for i := range userReport.Findings {
-		finding := &userReport.Findings[i]
-		for j := range finding.CryptographicAssets {
-			asset := &finding.CryptographicAssets[j]
-
-			absFilePath := finding.FilePath
-			if !filepath.IsAbs(absFilePath) {
-				absFilePath = filepath.Join(userTarget, absFilePath)
-			}
-
-			containingFn := tracer.FindContainingFunction(absFilePath, asset.StartLine)
-			if containingFn == nil {
-				continue
-			}
-
-			chains := tracer.TraceBack(containingFn.ID, userPackages, 0)
-			if len(chains) > 0 {
-				asset.CallChains = make([][]callgraph.CallChainEntry, len(chains))
-				for k, chain := range chains {
-					asset.CallChains[k] = normalizeCallChainPaths(tracer.Entries(chain), userTarget, nil)
-				}
-			}
-		}
-	}
-}
-
-// mergeReports combines the user report with reachable dependency findings.
-// When includeUnreachable is false, only dependency findings whose assets have a
-// "callChain" metadata key (traced back to user code) are included. When true,
-// all dependency findings are included regardless of reachability.
+// mergeReports combines the user report with all dependency findings.
+// Reachability filtering is handled by the callgraph export (backward_paths),
+// not by the interim report.
 func (ds *DependencyScanner) mergeReports(
 	userReport *entities.InterimReport,
 	depReports map[string]*entities.InterimReport,
-	includeUnreachable bool,
 ) *entities.InterimReport {
 	merged := &entities.InterimReport{
 		Version:  userReport.Version,
@@ -505,68 +457,35 @@ func (ds *DependencyScanner) mergeReports(
 		merged.Findings = append(merged.Findings, finding)
 	}
 
-	// Add only reachable dependency findings (those with call chains back to user code)
+	// Include all dependency findings
 	for _, report := range depReports {
 		for _, finding := range report.Findings {
-			var reachableAssets []entities.CryptographicAsset
-			for j := range finding.CryptographicAssets {
-				asset := &finding.CryptographicAssets[j]
-				if len(asset.CallChains) > 0 || includeUnreachable {
-					reachableAssets = append(reachableAssets, *asset)
-				}
-			}
-			if len(reachableAssets) > 0 {
-				f := finding
-				f.CryptographicAssets = reachableAssets
-				merged.Findings = append(merged.Findings, f)
-			}
+			merged.Findings = append(merged.Findings, finding)
+		}
+	}
+
+	// Generate stable finding IDs for all assets
+	for i := range merged.Findings {
+		finding := &merged.Findings[i]
+		for j := range finding.CryptographicAssets {
+			asset := &finding.CryptographicAssets[j]
+			asset.FindingID = generateFindingID(finding.FilePath, asset.StartLine, asset.Rules)
 		}
 	}
 
 	return merged
 }
 
-// normalizeCallChainPaths rewrites absolute file paths in call chain entries to
-// user-friendly relative paths. User code paths become relative to userTarget,
-// dependency code paths become module@version/relative. When dep is nil (user
-// code enrichment), only user-target normalization is applied.
-func normalizeCallChainPaths(entries []callgraph.CallChainEntry, userTarget string, dep *dependency.Dependency) []callgraph.CallChainEntry {
-	absUserTarget := userTarget
-	if absUserTargetResolved, err := filepath.Abs(userTarget); err == nil {
-		absUserTarget = absUserTargetResolved
+// generateFindingID produces a stable short hash for a finding.
+// It hashes file_path + start_line + first_rule_id and returns the first 8 hex chars.
+func generateFindingID(filePath string, startLine int, rules []entities.RuleInfo) string {
+	ruleID := ""
+	if len(rules) > 0 {
+		ruleID = rules[0].ID
 	}
-
-	result := make([]callgraph.CallChainEntry, len(entries))
-
-	for i, entry := range entries {
-		result[i] = entry
-		absPath := entry.FilePath
-		if !filepath.IsAbs(absPath) {
-			continue
-		}
-
-		// Try user target first
-		if rel, err := filepath.Rel(absUserTarget, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-			result[i].FilePath = rel
-			result[i].Namespace = ""
-			continue
-		}
-
-		// Try dependency dir
-		if dep != nil {
-			absDepDir := dep.Dir
-			if absDepDirResolved, err := filepath.Abs(dep.Dir); err == nil {
-				absDepDir = absDepDirResolved
-			}
-
-			if rel, err := filepath.Rel(absDepDir, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-				result[i].FilePath = dep.Module + "@" + dep.Version + "/" + rel
-				continue
-			}
-		}
-	}
-
-	return result
+	input := filePath + ":" + strconv.Itoa(startLine) + ":" + ruleID
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])[:8]
 }
 
 // ecosystemToLanguages maps an ecosystem name to language hints for the orchestrator.

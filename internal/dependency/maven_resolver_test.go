@@ -179,3 +179,368 @@ exit 1
 		t.Fatalf("graph root children len = %d, want 2", len(result.Graph["com.acme:app"]))
 	}
 }
+
+func TestMavenResolver_ParseModules(t *testing.T) {
+	r := NewMavenResolver()
+
+	t.Run("multi-module", func(t *testing.T) {
+		dir := t.TempDir()
+		pom := `<project>
+			<groupId>com.acme</groupId>
+			<artifactId>parent</artifactId>
+			<packaging>pom</packaging>
+			<modules>
+				<module>core</module>
+				<module>web</module>
+			</modules>
+		</project>`
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
+			t.Fatalf("write pom.xml: %v", err)
+		}
+		// Create module directories
+		os.MkdirAll(filepath.Join(dir, "core"), 0o755)
+		os.MkdirAll(filepath.Join(dir, "web"), 0o755)
+
+		modules, isMulti := r.parseModules(dir)
+		if !isMulti {
+			t.Fatal("expected multi-module project")
+		}
+		if len(modules) != 2 {
+			t.Fatalf("modules len = %d, want 2", len(modules))
+		}
+	})
+
+	t.Run("single-module", func(t *testing.T) {
+		dir := t.TempDir()
+		pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId></project>`
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
+			t.Fatalf("write pom.xml: %v", err)
+		}
+
+		_, isMulti := r.parseModules(dir)
+		if isMulti {
+			t.Fatal("expected single-module project")
+		}
+	})
+
+	t.Run("missing-module-dir", func(t *testing.T) {
+		dir := t.TempDir()
+		pom := `<project>
+			<groupId>com.acme</groupId>
+			<modules><module>missing</module><module>exists</module></modules>
+		</project>`
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
+			t.Fatalf("write pom.xml: %v", err)
+		}
+		os.MkdirAll(filepath.Join(dir, "exists"), 0o755)
+
+		modules, isMulti := r.parseModules(dir)
+		if !isMulti {
+			t.Fatal("expected multi-module (one valid module)")
+		}
+		if len(modules) != 1 || modules[0] != "exists" {
+			t.Fatalf("modules = %v, want [exists]", modules)
+		}
+	})
+}
+
+func TestMavenResolver_IsInterModuleFailure(t *testing.T) {
+	tests := []struct {
+		name       string
+		stderr     string
+		groupID    string
+		modules    []string
+		wantResult bool
+	}{
+		{
+			name:       "inter-module failure",
+			stderr:     `Could not resolve dependencies for project me.zhengjie:eladmin-logging:jar:2.7\ndependency: me.zhengjie:eladmin-common:jar:2.7`,
+			groupID:    "me.zhengjie",
+			modules:    []string{"eladmin-common", "eladmin-logging"},
+			wantResult: true,
+		},
+		{
+			name:       "external dependency failure",
+			stderr:     `Could not resolve dependencies for project com.acme:app:jar:1.0\nCould not find artifact org.unknown:lib:jar:1.0`,
+			groupID:    "com.acme",
+			modules:    []string{"core", "web"},
+			wantResult: false,
+		},
+		{
+			name:       "no resolution error",
+			stderr:     `Some other Maven warning`,
+			groupID:    "com.acme",
+			modules:    []string{"core"},
+			wantResult: false,
+		},
+		{
+			name:       "empty inputs",
+			stderr:     `Could not resolve dependencies`,
+			groupID:    "",
+			modules:    nil,
+			wantResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isInterModuleFailure(tt.stderr, tt.groupID, tt.modules)
+			if got != tt.wantResult {
+				t.Fatalf("isInterModuleFailure() = %v, want %v", got, tt.wantResult)
+			}
+		})
+	}
+}
+
+func TestMavenResolver_Resolve_MultiModule_PartialSuccess(t *testing.T) {
+	// Tier 1: mvn dependency:list exits non-zero but writes partial output.
+	// The resolver should return the partial deps instead of failing.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project := t.TempDir()
+	pom := `<project>
+		<groupId>com.acme</groupId>
+		<artifactId>parent</artifactId>
+		<packaging>pom</packaging>
+		<modules><module>core</module><module>web</module></modules>
+	</project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+	os.MkdirAll(filepath.Join(project, "core"), 0o755)
+	os.MkdirAll(filepath.Join(project, "web"), 0o755)
+	// Write module pom.xml files for artifactId collection
+	os.WriteFile(filepath.Join(project, "core", "pom.xml"),
+		[]byte(`<project><artifactId>core</artifactId></project>`), 0o600)
+	os.WriteFile(filepath.Join(project, "web", "pom.xml"),
+		[]byte(`<project><artifactId>web</artifactId></project>`), 0o600)
+
+	binDir := t.TempDir()
+	// Mock mvn: dependency:list writes partial output but exits 1 (simulating reactor partial failure).
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+out=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+  esac
+done
+if echo "$@" | grep -q "dependency:list"; then
+  if [ -n "$out" ]; then
+    cat > "$out" <<'EOF_LIST'
+org.example:lib:jar:1.2.3:compile
+org.springframework:spring-core:jar:5.3.0:compile
+EOF_LIST
+  fi
+  echo "BUILD FAILURE: some module failed" >&2
+  exit 1
+fi
+if echo "$@" | grep -q "dependency:tree"; then
+  if [ -n "$out" ]; then
+    echo "" > "$out"
+  fi
+  exit 1
+fi
+if echo "$@" | grep -q "dependency:sources"; then
+  exit 0
+fi
+exit 0
+`)
+	prependPath(t, binDir)
+
+	r := NewMavenResolver()
+	result, err := r.Resolve(context.Background(), project, -1)
+	if err != nil {
+		t.Fatalf("Resolve should not fail on partial success: %v", err)
+	}
+
+	// Should have captured partial deps from Tier 1
+	if len(result.Dependencies) != 2 {
+		t.Fatalf("Dependencies len = %d, want 2 (partial results)", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Module != "org.example:lib" {
+		t.Fatalf("unexpected first dep: %v", result.Dependencies[0])
+	}
+
+	// WorkspaceMembers should be populated for multi-module project
+	if len(result.WorkspaceMembers) != 2 {
+		t.Fatalf("WorkspaceMembers len = %d, want 2", len(result.WorkspaceMembers))
+	}
+}
+
+func TestMavenResolver_Resolve_MultiModule_Tier2Fallback(t *testing.T) {
+	// Tier 1 returns zero deps. Tier 2 (per-module) should be tried.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project := t.TempDir()
+	pom := `<project>
+		<groupId>com.acme</groupId>
+		<artifactId>parent</artifactId>
+		<packaging>pom</packaging>
+		<modules><module>core</module><module>web</module></modules>
+	</project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+	os.MkdirAll(filepath.Join(project, "core"), 0o755)
+	os.MkdirAll(filepath.Join(project, "web"), 0o755)
+	os.WriteFile(filepath.Join(project, "core", "pom.xml"),
+		[]byte(`<project><artifactId>core</artifactId></project>`), 0o600)
+	os.WriteFile(filepath.Join(project, "web", "pom.xml"),
+		[]byte(`<project><artifactId>web</artifactId></project>`), 0o600)
+
+	binDir := t.TempDir()
+	// Mock mvn: reactor dependency:list writes nothing (simulates complete failure).
+	// Per-module (-pl) calls succeed for "core" but fail for "web".
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+out=""
+pl_module=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -pl) pl_module="NEXT" ;;
+    *)
+      if [ "$pl_module" = "NEXT" ]; then
+        pl_module="$arg"
+      fi
+      ;;
+  esac
+done
+if echo "$@" | grep -q "dependency:list"; then
+  if [ -n "$pl_module" ] && [ "$pl_module" != "NEXT" ]; then
+    # Per-module mode
+    if [ "$pl_module" = "core" ]; then
+      cat > "$out" <<'EOF_LIST'
+org.example:lib:jar:1.2.3:compile
+EOF_LIST
+      exit 0
+    else
+      exit 1
+    fi
+  fi
+  # Reactor mode: write empty file, exit 1
+  if [ -n "$out" ]; then
+    echo "" > "$out"
+  fi
+  exit 1
+fi
+if echo "$@" | grep -q "dependency:tree"; then
+  if [ -n "$out" ]; then
+    echo "" > "$out"
+  fi
+  exit 0
+fi
+if echo "$@" | grep -q "dependency:sources"; then
+  exit 0
+fi
+exit 0
+`)
+	prependPath(t, binDir)
+
+	r := NewMavenResolver()
+	result, err := r.Resolve(context.Background(), project, -1)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// Tier 2 should have resolved core's dependency
+	if len(result.Dependencies) != 1 {
+		t.Fatalf("Dependencies len = %d, want 1 (from Tier 2 per-module)", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Module != "org.example:lib" {
+		t.Fatalf("unexpected dep: %v", result.Dependencies[0])
+	}
+}
+
+func TestMavenResolver_Resolve_MultiModule_Tier3Fallback(t *testing.T) {
+	// Tier 1 returns zero deps. Tier 2 returns zero deps.
+	// stderr indicates inter-module failure → Tier 3 (install + retry).
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project := t.TempDir()
+	pom := `<project>
+		<groupId>me.zhengjie</groupId>
+		<artifactId>eladmin</artifactId>
+		<packaging>pom</packaging>
+		<modules><module>eladmin-common</module><module>eladmin-logging</module></modules>
+	</project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+	os.MkdirAll(filepath.Join(project, "eladmin-common"), 0o755)
+	os.MkdirAll(filepath.Join(project, "eladmin-logging"), 0o755)
+	os.WriteFile(filepath.Join(project, "eladmin-common", "pom.xml"),
+		[]byte(`<project><artifactId>eladmin-common</artifactId></project>`), 0o600)
+	os.WriteFile(filepath.Join(project, "eladmin-logging", "pom.xml"),
+		[]byte(`<project><artifactId>eladmin-logging</artifactId></project>`), 0o600)
+
+	// Track state: after install, dependency:list should succeed.
+	stateFile := filepath.Join(t.TempDir(), "installed")
+
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+STATE_FILE="`+stateFile+`"
+out=""
+pl_module=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -pl) pl_module="NEXT" ;;
+    *)
+      if [ "$pl_module" = "NEXT" ]; then
+        pl_module="$arg"
+      fi
+      ;;
+  esac
+done
+if [ "$1" = "install" ]; then
+  touch "$STATE_FILE"
+  exit 0
+fi
+if echo "$@" | grep -q "dependency:list"; then
+  # Per-module mode also returns nothing (simulates all modules failing due to inter-dep)
+  if [ -n "$pl_module" ] && [ "$pl_module" != "NEXT" ]; then
+    if [ -n "$out" ]; then echo "" > "$out"; fi
+    exit 1
+  fi
+  # Reactor mode: succeeds after install
+  if [ -f "$STATE_FILE" ]; then
+    cat > "$out" <<'EOF_LIST'
+org.springframework:spring-core:jar:5.3.0:compile
+com.mysql:mysql-connector-java:jar:8.0.33:compile
+EOF_LIST
+    exit 0
+  fi
+  # Before install: fail with inter-module error
+  if [ -n "$out" ]; then echo "" > "$out"; fi
+  echo "Could not resolve dependencies for project me.zhengjie:eladmin-logging:jar:2.7" >&2
+  echo "Could not find artifact me.zhengjie:eladmin-common:jar:2.7" >&2
+  exit 1
+fi
+if echo "$@" | grep -q "dependency:tree"; then
+  if [ -n "$out" ]; then echo "" > "$out"; fi
+  exit 0
+fi
+if echo "$@" | grep -q "dependency:sources"; then
+  exit 0
+fi
+exit 0
+`)
+	prependPath(t, binDir)
+
+	r := NewMavenResolver()
+	result, err := r.Resolve(context.Background(), project, -1)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// Tier 3 should have resolved deps after install
+	if len(result.Dependencies) != 2 {
+		t.Fatalf("Dependencies len = %d, want 2 (from Tier 3 install+retry)", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Module != "org.springframework:spring-core" {
+		t.Fatalf("unexpected first dep: %v", result.Dependencies[0])
+	}
+}

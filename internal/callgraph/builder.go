@@ -32,14 +32,23 @@ type PackageDir struct {
 
 // Builder constructs a CallGraph from multiple packages using a language-specific parser.
 type Builder struct {
-	parser Parser
+	parser       Parser
+	typeResolver TypeResolver
 }
 
 // NewBuilder creates a new call graph builder with the given parser.
+// An optional TypeResolver can be set via SetTypeResolver for language-native
+// type resolution (bytecode analysis, go/types, etc.).
 func NewBuilder(parser Parser) *Builder {
 	return &Builder{
 		parser: parser,
 	}
+}
+
+// SetTypeResolver configures the builder to use a language-specific type resolver
+// after tree-sitter parsing. This enriches the call graph with full type information.
+func (b *Builder) SetTypeResolver(resolver TypeResolver) {
+	b.typeResolver = resolver
 }
 
 // PackageSeparator exposes the parser's package separator for use by the tracer.
@@ -62,8 +71,18 @@ func (b *Builder) BuildFromDirectories(packages []PackageDir) (*CallGraph, error
 		}
 	}
 
-	// Build the reverse caller index
+	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	b.buildCallerIndex(graph)
+
+	// Language-native type resolution (bytecode, go/types, etc.)
+	if b.typeResolver != nil {
+		if err := b.typeResolver.ResolveTypes(graph, packages); err != nil {
+			log.Warn().Err(err).Msg("Type resolver encountered errors (continuing with partial resolution)")
+		}
+	}
+
+	// Resolve fluent chain calls using return type propagation (benefits from type resolver enrichment)
+	resolveFluentChainsByReturnType(graph)
 
 	log.Info().
 		Int("functions", len(graph.Functions)).
@@ -328,6 +347,181 @@ func namespaceRoot(pkg string) string {
 		return parts[0] + sep + parts[1]
 	}
 	return pkg
+}
+
+// resolveFluentChainsByReturnType improves call resolution for fluent chains
+// by propagating return types through chained calls.
+//
+// For a chain like Jwts.builder().setId(id).signWith(algo, key):
+//   - Jwts.builder() is resolved → its ReturnType is "JwtBuilder"
+//   - .setId(id) was unresolved → now we look for JwtBuilder.setId in the graph
+//   - .signWith(algo, key) was unresolved → JwtBuilder.signWith in the graph
+//
+// This rewrites FunctionCall.Callee for matched calls, making them resolvable
+// for parameter type extraction and caller index linking.
+func resolveFluentChainsByReturnType(graph *CallGraph) {
+	totalResolved := 0
+	for pass := range 10 { // max 10 iterations to prevent infinite loops
+		typePackages := buildTypePackageIndex(graph)
+		resolved := 0
+		for _, fn := range graph.Functions {
+			resolved += resolveFluentCallsInFunction(fn, graph, typePackages)
+		}
+		totalResolved += resolved
+		if resolved == 0 {
+			break // fixed point reached
+		}
+		_ = pass
+	}
+
+	if totalResolved > 0 {
+		log.Info().Int("resolved", totalResolved).Msg("Resolved fluent chain calls via return types")
+	}
+}
+
+// buildTypePackageIndex maps simple type names to their packages.
+// When a type appears in multiple packages, the first one wins (deterministic via sort).
+func buildTypePackageIndex(graph *CallGraph) map[string]string {
+	index := make(map[string]string)
+	// Sort keys for deterministic output
+	keys := make([]string, 0, len(graph.Functions))
+	for k := range graph.Functions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		fn := graph.Functions[k]
+		if fn.ID.Type == "" {
+			continue
+		}
+		if _, exists := index[fn.ID.Type]; !exists {
+			index[fn.ID.Type] = fn.ID.Package
+		}
+	}
+	return index
+}
+
+// resolveFluentCallsInFunction processes calls within a single function,
+// propagating return types through fluent chains to resolve unresolved calls.
+func resolveFluentCallsInFunction(fn *FunctionDecl, graph *CallGraph, typePackages map[string]string) int {
+	resolved := 0
+
+	// Sort calls by line, then resolved-before-unresolved within the same line.
+	// This ensures innermost calls in fluent chains (which are resolved, e.g., builder())
+	// are processed first, setting lastReturnType for unresolved chained calls.
+	sortedIndices := make([]int, len(fn.Calls))
+	for i := range sortedIndices {
+		sortedIndices[i] = i
+	}
+	sort.SliceStable(sortedIndices, func(a, b int) bool {
+		lineA := fn.Calls[sortedIndices[a]].Line
+		lineB := fn.Calls[sortedIndices[b]].Line
+		if lineA != lineB {
+			return lineA < lineB
+		}
+		_, aResolved := graph.Functions[fn.Calls[sortedIndices[a]].Callee.String()]
+		_, bResolved := graph.Functions[fn.Calls[sortedIndices[b]].Callee.String()]
+		if aResolved != bResolved {
+			return aResolved // resolved before unresolved
+		}
+		return false
+	})
+
+	// Track return type from the last resolved call on each line (fluent chains share a line)
+	lastReturnType := ""
+	lastLine := -1
+
+	for _, idx := range sortedIndices {
+		call := &fn.Calls[idx]
+		calleeKey := call.Callee.String()
+
+		// If this call is on a different line, reset the chain tracking
+		if call.Line != lastLine {
+			lastReturnType = ""
+			lastLine = call.Line
+		}
+
+		// Check if this call is already resolved
+		if callee, ok := graph.Functions[calleeKey]; ok {
+			if callee.ReturnType != "" {
+				lastReturnType = stripGenericSuffix(callee.ReturnType)
+			}
+			continue
+		}
+
+		// Unresolved call — try to resolve via the last return type
+		if lastReturnType == "" || !strings.Contains(call.Raw, ").") {
+			continue
+		}
+
+		// Look up the return type's package
+		pkg, ok := typePackages[lastReturnType]
+		if !ok {
+			continue
+		}
+
+		// Try to find the method on this type (or its parent interfaces)
+		candidateID, candidateFn := findMethodOnTypeOrParents(
+			graph, lastReturnType, pkg, call.Callee.Name, typePackages,
+		)
+		if candidateFn == nil {
+			continue
+		}
+		candidateKey := candidateID.String()
+
+		// Rewrite the call's callee to the resolved function
+		call.Callee = candidateID
+
+		// Add to caller index
+		addCaller(graph.Callers, candidateKey, fn.ID.String())
+
+		// Propagate this callee's return type for the next chain link
+		if candidateFn.ReturnType != "" {
+			lastReturnType = stripGenericSuffix(candidateFn.ReturnType)
+		}
+
+		resolved++
+	}
+
+	return resolved
+}
+
+// findMethodOnTypeOrParents looks for a method on the given type, falling back to
+// parent interfaces from the TypeHierarchy if not found directly.
+func findMethodOnTypeOrParents(
+	graph *CallGraph, typeName, pkg, methodName string, typePackages map[string]string,
+) (FunctionID, *FunctionDecl) {
+	// Try direct match first
+	id := FunctionID{Package: pkg, Type: typeName, Name: methodName}
+	if fn, ok := graph.Functions[id.String()]; ok {
+		return id, fn
+	}
+
+	// Try parent interfaces
+	if graph.TypeHierarchy != nil {
+		for _, parent := range graph.TypeHierarchy[typeName] {
+			parentPkg, ok := typePackages[parent]
+			if !ok {
+				parentPkg = pkg // assume same package
+			}
+			parentID := FunctionID{Package: parentPkg, Type: parent, Name: methodName}
+			if fn, ok := graph.Functions[parentID.String()]; ok {
+				return parentID, fn
+			}
+		}
+	}
+
+	return FunctionID{}, nil
+}
+
+// stripGenericSuffix removes generic type parameters from a type name.
+// E.g., "Map<String, String>" → "Map", "ClaimsMutator<JwtBuilder>" → "ClaimsMutator"
+func stripGenericSuffix(typeName string) string {
+	if idx := strings.Index(typeName, "<"); idx > 0 {
+		return typeName[:idx]
+	}
+	return typeName
 }
 
 func methodLookupName(name string) string {

@@ -77,7 +77,6 @@ var (
 	scanDependencies    bool
 	scanDepMaxDepth     int
 	scanDepEcosystem    string
-	scanDepUnreachable  bool
 	scanExportCallgraph string
 	scanExportCgFormat  string
 	scanDepWorkers      int
@@ -140,10 +139,10 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
 	scanCmd.Flags().IntVar(&scanDepMaxDepth, "dep-max-depth", 3, "Maximum depth for recursive dependency resolution")
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
-	scanCmd.Flags().BoolVar(&scanDepUnreachable, "dep-include-unreachable", false, "Include crypto findings in dependencies not reachable from user code call graph")
+
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file (requires --scan-dependencies)")
-	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format: json, dot, text")
+	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -319,6 +318,9 @@ func runScan(_ *cobra.Command, args []string) error {
 					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
 				} else {
 					cgBuilder := callgraph.NewBuilder(cgParser)
+					if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem); typeResolver != nil {
+						cgBuilder.SetTypeResolver(typeResolver)
+					}
 
 					var findingsCache engine.FindingsCache
 					fc, cacheErr := engine.NewDiskFindingsCache()
@@ -330,10 +332,9 @@ func runScan(_ *cobra.Command, args []string) error {
 
 					depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
 					depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
-						MaxDepth:           scanDepMaxDepth,
-						IncludeUnreachable: scanDepUnreachable,
-						Workers:            scanDepWorkers,
-						ScanOptions:        scanOpts,
+						MaxDepth:    scanDepMaxDepth,
+						Workers:     scanDepWorkers,
+						ScanOptions: scanOpts,
 					})
 					if depErr != nil {
 						return fmt.Errorf("dependency scan failed: %w", depErr)

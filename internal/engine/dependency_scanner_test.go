@@ -131,8 +131,9 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 
 	pkgs := ds.collectPackageDirs("/user/project", resolvedWorkspace, depReports, depMap)
-	if len(pkgs) != 3 {
-		t.Fatalf("collectPackageDirs len = %d, want 3", len(pkgs))
+	// 2 workspace members + 2 deps (ALL deps included for type resolution)
+	if len(pkgs) != 4 {
+		t.Fatalf("collectPackageDirs len = %d, want 4", len(pkgs))
 	}
 
 	workspaceUsers := ds.buildUserPackages(resolvedWorkspace)
@@ -147,33 +148,7 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 }
 
-func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
-	userTarget := t.TempDir()
-	depDir := t.TempDir()
-
-	entries := []callgraph.CallChainEntry{
-		{FunctionName: "Entry", Namespace: "app", FilePath: filepath.Join(userTarget, "main.go"), Line: 10},
-		{FunctionName: "Crypto", Namespace: "dep", FilePath: filepath.Join(depDir, "lib.go"), Line: 20},
-		{FunctionName: "X", Namespace: "other", FilePath: "/outside/path.go", Line: 30},
-	}
-
-	normalized := normalizeCallChainPaths(entries, userTarget, &dependency.Dependency{Module: "github.com/acme/dep", Version: "v1", Dir: depDir})
-	if normalized[0].FilePath != "main.go" {
-		t.Fatalf("expected user path to be normalized, got %q", normalized[0].FilePath)
-	}
-	if normalized[0].Namespace != "" {
-		t.Fatalf("expected user namespace to be cleared, got %q", normalized[0].Namespace)
-	}
-	if !strings.HasPrefix(normalized[1].FilePath, "github.com/acme/dep@v1/") {
-		t.Fatalf("expected dependency path prefix, got %q", normalized[1].FilePath)
-	}
-	if normalized[1].Namespace != "dep" {
-		t.Fatalf("expected dependency namespace to be preserved, got %q", normalized[1].Namespace)
-	}
-	if normalized[2].FilePath != "/outside/path.go" {
-		t.Fatalf("outside path should remain unchanged, got %q", normalized[2].FilePath)
-	}
-
+func TestDependencyScanner_MergeReports(t *testing.T) {
 	ds := &DependencyScanner{}
 	userReport := &entities.InterimReport{
 		Version: "1.2",
@@ -183,31 +158,27 @@ func TestDependencyScanner_NormalizeAndMerge(t *testing.T) {
 		},
 	}
 	depReports := map[string]*entities.InterimReport{
-		"reachable": {
+		"dep1": {
 			Findings: []entities.Finding{{
 				FilePath:            "dep/a.go",
-				CryptographicAssets: []entities.CryptographicAsset{{CallChains: [][]callgraph.CallChainEntry{{{FunctionName: "Entry", Namespace: "app", FilePath: "main.go", Line: 1}}}}},
+				CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
 			}},
 		},
-		"unreachable": {
+		"dep2": {
 			Findings: []entities.Finding{{
 				FilePath:            "dep/b.go",
-				CryptographicAssets: []entities.CryptographicAsset{{}},
+				CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
 			}},
 		},
 	}
 
-	mergedReachable := ds.mergeReports(userReport, depReports, false)
-	if len(mergedReachable.Findings) != 2 {
-		t.Fatalf("reachable-only merge findings len = %d, want 2", len(mergedReachable.Findings))
+	merged := ds.mergeReports(userReport, depReports)
+	// All findings included: 1 user + 2 dependency
+	if len(merged.Findings) != 3 {
+		t.Fatalf("merge findings len = %d, want 3", len(merged.Findings))
 	}
-	if mergedReachable.Findings[0].CryptographicAssets[0].Source != "direct" {
+	if merged.Findings[0].CryptographicAssets[0].Source != "direct" {
 		t.Fatalf("expected user findings to default to direct source")
-	}
-
-	mergedAll := ds.mergeReports(userReport, depReports, true)
-	if len(mergedAll.Findings) != 3 {
-		t.Fatalf("include-unreachable merge findings len = %d, want 3", len(mergedAll.Findings))
 	}
 }
 
@@ -274,20 +245,8 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	if asset.DependencyInfo.Function == "" {
 		t.Fatal("expected dependency function attribution to be set")
 	}
-	if len(asset.CallChains) == 0 {
-		t.Fatal("expected dependency call chains to be populated")
-	}
 	if !strings.HasPrefix(depReport.Findings[0].FilePath, "dep/mod@v1.0.0/") {
 		t.Fatalf("unexpected rewritten file path: %s", depReport.Findings[0].FilePath)
-	}
-
-	userReport := &entities.InterimReport{Findings: []entities.Finding{{
-		FilePath:            "main.go",
-		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 30}},
-	}}}
-	ds.enrichUserFindings(userReport, userTarget, tracer, map[string]bool{"app": true})
-	if len(userReport.Findings[0].CryptographicAssets[0].CallChains) == 0 {
-		t.Fatal("expected user finding call chain enrichment")
 	}
 }
 

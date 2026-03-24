@@ -46,28 +46,20 @@ The default output format containing detailed cryptographic asset information op
             "version": "v0.17.0",
             "function": "golang.org/x/crypto/chacha20poly1305.New"
           },
+          "finding_id": "a1b2c3d4",
           "call_chains": [
             [
               {
                 "function_name": "main",
-                "file": "main.go",
-                "line": 15,
-                "owner_type": "module",
-                "owner_name": "app"
+                "namespace": "example.com/app",
+                "file_path": "main.go",
+                "line": 15
               },
               {
                 "function_name": "New",
                 "namespace": "golang.org/x/crypto/chacha20poly1305",
-                "file": "golang.org/x/crypto@v0.17.0/chacha20.go",
-                "line": 42,
-                "owner_type": "type",
-                "owner_name": "chacha20poly1305",
-                "function_type": "function",
-                "return_type": "*Cipher",
-                "parameters": [
-                  {"type": "[]byte", "argument_value": "key"},
-                  {"type": "[]byte", "argument_value": "nonce"}
-                ]
+                "file_path": "golang.org/x/crypto@v0.17.0/chacha20.go",
+                "line": 42
               }
             ]
           ]
@@ -78,7 +70,7 @@ The default output format containing detailed cryptographic asset information op
 }
 ```
 
-> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source`, `dependency_info`, and `call_chains` for dependency scanning attribution. Version 1.3 enriches each `call_chains` step with split symbol fields and optional parameter argument bindings. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
+> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source`, `dependency_info`, and `call_chains` for dependency scanning attribution. Version 1.3 adds `finding_id` for cross-referencing with the callgraph export, and simplifies `call_chains` steps to structured fields: `function_name`, `class_name`, `namespace`, `file_path`, `line`. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
 
 ### Field Descriptions
 

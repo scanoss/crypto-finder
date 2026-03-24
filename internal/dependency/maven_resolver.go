@@ -19,6 +19,8 @@ type pomProject struct {
 	GroupID    string    `xml:"groupId"`
 	ArtifactID string    `xml:"artifactId"`
 	Parent     pomParent `xml:"parent"`
+	Modules    []string  `xml:"modules>module"`
+	Packaging  string    `xml:"packaging"`
 }
 
 type pomParent struct {
@@ -39,6 +41,11 @@ func (r *MavenResolver) Ecosystem() string {
 }
 
 // Resolve uses Maven CLI to resolve all transitive dependencies for the project at targetDir.
+// For multi-module projects, it uses a three-tier fallback strategy:
+//
+//	Tier 1: mvn dependency:list --fail-never (partial results from reactor)
+//	Tier 2: Per-module resolution with -pl <module> (isolate each module)
+//	Tier 3: mvn install -DskipTests, then retry Tier 1 (build locally first)
 func (r *MavenResolver) Resolve(ctx context.Context, targetDir string, _ int) (*ResolveResult, error) {
 	// Step 1: Parse pom.xml for root module info
 	rootModule, err := r.parseRootModule(targetDir)
@@ -52,10 +59,51 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string, _ int) (*
 		Graph:        make(map[string][]string),
 	}
 
-	// Step 2: List dependencies
-	deps, err := r.listDependencies(ctx, targetDir)
+	// Step 2: Detect multi-module project
+	modules, isMultiModule := r.parseModules(targetDir)
+	if isMultiModule {
+		log.Info().Int("modules", len(modules)).Msg("Detected multi-module Maven project")
+		// Populate WorkspaceMembers so all modules are treated as user code
+		// for call chain tracing (following the cargo_resolver pattern).
+		for _, module := range modules {
+			moduleDir := filepath.Join(targetDir, module)
+			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
+				Name: rootModule + ":" + module,
+				Dir:  moduleDir,
+			})
+		}
+	}
+
+	// Step 3 (Tier 1): List dependencies with --fail-never
+	depsResult, err := r.listDependencies(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Maven dependencies: %w", err)
+	}
+	deps := depsResult.deps
+
+	// Tier 2: If zero deps from a multi-module project, try per-module resolution
+	if len(deps) == 0 && isMultiModule {
+		log.Info().Msg("Tier 1 returned no dependencies, trying per-module resolution (Tier 2)")
+
+		// Collect module artifactIds for inter-module detection
+		moduleArtifactIDs := r.collectModuleArtifactIDs(targetDir, modules)
+
+		perModuleResult, perModuleErr := r.listDependenciesPerModule(ctx, targetDir, modules)
+		if perModuleErr == nil && len(perModuleResult.deps) > 0 {
+			deps = perModuleResult.deps
+		}
+
+		// Tier 3: If still zero deps and inter-module failure detected, build locally and retry
+		if len(deps) == 0 && isInterModuleFailure(depsResult.stderr, rootModule, moduleArtifactIDs) {
+			log.Info().Msg("Inter-module dependency failure detected, building modules locally (Tier 3)")
+			_ = r.installModules(ctx, targetDir)
+
+			// Retry Tier 1 after install
+			retryResult, retryErr := r.listDependencies(ctx, targetDir)
+			if retryErr == nil && len(retryResult.deps) > 0 {
+				deps = retryResult.deps
+			}
+		}
 	}
 
 	if len(deps) == 0 {
@@ -63,10 +111,10 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string, _ int) (*
 		return result, nil
 	}
 
-	// Step 3: Download source JARs (best-effort)
+	// Step 4: Download source JARs (best-effort)
 	r.downloadSources(ctx, targetDir)
 
-	// Step 4: Extract source JARs to cache and attach source dirs when available.
+	// Step 5: Extract source JARs to cache and attach source dirs when available.
 	cache, err := NewSourceCache()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create source cache: %w", err)
@@ -88,7 +136,7 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string, _ int) (*
 		withSources++
 	}
 
-	// Step 5: Build dependency graph (best-effort)
+	// Step 6: Build dependency graph (best-effort, with --fail-never)
 	graph, err := r.dependencyTree(ctx, targetDir)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to build Maven dependency graph, call chain tracing may be limited")
@@ -103,6 +151,27 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string, _ int) (*
 		Msg("Resolved Maven dependencies")
 
 	return result, nil
+}
+
+// collectModuleArtifactIDs reads each module's pom.xml to extract its artifactId.
+func (r *MavenResolver) collectModuleArtifactIDs(targetDir string, modules []string) []string {
+	ids := make([]string, 0, len(modules))
+	for _, module := range modules {
+		pomPath := filepath.Join(targetDir, module, "pom.xml")
+		data, err := os.ReadFile(pomPath)
+		if err != nil {
+			// Use the directory name as a fallback artifactId (common convention)
+			ids = append(ids, module)
+			continue
+		}
+		var pom pomProject
+		if err := xml.Unmarshal(data, &pom); err != nil || pom.ArtifactID == "" {
+			ids = append(ids, module)
+			continue
+		}
+		ids = append(ids, pom.ArtifactID)
+	}
+	return ids
 }
 
 // parseRootModule extracts the groupId from the project's pom.xml.
@@ -129,8 +198,46 @@ func (r *MavenResolver) parseRootModule(targetDir string) (string, error) {
 	return groupID, nil
 }
 
-// listDependencies runs `mvn dependency:list` and parses the output.
-func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) ([]Dependency, error) {
+// parseModules reads the pom.xml and returns the list of module directory names.
+// The second return value indicates whether this is a multi-module project.
+func (r *MavenResolver) parseModules(targetDir string) ([]string, bool) {
+	pomPath := filepath.Join(targetDir, "pom.xml")
+	data, err := os.ReadFile(pomPath)
+	if err != nil {
+		return nil, false
+	}
+
+	var pom pomProject
+	if err := xml.Unmarshal(data, &pom); err != nil {
+		return nil, false
+	}
+
+	if len(pom.Modules) == 0 {
+		return nil, false
+	}
+
+	// Validate that module directories exist
+	modules := make([]string, 0, len(pom.Modules))
+	for _, m := range pom.Modules {
+		moduleDir := filepath.Join(targetDir, m)
+		if info, err := os.Stat(moduleDir); err == nil && info.IsDir() {
+			modules = append(modules, m)
+		}
+	}
+
+	return modules, len(modules) > 0
+}
+
+// listDepsResult holds the result of a dependency listing attempt, including partial results.
+type listDepsResult struct {
+	deps    []Dependency
+	stderr  string   // full stderr for diagnostics
+	partial bool     // true if some modules failed but others succeeded
+}
+
+// listDependencies runs `mvn dependency:list` with --fail-never to collect
+// partial results from multi-module projects where some modules may fail.
+func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) (*listDepsResult, error) {
 	// Create a temp file for dependency output
 	tmpFile, err := os.CreateTemp("", "mvn-deps-*.txt")
 	if err != nil {
@@ -149,30 +256,50 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 	// includeScope=compile includes compile + provided + system scopes (Maven's
 	// scope hierarchy). This captures all dependencies the source code can call into,
 	// while excluding test-only dependencies.
+	// --fail-never continues past module failures in multi-module builds.
+	// -DappendOutput=true appends each module's output instead of overwriting.
 	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
 	cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
 		"-DoutputFile="+tmpPath,
 		"-DincludeScope=compile",
 		"-DoutputAbsoluteArtifactFilename=false",
-		"-q", // quiet mode
+		"-DappendOutput=true",
+		"--fail-never",
 	)
 	cmd.Dir = targetDir
 
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("mvn dependency:list: %w\nstderr: %s", err, stderr.String())
+	runErr := cmd.Run()
+
+	// Even on error, parse whatever was written to the output file (partial results).
+	data, _ := os.ReadFile(tmpPath)
+	deps := r.parseDependencyList(string(data))
+
+	result := &listDepsResult{
+		deps:   deps,
+		stderr: stderr.String(),
 	}
 
-	// Parse the output file
-	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
-	data, err := os.ReadFile(tmpPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading dependency list output: %w", err)
+	if runErr != nil {
+		if len(deps) > 0 {
+			// Partial success: some modules resolved, others failed.
+			result.partial = true
+			log.Warn().
+				Int("resolved", len(deps)).
+				Str("stderr", truncate(stderr.String(), 500)).
+				Msg("Maven dependency:list partially succeeded (some modules failed)")
+		} else {
+			log.Debug().
+				Str("stderr", truncate(stderr.String(), 500)).
+				Str("stdout", truncate(stdout.String(), 500)).
+				Msg("Maven dependency:list failed with no results")
+		}
 	}
 
-	return r.parseDependencyList(string(data)), nil
+	return result, nil
 }
 
 // parseDependencyList parses the output of `mvn dependency:list -DoutputFile=...`.
@@ -291,7 +418,8 @@ func (r *MavenResolver) dependencyTree(ctx context.Context, targetDir string) (m
 	cmd := exec.CommandContext(ctx, "mvn", "dependency:tree",
 		"-DoutputFile="+tmpPath,
 		"-DoutputType=text",
-		"-q",
+		"-DappendOutput=true",
+		"--fail-never",
 	)
 	cmd.Dir = targetDir
 
@@ -360,4 +488,124 @@ func (r *MavenResolver) parseTreeOutput(output string) map[string][]string {
 	}
 
 	return graph
+}
+
+// listDependenciesPerModule resolves dependencies for each module independently.
+// This is Tier 2: when the reactor build fails, individual modules may still resolve.
+func (r *MavenResolver) listDependenciesPerModule(ctx context.Context, targetDir string, modules []string) (*listDepsResult, error) {
+	seen := make(map[string]bool)
+	var allDeps []Dependency
+	anyPartial := false
+
+	for _, module := range modules {
+		tmpFile, err := os.CreateTemp("", "mvn-deps-*.txt")
+		if err != nil {
+			continue
+		}
+		tmpPath := tmpFile.Name()
+		_ = tmpFile.Close()
+
+		// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
+		cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
+			"-pl", module,
+			"-DoutputFile="+tmpPath,
+			"-DincludeScope=compile",
+			"-DoutputAbsoluteArtifactFilename=false",
+		)
+		cmd.Dir = targetDir
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		runErr := cmd.Run()
+
+		data, _ := os.ReadFile(tmpPath)
+		_ = os.Remove(tmpPath)
+
+		if runErr != nil {
+			anyPartial = true
+			log.Debug().
+				Str("module", module).
+				Str("stderr", truncate(stderr.String(), 300)).
+				Msg("Per-module dependency:list failed, skipping module")
+			continue
+		}
+
+		for _, dep := range r.parseDependencyList(string(data)) {
+			if !seen[dep.Module] {
+				seen[dep.Module] = true
+				allDeps = append(allDeps, dep)
+			}
+		}
+	}
+
+	return &listDepsResult{
+		deps:    allDeps,
+		partial: anyPartial,
+	}, nil
+}
+
+// installModules runs `mvn install -DskipTests` to build all modules locally,
+// making inter-module artifacts available in ~/.m2/repository.
+// This is Tier 3: expensive but resolves inter-module transitive dependencies.
+func (r *MavenResolver) installModules(ctx context.Context, targetDir string) error {
+	log.Info().Msg("Building modules locally to resolve inter-module dependencies (this may take several minutes)...")
+
+	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
+	cmd := exec.CommandContext(ctx, "mvn", "install",
+		"-DskipTests",
+		"--fail-never",
+		"-q",
+	)
+	cmd.Dir = targetDir
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Warn().
+			Str("stderr", truncate(stderr.String(), 500)).
+			Msg("mvn install partially failed (some modules may not have built)")
+		// Non-fatal: even partial install may unblock dependency resolution
+	}
+
+	return nil
+}
+
+// isInterModuleFailure checks whether Maven's stderr indicates that the failure
+// is caused by unresolvable inter-module dependencies (i.e., the project's own
+// artifacts are not yet built/installed).
+func isInterModuleFailure(stderr string, projectGroupID string, moduleArtifactIDs []string) bool {
+	if projectGroupID == "" || len(moduleArtifactIDs) == 0 {
+		return false
+	}
+
+	// Look for "Could not resolve dependencies" or "Could not find artifact"
+	// where the missing artifact matches the project's own groupId + a known module.
+	lowerStderr := strings.ToLower(stderr)
+	hasResolutionError := strings.Contains(lowerStderr, "could not resolve dependencies") ||
+		strings.Contains(lowerStderr, "could not find artifact") ||
+		strings.Contains(lowerStderr, "could not transfer artifact")
+
+	if !hasResolutionError {
+		return false
+	}
+
+	// Check if any module artifactId appears in the error context
+	for _, artifactID := range moduleArtifactIDs {
+		marker := projectGroupID + ":" + artifactID
+		if strings.Contains(stderr, marker) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// truncate returns s trimmed to maxLen characters, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

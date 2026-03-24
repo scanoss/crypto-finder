@@ -160,7 +160,3 @@ func findCallLine(callerFn *FunctionDecl, calleeKey string) int {
 	return callerFn.StartLine
 }
 
-// Entries converts a traced chain to enriched serializable entries.
-func (t *Tracer) Entries(chain CallChain) []CallChainEntry {
-	return chain.Entries(t.graph)
-}

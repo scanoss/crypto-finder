@@ -189,8 +189,9 @@ func TestTracerAndHelpers(t *testing.T) {
 	if len(chains) != 1 {
 		t.Fatalf("TraceBack chains len = %d, want 1", len(chains))
 	}
-	if got := chains[0].String(); !strings.Contains(got, "app.Entry") || !strings.Contains(got, "dep.Crypto") {
-		t.Fatalf("unexpected chain string: %s", got)
+	lastStep := chains[0].Steps[len(chains[0].Steps)-1]
+	if chains[0].Steps[0].Function.Package != "app" || lastStep.Function.Package != "dep" {
+		t.Fatalf("unexpected chain steps: %+v", chains[0].Steps)
 	}
 
 	limited := tracer.TraceBack(depCrypto.ID, map[string]bool{"app": true}, 2)
@@ -262,45 +263,6 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatal("expected parse error for unmatched method syntax")
 	}
 
-	chain := CallChain{Steps: []CallChainStep{
-		{Function: FunctionID{Package: "app", Name: "main"}, FilePath: "main.go", Line: 1},
-		{Function: FunctionID{Package: "crypto/aes", Name: "NewCipher"}, FilePath: "a.go", Line: 9},
-	}}
-	graph := &CallGraph{
-		Functions: map[string]*FunctionDecl{
-			"app.main": {
-				ID:           FunctionID{Package: "app", Name: "main"},
-				FunctionType: "function",
-				OwnerType:    "module",
-				OwnerName:    "app",
-				Calls: []FunctionCall{{
-					Callee:    FunctionID{Package: "crypto/aes", Name: "NewCipher"},
-					Line:      1,
-					Arguments: []string{"\"AES\""},
-				}},
-			},
-			"crypto/aes.NewCipher": {
-				ID:           FunctionID{Package: "crypto/aes", Name: "NewCipher"},
-				FunctionType: "function",
-				OwnerType:    "module",
-				OwnerName:    "crypto/aes",
-				Parameters:   []FunctionParameter{{Type: "string"}},
-			},
-		},
-	}
-	entries := chain.Entries(graph)
-	if len(entries) != 2 || entries[0].FunctionName != "main" {
-		t.Fatalf("unexpected entries: %#v", entries)
-	}
-	if got := entries[1].Parameters[0].Type; got != "string" {
-		t.Fatalf("unexpected parameter type: %q", got)
-	}
-	if got := entries[1].Parameters[0].ArgumentValue; got != "\"AES\"" {
-		t.Fatalf("unexpected argument value: %q", got)
-	}
-	if got := chain.String(); got != "app.main() -> crypto/aes.NewCipher()" {
-		t.Fatalf("unexpected chain string: %s", got)
-	}
 }
 
 func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {

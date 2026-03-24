@@ -72,7 +72,7 @@ flowchart TB
 
 Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` to avoid scanning the same package twice.
 
-Only dependencies **with findings** proceed to step 4 — this keeps the call graph small and focused.
+All scanned dependencies proceed to step 4 — even those without crypto findings contribute type declarations needed for accurate call resolution (e.g., `JwtBuilder` interface declarations in `jjwt-api`).
 
 ### Step 4: Build the Call Graph
 
@@ -181,6 +181,16 @@ Callers:    "crypto/aes.NewCipher"         → ["example.com/app.Encrypt"]
 
 The reverse index is what enables **backward tracing** — starting from a crypto finding and walking up to user code.
 
+#### Type resolution
+
+After building the caller index, the builder runs additional resolution passes to improve type accuracy:
+
+1. **`TypeResolver`** (language-specific): For Java, a bytecode-based resolver reads `.class` files from Maven-cached JARs to extract fully-qualified method signatures. This provides accurate parameter types (e.g., `io.jsonwebtoken.SignatureAlgorithm` instead of generic `K`) and return types for fluent chain resolution. The `TypeResolver` interface is extensible — each language can implement its own approach (Go: `go/types`, Python: `.pyi` stubs, Rust: `rust-analyzer`).
+
+2. **Fluent chain resolution**: For chained calls like `Jwts.builder().setId(id).signWith(algo, key)`, return types are propagated through the chain. If `builder()` returns `JwtBuilder`, then `setId()` is resolved as `JwtBuilder.setId`. Interface inheritance is also followed (e.g., `JwtBuilder` extends `ClaimsMutator`, so `setId` resolves to `ClaimsMutator.setId`).
+
+3. **Argument source tracing**: For each function call, the parser traces where argument values come from — literal constants, local variables, class fields, method parameters, or call results. This produces recursive `source_nodes` showing the data flow into each argument.
+
 ### Step 5: Trace & Attribute Findings
 
 This is the core of the attribution system. For each crypto finding in a dependency:
@@ -222,30 +232,36 @@ The result is an ordered array: **`[program_entry_point, ..., intermediate, ...,
 After tracing, each finding gets structured fields:
 
 **Dependency finding:**
-```go
-asset.Source = "dependency"
-asset.DependencyInfo = &DependencyInfo{
-    Module:   "golang.org/x/crypto",
-    Version:  "v0.17.0",
-    Function: "golang.org/x/crypto/chacha20poly1305.New",
-}
-asset.CallChains = [][]CallChainEntry{
-    {
-        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
-        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
-        {Function: "golang.org/x/crypto/chacha20poly1305.New", File: "golang.org/x/crypto@v0.17.0/chacha20.go", Line: 42},
-    },
+```json
+{
+  "source": "dependency",
+  "finding_id": "a1b2c3d4",
+  "dependency_info": {
+    "module": "golang.org/x/crypto",
+    "version": "v0.17.0",
+    "function": "golang.org/x/crypto/chacha20poly1305.New"
+  },
+  "call_chains": [
+    [
+      {"function_name": "main", "namespace": "example.com/app", "file_path": "main.go", "line": 15},
+      {"function_name": "SecureEncrypt", "namespace": "example.com/app/mypkg", "file_path": "mypkg/crypto.go", "line": 8},
+      {"function_name": "New", "namespace": "golang.org/x/crypto/chacha20poly1305", "file_path": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
+    ]
+  ]
 }
 ```
 
 **User code finding** (enriched with intra-project call chain):
-```go
-asset.Source = "direct"
-asset.CallChains = [][]CallChainEntry{
-    {
-        {Function: "example.com/app.main",              File: "main.go",        Line: 15},
-        {Function: "example.com/app/mypkg.SecureEncrypt", File: "mypkg/crypto.go", Line: 8},
-    },
+```json
+{
+  "source": "direct",
+  "finding_id": "e5f6a7b8",
+  "call_chains": [
+    [
+      {"function_name": "main", "namespace": "example.com/app", "file_path": "main.go", "line": 15},
+      {"function_name": "SecureEncrypt", "namespace": "example.com/app/mypkg", "file_path": "mypkg/crypto.go", "line": 8}
+    ]
+  ]
 }
 ```
 
@@ -460,10 +476,11 @@ Iteration 2:
 
 ```json
 "source": "direct",
+"finding_id": "a1b2c3d4",
 "call_chains": [
     [
-        {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-        {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+        {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 14},
+        {"function_name": "SecureEncrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 12}
     ]
 ]
 ```
@@ -485,10 +502,11 @@ TraceBack(SecureDecrypt):
 
 ```json
 "source": "direct",
+"finding_id": "b2c3d4e5",
 "call_chains": [
     [
-        {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
-        {"function": "example.com/crypto-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go","line": 28}
+        {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 19},
+        {"function_name": "SecureDecrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 28}
     ]
 ]
 ```
@@ -533,7 +551,7 @@ The final output (default mode, no `--dep-include-unreachable`):
 
 ```json
 {
-  "version": "1.2",
+  "version": "1.3",
   "tool": {"name": "crypto-finder", "version": "dev"},
   "findings": [
     {
@@ -549,10 +567,11 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
           "source": "direct",
+          "finding_id": "a1b2c3d4",
           "call_chains": [
             [
-              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+              {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 14},
+              {"function_name": "SecureEncrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 12}
             ]
           ]
         },
@@ -565,10 +584,11 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "CSPRNG", "assetType": "algorithm", "...": "..."},
           "source": "direct",
+          "finding_id": "a1b2c3d4",
           "call_chains": [
             [
-              {"function": "example.com/crypto-test.main",              "file": "main.go",        "line": 14},
-              {"function": "example.com/crypto-test/mypkg.SecureEncrypt","file": "mypkg/crypto.go","line": 12}
+              {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 14},
+              {"function_name": "SecureEncrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 12}
             ]
           ]
         },
@@ -581,10 +601,11 @@ The final output (default mode, no `--dep-include-unreachable`):
           "status": "pending",
           "metadata": {"algorithmFamily": "ChaCha20", "assetType": "algorithm", "...": "..."},
           "source": "direct",
+          "finding_id": "b2c3d4e5",
           "call_chains": [
             [
-              {"function": "example.com/crypto-test.main",               "file": "main.go",        "line": 19},
-              {"function": "example.com/crypto-test/mypkg.SecureDecrypt","file": "mypkg/crypto.go","line": 28}
+              {"function_name": "main", "namespace": "example.com/crypto-test", "file_path": "main.go", "line": 19},
+              {"function_name": "SecureDecrypt", "namespace": "example.com/crypto-test/mypkg", "file_path": "mypkg/crypto.go", "line": 28}
             ]
           ]
         }
@@ -772,18 +793,19 @@ BFS found **two** complete chains. Both are stored in `call_chains`:
     "version": "v0.0.0",
     "function": "example.com/cryptowrapper.newAEAD"
   },
+  "finding_id": "c3d4e5f6",
   "call_chains": [
     [
-      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 14},
-      {"function": "example.com/dep-chain-test/mypkg.SecureEncrypt", "file": "mypkg/crypto.go", "line": 16},
-      {"function": "example.com/cryptowrapper.Encrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 20},
-      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+      {"function_name": "main", "namespace": "example.com/dep-chain-test", "file_path": "main.go", "line": 14},
+      {"function_name": "SecureEncrypt", "namespace": "example.com/dep-chain-test/mypkg", "file_path": "mypkg/crypto.go", "line": 16},
+      {"function_name": "Encrypt", "namespace": "example.com/cryptowrapper", "file_path": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 20},
+      {"function_name": "newAEAD", "namespace": "example.com/cryptowrapper", "file_path": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
     ],
     [
-      {"function": "example.com/dep-chain-test.main",                "file": "main.go",        "line": 19},
-      {"function": "example.com/dep-chain-test/mypkg.SecureDecrypt", "file": "mypkg/crypto.go", "line": 25},
-      {"function": "example.com/cryptowrapper.Decrypt",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 37},
-      {"function": "example.com/cryptowrapper.newAEAD",              "file": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
+      {"function_name": "main", "namespace": "example.com/dep-chain-test", "file_path": "main.go", "line": 19},
+      {"function_name": "SecureDecrypt", "namespace": "example.com/dep-chain-test/mypkg", "file_path": "mypkg/crypto.go", "line": 25},
+      {"function_name": "Decrypt", "namespace": "example.com/cryptowrapper", "file_path": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 37},
+      {"function_name": "newAEAD", "namespace": "example.com/cryptowrapper", "file_path": "example.com/cryptowrapper@v0.0.0/wrapper.go", "line": 58}
     ]
   ]
 }
@@ -829,7 +851,8 @@ Version 1.3 keeps v1.2 attribution fields and enriches each `call_chains` step w
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
 | `dependency_info` | `object` | Dependency findings only | `{module, version, function}` |
-| `call_chains` | `array of arrays` | When traceable to user code | Ordered call path steps enriched with function metadata and optional parameter argument bindings |
+| `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
+| `call_chains` | `array of arrays` | When traceable to user code | Ordered call path steps with structured function references |
 
 ### Call Chains Ordering
 
@@ -839,21 +862,15 @@ The `call_chains` field contains all traced paths from program entry points to t
 {
   "call_chains": [
     [
-      {"function_name": "main", "file": "main.go", "line": 15},
-      {"function_name": "SecureEncrypt", "file": "mypkg/crypto.go", "line": 8},
-      {
-        "function_name": "New",
-        "namespace": "golang.org/x/crypto/chacha20poly1305",
-        "file": "golang.org/x/crypto@v0.17.0/chacha20.go",
-        "line": 42,
-        "parameters": [{"type": "[]byte", "argument_value": "key"}]
-      }
+      {"function_name": "main", "namespace": "example.com/app", "file_path": "main.go", "line": 15},
+      {"function_name": "SecureEncrypt", "namespace": "example.com/app/mypkg", "file_path": "mypkg/crypto.go", "line": 8},
+      {"function_name": "New", "namespace": "golang.org/x/crypto/chacha20poly1305", "file_path": "golang.org/x/crypto@v0.17.0/chacha20.go", "line": 42}
     ]
   ]
 }
 ```
 
-Reading this: `main()` at line 15 calls `SecureEncrypt()` at line 8, which calls `chacha20poly1305.New()` at line 42.
+Each step contains `function_name`, `class_name` (for Java/OOP), `namespace` (package), `file_path`, and `line`. Reading this: `main()` at line 15 calls `SecureEncrypt()` at line 8, which calls `chacha20poly1305.New()` at line 42.
 
 ## Findings Cache
 
@@ -977,13 +994,38 @@ The extensible architecture makes adding a new language a matter of implementing
 
 #### Maven Resolution Details
 
-The `MavenResolver` executes three Maven commands:
+The `MavenResolver` uses a **three-tier fallback strategy** to maximize dependency recovery, especially for multi-module projects:
 
-1. **`mvn dependency:list -DincludeScope=compile`** — lists all compile+provided+system scope dependencies (excludes test-only). Output format: `groupId:artifactId:type:version:scope`
-2. **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
-3. **`mvn dependency:tree`** — builds the dependency graph adjacency list (best-effort)
+**Tier 1 — Reactor with `--fail-never`** (always attempted):
+- Runs `mvn dependency:list --fail-never -DappendOutput=true -DincludeScope=compile`
+- The `--fail-never` flag continues past module failures; `-DappendOutput=true` accumulates results from all succeeding modules into a single output file
+- If some modules resolve successfully, their dependencies are collected even if other modules fail
 
-Dependencies without source JARs are skipped — they appear in logs as warnings but are excluded from scanning.
+**Tier 2 — Per-module resolution** (if Tier 1 yields zero dependencies on a multi-module project):
+- Detects modules from `<modules>` in the parent `pom.xml`
+- Runs `mvn dependency:list -pl <module>` for each module independently
+- Modules that fail are skipped; dependencies from succeeding modules are deduplicated and collected
+
+**Tier 3 — Local install + retry** (if Tier 2 yields zero dependencies and inter-module failure is detected):
+- Runs `mvn install -DskipTests --fail-never` to build all modules locally, populating `~/.m2/repository` with inter-module artifacts
+- Retries Tier 1 after install
+- This is expensive (requires compilation) but is the only way to resolve inter-module transitive dependencies
+
+After dependency listing, the resolver also runs:
+- **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
+- **`mvn dependency:tree --fail-never -DappendOutput=true`** — builds the dependency graph adjacency list (best-effort)
+
+Dependencies without source JARs are included in the results but without a source directory — they appear in logs as debug messages.
+
+#### Multi-Module Project Support
+
+Multi-module Maven projects (parent POM with `<modules>`) are automatically detected. When detected:
+- All modules are registered as `WorkspaceMembers`, meaning they are treated as **user code** for call chain tracing (same as Cargo workspace members)
+- The `WorkspaceMember.Name` follows the format `groupId:moduleDirName`
+- The three-tier fallback strategy handles common multi-module failures:
+  - **Inter-module dependencies** (e.g., `eladmin-logging` depends on `eladmin-common`) — resolved via Tier 3
+  - **HTTP mirror blocks** (Maven 3.8.1+ blocks insecure HTTP repositories) — partial results collected via Tier 1
+  - **Missing parent POMs** or private repositories — gracefully degraded via Tier 1/2
 
 #### Java Call Resolution
 
@@ -1084,7 +1126,7 @@ No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entiti
 - **Missing source JARs** — ~35% of Java libraries don't publish source JARs; these dependencies are skipped with a warning. Bytecode analysis could be a future fallback.
 - **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
 - **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.
-- **Single-module Maven only** — Multi-module Maven projects (parent POM with `<modules>`) are not yet supported.
+- **Multi-module Maven partial resolution** — Multi-module Maven projects are supported via a three-tier fallback strategy. Tier 3 (`mvn install -DskipTests`) requires compilation and may fail if the project needs specific JDK versions or build tools not available in the scan environment.
 
 ### Python-specific
 - **Requires `pip` in PATH** — The resolver shells out to `pip list` and `pip show`; the correct virtual environment must be activated.

@@ -5,10 +5,35 @@ package callgraph
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 const constructorMethodName = "<init>"
+
+// TypeResolver provides language-specific type resolution capabilities.
+// Each language implements this using its best-fit approach (bytecode analysis,
+// go/types, type stubs, LSP, etc.). The builder calls it after tree-sitter
+// parsing to enrich the call graph with full type information.
+type TypeResolver interface {
+	// ResolveTypes enriches function declarations and calls in the graph with
+	// type information that tree-sitter alone cannot provide. It receives the
+	// full graph and the source/artifact directories, and modifies calls in-place.
+	ResolveTypes(graph *CallGraph, sourceRoots []PackageDir) error
+}
+
+// BaseFunctionName strips the #N arity suffix from a function name.
+// For example, "encrypt#1" returns "encrypt", "refreshSecrets#0" returns "refreshSecrets".
+func BaseFunctionName(name string) string {
+	idx := strings.LastIndex(name, "#")
+	if idx <= 0 || idx >= len(name)-1 {
+		return name
+	}
+	if _, err := strconv.Atoi(name[idx+1:]); err != nil {
+		return name
+	}
+	return name[:idx]
+}
 
 // FunctionID uniquely identifies a function or method across packages.
 type FunctionID struct {
@@ -22,11 +47,22 @@ type FunctionID struct {
 }
 
 // String returns a human-readable representation of the function ID.
+// This includes the arity suffix (e.g., "javax.crypto.(Cipher).getInstance#1").
 func (f FunctionID) String() string {
 	if f.Type != "" {
 		return fmt.Sprintf("%s.(%s).%s", f.Package, f.Type, f.Name)
 	}
 	return fmt.Sprintf("%s.%s", f.Package, f.Name)
+}
+
+// CanonicalSymbol returns a clean, human-readable symbol without arity suffix.
+// For example, "javax.crypto.Cipher.getInstance" instead of "javax.crypto.(Cipher).getInstance#1".
+func (f FunctionID) CanonicalSymbol() string {
+	base := BaseFunctionName(f.Name)
+	if f.Type != "" {
+		return f.Package + "." + f.Type + "." + base
+	}
+	return f.Package + "." + base
 }
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
@@ -60,6 +96,36 @@ type FunctionCall struct {
 	Line int
 	// Arguments are the raw argument expressions passed in this invocation.
 	Arguments []string
+	// ArgumentSources traces where each argument value comes from.
+	// Parallel to Arguments — same indices. Populated by the parser's data flow analysis.
+	ArgumentSources [][]SourceNode
+}
+
+// SourceNode describes where a value comes from in the data flow.
+// Nodes are recursive: each node can have its own SourceNodes showing deeper origins.
+type SourceNode struct {
+	// Type classifies the origin: VALUE, VARIABLE, FIELD, PARAMETER, CALL_RESULT, EXPRESSION
+	Type string
+	// Name is the variable/field/parameter name (e.g., "secret", "algorithm")
+	Name string
+	// DeclaredType is the type if known (e.g., "byte[]", "io.jsonwebtoken.SignatureAlgorithm")
+	DeclaredType string
+	// Value is the actual value for VALUE nodes (e.g., "\"AES\"", "256")
+	Value string
+	// ParameterIndex is set for PARAMETER nodes — which param (0-based)
+	ParameterIndex int
+	// CallTarget is set for CALL_RESULT nodes — the function that produced this value
+	CallTarget *FunctionID
+	// Location is where this source is defined
+	Location *SourceLocation
+	// SourceNodes traces where THIS node's value came from (recursive)
+	SourceNodes []SourceNode
+}
+
+// SourceLocation identifies a position in source code.
+type SourceLocation struct {
+	FilePath string
+	Line     int
 }
 
 // FileAnalysis contains all extracted information from a single source file.
@@ -79,6 +145,9 @@ type CallGraph struct {
 	// Callers maps callee FunctionID.String() to list of caller FunctionID.String()
 	// This is the reverse index for walking backwards from a crypto finding.
 	Callers map[string][]string
+	// TypeHierarchy maps a type name to its parent interfaces/superclasses.
+	// E.g., "JwtBuilder" → ["ClaimsMutator"]. Populated by TypeResolver from bytecode.
+	TypeHierarchy map[string][]string
 }
 
 // CallChain represents a traced path from user code to a crypto finding.
@@ -129,164 +198,3 @@ func ParseFunctionID(s, _ string) (FunctionID, error) {
 	}, nil
 }
 
-// CallChainEntry is a JSON-serializable representation of a single call chain step.
-// It exposes split symbol fields and optional parameter/argument bindings suitable
-// for downstream ingestion.
-type CallChainEntry struct {
-	FunctionName string               `json:"function_name"`
-	Namespace    string               `json:"namespace,omitempty"`
-	FilePath     string               `json:"file"`
-	Line         int                  `json:"line"`
-	OwnerType    string               `json:"owner_type,omitempty"`
-	OwnerName    string               `json:"owner_name,omitempty"`
-	FunctionType string               `json:"function_type,omitempty"`
-	ReturnType   string               `json:"return_type,omitempty"`
-	Parameters   []CallChainParameter `json:"parameters,omitempty"`
-}
-
-// CallChainParameter represents a parameter in a call chain node.
-type CallChainParameter struct {
-	Type          string `json:"type,omitempty"`
-	ArgumentValue string `json:"argument_value,omitempty"`
-}
-
-// Entries converts the call chain steps into JSON-serializable CallChainEntry values.
-func (cc CallChain) Entries(graph *CallGraph) []CallChainEntry {
-	entries := make([]CallChainEntry, len(cc.Steps))
-	for i, step := range cc.Steps {
-		entry := CallChainEntry{
-			FunctionName: step.Function.Name,
-			Namespace:    step.Function.Package,
-			FilePath:     step.FilePath,
-			Line:         step.Line,
-		}
-
-		if graph != nil {
-			if fn, ok := graph.Functions[step.Function.String()]; ok {
-				entry.OwnerType = fn.OwnerType
-				entry.OwnerName = fn.OwnerName
-				if entry.OwnerName == "" {
-					entry.OwnerName = fn.ID.Type
-				}
-				entry.FunctionType = fn.FunctionType
-				entry.ReturnType = fn.ReturnType
-				entry.Parameters = mergeDeclAndCallParameters(fn.Parameters, nil)
-			}
-		}
-
-		// Fallback owner metadata when declaration data isn't available.
-		if entry.OwnerName == "" && step.Function.Type != "" {
-			entry.OwnerName = step.Function.Type
-		}
-
-		if i > 0 {
-			args := cc.findInvocationArgs(graph, i)
-			entry.Parameters = mergeDeclAndCallParameters(toDeclaredParameters(entry.Parameters), args)
-		}
-
-		entry.Parameters = compactParameters(entry.Parameters)
-		entries[i] = CallChainEntry{
-			FunctionName: entry.FunctionName,
-			Namespace:    entry.Namespace,
-			FilePath:     entry.FilePath,
-			Line:         entry.Line,
-			OwnerType:    entry.OwnerType,
-			OwnerName:    entry.OwnerName,
-			FunctionType: entry.FunctionType,
-			ReturnType:   entry.ReturnType,
-			Parameters:   entry.Parameters,
-		}
-	}
-	return entries
-}
-
-func (cc CallChain) findInvocationArgs(graph *CallGraph, index int) []string {
-	if graph == nil || index <= 0 || index >= len(cc.Steps) {
-		return nil
-	}
-
-	prevStep := cc.Steps[index-1]
-	currStep := cc.Steps[index]
-
-	prevFn, ok := graph.Functions[prevStep.Function.String()]
-	if !ok {
-		return nil
-	}
-
-	calleeKey := currStep.Function.String()
-	var fallback []string
-	for _, call := range prevFn.Calls {
-		if call.Callee.String() != calleeKey {
-			continue
-		}
-		if call.Line == prevStep.Line {
-			return call.Arguments
-		}
-		if fallback == nil {
-			fallback = call.Arguments
-		}
-	}
-
-	return fallback
-}
-
-func mergeDeclAndCallParameters(declared []FunctionParameter, args []string) []CallChainParameter {
-	size := len(declared)
-	if len(args) > size {
-		size = len(args)
-	}
-	if size == 0 {
-		return nil
-	}
-
-	result := make([]CallChainParameter, size)
-	for i := range declared {
-		result[i].Type = strings.TrimSpace(declared[i].Type)
-	}
-	for i := range args {
-		arg := strings.TrimSpace(args[i])
-		if arg == "" {
-			continue
-		}
-		result[i].ArgumentValue = arg
-	}
-	return result
-}
-
-func toDeclaredParameters(params []CallChainParameter) []FunctionParameter {
-	if len(params) == 0 {
-		return nil
-	}
-	declared := make([]FunctionParameter, len(params))
-	for i, p := range params {
-		declared[i] = FunctionParameter{Type: p.Type}
-	}
-	return declared
-}
-
-func compactParameters(params []CallChainParameter) []CallChainParameter {
-	if len(params) == 0 {
-		return nil
-	}
-	compacted := make([]CallChainParameter, 0, len(params))
-	for _, p := range params {
-		if strings.TrimSpace(p.Type) == "" && strings.TrimSpace(p.ArgumentValue) == "" {
-			continue
-		}
-		compacted = append(compacted, p)
-	}
-	if len(compacted) == 0 {
-		return nil
-	}
-	return compacted
-}
-
-// String returns a human-readable representation of the call chain.
-// Example: "main.Encrypt() -> chacha20poly1305.New() -> cipher.NewGCM()".
-func (cc CallChain) String() string {
-	parts := make([]string, len(cc.Steps))
-	for i, step := range cc.Steps {
-		parts[i] = step.Function.String() + "()"
-	}
-	return strings.Join(parts, " -> ")
-}
