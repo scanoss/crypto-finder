@@ -83,7 +83,7 @@ func TestBuilder_BuildFromDirectories(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestBuilder_AnalyzePackageErrorContinues(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: dir1, ImportPath: "bad"}, {Dir: dir2, ImportPath: "ok"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: dir1, ImportPath: "bad"}, {Dir: dir2, ImportPath: "ok"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {
 	}
 
 	builder := NewBuilder(parser)
-	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}})
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}

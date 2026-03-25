@@ -130,10 +130,13 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 		"dep@2": {Module: "github.com/acme/dep2", Version: "v2", Dir: "/deps/dep2"},
 	}
 
-	pkgs := ds.collectPackageDirs("/user/project", resolvedWorkspace, depReports, depMap)
-	// 2 workspace members + 2 deps (ALL deps included for type resolution)
-	if len(pkgs) != 4 {
-		t.Fatalf("collectPackageDirs len = %d, want 4", len(pkgs))
+	sets := ds.collectPackageSets("/user/project", resolvedWorkspace, depReports, depMap)
+	// 2 workspace members + 1 dep with findings = 3 graphPackages; 1 dep without findings = 1 typeOnlyPackage
+	if len(sets.graphPackages) != 3 {
+		t.Fatalf("graphPackages len = %d, want 3 (2 workspace + 1 finding dep)", len(sets.graphPackages))
+	}
+	if len(sets.typeOnlyPackages) != 1 {
+		t.Fatalf("typeOnlyPackages len = %d, want 1 (1 dep without findings)", len(sets.typeOnlyPackages))
 	}
 
 	workspaceUsers := ds.buildUserPackages(resolvedWorkspace)

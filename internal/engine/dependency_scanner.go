@@ -152,8 +152,10 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	// Step 4: Build call graph (user code + deps with findings)
 	// Always build the graph when dependency scanning is enabled — even with zero
 	// dependency findings, call chain enrichment of user code findings is valuable.
-	packages := ds.collectPackageDirs(opts.ScanOptions.Target, resolved, depReports, depMap)
-	graph, err := ds.cgBuilder.BuildFromDirectories(packages)
+	// Two-phase approach: full source parsing for findings deps + user code;
+	// bytecode-only type index for remaining deps (preserves type resolution accuracy).
+	sets := ds.collectPackageSets(opts.ScanOptions.Target, resolved, depReports, depMap)
+	graph, err := ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build call graph: %w", err)
 	}
@@ -334,49 +336,57 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	return depOpts
 }
 
-// collectPackageDirs builds the list of PackageDirs for call graph construction.
-// For workspace projects (e.g., Cargo workspaces), each member gets its own entry
-// so that functions are assigned the correct package paths.
-func (ds *DependencyScanner) collectPackageDirs(
+// packageSets separates dependencies into two groups for the two-phase callgraph build.
+type packageSets struct {
+	// graphPackages get full source parsing: user code + deps with crypto findings.
+	graphPackages []callgraph.PackageDir
+	// typeOnlyPackages are used only for bytecode type indexing (no source parsing).
+	// This preserves type resolution accuracy while avoiding expensive parsing of
+	// deps that have no crypto findings.
+	typeOnlyPackages []callgraph.PackageDir
+}
+
+// collectPackageSets builds two lists of PackageDirs for the two-phase callgraph build.
+// graphPackages: user code + deps with findings (full source parsing).
+// typeOnlyPackages: deps without findings (bytecode type index only).
+func (ds *DependencyScanner) collectPackageSets(
 	userTarget string,
 	resolved *dependency.ResolveResult,
 	depReports map[string]*entities.InterimReport,
 	depMap map[string]*dependency.Dependency,
-) []callgraph.PackageDir {
-	baseCap := 1
-	if len(resolved.WorkspaceMembers) > 0 {
-		baseCap = len(resolved.WorkspaceMembers)
-	}
-	packages := make([]callgraph.PackageDir, 0, baseCap+len(depReports))
+) packageSets {
+	sets := packageSets{}
 
 	if len(resolved.WorkspaceMembers) > 0 {
 		// Workspace project: each member is a separate package root
 		for _, member := range resolved.WorkspaceMembers {
-			packages = append(packages, callgraph.PackageDir{
+			sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 				Dir:        member.Dir,
 				ImportPath: member.Name,
 			})
 		}
 	} else {
 		// Single-project: the target directory is the package root
-		packages = append(packages, callgraph.PackageDir{
+		sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 			Dir:        userTarget,
 			ImportPath: resolved.RootModule,
 		})
 	}
 
-	// Include ALL dependencies for complete type resolution.
-	// Even deps without crypto findings contribute type declarations
-	// (e.g., JwtBuilder interface) needed to resolve fluent chains.
-	for key := range depMap {
-		dep := depMap[key]
-		packages = append(packages, callgraph.PackageDir{
+	// Split deps: findings deps get full source parsing; others get bytecode-only type index.
+	for key, dep := range depMap {
+		pkg := callgraph.PackageDir{
 			Dir:        dep.Dir,
 			ImportPath: dep.Module,
-		})
+		}
+		if report, ok := depReports[key]; ok && hasFindings(report) {
+			sets.graphPackages = append(sets.graphPackages, pkg)
+		} else {
+			sets.typeOnlyPackages = append(sets.typeOnlyPackages, pkg)
+		}
 	}
 
-	return packages
+	return sets
 }
 
 // buildUserPackages returns the set of package names that constitute user code.

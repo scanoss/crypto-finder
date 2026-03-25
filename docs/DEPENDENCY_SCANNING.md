@@ -91,28 +91,44 @@ The [`NewParserForEcosystem()`](../internal/callgraph/parser_registry.go) factor
 
 ```mermaid
 flowchart TB
-    subgraph "Package Dirs (input)"
+    subgraph "Graph Packages (full source parsing)"
         U["User Code Dir<br/><i>+ import path</i>"]
         D1["Dep with findings<br/><i>golang.org/x/crypto</i>"]
         D2["Dep with findings<br/><i>org.bouncycastle:bcprov-jdk18on</i>"]
     end
 
+    subgraph "Type-Only Packages (bytecode index only)"
+        T1["Dep without findings<br/><i>org.springframework:spring-core</i>"]
+        T2["Dep without findings<br/><i>com.fasterxml.jackson:jackson-core</i>"]
+    end
+
     subgraph "Builder.BuildFromDirectories()"
         direction TB
-        Parse["Parser.ParseDirectory()<br/><i>syntactic parsing per source file</i>"]
+        Parse["Phase 1: Parser.ParseDirectory()<br/><i>syntactic parsing per source file</i>"]
         FnMap["Functions map<br/><i>FunctionID → FunctionDecl</i>"]
         RevIdx["Callers reverse index<br/><i>callee → []callerID</i>"]
+        TypeRes["Phase 2: Bytecode type index<br/><i>class names + method signatures + return types</i>"]
+        Fluent["Fluent chain resolution<br/><i>propagate return types</i>"]
 
         Parse --> FnMap
         FnMap --> RevIdx
+        RevIdx --> TypeRes
+        TypeRes --> Fluent
     end
 
     U --> Parse
     D1 --> Parse
     D2 --> Parse
+    T1 --> TypeRes
+    T2 --> TypeRes
 
-    RevIdx --> CG["CallGraph"]
+    Fluent --> CG["CallGraph"]
 ```
+
+> **Performance optimization**: Only dependencies with crypto findings get full source parsing.
+> Dependencies without findings contribute only their bytecode type signatures (class names,
+> method signatures, return types, interface hierarchy). This preserves 100% type resolution
+> accuracy for fluent chains while skipping expensive source parsing for ~80% of dependencies.
 
 #### What the parser extracts
 
@@ -1111,6 +1127,59 @@ To add support for a new ecosystem:
 5. **Add manifest detection** in `detectEcosystem()` — add one `if` checking for the manifest file
 
 No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entities, or schemas.
+
+## Performance
+
+### Two-Phase Call Graph Build
+
+The call graph build is the most expensive step in the dependency scanning pipeline. To minimize cost while preserving 100% type resolution accuracy, the builder uses a **two-phase approach**:
+
+**Phase 1 — Source parsing (targeted):** Only dependencies with crypto findings + user code modules get full source parsing via `Parser.ParseDirectory()`. This builds `FunctionDecl` entries with call sites, parameters, and return types.
+
+**Phase 2 — Bytecode type indexing (comprehensive):** ALL dependencies (including those without findings) are indexed via `JavaBytecodeTypeResolver`. This reads `.class` files from Maven JARs to extract class names, method signatures, return types, and interface hierarchy. The type index is used to resolve fluent chains and enrich parameter types across dependency boundaries.
+
+**Why both phases are needed:** Java fluent APIs (e.g., `Jwts.builder().signWith(key)`) require knowing return types from one dependency to resolve calls in another. A dependency without crypto findings may define the return type that bridges a call chain from user code to a crypto finding. Skipping its type information would break backward tracing.
+
+#### Benchmarks (eladmin — 160 deps, 27 with findings, 269 crypto assets)
+
+| Metric | All deps (naive) | Two-phase | Improvement |
+|--------|-----------------|-----------|-------------|
+| Packages source-parsed | 157 | 32 | -80% |
+| Functions in graph | 467,864 | 168,386 | -64% |
+| Caller index entries | 368,325 | 190,686 | -48% |
+| Bytecode methods indexed | 529,967 | 531,606 | same |
+| Pipeline duration | ~461s | ~257s | -44% |
+| Findings | 269 | 269 | identical |
+| Findings with backward paths | 223 | 223 | identical |
+
+### Current Bottlenecks
+
+The pipeline has three main time consumers:
+
+1. **Dependency scanning with opengrep** (~3-5 min for 157 deps): Each dependency is scanned by opengrep with 62 rules. Runs in parallel with configurable worker count (`--dep-workers`). Scanning time depends on dependency source size — large libraries like `hutool-all` or `spring-core` take 8-10s each.
+
+2. **Bytecode type resolution** (~3 min): Reads and parses `.class` files from all dependency JARs (~530K methods across 160 JARs). This is I/O + CPU intensive due to constant pool parsing for every class file. Currently runs single-threaded.
+
+3. **Source parsing for graph packages** (~1 min): Parses `.java` files from 32 packages (user code + 27 deps with findings) to build 168K function declarations with call sites.
+
+### Future Optimization Opportunities
+
+#### Bytecode type resolution (highest impact)
+
+The bytecode resolution phase (~3 min) is the current bottleneck. Potential improvements:
+
+- **Parallel JAR processing**: Read and parse JARs concurrently. Each JAR is independent — the type index can be built with a concurrent map or merged after parallel extraction. Expected improvement: ~2-3x speedup.
+- **Bytecode index cache**: Cache the type index (`map[string][]methodSignature` + hierarchy) keyed by `groupId:artifactId:version`. Dependencies don't change between scans of the same project. Cache could be stored alongside the findings cache in `~/.scanoss/crypto-finder/cache/`.
+- **Selective bytecode indexing**: Only index JARs whose types appear in unresolved calls from the graph packages. This requires a two-pass approach: build the graph first, collect unresolved type names, then only read JARs that define those types. More complex but could skip 80%+ of JARs.
+
+#### Opengrep scanning
+
+- **Result caching**: The existing `DiskFindingsCache` already caches dependency scan results by `module@version:rulesHash`. On repeated scans of the same project (e.g., during development), most dependencies hit the cache. First-scan performance depends on opengrep throughput.
+- **Skip empty/stub dependencies**: Dependencies like `listenablefuture` (empty JAR) or starter POMs (no source code) trigger opengrep failures. Pre-checking for scannable files before invoking opengrep would eliminate ~10-15 wasted invocations per project.
+
+#### Call graph export
+
+- **Export is fast** (~10-15s for 269 findings) and not currently a bottleneck. The finding-centric export only traces paths reachable from findings, producing a compact JSON (~9.5K lines for eladmin) regardless of full graph size.
 
 ## Limitations
 

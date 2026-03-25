@@ -56,14 +56,20 @@ func (b *Builder) PackageSeparator() string {
 	return b.parser.PackageSeparator()
 }
 
-// BuildFromDirectories analyzes all source files in the given package directories
-// and builds a unified call graph with a reverse caller index.
-func (b *Builder) BuildFromDirectories(packages []PackageDir) (*CallGraph, error) {
+// BuildFromDirectories analyzes source files and builds a call graph.
+//
+// Two-phase approach for performance:
+//   - packages: get full source parsing (user code + deps with findings)
+//   - typeOnlyPackages: used only for bytecode type indexing (no source parsing),
+//     preserving type resolution accuracy for fluent chains across dependency boundaries
+func (b *Builder) BuildFromDirectories(packages []PackageDir, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	graph := &CallGraph{
 		Functions: make(map[string]*FunctionDecl),
 		Callers:   make(map[string][]string),
 	}
 
+	// Phase 1: Parse source files only for packages that need full analysis
+	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
 			log.Debug().Err(err).Str("package", pkg.ImportPath).Msg("Failed to analyze package")
@@ -71,12 +77,19 @@ func (b *Builder) BuildFromDirectories(packages []PackageDir) (*CallGraph, error
 		}
 	}
 
+	log.Info().Int("functions", len(graph.Functions)).Msg("Source parsing complete, building caller index")
+
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	b.buildCallerIndex(graph)
 
-	// Language-native type resolution (bytecode, go/types, etc.)
+	// Phase 2: Type resolution from bytecode — index ALL packages (including type-only)
+	// so that fluent chain resolution has complete type information across all deps.
 	if b.typeResolver != nil {
-		if err := b.typeResolver.ResolveTypes(graph, packages); err != nil {
+		allPackages := make([]PackageDir, 0, len(packages)+len(typeOnlyPackages))
+		allPackages = append(allPackages, packages...)
+		allPackages = append(allPackages, typeOnlyPackages...)
+		log.Info().Int("typePackages", len(allPackages)).Msg("Resolving types from bytecode")
+		if err := b.typeResolver.ResolveTypes(graph, allPackages); err != nil {
 			log.Warn().Err(err).Msg("Type resolver encountered errors (continuing with partial resolution)")
 		}
 	}
