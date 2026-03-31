@@ -329,17 +329,23 @@ func TestClient_DownloadRuleset_ContextCancellation(t *testing.T) {
 func TestClient_DownloadRuleset_ContextCanceledDuringRetryBackoff(t *testing.T) {
 	t.Parallel()
 
+	attemptCount := 0
+	ctx, cancel := context.WithCancel(context.Background())
 	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
+		attemptCount++
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("server error"))
+		if attemptCount == 1 {
+			time.AfterFunc(10*time.Millisecond, cancel)
+		}
 	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
 	_, _, err := client.DownloadRuleset(ctx, "dca", "latest")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled during retry backoff, got %v", err)
+	}
+	if attemptCount != 1 {
+		t.Fatalf("expected exactly one failed download before cancellation, got %d", attemptCount)
 	}
 }
 

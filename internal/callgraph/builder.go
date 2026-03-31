@@ -11,6 +11,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	ownerTypeInterface = "interface"
+	javaStringType     = "String"
+)
+
 // Parser extracts function declarations, calls, and imports from source files
 // in a language-specific way. Each supported language implements this interface.
 type Parser interface {
@@ -283,7 +288,7 @@ func (b *Builder) expandInterfaceDispatch(
 	methodsByName map[string][]*FunctionDecl,
 ) []string {
 	calleeDecl, ok := graph.Functions[calleeKey]
-	if !ok || calleeDecl.OwnerType != "interface" {
+	if !ok || calleeDecl.OwnerType != ownerTypeInterface {
 		return nil
 	}
 
@@ -295,7 +300,7 @@ func (b *Builder) expandInterfaceDispatch(
 	baseRoot := namespaceRoot(calleeDecl.ID.Package)
 	results := make([]string, 0, len(targets))
 	for _, candidate := range targets {
-		if candidate.OwnerType == "interface" {
+		if candidate.OwnerType == ownerTypeInterface {
 			continue
 		}
 		if len(candidate.Parameters) != len(calleeDecl.Parameters) {
@@ -755,7 +760,7 @@ func inferJavaArgumentType(call *FunctionCall, idx int) string {
 	case expr == "":
 		return ""
 	case strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\""):
-		return "String"
+		return javaStringType
 	case expr == "true" || expr == "false":
 		return "boolean"
 	case strings.HasPrefix(expr, "new "):

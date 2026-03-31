@@ -114,6 +114,25 @@ func TestDiskBytecodeIndexCache_Get_Miss(t *testing.T) {
 	}
 }
 
+func TestDiskBytecodeIndexCache_Get_MissWithoutLegacyKey(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskBytecodeIndexCacheWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewDiskBytecodeIndexCacheWithDir: %v", err)
+	}
+
+	got, ok, err := cache.Get(context.Background(), "not-versioned-key")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cache miss, got hit")
+	}
+	if got != nil {
+		t.Fatal("expected nil entry on miss")
+	}
+}
+
 func TestDiskBytecodeIndexCache_CorruptedFile(t *testing.T) {
 	dir := t.TempDir()
 	cache, err := NewDiskBytecodeIndexCacheWithDir(dir)
@@ -168,6 +187,36 @@ func TestDiskBytecodeIndexCache_SchemaMismatch(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("expected schema-mismatched cache file to be removed")
+	}
+}
+
+func TestReadBytecodeCacheFile_SchemaMismatchRemoveFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stale.json")
+	stale := []byte(`{"schema_version":999,"artifact_key":"io.jsonwebtoken:jjwt-api@0.12.5","methods_index":{},"type_hierarchy":{}}`)
+	if err := os.WriteFile(path, stale, 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	originalRemove := removeBytecodeCacheFile
+	removeBytecodeCacheFile = func(removePath string) error {
+		if removePath == path {
+			return errors.New("simulated remove failure")
+		}
+		return originalRemove(removePath)
+	}
+	t.Cleanup(func() {
+		removeBytecodeCacheFile = originalRemove
+	})
+
+	got, ok, err := readBytecodeCacheFile(path, bytecodeCacheSchemaVersion)
+	if err == nil || !strings.Contains(err.Error(), "failed to remove corrupted cache file") {
+		t.Fatalf("expected schema mismatch cleanup failure, got %v", err)
+	}
+	if ok {
+		t.Fatal("expected cache miss on schema mismatch")
+	}
+	if got != nil {
+		t.Fatal("expected nil entry on schema mismatch")
 	}
 }
 
