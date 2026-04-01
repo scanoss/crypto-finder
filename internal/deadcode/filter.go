@@ -36,11 +36,11 @@ var cLanguageExtensions = map[string]bool{
 
 // maxWorkers caps the number of concurrent file reads for dead code detection.
 // Bounded to avoid exhausting file descriptors on large scans.
-var maxWorkers = runtime.NumCPU()
+var maxWorkers = min(runtime.NumCPU(), 8)
 
 // filterResult holds the outcome of processing a single finding.
 type filterResult struct {
-	index   int              // original position in the findings slice
+	index   int               // original position in the findings slice
 	finding *entities.Finding // nil if the finding was fully filtered out
 }
 
@@ -72,8 +72,9 @@ func FilterReport(report *entities.InterimReport, targetDir string) *entities.In
 		}
 	}
 
-	// Process C/C++ files concurrently.
+	// Process C/C++ files concurrently using a bounded worker pool.
 	if len(cFindings) > 0 {
+		resultsCh := make(chan filterResult, len(cFindings))
 		sem := make(chan struct{}, maxWorkers)
 		var wg sync.WaitGroup
 
@@ -85,11 +86,16 @@ func FilterReport(report *entities.InterimReport, targetDir string) *entities.In
 				defer func() { <-sem }() // release
 
 				result := filterFinding(finding, targetDir)
-				results[idx] = filterResult{index: idx, finding: result}
+				resultsCh <- filterResult{index: idx, finding: result}
 			}(cf.index, cf.finding)
 		}
 
 		wg.Wait()
+		close(resultsCh)
+
+		for r := range resultsCh {
+			results[r.index] = r
+		}
 	}
 
 	// Rebuild findings slice preserving original order.

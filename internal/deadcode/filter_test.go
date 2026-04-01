@@ -114,7 +114,7 @@ func TestFilterReport(t *testing.T) {
 						FilePath: "if0_else.c",
 						Language: "c",
 						CryptographicAssets: []entities.CryptographicAsset{
-							{StartLine: 7, EndLine: 7, Match: "EVP_md5()"},     // dead (#if 0 branch, lines 4-9)
+							{StartLine: 7, EndLine: 7, Match: "EVP_md5()"},      // dead (#if 0 branch, lines 4-9)
 							{StartLine: 12, EndLine: 12, Match: "EVP_sha256()"}, // live (#else branch)
 							{StartLine: 18, EndLine: 18, Match: "EVP_sha1()"},   // live
 						},

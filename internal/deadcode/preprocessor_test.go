@@ -56,16 +56,16 @@ func TestFindDeadRegions(t *testing.T) {
 			name: "all statically-false variants",
 			file: "variants.c",
 			expected: []Region{
-				{StartLine: 7, EndLine: 10},   // #if (0)
-				{StartLine: 15, EndLine: 18},  // #if 0x0
-				{StartLine: 23, EndLine: 26},  // #if 00
-				{StartLine: 31, EndLine: 34},  // #if !1
-				{StartLine: 39, EndLine: 42},  // #if 0 && FEATURE_ENABLED
+				{StartLine: 7, EndLine: 10},  // #if (0)
+				{StartLine: 15, EndLine: 18}, // #if 0x0
+				{StartLine: 23, EndLine: 26}, // #if 00
+				{StartLine: 31, EndLine: 34}, // #if !1
+				{StartLine: 39, EndLine: 42}, // #if 0 && FEATURE_ENABLED
 			},
 		},
 		{
-			name: "no dead code — #ifdef and #if 0x1 are not statically false",
-			file: "no_dead_code.c",
+			name:     "no dead code — #ifdef and #if 0x1 are not statically false",
+			file:     "no_dead_code.c",
 			expected: []Region{},
 		},
 	}
@@ -132,7 +132,7 @@ func TestIsStaticallyFalse(t *testing.T) {
 		{"1", false},
 		{"0x1", false},
 		{"0x0F", false},
-		{"01", false},      // octal 1
+		{"01", false},         // octal 1
 		{"0 || MACRO", false}, // could be true
 		{"!0", false},
 		{"DEFINED", false},

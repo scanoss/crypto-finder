@@ -147,5 +147,5 @@ func ShouldUseSpinner() bool {
 	if flag.Lookup("test.v") != nil {
 		return false
 	}
-	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
+	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // Fd() returns a small non-negative value.
 }

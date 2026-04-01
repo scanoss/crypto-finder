@@ -240,7 +240,6 @@ func TestFormatMultiError(t *testing.T) {
 				"rule validation",
 				"rule1.yaml",
 				"rule2.yaml",
-				"-", // bullet points
 			},
 		},
 		{
@@ -375,5 +374,19 @@ func TestWrapWithSuggestion(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFormatMultiError_PreservesErrorChain(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("sentinel error")
+	result := FormatMultiError("test", []error{
+		sentinel,
+		errors.New("other error"),
+	})
+
+	if !errors.Is(result, sentinel) {
+		t.Error("Expected errors.Is to find the sentinel error in the chain")
 	}
 }

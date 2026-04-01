@@ -23,6 +23,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Region represents a contiguous block of dead code delimited by preprocessor directives.
@@ -34,16 +36,16 @@ type Region struct {
 // Compiled regexes for preprocessor directive detection.
 var (
 	reIfDirective = regexp.MustCompile(`^\s*#\s*if\s+(.+)`)
-	reIfdef       = regexp.MustCompile(`^\s*#\s*if(?:def|ndef)\b`)
+	reIfdef       = regexp.MustCompile(`^\s*#\s*if(?:n?def)\b`)
 	reElif        = regexp.MustCompile(`^\s*#\s*elif\b`)
 	reElse        = regexp.MustCompile(`^\s*#\s*else\b`)
 	reEndif       = regexp.MustCompile(`^\s*#\s*endif\b`)
 
 	// Patterns for statically-false expression evaluation.
-	reLiteralZero = regexp.MustCompile(`^0+$`)
-	reHexZero     = regexp.MustCompile(`^0[xX]0+$`)
-	reNotOne      = regexp.MustCompile(`^!\s*1$`)
-	reShortCircut = regexp.MustCompile(`^0\s*&&`)
+	reLiteralZero  = regexp.MustCompile(`^0+$`)
+	reHexZero      = regexp.MustCompile(`^0[xX]0+$`)
+	reNotOne       = regexp.MustCompile(`^!\s*1$`)
+	reShortCircuit = regexp.MustCompile(`^0\s*&&`)
 )
 
 // isStaticallyFalse evaluates whether a preprocessor #if expression is
@@ -61,7 +63,7 @@ func isStaticallyFalse(expr string) bool {
 	}
 
 	// Check short-circuit first (before stripping parens): 0 && <anything>
-	if reShortCircut.MatchString(expr) {
+	if reShortCircuit.MatchString(expr) {
 		return true
 	}
 
@@ -82,7 +84,7 @@ func isStaticallyFalse(expr string) bool {
 }
 
 // stripTrailingComment removes C-style trailing comments from an expression.
-// "0 // comment" → "0", "0 /* comment */" → "0"
+// "0 // comment" → "0", "0 /* comment */" → "0".
 func stripTrailingComment(s string) string {
 	if idx := strings.Index(s, "//"); idx >= 0 {
 		s = s[:idx]
@@ -127,7 +129,11 @@ func FindDeadRegions(filePath string) ([]Region, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Warn().Err(cerr).Str("file", filePath).Msg("Failed to close file")
+		}
+	}()
 
 	var regions []Region
 	var deadStart int
@@ -141,33 +147,18 @@ func FindDeadRegions(filePath string) ([]Region, error) {
 		line := scanner.Text()
 
 		if deadDepth > 0 {
-			// Inside a dead code block — track nesting.
-			if matchesIfFamily(line) {
-				deadDepth++
-			} else if reElif.MatchString(line) || reElse.MatchString(line) {
-				if deadDepth == 1 {
-					// The #else/#elif branch of the outermost #if 0 IS compiled.
-					regions = append(regions, Region{StartLine: deadStart, EndLine: lineNum})
-					deadDepth = 0
-				}
-			} else if reEndif.MatchString(line) {
-				deadDepth--
-				if deadDepth == 0 {
-					regions = append(regions, Region{StartLine: deadStart, EndLine: lineNum})
-				}
-			}
-		} else {
-			// Live code — check for statically-false #if directives.
-			if reIfdef.MatchString(line) {
-				// #ifdef / #ifndef are not statically evaluable — skip.
-				continue
-			}
-			if m := reIfDirective.FindStringSubmatch(line); m != nil {
-				if isStaticallyFalse(m[1]) {
-					deadStart = lineNum
-					deadDepth = 1
-				}
-			}
+			deadDepth, regions = trackDeadBlock(line, deadDepth, deadStart, lineNum, regions)
+			continue
+		}
+
+		// Live code — check for statically-false #if directives.
+		if reIfdef.MatchString(line) {
+			// #ifdef / #ifndef are not statically evaluable — skip.
+			continue
+		}
+		if m := reIfDirective.FindStringSubmatch(line); m != nil && isStaticallyFalse(m[1]) {
+			deadStart = lineNum
+			deadDepth = 1
 		}
 	}
 
@@ -176,6 +167,27 @@ func FindDeadRegions(filePath string) ([]Region, error) {
 	}
 
 	return regions, nil
+}
+
+// trackDeadBlock processes a single line while inside a dead code block,
+// tracking nesting depth and closing the region when appropriate.
+func trackDeadBlock(line string, deadDepth, deadStart, lineNum int, regions []Region) (int, []Region) {
+	switch {
+	case matchesIfFamily(line):
+		deadDepth++
+	case reElif.MatchString(line) || reElse.MatchString(line):
+		if deadDepth == 1 {
+			// The #else/#elif branch of the outermost #if 0 IS compiled.
+			regions = append(regions, Region{StartLine: deadStart, EndLine: lineNum})
+			deadDepth = 0
+		}
+	case reEndif.MatchString(line):
+		deadDepth--
+		if deadDepth == 0 {
+			regions = append(regions, Region{StartLine: deadStart, EndLine: lineNum})
+		}
+	}
+	return deadDepth, regions
 }
 
 // matchesIfFamily returns true if the line is any #if, #ifdef, or #ifndef directive.
