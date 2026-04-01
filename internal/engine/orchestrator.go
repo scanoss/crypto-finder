@@ -127,7 +127,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	// Step 6: Process and enrich results
-	enrichedReport, err := o.processor.Process(report, languages)
+	enrichedReport, err := o.processor.Process(report, languages, opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process results: %w", err)
 	}

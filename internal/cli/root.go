@@ -79,13 +79,13 @@ func setupLogging() {
 // Execute runs the root command and exits on error.
 func Execute() {
 	// Disable pterm colors if not running in a TTY (e.g., piped output or non-interactive terminal)
-	if !term.IsTerminal(int(os.Stderr.Fd())) {
+	if !term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // Fd() returns a small non-negative value.
 		pterm.DisableColor()
 	}
 
 	if err := rootCmd.Execute(); err != nil {
 		// Use plain error output in non-TTY environments to avoid color artifacts
-		if !term.IsTerminal(int(os.Stderr.Fd())) {
+		if !term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // Fd() returns a small non-negative value.
 			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
 		} else {
 			pterm.Error.Printfln("%s", err)

@@ -19,8 +19,8 @@
 package clierrors
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 )
 
 // FormatError wraps an error with operation context for better CLI output.
@@ -76,25 +76,16 @@ func FormatValidationError(flag, message, suggestion string) error {
 //	// Output: "Multiple errors during rule validation:
 //	//   - file not found: rule1.yaml
 //	//   - file not found: rule2.yaml"
-func FormatMultiError(context string, errors []error) error {
-	if len(errors) == 0 {
+func FormatMultiError(context string, errs []error) error {
+	if len(errs) == 0 {
 		return nil
 	}
 
-	if len(errors) == 1 {
-		return errors[0]
+	if len(errs) == 1 {
+		return errs[0]
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("multiple errors during %s:\n", context))
-	for i, err := range errors {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-		sb.WriteString(fmt.Sprintf("  - %v", err))
-	}
-
-	return fmt.Errorf("%s", sb.String())
+	return fmt.Errorf("multiple errors during %s: %w", context, errors.Join(errs...))
 }
 
 // WrapWithSuggestion wraps an error with a helpful suggestion.
