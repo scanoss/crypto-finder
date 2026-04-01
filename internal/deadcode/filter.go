@@ -113,7 +113,19 @@ func FilterReport(report *entities.InterimReport, targetDir string) *entities.In
 // filterFinding processes a single C/C++ finding, removing assets inside dead code regions.
 // Returns nil if all assets were filtered out.
 func filterFinding(finding entities.Finding, targetDir string) *entities.Finding {
-	fullPath := filepath.Join(targetDir, finding.FilePath)
+	if filepath.IsAbs(finding.FilePath) {
+		log.Debug().Str("file", finding.FilePath).Msg("Skipping finding with absolute file path")
+		return &finding
+	}
+
+	fullPath := filepath.Clean(filepath.Join(targetDir, finding.FilePath))
+
+	relPath, err := filepath.Rel(targetDir, fullPath)
+	if err != nil || relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		log.Debug().Str("file", finding.FilePath).Msg("Skipping finding with file path escaping target directory")
+		return &finding
+	}
+
 	regions, err := FindDeadRegions(fullPath)
 	if err != nil {
 		log.Debug().Err(err).Str("file", finding.FilePath).Msg("Could not read file for dead code filtering, keeping all findings")
