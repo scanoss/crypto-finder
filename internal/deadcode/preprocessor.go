@@ -156,7 +156,7 @@ func FindDeadRegions(filePath string) ([]Region, error) {
 			// #ifdef / #ifndef are not statically evaluable — skip.
 			continue
 		}
-		if m := reIfDirective.FindStringSubmatch(line); m != nil && isStaticallyFalse(m[1]) {
+		if m := reIfDirective.FindStringSubmatch(line); len(m) > 1 && isStaticallyFalse(m[1]) {
 			deadStart = lineNum
 			deadDepth = 1
 		}
