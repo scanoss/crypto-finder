@@ -157,7 +157,7 @@ func TestProcessor_Process(t *testing.T) {
 			t.Parallel()
 
 			processor := NewProcessor()
-			result, err := processor.Process(tt.inputReport, tt.languages)
+			result, err := processor.Process(tt.inputReport, tt.languages, "")
 
 			if tt.expectError {
 				if err == nil {

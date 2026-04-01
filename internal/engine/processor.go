@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"github.com/scanoss/crypto-finder/internal/deadcode"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/version"
 )
@@ -35,7 +36,7 @@ func NewProcessor() *Processor {
 // Current processing:
 //   - Validates report structure
 //   - Ensures all required fields are present
-func (p *Processor) Process(report *entities.InterimReport, _ []string) (*entities.InterimReport, error) {
+func (p *Processor) Process(report *entities.InterimReport, _ []string, targetDir string) (*entities.InterimReport, error) {
 	if report == nil {
 		// Return empty report if scanner found nothing
 		return &entities.InterimReport{
@@ -52,6 +53,11 @@ func (p *Processor) Process(report *entities.InterimReport, _ []string) (*entiti
 
 	if report.Findings == nil {
 		report.Findings = []entities.Finding{}
+	}
+
+	// Filter out findings inside preprocessor dead code blocks (C/C++ only).
+	if targetDir != "" {
+		report = deadcode.FilterReport(report, targetDir)
 	}
 
 	report.SortFindings()
