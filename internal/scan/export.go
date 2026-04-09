@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	callGraphSchemaVersion   = "4.3"
+	callGraphSchemaVersion   = "5.0"
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -46,9 +46,10 @@ type cachedContainingFunction struct {
 }
 
 type callGraphExportV2 struct {
-	SchemaVersion string                   `json:"schema_version"`
-	ScanMetadata  callGraphExportScanMeta  `json:"scan_metadata"`
-	FindingGraphs []callGraphExportFinding `json:"finding_graphs"`
+	SchemaVersion   string                   `json:"schema_version"`
+	ScanMetadata    callGraphExportScanMeta  `json:"scan_metadata"`
+	FindingGraphs   []callGraphExportFinding `json:"finding_graphs"`
+	EntryPointIndex []callGraphEntryPoint    `json:"entry_point_index,omitempty"`
 }
 
 type callGraphExportScanMeta struct {
@@ -139,6 +140,22 @@ type callGraphChainNode struct {
 	DependencyInfo *callGraphDependencyContext `json:"dependency_info,omitempty"`
 	EntryCall      *callGraphEntryCall         `json:"entry_call,omitempty"`
 	CryptoCall     *callGraphCalledFunction    `json:"crypto_call,omitempty"`
+}
+
+type callGraphEntryPoint struct {
+	Function          string                      `json:"function"`
+	Class             string                      `json:"class,omitempty"`
+	Method            string                      `json:"method"`
+	ReturnType        string                      `json:"return_type,omitempty"`
+	ParameterTypes    []string                    `json:"parameter_types,omitempty"`
+	ReachableFindings []callGraphReachableFinding `json:"reachable_findings"`
+}
+
+type callGraphReachableFinding struct {
+	FindingID        string                     `json:"finding_id"`
+	MatchedOperation *callGraphMatchedOperation `json:"matched_operation"`
+	ChainDepth       int                        `json:"chain_depth"`
+	FindingGraphRef  string                     `json:"finding_graph_ref"`
 }
 
 type exportDependencyRoot struct {
@@ -269,7 +286,106 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		return out.FindingGraphs[i].FindingID < out.FindingGraphs[j].FindingID
 	})
 
+	out.EntryPointIndex = buildEntryPointIndex(out.FindingGraphs)
+
 	return out
+}
+
+// buildEntryPointIndex creates an O(1) lookup from function name to reachable
+// crypto operations. Every function that appears in any call chain is a
+// potential entry point — external code might call any of them.
+func buildEntryPointIndex(findingGraphs []callGraphExportFinding) []callGraphEntryPoint {
+	type findingRef struct {
+		findingID  string
+		matchedOp  *callGraphMatchedOperation
+		chainDepth int
+	}
+
+	type entryPointData struct {
+		class    string
+		method   string
+		findings map[string]findingRef // findingID → ref (keep shallowest depth)
+	}
+
+	index := make(map[string]*entryPointData)
+
+	for _, fg := range findingGraphs {
+		if fg.MatchedOperation == nil {
+			continue
+		}
+		for _, chain := range fg.CallChains {
+			if len(chain) == 0 {
+				continue
+			}
+			for pos, node := range chain {
+				fn := node.FunctionName
+				if fn == "" {
+					continue
+				}
+				depth := len(chain) - pos
+
+				ep, ok := index[fn]
+				if !ok {
+					class, method := splitFunctionName(fn)
+					ep = &entryPointData{
+						class:    class,
+						method:   method,
+						findings: make(map[string]findingRef),
+					}
+					index[fn] = ep
+				}
+
+				existing, exists := ep.findings[fg.FindingID]
+				if !exists || depth < existing.chainDepth {
+					ep.findings[fg.FindingID] = findingRef{
+						findingID:  fg.FindingID,
+						matchedOp:  fg.MatchedOperation,
+						chainDepth: depth,
+					}
+				}
+			}
+		}
+	}
+
+	result := make([]callGraphEntryPoint, 0, len(index))
+	for fn, ep := range index {
+		findings := make([]callGraphReachableFinding, 0, len(ep.findings))
+		for _, ref := range ep.findings {
+			findings = append(findings, callGraphReachableFinding{
+				FindingID: ref.findingID,
+				MatchedOperation: &callGraphMatchedOperation{
+					Kind:   ref.matchedOp.Kind,
+					Symbol: ref.matchedOp.Symbol,
+				},
+				ChainDepth:      ref.chainDepth,
+				FindingGraphRef: ref.findingID,
+			})
+		}
+		sort.Slice(findings, func(i, j int) bool {
+			return findings[i].FindingID < findings[j].FindingID
+		})
+		result = append(result, callGraphEntryPoint{
+			Function:          fn,
+			Class:             ep.class,
+			Method:            ep.method,
+			ReachableFindings: findings,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Function < result[j].Function
+	})
+
+	return result
+}
+
+// splitFunctionName extracts class and method from a fully qualified function name.
+// e.g., "org.apache.http.ssl.SSLContextBuilder.build" → ("org.apache.http.ssl.SSLContextBuilder", "build")
+func splitFunctionName(fn string) (class, method string) {
+	idx := strings.LastIndex(fn, ".")
+	if idx < 0 {
+		return "", fn
+	}
+	return fn[:idx], fn[idx+1:]
 }
 
 func countExportFindingAssets(report *entities.InterimReport) int {
@@ -847,10 +963,19 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 	if result == nil || strings.TrimSpace(result.RootModule) == "" {
 		return nil
 	}
+	// In standalone mode (no dependencies), return nil so the tracer
+	// traverses call chains to graph roots instead of stopping at the
+	// first root-module function. This produces deeper chains needed
+	// for entry_point_index: e.g., HttpClientBuilder.build → ... →
+	// SSLContext.getInstance (depth 5) instead of just depth 1.
+	if len(result.Dependencies) == 0 {
+		return nil
+	}
 	return map[string]bool{
 		strings.TrimSpace(result.RootModule): true,
 	}
 }
+
 
 func exportPackageSeparator(ecosystem string) string {
 	switch ecosystem {

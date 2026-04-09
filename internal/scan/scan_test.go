@@ -183,8 +183,8 @@ func TestExportCallGraph(t *testing.T) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("invalid json output: %v", err)
 		}
-		if payload.SchemaVersion != "4.3" {
-			t.Fatalf("schema_version = %q, want 4.3", payload.SchemaVersion)
+		if payload.SchemaVersion != "5.0" {
+			t.Fatalf("schema_version = %q, want 5.0", payload.SchemaVersion)
 		}
 		if len(payload.FindingGraphs) != 1 {
 			t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
@@ -1208,6 +1208,9 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 		RootModule:  "example.app",
 		Ecosystem:   "java",
 		ProjectRoot: projectRoot,
+		Dependencies: []dependency.Dependency{
+			{Module: "io.jsonwebtoken", Version: "0.12.3", Dir: projectRoot},
+		},
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-direct-prop.json")
@@ -1631,4 +1634,219 @@ func TestValidateFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+
+	// Two findings with overlapping chains to test deduplication.
+	//
+	// Chain 1: Controller → Service → Cipher.getInstance  (finding A)
+	// Chain 2: Service → Cipher.getInstance                (finding A, shorter path)
+	// Chain 3: Controller → Service → Mac.getInstance      (finding B)
+	//
+	// Expected entry points:
+	//   Controller: finding A (depth 3), finding B (depth 3)
+	//   Service:    finding A (depth 2, shallowest), finding B (depth 2)
+	controllerID := callgraph.FunctionID{Package: "com.app", Type: "Controller", Name: "handle#0"}
+	serviceID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "process#1"}
+	cipherGetInstanceID := callgraph.FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance#1"}
+	macGetInstanceID := callgraph.FunctionID{Package: "javax.crypto", Type: "Mac", Name: "getInstance#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			controllerID.String(): {
+				ID:        controllerID,
+				FilePath:  joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
+				StartLine: 10,
+				EndLine:   20,
+				Calls: []callgraph.FunctionCall{{
+					Callee:   serviceID,
+					FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
+					Line:     15,
+				}},
+			},
+			serviceID.String(): {
+				ID:        serviceID,
+				FilePath:  joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+				StartLine: 30,
+				EndLine:   40,
+				Calls: []callgraph.FunctionCall{
+					{
+						Callee:   cipherGetInstanceID,
+						FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+						Line:     35,
+					},
+					{
+						Callee:   macGetInstanceID,
+						FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+						Line:     36,
+					},
+				},
+			},
+		},
+		Callers: map[string][]string{
+			serviceID.String():         {controllerID.String()},
+			cipherGetInstanceID.String(): {serviceID.String()},
+			macGetInstanceID.String():    {serviceID.String()},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "src/main/java/com/app/Service.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{{
+					StartLine: 35,
+					EndLine:   35,
+					Match:     "Cipher.getInstance(\"AES\")",
+					Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher", Message: "cipher", Severity: "INFO"}},
+					Status:    "pending",
+					FindingID: "finding-cipher",
+					Source:    "direct",
+				}},
+			},
+			{
+				FilePath: "src/main/java/com/app/Service.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{{
+					StartLine: 36,
+					EndLine:   36,
+					Match:     "Mac.getInstance(\"HmacSHA256\")",
+					Rules:     []entities.RuleInfo{{ID: "java.crypto.mac", Message: "mac", Severity: "INFO"}},
+					Status:    "pending",
+					FindingID: "finding-mac",
+					Source:    "direct",
+				}},
+			},
+		},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		Report:      report,
+		RootModule:  "com.app",
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	out := filepath.Join(t.TempDir(), "cg-entry-points.json")
+	if err := ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph: %v", err)
+	}
+
+	var payload callGraphExportV2
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+
+	if payload.SchemaVersion != "5.0" {
+		t.Fatalf("schema_version = %q, want 5.0", payload.SchemaVersion)
+	}
+
+	if len(payload.EntryPointIndex) == 0 {
+		t.Fatal("entry_point_index is empty, expected entry points")
+	}
+
+	// Build a lookup for assertions
+	epMap := make(map[string]callGraphEntryPoint)
+	for _, ep := range payload.EntryPointIndex {
+		epMap[ep.Function] = ep
+	}
+
+	// Controller should be an entry point reaching both findings
+	controllerEP, ok := epMap["com.app.Controller.handle"]
+	if !ok {
+		t.Fatalf("missing entry point for Controller.handle, got: %v", keys(epMap))
+	}
+	if controllerEP.Class != "com.app.Controller" || controllerEP.Method != "handle" {
+		t.Fatalf("unexpected class/method: %q / %q", controllerEP.Class, controllerEP.Method)
+	}
+	if len(controllerEP.ReachableFindings) != 2 {
+		t.Fatalf("Controller.handle should reach 2 findings, got %d", len(controllerEP.ReachableFindings))
+	}
+
+	// Service should also be an entry point with shallowest depth
+	serviceEP, ok := epMap["com.app.Service.process"]
+	if !ok {
+		t.Fatalf("missing entry point for Service.process, got: %v", keys(epMap))
+	}
+	if len(serviceEP.ReachableFindings) != 2 {
+		t.Fatalf("Service.process should reach 2 findings, got %d", len(serviceEP.ReachableFindings))
+	}
+	// Service.process → Cipher.getInstance is depth 2 (Service node + crypto node)
+	for _, rf := range serviceEP.ReachableFindings {
+		if rf.ChainDepth > 2 {
+			t.Fatalf("Service.process chain_depth should be ≤ 2, got %d for %s", rf.ChainDepth, rf.FindingID)
+		}
+	}
+}
+
+func TestExportCallGraph_EntryPointIndexEmptyWhenNoChains(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{},
+		Callers:   map[string][]string{},
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "src/main/java/com/app/App.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 10,
+				EndLine:   10,
+				Match:     "Cipher.getInstance(\"AES\")",
+				Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher", Message: "cipher", Severity: "INFO"}},
+				Status:    "pending",
+				FindingID: "unresolved-1",
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		Report:      report,
+		RootModule:  "com.app",
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	out := filepath.Join(t.TempDir(), "cg-no-chains.json")
+	if err := ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph: %v", err)
+	}
+
+	var payload callGraphExportV2
+	data, _ := os.ReadFile(out)
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+
+	if len(payload.EntryPointIndex) != 0 {
+		t.Fatalf("entry_point_index should be empty for unresolved findings, got %d entries", len(payload.EntryPointIndex))
+	}
+}
+
+func keys(m map[string]callGraphEntryPoint) []string {
+	result := make([]string, 0, len(m))
+	for k := range m {
+		result = append(result, k)
+	}
+	return result
 }
