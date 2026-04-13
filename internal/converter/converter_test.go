@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -374,6 +375,15 @@ func TestConverter_MultipleRulesOnSameLine(t *testing.T) {
 
 	// Verify each identity contains methods with rule IDs
 	for i, identity := range identities {
+		if identity.Field != cdx.EvidenceIdentityFieldTypeName {
+			t.Errorf(
+				"Identity[%d] field = %q, want %q",
+				i,
+				identity.Field,
+				cdx.EvidenceIdentityFieldTypeName,
+			)
+		}
+
 		if identity.Methods == nil || len(*identity.Methods) == 0 {
 			t.Errorf("Identity[%d] has no methods", i)
 			continue

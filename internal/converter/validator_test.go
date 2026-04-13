@@ -258,6 +258,42 @@ func TestValidator_ValidateComponent(t *testing.T) {
 			wantErr:     true,
 			errContains: "cryptoProperties",
 		},
+		{
+			name: "Evidence identity missing field",
+			component: &cdx.Component{
+				Type:   cdx.ComponentTypeCryptographicAsset,
+				BOMRef: "test-ref",
+				Name:   "AES-256-GCM",
+				CryptoProperties: &cdx.CryptoProperties{
+					AssetType: cdx.CryptoAssetTypeAlgorithm,
+					AlgorithmProperties: &cdx.CryptoAlgorithmProperties{
+						Primitive: cdx.CryptoPrimitiveAE,
+					},
+				},
+				Evidence: &cdx.Evidence{
+					Identity: &[]cdx.EvidenceIdentity{
+						{
+							Confidence: func() *float32 {
+								value := float32(1)
+								return &value
+							}(),
+							Methods: &[]cdx.EvidenceIdentityMethod{
+								{
+									Technique:  cdx.EvidenceIdentityTechniqueSourceCodeAnalysis,
+									Value:      "scanoss:ruleid,go-crypto-aes-gcm",
+									Confidence: func() *float32 {
+										value := float32(1)
+										return &value
+									}(),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr:     true,
+			errContains: "evidence.identity[0].field",
+		},
 	}
 
 	for _, tt := range tests {

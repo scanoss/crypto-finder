@@ -205,13 +205,14 @@ func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
 
 		if identity.RuleID != "" {
 			methods = append(methods, cdx.EvidenceIdentityMethod{
-				Technique:  "source-code-analysis",
+				Technique:  cdx.EvidenceIdentityTechniqueSourceCodeAnalysis,
 				Value:      fmt.Sprintf("scanoss:ruleid,%s", identity.RuleID),
 				Confidence: &confidence,
 			})
 		}
 
 		identities = append(identities, cdx.EvidenceIdentity{
+			Field:      cdx.EvidenceIdentityFieldTypeName,
 			Methods:    &methods,
 			Confidence: &confidence,
 		})
