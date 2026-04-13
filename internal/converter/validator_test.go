@@ -279,8 +279,8 @@ func TestValidator_ValidateComponent(t *testing.T) {
 							}(),
 							Methods: &[]cdx.EvidenceIdentityMethod{
 								{
-									Technique:  cdx.EvidenceIdentityTechniqueSourceCodeAnalysis,
-									Value:      "scanoss:ruleid,go-crypto-aes-gcm",
+									Technique: cdx.EvidenceIdentityTechniqueSourceCodeAnalysis,
+									Value:     "scanoss:ruleid,go-crypto-aes-gcm",
 									Confidence: func() *float32 {
 										value := float32(1)
 										return &value
