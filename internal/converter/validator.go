@@ -121,6 +121,10 @@ func (v *Validator) validateComponent(component *cdx.Component) error {
 		return fmt.Errorf("cryptoProperties: %w", err)
 	}
 
+	if err := v.validateEvidence(component.Evidence); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -209,4 +213,19 @@ func (v *Validator) validatePrimitive(primitive cdx.CryptoPrimitive) error {
 	validPrimitivesStr = validPrimitivesStr[:len(validPrimitivesStr)-2]
 
 	return fmt.Errorf("invalid primitive value: %s (must be one of: %s)", primitive, validPrimitivesStr)
+}
+
+// validateEvidence validates evidence structures used by generated cryptographic assets.
+func (v *Validator) validateEvidence(evidence *cdx.Evidence) error {
+	if evidence == nil || evidence.Identity == nil {
+		return nil
+	}
+
+	for i, identity := range *evidence.Identity {
+		if identity.Field == "" {
+			return fmt.Errorf("evidence.identity[%d].field is required", i)
+		}
+	}
+
+	return nil
 }
