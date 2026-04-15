@@ -65,15 +65,6 @@ func GetInstance() *Config {
 	return instance
 }
 
-// ResetInstance resets the singleton instance.
-// Only for testing purposes.
-func ResetInstance() {
-	instanceMu.Lock()
-	defer instanceMu.Unlock()
-	instance = nil
-	once = sync.Once{}
-}
-
 // GetAPIKey returns the configured API key.
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()

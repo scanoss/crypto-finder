@@ -46,13 +46,6 @@ func NewJSONWriter() *JSONWriter {
 	}
 }
 
-// NewCompactJSONWriter creates a new JSON writer without pretty-printing.
-func NewCompactJSONWriter() *JSONWriter {
-	return &JSONWriter{
-		PrettyPrint: false,
-	}
-}
-
 // Write writes the interim report to JSON format.
 //
 // Destination handling:

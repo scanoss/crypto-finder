@@ -26,20 +26,14 @@ func TestBaseFunctionNameAndMethodArityKey(t *testing.T) {
 	}
 }
 
-func TestFunctionID_StringAndCanonicalSymbol(t *testing.T) {
+func TestFunctionID_String(t *testing.T) {
 	method := FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance#1"}
 	if got := method.String(); got != "javax.crypto.(Cipher).getInstance#1" {
 		t.Fatalf("method.String() = %q", got)
-	}
-	if got := method.CanonicalSymbol(); got != "javax.crypto.Cipher.getInstance" {
-		t.Fatalf("method.CanonicalSymbol() = %q", got)
 	}
 
 	fn := FunctionID{Package: "crypto/aes", Name: "NewCipher"}
 	if got := fn.String(); got != "crypto/aes.NewCipher" {
 		t.Fatalf("fn.String() = %q", got)
-	}
-	if got := fn.CanonicalSymbol(); got != "crypto/aes.NewCipher" {
-		t.Fatalf("fn.CanonicalSymbol() = %q", got)
 	}
 }

@@ -19,28 +19,6 @@ func NewTracer(graph *CallGraph, pkgSep string) *Tracer {
 	return &Tracer{graph: graph, pkgSep: pkgSep}
 }
 
-// FindContainingFunction finds the FunctionDecl that contains the given file:line.
-// Returns nil if no function spans that location.
-func (t *Tracer) FindContainingFunction(filePath string, line int) *FunctionDecl {
-	for _, fn := range t.graph.Functions {
-		if fn.FilePath == filePath && line >= fn.StartLine && line <= fn.EndLine {
-			return fn
-		}
-	}
-	return nil
-}
-
-// TraceBack finds all call chains from user entry points to the target function.
-// It uses BFS backwards through the caller index, terminating chains when a
-// function in a user package is reached.
-//
-// userPackages defines which Go import paths are considered "user code".
-// maxDepth limits how deep the backward trace goes (0 = unlimited).
-func (t *Tracer) TraceBack(target FunctionID, userPackages map[string]bool, maxDepth int) []CallChain {
-	chains, _ := t.TraceBackLimited(target, userPackages, maxDepth, 0)
-	return chains
-}
-
 // TraceBackLimited behaves like TraceBack but can stop early after collecting
 // maxChains complete chains. A maxChains value of 0 means unlimited.
 func (t *Tracer) TraceBackLimited(target FunctionID, userPackages map[string]bool, maxDepth, maxChains int) ([]CallChain, bool) {

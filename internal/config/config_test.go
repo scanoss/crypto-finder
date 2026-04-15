@@ -25,12 +25,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+func resetTestInstance() {
+	instanceMu.Lock()
+	defer instanceMu.Unlock()
+	instance = nil
+	once = sync.Once{}
+}
+
 // setupTest prepares a clean test environment.
 func setupTest(t *testing.T) func() {
 	t.Helper()
 
 	// Reset singleton
-	ResetInstance()
+	resetTestInstance()
 
 	// Create temp config directory
 	tmpDir := t.TempDir()
@@ -56,7 +63,7 @@ func setupTest(t *testing.T) func() {
 		if oldConfigFile != "" {
 			viper.SetConfigFile(oldConfigFile)
 		}
-		ResetInstance()
+		resetTestInstance()
 	}
 }
 
@@ -625,7 +632,7 @@ func TestEnsureConfigPermissions_Integration(t *testing.T) {
 	}
 
 	// Step 3: Reset and re-initialize - should auto-fix permissions
-	ResetInstance()
+	resetTestInstance()
 	viper.Reset()
 	viper.SetConfigFile(configPath)
 	viper.SetConfigType("json")

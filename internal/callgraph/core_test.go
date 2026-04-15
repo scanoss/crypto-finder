@@ -178,16 +178,12 @@ func TestTracerAndHelpers(t *testing.T) {
 	}
 
 	tracer := NewTracer(graph, "/")
-	if got := tracer.FindContainingFunction("/dep/lib.go", 20); got == nil || got.ID.String() != depCrypto.ID.String() {
-		t.Fatalf("FindContainingFunction returned unexpected result: %#v", got)
+	chains, truncated := tracer.TraceBackLimited(depCrypto.ID, map[string]bool{"app": true}, 0, 0)
+	if truncated {
+		t.Fatal("TraceBackLimited unexpectedly reported truncation")
 	}
-	if got := tracer.FindContainingFunction("/dep/lib.go", 99); got != nil {
-		t.Fatalf("expected nil for out-of-range line, got %#v", got)
-	}
-
-	chains := tracer.TraceBack(depCrypto.ID, map[string]bool{"app": true}, 0)
 	if len(chains) != 1 {
-		t.Fatalf("TraceBack chains len = %d, want 1", len(chains))
+		t.Fatalf("TraceBackLimited chains len = %d, want 1", len(chains))
 	}
 	if len(chains[0].Steps) != 2 {
 		t.Fatalf("expected trace to stop at first user boundary, got %+v", chains[0].Steps)
@@ -197,7 +193,10 @@ func TestTracerAndHelpers(t *testing.T) {
 		t.Fatalf("unexpected chain steps: %+v", chains[0].Steps)
 	}
 
-	limited := tracer.TraceBack(depCrypto.ID, map[string]bool{"app": true}, 2)
+	limited, truncated := tracer.TraceBackLimited(depCrypto.ID, map[string]bool{"app": true}, 2, 0)
+	if truncated {
+		t.Fatal("TraceBackLimited unexpectedly reported truncation for depth-limited traversal")
+	}
 	if len(limited) != 1 {
 		t.Fatalf("expected one chain with depth=2, got %#v", limited)
 	}
@@ -212,7 +211,10 @@ func TestTracerAndHelpers(t *testing.T) {
 	}
 	graph.Callers[depCrypto.ID.String()] = []string{userHelper.ID.String()}
 
-	missing := tracer.TraceBack(FunctionID{Package: "x", Name: "Missing"}, map[string]bool{"app": true}, 0)
+	missing, truncated := tracer.TraceBackLimited(FunctionID{Package: "x", Name: "Missing"}, map[string]bool{"app": true}, 0, 0)
+	if truncated {
+		t.Fatal("TraceBackLimited unexpectedly reported truncation for missing target")
+	}
 	if len(missing) != 0 {
 		t.Fatalf("expected no chains for missing target, got %#v", missing)
 	}

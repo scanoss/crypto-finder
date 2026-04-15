@@ -23,21 +23,6 @@ import (
 	"testing"
 )
 
-func TestNewScanossConfigSource(t *testing.T) {
-	t.Parallel()
-
-	configPath := "/path/to/scanoss.json"
-	source := NewScanossConfigSource(configPath)
-
-	if source == nil {
-		t.Fatal("Expected non-nil source")
-	}
-
-	if source.configPath != configPath {
-		t.Errorf("Expected configPath '%s', got '%s'", configPath, source.configPath)
-	}
-}
-
 func TestNewScanossConfigSourceFromDir(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +60,7 @@ func TestScanossConfigSource_Load_FileExists(t *testing.T) {
 		t.Fatalf("Failed to create test config: %v", err)
 	}
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	patterns, err := source.Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -99,7 +84,7 @@ func TestScanossConfigSource_Load_FileDoesNotExist(t *testing.T) {
 	// Use a path that doesn't exist
 	configPath := filepath.Join(t.TempDir(), "nonexistent.json")
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	patterns, err := source.Load()
 	// Should not return error when file doesn't exist
 	if err != nil {
@@ -132,7 +117,7 @@ func TestScanossConfigSource_Load_EmptyPatterns(t *testing.T) {
 		t.Fatalf("Failed to create test config: %v", err)
 	}
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	patterns, err := source.Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -156,7 +141,7 @@ func TestScanossConfigSource_Load_InvalidJSON(t *testing.T) {
 		t.Fatalf("Failed to create test config: %v", err)
 	}
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	_, err := source.Load()
 
 	// Should return error for invalid JSON
@@ -184,7 +169,7 @@ func TestScanossConfigSource_Load_MissingSettings(t *testing.T) {
 		t.Fatalf("Failed to create test config: %v", err)
 	}
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	patterns, err := source.Load()
 	// Should not error, just return empty/nil patterns
 	if err != nil {
@@ -200,7 +185,7 @@ func TestScanossConfigSource_Name(t *testing.T) {
 	t.Parallel()
 
 	configPath := "/path/to/scanoss.json"
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 
 	name := source.Name()
 
@@ -243,7 +228,7 @@ func TestScanossConfigSource_Load_ComplexPatterns(t *testing.T) {
 		t.Fatalf("Failed to create test config: %v", err)
 	}
 
-	source := NewScanossConfigSource(configPath)
+	source := &ScanossConfigSource{configPath: configPath}
 	patterns, err := source.Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)

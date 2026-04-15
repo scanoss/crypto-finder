@@ -96,16 +96,6 @@ func (f FunctionID) String() string {
 	return fmt.Sprintf("%s.%s", f.Package, f.Name)
 }
 
-// CanonicalSymbol returns a clean, human-readable symbol without arity suffix.
-// For example, "javax.crypto.Cipher.getInstance" instead of "javax.crypto.(Cipher).getInstance#1".
-func (f FunctionID) CanonicalSymbol() string {
-	base := BaseFunctionName(f.Name)
-	if f.Type != "" {
-		return f.Package + "." + f.Type + "." + base
-	}
-	return f.Package + "." + base
-}
-
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
 	ID           FunctionID

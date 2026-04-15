@@ -68,8 +68,12 @@ func TestRegistry_Register(t *testing.T) {
 	registry.Register("test", scanner)
 
 	// Verify it was registered
-	if !registry.Has("test") {
-		t.Error("Scanner should be registered")
+	retrieved, err := registry.Get("test")
+	if err != nil {
+		t.Fatalf("Get() failed after Register(): %v", err)
+	}
+	if retrieved != scanner {
+		t.Error("Registered scanner was not returned by Get()")
 	}
 }
 
@@ -116,13 +120,15 @@ func TestRegistry_Get_NotFound(t *testing.T) {
 	}
 }
 
-func TestRegistry_Available(t *testing.T) {
+func TestRegistry_available(t *testing.T) {
 	t.Parallel()
 
 	registry := NewRegistry()
 
 	// Empty registry
-	available := registry.Available()
+	registry.mu.RLock()
+	available := registry.available()
+	registry.mu.RUnlock()
 	if len(available) != 0 {
 		t.Errorf("Expected 0 scanners, got %d", len(available))
 	}
@@ -132,7 +138,9 @@ func TestRegistry_Available(t *testing.T) {
 	registry.Register("opengrep", &mockScanner{name: "opengrep"})
 	registry.Register("cbom-toolkit", &mockScanner{name: "cbom"})
 
-	available = registry.Available()
+	registry.mu.RLock()
+	available = registry.available()
+	registry.mu.RUnlock()
 	if len(available) != 3 {
 		t.Fatalf("Expected 3 scanners, got %d", len(available))
 	}
@@ -146,27 +154,27 @@ func TestRegistry_Available(t *testing.T) {
 	}
 }
 
-func TestRegistry_Has(t *testing.T) {
+func TestRegistry_GetReflectsPresence(t *testing.T) {
 	t.Parallel()
 
 	registry := NewRegistry()
 	scanner := &mockScanner{name: "test"}
 
 	// Should not have scanner initially
-	if registry.Has("test") {
-		t.Error("Registry should not have 'test' scanner yet")
+	if _, err := registry.Get("test"); err == nil {
+		t.Error("Registry should not return 'test' scanner yet")
 	}
 
 	// Register and check again
 	registry.Register("test", scanner)
 
-	if !registry.Has("test") {
-		t.Error("Registry should have 'test' scanner")
+	if _, err := registry.Get("test"); err != nil {
+		t.Errorf("Registry should return 'test' scanner: %v", err)
 	}
 
 	// Check non-existent
-	if registry.Has("nonexistent") {
-		t.Error("Registry should not have 'nonexistent' scanner")
+	if _, err := registry.Get("nonexistent"); err == nil {
+		t.Error("Registry should not return 'nonexistent' scanner")
 	}
 }
 
@@ -216,8 +224,9 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 0; i < 100; i++ {
 			registry.Get("concurrent")
-			registry.Has("concurrent")
-			registry.Available()
+			registry.mu.RLock()
+			_ = registry.available()
+			registry.mu.RUnlock()
 		}
 		done <- true
 	}()
@@ -227,7 +236,7 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 	<-done
 
 	// Verify registry is still functional
-	if !registry.Has("concurrent") {
-		t.Error("Scanner should be registered after concurrent access")
+	if _, err := registry.Get("concurrent"); err != nil {
+		t.Errorf("Scanner should be registered after concurrent access: %v", err)
 	}
 }
