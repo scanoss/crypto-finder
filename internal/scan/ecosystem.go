@@ -3,6 +3,8 @@ package scan
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/scanoss/crypto-finder/internal/dependency"
 )
 
 const (
@@ -20,8 +22,9 @@ func DetectEcosystem(target string) string {
 	if _, err := os.Stat(filepath.Join(target, "go.mod")); err == nil {
 		return ecosystemGo
 	}
-	// Check for Java (Maven)
-	if _, err := os.Stat(filepath.Join(target, "pom.xml")); err == nil {
+	// Check for Java (Maven or Gradle). Build-tool ambiguity is surfaced later by
+	// the Java resolver so ecosystem detection still classifies the target as Java.
+	if dependency.HasJavaManifest(target) {
 		return ecosystemJava
 	}
 	// Check for Rust (Cargo)

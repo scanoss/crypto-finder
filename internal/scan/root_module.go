@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -67,22 +68,38 @@ func detectGoRootModule(targetDir string) string {
 }
 
 func detectJavaRootModule(targetDir string) string {
-	data, err := os.ReadFile(filepath.Join(targetDir, "pom.xml"))
-	if err != nil {
-		return ""
+	if data, err := os.ReadFile(filepath.Join(targetDir, "pom.xml")); err == nil {
+		var pom pomRootModule
+		if err := xml.Unmarshal(data, &pom); err == nil {
+			if pom.GroupID != "" {
+				return pom.GroupID
+			}
+			if pom.Parent.GroupID != "" {
+				return pom.Parent.GroupID
+			}
+			if pom.ArtifactID != "" {
+				return pom.ArtifactID
+			}
+		}
 	}
 
-	var pom pomRootModule
-	if err := xml.Unmarshal(data, &pom); err != nil {
-		return ""
+	return detectGradleRootModule(targetDir)
+}
+
+var gradleRootNamePattern = regexp.MustCompile(`(?m)^\s*rootProject\.name\s*=\s*["']([^"']+)["']`)
+
+func detectGradleRootModule(targetDir string) string {
+	for _, candidate := range []string{"settings.gradle", "settings.gradle.kts"} {
+		data, err := os.ReadFile(filepath.Join(targetDir, candidate))
+		if err != nil {
+			continue
+		}
+		matches := gradleRootNamePattern.FindStringSubmatch(string(data))
+		if len(matches) == 2 {
+			return strings.TrimSpace(matches[1])
+		}
 	}
-	if pom.GroupID != "" {
-		return pom.GroupID
-	}
-	if pom.Parent.GroupID != "" {
-		return pom.Parent.GroupID
-	}
-	return pom.ArtifactID
+	return ""
 }
 
 func detectSectionName(path, section string) string {

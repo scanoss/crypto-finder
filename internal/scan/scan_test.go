@@ -89,6 +89,39 @@ func TestDetectEcosystem(t *testing.T) {
 		}
 	})
 
+	t.Run("java-gradle-build", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "build.gradle")
+		if got := DetectEcosystem(dir); got != "java" {
+			t.Fatalf("DetectEcosystem() = %q, want java", got)
+		}
+	})
+
+	t.Run("java-gradle-kts-build", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "build.gradle.kts")
+		if got := DetectEcosystem(dir); got != "java" {
+			t.Fatalf("DetectEcosystem() = %q, want java", got)
+		}
+	})
+
+	t.Run("java-gradle-settings", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "settings.gradle")
+		if got := DetectEcosystem(dir); got != "java" {
+			t.Fatalf("DetectEcosystem() = %q, want java", got)
+		}
+	})
+
+	t.Run("java-mixed-manifests-still-classifies-java", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "pom.xml")
+		writeFile(t, dir, "build.gradle")
+		if got := DetectEcosystem(dir); got != "java" {
+			t.Fatalf("DetectEcosystem() = %q, want java", got)
+		}
+	})
+
 	t.Run("rust", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "Cargo.toml")
@@ -1688,7 +1721,7 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 			},
 		},
 		Callers: map[string][]string{
-			serviceID.String():         {controllerID.String()},
+			serviceID.String():           {controllerID.String()},
 			cipherGetInstanceID.String(): {serviceID.String()},
 			macGetInstanceID.String():    {serviceID.String()},
 		},

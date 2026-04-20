@@ -18,8 +18,11 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
@@ -27,13 +30,16 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 var (
-	debug   bool
-	verbose bool
-	quiet   bool
+	debug             bool
+	verbose           bool
+	quiet             bool
+	errorOutputFormat string
 )
 
 var rootCmd = &cobra.Command{
@@ -44,8 +50,12 @@ var rootCmd = &cobra.Command{
 	as the default scanning engine and outputs results in a standardized interim JSON format.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		if err := validateErrorOutputFormat(errorOutputFormat); err != nil {
+			return err
+		}
 		setupLogging()
+		return nil
 	},
 }
 
@@ -54,6 +64,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Enable quiet logging")
+	rootCmd.PersistentFlags().StringVar(&errorOutputFormat, "error-format", "text", "Error output format: text, json")
 
 	// Subcommands
 	rootCmd.AddCommand(scanCmd)
@@ -65,6 +76,13 @@ func init() {
 func setupLogging() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	semgrep.SetHumanErrorOutputEnabled(normalizedErrorOutputFormat() != "json")
+
+	if normalizedErrorOutputFormat() == "json" {
+		pterm.DisableColor()
+		zerolog.SetGlobalLevel(zerolog.Disabled)
+		return
+	}
 
 	switch {
 	case quiet:
@@ -91,12 +109,44 @@ func Execute() {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
-		// Use plain error output in non-TTY environments to avoid color artifacts
-		if !ok || !term.IsTerminal(stderrFD) {
+		if normalizedErrorOutputFormat() == "json" {
+			renderJSONError(os.Stderr, err)
+		} else if !ok || !term.IsTerminal(stderrFD) {
 			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
 		} else {
 			pterm.Error.Printfln("%s", err)
 		}
 		os.Exit(1)
 	}
+}
+
+func validateErrorOutputFormat(format string) error {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "text", "json":
+		return nil
+	default:
+		return failure.New(
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("invalid --error-format %q (supported: text, json)", format),
+			failure.WithDetail("error_format", format),
+		)
+	}
+}
+
+func normalizedErrorOutputFormat() string {
+	format := strings.ToLower(strings.TrimSpace(errorOutputFormat))
+	if format == "" {
+		return "text"
+	}
+	return format
+}
+
+func renderJSONError(output io.Writer, err error) {
+	data, marshalErr := failure.MarshalJSON(err)
+	if marshalErr != nil {
+		fallback := failure.ToPayload(err)
+		data, _ = json.Marshal(fallback)
+	}
+	_, _ = output.Write(append(data, '\n'))
 }

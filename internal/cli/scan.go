@@ -34,6 +34,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
@@ -294,14 +295,20 @@ func runScan(_ *cobra.Command, args []string) error {
 		ExportCallgraph:  scanExportCallgraph,
 	})
 	if err != nil {
-		return err
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
 	scanLanguages = normalizedLanguages
 
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
 	if err != nil {
-		return fmt.Errorf("invalid timeout format '%s': %w (use format like '10m', '1h', '30d', or '2w')", scanTimeout, err)
+		return failure.Wrap(
+			err,
+			failure.CodeInvalidTimeout,
+			failure.StageInput,
+			fmt.Sprintf("invalid timeout format '%s' (use format like '10m', '1h', '30d', or '2w')", scanTimeout),
+			failure.WithDetail("timeout", scanTimeout),
+		)
 	}
 
 	// Create context with timeout
@@ -334,7 +341,12 @@ func runScan(_ *cobra.Command, args []string) error {
 
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(scanAPIKey, scanAPIURL); err != nil {
-		return fmt.Errorf("failed to initialize config: %w", err)
+		return failure.WrapUnknown(
+			err,
+			failure.CodeConfigInitializationFailed,
+			failure.StageConfig,
+			"failed to initialize config",
+		)
 	}
 	var (
 		javaRuntime         javaruntime.Config
@@ -347,7 +359,12 @@ func runScan(_ *cobra.Command, args []string) error {
 
 		resolvedRuntime, resolveErr := resolveJavaRuntimeConfig(cfg)
 		if resolveErr != nil {
-			return fmt.Errorf("failed to resolve Java runtime configuration: %w", resolveErr)
+			return failure.WrapUnknown(
+				resolveErr,
+				failure.CodeJavaRuntimeConfigInvalid,
+				failure.StageConfig,
+				"failed to resolve Java runtime configuration",
+			)
 		}
 
 		javaRuntime = resolvedRuntime
@@ -367,7 +384,12 @@ func runScan(_ *cobra.Command, args []string) error {
 		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
-			return fmt.Errorf("failed to create cache manager: %w", err)
+			return failure.WrapUnknown(
+				err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"failed to create cache manager",
+			)
 		}
 
 		cacheManager.SetNoCache(scanNoCache)
@@ -376,10 +398,21 @@ func runScan(_ *cobra.Command, args []string) error {
 		// Parse and validate max stale age
 		maxStaleAge, err := scanutil.ParseDuration(scanMaxStaleAge)
 		if err != nil {
-			return fmt.Errorf("invalid --max-stale-age format '%s': %w (use format like '30d', '720h', or '2w')", scanMaxStaleAge, err)
+			return failure.Wrap(
+				err,
+				failure.CodeInvalidArguments,
+				failure.StageInput,
+				fmt.Sprintf("invalid --max-stale-age format '%s' (use format like '30d', '720h', or '2w')", scanMaxStaleAge),
+				failure.WithDetail("max_stale_age", scanMaxStaleAge),
+			)
 		}
 		if maxStaleAge > config.MaxStaleCacheAge {
-			return fmt.Errorf("--max-stale-age cannot exceed %s (got: %s)", config.MaxStaleCacheAge, maxStaleAge)
+			return failure.New(
+				failure.CodeInvalidArguments,
+				failure.StageInput,
+				fmt.Sprintf("--max-stale-age cannot exceed %s (got: %s)", config.MaxStaleCacheAge, maxStaleAge),
+				failure.WithDetail("max_stale_age", maxStaleAge.String()),
+			)
 		}
 		cacheManager.SetMaxStaleCacheAge(maxStaleAge)
 
@@ -403,7 +436,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	var rulesManager *rules.Manager
 	switch len(ruleSources) {
 	case 0:
-		return fmt.Errorf("no rule sources configured (use --rules, --rules-dir, or enable remote rules)")
+		return failure.New(
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"no rule sources configured (use --rules, --rules-dir, or enable remote rules)",
+		)
 	case 1:
 		rulesManager = rules.NewManager(ruleSources[0])
 		log.Info().Msgf("Rules manager configured with source: %s", ruleSources[0].Name())
@@ -459,7 +496,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		if ecosystem != "" {
 			depRegistry := dependency.NewRegistry()
 			depRegistry.Register("go", dependency.NewGoResolver())
-			depRegistry.Register("java", dependency.NewMavenResolver())
+			depRegistry.Register("java", dependency.NewJavaResolver())
 			depRegistry.Register("python", dependency.NewPipResolver())
 			depRegistry.Register("rust", dependency.NewCargoResolver())
 
@@ -474,7 +511,7 @@ func runScan(_ *cobra.Command, args []string) error {
 					scanOpts.JavaRuntime = javaRuntime
 					scanOpts.JavaRuntimeCacheToken = javaRuntime.CacheKeyToken()
 				}
-				if javaResolver, ok := resolver.(*dependency.MavenResolver); ok {
+				if javaResolver, ok := resolver.(dependency.JavaRuntimeConfigurer); ok {
 					javaResolver.SetJavaRuntime(javaRuntime)
 				}
 				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
@@ -499,7 +536,12 @@ func runScan(_ *cobra.Command, args []string) error {
 							ScanOptions: scanOpts,
 						})
 						if depErr != nil {
-							return fmt.Errorf("dependency scan failed: %w", depErr)
+							return failure.WrapUnknown(
+								depErr,
+								failure.CodeDependencyResolutionFailed,
+								failure.StageDependency,
+								"dependency scan failed",
+							)
 						}
 						report = depResult.Report
 						callGraphResult = depResult
@@ -521,7 +563,12 @@ func runScan(_ *cobra.Command, args []string) error {
 		}
 		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests)
 		if err != nil {
-			return fmt.Errorf("failed to build call graph for export: %w", err)
+			return failure.WrapUnknown(
+				err,
+				failure.CodeCallGraphBuildFailed,
+				failure.StageCallGraph,
+				"failed to build call graph for export",
+			)
 		}
 	}
 
@@ -536,7 +583,12 @@ func runScan(_ *cobra.Command, args []string) error {
 			callGraphResult.Report = report
 		}
 		if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult); exportErr != nil {
-			return fmt.Errorf("failed to export call graph: %w", exportErr)
+			return failure.WrapUnknown(
+				exportErr,
+				failure.CodeCallGraphExportFailed,
+				failure.StageExport,
+				"failed to export call graph",
+			)
 		}
 		log.Info().
 			Str("file", scanExportCallgraph).
@@ -557,7 +609,12 @@ func runScan(_ *cobra.Command, args []string) error {
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
 	if err != nil {
-		return fmt.Errorf("failed to get output writer: %w", err)
+		return failure.WrapUnknown(
+			err,
+			failure.CodeOutputWriterUnavailable,
+			failure.StageOutput,
+			"failed to get output writer",
+		)
 	}
 
 	// Write output (to stdout or file)
@@ -567,7 +624,12 @@ func runScan(_ *cobra.Command, args []string) error {
 		Str("format", scanFormat).
 		Msg("Writing scan output")
 	if err := writer.Write(report, scanOutput); err != nil {
-		return fmt.Errorf("failed to write output: %w", err)
+		return failure.WrapUnknown(
+			err,
+			failure.CodeOutputWriteFailed,
+			failure.StageOutput,
+			"failed to write output",
+		)
 	}
 	log.Info().
 		Str("destination", scanOutput).
@@ -577,14 +639,21 @@ func runScan(_ *cobra.Command, args []string) error {
 	findingsCount := scanutil.CountFindings(report)
 	filesCount := len(report.Findings)
 
-	err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to render scan summary")
+	if normalizedErrorOutputFormat() != "json" {
+		err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to render scan summary")
+		}
 	}
 
 	// Handle --fail-on-findings
 	if scanFailOnFind && findingsCount > 0 {
-		return fmt.Errorf("scan detected %d findings (--fail-on-findings enabled)", findingsCount)
+		return failure.New(
+			failure.CodeFindingsDetected,
+			failure.StagePolicy,
+			fmt.Sprintf("scan detected %d findings (--fail-on-findings enabled)", findingsCount),
+			failure.WithDetail("findings_count", fmt.Sprintf("%d", findingsCount)),
+		)
 	}
 
 	return nil

@@ -78,6 +78,26 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
+	t.Run("java-gradle-settings", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.gradle"), []byte(`rootProject.name = 'gradle-demo'`), 0o600); err != nil {
+			t.Fatalf("write settings.gradle: %v", err)
+		}
+		if got := DetectRootModule(dir, "java"); got != "gradle-demo" {
+			t.Fatalf("DetectRootModule(java gradle) = %q, want gradle-demo", got)
+		}
+	})
+
+	t.Run("java-gradle-kts-settings", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.gradle.kts"), []byte(`rootProject.name = "gradle-kts-demo"`), 0o600); err != nil {
+			t.Fatalf("write settings.gradle.kts: %v", err)
+		}
+		if got := DetectRootModule(dir, "java"); got != "gradle-kts-demo" {
+			t.Fatalf("DetectRootModule(java gradle kts) = %q, want gradle-kts-demo", got)
+		}
+	})
+
 	t.Run("rust", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"rust-demo\"\n"), 0o600); err != nil {

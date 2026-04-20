@@ -136,12 +136,12 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 			report: &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}},
 		},
 		{
-			dep:    dependency.Dependency{Module: "github.com/acme/dep2", Version: "v2", Dir: "/deps/dep2"},
+			dep:    dependency.Dependency{Module: "github.com/acme/dep2", Version: "v2", Dir: "/deps/dep2", CompiledArtifactPath: "/artifacts/dep2.jar"},
 			status: depScanStatusScanned,
 			report: &entities.InterimReport{Findings: []entities.Finding{{}}},
 		},
 		{
-			dep:    dependency.Dependency{Module: "github.com/acme/dep3", Version: "v3"},
+			dep:    dependency.Dependency{Module: "github.com/acme/dep3", Version: "v3", CompiledArtifactPath: "/artifacts/dep3.jar"},
 			status: depScanStatusSkippedNoSource,
 		},
 		{
@@ -164,6 +164,12 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 	if sets.typeOnlyPackages[0].Version != "v2" || sets.typeOnlyPackages[1].Version != "v3" || sets.typeOnlyPackages[2].Version != "v4" {
 		t.Fatalf("unexpected typeOnlyPackages versions: %#v", sets.typeOnlyPackages)
+	}
+	if sets.typeOnlyPackages[0].CompiledArtifactPath != "/artifacts/dep2.jar" {
+		t.Fatalf("expected compiled artifact path to propagate, got %#v", sets.typeOnlyPackages[0])
+	}
+	if sets.typeOnlyPackages[1].CompiledArtifactPath != "/artifacts/dep3.jar" {
+		t.Fatalf("expected compiled artifact path to propagate for source-less dep, got %#v", sets.typeOnlyPackages[1])
 	}
 
 	workspaceUsers := ds.buildUserPackages(resolvedWorkspace)

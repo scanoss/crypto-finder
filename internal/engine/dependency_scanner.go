@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"runtime"
 	"sort"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
@@ -119,7 +119,12 @@ func (ds *DependencyScanner) ScanWithDependencies(
 
 	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build call graph: %w", err)
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeCallGraphBuildFailed,
+			failure.StageCallGraph,
+			"failed to build call graph",
+		)
 	}
 
 	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
@@ -150,7 +155,12 @@ func (ds *DependencyScanner) prepareDependencyScan(
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
 	resolved, err := ds.resolver.Resolve(ctx, opts.ScanOptions.Target)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("dependency resolution failed: %w", err)
+		return nil, nil, "", failure.WrapUnknown(
+			err,
+			failure.CodeDependencyResolutionFailed,
+			failure.StageDependency,
+			"dependency resolution failed",
+		)
 	}
 	log.Info().Int("deps", len(resolved.Dependencies)).Msg("Resolved dependencies")
 	if len(resolved.Dependencies) == 0 {
@@ -159,7 +169,12 @@ func (ds *DependencyScanner) prepareDependencyScan(
 
 	filteredRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem())
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("failed to load rules for dependency scanning: %w", err)
+		return nil, nil, "", failure.WrapUnknown(
+			err,
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"failed to load rules for dependency scanning",
+		)
 	}
 	log.Info().
 		Int("rules", len(filteredRulePaths)).
@@ -480,9 +495,10 @@ func (ds *DependencyScanner) collectPackageSets(
 	// Split deps: findings deps get full source parsing; others get bytecode-only type index.
 	for _, result := range depResults {
 		pkg := callgraph.PackageDir{
-			Dir:        result.dep.Dir,
-			ImportPath: result.dep.Module,
-			Version:    result.dep.Version,
+			Dir:                  result.dep.Dir,
+			ImportPath:           result.dep.Module,
+			Version:              result.dep.Version,
+			CompiledArtifactPath: result.dep.CompiledArtifactPath,
 		}
 		if result.status == depScanStatusScanned && result.report != nil && hasFindings(result.report) && result.dep.Dir != "" {
 			sets.graphPackages = append(sets.graphPackages, pkg)
@@ -648,9 +664,21 @@ func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency
 	for _, dep := range ordered {
 		key := dependencyKey(dep)
 		existing, ok := unique[key]
-		if !ok || (existing.Dir == "" && dep.Dir != "") {
+		if !ok {
 			unique[key] = dep
+			continue
 		}
+		if existing.Dir == "" && dep.Dir != "" {
+			unique[key] = dep
+			continue
+		}
+		if existing.CompiledArtifactPath == "" && dep.CompiledArtifactPath != "" {
+			existing.CompiledArtifactPath = dep.CompiledArtifactPath
+		}
+		if existing.SourceArchivePath == "" && dep.SourceArchivePath != "" {
+			existing.SourceArchivePath = dep.SourceArchivePath
+		}
+		unique[key] = existing
 	}
 
 	result := make([]dependency.Dependency, 0, len(unique))

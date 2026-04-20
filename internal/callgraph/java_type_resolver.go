@@ -660,6 +660,11 @@ func (r *JavaBytecodeTypeResolver) findCompiledJAR(root PackageDir) string {
 	if r.resolveJARPath != nil {
 		return r.resolveJARPath(root)
 	}
+	if root.CompiledArtifactPath != "" {
+		if _, err := os.Stat(root.CompiledArtifactPath); err == nil {
+			return root.CompiledArtifactPath
+		}
+	}
 	if root.Version == "" {
 		return ""
 	}

@@ -124,6 +124,8 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 	withSources := 0
 
 	for _, dep := range deps {
+		dep.CompiledArtifactPath = r.compiledJarPath(dep, m2Repo)
+		dep.SourceArchivePath = r.sourceJarPath(dep, m2Repo)
 		dir := r.resolveSourceDir(dep, m2Repo, cache)
 		dep.Dir = dir
 		result.Dependencies = append(result.Dependencies, dep)
@@ -556,6 +558,26 @@ func (r *MavenResolver) sourceJarPath(dep Dependency, m2Repo string) string {
 	artifactID := parts[1]
 	return filepath.Join(m2Repo, groupPath, artifactID, dep.Version,
 		fmt.Sprintf("%s-%s-sources.jar", artifactID, dep.Version))
+}
+
+func (r *MavenResolver) compiledJarPath(dep Dependency, m2Repo string) string {
+	if m2Repo == "" {
+		return ""
+	}
+
+	parts := strings.Split(dep.Module, ":")
+	if len(parts) != 2 || dep.Version == "" {
+		return ""
+	}
+
+	groupPath := strings.ReplaceAll(parts[0], ".", string(os.PathSeparator))
+	artifactID := parts[1]
+	jarPath := filepath.Join(m2Repo, groupPath, artifactID, dep.Version,
+		fmt.Sprintf("%s-%s.jar", artifactID, dep.Version))
+	if _, err := os.Stat(jarPath); err != nil {
+		return ""
+	}
+	return jarPath
 }
 
 func (r *MavenResolver) hasSourceJar(dep Dependency, m2Repo string) bool {

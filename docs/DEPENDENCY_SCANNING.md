@@ -203,7 +203,7 @@ The reverse index is what enables **backward tracing** — starting from a crypt
 
 After building the caller index, the builder runs additional resolution passes to improve type accuracy:
 
-1. **`TypeResolver`** (language-specific): For Java, a bytecode-based resolver reads `.class` files from Maven-cached JARs plus the selected JDK platform archives to extract fully-qualified method signatures. JAR indexing runs in parallel and uses a per-artifact bytecode cache under `~/.scanoss/crypto-finder/cache/bytecode/`, keyed by exact artifact identity. This provides accurate parameter types (e.g., `io.jsonwebtoken.SignatureAlgorithm` instead of generic `K`) and return types for fluent chain resolution. The Java resolver can be configured per scan with `java_jdk_major` (`auto`, `8`, `11`, `17`, `21`) and `java_jdk_homes`, which also makes Maven dependency resolution JDK-aware. The `TypeResolver` interface is extensible — each language can implement its own approach (Go: `go/types`, Python: `.pyi` stubs, Rust: `rust-analyzer`).
+1. **`TypeResolver`** (language-specific): For Java, a bytecode-based resolver reads `.class` files from resolver-supplied dependency JARs (Maven or Gradle) plus the selected JDK platform archives to extract fully-qualified method signatures. JAR indexing runs in parallel and uses a per-artifact bytecode cache under `~/.scanoss/crypto-finder/cache/bytecode/`, keyed by exact artifact identity. This provides accurate parameter types (e.g., `io.jsonwebtoken.SignatureAlgorithm` instead of generic `K`) and return types for fluent chain resolution. The Java resolver can be configured per scan with `java_jdk_major` (`auto`, `8`, `11`, `17`, `21`) and `java_jdk_homes`, which also makes Java dependency resolution JDK-aware. The `TypeResolver` interface is extensible — each language can implement its own approach (Go: `go/types`, Python: `.pyi` stubs, Rust: `rust-analyzer`).
 
 2. **Fluent chain resolution**: For chained calls like `Jwts.builder().setId(id).signWith(algo, key)`, return types are propagated through the chain. If `builder()` returns `JwtBuilder`, then `setId()` is resolved as `JwtBuilder.setId`. Interface inheritance is also followed (e.g., `JwtBuilder` extends `ClaimsMutator`, so `setId` resolves to `ClaimsMutator.setId`).
 
@@ -1009,7 +1009,9 @@ internal/
 │   ├── resolver.go                # Resolver interface + Dependency/ResolveResult types
 │   ├── registry.go                # Ecosystem → Resolver registry
 │   ├── go_resolver.go             # Go: `go list -m -json all`
-│   ├── maven_resolver.go          # Java: `mvn dependency:list/sources/tree`
+│   ├── java_resolver.go           # Java: auto-detect Maven vs Gradle
+│   ├── maven_resolver.go          # Java/Maven: `mvn dependency:list/sources/tree`
+│   ├── gradle_resolver.go         # Java/Gradle: init-script export via `gradlew` / `gradle`
 │   ├── pip_resolver.go            # Python: `pip list` + `pip show`
 │   ├── cargo_resolver.go          # Rust: `cargo metadata --format-version=1`
 │   └── source_cache.go            # Shared: ZIP/JAR extraction to ~/.crypto-finder/cache/sources/
@@ -1041,14 +1043,14 @@ The extensible architecture makes adding a new language a matter of implementing
 - **Package separator**: `/`
 - **Source location**: Go module cache (`$GOPATH/pkg/mod/`)
 
-### Java (Maven)
+### Java (Maven / Gradle)
 
-- **Resolver**: [`MavenResolver`](../internal/dependency/maven_resolver.go) — uses Maven CLI
+- **Resolver**: [`JavaResolver`](../internal/dependency/java_resolver.go) — auto-detects Maven vs Gradle at the project root
 - **Parser**: [`JavaParser`](../internal/callgraph/java_parser.go) — syntactic parsing of Java source
-- **Manifest**: `pom.xml`
+- **Manifest**: `pom.xml`, `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts`
 - **Module format**: `groupId:artifactId` (e.g., `org.bouncycastle:bcprov-jdk18on`)
 - **Package separator**: `.`
-- **Source location**: Source JARs extracted from `~/.m2/repository/` to `~/.crypto-finder/cache/sources/`
+- **Source location**: Source JARs resolved by the active build tool and extracted to `~/.scanoss/crypto-finder/cache/sources/`
 
 #### Maven Resolution Details
 
@@ -1074,6 +1076,16 @@ After dependency listing, the resolver also runs:
 - **`mvn dependency:tree --fail-never -DappendOutput=true`** — builds the dependency graph adjacency list (best-effort)
 
 Dependencies without source JARs are included in the resolution results but without a source directory. They are skipped for source scanning and logged explicitly; if the compiled artifact is present in `~/.m2/repository`, Java bytecode indexing can still use it as a type-only dependency.
+
+#### Gradle Resolution Details
+
+The `GradleResolver` asks Gradle itself for a machine-readable dependency model via a temporary init script:
+
+- Prefers `./gradlew` and falls back to `gradle` from `PATH`
+- Resolves the main Java compile classpath for single-project and multi-project builds
+- Treats included Gradle subprojects as `WorkspaceMembers` rather than external dependencies
+- Captures external module coordinates, versioned dependency edges, compiled JAR paths, and best-effort source archive paths
+- Reuses the shared source extraction cache so Gradle and Maven dependencies flow through the same Java scanning pipeline
 
 #### Multi-Module Project Support
 
@@ -1246,7 +1258,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 - **No cross-module method resolution** — Method calls on variables (e.g., `cipher.Encrypt()`) are recorded with the variable name as the type, not the resolved type. Cross-package type resolution would require full type analysis.
 
 ### Java-specific
-- **Maven only** — Gradle projects are not supported. A `GradleResolver` could be added in the future.
+- **Gradle source archives are best-effort** — Gradle dependency resolution provides binary artifact paths deterministically, but source archive availability still depends on what upstream repositories publish.
 - **Missing source JARs** — Dependencies without sources are skipped for source scanning, but they can still contribute Java bytecode types if the compiled JAR is present locally. They cannot produce source-level findings until sources are available.
 - **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
 - **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.

@@ -351,6 +351,38 @@ func TestJavaBytecodeTypeResolver_ResolveTypes_DeduplicatesJARs(t *testing.T) {
 	}
 }
 
+func TestJavaBytecodeTypeResolver_ResolveTypes_UsesResolverSuppliedCompiledArtifactPath(t *testing.T) {
+	disableAmbientJavaHome(t)
+
+	compiledJar := filepath.Join(t.TempDir(), "lib.jar")
+	if err := os.WriteFile(compiledJar, []byte("jar"), 0o600); err != nil {
+		t.Fatalf("write compiled jar: %v", err)
+	}
+
+	var seen []string
+	resolver := &JavaBytecodeTypeResolver{
+		extractClassInfo: func(path string) ([]*classFileInfo, error) {
+			seen = append(seen, path)
+			return []*classFileInfo{{
+				className:     "JwtBuilder",
+				fullClassName: "io.jsonwebtoken.JwtBuilder",
+			}}, nil
+		},
+	}
+
+	if err := resolver.ResolveTypes(&CallGraph{}, []PackageDir{{
+		ImportPath:           "org.example:lib",
+		Version:              "1.2.3",
+		CompiledArtifactPath: compiledJar,
+	}}); err != nil {
+		t.Fatalf("ResolveTypes: %v", err)
+	}
+
+	if len(seen) != 1 || seen[0] != compiledJar {
+		t.Fatalf("expected resolver to use supplied compiled artifact path, got %#v", seen)
+	}
+}
+
 func TestJavaBytecodeTypeResolver_ResolveTypes_ProcessesJARsConcurrently(t *testing.T) {
 	disableAmbientJavaHome(t)
 

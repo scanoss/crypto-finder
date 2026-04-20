@@ -1,0 +1,199 @@
+import groovy.json.JsonOutput
+import org.gradle.api.GradleException
+import org.gradle.api.Project
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
+
+String normalizeGroup(Object raw) {
+    def value = raw == null ? '' : raw.toString().trim()
+    if (!value || value == 'unspecified') {
+        return ''
+    }
+    return value
+}
+
+String projectNodeName(Project project, String fallbackRootModule) {
+    def group = normalizeGroup(project.group)
+    if (group) {
+        return group + ':' + project.name
+    }
+    return fallbackRootModule + ':' + project.name
+}
+
+Map toExternalRef(ModuleComponentIdentifier componentId) {
+    return [module: componentId.group + ':' + componentId.module, version: componentId.version]
+}
+
+Map toProjectRef(Project project, String fallbackRootModule) {
+    def version = project.version == null ? '' : project.version.toString().trim()
+    if (version == 'unspecified') {
+        version = ''
+    }
+    return [module: projectNodeName(project, fallbackRootModule), version: version]
+}
+
+void addGraphRef(Map<String, List<Map>> graph, String parentKey, Map childRef) {
+    if (!parentKey || childRef == null || !childRef.module) {
+        return
+    }
+    def existing = graph[parentKey]
+    if (existing == null) {
+        existing = []
+        graph[parentKey] = existing
+    }
+    if (!existing.any { it.module == childRef.module && ((it.version ?: '') == (childRef.version ?: '')) }) {
+        existing << [module: childRef.module, version: childRef.version ?: '']
+    }
+}
+
+File resolveSourceJar(Project project, String module, String version) {
+    def parts = module.split(':', 2)
+    if (parts.length != 2) {
+        return null
+    }
+    try {
+        def detached = project.configurations.detachedConfiguration(
+            project.dependencies.create(parts[0] + ':' + parts[1] + ':' + version + ':sources@jar')
+        )
+        detached.transitive = false
+        def files = detached.resolve()
+        return files.find { it.name.endsWith('-sources.jar') || it.name.endsWith('.jar') }
+    } catch (Exception ignored) {
+        return null
+    }
+}
+
+void exportModel(gradle) {
+    def outputPath = System.getProperty('scanoss.crypto.finder.output')
+    if (!outputPath) {
+        throw new GradleException('Missing -Dscanoss.crypto.finder.output for Crypto Finder Gradle export')
+    }
+
+    Project root = gradle.rootProject
+    String rootModule = normalizeGroup(root.group)
+    if (!rootModule) {
+        rootModule = root.name
+    }
+
+    Map<String, Project> projectByPath = [:]
+    root.allprojects.each { projectByPath[it.path] = it }
+
+    def javaProjects = root.allprojects.findAll { it.configurations.findByName('compileClasspath') != null }
+    def workspaceMembers = []
+    if (javaProjects.size() > 1) {
+        javaProjects.each { project ->
+            workspaceMembers << [
+                name: projectNodeName(project, rootModule),
+                dir: project.projectDir.absolutePath,
+            ]
+        }
+    }
+
+    Map<String, Map> dependenciesByKey = [:]
+    Map<String, List<Map>> graph = [:]
+    Set<String> expandedNodes = new LinkedHashSet<>()
+
+    Closure walkSelected
+    walkSelected = { selected, String parentKey, Project contextProject ->
+        def componentId = selected.id
+        Map childRef = null
+        String childKey = null
+        Project childProject = contextProject
+
+        if (componentId instanceof ModuleComponentIdentifier) {
+            childRef = toExternalRef(componentId)
+            childKey = childRef.module + '@' + childRef.version
+            if (!dependenciesByKey.containsKey(childKey)) {
+                dependenciesByKey[childKey] = [
+                    module: childRef.module,
+                    version: childRef.version,
+                    binaryPath: '',
+                    sourceArchivePath: '',
+                    sourceProjectPath: contextProject.path,
+                ]
+            }
+        } else if (componentId instanceof ProjectComponentIdentifier) {
+            def targetProject = projectByPath[componentId.projectPath]
+            if (targetProject == null) {
+                return
+            }
+            childRef = toProjectRef(targetProject, rootModule)
+            childKey = childRef.version ? (childRef.module + '@' + childRef.version) : childRef.module
+            childProject = targetProject
+        } else {
+            return
+        }
+
+        addGraphRef(graph, parentKey, childRef)
+        if (!expandedNodes.add(childKey)) {
+            return
+        }
+
+        selected.dependencies.each { dep ->
+            if (dep instanceof ResolvedDependencyResult) {
+                walkSelected(dep.selected, childKey, childProject)
+            }
+        }
+    }
+
+    javaProjects.each { project ->
+        def compileClasspath = project.configurations.findByName('compileClasspath')
+        if (compileClasspath == null) {
+            return
+        }
+
+        def projectRootKey = javaProjects.size() > 1 ? projectNodeName(project, rootModule) : rootModule
+        compileClasspath.incoming.resolutionResult.root.dependencies.each { dep ->
+            if (dep instanceof ResolvedDependencyResult) {
+                walkSelected(dep.selected, projectRootKey, project)
+            }
+        }
+
+        compileClasspath.resolvedConfiguration.lenientConfiguration.artifacts.each { artifact ->
+            def mv = artifact.moduleVersion.id
+            def module = mv.group + ':' + mv.name
+            def depKey = module + '@' + mv.version
+            def dep = dependenciesByKey[depKey]
+            if (dep == null) {
+                return
+            }
+            if (artifact.file != null && artifact.file.name.endsWith('.jar') && !dep.binaryPath) {
+                dep.binaryPath = artifact.file.absolutePath
+            }
+        }
+    }
+
+    dependenciesByKey.values().each { dep ->
+        def sourceProject = projectByPath[dep.sourceProjectPath] ?: root
+        def sourceJar = resolveSourceJar(sourceProject, dep.module, dep.version)
+        dep.sourceArchivePath = sourceJar != null ? sourceJar.absolutePath : ''
+        dep.remove('sourceProjectPath')
+    }
+
+    def payload = [
+        rootModule: rootModule,
+        workspaceMembers: workspaceMembers,
+        dependencies: dependenciesByKey.values().toList().sort { a, b ->
+            def left = a.module + '@' + a.version
+            def right = b.module + '@' + b.version
+            left <=> right
+        },
+        versionedGraph: graph,
+    ]
+
+    def outputFile = new File(outputPath)
+    outputFile.parentFile?.mkdirs()
+    outputFile.text = JsonOutput.prettyPrint(JsonOutput.toJson(payload))
+}
+
+gradle.projectsLoaded {
+    def root = gradle.rootProject
+    if (root.tasks.findByName('scanossCryptoFinderExport') == null) {
+        root.tasks.create(name: 'scanossCryptoFinderExport') {
+            doLast {
+                exportModel(gradle)
+            }
+        }
+    }
+}

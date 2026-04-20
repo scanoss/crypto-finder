@@ -20,13 +20,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 )
+
+var humanErrorOutputEnabled atomic.Bool
+
+func init() {
+	humanErrorOutputEnabled.Store(true)
+}
+
+// SetHumanErrorOutputEnabled controls whether Semgrep-compatible scanner errors
+// are rendered for humans on stderr.
+func SetHumanErrorOutputEnabled(enabled bool) {
+	humanErrorOutputEnabled.Store(enabled)
+}
 
 // ParseSemgrepCompatibleOutput parses Semgrep's JSON output into the SemgrepOutput schema.
 // This function can be reused by other compatible scanners (e.g., OpenGrep).
@@ -107,7 +121,7 @@ func LogSemgrepCompatibleErrors(errors []entities.SemgrepError) bool {
 	}
 
 	// Display errors
-	if len(errorItems) > 0 {
+	if len(errorItems) > 0 && humanErrorOutputEnabled.Load() {
 		pterm.Error.Println("Scanner Errors")
 		err := pterm.DefaultBulletList.WithItems(errorItems).WithWriter(os.Stderr).Render()
 		if err != nil {
@@ -124,16 +138,34 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 	parsedOutput, err := ParseSemgrepCompatibleOutput(stdout)
 	if err != nil {
 		log.Error().Err(err).Msgf("failed to parse %s output", scannerName)
-		return err
+		return failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			fmt.Sprintf("failed to parse %s output", scannerName),
+			failure.WithDetail("scanner", scannerName),
+		)
 	}
 
 	if LogSemgrepCompatibleErrors(parsedOutput.Errors) {
-		return fmt.Errorf("%s execution failed with exit code %d", scannerName, exitCode)
+		return failure.New(
+			failure.CodeScannerExecutionFailed,
+			failure.StageScan,
+			fmt.Sprintf("%s execution failed with exit code %d", scannerName, exitCode),
+			failure.WithDetail("scanner", scannerName),
+			failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+		)
 	}
 
 	log.Error().
 		Int("exit_code", exitCode).
 		Dur("duration", duration).
 		Msgf("%s failed with no error details", scannerName)
-	return fmt.Errorf("%s execution failed with exit code %d", scannerName, exitCode)
+	return failure.New(
+		failure.CodeScannerExecutionFailed,
+		failure.StageScan,
+		fmt.Sprintf("%s execution failed with exit code %d", scannerName, exitCode),
+		failure.WithDetail("scanner", scannerName),
+		failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+	)
 }

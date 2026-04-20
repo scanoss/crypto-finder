@@ -30,6 +30,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
@@ -78,14 +79,26 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	// Detect opengrep in PATH
 	path, err := lookPath(s.executablePath)
 	if err != nil {
-		return fmt.Errorf("opengrep not found in PATH: %w (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)", err)
+		return failure.Wrap(
+			err,
+			failure.CodeScannerUnavailable,
+			failure.StageScan,
+			"opengrep not found in PATH (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 	s.executablePath = path
 
 	// Get opengrep version
 	s.version, err = s.detectVersion()
 	if err != nil {
-		return fmt.Errorf("failed to detect opengrep version: %w", err)
+		return failure.Wrap(
+			err,
+			failure.CodeScannerInitializationFailed,
+			failure.StageScan,
+			"failed to detect opengrep version",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Validate minimum version
@@ -117,7 +130,12 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 // Scan executes OpenGrep against the target with the given rule paths.
 func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
-		return nil, fmt.Errorf("no rule paths provided")
+		return nil, failure.New(
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"no rule paths provided",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Apply timeout to context if not already set
@@ -145,7 +163,13 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Parse opengrep JSON output (uses same format as Semgrep)
 	opengrepResults, err := semgrep.ParseSemgrepCompatibleOutput(output)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse opengrep output: %w", err)
+		return nil, failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			"failed to parse opengrep output",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
@@ -250,9 +274,21 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 			log.Error().
 				Dur("duration", duration).
 				Msg("opengrep execution timed out")
-			return nil, stderr, fmt.Errorf("opengrep execution timed out after %v", s.timeout)
+			return nil, stderr, failure.New(
+				failure.CodeScannerTimeout,
+				failure.StageScan,
+				fmt.Sprintf("opengrep execution timed out after %v", s.timeout),
+				failure.WithRetryable(true),
+				failure.WithDetail("scanner", ScannerName),
+			)
 		}
-		return nil, stderr, fmt.Errorf("opengrep execution canceled: %w", ctx.Err())
+		return nil, stderr, failure.Wrap(
+			ctx.Err(),
+			failure.CodeScannerCancelled,
+			failure.StageScan,
+			"opengrep execution canceled",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// OpenGrep exit codes (same as Semgrep):

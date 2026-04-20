@@ -25,6 +25,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
@@ -104,7 +105,12 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		// Auto-detect languages so we can use only the needed rules. This significantly optimizes scanner performance.
 		languages, err = o.langDetector.Detect(opts.Target)
 		if err != nil {
-			return nil, fmt.Errorf("failed to detect languages: %w", err)
+			return nil, failure.WrapUnknown(
+				err,
+				failure.CodeLanguageDetectionFailed,
+				failure.StageScan,
+				"failed to detect languages",
+			)
 		}
 	}
 
@@ -116,7 +122,12 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	} else {
 		rulePaths, err = o.rulesManager.Load()
 		if err != nil {
-			return nil, fmt.Errorf("failed to load rules: %w", err)
+			return nil, failure.WrapUnknown(
+				err,
+				failure.CodeRulesLoadFailed,
+				failure.StageRules,
+				"failed to load rules",
+			)
 		}
 		log.Info().Int("count", len(rulePaths)).Msg("Loaded rules")
 
@@ -130,12 +141,24 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	// Step 3: Get scanner from registry
 	scannerInstance, err := o.scannerReg.Get(opts.ScannerName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get scanner: %w", err)
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeScannerUnavailable,
+			failure.StageScan,
+			"failed to get scanner",
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
 	}
 
 	// Step 4: Initialize scanner
 	if err := scannerInstance.Initialize(opts.ScannerConfig); err != nil {
-		return nil, fmt.Errorf("failed to initialize scanner '%s': %w", opts.ScannerName, err)
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeScannerInitializationFailed,
+			failure.StageScan,
+			fmt.Sprintf("failed to initialize scanner '%s'", opts.ScannerName),
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
 	}
 
 	// Step 5: Execute scan
@@ -146,13 +169,24 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 	report, err := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
 	if err != nil {
-		return nil, fmt.Errorf("scan failed: %w", err)
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeScannerExecutionFailed,
+			failure.StageScan,
+			"scan failed",
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
 	}
 
 	// Step 6: Process and enrich results
 	enrichedReport, err := o.processor.Process(report, languages, opts.Target)
 	if err != nil {
-		return nil, fmt.Errorf("failed to process results: %w", err)
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeScannerExecutionFailed,
+			failure.StageScan,
+			"failed to process results",
+		)
 	}
 
 	return enrichedReport, nil

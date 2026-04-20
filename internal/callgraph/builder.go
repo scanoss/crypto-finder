@@ -32,9 +32,10 @@ type Parser interface {
 
 // PackageDir associates a filesystem directory with its package/module path.
 type PackageDir struct {
-	Dir        string // Absolute filesystem path
-	ImportPath string // Package/module path (e.g., "crypto/aes" or "javax.crypto")
-	Version    string // Dependency version when applicable (e.g., "1.2.3")
+	Dir                  string // Absolute filesystem path
+	ImportPath           string // Package/module path (e.g., "crypto/aes" or "javax.crypto")
+	Version              string // Dependency version when applicable (e.g., "1.2.3")
+	CompiledArtifactPath string // Absolute path to a compiled artifact for type-only resolution
 }
 
 // Builder constructs a CallGraph from multiple packages using a language-specific parser.

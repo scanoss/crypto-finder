@@ -6,12 +6,18 @@ import "context"
 
 // Dependency represents a single resolved dependency with its source location.
 type Dependency struct {
-	// Module is the import path (e.g., "golang.org/x/crypto")
+	// Module is the import path (e.g., "golang.org/x/crypto" or "org.example:lib").
 	Module string
-	// Version is the resolved version (e.g., "v0.17.0")
+	// Version is the resolved version (e.g., "v0.17.0" or "1.2.3").
 	Version string
-	// Dir is the absolute filesystem path to the dependency source code
+	// Dir is the absolute filesystem path to the dependency source code.
 	Dir string
+	// CompiledArtifactPath is the absolute path to the compiled artifact used for
+	// type-only indexing when source scanning is unavailable or incomplete.
+	CompiledArtifactPath string
+	// SourceArchivePath is the absolute path to the downloaded source archive when
+	// available. The extracted source directory in Dir remains the preferred scan input.
+	SourceArchivePath string
 }
 
 // Ref identifies a dependency edge target without requiring a source directory.
@@ -62,6 +68,6 @@ type ResolveResult struct {
 type Resolver interface {
 	// Resolve returns all dependencies for the project at targetDir.
 	Resolve(ctx context.Context, targetDir string) (*ResolveResult, error)
-	// Ecosystem returns the name of the ecosystem (e.g., "go", "python", "rust")
+	// Ecosystem returns the name of the ecosystem (e.g., "go", "python", "java", "rust")
 	Ecosystem() string
 }

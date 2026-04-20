@@ -72,6 +72,7 @@ COPY --from=eclipse-temurin:11-jdk /opt/java/openjdk /opt/jdks/jdk11
 COPY --from=eclipse-temurin:17-jdk /opt/java/openjdk /opt/jdks/jdk17
 COPY --from=eclipse-temurin:21-jdk /opt/java/openjdk /opt/jdks/jdk21
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gradle \
     maven \
     && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/opt/jdks/jdk21

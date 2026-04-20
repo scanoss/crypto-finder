@@ -29,6 +29,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
@@ -66,7 +67,13 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	// Detect semgrep in PATH
 	path, err := exec.LookPath(s.executablePath)
 	if err != nil {
-		return fmt.Errorf("semgrep not found in PATH: %w (install with: pip install semgrep)", err)
+		return failure.Wrap(
+			err,
+			failure.CodeScannerUnavailable,
+			failure.StageScan,
+			"semgrep not found in PATH (install with: pip install semgrep)",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 	s.executablePath = path
 
@@ -98,7 +105,12 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 // Scan executes Semgrep against the target with the given rule paths.
 func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
-		return nil, fmt.Errorf("no rule paths provided")
+		return nil, failure.New(
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"no rule paths provided",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Apply timeout to context if not already set
@@ -125,7 +137,13 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 
 	semgrepResults, err := ParseSemgrepCompatibleOutput(output)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse semgrep output: %w", err)
+		return nil, failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			"failed to parse semgrep output",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	LogSemgrepCompatibleErrors(semgrepResults.Errors)
@@ -213,9 +231,21 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 			log.Error().
 				Dur("duration", duration).
 				Msg("semgrep execution timed out")
-			return nil, stderr, fmt.Errorf("semgrep execution timed out after %v", s.timeout)
+			return nil, stderr, failure.New(
+				failure.CodeScannerTimeout,
+				failure.StageScan,
+				fmt.Sprintf("semgrep execution timed out after %v", s.timeout),
+				failure.WithRetryable(true),
+				failure.WithDetail("scanner", ScannerName),
+			)
 		}
-		return nil, stderr, fmt.Errorf("semgrep execution canceled: %w", ctx.Err())
+		return nil, stderr, failure.Wrap(
+			ctx.Err(),
+			failure.CodeScannerCancelled,
+			failure.StageScan,
+			"semgrep execution canceled",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Semgrep exit codes:
@@ -238,7 +268,6 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 
 		err = HandleSemgrepCompatibleErrors(stdout, duration, exitCode, ScannerName)
 		if err != nil {
-			fmt.Println(err)
 			return nil, stderr, err
 		}
 

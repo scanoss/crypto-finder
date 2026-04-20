@@ -270,6 +270,10 @@ func TestMavenResolver_Resolve(t *testing.T) {
 		t.Fatalf("mkdir m2 repo: %v", err)
 	}
 	createZipArchive(t, jarPath, map[string]string{"src/Lib.java": "class Lib {}", "README.md": "x"})
+	compiledJarPath := filepath.Join(home, ".m2", "repository", "org", "example", "lib", "1.2.3", "lib-1.2.3.jar")
+	if err := os.WriteFile(compiledJarPath, []byte("jar"), 0o600); err != nil {
+		t.Fatalf("write compiled jar: %v", err)
+	}
 
 	binDir := t.TempDir()
 	writeExecutable(t, binDir, "mvn", `#!/bin/sh
@@ -326,6 +330,12 @@ exit 1
 	}
 	if withSources.Dir == "" {
 		t.Fatal("expected extracted source directory for dependency")
+	}
+	if withSources.CompiledArtifactPath != compiledJarPath {
+		t.Fatalf("CompiledArtifactPath = %q, want %q", withSources.CompiledArtifactPath, compiledJarPath)
+	}
+	if withSources.SourceArchivePath != jarPath {
+		t.Fatalf("SourceArchivePath = %q, want %q", withSources.SourceArchivePath, jarPath)
 	}
 	if _, err := os.Stat(filepath.Join(withSources.Dir, "src", "Lib.java")); err != nil {
 		t.Fatalf("expected extracted source file: %v", err)
