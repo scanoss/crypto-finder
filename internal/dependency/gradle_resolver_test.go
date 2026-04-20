@@ -101,6 +101,49 @@ exit 0
 	}
 }
 
+func TestGradleResolver_Resolve_DisablesParallelExecution(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "build.gradle"), []byte("plugins {}"), 0o600); err != nil {
+		t.Fatalf("write build.gradle: %v", err)
+	}
+
+	argsCapture := filepath.Join(t.TempDir(), "gradle-args.txt")
+	writeExecutable(t, project, "gradlew", fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > %q
+out=""
+for arg in "$@"; do
+  case "$arg" in
+    -Dscanoss.crypto.finder.output=*) out="${arg#-Dscanoss.crypto.finder.output=}" ;;
+  esac
+done
+cat > "$out" <<'JSON'
+{
+  "rootModule": "demo",
+  "workspaceMembers": [],
+  "dependencies": [],
+  "versionedGraph": {}
+}
+JSON
+exit 0
+`, argsCapture))
+
+	resolver := NewGradleResolver()
+	if _, err := resolver.Resolve(context.Background(), project); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	data, err := os.ReadFile(argsCapture)
+	if err != nil {
+		t.Fatalf("read args capture: %v", err)
+	}
+	if !strings.Contains(string(data), "--no-parallel\n") {
+		t.Fatalf("expected --no-parallel in Gradle args, got:\n%s", data)
+	}
+}
+
 func TestGradleResolver_Resolve_FallsBackToPathGradle(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

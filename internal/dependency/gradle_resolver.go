@@ -175,6 +175,7 @@ func (r *GradleResolver) exportDependencyModel(ctx context.Context, targetDir, c
 	args := []string{
 		"--init-script", initPath,
 		"-q",
+		"--no-parallel",
 		"--console=plain",
 		"-Dscanoss.crypto.finder.output=" + outPath,
 		gradleExportTaskName,
