@@ -72,7 +72,7 @@ func (r *MavenResolver) SetJavaRuntime(cfg javaruntime.Config) {
 
 // Ecosystem returns "java".
 func (r *MavenResolver) Ecosystem() string {
-	return "java"
+	return ecosystemJava
 }
 
 // Resolve uses Maven CLI to resolve all transitive dependencies for the project at targetDir.

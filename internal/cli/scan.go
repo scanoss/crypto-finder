@@ -48,7 +48,9 @@ import (
 
 const (
 	defaultScanner        = opengrep.ScannerName
-	defaultFormat         = "json"
+	formatJSON            = "json"
+	formatText            = "text"
+	defaultFormat         = formatJSON
 	defaultTimeout        = "10m"
 	defaultRulesetName    = "dca"
 	defaultRulesetVersion = "latest"
@@ -60,7 +62,7 @@ const (
 var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
 // SupportedFormats lists the output formats supported by the tool.
-var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
+var SupportedFormats = []string{formatJSON, "cyclonedx"} // Future: csv, html, sarif
 
 var (
 	scanRules           []string
@@ -639,7 +641,7 @@ func runScan(_ *cobra.Command, args []string) error {
 	findingsCount := scanutil.CountFindings(report)
 	filesCount := len(report.Findings)
 
-	if normalizedErrorOutputFormat() != "json" {
+	if normalizedErrorOutputFormat() != formatJSON {
 		err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to render scan summary")

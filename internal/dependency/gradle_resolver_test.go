@@ -207,6 +207,32 @@ exit 0
 	}
 }
 
+func TestCompareJavaMajors_FallsBackForNonNumericInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  int
+	}{
+		{name: "shorter string is lower", left: "9a", right: "10b", want: -1},
+		{name: "same length lexical compare", left: "21a", right: "21b", want: -1},
+		{name: "same fallback value", left: "17x", right: "17x", want: 0},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := compareJavaMajors(tt.left, tt.right); got != tt.want {
+				t.Fatalf("compareJavaMajors(%q, %q) = %d, want %d", tt.left, tt.right, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGradleResolver_Resolve_MultiProjectWorkspaceMembers(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

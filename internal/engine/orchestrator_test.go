@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/version"
@@ -245,8 +246,18 @@ func TestOrchestrator_Scan_LanguageDetectionError(t *testing.T) {
 		t.Fatal("expected error but got none")
 	}
 
-	if !errors.Is(err, errors.New("failed to detect languages: language detection failed")) && err.Error() != "failed to detect languages: language detection failed" {
-		t.Errorf("expected language detection error, got: %v", err)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("expected structured error, got: %v", err)
+	}
+	if structured.Code != failure.CodeLanguageDetectionFailed {
+		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeLanguageDetectionFailed)
+	}
+	if structured.Message != "failed to detect languages" {
+		t.Fatalf("Message = %q, want %q", structured.Message, "failed to detect languages")
+	}
+	if structured.Cause == nil || structured.Cause.Error() != "language detection failed" {
+		t.Fatalf("Cause = %v, want language detection failed", structured.Cause)
 	}
 }
 
@@ -347,8 +358,18 @@ func TestOrchestrator_Scan_ScannerInitializeError(t *testing.T) {
 		t.Fatal("expected error but got none")
 	}
 
-	if err.Error() != "failed to initialize scanner 'test-scanner': scanner initialization failed" {
-		t.Errorf("expected scanner initialization error, got: %v", err)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("expected structured error, got: %v", err)
+	}
+	if structured.Code != failure.CodeScannerInitializationFailed {
+		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeScannerInitializationFailed)
+	}
+	if structured.Message != "failed to initialize scanner 'test-scanner'" {
+		t.Fatalf("Message = %q, want %q", structured.Message, "failed to initialize scanner 'test-scanner'")
+	}
+	if structured.Cause == nil || structured.Cause.Error() != "scanner initialization failed" {
+		t.Fatalf("Cause = %v, want scanner initialization failed", structured.Cause)
 	}
 }
 
@@ -383,8 +404,18 @@ func TestOrchestrator_Scan_ScanExecutionError(t *testing.T) {
 		t.Fatal("expected error but got none")
 	}
 
-	if err.Error() != "scan failed: scan execution failed" {
-		t.Errorf("expected scan execution error, got: %v", err)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("expected structured error, got: %v", err)
+	}
+	if structured.Code != failure.CodeScannerExecutionFailed {
+		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeScannerExecutionFailed)
+	}
+	if structured.Message != "scan failed" {
+		t.Fatalf("Message = %q, want %q", structured.Message, "scan failed")
+	}
+	if structured.Cause == nil || structured.Cause.Error() != "scan execution failed" {
+		t.Fatalf("Cause = %v, want scan execution failed", structured.Cause)
 	}
 }
 

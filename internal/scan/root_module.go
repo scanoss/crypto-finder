@@ -68,22 +68,32 @@ func detectGoRootModule(targetDir string) string {
 }
 
 func detectJavaRootModule(targetDir string) string {
-	if data, err := os.ReadFile(filepath.Join(targetDir, "pom.xml")); err == nil {
-		var pom pomRootModule
-		if err := xml.Unmarshal(data, &pom); err == nil {
-			if pom.GroupID != "" {
-				return pom.GroupID
-			}
-			if pom.Parent.GroupID != "" {
-				return pom.Parent.GroupID
-			}
-			if pom.ArtifactID != "" {
-				return pom.ArtifactID
-			}
-		}
+	if pomName := detectPomRootModule(targetDir); pomName != "" {
+		return pomName
 	}
 
 	return detectGradleRootModule(targetDir)
+}
+
+func detectPomRootModule(targetDir string) string {
+	data, err := os.ReadFile(filepath.Join(targetDir, "pom.xml"))
+	if err != nil {
+		return ""
+	}
+
+	var pom pomRootModule
+	if err := xml.Unmarshal(data, &pom); err != nil {
+		return ""
+	}
+
+	switch {
+	case pom.GroupID != "":
+		return pom.GroupID
+	case pom.Parent.GroupID != "":
+		return pom.Parent.GroupID
+	default:
+		return pom.ArtifactID
+	}
 }
 
 var gradleRootNamePattern = regexp.MustCompile(`(?m)^\s*rootProject\.name\s*=\s*["']([^"']+)["']`)

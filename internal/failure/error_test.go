@@ -77,3 +77,23 @@ func TestMarshalJSON_UsesStructuredPayload(t *testing.T) {
 		t.Fatalf("RawError = %q", payload.RawError)
 	}
 }
+
+func TestToPayload_DefaultsMissingStructuredFields(t *testing.T) {
+	t.Parallel()
+
+	err := &Error{
+		Message: "missing fields",
+		Cause:   errors.New("root cause"),
+	}
+
+	payload := ToPayload(err)
+	if payload.Code != CodeUnknown {
+		t.Fatalf("Code = %q, want %q", payload.Code, CodeUnknown)
+	}
+	if payload.Stage != StageUnknown {
+		t.Fatalf("Stage = %q, want %q", payload.Stage, StageUnknown)
+	}
+	if payload.Cause != "root cause" {
+		t.Fatalf("Cause = %q, want root cause", payload.Cause)
+	}
+}

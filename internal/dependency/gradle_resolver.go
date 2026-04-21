@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,7 +63,7 @@ func (r *GradleResolver) SetJavaRuntime(cfg javaruntime.Config) {
 
 // Ecosystem returns "java".
 func (r *GradleResolver) Ecosystem() string {
-	return "java"
+	return ecosystemJava
 }
 
 // Resolve uses Gradle itself to export a machine-readable dependency model.
@@ -87,7 +88,7 @@ func (r *GradleResolver) Resolve(ctx context.Context, targetDir string) (*Resolv
 	if len(output.WorkspaceMembers) > 1 {
 		result.WorkspaceMembers = make([]WorkspaceMember, 0, len(output.WorkspaceMembers))
 		for _, member := range output.WorkspaceMembers {
-			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{Name: member.Name, Dir: member.Dir})
+			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember(member))
 		}
 	}
 
@@ -181,6 +182,7 @@ func (r *GradleResolver) exportDependencyModel(ctx context.Context, targetDir, c
 		gradleExportTaskName,
 	}
 
+	// #nosec G702 -- exec.CommandContext does not invoke a shell; command comes from the Gradle wrapper path or a PATH lookup for gradle.
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = targetDir
 	if err := r.configureGradleCommand(cmd, targetDir); err != nil {
@@ -199,6 +201,7 @@ func (r *GradleResolver) exportDependencyModel(ctx context.Context, targetDir, c
 		)
 	}
 
+	// #nosec G703 -- outPath is created by os.CreateTemp in this function.
 	data, err := os.ReadFile(outPath)
 	if err != nil {
 		return nil, failure.Wrap(
@@ -248,7 +251,7 @@ type gradleVersion struct {
 	patch int
 }
 
-var gradleDistributionVersionPattern = regexp.MustCompile(`gradle-([0-9]+(?:\.[0-9]+){1,2})-`)
+var gradleDistributionVersionPattern = regexp.MustCompile(`gradle-(\d+(?:\.\d+){1,2})-`)
 
 func (r *GradleResolver) resolveJavaSelection(targetDir string) (*javaruntime.Selection, error) {
 	wrapperVersion, hasWrapperVersion, err := detectGradleWrapperVersion(targetDir)
@@ -476,12 +479,32 @@ func compatibleJavaMajorsLabel(maxMajor string) string {
 }
 
 func compareJavaMajors(left, right string) int {
-	leftInt, _ := strconv.Atoi(left)
-	rightInt, _ := strconv.Atoi(right)
+	leftInt, leftErr := strconv.Atoi(left)
+	rightInt, rightErr := strconv.Atoi(right)
+	if leftErr != nil || rightErr != nil {
+		return compareNumericStrings(left, right)
+	}
 	switch {
 	case leftInt < rightInt:
 		return -1
 	case leftInt > rightInt:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareNumericStrings(left, right string) int {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	switch {
+	case len(left) < len(right):
+		return -1
+	case len(left) > len(right):
+		return 1
+	case left < right:
+		return -1
+	case left > right:
 		return 1
 	default:
 		return 0
@@ -521,7 +544,9 @@ func (r *GradleResolver) writeInitScript() (string, error) {
 		)
 	}
 	if _, err := file.WriteString(gradleExportInitScript); err != nil {
-		_ = file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return "", failure.Wrap(
 			err,
 			failure.CodeGradleExportFailed,

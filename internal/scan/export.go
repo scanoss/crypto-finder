@@ -246,7 +246,7 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		out.ScanMetadata.ToolName = result.Report.Tool.Name
 		out.ScanMetadata.ToolVersion = result.Report.Tool.Version
 	}
-	if result.Ecosystem == "java" && result.CallGraph != nil && result.CallGraph.JavaPlatformSignatures != nil {
+	if result.Ecosystem == ecosystemJava && result.CallGraph != nil && result.CallGraph.JavaPlatformSignatures != nil {
 		meta := result.CallGraph.JavaPlatformSignatures
 		out.ScanMetadata.JavaRequestedJDKMajor = meta.RequestedMajor
 		out.ScanMetadata.JavaRuntimeVersion = meta.RuntimeVersion
@@ -295,97 +295,122 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 // crypto operations. Every function that appears in any call chain is a
 // potential entry point — external code might call any of them.
 func buildEntryPointIndex(findingGraphs []callGraphExportFinding) []callGraphEntryPoint {
-	type findingRef struct {
-		findingID  string
-		matchedOp  *callGraphMatchedOperation
-		chainDepth int
-	}
-
-	type entryPointData struct {
-		class    string
-		method   string
-		findings map[string]findingRef // findingID → ref (keep shallowest depth)
-	}
-
 	index := make(map[string]*entryPointData)
-
-	for _, fg := range findingGraphs {
-		if fg.MatchedOperation == nil {
-			continue
-		}
-		for _, chain := range fg.CallChains {
-			if len(chain) == 0 {
-				continue
-			}
-			for pos, node := range chain {
-				fn := node.FunctionName
-				if fn == "" {
-					continue
-				}
-				depth := len(chain) - pos
-
-				ep, ok := index[fn]
-				if !ok {
-					class, method := splitFunctionName(fn)
-					ep = &entryPointData{
-						class:    class,
-						method:   method,
-						findings: make(map[string]findingRef),
-					}
-					index[fn] = ep
-				}
-
-				existing, exists := ep.findings[fg.FindingID]
-				if !exists || depth < existing.chainDepth {
-					ep.findings[fg.FindingID] = findingRef{
-						findingID:  fg.FindingID,
-						matchedOp:  fg.MatchedOperation,
-						chainDepth: depth,
-					}
-				}
-			}
-		}
+	for i := range findingGraphs {
+		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
 	}
-
-	result := make([]callGraphEntryPoint, 0, len(index))
-	for fn, ep := range index {
-		findings := make([]callGraphReachableFinding, 0, len(ep.findings))
-		for _, ref := range ep.findings {
-			findings = append(findings, callGraphReachableFinding{
-				FindingID: ref.findingID,
-				MatchedOperation: &callGraphMatchedOperation{
-					Kind:   ref.matchedOp.Kind,
-					Symbol: ref.matchedOp.Symbol,
-				},
-				ChainDepth:      ref.chainDepth,
-				FindingGraphRef: ref.findingID,
-			})
-		}
-		sort.Slice(findings, func(i, j int) bool {
-			return findings[i].FindingID < findings[j].FindingID
-		})
-		result = append(result, callGraphEntryPoint{
-			Function:          fn,
-			Class:             ep.class,
-			Method:            ep.method,
-			ReachableFindings: findings,
-		})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Function < result[j].Function
-	})
-
-	return result
+	return flattenEntryPointIndex(index)
 }
 
 // splitFunctionName extracts class and method from a fully qualified function name.
-// e.g., "org.apache.http.ssl.SSLContextBuilder.build" → ("org.apache.http.ssl.SSLContextBuilder", "build")
+// e.g., "org.apache.http.ssl.SSLContextBuilder.build" → ("org.apache.http.ssl.SSLContextBuilder", "build").
 func splitFunctionName(fn string) (class, method string) {
 	idx := strings.LastIndex(fn, ".")
 	if idx < 0 {
 		return "", fn
 	}
 	return fn[:idx], fn[idx+1:]
+}
+
+type entryPointFindingRef struct {
+	findingID  string
+	matchedOp  *callGraphMatchedOperation
+	chainDepth int
+}
+
+type entryPointData struct {
+	class    string
+	method   string
+	findings map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
+}
+
+func addFindingGraphToEntryPointIndex(index map[string]*entryPointData, fg *callGraphExportFinding) {
+	if fg == nil || fg.MatchedOperation == nil {
+		return
+	}
+	for _, chain := range fg.CallChains {
+		addEntryPointChain(index, fg, chain)
+	}
+}
+
+func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFinding, chain []callGraphChainNode) {
+	if len(chain) == 0 {
+		return
+	}
+	for pos, node := range chain {
+		fn := node.FunctionName
+		if fn == "" {
+			continue
+		}
+		recordEntryPointFinding(ensureEntryPointData(index, fn), fg, len(chain)-pos)
+	}
+}
+
+func ensureEntryPointData(index map[string]*entryPointData, fn string) *entryPointData {
+	if ep, ok := index[fn]; ok {
+		return ep
+	}
+
+	class, method := splitFunctionName(fn)
+	ep := &entryPointData{
+		class:    class,
+		method:   method,
+		findings: make(map[string]entryPointFindingRef),
+	}
+	index[fn] = ep
+	return ep
+}
+
+func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, depth int) {
+	if ep == nil || fg == nil || fg.MatchedOperation == nil {
+		return
+	}
+
+	existing, exists := ep.findings[fg.FindingID]
+	if exists && depth >= existing.chainDepth {
+		return
+	}
+
+	ep.findings[fg.FindingID] = entryPointFindingRef{
+		findingID:  fg.FindingID,
+		matchedOp:  fg.MatchedOperation,
+		chainDepth: depth,
+	}
+}
+
+func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphEntryPoint {
+	result := make([]callGraphEntryPoint, 0, len(index))
+	for fn, ep := range index {
+		result = append(result, callGraphEntryPoint{
+			Function:          fn,
+			Class:             ep.class,
+			Method:            ep.method,
+			ReachableFindings: flattenReachableFindings(ep.findings),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Function < result[j].Function
+	})
+	return result
+}
+
+func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGraphReachableFinding {
+	flattened := make([]callGraphReachableFinding, 0, len(findings))
+	for _, ref := range findings {
+		flattened = append(flattened, callGraphReachableFinding{
+			FindingID: ref.findingID,
+			MatchedOperation: &callGraphMatchedOperation{
+				Kind:   ref.matchedOp.Kind,
+				Symbol: ref.matchedOp.Symbol,
+			},
+			ChainDepth:      ref.chainDepth,
+			FindingGraphRef: ref.findingID,
+		})
+	}
+	sort.Slice(flattened, func(i, j int) bool {
+		return flattened[i].FindingID < flattened[j].FindingID
+	})
+	return flattened
 }
 
 func countExportFindingAssets(report *entities.InterimReport) int {
@@ -975,7 +1000,6 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 		strings.TrimSpace(result.RootModule): true,
 	}
 }
-
 
 func exportPackageSeparator(ecosystem string) string {
 	switch ecosystem {

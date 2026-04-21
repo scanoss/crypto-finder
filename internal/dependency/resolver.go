@@ -4,6 +4,8 @@ package dependency
 
 import "context"
 
+const ecosystemJava = "java"
+
 // Dependency represents a single resolved dependency with its source location.
 type Dependency struct {
 	// Module is the import path (e.g., "golang.org/x/crypto" or "org.example:lib").

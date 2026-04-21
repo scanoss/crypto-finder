@@ -76,9 +76,9 @@ func init() {
 func setupLogging() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	semgrep.SetHumanErrorOutputEnabled(normalizedErrorOutputFormat() != "json")
+	semgrep.SetHumanErrorOutputEnabled(normalizedErrorOutputFormat() != formatJSON)
 
-	if normalizedErrorOutputFormat() == "json" {
+	if normalizedErrorOutputFormat() == formatJSON {
 		pterm.DisableColor()
 		zerolog.SetGlobalLevel(zerolog.Disabled)
 		return
@@ -99,21 +99,23 @@ func setupLogging() {
 // Execute runs the root command and exits on error.
 func Execute() {
 	stderrFD, ok := utils.FDToInt(os.Stderr.Fd())
+	isTTY := ok && term.IsTerminal(stderrFD)
 	if !ok {
 		pterm.DisableColor()
 	}
 
 	// Disable pterm colors if not running in a TTY (e.g., piped output or non-interactive terminal)
-	if !ok || !term.IsTerminal(stderrFD) {
+	if !isTTY {
 		pterm.DisableColor()
 	}
 
 	if err := rootCmd.Execute(); err != nil {
-		if normalizedErrorOutputFormat() == "json" {
+		switch {
+		case normalizedErrorOutputFormat() == formatJSON:
 			renderJSONError(os.Stderr, err)
-		} else if !ok || !term.IsTerminal(stderrFD) {
+		case !isTTY:
 			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
-		} else {
+		default:
 			pterm.Error.Printfln("%s", err)
 		}
 		os.Exit(1)
@@ -122,7 +124,7 @@ func Execute() {
 
 func validateErrorOutputFormat(format string) error {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "text", "json":
+	case "", formatText, formatJSON:
 		return nil
 	default:
 		return failure.New(
@@ -137,7 +139,7 @@ func validateErrorOutputFormat(format string) error {
 func normalizedErrorOutputFormat() string {
 	format := strings.ToLower(strings.TrimSpace(errorOutputFormat))
 	if format == "" {
-		return "text"
+		return formatText
 	}
 	return format
 }
@@ -146,7 +148,14 @@ func renderJSONError(output io.Writer, err error) {
 	data, marshalErr := failure.MarshalJSON(err)
 	if marshalErr != nil {
 		fallback := failure.ToPayload(err)
-		data, _ = json.Marshal(fallback)
+		fallbackData, fallbackErr := json.Marshal(fallback)
+		if fallbackErr != nil {
+			data = []byte(fmt.Sprintf(`{"code":%q,"stage":%q,"retryable":false,"message":%q}`, failure.CodeUnknown, failure.StageUnknown, err.Error()))
+		} else {
+			data = fallbackData
+		}
 	}
-	_, _ = output.Write(append(data, '\n'))
+	if _, writeErr := output.Write(append(data, '\n')); writeErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+	}
 }

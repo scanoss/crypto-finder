@@ -21,11 +21,6 @@ type JavaRuntimeConfigurer interface {
 	SetJavaRuntime(cfg javaruntime.Config)
 }
 
-type javaBuildResolver interface {
-	Resolve(ctx context.Context, targetDir string) (*ResolveResult, error)
-	SetJavaRuntime(cfg javaruntime.Config)
-}
-
 // JavaResolver delegates Java dependency resolution to the build-tool-specific
 // resolver detected at the project root.
 type JavaResolver struct {
@@ -44,7 +39,7 @@ func NewJavaResolver() *JavaResolver {
 
 // Ecosystem returns "java".
 func (r *JavaResolver) Ecosystem() string {
-	return "java"
+	return ecosystemJava
 }
 
 // SetJavaRuntime configures which Java runtime Java build-tool resolvers should use.

@@ -1,3 +1,4 @@
+// Package failure defines structured machine-readable terminal errors.
 package failure
 
 import (
@@ -12,6 +13,7 @@ type Code string
 // Stage identifies the pipeline stage that produced the failure.
 type Stage string
 
+// Failure codes are stable machine-readable identifiers for terminal errors.
 const (
 	CodeUnknown                     Code = "unknown_error"
 	CodeInvalidArguments            Code = "invalid_arguments"
@@ -24,7 +26,7 @@ const (
 	CodeScannerInitializationFailed Code = "scanner_initialization_failed"
 	CodeScannerExecutionFailed      Code = "scanner_execution_failed"
 	CodeScannerTimeout              Code = "scanner_timeout"
-	CodeScannerCancelled            Code = "scanner_cancelled"
+	CodeScannerCancelled            Code = "scanner_canceled"
 	CodeScannerOutputParseFailed    Code = "scanner_output_parse_failed"
 	CodeLanguageDetectionFailed     Code = "language_detection_failed"
 	CodeDependencyResolutionFailed  Code = "dependency_resolution_failed"
@@ -40,6 +42,7 @@ const (
 	CodeFindingsDetected            Code = "findings_detected"
 )
 
+// Failure stages identify which pipeline phase produced a terminal error.
 const (
 	StageUnknown    Stage = "unknown"
 	StageInput      Stage = "input"
@@ -146,8 +149,8 @@ func WrapUnknown(err error, code Code, stage Stage, message string, opts ...Opti
 	if err == nil {
 		return nil
 	}
-	if _, ok := As(err); ok {
-		return Prefix(err, message)
+	if structured, ok := As(err); ok {
+		return Prefix(structured, message)
 	}
 	return Wrap(err, code, stage, message, opts...)
 }
@@ -208,29 +211,7 @@ func ToPayload(err error) Payload {
 
 	raw := err.Error()
 	if structured, ok := As(err); ok {
-		payload := Payload{
-			Code:      structured.Code,
-			Stage:     structured.Stage,
-			Retryable: structured.Retryable,
-			Message:   structured.Error(),
-			Details:   cloneDetails(structured.Details),
-		}
-		if structured.Cause != nil {
-			payload.Cause = structured.Cause.Error()
-		}
-		if raw != "" && raw != payload.Message {
-			payload.RawError = raw
-		}
-		if payload.Code == "" {
-			payload.Code = CodeUnknown
-		}
-		if payload.Stage == "" {
-			payload.Stage = StageUnknown
-		}
-		if payload.Message == "" {
-			payload.Message = raw
-		}
-		return payload
+		return structuredPayload(structured, raw)
 	}
 
 	return Payload{
@@ -244,6 +225,32 @@ func ToPayload(err error) Payload {
 // MarshalJSON serializes any error into the machine-readable payload.
 func MarshalJSON(err error) ([]byte, error) {
 	return json.Marshal(ToPayload(err))
+}
+
+func structuredPayload(structured *Error, raw string) Payload {
+	payload := Payload{
+		Code:      structured.Code,
+		Stage:     structured.Stage,
+		Retryable: structured.Retryable,
+		Message:   structured.Error(),
+		Details:   cloneDetails(structured.Details),
+	}
+	if structured.Cause != nil {
+		payload.Cause = structured.Cause.Error()
+	}
+	if raw != "" && raw != payload.Message {
+		payload.RawError = raw
+	}
+	if payload.Code == "" {
+		payload.Code = CodeUnknown
+	}
+	if payload.Stage == "" {
+		payload.Stage = StageUnknown
+	}
+	if payload.Message == "" {
+		payload.Message = raw
+	}
+	return payload
 }
 
 func cloneDetails(details map[string]string) map[string]string {

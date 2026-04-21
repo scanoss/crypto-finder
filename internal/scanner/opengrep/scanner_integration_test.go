@@ -18,6 +18,7 @@ package opengrep
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -25,30 +26,61 @@ import (
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
 // checkOpengrepAvailable checks if opengrep is installed.
 func checkOpengrepAvailable(t *testing.T) {
 	t.Helper()
-	_, err := exec.LookPath("opengrep")
+	path, err := exec.LookPath("opengrep")
 	if err != nil {
 		t.Skip("opengrep not found in PATH - skipping integration test (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)")
+	}
+
+	cmd := exec.CommandContext(context.Background(), path, "--version")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return
+	}
+
+	if isOpengrepEnvironmentIssue(err, string(output)) {
+		t.Skipf("opengrep is present but unusable in this environment: %s", strings.TrimSpace(string(output)))
 	}
 }
 
 func skipIfOpengrepEnvironmentIssue(t *testing.T, err error) {
 	t.Helper()
-	if err == nil {
-		return
-	}
 
-	errMsg := err.Error()
-	if strings.Contains(errMsg, "exit status") ||
-		strings.Contains(errMsg, "operation not permitted") ||
-		strings.Contains(errMsg, "permission denied") {
+	if isOpengrepEnvironmentIssue(err, "") {
 		t.Skipf("opengrep is present but unusable in this environment: %v", err)
 	}
+}
+
+func isOpengrepEnvironmentIssue(err error, output string) bool {
+	for _, text := range opengrepIssueTexts(err, output) {
+		if strings.Contains(text, "operation not permitted") ||
+			strings.Contains(text, "permission denied") ||
+			strings.Contains(text, "semgrep.log") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func opengrepIssueTexts(err error, output string) []string {
+	texts := make([]string, 0, 4)
+	if output != "" {
+		texts = append(texts, strings.ToLower(output))
+	}
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		texts = append(texts, strings.ToLower(current.Error()))
+	}
+	if structured, ok := failure.As(err); ok && structured.Cause != nil {
+		texts = append(texts, strings.ToLower(structured.Cause.Error()))
+	}
+	return texts
 }
 
 func initializeScannerOrSkip(t *testing.T, config scanner.Config) *Scanner {

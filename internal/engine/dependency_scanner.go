@@ -220,7 +220,8 @@ type dependencyScanSummary struct {
 
 func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummary {
 	summary := dependencyScanSummary{}
-	for _, result := range depResults {
+	for i := range depResults {
+		result := &depResults[i]
 		switch result.status {
 		case depScanStatusScanned:
 			summary.depsScanned++
@@ -264,12 +265,12 @@ func (ds *DependencyScanner) attributeDependencyResults(
 	tracer *callgraph.Tracer,
 	userPackages map[string]bool,
 ) {
-	for _, result := range depResults {
+	for i := range depResults {
+		result := &depResults[i]
 		if result.status != depScanStatusScanned || result.report == nil {
 			continue
 		}
-		dep := result.dep
-		ds.attributeFindings(result.report, &dep, target, tracer, userPackages)
+		ds.attributeFindings(result.report, &result.dep, target, tracer, userPackages)
 	}
 }
 
@@ -493,7 +494,8 @@ func (ds *DependencyScanner) collectPackageSets(
 	}
 
 	// Split deps: findings deps get full source parsing; others get bytecode-only type index.
-	for _, result := range depResults {
+	for i := range depResults {
+		result := &depResults[i]
 		pkg := callgraph.PackageDir{
 			Dir:                  result.dep.Dir,
 			ImportPath:           result.dep.Module,
@@ -569,7 +571,8 @@ func (ds *DependencyScanner) mergeReports(
 	merged.Findings = append(merged.Findings, userReport.Findings...)
 
 	// Include all dependency findings
-	for _, result := range depResults {
+	for i := range depResults {
+		result := &depResults[i]
 		if result.status != depScanStatusScanned || result.report == nil {
 			continue
 		}

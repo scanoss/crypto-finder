@@ -209,6 +209,7 @@ func (c *DiskBytecodeIndexCache) Put(_ context.Context, key string, value *Cache
 }
 
 func renameBytecodeCacheFile(tmpPath, path string) error {
+	// #nosec G703 -- tmpPath is created by os.CreateTemp and path is derived from a sanitized cache filename.
 	err := os.Rename(tmpPath, path)
 	if err == nil {
 		return nil
@@ -221,6 +222,7 @@ func renameBytecodeCacheFile(tmpPath, path string) error {
 	if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 		return fmt.Errorf("failed to replace existing cache file: %w", errors.Join(err, removeErr))
 	}
+	// #nosec G703 -- tmpPath is created by os.CreateTemp and path is derived from a sanitized cache filename.
 	if retryErr := os.Rename(tmpPath, path); retryErr != nil {
 		return fmt.Errorf("failed to rename cache file after replacing existing file: %w", errors.Join(err, retryErr))
 	}
