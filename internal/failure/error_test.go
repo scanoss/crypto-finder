@@ -173,11 +173,11 @@ func TestFailureHelpers_WrapPrefixAsAndPayloadFallbacks(t *testing.T) {
 	if got := Prefix(nil, "ctx"); got != nil {
 		t.Fatalf("Prefix(nil) = %v, want nil", got)
 	}
-	if got := Prefix(plain, ""); got != plain {
-		t.Fatal("Prefix with empty message should return original error")
+	if got := Prefix(plain, ""); !errors.Is(got, plain) || errors.Unwrap(got) != nil {
+		t.Fatalf("Prefix with empty message should return original error, got %v", got)
 	}
-	if got := Prefix(plain, plain.Error()); got != plain {
-		t.Fatal("Prefix with identical message should return original error")
+	if got := Prefix(plain, plain.Error()); !errors.Is(got, plain) || errors.Unwrap(got) != nil {
+		t.Fatalf("Prefix with identical message should return original error, got %v", got)
 	}
 
 	if structured, ok := As(nil); ok || structured != nil {
@@ -214,7 +214,7 @@ func TestFailureHelpers_WithDetailsUnwrapAndStructuredPayloadFallbackMessage(t *
 
 	cause := errors.New("wrapped cause")
 	wrapped := &Error{Cause: cause}
-	if got := wrapped.Unwrap(); got != cause {
+	if got := wrapped.Unwrap(); !errors.Is(got, cause) || errors.Unwrap(got) != nil {
 		t.Fatalf("Unwrap() = %v, want %v", got, cause)
 	}
 
