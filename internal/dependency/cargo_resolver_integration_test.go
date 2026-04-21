@@ -37,19 +37,19 @@ if [ "$1" = "metadata" ]; then
   "resolve": {
     "nodes": [
       {
-        "id": "my-app 0.1.0 (path+file:///workspace/my-app)",
+        "id": "path+file:///workspace/my-app#my-app@0.1.0",
         "deps": [
-          {"pkg": "crypto-lib 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)"}
+          {"pkg": "registry+https://github.com/rust-lang/crates.io-index#crypto-lib@1.2.3"}
         ]
       },
       {
-        "id": "crypto-lib 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+        "id": "registry+https://github.com/rust-lang/crates.io-index#crypto-lib@1.2.3",
         "deps": [
-          {"pkg": "serde@1.0.0"}
+          {"pkg": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0"}
         ]
       },
       {
-        "id": "serde@1.0.0",
+        "id": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
         "deps": []
       }
     ]
@@ -83,6 +83,12 @@ exit 1
 	}
 	if len(result.Graph["crypto-lib"]) != 1 || result.Graph["crypto-lib"][0] != "serde" {
 		t.Fatalf("unexpected graph for crypto-lib: %#v", result.Graph)
+	}
+	if len(result.VersionedGraph["my-app@0.1.0"]) != 1 || result.VersionedGraph["my-app@0.1.0"][0] != (Ref{Module: "crypto-lib", Version: "1.2.3"}) {
+		t.Fatalf("unexpected versioned graph for root: %#v", result.VersionedGraph)
+	}
+	if len(result.VersionedGraph["crypto-lib@1.2.3"]) != 1 || result.VersionedGraph["crypto-lib@1.2.3"][0] != (Ref{Module: "serde", Version: "1.0.0"}) {
+		t.Fatalf("unexpected versioned graph for crypto-lib: %#v", result.VersionedGraph)
 	}
 }
 

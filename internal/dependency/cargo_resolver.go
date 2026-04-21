@@ -65,8 +65,9 @@ func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 	}
 
 	result := &ResolveResult{
-		Dependencies: make([]Dependency, 0, len(meta.Packages)),
-		Graph:        make(map[string][]string),
+		Dependencies:   make([]Dependency, 0, len(meta.Packages)),
+		Graph:          make(map[string][]string),
+		VersionedGraph: make(map[string][]Ref),
 	}
 
 	// Build a lookup from package ID prefix to package name for graph building
@@ -96,22 +97,30 @@ func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 
 	// Build ID→name mapping for resolve graph
 	for _, node := range meta.Resolve.Nodes {
-		name := cargoPackageNameFromID(node.ID)
-		pkgByID[node.ID] = name
+		ref := cargoPackageRefFromID(node.ID)
+		pkgByID[node.ID] = ref.Module
 	}
 
 	// Build dependency graph from resolve nodes
 	for _, node := range meta.Resolve.Nodes {
-		parentName := pkgByID[node.ID]
+		parentRef := cargoPackageRefFromID(node.ID)
+		parentName := parentRef.Module
 		if parentName == "" {
 			continue
 		}
 		for _, dep := range node.Deps {
-			childName := pkgByID[dep.Pkg]
+			childRef := cargoPackageRefFromID(dep.Pkg)
+			childName := childRef.Module
+			if childName == "" {
+				childName = pkgByID[dep.Pkg]
+			}
 			if childName == "" {
 				childName = cargoPackageNameFromID(dep.Pkg)
 			}
 			result.Graph[parentName] = append(result.Graph[parentName], childName)
+			if parentKey := parentRef.Key(); parentKey != "" && childRef.Module != "" {
+				result.VersionedGraph[parentKey] = append(result.VersionedGraph[parentKey], childRef)
+			}
 		}
 	}
 
@@ -144,17 +153,40 @@ func (r *CargoResolver) cargoMetadata(ctx context.Context, dir string) (*cargoMe
 	return &meta, nil
 }
 
+// cargoPackageRefFromID extracts the package name and version from a cargo package ID.
+// Current Cargo emits package IDs like:
+//   - "path+file:///tmp/app#app@0.1.0"
+//   - "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0"
+//
+// Older formats may look like:
+//   - "ring 0.17.8 (registry+https://github.com/rust-lang/crates.io-index)"
+//   - "ring@0.17.8"
+func cargoPackageRefFromID(id string) Ref {
+	if hashIdx := strings.LastIndex(id, "#"); hashIdx != -1 && hashIdx+1 < len(id) {
+		id = id[hashIdx+1:]
+	}
+
+	if atIdx := strings.LastIndex(id, "@"); atIdx != -1 {
+		return Ref{
+			Module:  id[:atIdx],
+			Version: id[atIdx+1:],
+		}
+	}
+
+	fields := strings.Fields(id)
+	if len(fields) >= 2 {
+		return Ref{
+			Module:  fields[0],
+			Version: fields[1],
+		}
+	}
+
+	return Ref{Module: id}
+}
+
 // cargoPackageNameFromID extracts the package name from a cargo package ID.
 // IDs look like: "ring 0.17.8 (registry+https://github.com/rust-lang/crates.io-index)"
 // or in newer formats: "ring@0.17.8" or just "ring 0.17.8".
 func cargoPackageNameFromID(id string) string {
-	// Handle "name@version" format
-	if idx := strings.Index(id, "@"); idx != -1 {
-		return id[:idx]
-	}
-	// Handle "name version (...)" format
-	if idx := strings.Index(id, " "); idx != -1 {
-		return id[:idx]
-	}
-	return id
+	return cargoPackageRefFromID(id).Module
 }

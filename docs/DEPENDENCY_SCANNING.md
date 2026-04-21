@@ -1109,7 +1109,7 @@ The `JavaParser` resolves method calls through import analysis:
 
 ### Python (pip)
 
-- **Resolver**: [`PipResolver`](../internal/dependency/pip_resolver.go) — uses `pip list --format=json` + `pip show` to resolve packages
+- **Resolver**: [`PipResolver`](../internal/dependency/pip_resolver.go) — uses `python -m pip list --format=json` + `python -m pip show` to resolve packages with the same interpreter used for metadata lookups
 - **Parser**: [`PythonParser`](../internal/callgraph/python_parser.go) — syntactic parsing of Python source
 - **Manifests**: `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py`
 - **Module format**: Python package name (e.g., `cryptography`)
@@ -1121,9 +1121,9 @@ The `JavaParser` resolves method calls through import analysis:
 The `PipResolver` executes the following steps:
 
 1. **Root module detection** — reads `pyproject.toml` for `[project] name`, falls back to directory name
-2. **`pip list --format=json`** — lists all installed packages with versions
-3. **`pip show <packages>`** — gets location and dependency info for each package (batched in groups of 50)
-4. **Distribution-to-import mapping** — uses `importlib.metadata.packages_distributions()` (Python 3.10+) to map distribution names to import names. Falls back to scanning `*.dist-info` directories (`top_level.txt` → `RECORD` file) for older Python versions
+2. **`python -m pip list --format=json`** — lists all installed packages with versions
+3. **`python -m pip show <packages>`** — gets location and dependency info for each package (batched in groups of 50)
+4. **Distribution-to-import mapping** — uses that SAME interpreter's `importlib.metadata.packages_distributions()` (Python 3.10+) to map distribution names to import names. Falls back to scanning `*.dist-info` directories (`top_level.txt` → `RECORD` file) for older Python versions
 5. **Package directory resolution** — uses the import mapping, then heuristic name normalization, to find the source directory. Single-file modules (e.g., `six.py`) and C-extension packages are skipped
 
 #### Python Call Resolution
@@ -1265,7 +1265,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 - **Multi-module Maven partial resolution** — Multi-module Maven projects are supported via a three-tier fallback strategy. Tier 3 (`mvn install -DskipTests`) requires compilation and may fail if the project needs specific JDK versions or build tools not available in the scan environment.
 
 ### Python-specific
-- **Requires `pip` in PATH** — The resolver shells out to `pip list` and `pip show`; the correct virtual environment must be activated.
+- **Requires a Python interpreter with `pip` available** — The resolver now runs `python -m pip` and `importlib.metadata` through the same interpreter. If `VIRTUAL_ENV` is set, that environment's Python is preferred; otherwise it falls back to `python3` then `python` from PATH.
 - **Single-file modules skipped** — Packages distributed as a single `.py` file (e.g., `six.py`) are skipped since there is no directory to scan.
 - **C-extension packages skipped** — Packages without Python source on disk (compiled C extensions) cannot be scanned.
 - **Distribution-to-import mapping** — Relies on `importlib.metadata` (Python 3.10+) or `*.dist-info` fallback; packages with non-standard layouts may not be resolved.

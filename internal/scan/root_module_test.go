@@ -118,6 +118,16 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
+	t.Run("python-poetry", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[tool.poetry]\nname = 'poetry-demo'\n"), 0o600); err != nil {
+			t.Fatalf("write pyproject.toml: %v", err)
+		}
+		if got := DetectRootModule(dir, "python"); got != "poetry-demo" {
+			t.Fatalf("DetectRootModule(python poetry) = %q, want poetry-demo", got)
+		}
+	})
+
 	t.Run("empty-ecosystem-fallback", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "plain-repo")
 		if err := os.MkdirAll(dir, 0o755); err != nil {

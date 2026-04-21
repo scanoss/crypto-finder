@@ -1,10 +1,12 @@
 package dependency
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +98,14 @@ name = 'another-lib'
 			want: "another-lib",
 		},
 		{
+			name: "poetry pyproject",
+			content: `[tool.poetry]
+name = "poetry-lib"
+version = "1.0.0"
+`,
+			want: "poetry-lib",
+		},
+		{
 			name:    "no project section",
 			content: `[build-system]\nrequires = ["setuptools"]`,
 			want:    "",
@@ -141,6 +151,124 @@ func TestPipResolver_Ecosystem(t *testing.T) {
 	r := NewPipResolver()
 	if got := r.Ecosystem(); got != "python" {
 		t.Errorf("Ecosystem() = %q, want %q", got, "python")
+	}
+}
+
+func TestPipResolver_ResolvePythonExecutable(t *testing.T) {
+	t.Run("prefers virtualenv python", func(t *testing.T) {
+		r := NewPipResolver()
+		venv := t.TempDir()
+		pythonPath := filepath.Join(venv, "bin", "python")
+		if err := os.MkdirAll(filepath.Dir(pythonPath), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(pythonPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write python: %v", err)
+		}
+		t.Setenv("VIRTUAL_ENV", venv)
+
+		got, err := r.resolvePythonExecutable()
+		if err != nil {
+			t.Fatalf("resolvePythonExecutable: %v", err)
+		}
+		if got != pythonPath {
+			t.Fatalf("resolvePythonExecutable() = %q, want %q", got, pythonPath)
+		}
+	})
+
+	t.Run("falls back to python3 then python", func(t *testing.T) {
+		r := NewPipResolver()
+		tmpBin := t.TempDir()
+		writeExecutable(t, tmpBin, "python3", "#!/bin/sh\n")
+		prependPath(t, tmpBin)
+		t.Setenv("VIRTUAL_ENV", "")
+
+		got, err := r.resolvePythonExecutable()
+		if err != nil {
+			t.Fatalf("resolvePythonExecutable: %v", err)
+		}
+		if got != filepath.Join(tmpBin, "python3") {
+			t.Fatalf("resolvePythonExecutable() = %q, want %q", got, filepath.Join(tmpBin, "python3"))
+		}
+	})
+
+	t.Run("uses python when python3 is unavailable", func(t *testing.T) {
+		r := NewPipResolver()
+		r.lookPath = func(file string) (string, error) {
+			if file == "python3" {
+				return "", os.ErrNotExist
+			}
+			if file == "python" {
+				return "/mock/python", nil
+			}
+			return "", os.ErrNotExist
+		}
+		t.Setenv("VIRTUAL_ENV", "")
+
+		got, err := r.resolvePythonExecutable()
+		if err != nil {
+			t.Fatalf("resolvePythonExecutable: %v", err)
+		}
+		if got != "/mock/python" {
+			t.Fatalf("resolvePythonExecutable() = %q, want /mock/python", got)
+		}
+	})
+}
+
+func TestPipResolver_Resolve_UsesSameInterpreterForPipAndMetadata(t *testing.T) {
+	tmpBin := t.TempDir()
+	logPath := filepath.Join(tmpBin, "python-invocations.log")
+	sitePackages := filepath.Join(t.TempDir(), "site-packages")
+	if err := os.MkdirAll(filepath.Join(sitePackages, "cryptography"), 0o755); err != nil {
+		t.Fatalf("mkdir cryptography package: %v", err)
+	}
+	writeExecutable(t, tmpBin, "python3", `#!/bin/sh
+printf '%s\n' "$@" >> "`+logPath+`"
+if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "list" ]; then
+  cat <<'JSON'
+[{"name":"cryptography","version":"41.0.7"}]
+JSON
+  exit 0
+fi
+if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "show" ]; then
+  cat <<'EOF'
+Name: cryptography
+Version: 41.0.7
+Location: `+sitePackages+`
+Requires: cffi
+EOF
+  exit 0
+fi
+if [ "$1" = "-c" ]; then
+  cat <<'JSON'
+{"cryptography":["cryptography"]}
+JSON
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1
+`)
+	prependPath(t, tmpBin)
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "pyproject.toml"), []byte("[project]\nname='demo'\n"), 0o600); err != nil {
+		t.Fatalf("write pyproject.toml: %v", err)
+	}
+
+	r := NewPipResolver()
+	if _, err := r.Resolve(context.Background(), projectDir); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read invocation log: %v", err)
+	}
+	logText := string(data)
+	if strings.Count(logText, "-m\npip\n") < 2 {
+		t.Fatalf("expected pip to be invoked through python -m pip for list and show, got log:\n%s", logText)
+	}
+	if !strings.Contains(logText, "-c\n") {
+		t.Fatalf("expected metadata lookup through the same interpreter, got log:\n%s", logText)
 	}
 }
 

@@ -138,6 +138,129 @@ func TestDetectEcosystem(t *testing.T) {
 		}
 	})
 
+	writePyproject := func(t *testing.T, dir, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(body), 0o600); err != nil {
+			t.Fatalf("write pyproject.toml: %v", err)
+		}
+	}
+
+	// Polyglot: Python packaging that embeds Rust via PyO3/setuptools-rust/maturin.
+	// These cases mirror pyca/cryptography, pydantic-core, orjson, polars, etc.
+
+	t.Run("polyglot-python-rust-with-project-table", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, `
+[project]
+name = "my-pkg"
+version = "0.1.0"
+`)
+		if got := DetectEcosystem(dir); got != "python" {
+			t.Fatalf("DetectEcosystem() = %q, want python (pyproject declares [project])", got)
+		}
+	})
+
+	t.Run("polyglot-python-rust-with-setuptools-rust-backend", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, `
+[build-system]
+requires = ["setuptools >= 77.0", "setuptools-rust>=1.7.0"]
+build-backend = "setuptools.build_meta"
+`)
+		if got := DetectEcosystem(dir); got != "python" {
+			t.Fatalf("DetectEcosystem() = %q, want python (setuptools-rust in requires)", got)
+		}
+	})
+
+	t.Run("polyglot-python-rust-with-maturin-tool-section", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, `
+[tool.maturin]
+module-name = "my_pkg._native"
+`)
+		if got := DetectEcosystem(dir); got != "python" {
+			t.Fatalf("DetectEcosystem() = %q, want python ([tool.maturin] present)", got)
+		}
+	})
+
+	t.Run("polyglot-python-rust-with-hatchling-backend", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, `
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`)
+		if got := DetectEcosystem(dir); got != "python" {
+			t.Fatalf("DetectEcosystem() = %q, want python (hatchling in requires)", got)
+		}
+	})
+
+	t.Run("polyglot-rust-with-pyproject-dev-tooling-only", func(t *testing.T) {
+		// pyproject.toml used only for dev tooling (linter config, black/ruff settings)
+		// with no Python package markers → Rust wins (Cargo.toml is authoritative).
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, `
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+target-version = "py311"
+`)
+		if got := DetectEcosystem(dir); got != "rust" {
+			t.Fatalf("DetectEcosystem() = %q, want rust (pyproject has no Python package markers)", got)
+		}
+	})
+
+	t.Run("polyglot-rust-with-empty-pyproject", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, "")
+		if got := DetectEcosystem(dir); got != "rust" {
+			t.Fatalf("DetectEcosystem() = %q, want rust (empty pyproject)", got)
+		}
+	})
+
+	t.Run("polyglot-rust-with-malformed-pyproject", func(t *testing.T) {
+		// Malformed TOML must not panic; fall back to existing precedence (Rust wins).
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writePyproject(t, dir, "this is : not = valid [toml")
+		if got := DetectEcosystem(dir); got != "rust" {
+			t.Fatalf("DetectEcosystem() = %q, want rust (malformed pyproject falls back)", got)
+		}
+	})
+
+	t.Run("go-beats-python-pyproject", func(t *testing.T) {
+		// Regression: go.mod at root remains authoritative even if pyproject declares a Python package.
+		dir := t.TempDir()
+		writeFile(t, dir, "go.mod")
+		writePyproject(t, dir, `
+[project]
+name = "dev-tooling"
+`)
+		if got := DetectEcosystem(dir); got != "go" {
+			t.Fatalf("DetectEcosystem() = %q, want go", got)
+		}
+	})
+
+	t.Run("java-beats-python-pyproject", func(t *testing.T) {
+		// Regression: Java manifest wins over pyproject for now (Python↔Java polyglot out of scope).
+		dir := t.TempDir()
+		writeFile(t, dir, "pom.xml")
+		writePyproject(t, dir, `
+[project]
+name = "dev-tooling"
+`)
+		if got := DetectEcosystem(dir); got != "java" {
+			t.Fatalf("DetectEcosystem() = %q, want java", got)
+		}
+	})
+
 	t.Run("none", func(t *testing.T) {
 		dir := t.TempDir()
 		if got := DetectEcosystem(dir); got != "" {

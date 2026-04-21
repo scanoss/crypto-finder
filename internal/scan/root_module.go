@@ -41,7 +41,7 @@ func DetectRootModule(targetDir, ecosystem string) string {
 			return name
 		}
 	case ecosystemPython:
-		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]"); name != "" {
+		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]"); name != "" {
 			return name
 		}
 	}
@@ -112,18 +112,23 @@ func detectGradleRootModule(targetDir string) string {
 	return ""
 }
 
-func detectSectionName(path, section string) string {
+func detectSectionName(path string, sections ...string) string {
 	file, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
 	defer closeRootModuleFile(file)
 
+	allowed := make(map[string]bool, len(sections))
+	for _, section := range sections {
+		allowed[section] = true
+	}
+
 	inSection := false
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == section {
+		if allowed[line] {
 			inSection = true
 			continue
 		}

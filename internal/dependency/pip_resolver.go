@@ -32,11 +32,17 @@ type pipShowInfo struct {
 }
 
 // PipResolver resolves Python dependencies using the `pip` CLI.
-type PipResolver struct{}
+type PipResolver struct {
+	lookPath    func(string) (string, error)
+	execCommand func(context.Context, string, ...string) *exec.Cmd
+}
 
 // NewPipResolver creates a new Python/pip dependency resolver.
 func NewPipResolver() *PipResolver {
-	return &PipResolver{}
+	return &PipResolver{
+		lookPath:    exec.LookPath,
+		execCommand: exec.CommandContext,
+	}
 }
 
 // Ecosystem returns "python".
@@ -51,6 +57,10 @@ func (r *PipResolver) Ecosystem() string {
 func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
+	pythonExec, err := r.resolvePythonExecutable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate Python interpreter: %w", err)
+	}
 
 	result := &ResolveResult{
 		RootModule:   rootModule,
@@ -59,7 +69,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	}
 
 	// Step 2: List installed packages
-	packages, err := r.pipList(ctx)
+	packages, err := r.pipList(ctx, pythonExec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pip packages: %w", err)
 	}
@@ -75,13 +85,13 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		pkgNames[i] = pkg.Name
 	}
 
-	infoMap, err := r.pipShow(ctx, pkgNames)
+	infoMap, err := r.pipShow(ctx, pythonExec, pkgNames)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get pip show info, falling back to basic resolution")
 	}
 
 	// Step 4: Build distribution→import mapping via importlib.metadata
-	distToImport := r.pythonPackagesDistributions(ctx)
+	distToImport := r.pythonPackagesDistributions(ctx, pythonExec)
 	if len(distToImport) > 0 {
 		log.Info().Int("mappings", len(distToImport)).Msg("Loaded Python distribution-to-import mapping via importlib.metadata")
 	} else {
@@ -149,6 +159,33 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	return result, nil
 }
 
+func (r *PipResolver) resolvePythonExecutable() (string, error) {
+	if virtualEnv := strings.TrimSpace(os.Getenv("VIRTUAL_ENV")); virtualEnv != "" {
+		for _, candidate := range []string{
+			filepath.Join(virtualEnv, "bin", "python"),
+			filepath.Join(virtualEnv, "bin", "python3"),
+			filepath.Join(virtualEnv, "Scripts", "python.exe"),
+			filepath.Join(virtualEnv, "Scripts", "python"),
+		} {
+			if candidate == "" {
+				continue
+			}
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+	}
+
+	for _, candidate := range []string{"python3", "python"} {
+		path, err := r.lookPath(candidate)
+		if err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("neither python3 nor python is available in PATH")
+}
+
 // detectRootModule tries to determine the root project name from manifest files.
 func (r *PipResolver) detectRootModule(targetDir string) string {
 	// Try pyproject.toml first
@@ -166,19 +203,28 @@ func (r *PipResolver) detectRootModule(targetDir string) string {
 // parsePyprojectName extracts the project name from pyproject.toml.
 // Looks for `name = "..."` under `[project]` section.
 func parsePyprojectName(content string) string {
-	inProjectSection := false
+	for _, section := range []string{"[project]", "[tool.poetry]"} {
+		if name := parseNameFromSection(content, section); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func parseNameFromSection(content, section string) string {
+	inSection := false
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "[project]" {
-			inProjectSection = true
+		if line == section {
+			inSection = true
 			continue
 		}
 		if strings.HasPrefix(line, "[") {
-			inProjectSection = false
+			inSection = false
 			continue
 		}
-		if inProjectSection && strings.HasPrefix(line, "name") {
+		if inSection && strings.HasPrefix(line, "name") {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
 				name := strings.TrimSpace(parts[1])
@@ -190,16 +236,16 @@ func parsePyprojectName(content string) string {
 	return ""
 }
 
-// pipList runs `pip list --format=json` and parses the output.
-func (r *PipResolver) pipList(ctx context.Context) ([]pipPackage, error) {
-	cmd := exec.CommandContext(ctx, "pip", "list", "--format=json")
+// pipList runs `python -m pip list --format=json` and parses the output.
+func (r *PipResolver) pipList(ctx context.Context, pythonExec string) ([]pipPackage, error) {
+	cmd := r.execCommand(ctx, pythonExec, "-m", "pip", "list", "--format=json")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("pip list --format=json: %w\nstderr: %s", err, stderr.String())
+		return nil, fmt.Errorf("%s -m pip list --format=json: %w\nstderr: %s", pythonExec, err, stderr.String())
 	}
 
 	var packages []pipPackage
@@ -213,7 +259,7 @@ func (r *PipResolver) pipList(ctx context.Context) ([]pipPackage, error) {
 // pipShow runs `pip show pkg1 pkg2 ...` and parses the multi-package output.
 //
 //nolint:unparam // error return kept for interface consistency; per-batch errors are logged and swallowed.
-func (r *PipResolver) pipShow(ctx context.Context, packageNames []string) (map[string]pipShowInfo, error) {
+func (r *PipResolver) pipShow(ctx context.Context, pythonExec string, packageNames []string) (map[string]pipShowInfo, error) {
 	if len(packageNames) == 0 {
 		return nil, nil
 	}
@@ -226,8 +272,8 @@ func (r *PipResolver) pipShow(ctx context.Context, packageNames []string) (map[s
 		end := min(i+batchSize, len(packageNames))
 		batch := packageNames[i:end]
 
-		args := append([]string{"show"}, batch...)
-		cmd := exec.CommandContext(ctx, "pip", args...)
+		args := append([]string{"-m", "pip", "show"}, batch...)
+		cmd := r.execCommand(ctx, pythonExec, args...)
 
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -342,10 +388,11 @@ func (r *PipResolver) resolvePackageDir(pkgName string, info pipShowInfo, distTo
 	return "", skipReasonNoSource
 }
 
-// pythonPackagesDistributions calls Python's importlib.metadata.packages_distributions()
+// pythonPackagesDistributions calls the selected interpreter's
+// importlib.metadata.packages_distributions()
 // (available in Python 3.10+) and inverts the mapping to: normalized_dist_name → []import_names.
-func (r *PipResolver) pythonPackagesDistributions(ctx context.Context) map[string][]string {
-	cmd := exec.CommandContext(ctx, "python3", "-c",
+func (r *PipResolver) pythonPackagesDistributions(ctx context.Context, pythonExec string) map[string][]string {
+	cmd := r.execCommand(ctx, pythonExec, "-c",
 		"import json,importlib.metadata as m; print(json.dumps(m.packages_distributions()))")
 
 	var stdout, stderr bytes.Buffer
