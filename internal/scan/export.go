@@ -81,9 +81,12 @@ type callGraphDependencyContext struct {
 }
 
 type callGraphCalledFunction struct {
-	FunctionName string               `json:"function_name"`
-	Line         int                  `json:"line"`
-	Parameters   []callGraphParameter `json:"parameters,omitempty"`
+	FunctionName       string               `json:"function_name"`
+	CanonicalSignature string               `json:"canonical_signature,omitempty"`
+	ReturnType         string               `json:"return_type,omitempty"`
+	ParameterTypes     []string             `json:"parameter_types,omitempty"`
+	Line               int                  `json:"line"`
+	Parameters         []callGraphParameter `json:"parameters,omitempty"`
 }
 
 type callGraphMatchedOperation struct {
@@ -94,10 +97,13 @@ type callGraphMatchedOperation struct {
 }
 
 type callGraphEntryCall struct {
-	FunctionName string               `json:"function_name,omitempty"`
-	FilePath     string               `json:"file_path"`
-	Line         int                  `json:"line"`
-	Parameters   []callGraphParameter `json:"parameters,omitempty"`
+	FunctionName       string               `json:"function_name,omitempty"`
+	CanonicalSignature string               `json:"canonical_signature,omitempty"`
+	ReturnType         string               `json:"return_type,omitempty"`
+	ParameterTypes     []string             `json:"parameter_types,omitempty"`
+	FilePath           string               `json:"file_path"`
+	Line               int                  `json:"line"`
+	Parameters         []callGraphParameter `json:"parameters,omitempty"`
 }
 
 type callGraphParameter struct {
@@ -134,21 +140,25 @@ type exportSourceLocation struct {
 }
 
 type callGraphChainNode struct {
-	FunctionName   string                      `json:"function_name"`
-	FilePath       string                      `json:"file_path"`
-	StartLine      int                         `json:"start_line,omitempty"`
-	DependencyInfo *callGraphDependencyContext `json:"dependency_info,omitempty"`
-	EntryCall      *callGraphEntryCall         `json:"entry_call,omitempty"`
-	CryptoCall     *callGraphCalledFunction    `json:"crypto_call,omitempty"`
+	FunctionName       string                      `json:"function_name"`
+	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
+	ReturnType         string                      `json:"return_type,omitempty"`
+	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	FilePath           string                      `json:"file_path"`
+	StartLine          int                         `json:"start_line,omitempty"`
+	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
+	EntryCall          *callGraphEntryCall         `json:"entry_call,omitempty"`
+	CryptoCall         *callGraphCalledFunction    `json:"crypto_call,omitempty"`
 }
 
 type callGraphEntryPoint struct {
-	Function          string                      `json:"function"`
-	Class             string                      `json:"class,omitempty"`
-	Method            string                      `json:"method"`
-	ReturnType        string                      `json:"return_type,omitempty"`
-	ParameterTypes    []string                    `json:"parameter_types,omitempty"`
-	ReachableFindings []callGraphReachableFinding `json:"reachable_findings"`
+	Function           string                      `json:"function"`
+	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
+	Class              string                      `json:"class,omitempty"`
+	Method             string                      `json:"method"`
+	ReturnType         string                      `json:"return_type,omitempty"`
+	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	ReachableFindings  []callGraphReachableFinding `json:"reachable_findings"`
 }
 
 type callGraphReachableFinding struct {
@@ -319,9 +329,13 @@ type entryPointFindingRef struct {
 }
 
 type entryPointData struct {
-	class    string
-	method   string
-	findings map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
+	function           string
+	canonicalSignature string
+	class              string
+	method             string
+	returnType         string
+	parameterTypes     []string
+	findings           map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
 }
 
 func addFindingGraphToEntryPointIndex(index map[string]*entryPointData, fg *callGraphExportFinding) {
@@ -338,26 +352,42 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 		return
 	}
 	for pos, node := range chain {
-		fn := node.FunctionName
-		if fn == "" {
+		if node.FunctionName == "" {
 			continue
 		}
-		recordEntryPointFinding(ensureEntryPointData(index, fn), fg, len(chain)-pos)
+		recordEntryPointFinding(ensureEntryPointData(index, node), fg, len(chain)-pos)
 	}
 }
 
-func ensureEntryPointData(index map[string]*entryPointData, fn string) *entryPointData {
-	if ep, ok := index[fn]; ok {
+func ensureEntryPointData(index map[string]*entryPointData, node callGraphChainNode) *entryPointData {
+	key := node.CanonicalSignature
+	if key == "" {
+		key = node.FunctionName
+	}
+	if ep, ok := index[key]; ok {
+		if ep.canonicalSignature == "" {
+			ep.canonicalSignature = node.CanonicalSignature
+		}
+		if ep.returnType == "" {
+			ep.returnType = node.ReturnType
+		}
+		if len(ep.parameterTypes) == 0 {
+			ep.parameterTypes = cloneStringSlice(node.ParameterTypes)
+		}
 		return ep
 	}
 
-	class, method := splitFunctionName(fn)
+	class, method := splitFunctionName(node.FunctionName)
 	ep := &entryPointData{
-		class:    class,
-		method:   method,
-		findings: make(map[string]entryPointFindingRef),
+		function:           node.FunctionName,
+		canonicalSignature: node.CanonicalSignature,
+		class:              class,
+		method:             method,
+		returnType:         node.ReturnType,
+		parameterTypes:     cloneStringSlice(node.ParameterTypes),
+		findings:           make(map[string]entryPointFindingRef),
 	}
-	index[fn] = ep
+	index[key] = ep
 	return ep
 }
 
@@ -380,12 +410,15 @@ func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, dep
 
 func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphEntryPoint {
 	result := make([]callGraphEntryPoint, 0, len(index))
-	for fn, ep := range index {
+	for _, ep := range index {
 		result = append(result, callGraphEntryPoint{
-			Function:          fn,
-			Class:             ep.class,
-			Method:            ep.method,
-			ReachableFindings: flattenReachableFindings(ep.findings),
+			Function:           ep.function,
+			CanonicalSignature: ep.canonicalSignature,
+			Class:              ep.class,
+			Method:             ep.method,
+			ReturnType:         ep.returnType,
+			ParameterTypes:     cloneStringSlice(ep.parameterTypes),
+			ReachableFindings:  flattenReachableFindings(ep.findings),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -622,6 +655,7 @@ func findCryptoCall(
 		Line:         bestCall.Line,
 		Parameters:   mergeCallParameters(ctx, &bestCall.Callee, callee, bestCall.Arguments, bestCall.ArgumentSources, sourcePath, bestCall.Line),
 	}
+	applyExportFunctionMetadataToCalledFunction(result, buildExportFunctionMetadata(graph, bestCall.Callee, callee))
 
 	return result
 }
@@ -1102,6 +1136,7 @@ func cloneEntryCall(call *callGraphEntryCall) *callGraphEntryCall {
 		return nil
 	}
 	cloned := *call
+	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
 	return &cloned
 }
@@ -1111,6 +1146,7 @@ func cloneCalledFunction(call *callGraphCalledFunction) *callGraphCalledFunction
 		return nil
 	}
 	cloned := *call
+	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
 	return &cloned
 }
@@ -1134,14 +1170,20 @@ func buildChainNode(
 ) callGraphChainNode {
 	location := normalizeExportPath(ctx, actualPath)
 	startLine := 0
-	if fn := ctx.graph.Functions[id.String()]; fn != nil {
+	var fn *callgraph.FunctionDecl
+	if decl := ctx.graph.Functions[id.String()]; decl != nil {
+		fn = decl
 		startLine = fn.StartLine
 	}
+	meta := buildExportFunctionMetadata(ctx.graph, id, fn)
 	return callGraphChainNode{
-		FunctionName:   fullFunctionName(id),
-		FilePath:       location.FilePath,
-		StartLine:      startLine,
-		DependencyInfo: location.DependencyInfo,
+		FunctionName:       meta.FunctionName,
+		CanonicalSignature: meta.CanonicalSignature,
+		ReturnType:         meta.ReturnType,
+		ParameterTypes:     cloneStringSlice(meta.ParameterTypes),
+		FilePath:           location.FilePath,
+		StartLine:          startLine,
+		DependencyInfo:     location.DependencyInfo,
 	}
 }
 
@@ -1156,18 +1198,22 @@ func buildEntryCall(
 	location := normalizeExportPath(ctx, callSitePath)
 	callerFn := graph.Functions[callerID.String()]
 	if callerFn == nil {
-		return &callGraphEntryCall{
+		entryCall := &callGraphEntryCall{
 			FilePath: location.FilePath,
 			Line:     fallbackLine,
 		}
+		applyExportFunctionMetadataToEntryCall(entryCall, buildExportFunctionMetadata(graph, calleeID, graph.Functions[calleeID.String()]))
+		return entryCall
 	}
 
 	call := findMatchingInvocation(callerFn, calleeID.String())
 	if call == nil {
-		return &callGraphEntryCall{
+		entryCall := &callGraphEntryCall{
 			FilePath: location.FilePath,
 			Line:     fallbackLine,
 		}
+		applyExportFunctionMetadataToEntryCall(entryCall, buildExportFunctionMetadata(graph, calleeID, graph.Functions[calleeID.String()]))
+		return entryCall
 	}
 
 	location = normalizeExportPath(ctx, call.FilePath)
@@ -1177,6 +1223,7 @@ func buildEntryCall(
 		Line:       call.Line,
 		Parameters: mergeCallParameters(ctx, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
 	}
+	applyExportFunctionMetadataToEntryCall(entryCall, buildExportFunctionMetadata(graph, call.Callee, calleeFn))
 	callName := fullFunctionName(call.Callee)
 	if callName != fullFunctionName(calleeID) {
 		entryCall.FunctionName = callName
@@ -1292,6 +1339,169 @@ func cloneSourceNodes(nodes []exportSourceNode) []exportSourceNode {
 		}
 	}
 	return result
+}
+
+type exportFunctionMetadata struct {
+	FunctionName       string
+	CanonicalSignature string
+	ReturnType         string
+	ParameterTypes     []string
+}
+
+func buildExportFunctionMetadata(
+	graph *callgraph.CallGraph,
+	id callgraph.FunctionID,
+	decl *callgraph.FunctionDecl,
+) exportFunctionMetadata {
+	meta := exportFunctionMetadata{
+		FunctionName: fullFunctionName(id),
+	}
+
+	if decl != nil {
+		meta.ParameterTypes = exportParameterTypesFromDecl(decl.Parameters)
+		meta.ReturnType = strings.TrimSpace(decl.ReturnType)
+	}
+
+	if sig, ok := exportExternalSignature(graph, id, len(meta.ParameterTypes)); ok {
+		meta.ParameterTypes = mergeExportParameterTypes(meta.ParameterTypes, sig.ParameterTypes)
+		if meta.ReturnType == "" {
+			meta.ReturnType = strings.TrimSpace(sig.ReturnType)
+		}
+	}
+
+	meta.ReturnType = normalizeExportReturnType(id, meta.ReturnType)
+	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
+	return meta
+}
+
+func normalizeExportReturnType(id callgraph.FunctionID, returnType string) string {
+	trimmed := strings.TrimSpace(returnType)
+	if callgraph.BaseFunctionName(id.Name) != "<init>" {
+		return trimmed
+	}
+	if trimmed != "" && trimmed != "void" {
+		return trimmed
+	}
+	return strings.TrimSpace(id.Type)
+}
+
+func exportParameterTypesFromDecl(params []callgraph.FunctionParameter) []string {
+	if len(params) == 0 {
+		return nil
+	}
+	types := make([]string, len(params))
+	for i := range params {
+		types[i] = strings.TrimSpace(params[i].Type)
+	}
+	if allEmptyStrings(types) {
+		return nil
+	}
+	return types
+}
+
+func mergeExportParameterTypes(existing, fallback []string) []string {
+	if len(existing) == 0 {
+		if len(fallback) == 0 {
+			return nil
+		}
+		return append([]string(nil), fallback...)
+	}
+	if len(fallback) == 0 {
+		return existing
+	}
+
+	merged := append([]string(nil), existing...)
+	limit := len(merged)
+	if len(fallback) < limit {
+		limit = len(fallback)
+	}
+	for i := 0; i < limit; i++ {
+		if strings.TrimSpace(merged[i]) == "" {
+			merged[i] = strings.TrimSpace(fallback[i])
+		}
+	}
+	return merged
+}
+
+func exportExternalSignature(
+	graph *callgraph.CallGraph,
+	id callgraph.FunctionID,
+	paramCount int,
+) (callgraph.ExternalMethodSignature, bool) {
+	if graph == nil || graph.ExternalMethodSignatures == nil {
+		return callgraph.ExternalMethodSignature{}, false
+	}
+
+	signatures := graph.ExternalMethodSignatures[callgraph.ExternalMethodSignatureKey(id)]
+	if len(signatures) == 0 {
+		return callgraph.ExternalMethodSignature{}, false
+	}
+	for _, sig := range signatures {
+		if paramCount == 0 || len(sig.ParameterTypes) == paramCount {
+			return sig, true
+		}
+	}
+	return signatures[0], true
+}
+
+func canonicalSignature(functionName string, parameterTypes []string, returnType string) string {
+	if functionName == "" {
+		return ""
+	}
+
+	params := make([]string, len(parameterTypes))
+	for i := range parameterTypes {
+		paramType := strings.TrimSpace(parameterTypes[i])
+		if paramType == "" {
+			paramType = "?"
+		}
+		params[i] = paramType
+	}
+
+	signature := functionName + "(" + strings.Join(params, ", ") + ")"
+	if trimmedReturnType := strings.TrimSpace(returnType); trimmedReturnType != "" {
+		signature += ": " + trimmedReturnType
+	}
+	return signature
+}
+
+func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta exportFunctionMetadata) {
+	if call == nil {
+		return
+	}
+	call.FunctionName = meta.FunctionName
+	call.CanonicalSignature = meta.CanonicalSignature
+	call.ReturnType = meta.ReturnType
+	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+}
+
+func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, meta exportFunctionMetadata) {
+	if call == nil {
+		return
+	}
+	call.FunctionName = meta.FunctionName
+	call.CanonicalSignature = meta.CanonicalSignature
+	call.ReturnType = meta.ReturnType
+	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]string(nil), values...)
+}
+
+func allEmptyStrings(values []string) bool {
+	if len(values) == 0 {
+		return true
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneSourceNodesWithFallback(nodes []exportSourceNode, defaultFilePath string, defaultLine int) []exportSourceNode {

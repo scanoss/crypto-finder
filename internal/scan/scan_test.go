@@ -873,6 +873,19 @@ func TestExportCallGraph_UsesExternalSignatureFallbackForParameterTypes(t *testi
 	if params[0].Type != "java.lang.String" {
 		t.Fatalf("type = %q, want java.lang.String", params[0].Type)
 	}
+	cryptoCall := payload.FindingGraphs[0].CallChains[0][0].CryptoCall
+	if cryptoCall == nil {
+		t.Fatal("expected crypto_call metadata")
+	}
+	if cryptoCall.ReturnType != "java.security.MessageDigest" {
+		t.Fatalf("return_type = %q, want java.security.MessageDigest", cryptoCall.ReturnType)
+	}
+	if len(cryptoCall.ParameterTypes) != 1 || cryptoCall.ParameterTypes[0] != "java.lang.String" {
+		t.Fatalf("parameter_types = %#v, want [java.lang.String]", cryptoCall.ParameterTypes)
+	}
+	if cryptoCall.CanonicalSignature != "java.security.MessageDigest.getInstance(java.lang.String): java.security.MessageDigest" {
+		t.Fatalf("canonical_signature = %q, want java.security.MessageDigest.getInstance(java.lang.String): java.security.MessageDigest", cryptoCall.CanonicalSignature)
+	}
 }
 
 func TestExportCallGraph_UnresolvedExternalCallLeavesTypeEmpty(t *testing.T) {
@@ -1087,6 +1100,7 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 				EndLine:    110,
 				OwnerType:  "interface",
 				OwnerName:  "JwtBuilder",
+				ReturnType: "JwtBuilder",
 				Parameters: []callgraph.FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
 			},
 			depImplID.String(): {
@@ -1096,6 +1110,7 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 				EndLine:    267,
 				OwnerType:  "class",
 				OwnerName:  "DefaultJwtBuilder",
+				ReturnType: "JwtBuilder",
 				Parameters: []callgraph.FunctionParameter{{Type: "SignatureAlgorithm"}, {Type: "byte[]"}},
 				Calls: []callgraph.FunctionCall{{
 					Callee:          callgraph.FunctionID{Package: "javax.crypto.spec", Type: "SecretKeySpec", Name: "<init>"},
@@ -1185,6 +1200,15 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	if chain[0].FunctionName != "example.app.JWTCsrfTokenRepository.generateToken" || chain[1].FunctionName != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith" {
 		t.Fatalf("unexpected call chain: %#v", chain)
 	}
+	if chain[1].CanonicalSignature != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith(SignatureAlgorithm, byte[]): JwtBuilder" {
+		t.Fatalf("unexpected chain canonical signature: %q", chain[1].CanonicalSignature)
+	}
+	if chain[1].ReturnType != "JwtBuilder" {
+		t.Fatalf("unexpected chain return_type: %q", chain[1].ReturnType)
+	}
+	if len(chain[1].ParameterTypes) != 2 || chain[1].ParameterTypes[0] != "SignatureAlgorithm" || chain[1].ParameterTypes[1] != "byte[]" {
+		t.Fatalf("unexpected chain parameter_types: %#v", chain[1].ParameterTypes)
+	}
 	if chain[0].StartLine != 30 || chain[1].StartLine != 261 {
 		t.Fatalf("unexpected chain start lines: %#v", chain)
 	}
@@ -1197,6 +1221,15 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	}
 	if dependencyHop.FunctionName != "io.jsonwebtoken.JwtBuilder.signWith" {
 		t.Fatalf("expected interface call name on dependency hop, got %#v", dependencyHop)
+	}
+	if dependencyHop.CanonicalSignature != "io.jsonwebtoken.JwtBuilder.signWith(SignatureAlgorithm, byte[]): JwtBuilder" {
+		t.Fatalf("unexpected dependency hop canonical signature: %q", dependencyHop.CanonicalSignature)
+	}
+	if dependencyHop.ReturnType != "JwtBuilder" {
+		t.Fatalf("unexpected dependency hop return_type: %q", dependencyHop.ReturnType)
+	}
+	if len(dependencyHop.ParameterTypes) != 2 || dependencyHop.ParameterTypes[0] != "SignatureAlgorithm" || dependencyHop.ParameterTypes[1] != "byte[]" {
+		t.Fatalf("unexpected dependency hop parameter_types: %#v", dependencyHop.ParameterTypes)
 	}
 	if len(dependencyHop.Parameters) != 2 {
 		t.Fatalf("expected hop parameters for dependency call, got %#v", dependencyHop.Parameters)
@@ -1221,6 +1254,15 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	}
 	if chain[1].CryptoCall == nil || len(chain[1].CryptoCall.Parameters) != 2 {
 		t.Fatalf("unexpected crypto_call parameters: %#v", chain[1].CryptoCall)
+	}
+	if len(chain[1].CryptoCall.ParameterTypes) != 2 || chain[1].CryptoCall.ParameterTypes[0] != "byte[]" || chain[1].CryptoCall.ParameterTypes[1] != "String" {
+		t.Fatalf("unexpected crypto_call parameter_types: %#v", chain[1].CryptoCall.ParameterTypes)
+	}
+	if chain[1].CryptoCall.CanonicalSignature != "javax.crypto.spec.SecretKeySpec.<init>(byte[], String): SecretKeySpec" {
+		t.Fatalf("unexpected crypto_call canonical signature: %q", chain[1].CryptoCall.CanonicalSignature)
+	}
+	if chain[1].CryptoCall.ReturnType != "SecretKeySpec" {
+		t.Fatalf("unexpected crypto_call return_type: %q", chain[1].CryptoCall.ReturnType)
 	}
 	if chain[1].CryptoCall.Parameters[0].ParameterIndex != 0 || chain[1].CryptoCall.Parameters[1].ParameterIndex != 1 {
 		t.Fatalf("unexpected crypto_call parameter indexes: %#v", chain[1].CryptoCall.Parameters)
@@ -1814,10 +1856,11 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	graph := &callgraph.CallGraph{
 		Functions: map[string]*callgraph.FunctionDecl{
 			controllerID.String(): {
-				ID:        controllerID,
-				FilePath:  joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
-				StartLine: 10,
-				EndLine:   20,
+				ID:         controllerID,
+				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
+				StartLine:  10,
+				EndLine:    20,
+				ReturnType: "Response",
 				Calls: []callgraph.FunctionCall{{
 					Callee:   serviceID,
 					FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
@@ -1825,10 +1868,14 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 				}},
 			},
 			serviceID.String(): {
-				ID:        serviceID,
-				FilePath:  joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
-				StartLine: 30,
-				EndLine:   40,
+				ID:         serviceID,
+				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+				StartLine:  30,
+				EndLine:    40,
+				ReturnType: "Response",
+				Parameters: []callgraph.FunctionParameter{
+					{Type: "Request"},
+				},
 				Calls: []callgraph.FunctionCall{
 					{
 						Callee:   cipherGetInstanceID,
@@ -1927,6 +1974,15 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	if controllerEP.Class != "com.app.Controller" || controllerEP.Method != "handle" {
 		t.Fatalf("unexpected class/method: %q / %q", controllerEP.Class, controllerEP.Method)
 	}
+	if controllerEP.CanonicalSignature != "com.app.Controller.handle(): Response" {
+		t.Fatalf("unexpected controller canonical signature: %q", controllerEP.CanonicalSignature)
+	}
+	if controllerEP.ReturnType != "Response" {
+		t.Fatalf("unexpected controller return_type: %q", controllerEP.ReturnType)
+	}
+	if len(controllerEP.ParameterTypes) != 0 {
+		t.Fatalf("unexpected controller parameter_types: %#v", controllerEP.ParameterTypes)
+	}
 	if len(controllerEP.ReachableFindings) != 2 {
 		t.Fatalf("Controller.handle should reach 2 findings, got %d", len(controllerEP.ReachableFindings))
 	}
@@ -1939,11 +1995,227 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	if len(serviceEP.ReachableFindings) != 2 {
 		t.Fatalf("Service.process should reach 2 findings, got %d", len(serviceEP.ReachableFindings))
 	}
+	if serviceEP.CanonicalSignature != "com.app.Service.process(Request): Response" {
+		t.Fatalf("unexpected service canonical signature: %q", serviceEP.CanonicalSignature)
+	}
+	if serviceEP.ReturnType != "Response" {
+		t.Fatalf("unexpected service return_type: %q", serviceEP.ReturnType)
+	}
+	if len(serviceEP.ParameterTypes) != 1 || serviceEP.ParameterTypes[0] != "Request" {
+		t.Fatalf("unexpected service parameter_types: %#v", serviceEP.ParameterTypes)
+	}
 	// Service.process → Cipher.getInstance is depth 2 (Service node + crypto node)
 	for _, rf := range serviceEP.ReachableFindings {
 		if rf.ChainDepth > 2 {
 			t.Fatalf("Service.process chain_depth should be ≤ 2, got %d for %s", rf.ChainDepth, rf.FindingID)
 		}
+	}
+}
+
+func TestExportCallGraph_EntryPointIndexPreservesOverloadedFunctions(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+
+	stringOverloadID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "process#1$String"}
+	bytesOverloadID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "process#1$byte[]"}
+	cipherGetInstanceID := callgraph.FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance#1"}
+	macGetInstanceID := callgraph.FunctionID{Package: "javax.crypto", Type: "Mac", Name: "getInstance#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			stringOverloadID.String(): {
+				ID:         stringOverloadID,
+				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+				StartLine:  10,
+				EndLine:    20,
+				ReturnType: "Response",
+				Parameters: []callgraph.FunctionParameter{{Type: "String"}},
+				Calls: []callgraph.FunctionCall{{
+					Callee:   cipherGetInstanceID,
+					FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+					Line:     15,
+				}},
+			},
+			bytesOverloadID.String(): {
+				ID:         bytesOverloadID,
+				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+				StartLine:  30,
+				EndLine:    40,
+				ReturnType: "Response",
+				Parameters: []callgraph.FunctionParameter{{Type: "byte[]"}},
+				Calls: []callgraph.FunctionCall{{
+					Callee:   macGetInstanceID,
+					FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+					Line:     35,
+				}},
+			},
+		},
+		Callers: map[string][]string{
+			cipherGetInstanceID.String(): {stringOverloadID.String()},
+			macGetInstanceID.String():    {bytesOverloadID.String()},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "src/main/java/com/app/Service.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{{
+					StartLine: 15,
+					EndLine:   15,
+					Match:     "Cipher.getInstance(\"AES\")",
+					Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher", Message: "cipher", Severity: "INFO"}},
+					Status:    "pending",
+					FindingID: "finding-cipher-overload",
+					Source:    "direct",
+				}},
+			},
+			{
+				FilePath: "src/main/java/com/app/Service.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{{
+					StartLine: 35,
+					EndLine:   35,
+					Match:     "Mac.getInstance(\"HmacSHA256\")",
+					Rules:     []entities.RuleInfo{{ID: "java.crypto.mac", Message: "mac", Severity: "INFO"}},
+					Status:    "pending",
+					FindingID: "finding-mac-overload",
+					Source:    "direct",
+				}},
+			},
+		},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		Report:      report,
+		RootModule:  "com.app",
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	out := filepath.Join(t.TempDir(), "cg-entry-points-overloaded.json")
+	if err := ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph: %v", err)
+	}
+
+	var payload callGraphExportV2
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+
+	var overloaded []callGraphEntryPoint
+	for _, ep := range payload.EntryPointIndex {
+		if ep.Function == "com.app.Service.process" {
+			overloaded = append(overloaded, ep)
+		}
+	}
+	if len(overloaded) != 2 {
+		t.Fatalf("expected 2 overloaded entry point records, got %d (%#v)", len(overloaded), overloaded)
+	}
+
+	var foundString, foundBytes bool
+	for _, ep := range overloaded {
+		switch ep.CanonicalSignature {
+		case "com.app.Service.process(String): Response":
+			foundString = true
+		case "com.app.Service.process(byte[]): Response":
+			foundBytes = true
+		}
+	}
+	if !foundString || !foundBytes {
+		t.Fatalf("missing overloaded canonical signatures: %#v", overloaded)
+	}
+}
+
+func TestExportCallGraph_NormalizesExternalConstructorReturnType(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	constructorID := callgraph.FunctionID{Package: "javax.crypto.spec", Type: "PBEKeySpec", Name: "<init>"}
+	containerID := callgraph.FunctionID{Package: "example.app", Type: "KeyOps", Name: "derive#0"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			containerID.String(): {
+				ID:        containerID,
+				FilePath:  joinTestPath(projectRoot, "src/main/java/example/app/KeyOps.java"),
+				StartLine: 10,
+				EndLine:   20,
+				Calls: []callgraph.FunctionCall{{
+					Callee:    constructorID,
+					FilePath:  joinTestPath(projectRoot, "src/main/java/example/app/KeyOps.java"),
+					Line:      14,
+					Arguments: []string{"password", "salt", "iterations", "keyLength"},
+				}},
+			},
+		},
+		ExternalMethodSignatures: map[string][]callgraph.ExternalMethodSignature{
+			callgraph.ExternalMethodSignatureKey(constructorID): {{
+				ParameterTypes: []string{"char[]", "byte[]", "int", "int"},
+				ReturnType:     "void",
+			}},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "src/main/java/example/app/KeyOps.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 14,
+				EndLine:   14,
+				Match:     "new PBEKeySpec(password, salt, iterations, keyLength)",
+				Rules:     []entities.RuleInfo{{ID: "java.kdf.pbkdf2", Message: "pbkdf2", Severity: "INFO"}},
+				Status:    "pending",
+				Metadata:  map[string]string{"api": "PBEKeySpec"},
+				FindingID: "constructor-normalization-1",
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		Report:      report,
+		RootModule:  "example.app",
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	out := filepath.Join(t.TempDir(), "cg-constructor-normalization.json")
+	if err := ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph(json): %v", err)
+	}
+
+	var payload callGraphExportV2
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("invalid json output: %v", err)
+	}
+
+	cryptoCall := payload.FindingGraphs[0].CallChains[0][0].CryptoCall
+	if cryptoCall == nil {
+		t.Fatal("expected crypto_call metadata")
+	}
+	if cryptoCall.ReturnType != "PBEKeySpec" {
+		t.Fatalf("return_type = %q, want PBEKeySpec", cryptoCall.ReturnType)
+	}
+	if cryptoCall.CanonicalSignature != "javax.crypto.spec.PBEKeySpec.<init>(char[], byte[], int, int): PBEKeySpec" {
+		t.Fatalf("canonical_signature = %q, want normalized constructor signature", cryptoCall.CanonicalSignature)
 	}
 }
 
