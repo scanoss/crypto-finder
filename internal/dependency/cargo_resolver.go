@@ -64,65 +64,9 @@ func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		return nil, fmt.Errorf("failed to get cargo metadata in %s: %w", targetDir, err)
 	}
 
-	result := &ResolveResult{
-		Dependencies:   make([]Dependency, 0, len(meta.Packages)),
-		Graph:          make(map[string][]string),
-		VersionedGraph: make(map[string][]Ref),
-	}
-
-	// Build a lookup from package ID prefix to package name for graph building
-	pkgByID := make(map[string]string)
-
-	for _, pkg := range meta.Packages {
-		if pkg.Source == nil {
-			// Local/workspace crate — treat as user code
-			dir := filepath.Dir(pkg.ManifestPath)
-			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
-				Name: pkg.Name,
-				Dir:  dir,
-			})
-			if result.RootModule == "" {
-				result.RootModule = pkg.Name
-			}
-			continue
-		}
-
-		dir := filepath.Dir(pkg.ManifestPath)
-		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:  pkg.Name,
-			Version: pkg.Version,
-			Dir:     dir,
-		})
-	}
-
-	// Build ID→name mapping for resolve graph
-	for _, node := range meta.Resolve.Nodes {
-		ref := cargoPackageRefFromID(node.ID)
-		pkgByID[node.ID] = ref.Module
-	}
-
-	// Build dependency graph from resolve nodes
-	for _, node := range meta.Resolve.Nodes {
-		parentRef := cargoPackageRefFromID(node.ID)
-		parentName := parentRef.Module
-		if parentName == "" {
-			continue
-		}
-		for _, dep := range node.Deps {
-			childRef := cargoPackageRefFromID(dep.Pkg)
-			childName := childRef.Module
-			if childName == "" {
-				childName = pkgByID[dep.Pkg]
-			}
-			if childName == "" {
-				childName = cargoPackageNameFromID(dep.Pkg)
-			}
-			result.Graph[parentName] = append(result.Graph[parentName], childName)
-			if parentKey := parentRef.Key(); parentKey != "" && childRef.Module != "" {
-				result.VersionedGraph[parentKey] = append(result.VersionedGraph[parentKey], childRef)
-			}
-		}
-	}
+	result := newCargoResolveResult(meta)
+	pkgByID := cargoPackageNamesByNodeID(meta.Resolve.Nodes)
+	populateCargoGraph(result, meta.Resolve.Nodes, pkgByID)
 
 	log.Info().
 		Int("count", len(result.Dependencies)).
@@ -130,6 +74,89 @@ func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		Msg("Resolved Cargo dependencies")
 
 	return result, nil
+}
+
+func newCargoResolveResult(meta *cargoMetadata) *ResolveResult {
+	result := &ResolveResult{
+		Dependencies:   make([]Dependency, 0, len(meta.Packages)),
+		Graph:          make(map[string][]string),
+		VersionedGraph: make(map[string][]Ref),
+	}
+
+	for _, pkg := range meta.Packages {
+		appendCargoPackage(result, pkg)
+	}
+
+	return result
+}
+
+func appendCargoPackage(result *ResolveResult, pkg cargoPackage) {
+	dir := filepath.Dir(pkg.ManifestPath)
+	if pkg.Source == nil {
+		result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
+			Name: pkg.Name,
+			Dir:  dir,
+		})
+		if result.RootModule == "" {
+			result.RootModule = pkg.Name
+		}
+		return
+	}
+
+	result.Dependencies = append(result.Dependencies, Dependency{
+		Module:  pkg.Name,
+		Version: pkg.Version,
+		Dir:     dir,
+	})
+}
+
+func cargoPackageNamesByNodeID(nodes []cargoResolveNode) map[string]string {
+	pkgByID := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		ref := cargoPackageRefFromID(node.ID)
+		pkgByID[node.ID] = ref.Module
+	}
+	return pkgByID
+}
+
+func populateCargoGraph(result *ResolveResult, nodes []cargoResolveNode, pkgByID map[string]string) {
+	for _, node := range nodes {
+		parentRef := cargoPackageRefFromID(node.ID)
+		parentName := parentRef.Module
+		if parentName == "" {
+			continue
+		}
+		appendCargoDependencies(result, parentRef, parentName, node.Deps, pkgByID)
+	}
+}
+
+func appendCargoDependencies(
+	result *ResolveResult,
+	parentRef Ref,
+	parentName string,
+	deps []cargoResolveDep,
+	pkgByID map[string]string,
+) {
+	parentKey := parentRef.Key()
+	for _, dep := range deps {
+		childRef, childName := resolveCargoDependencyTarget(dep, pkgByID)
+		result.Graph[parentName] = append(result.Graph[parentName], childName)
+		if parentKey != "" && childRef.Module != "" {
+			result.VersionedGraph[parentKey] = append(result.VersionedGraph[parentKey], childRef)
+		}
+	}
+}
+
+func resolveCargoDependencyTarget(dep cargoResolveDep, pkgByID map[string]string) (Ref, string) {
+	childRef := cargoPackageRefFromID(dep.Pkg)
+	childName := childRef.Module
+	if childName == "" {
+		childName = pkgByID[dep.Pkg]
+	}
+	if childName == "" {
+		childName = cargoPackageNameFromID(dep.Pkg)
+	}
+	return childRef, childName
 }
 
 // cargoMetadata runs `cargo metadata --format-version=1` and parses the JSON output.

@@ -10,6 +10,7 @@ import (
 
 const constructorMethodName = "<init>"
 
+// Java visibility values exported in call graph metadata.
 const (
 	VisibilityPublic         = "public"
 	VisibilityProtected      = "protected"

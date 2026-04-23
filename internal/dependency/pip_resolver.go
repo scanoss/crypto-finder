@@ -17,6 +17,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const pythonExecutable = "python"
+
 // pipPackage represents a single entry from `pip list --format=json`.
 type pipPackage struct {
 	Name    string `json:"name"`
@@ -47,7 +49,7 @@ func NewPipResolver() *PipResolver {
 
 // Ecosystem returns "python".
 func (r *PipResolver) Ecosystem() string {
-	return "python"
+	return pythonExecutable
 }
 
 // Resolve uses `pip list` and `pip show` to resolve all installed Python packages
@@ -161,22 +163,17 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 
 func (r *PipResolver) resolvePythonExecutable() (string, error) {
 	if virtualEnv := strings.TrimSpace(os.Getenv("VIRTUAL_ENV")); virtualEnv != "" {
-		for _, candidate := range []string{
-			filepath.Join(virtualEnv, "bin", "python"),
-			filepath.Join(virtualEnv, "bin", "python3"),
-			filepath.Join(virtualEnv, "Scripts", "python.exe"),
-			filepath.Join(virtualEnv, "Scripts", "python"),
-		} {
+		for _, candidate := range virtualEnvPythonCandidates(virtualEnv) {
 			if candidate == "" {
 				continue
 			}
-			if _, err := os.Stat(candidate); err == nil {
+			if existsPath(candidate) {
 				return candidate, nil
 			}
 		}
 	}
 
-	for _, candidate := range []string{"python3", "python"} {
+	for _, candidate := range []string{"python3", pythonExecutable} {
 		path, err := r.lookPath(candidate)
 		if err == nil {
 			return path, nil
@@ -184,6 +181,24 @@ func (r *PipResolver) resolvePythonExecutable() (string, error) {
 	}
 
 	return "", fmt.Errorf("neither python3 nor python is available in PATH")
+}
+
+func virtualEnvPythonCandidates(virtualEnv string) []string {
+	base := filepath.Clean(virtualEnv)
+	return []string{
+		filepath.Join(base, "bin", pythonExecutable),
+		filepath.Join(base, "bin", "python3"),
+		filepath.Join(base, "Scripts", "python.exe"),
+		filepath.Join(base, "Scripts", pythonExecutable),
+	}
+}
+
+func existsPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Clean(path)) // #nosec G304 -- path is cleaned before existence check
+	return err == nil && !info.IsDir()
 }
 
 // detectRootModule tries to determine the root project name from manifest files.

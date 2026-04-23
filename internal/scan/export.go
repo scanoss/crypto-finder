@@ -357,7 +357,8 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 	if len(chain) == 0 {
 		return
 	}
-	for pos, node := range chain {
+	for pos := range chain {
+		node := &chain[pos]
 		if node.FunctionName == "" {
 			continue
 		}
@@ -365,27 +366,13 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 	}
 }
 
-func ensureEntryPointData(index map[string]*entryPointData, node callGraphChainNode) *entryPointData {
+func ensureEntryPointData(index map[string]*entryPointData, node *callGraphChainNode) *entryPointData {
 	key := node.CanonicalSignature
 	if key == "" {
 		key = node.FunctionName
 	}
-	if ep, ok := index[key]; ok {
-		if ep.canonicalSignature == "" {
-			ep.canonicalSignature = node.CanonicalSignature
-		}
-		if ep.returnType == "" {
-			ep.returnType = node.ReturnType
-		}
-		if len(ep.parameterTypes) == 0 {
-			ep.parameterTypes = cloneStringSlice(node.ParameterTypes)
-		}
-		if ep.visibility == "" {
-			ep.visibility = node.Visibility
-		}
-		if ep.ownerVisibility == "" {
-			ep.ownerVisibility = node.OwnerVisibility
-		}
+	if ep := index[key]; ep != nil {
+		mergeEntryPointData(ep, node)
 		return ep
 	}
 
@@ -403,6 +390,27 @@ func ensureEntryPointData(index map[string]*entryPointData, node callGraphChainN
 	}
 	index[key] = ep
 	return ep
+}
+
+func mergeEntryPointData(ep *entryPointData, node *callGraphChainNode) {
+	if ep == nil || node == nil {
+		return
+	}
+	if ep.canonicalSignature == "" {
+		ep.canonicalSignature = node.CanonicalSignature
+	}
+	if ep.returnType == "" {
+		ep.returnType = node.ReturnType
+	}
+	if len(ep.parameterTypes) == 0 {
+		ep.parameterTypes = cloneStringSlice(node.ParameterTypes)
+	}
+	if ep.visibility == "" {
+		ep.visibility = node.Visibility
+	}
+	if ep.ownerVisibility == "" {
+		ep.ownerVisibility = node.OwnerVisibility
+	}
 }
 
 func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, depth int) {
@@ -1055,7 +1063,7 @@ func exportPackageSeparator(ecosystem string) string {
 	switch ecosystem {
 	case "go":
 		return "/"
-	case "rust":
+	case ecosystemRust:
 		return "::"
 	default:
 		return "."

@@ -31,6 +31,8 @@ const (
 	javaNodeArgumentList         = "argument_list"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
+	javaFunctionTypeMethod       = "method"
+	javaFunctionTypeConstructor  = "constructor"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -418,9 +420,9 @@ func (p *JavaParser) parseMethodDecl(
 		EndLine:         int(node.EndPoint().Row) + 1,
 		OwnerType:       ownerType,
 		OwnerName:       ownerName,
-		FunctionType:    "method",
+		FunctionType:    javaFunctionTypeMethod,
 		ReturnType:      p.extractMethodReturnType(node, src),
-		Visibility:      parseJavaMemberVisibility(node, src, ownerType, "method"),
+		Visibility:      parseJavaMemberVisibility(node, src, ownerType, javaFunctionTypeMethod),
 		OwnerVisibility: ownerVisibility,
 		Parameters:      params,
 	}
@@ -465,9 +467,9 @@ func (p *JavaParser) parseConstructorDecl(
 		EndLine:         int(node.EndPoint().Row) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
-		FunctionType:    "constructor",
+		FunctionType:    javaFunctionTypeConstructor,
 		ReturnType:      className,
-		Visibility:      parseJavaMemberVisibility(node, src, "class", "constructor"),
+		Visibility:      parseJavaMemberVisibility(node, src, "class", javaFunctionTypeConstructor),
 		OwnerVisibility: ownerVisibility,
 		Parameters:      params,
 	}
@@ -512,7 +514,7 @@ func parseJavaMemberVisibility(node *sitter.Node, src []byte, ownerType, functio
 	if visibility != VisibilityPackagePrivate {
 		return visibility
 	}
-	if ownerType == "interface" && functionType == "method" {
+	if ownerType == "interface" && functionType == javaFunctionTypeMethod {
 		return VisibilityPublic
 	}
 	return VisibilityPackagePrivate
