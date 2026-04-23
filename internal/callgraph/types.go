@@ -10,6 +10,13 @@ import (
 
 const constructorMethodName = "<init>"
 
+const (
+	VisibilityPublic         = "public"
+	VisibilityProtected      = "protected"
+	VisibilityPrivate        = "private"
+	VisibilityPackagePrivate = "package-private"
+)
+
 // TypeResolver provides language-specific type resolution capabilities.
 // Each language implements this using its best-fit approach (bytecode analysis,
 // go/types, type stubs, LSP, etc.). The builder calls it after tree-sitter
@@ -98,16 +105,18 @@ func (f FunctionID) String() string {
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
-	ID           FunctionID
-	FilePath     string
-	StartLine    int
-	EndLine      int
-	OwnerType    string
-	OwnerName    string
-	FunctionType string
-	ReturnType   string
-	Parameters   []FunctionParameter
-	Calls        []FunctionCall
+	ID              FunctionID
+	FilePath        string
+	StartLine       int
+	EndLine         int
+	OwnerType       string
+	OwnerName       string
+	FunctionType    string
+	ReturnType      string
+	Visibility      string
+	OwnerVisibility string
+	Parameters      []FunctionParameter
+	Calls           []FunctionCall
 }
 
 // FunctionParameter describes a declared function parameter.

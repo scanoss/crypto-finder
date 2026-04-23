@@ -193,6 +193,93 @@ func TestJavaParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
 	}
 }
 
+func TestJavaParser_TracksVisibilityForTypesMethodsAndConstructors(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example.crypto;
+
+public class PublicApi {
+    public PublicApi() {}
+    private PublicApi(String mode) {}
+
+    public byte[] encrypt(byte[] data) { return data; }
+    protected byte[] protect(byte[] data) { return data; }
+    private void secret() {}
+    void packageOnly() {}
+
+    public class PublicInner {
+        public void run() {}
+    }
+
+    class PackageInner {
+        public void run() {}
+    }
+
+    private class HiddenOuter {
+        public void helper() {}
+
+        public class NestedPublic {
+            public void leak() {}
+        }
+    }
+}
+
+class InternalApi {
+    public void exposedButInternal() {}
+}
+
+public interface CryptoOps {
+    byte[] derive(byte[] input);
+    private void helper() {}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Visibility.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "com.example.crypto")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	functions := make(map[string]FunctionDecl)
+	for _, fn := range analyses[0].Functions {
+		functions[fn.ID.String()] = fn
+	}
+
+	assertVisibility := func(key, wantVisibility, wantOwnerVisibility string) {
+		t.Helper()
+		fn, ok := functions[key]
+		if !ok {
+			t.Fatalf("missing function %s", key)
+		}
+		if fn.Visibility != wantVisibility {
+			t.Fatalf("%s visibility = %q, want %q", key, fn.Visibility, wantVisibility)
+		}
+		if fn.OwnerVisibility != wantOwnerVisibility {
+			t.Fatalf("%s owner visibility = %q, want %q", key, fn.OwnerVisibility, wantOwnerVisibility)
+		}
+	}
+
+	assertVisibility("com.example.crypto.(PublicApi).<init>#0", VisibilityPublic, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi).<init>#1", VisibilityPrivate, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi).encrypt#1", VisibilityPublic, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi).protect#1", VisibilityProtected, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi).secret#0", VisibilityPrivate, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi).packageOnly#0", VisibilityPackagePrivate, VisibilityPublic)
+	assertVisibility("com.example.crypto.(InternalApi).exposedButInternal#0", VisibilityPublic, VisibilityPackagePrivate)
+	assertVisibility("com.example.crypto.(CryptoOps).derive#1", VisibilityPublic, VisibilityPublic)
+	assertVisibility("com.example.crypto.(CryptoOps).helper#0", VisibilityPrivate, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi.PublicInner).run#0", VisibilityPublic, VisibilityPublic)
+	assertVisibility("com.example.crypto.(PublicApi.PackageInner).run#0", VisibilityPublic, VisibilityPackagePrivate)
+	assertVisibility("com.example.crypto.(PublicApi.HiddenOuter).helper#0", VisibilityPublic, VisibilityPrivate)
+	assertVisibility("com.example.crypto.(PublicApi.HiddenOuter.NestedPublic).leak#0", VisibilityPublic, VisibilityPrivate)
+}
+
 func TestJavaParser_ResolveCalleePaths(t *testing.T) {
 	p := NewJavaParser()
 	analysis := &FileAnalysis{

@@ -1856,11 +1856,13 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	graph := &callgraph.CallGraph{
 		Functions: map[string]*callgraph.FunctionDecl{
 			controllerID.String(): {
-				ID:         controllerID,
-				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
-				StartLine:  10,
-				EndLine:    20,
-				ReturnType: "Response",
+				ID:              controllerID,
+				FilePath:        joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
+				StartLine:       10,
+				EndLine:         20,
+				ReturnType:      "Response",
+				Visibility:      callgraph.VisibilityPublic,
+				OwnerVisibility: callgraph.VisibilityPublic,
 				Calls: []callgraph.FunctionCall{{
 					Callee:   serviceID,
 					FilePath: joinTestPath(projectRoot, "src/main/java/com/app/Controller.java"),
@@ -1868,11 +1870,13 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 				}},
 			},
 			serviceID.String(): {
-				ID:         serviceID,
-				FilePath:   joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
-				StartLine:  30,
-				EndLine:    40,
-				ReturnType: "Response",
+				ID:              serviceID,
+				FilePath:        joinTestPath(projectRoot, "src/main/java/com/app/Service.java"),
+				StartLine:       30,
+				EndLine:         40,
+				ReturnType:      "Response",
+				Visibility:      callgraph.VisibilityPublic,
+				OwnerVisibility: callgraph.VisibilityPackagePrivate,
 				Parameters: []callgraph.FunctionParameter{
 					{Type: "Request"},
 				},
@@ -1980,6 +1984,9 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	if controllerEP.ReturnType != "Response" {
 		t.Fatalf("unexpected controller return_type: %q", controllerEP.ReturnType)
 	}
+	if controllerEP.Visibility != callgraph.VisibilityPublic || controllerEP.OwnerVisibility != callgraph.VisibilityPublic {
+		t.Fatalf("unexpected controller visibilities: %q / %q", controllerEP.Visibility, controllerEP.OwnerVisibility)
+	}
 	if len(controllerEP.ParameterTypes) != 0 {
 		t.Fatalf("unexpected controller parameter_types: %#v", controllerEP.ParameterTypes)
 	}
@@ -2001,8 +2008,21 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	if serviceEP.ReturnType != "Response" {
 		t.Fatalf("unexpected service return_type: %q", serviceEP.ReturnType)
 	}
+	if serviceEP.Visibility != callgraph.VisibilityPublic || serviceEP.OwnerVisibility != callgraph.VisibilityPackagePrivate {
+		t.Fatalf("unexpected service visibilities: %q / %q", serviceEP.Visibility, serviceEP.OwnerVisibility)
+	}
 	if len(serviceEP.ParameterTypes) != 1 || serviceEP.ParameterTypes[0] != "Request" {
 		t.Fatalf("unexpected service parameter_types: %#v", serviceEP.ParameterTypes)
+	}
+	chain := payload.FindingGraphs[0].CallChains[0]
+	if len(chain) < 2 {
+		t.Fatalf("expected chain with at least 2 nodes, got %d", len(chain))
+	}
+	if chain[0].Visibility != callgraph.VisibilityPublic || chain[0].OwnerVisibility != callgraph.VisibilityPublic {
+		t.Fatalf("unexpected controller chain visibilities: %q / %q", chain[0].Visibility, chain[0].OwnerVisibility)
+	}
+	if chain[1].Visibility != callgraph.VisibilityPublic || chain[1].OwnerVisibility != callgraph.VisibilityPackagePrivate {
+		t.Fatalf("unexpected service chain visibilities: %q / %q", chain[1].Visibility, chain[1].OwnerVisibility)
 	}
 	// Service.process → Cipher.getInstance is depth 2 (Service node + crypto node)
 	for _, rf := range serviceEP.ReachableFindings {

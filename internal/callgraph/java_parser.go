@@ -186,24 +186,32 @@ func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath stri
 		child := root.Child(i)
 		switch child.Type() {
 		case javaNodeClassDeclaration:
-			p.processClass(child, src, filePath, analysis, "")
+			p.processClass(child, src, filePath, analysis, "", "")
 		case javaNodeInterfaceDeclaration:
-			p.processInterface(child, src, filePath, analysis, "")
+			p.processInterface(child, src, filePath, analysis, "", "")
 		}
 	}
 }
 
 // processClass processes a class declaration and its methods.
-func (p *JavaParser) processClass(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, outerClass string) {
+func (p *JavaParser) processClass(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	outerClass string,
+	outerVisibility string,
+) {
 	className, body := parseJavaClass(node, src)
 	if className == "" || body == nil {
 		return
 	}
 
 	fullClassName := javaNestedTypeName(outerClass, className)
+	ownerVisibility := combineJavaOwnerVisibility(outerVisibility, parseJavaDeclaredVisibility(node, src))
 	fieldTypes := p.collectJavaFieldTypes(body, src)
 	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
-	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, fieldTypes, fieldAssignments)
+	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 }
@@ -249,6 +257,7 @@ func (p *JavaParser) collectJavaClassDecls(
 	filePath string,
 	analysis *FileAnalysis,
 	fullClassName string,
+	ownerVisibility string,
 	fieldTypes map[string]string,
 	fieldAssignments map[string]fieldAssignment,
 ) ([]*FunctionDecl, []*FunctionDecl) {
@@ -259,17 +268,17 @@ func (p *JavaParser) collectJavaClassDecls(
 		child := body.Child(i)
 		switch child.Type() {
 		case javaNodeMethodDeclaration:
-			if decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", fieldTypes, fieldAssignments); decl != nil {
+			if decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				methodDecls = append(methodDecls, decl)
 			}
 		case "constructor_declaration":
-			if decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, fieldTypes, fieldAssignments); decl != nil {
+			if decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				constructorDecls = append(constructorDecls, decl)
 			}
 		case javaNodeClassDeclaration:
-			p.processClass(child, src, filePath, analysis, fullClassName)
+			p.processClass(child, src, filePath, analysis, fullClassName, ownerVisibility)
 		case javaNodeInterfaceDeclaration:
-			p.processInterface(child, src, filePath, analysis, fullClassName)
+			p.processInterface(child, src, filePath, analysis, fullClassName, ownerVisibility)
 		}
 	}
 
@@ -314,7 +323,14 @@ func findConstructorBody(node *sitter.Node) *sitter.Node {
 }
 
 // processInterface processes an interface declaration and its methods.
-func (p *JavaParser) processInterface(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, outerType string) {
+func (p *JavaParser) processInterface(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	outerType string,
+	outerVisibility string,
+) {
 	var interfaceName string
 	var body *sitter.Node
 
@@ -336,20 +352,21 @@ func (p *JavaParser) processInterface(node *sitter.Node, src []byte, filePath st
 	if outerType != "" {
 		fullInterfaceName = outerType + "." + interfaceName
 	}
+	ownerVisibility := combineJavaOwnerVisibility(outerVisibility, parseJavaDeclaredVisibility(node, src))
 
 	var methodDecls []*FunctionDecl
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
 		case javaNodeMethodDeclaration:
-			decl := p.parseMethodDecl(child, src, filePath, analysis, fullInterfaceName, "interface", nil, nil)
+			decl := p.parseMethodDecl(child, src, filePath, analysis, fullInterfaceName, "interface", ownerVisibility, nil, nil)
 			if decl != nil {
 				methodDecls = append(methodDecls, decl)
 			}
 		case javaNodeClassDeclaration:
-			p.processClass(child, src, filePath, analysis, fullInterfaceName)
+			p.processClass(child, src, filePath, analysis, fullInterfaceName, ownerVisibility)
 		case javaNodeInterfaceDeclaration:
-			p.processInterface(child, src, filePath, analysis, fullInterfaceName)
+			p.processInterface(child, src, filePath, analysis, fullInterfaceName, ownerVisibility)
 		}
 	}
 
@@ -367,6 +384,7 @@ func (p *JavaParser) parseMethodDecl(
 	analysis *FileAnalysis,
 	ownerName string,
 	ownerType string,
+	ownerVisibility string,
 	fieldTypes map[string]string,
 	fieldAssignments map[string]fieldAssignment,
 ) *FunctionDecl {
@@ -395,14 +413,16 @@ func (p *JavaParser) parseMethodDecl(
 			Type:    ownerName,
 			Name:    javaMethodWithArity(name, len(params)),
 		},
-		FilePath:     filePath,
-		StartLine:    int(node.StartPoint().Row) + 1,
-		EndLine:      int(node.EndPoint().Row) + 1,
-		OwnerType:    ownerType,
-		OwnerName:    ownerName,
-		FunctionType: "method",
-		ReturnType:   p.extractMethodReturnType(node, src),
-		Parameters:   params,
+		FilePath:        filePath,
+		StartLine:       int(node.StartPoint().Row) + 1,
+		EndLine:         int(node.EndPoint().Row) + 1,
+		OwnerType:       ownerType,
+		OwnerName:       ownerName,
+		FunctionType:    "method",
+		ReturnType:      p.extractMethodReturnType(node, src),
+		Visibility:      parseJavaMemberVisibility(node, src, ownerType, "method"),
+		OwnerVisibility: ownerVisibility,
+		Parameters:      params,
 	}
 
 	if body != nil {
@@ -413,7 +433,16 @@ func (p *JavaParser) parseMethodDecl(
 }
 
 // parseConstructorDecl parses a Java constructor declaration.
-func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, className string, fieldTypes map[string]string, fieldAssignments map[string]fieldAssignment) *FunctionDecl {
+func (p *JavaParser) parseConstructorDecl(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	className string,
+	ownerVisibility string,
+	fieldTypes map[string]string,
+	fieldAssignments map[string]fieldAssignment,
+) *FunctionDecl {
 	var body *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -431,14 +460,16 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 			Type:    className,
 			Name:    javaMethodWithArity(constructorMethodName, len(params)),
 		},
-		FilePath:     filePath,
-		StartLine:    int(node.StartPoint().Row) + 1,
-		EndLine:      int(node.EndPoint().Row) + 1,
-		OwnerType:    "class",
-		OwnerName:    className,
-		FunctionType: "constructor",
-		ReturnType:   className,
-		Parameters:   params,
+		FilePath:        filePath,
+		StartLine:       int(node.StartPoint().Row) + 1,
+		EndLine:         int(node.EndPoint().Row) + 1,
+		OwnerType:       "class",
+		OwnerName:       className,
+		FunctionType:    "constructor",
+		ReturnType:      className,
+		Visibility:      parseJavaMemberVisibility(node, src, "class", "constructor"),
+		OwnerVisibility: ownerVisibility,
+		Parameters:      params,
 	}
 
 	if body != nil {
@@ -446,6 +477,85 @@ func (p *JavaParser) parseConstructorDecl(node *sitter.Node, src []byte, filePat
 	}
 
 	return decl
+}
+
+func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
+	if node == nil {
+		return VisibilityPackagePrivate
+	}
+	modifiers := node.ChildByFieldName("modifiers")
+	if visibility, ok := findJavaVisibilityInNode(modifiers, src); ok {
+		return visibility
+	}
+	if visibility, ok := findJavaVisibilityInNode(node, src); ok {
+		return visibility
+	}
+	return VisibilityPackagePrivate
+}
+
+func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		visibility := strings.TrimSpace(node.Child(i).Content(src))
+		switch visibility {
+		case VisibilityPublic, VisibilityProtected, VisibilityPrivate:
+			return visibility, true
+		}
+	}
+	return "", false
+}
+
+func parseJavaMemberVisibility(node *sitter.Node, src []byte, ownerType, functionType string) string {
+	visibility := parseJavaDeclaredVisibility(node, src)
+	if visibility != VisibilityPackagePrivate {
+		return visibility
+	}
+	if ownerType == "interface" && functionType == "method" {
+		return VisibilityPublic
+	}
+	return VisibilityPackagePrivate
+}
+
+func combineJavaOwnerVisibility(parentVisibility, declaredVisibility string) string {
+	declaredVisibility = normalizeJavaVisibility(declaredVisibility)
+	if parentVisibility == "" {
+		return declaredVisibility
+	}
+	parentVisibility = normalizeJavaVisibility(parentVisibility)
+	if javaVisibilityRank(parentVisibility) < javaVisibilityRank(declaredVisibility) {
+		return parentVisibility
+	}
+	return declaredVisibility
+}
+
+func normalizeJavaVisibility(visibility string) string {
+	switch strings.TrimSpace(visibility) {
+	case VisibilityPublic:
+		return VisibilityPublic
+	case VisibilityProtected:
+		return VisibilityProtected
+	case VisibilityPrivate:
+		return VisibilityPrivate
+	default:
+		return VisibilityPackagePrivate
+	}
+}
+
+func javaVisibilityRank(visibility string) int {
+	switch normalizeJavaVisibility(visibility) {
+	case VisibilityPrivate:
+		return 0
+	case VisibilityPackagePrivate:
+		return 1
+	case VisibilityProtected:
+		return 2
+	case VisibilityPublic:
+		return 3
+	default:
+		return 1
+	}
 }
 
 // extractCallsWithFieldTypes walks a method body to find all call expressions,

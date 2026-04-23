@@ -144,6 +144,8 @@ type callGraphChainNode struct {
 	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
 	ReturnType         string                      `json:"return_type,omitempty"`
 	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	Visibility         string                      `json:"visibility,omitempty"`
+	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
 	FilePath           string                      `json:"file_path"`
 	StartLine          int                         `json:"start_line,omitempty"`
 	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
@@ -158,6 +160,8 @@ type callGraphEntryPoint struct {
 	Method             string                      `json:"method"`
 	ReturnType         string                      `json:"return_type,omitempty"`
 	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	Visibility         string                      `json:"visibility,omitempty"`
+	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
 	ReachableFindings  []callGraphReachableFinding `json:"reachable_findings"`
 }
 
@@ -335,6 +339,8 @@ type entryPointData struct {
 	method             string
 	returnType         string
 	parameterTypes     []string
+	visibility         string
+	ownerVisibility    string
 	findings           map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
 }
 
@@ -374,6 +380,12 @@ func ensureEntryPointData(index map[string]*entryPointData, node callGraphChainN
 		if len(ep.parameterTypes) == 0 {
 			ep.parameterTypes = cloneStringSlice(node.ParameterTypes)
 		}
+		if ep.visibility == "" {
+			ep.visibility = node.Visibility
+		}
+		if ep.ownerVisibility == "" {
+			ep.ownerVisibility = node.OwnerVisibility
+		}
 		return ep
 	}
 
@@ -385,6 +397,8 @@ func ensureEntryPointData(index map[string]*entryPointData, node callGraphChainN
 		method:             method,
 		returnType:         node.ReturnType,
 		parameterTypes:     cloneStringSlice(node.ParameterTypes),
+		visibility:         node.Visibility,
+		ownerVisibility:    node.OwnerVisibility,
 		findings:           make(map[string]entryPointFindingRef),
 	}
 	index[key] = ep
@@ -418,6 +432,8 @@ func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphEntryPo
 			Method:             ep.method,
 			ReturnType:         ep.returnType,
 			ParameterTypes:     cloneStringSlice(ep.parameterTypes),
+			Visibility:         ep.visibility,
+			OwnerVisibility:    ep.ownerVisibility,
 			ReachableFindings:  flattenReachableFindings(ep.findings),
 		})
 	}
@@ -1181,6 +1197,8 @@ func buildChainNode(
 		CanonicalSignature: meta.CanonicalSignature,
 		ReturnType:         meta.ReturnType,
 		ParameterTypes:     cloneStringSlice(meta.ParameterTypes),
+		Visibility:         meta.Visibility,
+		OwnerVisibility:    meta.OwnerVisibility,
 		FilePath:           location.FilePath,
 		StartLine:          startLine,
 		DependencyInfo:     location.DependencyInfo,
@@ -1346,6 +1364,8 @@ type exportFunctionMetadata struct {
 	CanonicalSignature string
 	ReturnType         string
 	ParameterTypes     []string
+	Visibility         string
+	OwnerVisibility    string
 }
 
 func buildExportFunctionMetadata(
@@ -1360,6 +1380,8 @@ func buildExportFunctionMetadata(
 	if decl != nil {
 		meta.ParameterTypes = exportParameterTypesFromDecl(decl.Parameters)
 		meta.ReturnType = strings.TrimSpace(decl.ReturnType)
+		meta.Visibility = strings.TrimSpace(decl.Visibility)
+		meta.OwnerVisibility = strings.TrimSpace(decl.OwnerVisibility)
 	}
 
 	if sig, ok := exportExternalSignature(graph, id, len(meta.ParameterTypes)); ok {
