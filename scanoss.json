@@ -46,6 +46,10 @@
       {
         "path": "internal/scan/root_module.go",
         "purl": "pkg:github/simplyliz/codemcp"
+      },
+      {
+        "path": "internal/dependency/registry.go",
+        "purl": "pkg:golang/github.com/bianoble/agent-sync"
       }
     ]
   }
