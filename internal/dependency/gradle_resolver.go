@@ -521,29 +521,23 @@ func (r *GradleResolver) selectGradleCommand(targetDir string) (string, error) {
 		return wrapperPath, nil
 	}
 
-	if path, err := r.lookPath("gradle"); err == nil {
+	path, err := r.lookPath("gradle")
+	if err == nil {
 		return path, nil
-	} else if errors.Is(err, exec.ErrNotFound) {
+	}
+	if errors.Is(err, exec.ErrNotFound) {
 		return "", failure.New(
 			failure.CodeGradleToolMissing,
 			failure.StageDependency,
 			fmt.Sprintf("Gradle dependency scanning requires ./gradlew or gradle in PATH for %s", targetDir),
 			failure.WithDetail("target_dir", targetDir),
 		)
-	} else if err != nil {
-		return "", failure.WrapUnknown(
-			err,
-			failure.CodeDependencyResolutionFailed,
-			failure.StageDependency,
-			"locate Gradle executable",
-			failure.WithDetail("target_dir", targetDir),
-		)
 	}
-
-	return "", failure.New(
-		failure.CodeGradleToolMissing,
+	return "", failure.WrapUnknown(
+		err,
+		failure.CodeDependencyResolutionFailed,
 		failure.StageDependency,
-		fmt.Sprintf("Gradle dependency scanning requires ./gradlew or gradle in PATH for %s", targetDir),
+		"locate Gradle executable",
 		failure.WithDetail("target_dir", targetDir),
 	)
 }

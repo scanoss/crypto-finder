@@ -117,7 +117,7 @@ func TestErrReadCloser_ReadConsumesRemainingData(t *testing.T) {
 	}
 
 	n, err = reader.Read(buf)
-	if n != 3 || err != io.EOF {
+	if n != 3 || !errors.Is(err, io.EOF) {
 		t.Fatalf("second Read() = (%d, %v), want (3, EOF)", n, err)
 	}
 	if string(buf[:n]) != "def" {
@@ -125,7 +125,7 @@ func TestErrReadCloser_ReadConsumesRemainingData(t *testing.T) {
 	}
 
 	n, err = reader.Read(buf)
-	if n != 0 || err != io.EOF {
+	if n != 0 || !errors.Is(err, io.EOF) {
 		t.Fatalf("third Read() = (%d, %v), want (0, EOF)", n, err)
 	}
 }

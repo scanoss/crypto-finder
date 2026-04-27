@@ -1701,7 +1701,7 @@ func skipMethodTypeParameters(signature string, pos int) int {
 // signatures up to the closing ')'. Returns the parsed parameters and the
 // position after the ')'.
 func parseMethodSignatureParams(signature string, pos int) ([]TypeRef, int, error) {
-	var params []TypeRef
+	params := make([]TypeRef, 0, len(signature)-pos)
 	for pos < len(signature) && signature[pos] != ')' {
 		ref, newPos, err := parseSignatureType(signature, pos)
 		if err != nil {
@@ -1813,7 +1813,7 @@ func parseSignatureTypeArgs(s string, pos int) ([]TypeRef, int, error) {
 		return nil, pos, nil
 	}
 	pos++
-	var args []TypeRef
+	args := make([]TypeRef, 0, len(s)-pos)
 	for pos < len(s) && s[pos] != '>' {
 		arg, newPos, err := parseSignatureType(s, pos)
 		if err != nil {

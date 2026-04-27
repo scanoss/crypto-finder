@@ -1101,38 +1101,54 @@ func isNumericLiteral(s string) bool {
 	if s == "" {
 		return false
 	}
-	runes := []rune(s)
-	start := 0
-	if runes[0] == '-' {
-		if len(runes) == 1 {
+	runes, ok := trimNumericLiteralSign([]rune(s))
+	if !ok {
+		return false
+	}
+	if hasHexNumericLiteralPrefix(runes) {
+		return isHexNumericLiteralBody(runes[2:])
+	}
+	return isDecimalNumericLiteralBody(runes)
+}
+
+func trimNumericLiteralSign(runes []rune) ([]rune, bool) {
+	if len(runes) == 0 {
+		return nil, false
+	}
+	if runes[0] != '-' {
+		return runes, true
+	}
+	if len(runes) == 1 {
+		return nil, false
+	}
+	return runes[1:], true
+}
+
+func hasHexNumericLiteralPrefix(runes []rune) bool {
+	return len(runes) >= 2 && runes[0] == '0' && (runes[1] == 'x' || runes[1] == 'X')
+}
+
+func isHexNumericLiteralBody(runes []rune) bool {
+	if len(runes) == 0 {
+		return false
+	}
+	hasDigit := false
+	for _, c := range runes {
+		if !isNumericLiteralRune(c, true, false, false) {
 			return false
 		}
-		start = 1
-	}
-
-	if len(runes[start:]) >= 2 && runes[start] == '0' && (runes[start+1] == 'x' || runes[start+1] == 'X') {
-		if len(runes[start:]) == 2 {
-			return false
+		if c >= '0' && c <= '9' {
+			hasDigit = true
 		}
-		hasDigit := false
-		for i := start + 2; i < len(runes); i++ {
-			if !isNumericLiteralRune(runes[i], true, false, false) {
-				return false
-			}
-			if runes[i] >= '0' && runes[i] <= '9' {
-				hasDigit = true
-			}
-		}
-		return hasDigit
 	}
+	return hasDigit
+}
 
+func isDecimalNumericLiteralBody(runes []rune) bool {
 	hasDigit := false
 	seenDot := false
-	for i := start; i < len(runes); i++ {
-		c := runes[i]
-		allowDot := !seenDot
-		allowSuffix := i == len(runes)-1
-		if !isNumericLiteralRune(c, false, allowDot, allowSuffix) {
+	for i, c := range runes {
+		if !isNumericLiteralRune(c, false, !seenDot, i == len(runes)-1) {
 			return false
 		}
 		if c >= '0' && c <= '9' {
