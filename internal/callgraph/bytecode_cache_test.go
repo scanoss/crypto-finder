@@ -380,7 +380,7 @@ func TestBytecodeCacheStorageKey(t *testing.T) {
 	if got := bytecodeCacheStorageKey(""); got != "" {
 		t.Fatalf("bytecodeCacheStorageKey(empty) = %q, want empty", got)
 	}
-	if got := bytecodeCacheStorageKey("group:artifact@1.0.0"); !strings.HasPrefix(got, "v2:") {
+	if got := bytecodeCacheStorageKey("group:artifact@1.0.0"); !strings.HasPrefix(got, "v3:") {
 		t.Fatalf("bytecodeCacheStorageKey = %q, want versioned prefix", got)
 	}
 }

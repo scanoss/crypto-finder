@@ -408,6 +408,7 @@ func (p *JavaParser) parseMethodDecl(
 	}
 
 	params := p.extractJavaParameterTypes(node, src)
+	returnRaw, returnRef := p.extractMethodReturnTypeRef(node, src)
 
 	decl := &FunctionDecl{
 		ID: FunctionID{
@@ -421,7 +422,8 @@ func (p *JavaParser) parseMethodDecl(
 		OwnerType:       ownerType,
 		OwnerName:       ownerName,
 		FunctionType:    javaFunctionTypeMethod,
-		ReturnType:      p.extractMethodReturnType(node, src),
+		ReturnType:      erasedTypeName(returnRaw, returnRef),
+		ReturnTypeRef:   returnRef,
 		Visibility:      parseJavaMemberVisibility(node, src, ownerType, javaFunctionTypeMethod),
 		OwnerVisibility: ownerVisibility,
 		Parameters:      params,
@@ -1285,9 +1287,25 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 	}
 	params := make([]FunctionParameter, 0, len(specs))
 	for _, spec := range specs {
-		params = append(params, FunctionParameter{Type: spec.RawType})
+		ref := parseSourceTypeRef(spec.RawType)
+		params = append(params, FunctionParameter{
+			Type:    erasedTypeName(spec.RawType, ref),
+			TypeRef: ref,
+		})
 	}
 	return params
+}
+
+// erasedTypeName returns the erased simple name for a Java source type. When
+// the structured TypeRef carries information (i.e. the parser was able to
+// understand the raw text), its Name is preferred since it already reflects
+// any generic-argument stripping and short-name reduction. Otherwise the raw
+// source string is returned as-is so we never silently lose information.
+func erasedTypeName(rawType string, ref TypeRef) string {
+	if ref.Name != "" {
+		return ref.Name
+	}
+	return strings.TrimSpace(rawType)
 }
 
 type javaParameterSpec struct {
@@ -1388,7 +1406,11 @@ func normalizeJavaReferenceType(typeText string) string {
 	return normalized + arraySuffix
 }
 
-func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) string {
+// extractMethodReturnTypeRef returns both the raw text of the return type as
+// it appears in the source AST and a structured TypeRef that captures any
+// generic parameters declared on it. Callers that only need the raw text can
+// use extractMethodReturnType.
+func (p *JavaParser) extractMethodReturnTypeRef(node *sitter.Node, src []byte) (string, TypeRef) {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
@@ -1401,10 +1423,123 @@ func (p *JavaParser) extractMethodReturnType(node *sitter.Node, src []byte) stri
 			"boolean_type",
 			"void_type",
 			"array_type":
-			return strings.TrimSpace(child.Content(src))
+			raw := strings.TrimSpace(child.Content(src))
+			return raw, parseSourceTypeRef(raw)
 		}
 	}
-	return ""
+	return "", TypeRef{}
+}
+
+// parseSourceTypeRef parses a Java source type expression (e.g.
+// "Map<String, List<Foo>>", "byte[]", or "java.util.Set<? extends Number>")
+// into a structured TypeRef. The Name field is reduced to the simple class
+// name; package qualifiers and generic argument syntax are stripped from it
+// while generics are surfaced through GenericParameters.
+//
+// Bounded wildcards drop their bound direction; an unbounded wildcard becomes
+// {Name: "?"}.
+func parseSourceTypeRef(typeText string) TypeRef {
+	typeText = strings.TrimSpace(typeText)
+	if typeText == "" {
+		return TypeRef{}
+	}
+	if strings.HasSuffix(typeText, "...") {
+		return appendArrayDim(parseSourceTypeRef(strings.TrimSpace(strings.TrimSuffix(typeText, "..."))))
+	}
+	arraySuffix := ""
+	for strings.HasSuffix(typeText, "[]") {
+		typeText = strings.TrimSpace(strings.TrimSuffix(typeText, "[]"))
+		arraySuffix += "[]"
+	}
+	typeText = strings.TrimSpace(typeText)
+	if typeText == "" {
+		return TypeRef{Name: arraySuffix}
+	}
+
+	if strings.HasPrefix(typeText, "?") {
+		return TypeRef{Name: "?" + arraySuffix}
+	}
+
+	open := strings.Index(typeText, "<")
+	if open < 0 {
+		return TypeRef{Name: simpleSourceTypeName(typeText) + arraySuffix}
+	}
+
+	base := simpleSourceTypeName(strings.TrimSpace(typeText[:open]))
+	closeIdx := findMatchingTypeArgClose(typeText, open)
+	if closeIdx < 0 {
+		return TypeRef{Name: base + arraySuffix}
+	}
+	args := splitTopLevelTypeArgs(typeText[open+1 : closeIdx])
+	generics := make([]TypeRef, 0, len(args))
+	for _, arg := range args {
+		generics = append(generics, parseSourceWildcardOrTypeRef(arg))
+	}
+	return TypeRef{Name: base + arraySuffix, GenericParameters: generics}
+}
+
+func parseSourceWildcardOrTypeRef(arg string) TypeRef {
+	arg = strings.TrimSpace(arg)
+	switch {
+	case arg == "?" || arg == "":
+		return TypeRef{Name: "?"}
+	case strings.HasPrefix(arg, "? extends "):
+		return parseSourceTypeRef(strings.TrimSpace(strings.TrimPrefix(arg, "? extends ")))
+	case strings.HasPrefix(arg, "? super "):
+		return parseSourceTypeRef(strings.TrimSpace(strings.TrimPrefix(arg, "? super ")))
+	default:
+		return parseSourceTypeRef(arg)
+	}
+}
+
+func appendArrayDim(ref TypeRef) TypeRef {
+	ref.Name += "[]"
+	return ref
+}
+
+func simpleSourceTypeName(name string) string {
+	name = strings.TrimSpace(name)
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		name = name[dot+1:]
+	}
+	return name
+}
+
+func findMatchingTypeArgClose(s string, openIdx int) int {
+	depth := 0
+	for i := openIdx; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func splitTopLevelTypeArgs(inner string) []string {
+	depth := 0
+	start := 0
+	args := make([]string, 0, 2)
+	for i := 0; i < len(inner); i++ {
+		switch inner[i] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+		case ',':
+			if depth == 0 {
+				args = append(args, strings.TrimSpace(inner[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	args = append(args, strings.TrimSpace(inner[start:]))
+	return args
 }
 
 // resolveCallee resolves a class/method pair against imports and local variable types.

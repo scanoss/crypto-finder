@@ -256,7 +256,7 @@ func TestApplyResolvedJavaCall_AllowsFullClassWithoutPackage(t *testing.T) {
 		fullClass:  "StandaloneType",
 	}
 
-	if ok := applyResolvedJavaCall(graph, fn, call, sig, map[string][]string{}); !ok {
+	if ok := applyResolvedJavaCall(graph, fn, call, &sig, map[string][]string{}); !ok {
 		t.Fatal("expected applyResolvedJavaCall to resolve method without package")
 	}
 	if call.Callee.Package != "" || call.Callee.Type != "StandaloneType" || call.Callee.Name != "helper#0" {

@@ -339,8 +339,8 @@ func TestExportCallGraph(t *testing.T) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("invalid json output: %v", err)
 		}
-		if payload.SchemaVersion != "5.0" {
-			t.Fatalf("schema_version = %q, want 5.0", payload.SchemaVersion)
+		if payload.SchemaVersion != "5.1" {
+			t.Fatalf("schema_version = %q, want 5.1", payload.SchemaVersion)
 		}
 		if len(payload.FindingGraphs) != 1 {
 			t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
@@ -1956,8 +1956,8 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 		t.Fatalf("json: %v", err)
 	}
 
-	if payload.SchemaVersion != "5.0" {
-		t.Fatalf("schema_version = %q, want 5.0", payload.SchemaVersion)
+	if payload.SchemaVersion != "5.1" {
+		t.Fatalf("schema_version = %q, want 5.1", payload.SchemaVersion)
 	}
 
 	if len(payload.EntryPointIndex) == 0 {
@@ -2297,4 +2297,160 @@ func keys(m map[string]callGraphEntryPoint) []string {
 		result = append(result, k)
 	}
 	return result
+}
+
+// TestExportCallGraph_ExposesStructuredGenericParameters verifies that a
+// crypto chain whose entry function and external dependency both carry
+// parametrized types preserves that structure in the exported JSON. The
+// flat parameter_types/return_type strings keep the erased name (so existing
+// consumers continue to work) while the new *_ref fields surface nested
+// generic_parameters per IBM/QSC's CBOM enrichment request.
+func TestExportCallGraph_ExposesStructuredGenericParameters(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	digestProviderID := callgraph.FunctionID{Package: "org.bouncycastle.operator.bc", Type: "BcDefaultDigestProvider", Name: "createTable#0"}
+	entryID := callgraph.FunctionID{Package: "example.app", Type: "Service", Name: "lookup#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			entryID.String(): {
+				ID:         entryID,
+				FilePath:   joinTestPath(projectRoot, "src/main/java/example/app/Service.java"),
+				StartLine:  10,
+				EndLine:    30,
+				ReturnType: "Map",
+				ReturnTypeRef: callgraph.TypeRef{
+					Name: "Map",
+					GenericParameters: []callgraph.TypeRef{
+						{Name: "String"},
+						{Name: "Digest"},
+					},
+				},
+				Parameters: []callgraph.FunctionParameter{{
+					Type: "List",
+					TypeRef: callgraph.TypeRef{
+						Name:              "List",
+						GenericParameters: []callgraph.TypeRef{{Name: "String"}},
+					},
+				}},
+				Calls: []callgraph.FunctionCall{{
+					Callee:   digestProviderID,
+					FilePath: joinTestPath(projectRoot, "src/main/java/example/app/Service.java"),
+					Line:     22,
+				}},
+			},
+		},
+		ExternalMethodSignatures: map[string][]callgraph.ExternalMethodSignature{
+			callgraph.ExternalMethodSignatureKey(digestProviderID): {{
+				ParameterTypes: nil,
+				ReturnType:     "java.util.Map",
+				ReturnTypeRef: callgraph.TypeRef{
+					Name: "Map",
+					GenericParameters: []callgraph.TypeRef{
+						{Name: "String"},
+						{Name: "Digest"},
+					},
+				},
+			}},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.3",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "src/main/java/example/app/Service.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 22,
+				EndLine:   22,
+				Match:     "BcDefaultDigestProvider.createTable()",
+				Rules:     []entities.RuleInfo{{ID: "java.bc.digest", Message: "digest table", Severity: "INFO"}},
+				Status:    "pending",
+				Metadata:  map[string]string{"api": "BcDefaultDigestProvider.createTable"},
+				FindingID: "generics-1",
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		Report:      report,
+		RootModule:  "example.app",
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	out := filepath.Join(t.TempDir(), "cg-generics.json")
+	if err := ExportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("ExportCallGraph(json): %v", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var payload callGraphExportV2
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("invalid json output: %v", err)
+	}
+
+	if len(payload.FindingGraphs) != 1 || len(payload.FindingGraphs[0].CallChains) == 0 {
+		t.Fatalf("expected one finding graph with chains, got %#v", payload.FindingGraphs)
+	}
+	chain := payload.FindingGraphs[0].CallChains[0]
+	if len(chain) == 0 {
+		t.Fatal("empty chain")
+	}
+
+	entry := chain[0]
+	if entry.ReturnType != "Map" {
+		t.Fatalf("entry return_type = %q, want erased %q", entry.ReturnType, "Map")
+	}
+	if entry.ReturnTypeRef == nil {
+		t.Fatalf("entry return_type_ref is nil; expected structured generics")
+	}
+	if entry.ReturnTypeRef.Name != "Map" {
+		t.Fatalf("entry return_type_ref.name = %q, want Map", entry.ReturnTypeRef.Name)
+	}
+	if len(entry.ReturnTypeRef.GenericParameters) != 2 ||
+		entry.ReturnTypeRef.GenericParameters[0].Name != "String" ||
+		entry.ReturnTypeRef.GenericParameters[1].Name != "Digest" {
+		t.Fatalf("entry return_type_ref.generic_parameters = %#v, want [String, Digest]", entry.ReturnTypeRef.GenericParameters)
+	}
+
+	if len(entry.ParameterTypes) != 1 || entry.ParameterTypes[0] != "List" {
+		t.Fatalf("entry parameter_types = %#v, want [List]", entry.ParameterTypes)
+	}
+	if len(entry.ParameterTypeRefs) != 1 {
+		t.Fatalf("entry parameter_type_refs = %#v, want 1 entry", entry.ParameterTypeRefs)
+	}
+	if entry.ParameterTypeRefs[0].Name != "List" || len(entry.ParameterTypeRefs[0].GenericParameters) != 1 ||
+		entry.ParameterTypeRefs[0].GenericParameters[0].Name != "String" {
+		t.Fatalf("entry parameter_type_refs[0] = %#v, want List<String>", entry.ParameterTypeRefs[0])
+	}
+
+	terminal := chain[len(chain)-1]
+	if terminal.CryptoCall == nil {
+		t.Fatal("expected crypto_call on terminal chain node")
+	}
+	cryptoCall := *terminal.CryptoCall
+	if cryptoCall.ReturnType != "java.util.Map" {
+		t.Fatalf("crypto_call.return_type = %q, want java.util.Map", cryptoCall.ReturnType)
+	}
+	if cryptoCall.ReturnTypeRef == nil {
+		t.Fatalf("crypto_call.return_type_ref is nil; expected structured generics from external signature")
+	}
+	if cryptoCall.ReturnTypeRef.Name != "Map" || len(cryptoCall.ReturnTypeRef.GenericParameters) != 2 {
+		t.Fatalf("crypto_call.return_type_ref = %#v, want Map<String, Digest>", cryptoCall.ReturnTypeRef)
+	}
+
+	if !strings.Contains(string(data), "\"return_type_ref\"") {
+		t.Fatalf("exported JSON missing return_type_ref field; got: %s", data)
+	}
+	if !strings.Contains(string(data), "\"parameter_type_refs\"") {
+		t.Fatalf("exported JSON missing parameter_type_refs field; got: %s", data)
+	}
 }

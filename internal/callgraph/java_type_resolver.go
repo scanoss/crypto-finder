@@ -63,11 +63,13 @@ func (r *JavaBytecodeTypeResolver) SetBytecodeIndexCache(cache BytecodeIndexCach
 
 // methodSignature holds parsed method type information from bytecode.
 type methodSignature struct {
-	className  string   // e.g., "JwtBuilder"
-	methodName string   // e.g., "signWith"
-	paramTypes []string // e.g., ["SignatureAlgorithm", "byte[]"]
-	returnType string   // e.g., "JwtBuilder"
-	fullClass  string   // e.g., "io.jsonwebtoken.JwtBuilder"
+	className     string   // e.g., "JwtBuilder"
+	methodName    string   // e.g., "signWith"
+	paramTypes    []string // e.g., ["SignatureAlgorithm", "byte[]"]
+	returnType    string   // e.g., "JwtBuilder"
+	fullClass     string   // e.g., "io.jsonwebtoken.JwtBuilder"
+	paramTypeRefs []TypeRef
+	returnTypeRef TypeRef
 }
 
 type jarTask struct {
@@ -333,7 +335,8 @@ func enrichJavaFunctionDeclaration(fn *FunctionDecl, signatures []methodSignatur
 	}
 
 	arity := len(fn.Parameters)
-	for _, sig := range signatures {
+	for sigIdx := range signatures {
+		sig := &signatures[sigIdx]
 		if len(sig.paramTypes) != arity {
 			continue
 		}
@@ -389,8 +392,8 @@ func rewriteJavaCallFromIndex(
 	if len(signatures) == 0 {
 		return false
 	}
-	for _, sig := range signatures {
-		if applyResolvedJavaCall(graph, fn, call, sig, methodsByQualifiedArity) {
+	for sigIdx := range signatures {
+		if applyResolvedJavaCall(graph, fn, call, &signatures[sigIdx], methodsByQualifiedArity) {
 			return true
 		}
 	}
@@ -401,7 +404,7 @@ func applyResolvedJavaCall(
 	graph *CallGraph,
 	fn *FunctionDecl,
 	call *FunctionCall,
-	sig methodSignature,
+	sig *methodSignature,
 	methodsByQualifiedArity map[string][]string,
 ) bool {
 	pkg := ""
@@ -571,9 +574,10 @@ func (r *JavaBytecodeTypeResolver) indexSingleJAR(task jarTask) jarIndexChunk {
 	index := make(map[string][]methodSignature)
 	hierarchy := make(map[string][]string)
 	for _, info := range classInfos {
-		for _, sig := range info.methods {
+		for sigIdx := range info.methods {
+			sig := &info.methods[sigIdx]
 			key := sig.fullClass + "." + sig.methodName
-			index[key] = append(index[key], sig)
+			index[key] = append(index[key], *sig)
 		}
 		if parents := classHierarchyParents(info); len(parents) > 0 {
 			hierarchy[info.fullClassName] = parents
@@ -855,11 +859,12 @@ func buildJavaMethodLookup(index map[string][]methodSignature) *javaMethodLookup
 		simpleKey := simpleJavaTypeName(fullClass) + "." + methodName
 		lookup.simple[simpleKey] = append(lookup.simple[simpleKey], sigs...)
 
-		for _, sig := range sigs {
+		for sigIdx := range sigs {
+			sig := &sigs[sigIdx]
 			qualifiedArityKey := javaLookupArityKey(fullClass, methodName, len(sig.paramTypes))
 			simpleArityKey := javaLookupArityKey(simpleJavaTypeName(fullClass), methodName, len(sig.paramTypes))
-			lookup.qualifiedArity[qualifiedArityKey] = append(lookup.qualifiedArity[qualifiedArityKey], sig)
-			lookup.simpleArity[simpleArityKey] = append(lookup.simpleArity[simpleArityKey], sig)
+			lookup.qualifiedArity[qualifiedArityKey] = append(lookup.qualifiedArity[qualifiedArityKey], *sig)
+			lookup.simpleArity[simpleArityKey] = append(lookup.simpleArity[simpleArityKey], *sig)
 		}
 	}
 
@@ -1012,7 +1017,8 @@ func buildExternalMethodSignatureIndex(index map[string][]methodSignature) map[s
 	out := make(map[string][]ExternalMethodSignature)
 	seen := make(map[string]map[string]struct{})
 	for _, sigs := range index {
-		for _, sig := range sigs {
+		for sigIdx := range sigs {
+			sig := &sigs[sigIdx]
 			lastDot := strings.LastIndex(sig.fullClass, ".")
 			if lastDot <= 0 {
 				continue
@@ -1032,8 +1038,10 @@ func buildExternalMethodSignatureIndex(index map[string][]methodSignature) map[s
 			}
 			seen[key][fingerprint] = struct{}{}
 			out[key] = append(out[key], ExternalMethodSignature{
-				ParameterTypes: append([]string(nil), sig.paramTypes...),
-				ReturnType:     sig.returnType,
+				ParameterTypes:    append([]string(nil), sig.paramTypes...),
+				ReturnType:        sig.returnType,
+				ParameterTypeRefs: cloneTypeRefs(sig.paramTypeRefs),
+				ReturnTypeRef:     cloneTypeRef(sig.returnTypeRef),
 			})
 		}
 	}
@@ -1044,9 +1052,10 @@ func buildMethodIndexFromClassInfos(classInfos []*classFileInfo) (map[string][]m
 	index := make(map[string][]methodSignature)
 	hierarchy := make(map[string][]string)
 	for _, info := range classInfos {
-		for _, sig := range info.methods {
+		for sigIdx := range info.methods {
+			sig := &info.methods[sigIdx]
 			key := sig.fullClass + "." + sig.methodName
-			index[key] = append(index[key], sig)
+			index[key] = append(index[key], *sig)
 		}
 		if parents := classHierarchyParents(info); len(parents) > 0 {
 			hierarchy[info.fullClassName] = parents
@@ -1130,8 +1139,8 @@ func cloneMethodsByName(methods map[string][]methodSignature) map[string][]metho
 
 func inheritMethodSignatures(typeName string, sigs []methodSignature) []methodSignature {
 	inherited := make([]methodSignature, len(sigs))
-	for i, sig := range sigs {
-		inherited[i] = sig
+	for i := range sigs {
+		inherited[i] = sigs[i]
 		inherited[i].className = simpleJavaTypeName(typeName)
 		inherited[i].fullClass = typeName
 	}
@@ -1468,7 +1477,7 @@ func parseClassMethod(
 	attrCount := int(binary.BigEndian.Uint16(data[offset+6:]))
 	offset += 8
 
-	newOffset, truncated := skipMethodAttributes(data, offset, attrCount)
+	signature, newOffset, truncated := readMethodSignatureAttribute(data, cp, offset, attrCount)
 	if truncated {
 		return methodSignature{}, newOffset, &classFileInfo{
 			className:     className,
@@ -1483,24 +1492,48 @@ func parseClassMethod(
 		return methodSignature{}, newOffset, nil
 	}
 	params, ret := parseMethodDescriptor(descriptor)
-	return methodSignature{
+
+	sig := methodSignature{
 		className:  className,
 		methodName: methodName,
 		paramTypes: params,
 		returnType: ret,
 		fullClass:  fullClassName,
-	}, newOffset, nil
+	}
+	if signature != "" {
+		if paramRefs, retRef, sigErr := parseClassMethodSignature(signature); sigErr == nil {
+			sig.paramTypeRefs = paramRefs
+			sig.returnTypeRef = retRef
+		}
+	}
+	return sig, newOffset, nil
 }
 
-func skipMethodAttributes(data []byte, offset, attrCount int) (int, bool) {
+// readMethodSignatureAttribute walks the method's attribute table looking for
+// the "Signature" attribute (JVM Spec §4.7.9). When found, it returns the
+// referenced UTF-8 generic signature; otherwise the empty string. All other
+// attributes are skipped over.
+func readMethodSignatureAttribute(data []byte, cp []cpEntry, offset, attrCount int) (string, int, bool) {
+	signature := ""
 	for range attrCount {
 		if offset+6 > len(data) {
-			return offset, true
+			return signature, offset, true
 		}
+		nameIdx := int(binary.BigEndian.Uint16(data[offset:]))
 		attrLen := int(binary.BigEndian.Uint32(data[offset+2:]))
-		offset += 6 + attrLen
+		bodyOffset := offset + 6
+		if bodyOffset+attrLen > len(data) {
+			return signature, offset, true
+		}
+		if signature == "" && nameIdx > 0 && nameIdx < len(cp) && cp[nameIdx].strValue == "Signature" && attrLen >= 2 {
+			sigIdx := int(binary.BigEndian.Uint16(data[bodyOffset:]))
+			if sigIdx > 0 && sigIdx < len(cp) {
+				signature = cp[sigIdx].strValue
+			}
+		}
+		offset = bodyOffset + attrLen
 	}
-	return offset, false
+	return signature, offset, false
 }
 
 func methodSignatureStrings(cp []cpEntry, nameIdx, descIdx int) (string, string) {
@@ -1602,6 +1635,200 @@ func skipFieldsOrMethods(data []byte, offset int, _ []cpEntry) (int, error) {
 		}
 	}
 	return offset, nil
+}
+
+// signatureBaseTypes maps the JLS primitive signature characters to their
+// human-readable type name. Looked up before the more involved cases in
+// parseSignatureType to keep that function's complexity manageable.
+var signatureBaseTypes = map[byte]string{
+	'B': "byte",
+	'C': "char",
+	'D': "double",
+	'F': "float",
+	'I': "int",
+	'J': "long",
+	'S': "short",
+	'Z': "boolean",
+	'V': "void",
+}
+
+// parseClassMethodSignature parses a JLS §4.7.9.1 MethodSignature attribute
+// and returns structured TypeRef values for its parameters and return type.
+// The signature carries generics that the erased descriptor cannot express,
+// e.g. "(Ljava/util/List<Ljava/lang/String;>;)Ljava/util/Map<Ljava/lang/String;Ljava/util/List<Lcom/example/Foo;>;>;".
+func parseClassMethodSignature(signature string) ([]TypeRef, TypeRef, error) {
+	pos := skipMethodTypeParameters(signature, 0)
+	if pos >= len(signature) || signature[pos] != '(' {
+		return nil, TypeRef{}, fmt.Errorf("expected '(' in method signature %q at pos %d", signature, pos)
+	}
+	pos++
+
+	params, pos, err := parseMethodSignatureParams(signature, pos)
+	if err != nil {
+		return nil, TypeRef{}, err
+	}
+	if pos >= len(signature) {
+		return nil, TypeRef{}, fmt.Errorf("missing return type in method signature %q", signature)
+	}
+	ret, _, err := parseSignatureType(signature, pos)
+	if err != nil {
+		return nil, TypeRef{}, err
+	}
+	return params, ret, nil
+}
+
+// skipMethodTypeParameters skips an optional <TypeParameters> block that
+// generic methods declare ahead of their formal arguments.
+func skipMethodTypeParameters(signature string, pos int) int {
+	if pos >= len(signature) || signature[pos] != '<' {
+		return pos
+	}
+	depth := 1
+	pos++
+	for pos < len(signature) && depth > 0 {
+		switch signature[pos] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+		}
+		pos++
+	}
+	return pos
+}
+
+// parseMethodSignatureParams reads the comma-less list of parameter
+// signatures up to the closing ')'. Returns the parsed parameters and the
+// position after the ')'.
+func parseMethodSignatureParams(signature string, pos int) ([]TypeRef, int, error) {
+	var params []TypeRef
+	for pos < len(signature) && signature[pos] != ')' {
+		ref, newPos, err := parseSignatureType(signature, pos)
+		if err != nil {
+			return nil, pos, err
+		}
+		if newPos <= pos {
+			return nil, pos, fmt.Errorf("no progress at pos %d in %q", pos, signature)
+		}
+		params = append(params, ref)
+		pos = newPos
+	}
+	if pos >= len(signature) {
+		return nil, pos, fmt.Errorf("missing ')' in method signature %q", signature)
+	}
+	return params, pos + 1, nil
+}
+
+// parseSignatureType parses one JavaTypeSignature (BaseType, ClassTypeSignature,
+// TypeVariableSignature, or ArrayTypeSignature) starting at pos in a JLS
+// signature string. It returns the parsed TypeRef and the position after the
+// consumed bytes.
+func parseSignatureType(s string, pos int) (TypeRef, int, error) {
+	if pos >= len(s) {
+		return TypeRef{}, pos, fmt.Errorf("unexpected end of signature at pos %d", pos)
+	}
+	if name, ok := signatureBaseTypes[s[pos]]; ok {
+		return TypeRef{Name: name}, pos + 1, nil
+	}
+	switch s[pos] {
+	case '[':
+		elem, newPos, err := parseSignatureType(s, pos+1)
+		if err != nil {
+			return TypeRef{}, pos, err
+		}
+		elem.Name += "[]"
+		return elem, newPos, nil
+	case 'T':
+		end := strings.Index(s[pos:], ";")
+		if end < 0 {
+			return TypeRef{}, pos, fmt.Errorf("missing ';' for type variable at pos %d", pos)
+		}
+		return TypeRef{Name: s[pos+1 : pos+end]}, pos + end + 1, nil
+	case 'L':
+		return parseClassTypeSignature(s, pos+1)
+	case '*':
+		return TypeRef{Name: "?"}, pos + 1, nil
+	case '+', '-':
+		// Bounded wildcards (`? extends`, `? super`). The bound direction is
+		// dropped from the structured TypeRef — consumers wanting it can read
+		// the raw signature.
+		return parseSignatureType(s, pos+1)
+	default:
+		return TypeRef{}, pos, fmt.Errorf("unexpected signature char %q at pos %d in %q", s[pos], pos, s)
+	}
+}
+
+// parseClassTypeSignature parses the body after the leading 'L', covering
+// PackageSpecifier? SimpleClassTypeSignature ClassTypeSignatureSuffix* ';'.
+// Generic arguments from the outermost class are surfaced; generics that
+// belong to inner classes (rare in practice for our purposes) are also
+// collapsed into the same GenericParameters list.
+func parseClassTypeSignature(s string, pos int) (TypeRef, int, error) {
+	name, pos := readSignatureClassName(s, pos)
+
+	generics, pos, err := parseSignatureTypeArgs(s, pos)
+	if err != nil {
+		return TypeRef{}, pos, err
+	}
+
+	for pos < len(s) && s[pos] == '.' {
+		pos++
+		var inner string
+		inner, pos = readSignatureClassName(s, pos)
+		name = name + "." + inner
+		var innerArgs []TypeRef
+		innerArgs, pos, err = parseSignatureTypeArgs(s, pos)
+		if err != nil {
+			return TypeRef{}, pos, err
+		}
+		generics = append(generics, innerArgs...)
+	}
+
+	if pos < len(s) && s[pos] == ';' {
+		pos++
+	}
+	return TypeRef{Name: name, GenericParameters: generics}, pos, nil
+}
+
+// readSignatureClassName reads a JLS class identifier (slash-separated package
+// path plus simple name) up to the first delimiter ('<', ';', '.'), and
+// returns the simple class name plus the position of the delimiter.
+func readSignatureClassName(s string, pos int) (string, int) {
+	start := pos
+	for pos < len(s) && s[pos] != '<' && s[pos] != ';' && s[pos] != '.' {
+		pos++
+	}
+	name := s[start:pos]
+	if slash := strings.LastIndex(name, "/"); slash >= 0 {
+		name = name[slash+1:]
+	}
+	return name, pos
+}
+
+// parseSignatureTypeArgs parses an optional "<...>" type-argument block at
+// pos. Returns the list of arguments (nil when no block) and the position
+// after the closing '>'. Errors on malformed input or zero-progress parses.
+func parseSignatureTypeArgs(s string, pos int) ([]TypeRef, int, error) {
+	if pos >= len(s) || s[pos] != '<' {
+		return nil, pos, nil
+	}
+	pos++
+	var args []TypeRef
+	for pos < len(s) && s[pos] != '>' {
+		arg, newPos, err := parseSignatureType(s, pos)
+		if err != nil {
+			return nil, pos, err
+		}
+		if newPos <= pos {
+			return nil, pos, fmt.Errorf("no progress parsing type arguments at pos %d in %q", pos, s)
+		}
+		args = append(args, arg)
+		pos = newPos
+	}
+	if pos >= len(s) {
+		return nil, pos, fmt.Errorf("missing '>' after type arguments in %q", s)
+	}
+	return args, pos + 1, nil
 }
 
 // parseMethodDescriptor parses a JVM method descriptor string.

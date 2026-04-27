@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	callGraphSchemaVersion   = "5.0"
+	callGraphSchemaVersion   = "5.1"
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -84,9 +84,20 @@ type callGraphCalledFunction struct {
 	FunctionName       string               `json:"function_name"`
 	CanonicalSignature string               `json:"canonical_signature,omitempty"`
 	ReturnType         string               `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef       `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string             `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef      `json:"parameter_type_refs,omitempty"`
 	Line               int                  `json:"line"`
 	Parameters         []callGraphParameter `json:"parameters,omitempty"`
+}
+
+// exportTypeRef is the JSON shape for a structured Java type reference,
+// optionally carrying nested generic parameters. Surfaced alongside the
+// existing flat return_type/parameter_types strings (which keep the erased
+// type name for backwards compatibility).
+type exportTypeRef struct {
+	Name              string          `json:"name"`
+	GenericParameters []exportTypeRef `json:"generic_parameters,omitempty"`
 }
 
 type callGraphMatchedOperation struct {
@@ -100,7 +111,9 @@ type callGraphEntryCall struct {
 	FunctionName       string               `json:"function_name,omitempty"`
 	CanonicalSignature string               `json:"canonical_signature,omitempty"`
 	ReturnType         string               `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef       `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string             `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef      `json:"parameter_type_refs,omitempty"`
 	FilePath           string               `json:"file_path"`
 	Line               int                  `json:"line"`
 	Parameters         []callGraphParameter `json:"parameters,omitempty"`
@@ -143,7 +156,9 @@ type callGraphChainNode struct {
 	FunctionName       string                      `json:"function_name"`
 	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
 	ReturnType         string                      `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef              `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef             `json:"parameter_type_refs,omitempty"`
 	Visibility         string                      `json:"visibility,omitempty"`
 	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
 	FilePath           string                      `json:"file_path"`
@@ -159,7 +174,9 @@ type callGraphEntryPoint struct {
 	Class              string                      `json:"class,omitempty"`
 	Method             string                      `json:"method"`
 	ReturnType         string                      `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef              `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef             `json:"parameter_type_refs,omitempty"`
 	Visibility         string                      `json:"visibility,omitempty"`
 	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
 	ReachableFindings  []callGraphReachableFinding `json:"reachable_findings"`
@@ -338,7 +355,9 @@ type entryPointData struct {
 	class              string
 	method             string
 	returnType         string
+	returnTypeRef      *exportTypeRef
 	parameterTypes     []string
+	parameterTypeRefs  []exportTypeRef
 	visibility         string
 	ownerVisibility    string
 	findings           map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
@@ -383,7 +402,9 @@ func ensureEntryPointData(index map[string]*entryPointData, node *callGraphChain
 		class:              class,
 		method:             method,
 		returnType:         node.ReturnType,
+		returnTypeRef:      cloneExportTypeRef(node.ReturnTypeRef),
 		parameterTypes:     cloneStringSlice(node.ParameterTypes),
+		parameterTypeRefs:  cloneExportTypeRefs(node.ParameterTypeRefs),
 		visibility:         node.Visibility,
 		ownerVisibility:    node.OwnerVisibility,
 		findings:           make(map[string]entryPointFindingRef),
@@ -402,8 +423,14 @@ func mergeEntryPointData(ep *entryPointData, node *callGraphChainNode) {
 	if ep.returnType == "" {
 		ep.returnType = node.ReturnType
 	}
+	if ep.returnTypeRef == nil {
+		ep.returnTypeRef = cloneExportTypeRef(node.ReturnTypeRef)
+	}
 	if len(ep.parameterTypes) == 0 {
 		ep.parameterTypes = cloneStringSlice(node.ParameterTypes)
+	}
+	if len(ep.parameterTypeRefs) == 0 {
+		ep.parameterTypeRefs = cloneExportTypeRefs(node.ParameterTypeRefs)
 	}
 	if ep.visibility == "" {
 		ep.visibility = node.Visibility
@@ -439,7 +466,9 @@ func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphEntryPo
 			Class:              ep.class,
 			Method:             ep.method,
 			ReturnType:         ep.returnType,
+			ReturnTypeRef:      cloneExportTypeRef(ep.returnTypeRef),
 			ParameterTypes:     cloneStringSlice(ep.parameterTypes),
+			ParameterTypeRefs:  cloneExportTypeRefs(ep.parameterTypeRefs),
 			Visibility:         ep.visibility,
 			OwnerVisibility:    ep.ownerVisibility,
 			ReachableFindings:  flattenReachableFindings(ep.findings),
@@ -1143,6 +1172,9 @@ func cloneCallGraphChain(chain []callGraphChainNode) []callGraphChainNode {
 		cloned[i].DependencyInfo = cloneDependencyContext(chain[i].DependencyInfo)
 		cloned[i].EntryCall = cloneEntryCall(chain[i].EntryCall)
 		cloned[i].CryptoCall = cloneCalledFunction(chain[i].CryptoCall)
+		cloned[i].ReturnTypeRef = cloneExportTypeRef(chain[i].ReturnTypeRef)
+		cloned[i].ParameterTypeRefs = cloneExportTypeRefs(chain[i].ParameterTypeRefs)
+		cloned[i].ParameterTypes = cloneStringSlice(chain[i].ParameterTypes)
 	}
 	return cloned
 }
@@ -1162,6 +1194,8 @@ func cloneEntryCall(call *callGraphEntryCall) *callGraphEntryCall {
 	cloned := *call
 	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
+	cloned.ReturnTypeRef = cloneExportTypeRef(call.ReturnTypeRef)
+	cloned.ParameterTypeRefs = cloneExportTypeRefs(call.ParameterTypeRefs)
 	return &cloned
 }
 
@@ -1172,6 +1206,8 @@ func cloneCalledFunction(call *callGraphCalledFunction) *callGraphCalledFunction
 	cloned := *call
 	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
+	cloned.ReturnTypeRef = cloneExportTypeRef(call.ReturnTypeRef)
+	cloned.ParameterTypeRefs = cloneExportTypeRefs(call.ParameterTypeRefs)
 	return &cloned
 }
 
@@ -1204,7 +1240,9 @@ func buildChainNode(
 		FunctionName:       meta.FunctionName,
 		CanonicalSignature: meta.CanonicalSignature,
 		ReturnType:         meta.ReturnType,
+		ReturnTypeRef:      cloneExportTypeRef(meta.ReturnTypeRef),
 		ParameterTypes:     cloneStringSlice(meta.ParameterTypes),
+		ParameterTypeRefs:  cloneExportTypeRefs(meta.ParameterTypeRefs),
 		Visibility:         meta.Visibility,
 		OwnerVisibility:    meta.OwnerVisibility,
 		FilePath:           location.FilePath,
@@ -1371,7 +1409,9 @@ type exportFunctionMetadata struct {
 	FunctionName       string
 	CanonicalSignature string
 	ReturnType         string
+	ReturnTypeRef      *exportTypeRef
 	ParameterTypes     []string
+	ParameterTypeRefs  []exportTypeRef
 	Visibility         string
 	OwnerVisibility    string
 }
@@ -1387,21 +1427,111 @@ func buildExportFunctionMetadata(
 
 	if decl != nil {
 		meta.ParameterTypes = exportParameterTypesFromDecl(decl.Parameters)
+		meta.ParameterTypeRefs = exportParameterTypeRefsFromDecl(decl.Parameters)
 		meta.ReturnType = strings.TrimSpace(decl.ReturnType)
+		meta.ReturnTypeRef = exportTypeRefFromCallgraph(decl.ReturnTypeRef)
 		meta.Visibility = strings.TrimSpace(decl.Visibility)
 		meta.OwnerVisibility = strings.TrimSpace(decl.OwnerVisibility)
 	}
 
 	if sig, ok := exportExternalSignature(graph, id, len(meta.ParameterTypes)); ok {
 		meta.ParameterTypes = mergeExportParameterTypes(meta.ParameterTypes, sig.ParameterTypes)
+		meta.ParameterTypeRefs = mergeExportParameterTypeRefs(meta.ParameterTypeRefs, sig.ParameterTypeRefs)
 		if meta.ReturnType == "" {
 			meta.ReturnType = strings.TrimSpace(sig.ReturnType)
+		}
+		if meta.ReturnTypeRef == nil {
+			meta.ReturnTypeRef = exportTypeRefFromCallgraph(sig.ReturnTypeRef)
 		}
 	}
 
 	meta.ReturnType = normalizeExportReturnType(id, meta.ReturnType)
 	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
 	return meta
+}
+
+// exportTypeRefFromCallgraph converts a callgraph.TypeRef into the exported
+// shape, returning nil when the source carries no useful structured data.
+// The flat name alone is not surfaced through *_ref fields; consumers can
+// read it from the existing return_type / parameter_types strings.
+func exportTypeRefFromCallgraph(ref callgraph.TypeRef) *exportTypeRef {
+	if ref.Name == "" && len(ref.GenericParameters) == 0 {
+		return nil
+	}
+	if !ref.HasGenerics() {
+		return nil
+	}
+	out := convertCallgraphTypeRef(ref)
+	return &out
+}
+
+func convertCallgraphTypeRef(ref callgraph.TypeRef) exportTypeRef {
+	out := exportTypeRef{Name: ref.Name}
+	if len(ref.GenericParameters) > 0 {
+		out.GenericParameters = make([]exportTypeRef, len(ref.GenericParameters))
+		for i, child := range ref.GenericParameters {
+			out.GenericParameters[i] = convertCallgraphTypeRef(child)
+		}
+	}
+	return out
+}
+
+func exportParameterTypeRefsFromDecl(params []callgraph.FunctionParameter) []exportTypeRef {
+	if len(params) == 0 {
+		return nil
+	}
+	hasGenerics := false
+	refs := make([]exportTypeRef, len(params))
+	for i, param := range params {
+		refs[i] = convertCallgraphTypeRef(param.TypeRef)
+		if refs[i].Name == "" {
+			refs[i].Name = strings.TrimSpace(param.Type)
+		}
+		if param.TypeRef.HasGenerics() {
+			hasGenerics = true
+		}
+	}
+	if !hasGenerics {
+		return nil
+	}
+	return refs
+}
+
+func mergeExportParameterTypeRefs(existing []exportTypeRef, fallback []callgraph.TypeRef) []exportTypeRef {
+	if len(fallback) == 0 {
+		return existing
+	}
+	merged := append([]exportTypeRef(nil), existing...)
+	hasGenerics := false
+	for _, r := range merged {
+		if len(r.GenericParameters) > 0 {
+			hasGenerics = true
+			break
+		}
+	}
+	if len(merged) == 0 {
+		merged = make([]exportTypeRef, len(fallback))
+	}
+	limit := len(merged)
+	if len(fallback) < limit {
+		limit = len(fallback)
+	}
+	for i := 0; i < limit; i++ {
+		converted := convertCallgraphTypeRef(fallback[i])
+		if merged[i].Name == "" {
+			merged[i].Name = converted.Name
+		}
+		if len(merged[i].GenericParameters) == 0 {
+			merged[i].GenericParameters = converted.GenericParameters
+		}
+		if len(converted.GenericParameters) > 0 {
+			hasGenerics = true
+		}
+	}
+	if !hasGenerics {
+		return existing
+	}
+	return merged
 }
 
 func normalizeExportReturnType(id callgraph.FunctionID, returnType string) string {
@@ -1502,7 +1632,9 @@ func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta expor
 	call.FunctionName = meta.FunctionName
 	call.CanonicalSignature = meta.CanonicalSignature
 	call.ReturnType = meta.ReturnType
+	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
 }
 
 func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, meta exportFunctionMetadata) {
@@ -1512,7 +1644,29 @@ func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, 
 	call.FunctionName = meta.FunctionName
 	call.CanonicalSignature = meta.CanonicalSignature
 	call.ReturnType = meta.ReturnType
+	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
+}
+
+func cloneExportTypeRef(ref *exportTypeRef) *exportTypeRef {
+	if ref == nil {
+		return nil
+	}
+	out := *ref
+	out.GenericParameters = cloneExportTypeRefs(ref.GenericParameters)
+	return &out
+}
+
+func cloneExportTypeRefs(refs []exportTypeRef) []exportTypeRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]exportTypeRef, len(refs))
+	for i, r := range refs {
+		out[i] = *cloneExportTypeRef(&r)
+	}
+	return out
 }
 
 func cloneStringSlice(values []string) []string {

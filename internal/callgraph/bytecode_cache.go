@@ -15,7 +15,7 @@ import (
 
 const (
 	bytecodeCacheDirName       = "bytecode"
-	bytecodeCacheSchemaVersion = 2
+	bytecodeCacheSchemaVersion = 3
 	legacyBytecodeCacheVersion = 1
 )
 
@@ -47,11 +47,68 @@ type cachedBytecodeIndexJSON struct {
 }
 
 type serializedMethodSignature struct {
-	ClassName  string   `json:"class_name"`
-	MethodName string   `json:"method_name"`
-	ParamTypes []string `json:"param_types"`
-	ReturnType string   `json:"return_type"`
-	FullClass  string   `json:"full_class"`
+	ClassName     string              `json:"class_name"`
+	MethodName    string              `json:"method_name"`
+	ParamTypes    []string            `json:"param_types"`
+	ReturnType    string              `json:"return_type"`
+	FullClass     string              `json:"full_class"`
+	ParamTypeRefs []serializedTypeRef `json:"param_type_refs,omitempty"`
+	ReturnTypeRef *serializedTypeRef  `json:"return_type_ref,omitempty"`
+}
+
+type serializedTypeRef struct {
+	Name              string              `json:"name"`
+	GenericParameters []serializedTypeRef `json:"generic_parameters,omitempty"`
+}
+
+func encodeSerializedTypeRef(ref TypeRef) *serializedTypeRef {
+	if ref.Name == "" && len(ref.GenericParameters) == 0 {
+		return nil
+	}
+	out := &serializedTypeRef{Name: ref.Name}
+	if len(ref.GenericParameters) > 0 {
+		out.GenericParameters = make([]serializedTypeRef, len(ref.GenericParameters))
+		for i, child := range ref.GenericParameters {
+			if encoded := encodeSerializedTypeRef(child); encoded != nil {
+				out.GenericParameters[i] = *encoded
+			}
+		}
+	}
+	return out
+}
+
+func encodeSerializedTypeRefs(refs []TypeRef) []serializedTypeRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]serializedTypeRef, len(refs))
+	for i, r := range refs {
+		if encoded := encodeSerializedTypeRef(r); encoded != nil {
+			out[i] = *encoded
+		}
+	}
+	return out
+}
+
+func decodeSerializedTypeRef(ref *serializedTypeRef) TypeRef {
+	if ref == nil {
+		return TypeRef{}
+	}
+	return TypeRef{
+		Name:              ref.Name,
+		GenericParameters: decodeSerializedTypeRefs(ref.GenericParameters),
+	}
+}
+
+func decodeSerializedTypeRefs(refs []serializedTypeRef) []TypeRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]TypeRef, len(refs))
+	for i := range refs {
+		out[i] = decodeSerializedTypeRef(&refs[i])
+	}
+	return out
 }
 
 // MarshalJSON serializes a cached bytecode index using the stable JSON schema.
@@ -59,13 +116,16 @@ func (c CachedBytecodeIndex) MarshalJSON() ([]byte, error) {
 	methods := make(map[string][]serializedMethodSignature, len(c.MethodsIndex))
 	for key, sigs := range c.MethodsIndex {
 		encoded := make([]serializedMethodSignature, len(sigs))
-		for i, sig := range sigs {
+		for i := range sigs {
+			sig := &sigs[i]
 			encoded[i] = serializedMethodSignature{
-				ClassName:  sig.className,
-				MethodName: sig.methodName,
-				ParamTypes: append([]string(nil), sig.paramTypes...),
-				ReturnType: sig.returnType,
-				FullClass:  sig.fullClass,
+				ClassName:     sig.className,
+				MethodName:    sig.methodName,
+				ParamTypes:    append([]string(nil), sig.paramTypes...),
+				ReturnType:    sig.returnType,
+				FullClass:     sig.fullClass,
+				ParamTypeRefs: encodeSerializedTypeRefs(sig.paramTypeRefs),
+				ReturnTypeRef: encodeSerializedTypeRef(sig.returnTypeRef),
 			}
 		}
 		methods[key] = encoded
@@ -90,13 +150,16 @@ func (c *CachedBytecodeIndex) UnmarshalJSON(data []byte) error {
 	methods := make(map[string][]methodSignature, len(payload.MethodsIndex))
 	for key, sigs := range payload.MethodsIndex {
 		decoded := make([]methodSignature, len(sigs))
-		for i, sig := range sigs {
+		for i := range sigs {
+			sig := &sigs[i]
 			decoded[i] = methodSignature{
-				className:  sig.ClassName,
-				methodName: sig.MethodName,
-				paramTypes: append([]string(nil), sig.ParamTypes...),
-				returnType: sig.ReturnType,
-				fullClass:  sig.FullClass,
+				className:     sig.ClassName,
+				methodName:    sig.MethodName,
+				paramTypes:    append([]string(nil), sig.ParamTypes...),
+				returnType:    sig.ReturnType,
+				fullClass:     sig.FullClass,
+				paramTypeRefs: decodeSerializedTypeRefs(sig.ParamTypeRefs),
+				returnTypeRef: decodeSerializedTypeRef(sig.ReturnTypeRef),
 			}
 		}
 		methods[key] = decoded

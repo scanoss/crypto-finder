@@ -35,11 +35,48 @@ type StrictResolver interface {
 	StrictFailure() bool
 }
 
+// TypeRef describes a type reference, optionally carrying nested generic
+// parameters. Name holds the erased type name (e.g. "Map", "byte[]"), while
+// GenericParameters captures parametrized type arguments recursively (e.g.
+// Map<String, List<Foo>> → Name="Map", GenericParameters=[
+//
+//	{Name:"String"},
+//	{Name:"List", GenericParameters:[{Name:"Foo"}]}]).
+type TypeRef struct {
+	Name              string
+	GenericParameters []TypeRef
+}
+
+// HasGenerics reports whether the TypeRef carries any generic parameters.
+func (t TypeRef) HasGenerics() bool {
+	return len(t.GenericParameters) > 0
+}
+
+func cloneTypeRef(t TypeRef) TypeRef {
+	return TypeRef{
+		Name:              t.Name,
+		GenericParameters: cloneTypeRefs(t.GenericParameters),
+	}
+}
+
+func cloneTypeRefs(refs []TypeRef) []TypeRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]TypeRef, len(refs))
+	for i, r := range refs {
+		out[i] = cloneTypeRef(r)
+	}
+	return out
+}
+
 // ExternalMethodSignature stores resolver-derived signature data for methods that
 // may not have a source-backed FunctionDecl in the graph.
 type ExternalMethodSignature struct {
-	ParameterTypes []string
-	ReturnType     string
+	ParameterTypes    []string
+	ReturnType        string
+	ParameterTypeRefs []TypeRef
+	ReturnTypeRef     TypeRef
 }
 
 // JavaPlatformSignatureMetadata records whether Java platform signatures from a
@@ -114,6 +151,7 @@ type FunctionDecl struct {
 	OwnerName       string
 	FunctionType    string
 	ReturnType      string
+	ReturnTypeRef   TypeRef
 	Visibility      string
 	OwnerVisibility string
 	Parameters      []FunctionParameter
@@ -122,7 +160,8 @@ type FunctionDecl struct {
 
 // FunctionParameter describes a declared function parameter.
 type FunctionParameter struct {
-	Type string
+	Type    string
+	TypeRef TypeRef
 }
 
 // FunctionCall represents a call expression within a function body.

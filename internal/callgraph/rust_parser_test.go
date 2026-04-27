@@ -124,7 +124,8 @@ impl MyCrypto {
 	}
 
 	// Check that encrypt has calls
-	for _, fn := range analysis.Functions {
+	for i := range analysis.Functions {
+		fn := &analysis.Functions[i]
 		if fn.ID.Name == "encrypt" && fn.ID.Type == "" {
 			assertRustEncryptCalls(t, fn)
 			continue
@@ -169,7 +170,7 @@ func TestRustParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
 	}
 }
 
-func assertRustEncryptCalls(t *testing.T, fn FunctionDecl) {
+func assertRustEncryptCalls(t *testing.T, fn *FunctionDecl) {
 	t.Helper()
 
 	if len(fn.Calls) == 0 {
