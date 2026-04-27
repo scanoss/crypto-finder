@@ -14,13 +14,15 @@ import (
 
 // cargoMetadata represents the JSON output of `cargo metadata --format-version=1`.
 type cargoMetadata struct {
-	Packages      []cargoPackage `json:"packages"`
-	Resolve       cargoResolve   `json:"resolve"`
-	WorkspaceRoot string         `json:"workspace_root"`
+	Packages         []cargoPackage `json:"packages"`
+	Resolve          cargoResolve   `json:"resolve"`
+	WorkspaceMembers []string       `json:"workspace_members"`
+	WorkspaceRoot    string         `json:"workspace_root"`
 }
 
 // cargoPackage represents a single package in cargo metadata output.
 type cargoPackage struct {
+	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	Version      string  `json:"version"`
 	ManifestPath string  `json:"manifest_path"`
@@ -29,6 +31,7 @@ type cargoPackage struct {
 
 // cargoResolve represents the dependency graph in cargo metadata output.
 type cargoResolve struct {
+	Root  string             `json:"root"`
 	Nodes []cargoResolveNode `json:"nodes"`
 }
 
@@ -82,24 +85,26 @@ func newCargoResolveResult(meta *cargoMetadata) *ResolveResult {
 		Graph:          make(map[string][]string),
 		VersionedGraph: make(map[string][]Ref),
 	}
+	workspaceMemberIDs, workspaceMemberFallbacks := cargoWorkspaceMemberSets(meta.WorkspaceMembers)
+	result.RootModule = cargoRootModuleName(meta.Resolve.Root, meta.Packages)
+	if result.RootModule == "" {
+		result.RootModule = cargoFallbackRootModule(meta.WorkspaceMembers, meta.Packages)
+	}
 
 	for _, pkg := range meta.Packages {
-		appendCargoPackage(result, pkg)
+		appendCargoPackage(result, pkg, workspaceMemberIDs, workspaceMemberFallbacks)
 	}
 
 	return result
 }
 
-func appendCargoPackage(result *ResolveResult, pkg cargoPackage) {
+func appendCargoPackage(result *ResolveResult, pkg cargoPackage, workspaceMemberIDs, workspaceMemberFallbacks map[string]struct{}) {
 	dir := filepath.Dir(pkg.ManifestPath)
-	if pkg.Source == nil {
+	if isCargoWorkspacePackage(pkg, workspaceMemberIDs, workspaceMemberFallbacks) {
 		result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
 			Name: pkg.Name,
 			Dir:  dir,
 		})
-		if result.RootModule == "" {
-			result.RootModule = pkg.Name
-		}
 		return
 	}
 
@@ -216,4 +221,87 @@ func cargoPackageRefFromID(id string) Ref {
 // or in newer formats: "ring@0.17.8" or just "ring 0.17.8".
 func cargoPackageNameFromID(id string) string {
 	return cargoPackageRefFromID(id).Module
+}
+
+func cargoWorkspaceMemberSets(workspaceMembers []string) (map[string]struct{}, map[string]struct{}) {
+	memberIDs := make(map[string]struct{}, len(workspaceMembers))
+	memberFallbacks := make(map[string]struct{}, len(workspaceMembers))
+	for _, memberID := range workspaceMembers {
+		if memberID == "" {
+			continue
+		}
+		memberIDs[memberID] = struct{}{}
+		if ref := cargoPackageRefFromID(memberID); ref.Module != "" {
+			memberFallbacks[ref.Key()] = struct{}{}
+		}
+	}
+	return memberIDs, memberFallbacks
+}
+
+func isCargoWorkspacePackage(pkg cargoPackage, workspaceMemberIDs, workspaceMemberFallbacks map[string]struct{}) bool {
+	if pkg.ID != "" {
+		_, ok := workspaceMemberIDs[pkg.ID]
+		return ok
+	}
+
+	if len(workspaceMemberFallbacks) == 0 {
+		return false
+	}
+
+	_, ok := workspaceMemberFallbacks[Ref{Module: pkg.Name, Version: pkg.Version}.Key()]
+	return ok
+}
+
+func cargoRootModuleName(rootID string, packages []cargoPackage) string {
+	if rootID == "" {
+		return ""
+	}
+
+	for _, pkg := range packages {
+		if pkg.ID != "" && pkg.ID == rootID {
+			return pkg.Name
+		}
+	}
+
+	rootRef := cargoPackageRefFromID(rootID)
+	if rootRef.Module == "" {
+		return ""
+	}
+	for _, pkg := range packages {
+		if cargoPackageMatchesRef(pkg, rootRef) {
+			return pkg.Name
+		}
+	}
+	return rootRef.Module
+}
+
+func cargoFallbackRootModule(workspaceMembers []string, packages []cargoPackage) string {
+	if len(workspaceMembers) == 0 {
+		return ""
+	}
+
+	firstMember := workspaceMembers[0]
+	for _, pkg := range packages {
+		if pkg.ID != "" && pkg.ID == firstMember {
+			return pkg.Name
+		}
+	}
+
+	memberRef := cargoPackageRefFromID(firstMember)
+	if memberRef.Module == "" {
+		return ""
+	}
+	for _, pkg := range packages {
+		if cargoPackageMatchesRef(pkg, memberRef) {
+			return pkg.Name
+		}
+	}
+	return memberRef.Module
+}
+
+func cargoPackageMatchesRef(pkg cargoPackage, ref Ref) bool {
+	if pkg.Name == "" || pkg.Name != ref.Module {
+		return false
+	}
+	return ref.Version == "" || pkg.Version == "" || pkg.Version == ref.Version
 }

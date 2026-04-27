@@ -278,6 +278,9 @@ func TestPythonParser_DunderMethodSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseDirectory error: %v", err)
 	}
+	if len(analyses) == 0 {
+		t.Fatalf("expected at least 1 analysis from ParseDirectory(%q), got 0", dir)
+	}
 
 	analysis := analyses[0]
 

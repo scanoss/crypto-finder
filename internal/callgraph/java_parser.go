@@ -162,14 +162,19 @@ func (p *JavaParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 		importText := child.Content(src)
 		// Remove "import " prefix and ";" suffix
 		importText = strings.TrimPrefix(importText, "import ")
+		isStatic := strings.HasPrefix(importText, "static ")
 		importText = strings.TrimPrefix(importText, "static ")
 		importText = strings.TrimSuffix(importText, ";")
 		importText = strings.TrimSpace(importText)
 
 		if strings.HasSuffix(importText, ".*") {
-			// Wildcard import: import java.security.*
 			prefix := strings.TrimSuffix(importText, ".*")
-			analysis.WildcardImports = append(analysis.WildcardImports, prefix)
+			if isStatic {
+				analysis.StaticWildcardImports = append(analysis.StaticWildcardImports, prefix)
+			} else {
+				// Wildcard import: import java.security.*
+				analysis.WildcardImports = append(analysis.WildcardImports, prefix)
+			}
 		} else {
 			// Explicit import: import javax.crypto.Cipher → imports["Cipher"] = "javax.crypto"
 			lastDot := strings.LastIndex(importText, ".")
@@ -1096,22 +1101,62 @@ func isNumericLiteral(s string) bool {
 	if s == "" {
 		return false
 	}
-	for i, c := range s {
-		if !isNumericLiteralRune(i, c) {
+	runes := []rune(s)
+	start := 0
+	if runes[0] == '-' {
+		if len(runes) == 1 {
 			return false
 		}
+		start = 1
 	}
-	return true
+
+	if len(runes[start:]) >= 2 && runes[start] == '0' && (runes[start+1] == 'x' || runes[start+1] == 'X') {
+		if len(runes[start:]) == 2 {
+			return false
+		}
+		hasDigit := false
+		for i := start + 2; i < len(runes); i++ {
+			if !isNumericLiteralRune(runes[i], true, false, false) {
+				return false
+			}
+			if runes[i] >= '0' && runes[i] <= '9' {
+				hasDigit = true
+			}
+		}
+		return hasDigit
+	}
+
+	hasDigit := false
+	seenDot := false
+	for i := start; i < len(runes); i++ {
+		c := runes[i]
+		allowDot := !seenDot
+		allowSuffix := i == len(runes)-1
+		if !isNumericLiteralRune(c, false, allowDot, allowSuffix) {
+			return false
+		}
+		if c >= '0' && c <= '9' {
+			hasDigit = true
+			continue
+		}
+		if c == '.' {
+			seenDot = true
+		}
+	}
+	return hasDigit
 }
 
-func isNumericLiteralRune(index int, c rune) bool {
+func isNumericLiteralRune(c rune, allowHexLetters, allowDot, allowSuffix bool) bool {
 	if c >= '0' && c <= '9' {
 		return true
 	}
-	if index == 0 && c == '-' {
+	if allowHexLetters && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 		return true
 	}
-	return strings.ContainsRune(".LfdFDxXabcdefABCDEF", c)
+	if allowDot && c == '.' {
+		return true
+	}
+	return allowSuffix && strings.ContainsRune("fFdDlL", c)
 }
 
 func kindToSourceType(kind string) string {
@@ -1579,7 +1624,7 @@ func resolveImportedJavaLocalCallee(method string, analysis *FileAnalysis) (Func
 	if target, ok := functionIDFromImportedJavaType(analysis.Imports[BaseFunctionName(method)], method, analysis.PackagePath); ok {
 		return target, true
 	}
-	if importedType, ok := resolveJavaStaticWildcardImport(BaseFunctionName(method), analysis.WildcardImports); ok {
+	if importedType, ok := resolveJavaStaticWildcardImport(BaseFunctionName(method), analysis.StaticWildcardImports); ok {
 		if target, ok := functionIDFromImportedJavaType(importedType, method, analysis.PackagePath); ok {
 			return target, true
 		}

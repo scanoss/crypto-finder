@@ -46,11 +46,17 @@ func (r *errReadCloser) Read(p []byte) (int, error) {
 	if r.readErr != nil {
 		return 0, r.readErr
 	}
-	if r.readOnce {
+	if len(r.data) == 0 {
+		r.readOnce = true
 		return 0, io.EOF
 	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
 	r.readOnce = true
-	return copy(p, r.data), io.EOF
+	if len(r.data) == 0 {
+		return n, io.EOF
+	}
+	return n, nil
 }
 
 func (r *errReadCloser) Close() error {
@@ -93,6 +99,34 @@ func TestNewClient(t *testing.T) {
 
 	if client.httpClient == nil {
 		t.Error("httpClient is nil")
+	}
+}
+
+func TestErrReadCloser_ReadConsumesRemainingData(t *testing.T) {
+	t.Parallel()
+
+	reader := &errReadCloser{data: []byte("abcdef")}
+	buf := make([]byte, 3)
+
+	n, err := reader.Read(buf)
+	if n != 3 || err != nil {
+		t.Fatalf("first Read() = (%d, %v), want (3, nil)", n, err)
+	}
+	if string(buf[:n]) != "abc" {
+		t.Fatalf("first Read() data = %q, want %q", string(buf[:n]), "abc")
+	}
+
+	n, err = reader.Read(buf)
+	if n != 3 || err != io.EOF {
+		t.Fatalf("second Read() = (%d, %v), want (3, EOF)", n, err)
+	}
+	if string(buf[:n]) != "def" {
+		t.Fatalf("second Read() data = %q, want %q", string(buf[:n]), "def")
+	}
+
+	n, err = reader.Read(buf)
+	if n != 0 || err != io.EOF {
+		t.Fatalf("third Read() = (%d, %v), want (0, EOF)", n, err)
 	}
 }
 

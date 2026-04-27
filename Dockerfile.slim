@@ -6,7 +6,7 @@
 # ============================================================================
 # Stage 1: Build Go binary
 # ============================================================================
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine3.23 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git make gcc musl-dev
@@ -37,7 +37,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
 # ============================================================================
 # Stage 2: Final minimal image (just the binary)
 # ============================================================================
-FROM alpine:3.18
+FROM alpine:3.23
 
 # Install minimal runtime dependencies
 # - ca-certificates: For HTTPS requests

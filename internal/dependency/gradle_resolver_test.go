@@ -2,6 +2,7 @@ package dependency
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -324,6 +325,33 @@ func TestGradleResolver_Resolve_MissingGradleToolingFailsClearly(t *testing.T) {
 	}
 	if structured.Code != failure.CodeGradleToolMissing {
 		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeGradleToolMissing)
+	}
+}
+
+func TestGradleResolver_Resolve_LookPathNonNotFoundErrorIsNotClassifiedAsToolMissing(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "build.gradle"), []byte("plugins {}"), 0o600); err != nil {
+		t.Fatalf("write build.gradle: %v", err)
+	}
+
+	resolver := NewGradleResolver()
+	resolver.lookPath = func(string) (string, error) {
+		return "", os.ErrPermission
+	}
+
+	_, err := resolver.Resolve(context.Background(), project)
+	if err == nil {
+		t.Fatal("expected Resolve to fail on non-ErrNotFound lookPath error")
+	}
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("expected structured failure, got %T", err)
+	}
+	if structured.Code == failure.CodeGradleToolMissing {
+		t.Fatalf("Code = %q, did not want %q", structured.Code, failure.CodeGradleToolMissing)
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected error to preserve os.ErrPermission, got %v", err)
 	}
 }
 

@@ -818,7 +818,7 @@ func (r *MavenResolver) listDependenciesPerModule(ctx context.Context, targetDir
 func (r *MavenResolver) resolveModuleDependencies(ctx context.Context, targetDir, module string) ([]Dependency, bool, error) {
 	tmpFile, err := os.CreateTemp("", "mvn-deps-*.txt")
 	if err != nil {
-		return nil, false, nil
+		return nil, false, err
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -932,10 +932,16 @@ func (r *MavenResolver) installModules(ctx context.Context, targetDir string) er
 		debugOutput:  true,
 	})
 	if err != nil {
-		log.Warn().
-			Err(err).
-			Str("stderr", truncate(result.stderr, 500)).
-			Msg("mvn install partially failed (some modules may not have built)")
+		entry := log.Warn().Err(err)
+		if result == nil {
+			entry.
+				Str("target_dir", targetDir).
+				Msg("mvn install failed before command output was available (some modules may not have built)")
+		} else {
+			entry.
+				Str("stderr", truncate(result.stderr, 500)).
+				Msg("mvn install partially failed (some modules may not have built)")
+		}
 		// Non-fatal: even partial install may unblock dependency resolution
 		return err
 	}

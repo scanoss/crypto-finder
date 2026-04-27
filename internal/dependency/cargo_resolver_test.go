@@ -1,6 +1,7 @@
 package dependency
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -90,16 +91,143 @@ func TestCargoResolver_Ecosystem(t *testing.T) {
 }
 
 func TestCargoMetadataParsing(t *testing.T) {
-	// Test that the JSON struct types correctly distinguish local vs registry packages.
-	localPkg := cargoPackage{Source: nil}
-	registrySrc := "registry+https://github.com/rust-lang/crates.io-index"
-	registryPkg := cargoPackage{Source: &registrySrc}
+	raw := []byte(`{
+		"packages": [
+			{
+				"id": "path+file:///workspace/app#app@0.1.0",
+				"name": "app",
+				"version": "0.1.0",
+				"manifest_path": "/workspace/app/Cargo.toml",
+				"source": null
+			}
+		],
+		"workspace_members": ["path+file:///workspace/app#app@0.1.0"],
+		"resolve": {
+			"root": "path+file:///workspace/app#app@0.1.0",
+			"nodes": []
+		},
+		"workspace_root": "/workspace/app"
+	}`)
 
-	// Verify root detection: source == nil → root module.
-	if localPkg.Source != nil {
-		t.Error("expected local package to have nil Source")
+	var meta cargoMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	if registryPkg.Source == nil {
-		t.Error("expected registry package to have non-nil Source")
+
+	if len(meta.WorkspaceMembers) != 1 || meta.WorkspaceMembers[0] != "path+file:///workspace/app#app@0.1.0" {
+		t.Fatalf("unexpected workspace_members: %#v", meta.WorkspaceMembers)
+	}
+	if meta.Resolve.Root != "path+file:///workspace/app#app@0.1.0" {
+		t.Fatalf("Resolve.Root = %q", meta.Resolve.Root)
+	}
+	if len(meta.Packages) != 1 || meta.Packages[0].ID != "path+file:///workspace/app#app@0.1.0" {
+		t.Fatalf("unexpected package ids: %#v", meta.Packages)
+	}
+}
+
+func TestNewCargoResolveResult_UsesWorkspaceMembersAndResolveRoot(t *testing.T) {
+	registrySrc := "registry+https://github.com/rust-lang/crates.io-index"
+	meta := &cargoMetadata{
+		Packages: []cargoPackage{
+			{
+				ID:           "path+file:///workspace/app#app@0.1.0",
+				Name:         "app",
+				Version:      "0.1.0",
+				ManifestPath: "/workspace/app/Cargo.toml",
+				Source:       nil,
+			},
+			{
+				ID:           "path+file:///workspace/vendor/local-helper#local-helper@0.2.0",
+				Name:         "local-helper",
+				Version:      "0.2.0",
+				ManifestPath: "/workspace/vendor/local-helper/Cargo.toml",
+				Source:       nil,
+			},
+			{
+				ID:           "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
+				Name:         "serde",
+				Version:      "1.0.0",
+				ManifestPath: "/cargo/registry/src/serde/Cargo.toml",
+				Source:       &registrySrc,
+			},
+		},
+		WorkspaceMembers: []string{"path+file:///workspace/app#app@0.1.0"},
+		Resolve: cargoResolve{
+			Root: "path+file:///workspace/app#app@0.1.0",
+		},
+	}
+
+	result := newCargoResolveResult(meta)
+
+	if result.RootModule != "app" {
+		t.Fatalf("RootModule = %q, want app", result.RootModule)
+	}
+	if len(result.WorkspaceMembers) != 1 || result.WorkspaceMembers[0].Name != "app" {
+		t.Fatalf("unexpected workspace members: %#v", result.WorkspaceMembers)
+	}
+	if len(result.Dependencies) != 2 {
+		t.Fatalf("Dependencies len = %d, want 2", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Module != "local-helper" {
+		t.Fatalf("expected local path dependency to remain external, got %#v", result.Dependencies[0])
+	}
+}
+
+func TestNewCargoResolveResult_FallsBackWhenCanonicalIDsMissing(t *testing.T) {
+	meta := &cargoMetadata{
+		Packages: []cargoPackage{
+			{
+				Name:         "app",
+				Version:      "0.1.0",
+				ManifestPath: "/workspace/app/Cargo.toml",
+			},
+			{
+				Name:         "serde",
+				Version:      "1.0.0",
+				ManifestPath: "/cargo/registry/src/serde/Cargo.toml",
+			},
+		},
+		WorkspaceMembers: []string{"path+file:///workspace/app#app@0.1.0"},
+		Resolve: cargoResolve{
+			Root: "path+file:///workspace/app#app@0.1.0",
+		},
+	}
+
+	result := newCargoResolveResult(meta)
+
+	if result.RootModule != "app" {
+		t.Fatalf("RootModule = %q, want app", result.RootModule)
+	}
+	if len(result.WorkspaceMembers) != 1 || result.WorkspaceMembers[0].Name != "app" {
+		t.Fatalf("unexpected workspace members: %#v", result.WorkspaceMembers)
+	}
+}
+
+func TestNewCargoResolveResult_FallsBackWhenResolveRootMissing(t *testing.T) {
+	meta := &cargoMetadata{
+		Packages: []cargoPackage{
+			{
+				ID:           "path+file:///workspace/app#app@0.1.0",
+				Name:         "app",
+				Version:      "0.1.0",
+				ManifestPath: "/workspace/app/Cargo.toml",
+			},
+			{
+				ID:           "path+file:///workspace/lib#lib@0.2.0",
+				Name:         "lib",
+				Version:      "0.2.0",
+				ManifestPath: "/workspace/lib/Cargo.toml",
+			},
+		},
+		WorkspaceMembers: []string{
+			"path+file:///workspace/app#app@0.1.0",
+			"path+file:///workspace/lib#lib@0.2.0",
+		},
+	}
+
+	result := newCargoResolveResult(meta)
+
+	if result.RootModule != "app" {
+		t.Fatalf("RootModule = %q, want app", result.RootModule)
 	}
 }

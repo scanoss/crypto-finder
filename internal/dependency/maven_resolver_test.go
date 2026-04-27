@@ -254,6 +254,15 @@ func TestMavenResolver_RunMavenCommand_FailsForMismatchedConfiguredJavaHome(t *t
 	}
 }
 
+func TestMavenResolver_InstallModules_ReturnsConfigureErrorWhenCommandResultIsNil(t *testing.T) {
+	r := NewMavenResolver()
+	r.SetJavaRuntime(javaruntime.Config{RequestedMajor: "21"})
+
+	if err := r.installModules(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("expected installModules to return configure error")
+	}
+}
+
 func TestMavenResolver_Resolve(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -834,6 +843,23 @@ exit 0
 	}
 	if result.Dependencies[0].Module != "org.example:lib" {
 		t.Fatalf("unexpected dep: %v", result.Dependencies[0])
+	}
+}
+
+func TestMavenResolver_ResolveModuleDependencies_ReturnsCreateTempError(t *testing.T) {
+	missingTmp := filepath.Join(t.TempDir(), "missing-tmpdir")
+	t.Setenv("TMPDIR", missingTmp)
+
+	r := NewMavenResolver()
+	deps, partial, err := r.resolveModuleDependencies(context.Background(), t.TempDir(), "core")
+	if err == nil {
+		t.Fatal("expected resolveModuleDependencies to return CreateTemp error")
+	}
+	if deps != nil {
+		t.Fatalf("deps = %#v, want nil", deps)
+	}
+	if partial {
+		t.Fatal("partial = true, want false")
 	}
 }
 

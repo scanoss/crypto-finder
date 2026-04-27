@@ -2,8 +2,8 @@ package dependency
 
 import (
 	"context"
-	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -228,7 +228,7 @@ func TestJavaResolver_Resolve_DelegatesToDetectedBuildTool(t *testing.T) {
 
 		resolver := NewJavaResolver()
 		resolver.gradle.lookPath = func(string) (string, error) {
-			return "", errors.New("gradle not found")
+			return "", exec.ErrNotFound
 		}
 
 		_, err := resolver.Resolve(context.Background(), dir)

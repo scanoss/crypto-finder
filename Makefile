@@ -139,9 +139,27 @@ docker-shell: ## Open a shell in the Docker container for debugging
 		$(DOCKER_IMAGE):latest
 
 docker-scan-deps: ## Scan with dependency resolution (PROJ=path/to/project)
-	@echo "Scanning with dependency resolution..."
-	@docker run --rm \
-		-v $(PROJ):/workspace/code:ro \
+	@set -eu; \
+	if [ -z "$(strip $(PROJ))" ]; then \
+		echo "Error: PROJ is required. Usage: make docker-scan-deps PROJ=/path/to/project [ARGS='...']" >&2; \
+		exit 1; \
+	fi; \
+	PROJ_INPUT='$(PROJ)'; \
+	if command -v realpath >/dev/null 2>&1; then \
+		PROJ_ABS="$$(realpath "$$PROJ_INPUT")"; \
+	else \
+		case "$$PROJ_INPUT" in \
+			/*) PROJ_ABS="$$PROJ_INPUT" ;; \
+			*) PROJ_ABS="$$(cd "$$PROJ_INPUT" 2>/dev/null && pwd)" ;; \
+		esac; \
+	fi; \
+	if [ -z "$$PROJ_ABS" ] || [ ! -d "$$PROJ_ABS" ]; then \
+		echo "Error: PROJ must point to an existing project directory: $$PROJ_INPUT" >&2; \
+		exit 1; \
+	fi; \
+	echo "Scanning with dependency resolution in $$PROJ_ABS..."; \
+	docker run --rm \
+		-v "$$PROJ_ABS:/workspace/code:ro" \
 		--entrypoint sh $(DOCKER_IMAGE):latest-deps -c \
 		"set -eu; \
 		if [ -f /workspace/code/requirements.txt ]; then \

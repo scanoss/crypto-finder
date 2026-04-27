@@ -213,13 +213,14 @@ type SourceLocation struct {
 
 // FileAnalysis contains all extracted information from a single source file.
 type FileAnalysis struct {
-	FilePath        string
-	PackageName     string
-	PackagePath     string
-	Imports         map[string]string // alias (or last path segment) -> full import path
-	ImportedTypes   map[string]bool   // imported symbol alias -> inferred class/type
-	WildcardImports []string          // wildcard import prefixes (e.g., "java.security")
-	Functions       []FunctionDecl
+	FilePath              string
+	PackageName           string
+	PackagePath           string
+	Imports               map[string]string // alias (or last path segment) -> full import path
+	ImportedTypes         map[string]bool   // imported symbol alias -> inferred class/type
+	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
+	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
+	Functions             []FunctionDecl
 }
 
 // CallGraph is the complete call graph across all analyzed packages.

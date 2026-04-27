@@ -16,25 +16,32 @@ if [ "$1" = "metadata" ]; then
 {
   "packages": [
     {
+      "id": "path+file:///workspace/my-app#my-app@0.1.0",
       "name": "my-app",
       "version": "0.1.0",
       "manifest_path": "/workspace/my-app/Cargo.toml",
       "source": null
     },
     {
+      "id": "registry+https://github.com/rust-lang/crates.io-index#crypto-lib@1.2.3",
       "name": "crypto-lib",
       "version": "1.2.3",
       "manifest_path": "/cargo/registry/src/crypto-lib/Cargo.toml",
       "source": "registry+https://github.com/rust-lang/crates.io-index"
     },
     {
+      "id": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
       "name": "serde",
       "version": "1.0.0",
       "manifest_path": "/cargo/registry/src/serde/Cargo.toml",
       "source": "registry+https://github.com/rust-lang/crates.io-index"
     }
   ],
+  "workspace_members": [
+    "path+file:///workspace/my-app#my-app@0.1.0"
+  ],
   "resolve": {
+    "root": "path+file:///workspace/my-app#my-app@0.1.0",
     "nodes": [
       {
         "id": "path+file:///workspace/my-app#my-app@0.1.0",
@@ -143,7 +150,7 @@ func TestCargoResolver_MetadataManifestPathPassed(t *testing.T) {
 	writeExecutable(t, binDir, "cargo", `#!/bin/sh
 echo "$@" > "`+argsLog+`"
 cat <<'JSON'
-{"packages":[],"resolve":{"nodes":[]},"workspace_root":"/tmp"}
+{"packages":[],"workspace_members":[],"resolve":{"root":"","nodes":[]},"workspace_root":"/tmp"}
 JSON
 `)
 	prependPath(t, binDir)
