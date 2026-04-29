@@ -436,6 +436,23 @@ func (p *JavaParser) parseMethodDecl(
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
+
+		// Build variable type and origin maps for return-source tracing.
+		varTypes := make(map[string]string, len(fieldTypes))
+		for k, v := range fieldTypes {
+			varTypes[k] = v
+		}
+		p.collectParameterTypes(node, src, varTypes)
+		p.collectVarTypes(body, src, varTypes)
+
+		varOrigins := make(map[string]varOrigin)
+		for k, v := range fieldTypes {
+			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
+		}
+		p.collectParameterOrigins(node, src, filePath, varOrigins)
+		p.collectVarOrigins(body, src, filePath, varOrigins, false)
+
+		p.extractReturnSources(body, src, analysis, ownerName, varTypes, varOrigins, decl)
 	}
 
 	return decl
@@ -483,6 +500,23 @@ func (p *JavaParser) parseConstructorDecl(
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, className, fieldTypes, fieldAssignments)
+
+		// Build variable type and origin maps for return-source tracing.
+		varTypes := make(map[string]string, len(fieldTypes))
+		for k, v := range fieldTypes {
+			varTypes[k] = v
+		}
+		p.collectParameterTypes(node, src, varTypes)
+		p.collectVarTypes(body, src, varTypes)
+
+		varOrigins := make(map[string]varOrigin)
+		for k, v := range fieldTypes {
+			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
+		}
+		p.collectParameterOrigins(node, src, filePath, varOrigins)
+		p.collectVarOrigins(body, src, filePath, varOrigins, false)
+
+		p.extractReturnSources(body, src, analysis, className, varTypes, varOrigins, decl)
 	}
 
 	return decl
@@ -1923,4 +1957,221 @@ func normalizeJavaTypeNameWithPackage(typeText string) string {
 	}
 	replacer := strings.NewReplacer(".", "_", "$", "_")
 	return replacer.Replace(strings.TrimSpace(normalized)) + arraySuffix
+}
+
+// extractReturnSources walks the body AST and populates fn.ReturnSources with
+// SourceNode slices derived from each return_statement expression.
+//
+// Lambda bodies are NOT descended into — lambda return inference is explicitly
+// deferred to v2. Throw statements are NOT returns and are ignored.
+func (p *JavaParser) extractReturnSources(
+	body *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+	fn *FunctionDecl,
+) {
+	p.walkForReturnSources(body, src, analysis, currentClass, varTypes, varOrigins, fn)
+}
+
+// walkForReturnSources recursively descends the AST, collecting return_statement
+// nodes at the current scope level. It does NOT descend into lambda_expression
+// bodies (v1 explicit TODO: lambda return inference is deferred to v2).
+func (p *JavaParser) walkForReturnSources(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+	fn *FunctionDecl,
+) {
+	if node == nil {
+		return
+	}
+
+	switch node.Type() {
+	case "lambda_expression":
+		// TODO(callgraph-inferred-types v2): walk lambda return statements.
+		// In v1, we must NOT attribute lambda return values to the outer function.
+		// Do not descend.
+		return
+	case "return_statement":
+		exprNode := returnStatementExpressionNode(node)
+		if exprNode != nil {
+			nodes := p.traceExpressionNode(exprNode, src, analysis, currentClass, varTypes, varOrigins)
+			fn.ReturnSources = append(fn.ReturnSources, nodes...)
+		}
+		// For bare `return;` there is no expression — no SourceNode to append.
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkForReturnSources(node.Child(i), src, analysis, currentClass, varTypes, varOrigins, fn)
+	}
+}
+
+// javaNodeBoolLiteralTrue and javaNodeBoolLiteralFalse are tree-sitter node type
+// names for Java boolean literals. Extracted as constants to satisfy goconst.
+const (
+	javaNodeBoolLiteralTrue  = "true"
+	javaNodeBoolLiteralFalse = "false"
+)
+
+// traceExpressionNode converts a tree-sitter expression node to SourceNode slices.
+// It dispatches on AST node types for accurate resolution, avoiding text-parsing
+// ambiguity in fluent-chain expressions like `A.foo().bar()`.
+func (p *JavaParser) traceExpressionNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+) []SourceNode {
+	if node == nil {
+		return nil
+	}
+	switch node.Type() {
+	case "object_creation_expression":
+		return p.traceObjectCreationNode(node, src, analysis, currentClass, varTypes, varOrigins)
+	case "method_invocation":
+		return p.traceMethodInvocationNode(node, src, analysis, currentClass, varTypes, varOrigins)
+	case "ternary_expression":
+		return p.traceTernaryExpressionNode(node, src, analysis, currentClass, varTypes, varOrigins)
+	case "string_literal", "character_literal", "null_literal",
+		"decimal_integer_literal", "hex_integer_literal", "octal_integer_literal",
+		"binary_integer_literal", "decimal_floating_point_literal",
+		javaNodeBoolLiteralTrue, javaNodeBoolLiteralFalse:
+		// Literals → VALUE node.
+		return []SourceNode{{Type: "VALUE", Value: strings.TrimSpace(node.Content(src))}}
+	}
+	// Fallback: use text-based traceExpression for identifiers, field accesses, etc.
+	expr := strings.TrimSpace(node.Content(src))
+	if expr == "" {
+		return nil
+	}
+	return p.traceExpression(expr, analysis, currentClass, varTypes, varOrigins, 0)
+}
+
+// traceObjectCreationNode handles `new ClassName(...)` → CALL_RESULT with <init> as CallTarget.
+// The constructed type is stored in DeclaredType so the inference engine can identify
+// constructor calls via CallTarget.Name == "<init>#N".
+func (p *JavaParser) traceObjectCreationNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+) []SourceNode {
+	call := p.parseObjectCreation(node, src, "", analysis, currentClass, varTypes, varOrigins)
+	if call == nil {
+		return nil
+	}
+	sn := SourceNode{
+		Type:  "CALL_RESULT",
+		Value: strings.TrimSpace(node.Content(src)),
+	}
+	sn.CallTarget = &call.Callee
+	if call.Callee.Type != "" {
+		sn.DeclaredType = call.Callee.Type
+	}
+	return []SourceNode{sn}
+}
+
+// traceMethodInvocationNode handles `foo()` / `obj.foo()` / fluent chains.
+// Uses tree-sitter to identify the OUTERMOST callee, avoiding text-parsing
+// ambiguity (e.g. `A.getInstance("AES").generateKey()` correctly resolves to generateKey).
+//
+// Argument provenance: the argument_list child node's named children are each
+// traced via traceExpressionNode and stored in sn.SourceNodes with ParameterIndex
+// set to the argument's positional index. This allows the inference engine to
+// match KB-conditional contracts (e.g. Cipher.unwrap arg[2] == "Cipher.SECRET_KEY").
+func (p *JavaParser) traceMethodInvocationNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+) []SourceNode {
+	call := p.parseMethodInvocation(node, src, "", analysis, currentClass, varTypes, varOrigins)
+	if call == nil {
+		return nil
+	}
+	sn := SourceNode{
+		Type:  "CALL_RESULT",
+		Value: strings.TrimSpace(node.Content(src)),
+	}
+	sn.CallTarget = &call.Callee
+
+	// Populate sn.SourceNodes with per-argument provenance so the inference
+	// engine can resolve KB-conditional contracts (e.g. Cipher.unwrap opmode).
+	// Walk the argument_list child and trace each named argument expression.
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeArgumentList {
+			continue
+		}
+		// NamedChildCount / NamedChild skip punctuation tokens (, ; ( )).
+		argCount := int(child.NamedChildCount())
+		for j := 0; j < argCount; j++ {
+			argNode := child.NamedChild(j)
+			if argNode == nil {
+				continue
+			}
+			argSources := p.traceExpressionNode(argNode, src, analysis, currentClass, varTypes, varOrigins)
+			for k := range argSources {
+				argSources[k].ParameterIndex = j
+			}
+			sn.SourceNodes = append(sn.SourceNodes, argSources...)
+		}
+		break
+	}
+
+	return []SourceNode{sn}
+}
+
+// traceTernaryExpressionNode handles `condition ? expr1 : expr2` by collecting
+// SourceNodes from both branches (expr1 and expr2), skipping the condition.
+func (p *JavaParser) traceTernaryExpressionNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+) []SourceNode {
+	var result []SourceNode
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		t := child.Type()
+		// Skip punctuation tokens and the condition (index 0).
+		if t == "?" || t == ":" || t == javaNodeBoolLiteralTrue || t == javaNodeBoolLiteralFalse || i == 0 {
+			continue
+		}
+		result = append(result, p.traceExpressionNode(child, src, analysis, currentClass, varTypes, varOrigins)...)
+	}
+	return result
+}
+
+// returnStatementExpressionNode returns the expression child node from a
+// return_statement, or nil for bare `return;` statements.
+//
+// Tree-sitter Java grammar: return_statement → "return" expression? ";".
+func returnStatementExpressionNode(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		t := child.Type()
+		// Skip the "return" keyword and the ";" punctuation.
+		if t == "return" || t == ";" {
+			continue
+		}
+		// First non-keyword, non-punctuation child is the expression.
+		return child
+	}
+	return nil
 }

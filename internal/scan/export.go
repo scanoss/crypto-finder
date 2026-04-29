@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	callGraphSchemaVersion   = "5.1"
+	callGraphSchemaVersion   = "5.2"
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -81,14 +81,15 @@ type callGraphDependencyContext struct {
 }
 
 type callGraphCalledFunction struct {
-	FunctionName       string               `json:"function_name"`
-	CanonicalSignature string               `json:"canonical_signature,omitempty"`
-	ReturnType         string               `json:"return_type,omitempty"`
-	ReturnTypeRef      *exportTypeRef       `json:"return_type_ref,omitempty"`
-	ParameterTypes     []string             `json:"parameter_types,omitempty"`
-	ParameterTypeRefs  []exportTypeRef      `json:"parameter_type_refs,omitempty"`
-	Line               int                  `json:"line"`
-	Parameters         []callGraphParameter `json:"parameters,omitempty"`
+	FunctionName       string                `json:"function_name"`
+	CanonicalSignature string                `json:"canonical_signature,omitempty"`
+	ReturnType         string                `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef        `json:"return_type_ref,omitempty"`
+	ParameterTypes     []string              `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef       `json:"parameter_type_refs,omitempty"`
+	Line               int                   `json:"line"`
+	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
+	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
 }
 
 // exportTypeRef is the JSON shape for a structured Java type reference,
@@ -108,15 +109,16 @@ type callGraphMatchedOperation struct {
 }
 
 type callGraphEntryCall struct {
-	FunctionName       string               `json:"function_name,omitempty"`
-	CanonicalSignature string               `json:"canonical_signature,omitempty"`
-	ReturnType         string               `json:"return_type,omitempty"`
-	ReturnTypeRef      *exportTypeRef       `json:"return_type_ref,omitempty"`
-	ParameterTypes     []string             `json:"parameter_types,omitempty"`
-	ParameterTypeRefs  []exportTypeRef      `json:"parameter_type_refs,omitempty"`
-	FilePath           string               `json:"file_path"`
-	Line               int                  `json:"line"`
-	Parameters         []callGraphParameter `json:"parameters,omitempty"`
+	FunctionName       string                `json:"function_name,omitempty"`
+	CanonicalSignature string                `json:"canonical_signature,omitempty"`
+	ReturnType         string                `json:"return_type,omitempty"`
+	ReturnTypeRef      *exportTypeRef        `json:"return_type_ref,omitempty"`
+	ParameterTypes     []string              `json:"parameter_types,omitempty"`
+	ParameterTypeRefs  []exportTypeRef       `json:"parameter_type_refs,omitempty"`
+	FilePath           string                `json:"file_path"`
+	Line               int                   `json:"line"`
+	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
+	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
 }
 
 type callGraphParameter struct {
@@ -166,6 +168,7 @@ type callGraphChainNode struct {
 	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
 	EntryCall          *callGraphEntryCall         `json:"entry_call,omitempty"`
 	CryptoCall         *callGraphCalledFunction    `json:"crypto_call,omitempty"`
+	InferredReturn     *exportInferredReturn       `json:"inferred_return,omitempty"`
 }
 
 type callGraphEntryPoint struct {
@@ -1248,6 +1251,7 @@ func buildChainNode(
 		FilePath:           location.FilePath,
 		StartLine:          startLine,
 		DependencyInfo:     location.DependencyInfo,
+		InferredReturn:     cloneExportInferredReturn(meta.InferredReturn),
 	}
 }
 
@@ -1405,6 +1409,21 @@ func cloneSourceNodes(nodes []exportSourceNode) []exportSourceNode {
 	return result
 }
 
+// exportInferredReturn is the JSON shape for the inferred_return field on call
+// graph entries. The field is omitted (omitempty pointer) when no inference
+// fires or when the internal origin is "join-failed".
+//
+// "join-failed" exists in the internal origin enum for logging/telemetry but
+// MUST NOT appear in exported output. When a join fails, InferredReturn is nil
+// or its Origin is "join-failed"; the export layer treats both as absent.
+type exportInferredReturn struct {
+	Type       string             `json:"type"`
+	TypeRef    *exportTypeRef     `json:"type_ref,omitempty"`
+	Confidence string             `json:"confidence"`
+	Origin     string             `json:"origin"`
+	Provenance []exportSourceNode `json:"provenance,omitempty"`
+}
+
 type exportFunctionMetadata struct {
 	FunctionName       string
 	CanonicalSignature string
@@ -1414,6 +1433,7 @@ type exportFunctionMetadata struct {
 	ParameterTypeRefs  []exportTypeRef
 	Visibility         string
 	OwnerVisibility    string
+	InferredReturn     *exportInferredReturn
 }
 
 func buildExportFunctionMetadata(
@@ -1447,7 +1467,49 @@ func buildExportFunctionMetadata(
 
 	meta.ReturnType = normalizeExportReturnType(id, meta.ReturnType)
 	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
+
+	// Populate inferred_return when the inference pass produced a result.
+	// join-failed origin is suppressed from export (logged internally for telemetry only).
+	if decl != nil && decl.InferredReturn != nil && decl.InferredReturn.Origin != "join-failed" {
+		ir := decl.InferredReturn
+		meta.InferredReturn = &exportInferredReturn{
+			Type:       ir.Type,
+			TypeRef:    exportTypeRefFromCallgraph(ir.TypeRef),
+			Confidence: ir.Confidence,
+			Origin:     ir.Origin,
+			Provenance: convertInferredReturnProvenance(ir.Provenance),
+		}
+	}
+
 	return meta
+}
+
+// convertInferredReturnProvenance converts a []callgraph.SourceNode (inference
+// provenance) into the export shape without path normalization. This is used
+// only for the inferred_return.provenance field — the paths are not available
+// at metadata-build time since we don't have an exportBuildContext here.
+func convertInferredReturnProvenance(nodes []callgraph.SourceNode) []exportSourceNode {
+	if len(nodes) == 0 {
+		return nil
+	}
+	result := make([]exportSourceNode, len(nodes))
+	for i, n := range nodes {
+		result[i] = exportSourceNode{
+			Type:         n.Type,
+			Name:         n.Name,
+			DeclaredType: n.DeclaredType,
+			Value:        n.Value,
+			SourceNodes:  convertInferredReturnProvenance(n.SourceNodes),
+		}
+		if n.Type == sourceNodeTypeParameter {
+			idx := n.ParameterIndex
+			result[i].ParameterIndex = &idx
+		}
+		if n.CallTarget != nil {
+			result[i].CallTarget = fullFunctionName(*n.CallTarget)
+		}
+	}
+	return result
 }
 
 // exportTypeRefFromCallgraph converts a callgraph.TypeRef into the exported
@@ -1635,6 +1697,7 @@ func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta expor
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
+	call.InferredReturn = cloneExportInferredReturn(meta.InferredReturn)
 }
 
 func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, meta exportFunctionMetadata) {
@@ -1647,6 +1710,19 @@ func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, 
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
+	call.InferredReturn = cloneExportInferredReturn(meta.InferredReturn)
+}
+
+// cloneExportInferredReturn returns a deep copy of an exportInferredReturn,
+// or nil if the source is nil.
+func cloneExportInferredReturn(ir *exportInferredReturn) *exportInferredReturn {
+	if ir == nil {
+		return nil
+	}
+	clone := *ir
+	clone.TypeRef = cloneExportTypeRef(ir.TypeRef)
+	clone.Provenance = cloneSourceNodes(ir.Provenance)
+	return &clone
 }
 
 func cloneExportTypeRef(ref *exportTypeRef) *exportTypeRef {

@@ -141,6 +141,24 @@ func (f FunctionID) String() string {
 	return fmt.Sprintf("%s.%s", f.Package, f.Name)
 }
 
+// InferredReturn carries the result of static return-type inference for a function.
+// Fields mirror what the export layer surfaces, plus the internal-only join-failed origin.
+// The join-failed origin is never emitted in exported output; when a join fails the
+// entire field is omitted.
+type InferredReturn struct {
+	// Type is the inferred fully-qualified return type name, e.g. "javax.crypto.SecretKey".
+	Type string
+	// TypeRef is the structured generic form when applicable; zero value when none.
+	TypeRef TypeRef
+	// Confidence is the inference confidence level: "high", "medium", or "low".
+	Confidence string
+	// Origin is one of: "constructor", "kb-direct", "kb-conditional", "propagated",
+	// or the internal-only "join-failed" (never exported).
+	Origin string
+	// Provenance is the recursive provenance chain (subset of ReturnSources, normalised).
+	Provenance []SourceNode
+}
+
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
 	ID              FunctionID
@@ -156,6 +174,10 @@ type FunctionDecl struct {
 	OwnerVisibility string
 	Parameters      []FunctionParameter
 	Calls           []FunctionCall
+	// ReturnSources traces where return values originate; populated by parsers (v1: Java only).
+	ReturnSources []SourceNode
+	// InferredReturn is the result of the post-build inference pass; nil when no inference fires.
+	InferredReturn *InferredReturn
 }
 
 // FunctionParameter describes a declared function parameter.

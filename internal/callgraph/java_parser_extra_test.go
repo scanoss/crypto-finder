@@ -82,3 +82,85 @@ func TestDecorateJavaOverloadName_PreservesPackageQualifiers(t *testing.T) {
 		t.Fatalf("decorateJavaOverloadName(com.b.Key) = %q, want %q", gotB, "encrypt$com_b_Key")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Batch 3: ReturnSources extra tests (T3.6, T3.7, T3.8)
+// ---------------------------------------------------------------------------
+
+// TestJavaParser_MultipleReturnBranches tests T3.6:
+// if-else with two different return expressions → ReturnSources has 2 entries.
+func TestJavaParser_MultipleReturnBranches(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.IvParameterSpec;
+class Sample {
+    public Object choose(boolean flag, byte[] bytes) {
+        if (flag) {
+            return new SecretKeySpec(bytes, "AES");
+        } else {
+            return new IvParameterSpec(bytes);
+        }
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "choose")
+	if fn == nil {
+		t.Fatal("choose function not found")
+	}
+	if len(fn.ReturnSources) < 2 {
+		t.Fatalf("expected at least 2 ReturnSources for if-else returns, got %d", len(fn.ReturnSources))
+	}
+}
+
+// TestJavaParser_ReturnTernary_PopulatesReturnSources tests T3.7:
+// ternary `return flag ? new SecretKeySpec(...) : existingKey` produces
+// at least one ReturnSources entry.
+func TestJavaParser_ReturnTernary_PopulatesReturnSources(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.spec.SecretKeySpec;
+import java.security.Key;
+class Sample {
+    public Object ternary(boolean flag, byte[] bytes, Key existingKey) {
+        return flag ? new SecretKeySpec(bytes, "AES") : existingKey;
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "ternary")
+	if fn == nil {
+		t.Fatal("ternary function not found")
+	}
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources for ternary return expression")
+	}
+}
+
+// TestJavaParser_LambdaReturn_IsNotPopulated tests T3.8 (explicit TODO/deferred):
+// A lambda body's return statement MUST NOT be attributed to the outer function's
+// ReturnSources in v1. Lambda inference is deferred to v2.
+func TestJavaParser_LambdaReturn_IsNotPopulated(t *testing.T) {
+	t.Log("TODO: lambda inference deferred to v2 — outer fn must not absorb lambda return sources")
+	src := `package com.example;
+import java.util.function.Supplier;
+import javax.crypto.spec.SecretKeySpec;
+class Sample {
+    public Supplier<Object> makeSupplier(byte[] bytes) {
+        // TODO(callgraph-inferred-types v2): walk lambda return statements
+        return () -> new SecretKeySpec(bytes, "AES");
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "makeSupplier")
+	if fn == nil {
+		t.Fatal("makeSupplier function not found")
+	}
+	// The outer function's ReturnSources MUST be empty or non-constructor
+	// (the lambda itself is returned as a CALL_RESULT or EXPRESSION, not the constructor inside it).
+	for _, rs := range fn.ReturnSources {
+		if rs.CallTarget != nil && rs.CallTarget.Type == "SecretKeySpec" {
+			t.Errorf("outer fn ReturnSources should not contain SecretKeySpec constructor from lambda body (lambda inference is deferred to v2); got %#v", rs)
+		}
+	}
+}

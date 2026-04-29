@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
 const (
@@ -118,6 +120,20 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	resolveFluentChainsByReturnType(graph)
 	fluentResolutionDuration := time.Since(fluentResolutionStart)
 
+	// Post-build pass: infer semantic return types using the embedded JCA/JCE KB.
+	// This is language-agnostic — it operates on ReturnSources populated by parsers.
+	// In v1, only the Java parser populates ReturnSources; for other ecosystems the
+	// pass is a no-op since no function will have ReturnSources set.
+	inferenceStart := time.Now()
+	kb, err := contracts.LoadEmbeddedJava()
+	if err != nil {
+		return nil, fmt.Errorf("callgraph: load embedded Java KB: %w", err)
+	}
+	if err := InferReturnTypes(graph, kb); err != nil {
+		return nil, fmt.Errorf("callgraph: infer return types: %w", err)
+	}
+	inferenceDuration := time.Since(inferenceStart)
+
 	log.Info().
 		Int("functions", len(graph.Functions)).
 		Int("callees", len(graph.Callers)).
@@ -125,6 +141,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		Dur("caller_index_duration", callerIndexDuration).
 		Dur("type_resolution_duration", typeResolutionDuration).
 		Dur("fluent_resolution_duration", fluentResolutionDuration).
+		Dur("inference_duration", inferenceDuration).
 		Dur("total_duration", time.Since(buildStart)).
 		Msg("Built call graph")
 

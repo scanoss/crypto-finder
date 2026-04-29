@@ -750,3 +750,226 @@ class DemoController {
 		t.Fatalf("parameter location line = %d, want signature line 7", source.Location.Line)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Batch 3: ReturnSources tests (T3.1, T3.3, T3.4, T3.5)
+// ---------------------------------------------------------------------------
+
+// parseJavaInline parses an inline Java class string and returns all functions.
+func parseJavaInline(t *testing.T, src string) []FunctionDecl {
+	t.Helper()
+	p := NewJavaParser()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Sample.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analyses, err := p.ParseDirectory(dir, "com.example")
+	if err != nil {
+		t.Fatalf("ParseDirectory: %v", err)
+	}
+	if len(analyses) == 0 {
+		t.Fatal("no analyses returned")
+	}
+	return analyses[0].Functions
+}
+
+// findFunctionByName returns the first FunctionDecl whose base name matches.
+func findFunctionByName(fns []FunctionDecl, name string) *FunctionDecl {
+	for i := range fns {
+		if BaseFunctionName(fns[i].ID.Name) == name {
+			return &fns[i]
+		}
+	}
+	return nil
+}
+
+// TestJavaParser_ReturnNew_PopulatesReturnSources tests T3.1:
+// `return new SecretKeySpec(bytes, "AES")` should populate ReturnSources with a
+// CALL_RESULT node whose CallTarget.Name matches <init>#2.
+func TestJavaParser_ReturnNew_PopulatesReturnSources(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.spec.SecretKeySpec;
+class Sample {
+    public Object wrap(byte[] bytes) {
+        return new SecretKeySpec(bytes, "AES");
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "wrap")
+	if fn == nil {
+		t.Fatal("wrap function not found")
+	}
+
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty for constructor return")
+	}
+
+	rs := fn.ReturnSources[0]
+	if rs.Type != "CALL_RESULT" {
+		t.Fatalf("ReturnSources[0].Type = %q, want CALL_RESULT", rs.Type)
+	}
+	if rs.CallTarget == nil {
+		t.Fatal("ReturnSources[0].CallTarget is nil, expected <init>#2")
+	}
+	if !strings.Contains(rs.CallTarget.Name, "<init>") {
+		t.Fatalf("CallTarget.Name = %q, expected to contain <init>", rs.CallTarget.Name)
+	}
+}
+
+// TestJavaParser_ReturnCall_PopulatesReturnSources tests T3.3:
+// `return KeyGenerator.getInstance("AES").generateKey()` should produce a
+// CALL_RESULT node whose CallTarget.Name matches generateKey.
+func TestJavaParser_ReturnCall_PopulatesReturnSources(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.KeyGenerator;
+class Sample {
+    public Object getKey() throws Exception {
+        return KeyGenerator.getInstance("AES").generateKey();
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "getKey")
+	if fn == nil {
+		t.Fatal("getKey function not found")
+	}
+
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources for method-invocation return")
+	}
+
+	rs := fn.ReturnSources[0]
+	if rs.Type != "CALL_RESULT" {
+		t.Fatalf("ReturnSources[0].Type = %q, want CALL_RESULT", rs.Type)
+	}
+	if rs.CallTarget == nil {
+		t.Fatal("ReturnSources[0].CallTarget is nil, expected generateKey")
+	}
+	if !strings.Contains(rs.CallTarget.Name, "generateKey") {
+		t.Fatalf("CallTarget.Name = %q, expected to contain generateKey", rs.CallTarget.Name)
+	}
+}
+
+// TestJavaParser_ReturnLiteral_EmitsValueSourceNode tests T3.4:
+// `return null` / `return "str"` should emit a VALUE SourceNode.
+func TestJavaParser_ReturnLiteral_EmitsValueSourceNode(t *testing.T) {
+	src := `package com.example;
+class Sample {
+    public Object getNull() { return null; }
+    public String getString() { return "hello"; }
+}
+`
+	fns := parseJavaInline(t, src)
+
+	for _, name := range []string{"getNull", "getString"} {
+		fn := findFunctionByName(fns, name)
+		if fn == nil {
+			t.Fatalf("%s function not found", name)
+		}
+		if len(fn.ReturnSources) == 0 {
+			t.Fatalf("%s: expected ReturnSources for literal return", name)
+		}
+		if fn.ReturnSources[0].Type != "VALUE" {
+			t.Fatalf("%s: ReturnSources[0].Type = %q, want VALUE", name, fn.ReturnSources[0].Type)
+		}
+	}
+}
+
+// TestJavaParser_BareReturn_NoReturnSources tests T3.5:
+// `public void doWork() { return; }` should produce empty ReturnSources.
+func TestJavaParser_BareReturn_NoReturnSources(t *testing.T) {
+	src := `package com.example;
+class Sample {
+    public void doWork() { return; }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "doWork")
+	if fn == nil {
+		t.Fatal("doWork function not found")
+	}
+	if len(fn.ReturnSources) != 0 {
+		t.Fatalf("expected empty ReturnSources for bare return, got %d entries", len(fn.ReturnSources))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Batch 6: Argument provenance in traceMethodInvocationNode (T6.1, T6.2)
+// ---------------------------------------------------------------------------
+
+// TestJavaParser_MethodInvocation_PopulatesSourceNodesWithArgProvenance tests T6.1:
+// A 3-argument method invocation returned from a function should produce a CALL_RESULT
+// SourceNode whose SourceNodes slice has 3 entries, one per argument, each with the
+// correct ParameterIndex and resolved Type/Value.
+//
+// Java source: `return cipher.unwrap(wrapped, "AES", Cipher.SECRET_KEY);`
+// Expected:
+//   - ReturnSources[0].Type  = "CALL_RESULT"
+//   - ReturnSources[0].SourceNodes has len == 3
+//   - SourceNodes[0].ParameterIndex == 0  (the `wrapped` variable)
+//   - SourceNodes[1].ParameterIndex == 1  (the "AES" string literal → VALUE)
+//   - SourceNodes[2].ParameterIndex == 2  (Cipher.SECRET_KEY → VALUE)
+//   - SourceNodes[2].Value == "Cipher.SECRET_KEY"
+func TestJavaParser_MethodInvocation_PopulatesSourceNodesWithArgProvenance(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.Cipher;
+class Sample {
+    private Cipher cipher;
+    public Object unwrapKey(byte[] wrapped, String alg) throws Exception {
+        return cipher.unwrap(wrapped, "AES", Cipher.SECRET_KEY);
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "unwrapKey")
+	if fn == nil {
+		t.Fatal("unwrapKey function not found")
+	}
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources for method-invocation return, got none")
+	}
+
+	rs := fn.ReturnSources[0]
+	if rs.Type != "CALL_RESULT" {
+		t.Fatalf("ReturnSources[0].Type = %q, want CALL_RESULT", rs.Type)
+	}
+	if rs.CallTarget == nil {
+		t.Fatal("ReturnSources[0].CallTarget is nil, expected unwrap")
+	}
+	if !strings.Contains(rs.CallTarget.Name, "unwrap") {
+		t.Fatalf("CallTarget.Name = %q, expected to contain unwrap", rs.CallTarget.Name)
+	}
+
+	// T6.1: SourceNodes must have 3 entries, one per argument.
+	if len(rs.SourceNodes) != 3 {
+		t.Fatalf("SourceNodes has %d entries, want 3 (one per argument); nodes: %#v", len(rs.SourceNodes), rs.SourceNodes)
+	}
+
+	// Arg 0: wrapped variable — PARAMETER or VARIABLE node
+	arg0 := rs.SourceNodes[0]
+	if arg0.ParameterIndex != 0 {
+		t.Errorf("SourceNodes[0].ParameterIndex = %d, want 0", arg0.ParameterIndex)
+	}
+
+	// Arg 1: "AES" string literal — VALUE node
+	arg1 := rs.SourceNodes[1]
+	if arg1.ParameterIndex != 1 {
+		t.Errorf("SourceNodes[1].ParameterIndex = %d, want 1", arg1.ParameterIndex)
+	}
+	if arg1.Type != "VALUE" {
+		t.Errorf("SourceNodes[1].Type = %q, want VALUE", arg1.Type)
+	}
+	if arg1.Value != `"AES"` {
+		t.Errorf("SourceNodes[1].Value = %q, want %q", arg1.Value, `"AES"`)
+	}
+
+	// Arg 2: Cipher.SECRET_KEY field access — VALUE node with the right value.
+	arg2 := rs.SourceNodes[2]
+	if arg2.ParameterIndex != 2 {
+		t.Errorf("SourceNodes[2].ParameterIndex = %d, want 2", arg2.ParameterIndex)
+	}
+	if arg2.Value != "Cipher.SECRET_KEY" {
+		t.Errorf("SourceNodes[2].Value = %q, want %q", arg2.Value, "Cipher.SECRET_KEY")
+	}
+}
