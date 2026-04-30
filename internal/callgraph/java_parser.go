@@ -1127,6 +1127,12 @@ func parseJavaConstructorExpression(expr string) (typeName string, argc int, ok 
 	if typeName == "" {
 		return "", 0, false
 	}
+	// Array creation expressions contain "[" before the first "(", e.g.
+	// `new byte[digest.getDigestSize()]`. These are NOT constructor calls;
+	// treat them as opaque and return false so callers skip CALL_RESULT emission.
+	if strings.Contains(typeName, "[") {
+		return "", 0, false
+	}
 	argc = len(parseArgumentsFromDelimitedContent(expr[open : closeIdx+1]))
 	return typeName, argc, true
 }

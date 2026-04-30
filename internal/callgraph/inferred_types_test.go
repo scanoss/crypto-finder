@@ -751,6 +751,60 @@ public class Service {
 	assertInferredReturn(t, fn, "java.security.PrivateKey", ConfidenceHigh, OriginKBConditional)
 }
 
+// ---------------------------------------------------------------------------
+// Batch 7 — Real-world shape: RSA.unwrapSecretKey → AESCBC.cipher provenance
+// ---------------------------------------------------------------------------
+
+// TestE2E_RSAUnwrapSecretKey_InferredReturnPropagates tests that a method
+// `unwrapKey` that returns `RSA.unwrapSecretKey(...)` has InferredReturn inferred
+// as kb-conditional SecretKey, so that when it appears as an argument in
+// a sibling's call chain, the call_target_inferred_return decoration can be
+// applied at the export layer.
+//
+// This mirrors the Mastercard client-encryption-java shape:
+//   - RSA.unwrapSecretKey is a KB-conditional method (Cipher.unwrap path)
+//   - AESCBC.cipher receives a Key argument that came from RSA.unwrapSecretKey
+//   - The export layer decorates that argument's CALL_RESULT SourceNode with
+//     call_target_inferred_return pointing to SecretKey.
+func TestE2E_RSAUnwrapSecretKey_SurfacesInChainProvenance(t *testing.T) {
+	t.Parallel()
+
+	// The fixture synthesizes the `client-encryption-java` structural shape:
+	//   1. A `WrapperClass.unwrapKey` method that wraps Cipher.unwrap with SECRET_KEY.
+	//   2. A `WrapperClass.cipher` method that receives a Key parameter and calls
+	//      Cipher.getInstance. The `cipher` method is a crypto finding target.
+	// After inference, `unwrapKey` must have InferredReturn = SecretKey (kb-conditional).
+	src := `package com.example;
+import javax.crypto.Cipher;
+import java.security.Key;
+public class WrapperClass {
+    private Cipher cipher;
+    // unwrapKey wraps Cipher.unwrap with SECRET_KEY; engine infers SecretKey.
+    public Key unwrapKey(byte[] wrappedKey, String algorithm) throws Exception {
+        return cipher.unwrap(wrappedKey, algorithm, Cipher.SECRET_KEY);
+    }
+    // cipher takes a Key argument (which callers produce via unwrapKey) and
+    // calls Cipher.getInstance — a crypto finding. The export layer must
+    // decorate the call_target (unwrapKey) SourceNode in the argument provenance
+    // with call_target_inferred_return.type = "javax.crypto.SecretKey".
+    public byte[] encrypt(byte[] data, Key key) throws Exception {
+        Cipher c = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        c.init(Cipher.ENCRYPT_MODE, key);
+        return c.doFinal(data);
+    }
+}
+`
+	graph := parseInlineJava(t, "WrapperClass", src)
+
+	// Assert unwrapKey has InferredReturn = SecretKey (engine half of the test).
+	unwrapFn := findFunctionBySimpleName(t, graph, "unwrapKey")
+	assertInferredReturn(t, unwrapFn, "javax.crypto.SecretKey", ConfidenceHigh, OriginKBConditional)
+
+	// The export half (call_target_inferred_return decoration) is tested in
+	// internal/scan/export_inferred_return_test.go#TestExportSourceNode_PopulatesCallTargetInferredReturn
+	// and validated end-to-end via the real-world acceptance gate in Batch 7.
+}
+
 // TestE2E_ParserDriven_Scenario7_CipherUnwrapUnresolvedMultipleBranches tests T6.7:
 // When the third argument to Cipher.unwrap is an unresolved method parameter
 // (e.g. `mode` passed in from outside), all three KB branches (SECRET_KEY,

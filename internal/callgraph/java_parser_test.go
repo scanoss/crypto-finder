@@ -973,3 +973,93 @@ class Sample {
 		t.Errorf("SourceNodes[2].Value = %q, want %q", arg2.Value, "Cipher.SECRET_KEY")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Issue 3 — array_creation_expression must NOT produce a malformed CONSTRUCTOR_CALL
+// ---------------------------------------------------------------------------
+
+// TestParseArrayCreationExpression_DoesNotProduceMalformedType verifies that
+// `new byte[digest.getDigestSize()]` (Java array allocation) does NOT produce
+// a CALL_RESULT SourceNode with a truncated/malformed type string like
+// "byte[digest.getDigestSize".
+//
+// The bug manifests in the text-based parseJavaConstructorExpression:
+// `new byte[digest.getDigestSize()]` matches the "new " prefix and has "(" in
+// it, so the function extracts everything before the first "(" as the type
+// name, yielding the malformed string "byte[digest.getDigestSize".
+//
+// The fix: parseJavaConstructorExpression must reject expressions where the
+// candidate type name contains "[" — those are array allocations, not object
+// construction.
+func TestParseArrayCreationExpression_DoesNotProduceMalformedType(t *testing.T) {
+	t.Parallel()
+
+	// Direct unit test of parseJavaConstructorExpression for array allocations.
+	arrayExprs := []string{
+		"new byte[digest.getDigestSize()]",
+		"new byte[size]",
+		"new int[10]",
+		"new char[buf.length()]",
+	}
+	for _, expr := range arrayExprs {
+		typeName, _, ok := parseJavaConstructorExpression(expr)
+		if ok && strings.Contains(typeName, "[") {
+			t.Errorf("parseJavaConstructorExpression(%q): returned malformed typeName=%q (want ok=false for array creation)", expr, typeName)
+		}
+	}
+
+	// True constructors must still work.
+	goodExprs := []struct {
+		expr    string
+		wantTyp string
+	}{
+		{"new SecretKeySpec(bytes, \"AES\")", "SecretKeySpec"},
+		{"new javax.crypto.spec.SecretKeySpec(bytes, \"AES\")", "javax.crypto.spec.SecretKeySpec"},
+	}
+	for _, tc := range goodExprs {
+		typeName, _, ok := parseJavaConstructorExpression(tc.expr)
+		if !ok {
+			t.Errorf("parseJavaConstructorExpression(%q): got ok=false, want true", tc.expr)
+		} else if typeName != tc.wantTyp {
+			t.Errorf("parseJavaConstructorExpression(%q): typeName=%q, want %q", tc.expr, typeName, tc.wantTyp)
+		}
+	}
+
+	// Integration: a method that uses a local byte array must NOT produce
+	// malformed CALL_RESULT nodes in any SourceNode tree in the callgraph.
+	src := `package com.example;
+public class DigestWrapper {
+    private org.bouncycastle.crypto.Digest digest;
+    public Object computeDigest(byte[] input) {
+        byte[] hash = new byte[digest.getDigestSize()];
+        digest.doFinal(hash, 0);
+        return new javax.crypto.spec.SecretKeySpec(hash, "AES");
+    }
+}
+`
+	graph := parseInlineJava(t, "DigestWrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "computeDigest")
+	for _, sn := range fn.ReturnSources {
+		checkNoMalformedArrayType(t, sn)
+	}
+}
+
+// checkNoMalformedArrayType recursively checks that no SourceNode carries a
+// malformed array-creation type like "byte[digest.getDigestSize".
+func checkNoMalformedArrayType(t *testing.T, sn SourceNode) {
+	t.Helper()
+	if sn.Type == "CALL_RESULT" || sn.DeclaredType != "" {
+		typ := sn.DeclaredType
+		if sn.CallTarget != nil && sn.CallTarget.Type != "" {
+			typ = sn.CallTarget.Type
+		}
+		// A malformed array type has "[" in it but does NOT end with "[]".
+		if strings.Contains(typ, "[") && !strings.HasSuffix(typ, "[]") {
+			t.Errorf("malformed array type string in SourceNode: Type=%q DeclaredType=%q CallTarget=%v",
+				sn.Type, sn.DeclaredType, sn.CallTarget)
+		}
+	}
+	for _, child := range sn.SourceNodes {
+		checkNoMalformedArrayType(t, child)
+	}
+}

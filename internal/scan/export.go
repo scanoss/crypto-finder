@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	callGraphSchemaVersion   = "5.2"
+	callGraphSchemaVersion   = "5.3"
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -139,14 +139,15 @@ type callGraphFindingLocation struct {
 }
 
 type exportSourceNode struct {
-	Type           string                `json:"type"`
-	Name           string                `json:"name,omitempty"`
-	DeclaredType   string                `json:"declared_type,omitempty"`
-	Value          string                `json:"value,omitempty"`
-	ParameterIndex *int                  `json:"parameter_index,omitempty"`
-	CallTarget     string                `json:"call_target,omitempty"`
-	Location       *exportSourceLocation `json:"location,omitempty"`
-	SourceNodes    []exportSourceNode    `json:"source_nodes,omitempty"`
+	Type                     string                `json:"type"`
+	Name                     string                `json:"name,omitempty"`
+	DeclaredType             string                `json:"declared_type,omitempty"`
+	Value                    string                `json:"value,omitempty"`
+	ParameterIndex           *int                  `json:"parameter_index,omitempty"`
+	CallTarget               string                `json:"call_target,omitempty"`
+	CallTargetInferredReturn *exportInferredReturn `json:"call_target_inferred_return,omitempty"`
+	Location                 *exportSourceLocation `json:"location,omitempty"`
+	SourceNodes              []exportSourceNode    `json:"source_nodes,omitempty"`
 }
 
 type exportSourceLocation struct {
@@ -853,6 +854,12 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 		}
 		if n.CallTarget != nil {
 			result[i].CallTarget = fullFunctionName(*n.CallTarget)
+			// Option 1e: decorate CALL_RESULT nodes with the call target's
+			// inferred return type when it differs from the target's declared
+			// return type. This surfaces inferred types on argument provenance
+			// nodes even when the target function is not itself a finding caller.
+			// resolveCallTargetInferredReturn checks the node type internally.
+			result[i].CallTargetInferredReturn = resolveCallTargetInferredReturn(ctx, n.CallTarget, n.Type)
 		}
 		loc := &exportSourceLocation{
 			FilePath: defaultFilePath,
@@ -871,6 +878,41 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 		}
 	}
 	return result
+}
+
+// resolveCallTargetInferredReturn looks up the target function's InferredReturn
+// in the call graph and returns an exportInferredReturn for it, or nil when:
+//   - the nodeType is not "CALL_RESULT",
+//   - the target function is not in the graph,
+//   - no inference result exists,
+//   - the origin is join-failed, or
+//   - the inferred type equals the function's declared return type (Issue 2 rule).
+func resolveCallTargetInferredReturn(ctx *exportBuildContext, target *callgraph.FunctionID, nodeType string) *exportInferredReturn {
+	if nodeType != "CALL_RESULT" {
+		return nil
+	}
+	if ctx == nil || ctx.graph == nil || target == nil {
+		return nil
+	}
+	fn := ctx.graph.Functions[target.String()]
+	if fn == nil || fn.InferredReturn == nil {
+		return nil
+	}
+	ir := fn.InferredReturn
+	if ir.Origin == "join-failed" {
+		return nil
+	}
+	// Suppress when inferred type == declared return type (de-noising rule, Issue 2).
+	if strings.TrimSpace(ir.Type) == strings.TrimSpace(fn.ReturnType) {
+		return nil
+	}
+	return &exportInferredReturn{
+		Type:       ir.Type,
+		TypeRef:    exportTypeRefFromCallgraph(ir.TypeRef),
+		Confidence: ir.Confidence,
+		Origin:     ir.Origin,
+		Provenance: convertInferredReturnProvenance(ir.Provenance),
+	}
 }
 
 func resolveSimpleExportParameterValue(expr string, sourceNodes []exportSourceNode) string {
@@ -928,8 +970,8 @@ func resolveSimpleExportSourceValue(nodes []exportSourceNode) (string, bool) {
 	}
 
 	var resolved string
-	for _, node := range nodes {
-		value, ok := resolveSimpleExportSourceValueNode(node)
+	for i := range nodes {
+		value, ok := resolveSimpleExportSourceValueNode(nodes[i])
 		if !ok {
 			return "", false
 		}
@@ -1405,6 +1447,7 @@ func cloneSourceNodes(nodes []exportSourceNode) []exportSourceNode {
 			loc := *nodes[i].Location
 			result[i].Location = &loc
 		}
+		result[i].CallTargetInferredReturn = cloneExportInferredReturn(nodes[i].CallTargetInferredReturn)
 	}
 	return result
 }
@@ -1469,8 +1512,13 @@ func buildExportFunctionMetadata(
 	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
 
 	// Populate inferred_return when the inference pass produced a result.
-	// join-failed origin is suppressed from export (logged internally for telemetry only).
-	if decl != nil && decl.InferredReturn != nil && decl.InferredReturn.Origin != "join-failed" {
+	// Two suppression rules apply:
+	//   1. join-failed origin is suppressed (logged internally for telemetry only).
+	//   2. When inferred type == declared type the field carries zero information
+	//      and is omitted to reduce noise (Issue 2).
+	if decl != nil && decl.InferredReturn != nil &&
+		decl.InferredReturn.Origin != "join-failed" &&
+		strings.TrimSpace(decl.InferredReturn.Type) != strings.TrimSpace(meta.ReturnType) {
 		ir := decl.InferredReturn
 		meta.InferredReturn = &exportInferredReturn{
 			Type:       ir.Type,
