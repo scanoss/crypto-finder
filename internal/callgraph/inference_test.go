@@ -192,9 +192,9 @@ func TestLatticeJoin_NoCommonAncestor(t *testing.T) {
 // TestInferReturnTypes_EmptyGraph asserts that calling InferReturnTypes on a
 // graph with no functions returns no error and performs no inferences.
 func TestInferReturnTypes_EmptyGraph(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -219,9 +219,9 @@ func TestInferReturnTypes_EmptyGraph(t *testing.T) {
 // return source is a constructor call gets an InferredReturn with the
 // constructed type, high confidence, and "constructor" origin.
 func TestInferReturnTypes_ConstructorReturn(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 
 	g := &CallGraph{
@@ -268,9 +268,9 @@ func TestInferReturnTypes_ConstructorReturn(t *testing.T) {
 // TestInferReturnTypes_KBDirect asserts that a function calling
 // KeyGenerator.generateKey#0 gets InferredReturn{SecretKey, high, kb-direct}.
 func TestInferReturnTypes_KBDirect(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -315,9 +315,9 @@ func TestInferReturnTypes_KBDirect(t *testing.T) {
 // TestInferReturnTypes_KBConditional_Resolved asserts that a function calling
 // Cipher.unwrap#3 with arg[2]="Cipher.SECRET_KEY" resolves to SecretKey, high.
 func TestInferReturnTypes_KBConditional_Resolved(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -367,9 +367,9 @@ func TestInferReturnTypes_KBConditional_Resolved(t *testing.T) {
 // TestInferReturnTypes_KBConditional_SinglePlausible asserts that when arg is
 // unresolved but only one KB branch is plausible, confidence is medium.
 func TestInferReturnTypes_KBConditional_SinglePlausible(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	// Build a minimal KB with 3 conditional branches for "test.Op.call#1"
 	// Branch A: arg[0] in {"A"} → TypeA, high
@@ -383,8 +383,10 @@ func TestInferReturnTypes_KBConditional_SinglePlausible(t *testing.T) {
 	// Use the embedded KB: Cipher.unwrap#3 has 3 branches. Let's build a
 	// synthetic KB with 1 conditional entry.
 	customYAML := []byte(`
-schema_version: "1"
+schema_version: "2"
 ecosystem: java
+library:
+  name: test
 contracts:
   - method: com.example.Op.call
     arity: 1
@@ -447,9 +449,9 @@ hierarchy: {}
 func TestInferReturnTypes_KBConditional_MultiplePlausible(t *testing.T) {
 	// Cipher.unwrap#3 has 3 conditional branches (SECRET_KEY, PRIVATE_KEY, PUBLIC_KEY).
 	// With an unresolved arg[2], all 3 are plausible → InferredReturn should be nil.
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -490,9 +492,9 @@ func TestInferReturnTypes_KBConditional_MultiplePlausible(t *testing.T) {
 // TestInferReturnTypes_Propagated asserts that function A returning result of
 // function B (which has InferredReturn) inherits B's type via "propagated".
 func TestInferReturnTypes_Propagated(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -542,9 +544,9 @@ func TestInferReturnTypes_Propagated(t *testing.T) {
 // TestInferReturnTypes_MutualRecycleFixpoint asserts that a mutual recursion
 // A→B, B→A converges when A also has a direct constructor source.
 func TestInferReturnTypes_MutualRecycleFixpoint(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -598,9 +600,9 @@ func TestInferReturnTypes_MutualRecycleFixpoint(t *testing.T) {
 // TestInferReturnTypes_IterationCapWithStableType asserts that a chain of
 // functions deeper than inferenceMaxIterations converges to the base type.
 func TestInferReturnTypes_IterationCapWithStableType(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -656,9 +658,9 @@ func TestInferReturnTypes_IterationCapWithStableType(t *testing.T) {
 // TestInferReturnTypes_IterationCapNoStableType asserts that a purely cyclic
 // graph with no ground-truth source leaves InferredReturn nil after cap.
 func TestInferReturnTypes_IterationCapNoStableType(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -702,9 +704,9 @@ func TestInferReturnTypes_IterationCapNoStableType(t *testing.T) {
 // with a specific non-trigger type (javax.crypto.Cipher) does not get inference
 // even when ReturnSources are populated.
 func TestInferReturnTypes_DeclaredTypeSuppresses(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),
@@ -736,9 +738,9 @@ func TestInferReturnTypes_DeclaredTypeSuppresses(t *testing.T) {
 // TestInferReturnTypes_DeclaredObjectFires asserts that a function declared as
 // returning "Object" (a trigger type) does get inference when sources are present.
 func TestInferReturnTypes_DeclaredObjectFires(t *testing.T) {
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	g := &CallGraph{
 		Functions:     make(map[string]*FunctionDecl),

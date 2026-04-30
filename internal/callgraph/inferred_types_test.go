@@ -55,9 +55,9 @@ func parseInlineJava(t *testing.T, className, src string) *CallGraph {
 // mustLoadKB loads the embedded Java KB, failing the test on error.
 func mustLoadKB(t *testing.T) *contracts.KnowledgeBase {
 	t.Helper()
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 	return kb
 }

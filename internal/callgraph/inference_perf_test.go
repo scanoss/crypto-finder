@@ -88,9 +88,9 @@ func TestPerformance_InferenceOverhead(t *testing.T) {
 	dir := perfFixtureDir(t)
 	const iterations = 5
 
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
-		t.Fatalf("LoadEmbeddedJava: %v", err)
+		t.Fatalf("LoadEmbedded(\"java\"): %v", err)
 	}
 
 	var buildTotal, inferTotal time.Duration

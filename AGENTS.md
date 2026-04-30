@@ -63,7 +63,25 @@ internal/callgraph/contracts/
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
-change. The loader merges all KBs for a given ecosystem at runtime. See the engram
-record `callgraph/inferred-types/v1-design-decisions` for v1 architectural choices,
-and the multi-library scaling design (when finalised) for collision rules and
-library-metadata schema.
+change. The loader (`contracts.LoadEmbedded(ecosystem)`) discovers all `*.yaml` files in
+the ecosystem directory, validates each, and merges them via `contracts.Merge()` with
+conflict-detection rules:
+
+- Same method+arity+condition with identical return → idempotent (no error).
+- Same method+arity+condition with different return → HARD ERROR naming both libraries.
+- Hierarchy `child → [A]` in both libs → idempotent.
+- Hierarchy `child → [A]` vs `[B]` (no subset) → HARD ERROR naming both libraries.
+- Hierarchy `child → [A]` vs `[A, B]` → UNION (subset accepted).
+
+Each YAML carries a `library:` block with `name`, optional `coordinates`, optional
+`version_range`, and optional `description`. The `library.name` propagates onto every
+contract's `SourceLibrary` field for diagnostic identification across libraries.
+
+Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
+INTERNAL to the loader; the partner-facing export schema is independent (currently 5.3).
+
+To add a library:
+1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
+2. Set `schema_version: "2"`, `ecosystem: <name>`, and a unique `library.name`.
+3. Author contracts and hierarchy edges following the same shape as `jdk-crypto.yaml`.
+4. Tests run automatically — no Go code changes required.

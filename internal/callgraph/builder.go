@@ -125,7 +125,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// In v1, only the Java parser populates ReturnSources; for other ecosystems the
 	// pass is a no-op since no function will have ReturnSources set.
 	inferenceStart := time.Now()
-	kb, err := contracts.LoadEmbeddedJava()
+	kb, err := contracts.LoadEmbedded("java")
 	if err != nil {
 		return nil, fmt.Errorf("callgraph: load embedded Java KB: %w", err)
 	}

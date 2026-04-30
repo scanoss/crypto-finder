@@ -1,9 +1,13 @@
-schema_version: "1"
+schema_version: "2"
 ecosystem: java
+
+library:
+  name: jdk-crypto
+  description: "JDK Java Cryptography Architecture (JCA) and Java Cryptography Extension (JCE) standard library contracts"
 
 # JCA/JCE Knowledge Base — 44 contract entries + 31 hierarchy edges
 # Hand-curated for the callgraph-inferred-types v1 inference engine.
-# Schema version 1 — do not add fields without bumping schema_version.
+# Schema version 2 — library block required.
 
 contracts:
   # --- KeyGenerator ---
