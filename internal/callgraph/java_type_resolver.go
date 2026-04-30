@@ -1703,7 +1703,7 @@ func skipMethodTypeParameters(signature string, pos int) int {
 func parseMethodSignatureParams(signature string, pos int) ([]TypeRef, int, error) {
 	// Lazily allocate so a parameterless signature returns nil, matching the
 	// cloneTypeRefs convention (nil for empty TypeRef slices).
-	var params []TypeRef //nolint:prealloc // intentional: nil-on-empty matches cloneTypeRefs convention
+	var params []TypeRef
 	for pos < len(signature) && signature[pos] != ')' {
 		ref, newPos, err := parseSignatureType(signature, pos)
 		if err != nil {

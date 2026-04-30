@@ -1223,11 +1223,11 @@ func kindToSourceType(kind string) string {
 	case javaVarOriginKindParameter:
 		return javaSourceTypeParameter
 	case "field":
-		return "FIELD"
+		return sourceNodeField
 	case "local_variable":
-		return "VARIABLE"
+		return sourceNodeVariable
 	default:
-		return "VARIABLE"
+		return sourceNodeVariable
 	}
 }
 

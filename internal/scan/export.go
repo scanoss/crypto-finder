@@ -22,6 +22,7 @@ const (
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
+	sourceNodeTypeCallResult = "CALL_RESULT"
 	callGraphExportProgress  = 100
 	callGraphExportMaxDepth  = 32
 	callGraphExportMaxChains = 128
@@ -888,7 +889,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 //   - the origin is join-failed, or
 //   - the inferred type equals the function's declared return type (Issue 2 rule).
 func resolveCallTargetInferredReturn(ctx *exportBuildContext, target *callgraph.FunctionID, nodeType string) *exportInferredReturn {
-	if nodeType != "CALL_RESULT" {
+	if nodeType != sourceNodeTypeCallResult {
 		return nil
 	}
 	if ctx == nil || ctx.graph == nil || target == nil {
@@ -1417,7 +1418,7 @@ func propagateSourceNodeChildren(
 ) {
 	for i := range nodes {
 		originalChildren := len(nodes[i].SourceNodes)
-		if nodes[i].Type == "CALL_RESULT" && originalChildren > 0 {
+		if nodes[i].Type == sourceNodeTypeCallResult && originalChildren > 0 {
 			propagateSourceNodeChildren(nodes[i].SourceNodes[:originalChildren], upstream, defaultFilePath, defaultLine)
 		}
 		if nodes[i].Type == sourceNodeTypeParameter {
