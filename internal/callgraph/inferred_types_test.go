@@ -830,3 +830,94 @@ public class CipherWrapper {
 	// Multiple plausible branches (SECRET_KEY, PRIVATE_KEY, PUBLIC_KEY) → absent.
 	assertNoInferredReturn(t, fn)
 }
+
+// ---------------------------------------------------------------------------
+// Batch 8 — E2E acceptance: getSecretKey lazy-field-init shape
+// ---------------------------------------------------------------------------
+
+// TestE2E_GetSecretKey_PropagatedSurfacesInChainProvenance (Batch 8 pair 5 — integration/acceptance).
+//
+// This test mirrors the canonical IBM/Mastercard client-encryption-java shape:
+//
+//	FieldLevelEncryptionParams.getSecretKey() {
+//	    if (secretKey == null) {
+//	        try {
+//	            secretKey = RSA.unwrapSecretKey(config.decryptionKey, encBytes, "AES");
+//	        } catch (...) { }
+//	    }
+//	    return secretKey;  // ← FIELD source, not direct CALL_RESULT
+//	}
+//
+// The parser must propagate the in-method assignment (`secretKey = RSA.unwrap(...)`)
+// into the FIELD SourceNode's SourceNodes, enabling the inference engine to see
+// through the lazy-init wrapper and infer SecretKey as the return type.
+//
+// The engine sees:
+//   - `getSecretKey` return source: FIELD("secretKey") with SourceNodes=[CALL_RESULT(RSA.unwrap)]
+//   - RSA.unwrap is a KB-conditional function with arg[2]==Cipher.SECRET_KEY → SecretKey
+//   - InferredReturn propagated from unwrap → SecretKey
+//
+// Expected: getSecretKey.InferredReturn.type = "javax.crypto.SecretKey", origin ∈ {kb-conditional, propagated}.
+func TestE2E_GetSecretKey_PropagatedSurfacesInChainProvenance(t *testing.T) {
+	t.Parallel()
+
+	// Synthesize the IBM/Mastercard FieldLevelEncryptionParams.getSecretKey shape.
+	// Uses a class-level field 'secretKey' assigned inside a try-block within the method.
+	src := `package com.example;
+import javax.crypto.Cipher;
+import java.security.Key;
+public class FieldLevelEncryptionParams {
+    private Key secretKey;
+    private Cipher decryptionKey;
+    private byte[] encryptedKeyValue;
+
+    public Object getSecretKey() throws Exception {
+        if (secretKey == null) {
+            try {
+                secretKey = decryptionKey.unwrap(encryptedKeyValue, "AES", Cipher.SECRET_KEY);
+            } catch (Exception e) {
+                throw new Exception("unwrap failed", e);
+            }
+        }
+        return secretKey;
+    }
+}
+`
+	graph := parseInlineJava(t, "FieldLevelEncryptionParams", src)
+
+	fn := findFunctionBySimpleName(t, graph, "getSecretKey")
+
+	// The return source must carry assignment provenance so the engine can fire.
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty")
+	}
+
+	// Validate that at least one FIELD/VARIABLE node for "secretKey" has SourceNodes.
+	var secretKeyNode *SourceNode
+	for i := range fn.ReturnSources {
+		sn := &fn.ReturnSources[i]
+		if (sn.Type == "FIELD" || sn.Type == "VARIABLE") && sn.Name == "secretKey" {
+			secretKeyNode = sn
+			break
+		}
+	}
+	if secretKeyNode == nil {
+		t.Fatalf("expected a FIELD/VARIABLE SourceNode named 'secretKey' in ReturnSources; got: %+v", fn.ReturnSources)
+	}
+	if len(secretKeyNode.SourceNodes) == 0 {
+		t.Errorf("FIELD 'secretKey' SourceNodes must be populated from the in-method try-block assignment; "+
+			"got empty. Full ReturnSources: %+v", fn.ReturnSources)
+	}
+
+	// Assert the engine propagates through the assignment to produce an inference.
+	if fn.InferredReturn == nil {
+		t.Fatalf("expected InferredReturn on getSecretKey (propagated via field assignment); got nil. "+
+			"ReturnSources: %+v", fn.ReturnSources)
+	}
+	if fn.InferredReturn.Type != "javax.crypto.SecretKey" {
+		t.Errorf("InferredReturn.Type = %q, want %q", fn.InferredReturn.Type, "javax.crypto.SecretKey")
+	}
+	if fn.InferredReturn.Origin != OriginKBConditional && fn.InferredReturn.Origin != OriginPropagated {
+		t.Errorf("InferredReturn.Origin = %q, want kb-conditional or propagated", fn.InferredReturn.Origin)
+	}
+}

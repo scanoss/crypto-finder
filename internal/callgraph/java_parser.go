@@ -29,10 +29,13 @@ const (
 	javaNodeMethodDeclaration    = "method_declaration"
 	javaNodeFormalParameters     = "formal_parameters"
 	javaNodeArgumentList         = "argument_list"
+	javaNodeFieldAccess          = "field_access"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
+	javaVarOriginKindParameter   = "parameter"
 	javaFunctionTypeMethod       = "method"
 	javaFunctionTypeConstructor  = "constructor"
+	javaThisKeyword              = "this"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -762,10 +765,10 @@ func parseFieldAssignmentNode(
 }
 
 func assignedFieldName(left *sitter.Node, src []byte, fieldTypes map[string]string) string {
-	if left.Type() == "field_access" {
+	if left.Type() == javaNodeFieldAccess {
 		obj := left.ChildByFieldName("object")
 		field := left.ChildByFieldName("field")
-		if obj != nil && field != nil && obj.Content(src) == "this" {
+		if obj != nil && field != nil && obj.Content(src) == javaThisKeyword {
 			return field.Content(src)
 		}
 	}
@@ -856,7 +859,7 @@ func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, file
 			}
 			origins[param.Name] = varOrigin{
 				typeName:   param.Type,
-				kind:       "parameter",
+				kind:       javaVarOriginKindParameter,
 				line:       int(child.StartPoint().Row) + 1,
 				filePath:   filePath,
 				paramIndex: paramIdx,
@@ -1002,7 +1005,7 @@ func (p *JavaParser) traceOriginExpression(
 		DeclaredType: info.typeName,
 		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
 	}
-	if info.kind == "parameter" {
+	if info.kind == javaVarOriginKindParameter {
 		node.ParameterIndex = info.paramIndex
 	}
 	switch {
@@ -1217,7 +1220,7 @@ func isNumericLiteralRune(c rune, allowHexLetters, allowDot, allowSuffix bool) b
 
 func kindToSourceType(kind string) string {
 	switch kind {
-	case "parameter":
+	case javaVarOriginKindParameter:
 		return javaSourceTypeParameter
 	case "field":
 		return "FIELD"
@@ -1965,11 +1968,74 @@ func normalizeJavaTypeNameWithPackage(typeText string) string {
 	return replacer.Replace(strings.TrimSpace(normalized)) + arraySuffix
 }
 
+// collectMethodBodyAssignmentNodes scans a method body for assignment_expression
+// nodes where the LHS is a known variable or field name. For each match, the RHS
+// AST node is appended to the result map under the variable name.
+//
+// This enables provenance tracing for lazy-field-initialization patterns:
+//
+//	Key secretKey; // field, no declarator initializer
+//	Key get() {
+//	    secretKey = RSA.unwrap(...); // ← captured here
+//	    return secretKey;            // ← traced via methodBodyAssignments
+//	}
+//
+// The returned map is keyed by variable/field name (without "this." prefix).
+// Only same-method-body assignments are tracked (no cross-method field flow).
+//
+//nolint:nestif // Traversal of nested assignment expressions in method bodies requires deep nesting.
+func (p *JavaParser) collectMethodBodyAssignmentNodes(
+	node *sitter.Node,
+	src []byte,
+	varOrigins map[string]varOrigin,
+	result map[string][]*sitter.Node,
+) {
+	if node == nil {
+		return
+	}
+	if node.Type() == "assignment_expression" {
+		left := node.ChildByFieldName("left")
+		right := node.ChildByFieldName("right")
+		if left != nil && right != nil {
+			varName := assignedVarName(left, src)
+			if varName != "" {
+				if _, ok := varOrigins[varName]; ok {
+					result[varName] = append(result[varName], right)
+				}
+			}
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.collectMethodBodyAssignmentNodes(node.Child(i), src, varOrigins, result)
+	}
+}
+
+// assignedVarName returns the variable name from the left-hand side of an
+// assignment expression, handling both plain identifiers (x = ...) and
+// field accesses (this.x = ...).
+func assignedVarName(left *sitter.Node, src []byte) string {
+	switch left.Type() {
+	case javaNodeIdentifier:
+		return left.Content(src)
+	case javaNodeFieldAccess:
+		obj := left.ChildByFieldName("object")
+		field := left.ChildByFieldName("field")
+		if obj != nil && field != nil && obj.Content(src) == javaThisKeyword {
+			return field.Content(src)
+		}
+	}
+	return ""
+}
+
 // extractReturnSources walks the body AST and populates fn.ReturnSources with
 // SourceNode slices derived from each return_statement expression.
 //
 // Lambda bodies are NOT descended into — lambda return inference is explicitly
 // deferred to v2. Throw statements are NOT returns and are ignored.
+//
+// Before walking, in-method assignment RHS nodes are collected so that
+// FIELD/VARIABLE SourceNodes for returned identifiers can carry provenance from
+// in-method assignments (e.g., lazy-init: secretKey = RSA.unwrap(...)).
 func (p *JavaParser) extractReturnSources(
 	body *sitter.Node,
 	src []byte,
@@ -1979,7 +2045,12 @@ func (p *JavaParser) extractReturnSources(
 	varOrigins map[string]varOrigin,
 	fn *FunctionDecl,
 ) {
-	p.walkForReturnSources(body, src, analysis, currentClass, varTypes, varOrigins, fn)
+	// Collect in-method assignment RHS AST nodes for each known variable/field.
+	// These are threaded through the AST walk so traceExpressionNode can use them
+	// when tracing identifier/field_access return expressions.
+	bodyAssignments := make(map[string][]*sitter.Node)
+	p.collectMethodBodyAssignmentNodes(body, src, varOrigins, bodyAssignments)
+	p.walkForReturnSources(body, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments, fn)
 }
 
 // walkForReturnSources recursively descends the AST, collecting return_statement
@@ -1992,6 +2063,7 @@ func (p *JavaParser) walkForReturnSources(
 	currentClass string,
 	varTypes map[string]string,
 	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
 	fn *FunctionDecl,
 ) {
 	if node == nil {
@@ -2007,7 +2079,7 @@ func (p *JavaParser) walkForReturnSources(
 	case "return_statement":
 		exprNode := returnStatementExpressionNode(node)
 		if exprNode != nil {
-			nodes := p.traceExpressionNode(exprNode, src, analysis, currentClass, varTypes, varOrigins)
+			nodes := p.traceExpressionNode(exprNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 			fn.ReturnSources = append(fn.ReturnSources, nodes...)
 		}
 		// For bare `return;` there is no expression — no SourceNode to append.
@@ -2015,7 +2087,7 @@ func (p *JavaParser) walkForReturnSources(
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForReturnSources(node.Child(i), src, analysis, currentClass, varTypes, varOrigins, fn)
+		p.walkForReturnSources(node.Child(i), src, analysis, currentClass, varTypes, varOrigins, bodyAssignments, fn)
 	}
 }
 
@@ -2029,6 +2101,10 @@ const (
 // traceExpressionNode converts a tree-sitter expression node to SourceNode slices.
 // It dispatches on AST node types for accurate resolution, avoiding text-parsing
 // ambiguity in fluent-chain expressions like `A.foo().bar()`.
+//
+// bodyAssignments carries in-method assignment RHS nodes (name → []rhsNode) so
+// that identifier and field_access nodes can be enriched with provenance from
+// same-method assignments (e.g., `secretKey = RSA.unwrap(...); return secretKey`).
 func (p *JavaParser) traceExpressionNode(
 	node *sitter.Node,
 	src []byte,
@@ -2036,30 +2112,109 @@ func (p *JavaParser) traceExpressionNode(
 	currentClass string,
 	varTypes map[string]string,
 	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
 ) []SourceNode {
 	if node == nil {
 		return nil
 	}
 	switch node.Type() {
 	case "object_creation_expression":
-		return p.traceObjectCreationNode(node, src, analysis, currentClass, varTypes, varOrigins)
+		return p.traceObjectCreationNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 	case "method_invocation":
-		return p.traceMethodInvocationNode(node, src, analysis, currentClass, varTypes, varOrigins)
+		return p.traceMethodInvocationNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 	case "ternary_expression":
-		return p.traceTernaryExpressionNode(node, src, analysis, currentClass, varTypes, varOrigins)
+		return p.traceTernaryExpressionNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 	case "string_literal", "character_literal", "null_literal",
 		"decimal_integer_literal", "hex_integer_literal", "octal_integer_literal",
 		"binary_integer_literal", "decimal_floating_point_literal",
 		javaNodeBoolLiteralTrue, javaNodeBoolLiteralFalse:
 		// Literals → VALUE node.
 		return []SourceNode{{Type: "VALUE", Value: strings.TrimSpace(node.Content(src))}}
+	case javaNodeIdentifier, javaNodeFieldAccess:
+		// AST-based identifier/field tracing: use varOrigins for type/kind info and
+		// bodyAssignments for in-method assignment provenance. This avoids the
+		// text-based fallback which cannot extract argument SourceNodes from
+		// method invocations (needed for KB-conditional resolution).
+		return p.traceIdentifierNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 	}
-	// Fallback: use text-based traceExpression for identifiers, field accesses, etc.
+	// Fallback: use text-based traceExpression for any other node types.
 	expr := strings.TrimSpace(node.Content(src))
 	if expr == "" {
 		return nil
 	}
 	return p.traceExpression(expr, analysis, currentClass, varTypes, varOrigins, 0)
+}
+
+// traceIdentifierNode handles identifier and field_access AST nodes in
+// traceExpressionNode. It creates a FIELD/VARIABLE/PARAMETER SourceNode from
+// varOrigins and enriches its SourceNodes with provenance from either:
+//  1. The declarator initializer (existing behavior via traceExpression).
+//  2. Constructor-param assignment (existing behavior via fieldConstructorSourceNodes).
+//  3. In-method assignments captured in bodyAssignments (new Batch 8 behavior).
+//
+// If the identifier is not found in varOrigins, falls back to the text-based
+// traceExpression path (handles static field references like Cipher.SECRET_KEY).
+//
+// Cycle guard: bodyAssignments is NOT recursed when tracing assignment RHS nodes,
+// preventing self-referential assignment cycles. Only one level of assignment
+// provenance is traced per identifier.
+func (p *JavaParser) traceIdentifierNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
+) []SourceNode {
+	expr := strings.TrimSpace(node.Content(src))
+	if expr == "" {
+		return nil
+	}
+
+	// Resolve the variable name — strip "this." prefix for field_access nodes.
+	varName := expr
+	if node.Type() == javaNodeFieldAccess {
+		obj := node.ChildByFieldName("object")
+		field := node.ChildByFieldName("field")
+		if obj != nil && field != nil && strings.TrimSpace(obj.Content(src)) == javaThisKeyword {
+			varName = strings.TrimSpace(field.Content(src))
+		}
+	}
+
+	info, ok := varOrigins[varName]
+	if !ok {
+		// Not a known local/field — use text-based fallback (handles static
+		// references like Cipher.SECRET_KEY → VALUE node).
+		return p.traceExpression(expr, analysis, currentClass, varTypes, varOrigins, 0)
+	}
+
+	sn := SourceNode{
+		Type:         kindToSourceType(info.kind),
+		Name:         varName,
+		DeclaredType: info.typeName,
+		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
+	}
+	if info.kind == javaVarOriginKindParameter {
+		sn.ParameterIndex = info.paramIndex
+	}
+
+	switch {
+	case info.kind == javaVarOriginKindField && info.constructorParam != nil:
+		sn.SourceNodes = fieldConstructorSourceNodes(info.constructorParam)
+	case info.initializer != "":
+		sn.SourceNodes = p.traceExpression(info.initializer, analysis, currentClass, varTypes, varOrigins, 1)
+	case len(bodyAssignments[varName]) > 0:
+		// Trace each in-method assignment RHS via the AST-based path so that
+		// argument provenance (needed for KB-conditional resolution) is preserved.
+		// Pass nil bodyAssignments to prevent recursive assignment chasing
+		// (same-method-body assignments are only one level deep in v1).
+		for _, rhsNode := range bodyAssignments[varName] {
+			sn.SourceNodes = append(sn.SourceNodes, p.traceExpressionNode(rhsNode, src, analysis, currentClass, varTypes, varOrigins, nil)...)
+		}
+	}
+
+	return []SourceNode{sn}
 }
 
 // traceObjectCreationNode handles `new ClassName(...)` → CALL_RESULT with <init> as CallTarget.
@@ -2072,6 +2227,7 @@ func (p *JavaParser) traceObjectCreationNode(
 	currentClass string,
 	varTypes map[string]string,
 	varOrigins map[string]varOrigin,
+	_ map[string][]*sitter.Node,
 ) []SourceNode {
 	call := p.parseObjectCreation(node, src, "", analysis, currentClass, varTypes, varOrigins)
 	if call == nil {
@@ -2103,6 +2259,7 @@ func (p *JavaParser) traceMethodInvocationNode(
 	currentClass string,
 	varTypes map[string]string,
 	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
 ) []SourceNode {
 	call := p.parseMethodInvocation(node, src, "", analysis, currentClass, varTypes, varOrigins)
 	if call == nil {
@@ -2129,7 +2286,7 @@ func (p *JavaParser) traceMethodInvocationNode(
 			if argNode == nil {
 				continue
 			}
-			argSources := p.traceExpressionNode(argNode, src, analysis, currentClass, varTypes, varOrigins)
+			argSources := p.traceExpressionNode(argNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 			for k := range argSources {
 				argSources[k].ParameterIndex = j
 			}
@@ -2150,6 +2307,7 @@ func (p *JavaParser) traceTernaryExpressionNode(
 	currentClass string,
 	varTypes map[string]string,
 	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
 ) []SourceNode {
 	var result []SourceNode
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -2159,7 +2317,7 @@ func (p *JavaParser) traceTernaryExpressionNode(
 		if t == "?" || t == ":" || t == javaNodeBoolLiteralTrue || t == javaNodeBoolLiteralFalse || i == 0 {
 			continue
 		}
-		result = append(result, p.traceExpressionNode(child, src, analysis, currentClass, varTypes, varOrigins)...)
+		result = append(result, p.traceExpressionNode(child, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)...)
 	}
 	return result
 }

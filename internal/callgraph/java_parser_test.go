@@ -1044,6 +1044,204 @@ public class DigestWrapper {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Batch 8 — Field/variable assignment provenance for wrapper-case visibility
+// ---------------------------------------------------------------------------
+
+// TestJavaParser_LocalVariableReturn_PopulatesSourceNodesFromAssignment (Batch 8 pair 1).
+//
+// When a method assigns a local variable from a call and then returns the variable,
+// the parser must populate the VARIABLE SourceNode's SourceNodes slice with
+// the call's provenance. This allows the engine to propagate the inferred return
+// type through wrapper functions.
+//
+// Shape:
+//
+//	SecretKey unwrap() {
+//	    SecretKey result = KeyGenerator.getInstance("AES").generateKey();
+//	    return result;
+//	}
+//
+// Expected: ReturnSources contains a VARIABLE node for "result" whose SourceNodes
+// contains a CALL_RESULT for generateKey.
+func TestJavaParser_LocalVariableReturn_PopulatesSourceNodesFromAssignment(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+public class WrapperA {
+    public Object unwrap() throws Exception {
+        SecretKey result = KeyGenerator.getInstance("AES").generateKey();
+        return result;
+    }
+}
+`
+	graph := parseInlineJava(t, "WrapperA", src)
+
+	fn := findFunctionBySimpleName(t, graph, "unwrap")
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty")
+	}
+
+	// Find the VARIABLE or FIELD source node for "result".
+	var resultNode *SourceNode
+	for i := range fn.ReturnSources {
+		sn := &fn.ReturnSources[i]
+		if (sn.Type == "VARIABLE" || sn.Type == "FIELD") && sn.Name == "result" {
+			resultNode = sn
+			break
+		}
+	}
+	if resultNode == nil {
+		t.Fatalf("expected a VARIABLE/FIELD SourceNode named 'result'; got: %+v", fn.ReturnSources)
+	}
+	if len(resultNode.SourceNodes) == 0 {
+		t.Errorf("expected SourceNodes on 'result' variable node to be populated from assignment; got empty. "+
+			"Full ReturnSources: %+v", fn.ReturnSources)
+	}
+}
+
+// TestJavaParser_FieldReturn_PopulatesSourceNodesFromInMethodAssignment (Batch 8 pair 2).
+//
+// When a field is assigned inside a method body and then returned, the FIELD SourceNode
+// must carry the assignment's RHS in its SourceNodes slice. This is the canonical shape
+// of FieldLevelEncryptionParams.getSecretKey().
+//
+// Shape:
+//
+//	class Foo {
+//	    Key secretKey;
+//	    Key get() {
+//	        secretKey = RSA.unwrap(...);
+//	        return secretKey;
+//	    }
+//	}
+func TestJavaParser_FieldReturn_PopulatesSourceNodesFromInMethodAssignment(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+import java.security.Key;
+public class WrapperB {
+    private Key secretKey;
+    public Object get(Key decryptionKey, byte[] data) throws Exception {
+        secretKey = com.example.RSA.unwrap(decryptionKey, data);
+        return secretKey;
+    }
+}
+`
+	graph := parseInlineJava(t, "WrapperB", src)
+
+	fn := findFunctionBySimpleName(t, graph, "get")
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty")
+	}
+
+	// The return is `secretKey` — a field. The FIELD SourceNode must have SourceNodes.
+	var secretKeyNode *SourceNode
+	for i := range fn.ReturnSources {
+		sn := &fn.ReturnSources[i]
+		if (sn.Type == "FIELD" || sn.Type == "VARIABLE") && sn.Name == "secretKey" {
+			secretKeyNode = sn
+			break
+		}
+	}
+	if secretKeyNode == nil {
+		t.Fatalf("expected a FIELD/VARIABLE SourceNode named 'secretKey'; got: %+v", fn.ReturnSources)
+	}
+	if len(secretKeyNode.SourceNodes) == 0 {
+		t.Errorf("expected SourceNodes on 'secretKey' field node to be populated from in-method assignment; got empty. "+
+			"Full ReturnSources: %+v", fn.ReturnSources)
+	}
+}
+
+// TestJavaParser_FieldReturn_NoAssignment_LeavesSourceNodesEmpty (Batch 8 pair 3).
+//
+// When a field is returned without any in-method assignment, its SourceNodes must
+// remain empty (no cross-method data flow in v1). This ensures no regressions on
+// existing tests that previously relied on empty SourceNodes for VARIABLE/FIELD nodes.
+func TestJavaParser_FieldReturn_NoAssignment_LeavesSourceNodesEmpty(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+import java.security.Key;
+public class WrapperC {
+    private Key secretKey;
+    public Object get() {
+        return secretKey;
+    }
+}
+`
+	graph := parseInlineJava(t, "WrapperC", src)
+
+	fn := findFunctionBySimpleName(t, graph, "get")
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty")
+	}
+
+	// Find the FIELD SourceNode for "secretKey".
+	var secretKeyNode *SourceNode
+	for i := range fn.ReturnSources {
+		sn := &fn.ReturnSources[i]
+		if (sn.Type == "FIELD" || sn.Type == "VARIABLE") && sn.Name == "secretKey" {
+			secretKeyNode = sn
+			break
+		}
+	}
+	if secretKeyNode == nil {
+		t.Fatalf("expected a FIELD/VARIABLE SourceNode named 'secretKey'; got: %+v", fn.ReturnSources)
+	}
+	if len(secretKeyNode.SourceNodes) != 0 {
+		t.Errorf("expected SourceNodes to be empty when no in-method assignment; got: %+v", secretKeyNode.SourceNodes)
+	}
+}
+
+// TestJavaParser_FieldReturn_MultipleAssignments_PopulatesAllSourceNodes (Batch 8 pair 4).
+//
+// When a field has multiple in-method assignments (e.g., in different branches),
+// all of them must be represented in the SourceNodes slice. The engine's lattice
+// join handles the multi-candidate case.
+func TestJavaParser_FieldReturn_MultipleAssignments_PopulatesAllSourceNodes(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+import java.security.Key;
+public class WrapperD {
+    private Key key;
+    public Object get(boolean cond, Key decryptionKey, byte[] data) throws Exception {
+        if (cond) {
+            key = com.example.Crypto.getX(decryptionKey, data);
+        } else {
+            key = com.example.Crypto.getY(decryptionKey, data);
+        }
+        return key;
+    }
+}
+`
+	graph := parseInlineJava(t, "WrapperD", src)
+
+	fn := findFunctionBySimpleName(t, graph, "get")
+	if len(fn.ReturnSources) == 0 {
+		t.Fatal("expected ReturnSources to be non-empty")
+	}
+
+	var keyNode *SourceNode
+	for i := range fn.ReturnSources {
+		sn := &fn.ReturnSources[i]
+		if (sn.Type == "FIELD" || sn.Type == "VARIABLE") && sn.Name == "key" {
+			keyNode = sn
+			break
+		}
+	}
+	if keyNode == nil {
+		t.Fatalf("expected a FIELD/VARIABLE SourceNode named 'key'; got: %+v", fn.ReturnSources)
+	}
+	if len(keyNode.SourceNodes) < 2 {
+		t.Errorf("expected at least 2 SourceNodes (one per branch assignment), got %d: %+v",
+			len(keyNode.SourceNodes), keyNode.SourceNodes)
+	}
+}
+
 // checkNoMalformedArrayType recursively checks that no SourceNode carries a
 // malformed array-creation type like "byte[digest.getDigestSize".
 func checkNoMalformedArrayType(t *testing.T, sn SourceNode) {
