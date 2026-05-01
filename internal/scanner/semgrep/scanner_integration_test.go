@@ -48,7 +48,7 @@ func checkSemgrepAvailable(t *testing.T) {
 		t.Fatalf("Failed to write semgrep preflight target: %v", err)
 	}
 
-	cmd := exec.CommandContext(context.Background(), path, "--json", "--no-git-ignore", "--metrics", "off", "--config", ruleFile, tempDir)
+	cmd := exec.CommandContext(context.Background(), path, "--json", "--metrics", "off", "--config", ruleFile, tempDir)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		return

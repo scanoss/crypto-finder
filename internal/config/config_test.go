@@ -113,7 +113,7 @@ func TestInitialize_Priority_CLIFlags(t *testing.T) {
 	defer os.Unsetenv("SCANOSS_API_URL")
 
 	cfg := GetInstance()
-	err := cfg.Initialize("cli-key", "https://cli.example.com")
+	err := cfg.Initialize(InitOptions{APIKey: "cli-key", APIURL: "https://cli.example.com"})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestInitialize_Priority_EnvVars(t *testing.T) {
 
 	cfg := GetInstance()
 	// Initialize without CLI flags
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestInitialize_Priority_ConfigFile(t *testing.T) {
 
 	cfg := GetInstance()
 	// Initialize without CLI flags or env vars
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestInitialize_Priority_Defaults(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestInitialize_Priority_FullChain(t *testing.T) {
 
 	// 3. CLI flags (highest)
 	cfg := GetInstance()
-	err := cfg.Initialize("cli-key", "")
+	err := cfg.Initialize(InitOptions{APIKey: "cli-key"})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestInitialize_JavaRuntime_FromEnvAndConfig(t *testing.T) {
 	defer os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
 
 	cfg := GetInstance()
-	if err := cfg.Initialize("", ""); err != nil {
+	if err := cfg.Initialize(InitOptions{}); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
@@ -296,7 +296,7 @@ func TestInitialize_JavaRuntime_InvalidEnvHomeMapping(t *testing.T) {
 	defer os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
 
 	cfg := GetInstance()
-	if err := cfg.Initialize("", ""); err == nil {
+	if err := cfg.Initialize(InitOptions{}); err == nil {
 		t.Fatal("expected invalid Java JDK home mapping error")
 	}
 }
@@ -305,7 +305,7 @@ func TestSetAPIKey_Persistence(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestSetAPIURL_Persistence(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestGetters_ThreadSafe(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("test-key", "https://test.example.com")
+	err := cfg.Initialize(InitOptions{APIKey: "test-key", APIURL: "https://test.example.com"})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestSetters_ThreadSafe(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("", "")
+	err := cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestValidate_Success(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("test-key", "https://test.example.com")
+	err := cfg.Initialize(InitOptions{APIKey: "test-key", APIURL: "https://test.example.com"})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestConfigFilePermissions_NewFile(t *testing.T) {
 	defer setupTest(t)()
 
 	cfg := GetInstance()
-	err := cfg.Initialize("test-key", "https://test.example.com")
+	err := cfg.Initialize(InitOptions{APIKey: "test-key", APIURL: "https://test.example.com"})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestConfigFilePermissions_ExistingFileWithWrongPermissions(t *testing.T) {
 
 	// Initialize config - should automatically fix permissions
 	cfg := GetInstance()
-	err = cfg.Initialize("", "")
+	err = cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestConfigFilePermissions_CorrectPermissions(t *testing.T) {
 
 	// Initialize config - should not modify file
 	cfg := GetInstance()
-	err = cfg.Initialize("", "")
+	err = cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -606,7 +606,7 @@ func TestEnsureConfigPermissions_Integration(t *testing.T) {
 	cfg := GetInstance()
 
 	// Step 1: Initialize with new config - should create file with correct permissions
-	err := cfg.Initialize("initial-key", "https://initial.example.com")
+	err := cfg.Initialize(InitOptions{APIKey: "initial-key", APIURL: "https://initial.example.com"})
 	if err != nil {
 		t.Fatalf("Initial initialization failed: %v", err)
 	}
@@ -638,7 +638,7 @@ func TestEnsureConfigPermissions_Integration(t *testing.T) {
 	viper.SetConfigType("json")
 
 	cfg = GetInstance()
-	err = cfg.Initialize("", "")
+	err = cfg.Initialize(InitOptions{})
 	if err != nil {
 		t.Fatalf("Re-initialization failed: %v", err)
 	}

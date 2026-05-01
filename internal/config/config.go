@@ -40,15 +40,26 @@ const (
 	DefaultLatestCacheTTL   = 24 * time.Hour      // 24 hours for @latest
 	DefaultMaxStaleCacheAge = 30 * 24 * time.Hour // 30 days for stale cache fallback
 	MaxStaleCacheAge        = 90 * 24 * time.Hour // Maximum allowed: 90 days
+
+	// DefaultFindingsCacheBackend is the FindingsCache backend used when no
+	// override is provided via flag, env, or config file.
+	DefaultFindingsCacheBackend = "disk"
+
+	// DefaultFindingsCacheTable is the Postgres table name used by the
+	// PostgresFindingsCache when no override is provided.
+	DefaultFindingsCacheTable = "findings_cache"
 )
 
 // Config manages application configuration.
 type Config struct {
-	apiKey       string
-	apiURL       string
-	javaJDKMajor string
-	javaJDKHomes map[string]string
-	mu           sync.RWMutex
+	apiKey               string
+	apiURL               string
+	javaJDKMajor         string
+	javaJDKHomes         map[string]string
+	findingsCacheBackend string
+	findingsCacheDSN     string
+	findingsCacheTable   string
+	mu                   sync.RWMutex
 }
 
 var (
@@ -98,6 +109,30 @@ func (c *Config) GetJavaJDKHomes() map[string]string {
 	return homes
 }
 
+// GetFindingsCacheBackend returns the FindingsCache backend selector
+// ("disk" or "postgres").
+func (c *Config) GetFindingsCacheBackend() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheBackend
+}
+
+// GetFindingsCacheDSN returns the Postgres connection string used by the
+// PostgresFindingsCache. Empty when the backend is "disk".
+func (c *Config) GetFindingsCacheDSN() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheDSN
+}
+
+// GetFindingsCacheTable returns the Postgres table name used by the
+// PostgresFindingsCache.
+func (c *Config) GetFindingsCacheTable() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheTable
+}
+
 // SetAPIKey updates the API key and persists to config file.
 func (c *Config) SetAPIKey(key string) error {
 	c.mu.Lock()
@@ -120,15 +155,27 @@ func (c *Config) SetAPIURL(url string) error {
 	return c.writeConfig()
 }
 
+// InitOptions groups the runtime overrides accepted by Initialize so that
+// adding new flag-driven configuration does not change the function signature
+// at every call site.
+type InitOptions struct {
+	//nolint:gosec // G117: APIKey is the user's runtime override, not a hardcoded credential
+	APIKey               string
+	APIURL               string
+	FindingsCacheBackend string
+}
+
 // Initialize loads configuration from multiple sources.
 // Viper automatically handles priority (highest to lowest):
-// 1. Set() calls (used for CLI flags) - highest
-// 2. Environment variables (SCANOSS_API_KEY, SCANOSS_API_URL)
-// 3. Config file (~/.scanoss/crypto-finder/config.json)
-// 4. Defaults (SetDefault) - lowest
+//  1. Set() calls (used for CLI flags) - highest
+//  2. Environment variables (SCANOSS_API_KEY, SCANOSS_API_URL,
+//     SCANOSS_FINDINGS_CACHE_BACKEND, SCANOSS_FINDINGS_CACHE_DSN,
+//     SCANOSS_FINDINGS_CACHE_TABLE)
+//  3. Config file (~/.scanoss/crypto-finder/config.json)
+//  4. Defaults (SetDefault) - lowest
 //
 // The order of setup below doesn't affect priority - viper handles it automatically.
-func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
+func (c *Config) Initialize(opts InitOptions) error {
 	if err := c.setupViperConfig(); err != nil {
 		return err
 	}
@@ -136,7 +183,7 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 		return err
 	}
 	c.readConfigFile()
-	if err := c.applyRuntimeOverrides(apiKeyFlag, apiURLFlag); err != nil {
+	if err := c.applyRuntimeOverrides(opts); err != nil {
 		return err
 	}
 
@@ -154,6 +201,9 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 	c.apiURL = viper.GetString("api_url")
 	c.javaJDKMajor = javaJDKMajor
 	c.javaJDKHomes = javaJDKHomes
+	c.findingsCacheBackend = viper.GetString("findings_cache_backend")
+	c.findingsCacheDSN = viper.GetString("findings_cache_dsn")
+	c.findingsCacheTable = viper.GetString("findings_cache_table")
 	c.mu.Unlock()
 
 	return nil
@@ -182,16 +232,21 @@ func (c *Config) setupViperConfig() error {
 
 	viper.SetDefault("api_url", DefaultAPIURL)
 	viper.SetDefault("java_jdk_major", javaruntime.AutoMajor)
+	viper.SetDefault("findings_cache_backend", DefaultFindingsCacheBackend)
+	viper.SetDefault("findings_cache_table", DefaultFindingsCacheTable)
 	return nil
 }
 
 func (c *Config) bindEnvVars() error {
 	viper.SetEnvPrefix("SCANOSS")
 	envBindings := map[string]string{
-		"api_key":        "API key",
-		"api_url":        "API URL",
-		"java_jdk_major": "Java JDK major",
-		"java_jdk_homes": "Java JDK homes",
+		"api_key":                "API key",
+		"api_url":                "API URL",
+		"java_jdk_major":         "Java JDK major",
+		"java_jdk_homes":         "Java JDK homes",
+		"findings_cache_backend": "FindingsCache backend",
+		"findings_cache_dsn":     "FindingsCache DSN",
+		"findings_cache_table":   "FindingsCache table",
 	}
 	for key, label := range envBindings {
 		if err := viper.BindEnv(key); err != nil {
@@ -210,12 +265,15 @@ func (c *Config) readConfigFile() {
 	}
 }
 
-func (c *Config) applyRuntimeOverrides(apiKeyFlag, apiURLFlag string) error {
-	if apiKeyFlag != "" {
-		viper.Set("api_key", apiKeyFlag)
+func (c *Config) applyRuntimeOverrides(opts InitOptions) error {
+	if opts.APIKey != "" {
+		viper.Set("api_key", opts.APIKey)
 	}
-	if apiURLFlag != "" {
-		viper.Set("api_url", apiURLFlag)
+	if opts.APIURL != "" {
+		viper.Set("api_url", opts.APIURL)
+	}
+	if opts.FindingsCacheBackend != "" {
+		viper.Set("findings_cache_backend", opts.FindingsCacheBackend)
 	}
 
 	rawHomes := os.Getenv("SCANOSS_JAVA_JDK_HOMES")

@@ -228,7 +228,6 @@ func (s *Scanner) validateVersion() error {
 func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",            // JSON output format
-		"--no-git-ignore",   // Scan all files, don't respect .gitignore // TODO: Should be configurable?
 		"--taint-intrafile", // Enable taint analysis
 	}
 
