@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -147,6 +148,20 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 		)
 	}
 
+	// "No config given" is what semgrep/opengrep emits when none of the
+	// supplied rules target any language present in the scanned files —
+	// e.g., a Java ruleset run against a Kotlin-only artifact. Treat this
+	// as a cleanly empty result (zero findings) instead of a hard failure
+	// so the caller doesn't fail an entire mining job over a language gap.
+	if isNoApplicableRulesOnly(parsedOutput.Errors) {
+		log.Warn().
+			Int("exit_code", exitCode).
+			Dur("duration", duration).
+			Str("scanner", scannerName).
+			Msg("scanner found no rules applicable to detected languages; emitting empty result")
+		return nil
+	}
+
 	if LogSemgrepCompatibleErrors(parsedOutput.Errors) {
 		return failure.New(
 			failure.CodeScannerExecutionFailed,
@@ -168,4 +183,20 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 		failure.WithDetail("scanner", scannerName),
 		failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
 	)
+}
+
+// isNoApplicableRulesOnly reports whether every error in errs is a "No config
+// given" error. Semgrep/opengrep emits this when the supplied rules don't
+// target any language present in the scanned files; it's not a real failure,
+// just a signal that scanning produces zero findings here.
+func isNoApplicableRulesOnly(errs []entities.SemgrepError) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		if !strings.Contains(strings.ToLower(e.Message), "no config given") {
+			return false
+		}
+	}
+	return true
 }

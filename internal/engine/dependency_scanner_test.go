@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
@@ -590,4 +591,69 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestDetachDeadlineKeepCancel(t *testing.T) {
+	t.Run("parent deadline expiry does NOT cancel child", func(t *testing.T) {
+		// Parent has a 1ms deadline that we let expire.
+		parent, parentCancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer parentCancel()
+
+		child, childCancel := detachDeadlineKeepCancel(parent)
+		defer childCancel()
+
+		// Wait long enough for the parent to expire.
+		<-parent.Done()
+		if !errors.Is(parent.Err(), context.DeadlineExceeded) {
+			t.Fatalf("parent should have expired with DeadlineExceeded, got %v", parent.Err())
+		}
+
+		// Give the watcher goroutine a moment to react (it shouldn't, but
+		// race-free assertion needs a small wait).
+		time.Sleep(10 * time.Millisecond)
+
+		select {
+		case <-child.Done():
+			t.Fatalf("child was cancelled despite parent only expiring (this is the bug we are fixing)")
+		default:
+			// expected: child still alive
+		}
+
+		// Sanity: child has no deadline.
+		if _, ok := child.Deadline(); ok {
+			t.Fatalf("child should have no deadline")
+		}
+	})
+
+	t.Run("parent explicit cancel DOES cancel child", func(t *testing.T) {
+		parent, parentCancel := context.WithCancel(context.Background())
+
+		child, childCancel := detachDeadlineKeepCancel(parent)
+		defer childCancel()
+
+		parentCancel()
+
+		select {
+		case <-child.Done():
+			if !errors.Is(child.Err(), context.Canceled) {
+				t.Fatalf("child err = %v, want Canceled", child.Err())
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("child was not cancelled after parent was explicitly cancelled")
+		}
+	})
+
+	t.Run("explicit cancel of returned func cancels child", func(t *testing.T) {
+		parent := context.Background()
+		child, cancel := detachDeadlineKeepCancel(parent)
+
+		cancel()
+
+		select {
+		case <-child.Done():
+			// expected
+		case <-time.After(time.Second):
+			t.Fatalf("child was not cancelled by its own cancel func")
+		}
+	})
 }
