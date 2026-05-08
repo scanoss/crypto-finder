@@ -44,6 +44,7 @@ func (m *mockDetector) Detect(targetPath string) ([]string, error) {
 type mockRuleSource struct {
 	loadFunc func() ([]string, error)
 	nameFunc func() string
+	infoFunc func() entities.RulesInfo
 }
 
 func (m *mockRuleSource) Load() ([]string, error) {
@@ -58,6 +59,13 @@ func (m *mockRuleSource) Name() string {
 		return m.nameFunc()
 	}
 	return "mock-source"
+}
+
+func (m *mockRuleSource) Info() entities.RulesInfo {
+	if m.infoFunc != nil {
+		return m.infoFunc()
+	}
+	return entities.RulesInfo{}
 }
 
 type mockScanner struct {

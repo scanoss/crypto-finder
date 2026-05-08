@@ -294,9 +294,15 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		return fmt.Errorf("failed to extract tarball: %w", err)
 	}
 
-	// Create cache metadata
+	// Create cache metadata. The version we record is the *manifest* version
+	// returned by the SCANOSS API (concrete, e.g. "v1.0.4"), NOT the operator's
+	// request label (which can be "latest" — opaque, indistinguishable across
+	// upstream rule pack updates). Using the manifest version makes the
+	// metadata file a faithful audit trail of what was actually downloaded;
+	// downstream consumers (e.g. crypto-mining-service) stamp it on every
+	// scan result so a re-mine after a rules update is detectable.
 	ttl := m.getTTL(version)
-	metadata := NewMetadata(name, version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
 	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
 	if err := metadata.Save(tempMetadataPath); err != nil {
 		if err := os.RemoveAll(tempPath); err != nil {

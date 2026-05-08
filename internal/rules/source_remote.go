@@ -19,8 +19,12 @@ package rules
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/cache"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // RemoteRuleSource loads rules from a remote ruleset via API and caches them locally.
@@ -30,6 +34,11 @@ type RemoteRuleSource struct {
 	version      string
 	cacheManager *cache.Manager
 	ctx          context.Context
+
+	// loadedPath is the cached ruleset directory recorded by the most recent
+	// successful Load(). Info() reads .cache-meta.json from here. Empty
+	// before Load() completes.
+	loadedPath string
 }
 
 // NewRemoteRuleSource creates a new remote rule source
@@ -73,10 +82,40 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 		return nil, fmt.Errorf("failed to get ruleset '%s@%s': %w", r.rulesetName, r.version, err)
 	}
 
+	r.loadedPath = rulesetPath
 	return []string{rulesetPath}, nil
 }
 
 // Name returns a human-readable identifier for this source.
 func (r *RemoteRuleSource) Name() string {
 	return fmt.Sprintf("remote:%s@%s", r.rulesetName, r.version)
+}
+
+// Info returns the ruleset version and checksum recorded in .cache-meta.json
+// alongside the cached ruleset. Call after Load(); before Load() it returns
+// the zero RulesInfo.
+//
+// Failure modes (missing metadata file, parse error) are logged at warn but
+// returned as an empty RulesInfo rather than as an error — the scan itself
+// already succeeded; missing metadata is a degraded telemetry state, not a
+// scan failure.
+func (r *RemoteRuleSource) Info() entities.RulesInfo {
+	if r.loadedPath == "" {
+		return entities.RulesInfo{}
+	}
+	meta, err := cache.LoadMetadata(filepath.Join(r.loadedPath, ".cache-meta.json"))
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("ruleset", r.rulesetName).
+			Str("version", r.version).
+			Msg("RulesInfo unavailable: failed to read cache metadata")
+		return entities.RulesInfo{Source: "remote", Name: r.rulesetName, Version: r.version}
+	}
+	return entities.RulesInfo{
+		Source:         "remote",
+		Name:           meta.RulesetName,
+		Version:        meta.Version,
+		ChecksumSHA256: meta.ChecksumSHA256,
+	}
 }
