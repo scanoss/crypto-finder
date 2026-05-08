@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
@@ -55,14 +56,20 @@ const (
 	defaultRulesetName    = "dca"
 	defaultRulesetVersion = "latest"
 	ecosystemJava         = "java"
+
+	findingsCacheBackendDisk     = "disk"
+	findingsCacheBackendPostgres = "postgres"
 )
+
+// AllowedFindingsCacheBackends lists the FindingsCache backends supported by the tool.
+var AllowedFindingsCacheBackends = []string{findingsCacheBackendDisk, findingsCacheBackendPostgres}
 
 // AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
 var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
 // SupportedFormats lists the output formats supported by the tool.
-var SupportedFormats = []string{formatJSON, "cyclonedx"} // Future: csv, html, sarif
+var SupportedFormats = []string{formatJSON, "cyclonedx"}
 
 var (
 	scanRules           []string
@@ -89,6 +96,7 @@ var (
 	scanDepWorkers      int
 	scanJavaJDKMajor    string
 	scanJavaJDKHomes    []string
+	scanFindingsCache   string
 )
 
 var scanCmd = &cobra.Command{
@@ -150,6 +158,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
 
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
+	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
@@ -342,7 +351,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
 
 	cfg := config.GetInstance()
-	if err := cfg.Initialize(scanAPIKey, scanAPIURL); err != nil {
+	if err := cfg.Initialize(config.InitOptions{
+		APIKey:               scanAPIKey,
+		APIURL:               scanAPIURL,
+		FindingsCacheBackend: scanFindingsCache,
+	}); err != nil {
 		return failure.WrapUnknown(
 			err,
 			failure.CodeConfigInitializationFailed,
@@ -524,13 +537,11 @@ func runScan(_ *cobra.Command, args []string) error {
 					if builderErr != nil {
 						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
 					} else {
-						var findingsCache engine.FindingsCache
-						fc, cacheErr := engine.NewDiskFindingsCache()
+						findingsCache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
 						if cacheErr != nil {
-							log.Warn().Err(cacheErr).Msg("Failed to create findings cache, dependency scans will not be cached")
-						} else {
-							findingsCache = fc
+							return cacheErr
 						}
+						defer closeCache()
 
 						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
 						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
@@ -659,4 +670,63 @@ func runScan(_ *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// newFindingsCache builds the FindingsCache backend selected by configuration.
+//
+// Failure semantics differ by backend:
+//   - For the disk backend, construction errors are non-fatal: a warning is
+//     logged and (nil, noop, nil) is returned so the dependency scan still
+//     runs without caching (preserves the historical behavior).
+//   - For the postgres backend, any failure (missing DSN, pool init, schema
+//     bootstrap) is fatal: the scan is aborted with a structured error so
+//     misconfiguration cannot silently fall back to an unshared cache.
+func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsCache, func(), error) {
+	noop := func() {}
+	backend := cfg.GetFindingsCacheBackend()
+
+	switch backend {
+	case "", findingsCacheBackendDisk:
+		fc, err := engine.NewDiskFindingsCache()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create findings cache, dependency scans will not be cached")
+			return nil, noop, nil
+		}
+		return fc, noop, nil
+
+	case findingsCacheBackendPostgres:
+		dsn := cfg.GetFindingsCacheDSN()
+		if dsn == "" {
+			return nil, noop, failure.New(
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: SCANOSS_FINDINGS_CACHE_DSN must be set when --findings-cache=postgres",
+			)
+		}
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return nil, noop, failure.WrapUnknown(err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: failed to create Postgres pool",
+			)
+		}
+		table := cfg.GetFindingsCacheTable()
+		if err := engine.EnsureSchema(ctx, pool, table); err != nil {
+			pool.Close()
+			return nil, noop, failure.WrapUnknown(err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: failed to ensure schema",
+			)
+		}
+		return engine.NewPostgresFindingsCache(pool, engine.WithTableName(table)), pool.Close, nil
+
+	default:
+		return nil, noop, failure.New(
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("unknown findings-cache backend %q (allowed: %v)", backend, AllowedFindingsCacheBackends),
+		)
+	}
 }

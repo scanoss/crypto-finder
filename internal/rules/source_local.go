@@ -19,16 +19,28 @@
 package rules
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/rs/zerolog/log"
+
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // LocalRuleSource handles loading and validation of local rule files.
 type LocalRuleSource struct {
 	rulePaths []string
 	ruleDirs  []string
+
+	// loadedPaths is the result of the most recent successful Load(). Info()
+	// reads it to compute a deterministic content fingerprint. Empty before
+	// Load() completes.
+	loadedPaths []string
 }
 
 // NewLocalRuleSource creates a new local rule source.
@@ -78,6 +90,7 @@ func (l *LocalRuleSource) Load() ([]string, error) {
 		return nil, fmt.Errorf("no rules specified: use --rules <file> or --rules-dir <directory>")
 	}
 
+	l.loadedPaths = allRules
 	return allRules, nil
 }
 
@@ -194,4 +207,41 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 func (l *LocalRuleSource) isValidRuleExtension(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".yaml" || ext == ".yml"
+}
+
+// Info returns a content fingerprint of the loaded rule files. The
+// ChecksumSHA256 is computed deterministically: paths are sorted, then each
+// file's SHA256 is concatenated into a single hash. Two scans with the same
+// rule files produce the same checksum regardless of `--rules-dir` argument
+// order or filesystem walk order.
+//
+// For local rules there is no manifest, so Name and Version are empty.
+// Source is "local" whenever Load() has been called and produced at least
+// one path; the zero RulesInfo is returned before Load(). I/O errors during
+// hashing degrade to an empty RulesInfo with a warning log — the scan
+// already succeeded.
+func (l *LocalRuleSource) Info() entities.RulesInfo {
+	if len(l.loadedPaths) == 0 {
+		return entities.RulesInfo{}
+	}
+	paths := make([]string, len(l.loadedPaths))
+	copy(paths, l.loadedPaths)
+	sort.Strings(paths)
+
+	h := sha256.New()
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			log.Warn().Err(err).Str("rule_path", p).Msg("RulesInfo: skipping unreadable rule file")
+			continue
+		}
+		// Length-prefix each file so two files concatenated can't collide
+		// with a single file containing their concatenation.
+		_, _ = fmt.Fprintf(h, "%d:", len(data))
+		_, _ = h.Write(data)
+	}
+	return entities.RulesInfo{
+		Source:         "local",
+		ChecksumSHA256: hex.EncodeToString(h.Sum(nil)),
+	}
 }

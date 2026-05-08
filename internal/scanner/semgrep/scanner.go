@@ -179,7 +179,6 @@ func (s *Scanner) detectVersion() string {
 func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",           // JSON output format
-		"--no-git-ignore",  // Scan all files, don't respect .gitignore
 		"--metrics", "off", // Disable telemetry
 	}
 

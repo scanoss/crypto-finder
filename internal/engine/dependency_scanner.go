@@ -342,6 +342,20 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		return outcomes
 	}
 
+	// Detach per-dep scan ctx from the parent's deadline. Without this, a long
+	// setup phase (Maven dependency resolution, source download) eats the
+	// caller's global scan budget; by the time per-dep opengrep starts, the
+	// parent ctx is already at or past its deadline. Every per-dep
+	// WithTimeout(parent, X) inside the scanner then fires instantly with a
+	// misleading "timed out after X" error and a sub-millisecond duration.
+	//
+	// The detached context still propagates explicit cancellation (user Ctrl-C,
+	// errgroup cancel) so the user can still abort the run. Each individual
+	// opengrep invocation inside scanSingleDep gets its own fresh per-call
+	// timeout downstream, which is now unaffected by parent deadline pressure.
+	depCtx, depCancel := detachDeadlineKeepCancel(ctx)
+	defer depCancel()
+
 	// Worker pool
 	workCh := make(chan depWork, len(work))
 	resultCh := make(chan depScanResult, len(work))
@@ -352,7 +366,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		go func() {
 			defer wg.Done()
 			for item := range workCh {
-				result := ds.scanSingleDep(ctx, item.dep, item.key, rulePaths, rulesHash, opts)
+				result := ds.scanSingleDep(depCtx, item.dep, item.key, rulePaths, rulesHash, opts)
 				result.index = item.index
 				resultCh <- result
 			}
@@ -715,4 +729,29 @@ func hasFindings(report *entities.InterimReport) bool {
 		}
 	}
 	return false
+}
+
+// detachDeadlineKeepCancel returns a context whose deadline is independent of
+// the parent's, but which is still cancelled when the parent is *explicitly*
+// cancelled (parent.Err() == context.Canceled). When the parent is cancelled
+// because its own deadline expired (parent.Err() == context.DeadlineExceeded),
+// the returned context is *not* cancelled.
+//
+// This lets long-running children (per-dep opengrep scans) ignore an exhausted
+// global scan budget while still honoring an interactive abort. Each child is
+// expected to set its own appropriate timeout downstream.
+//
+// The caller MUST call the returned cancel func to release resources.
+func detachDeadlineKeepCancel(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-parent.Done():
+			if parent.Err() == context.Canceled {
+				cancel()
+			}
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }

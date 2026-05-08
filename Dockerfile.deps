@@ -88,19 +88,42 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 RUN python -m venv /opt/target-venv
 
 # ── Create non-root runtime user and migrate tool homes ──
+#
+# Stages 1-2 ran as root, so cargo/rustup/opengrep all installed under
+# /root. Move them under /home/crypto so the non-root runtime user can
+# reach them.
+#
+# OpenGrep needs an extra step: its v1.12.1 installer creates an ABSOLUTE
+# symlink at /root/.opengrep/cli/latest pointing into /root/.opengrep/cli/
+# <version>/. After the move that symlink dangles. Rather than try to
+# rewrite symlinks, we locate the real binary with `find` and pin a stable
+# /usr/local/bin/opengrep symlink that doesn't depend on the installer's
+# internal layout (which has shifted across versions).
 RUN groupadd --system crypto && \
     useradd --system --gid crypto --create-home --home-dir /home/crypto --shell /usr/sbin/nologin crypto && \
     mkdir -p /workspace /home/crypto/.config /home/crypto/.cache && \
     if [ -d /root/.cargo ]; then mv /root/.cargo /home/crypto/.cargo; fi && \
     if [ -d /root/.rustup ]; then mv /root/.rustup /home/crypto/.rustup; fi && \
     if [ -d /root/.opengrep ]; then mv /root/.opengrep /home/crypto/.opengrep; fi && \
+    OPENGREP_BIN=$(find /home/crypto/.opengrep -name opengrep -type f -executable 2>/dev/null | head -n1) && \
+    if [ -z "$OPENGREP_BIN" ]; then \
+        echo "ERROR: opengrep binary not found under /home/crypto/.opengrep" >&2; \
+        ls -laR /home/crypto/.opengrep >&2 || true; \
+        exit 1; \
+    fi && \
+    ln -sf "$OPENGREP_BIN" /usr/local/bin/opengrep && \
     chown -R crypto:crypto /workspace /opt/target-venv /home/crypto
 
 # ── Unified PATH ──
 ENV HOME=/home/crypto
 ENV CARGO_HOME=/home/crypto/.cargo
 ENV RUSTUP_HOME=/home/crypto/.rustup
-ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/home/crypto/.cargo/bin:$PATH:/home/crypto/.opengrep/cli/latest"
+# Note: opengrep is reached via /usr/local/bin/opengrep (already on $PATH),
+# pinned by the symlink created during user setup above. We deliberately
+# don't append /home/crypto/.opengrep/cli/latest here — that path becomes
+# a dangling symlink after the migration from /root and would mask real
+# "command not found" failures by silently letting the shell fall through.
+ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/home/crypto/.cargo/bin:$PATH"
 
 # Create workspace directory
 WORKDIR /workspace

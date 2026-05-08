@@ -37,6 +37,13 @@ type InterimReport struct {
 	// Tool contains information about the scanner that generated this report
 	Tool ToolInfo `json:"tool"`
 
+	// Rules describes the ruleset that was used for this scan. Downstream
+	// systems (e.g. crypto-mining-service) stamp this on every persisted
+	// result so a re-mine can be triggered when the rules pack changes,
+	// and a finding's provenance is auditable. Empty when no rule source
+	// could supply a version (e.g. ad-hoc local files with no manifest).
+	Rules RulesInfo `json:"rules,omitempty"`
+
 	// Findings contains all detected cryptographic assets grouped by file
 	Findings []Finding `json:"findings"`
 }
@@ -48,6 +55,31 @@ type ToolInfo struct {
 
 	// Version of the scanner tool (e.g., "1.45.0")
 	Version string `json:"version"`
+}
+
+// RulesInfo describes the ruleset that fed a scan. The Source field is
+// always set when Rules is populated; Name / Version / ChecksumSHA256 are
+// best-effort and may be empty depending on the source type.
+//
+// For remote rulesets, Version is the manifest version returned by the
+// SCANOSS API (e.g. "v1.0.0", "latest") and ChecksumSHA256 is the manifest
+// checksum, both lifted from .cache-meta.json. For local rulesets, Version
+// is empty and ChecksumSHA256 is a hash of the loaded rule file contents
+// in deterministic order.
+type RulesInfo struct {
+	// Source is "remote" or "local". Empty when no rules were loaded.
+	Source string `json:"source,omitempty"`
+
+	// Name of the ruleset (e.g. "dca"). Remote sources only.
+	Name string `json:"name,omitempty"`
+
+	// Version of the ruleset (e.g. "v1.0.0", "latest"). Remote sources only.
+	Version string `json:"version,omitempty"`
+
+	// ChecksumSHA256 is the content fingerprint of the ruleset.
+	// For remote sources: the manifest checksum reported by the API.
+	// For local sources: SHA256 of concatenated rule file contents in path-sorted order.
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
 }
 
 // Finding represents all cryptographic assets discovered in a single file.

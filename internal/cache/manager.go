@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -40,6 +41,7 @@ const (
 	metadataFileName = ".cache-meta.json"
 	manifestFileName = "manifest.json"
 	tempSuffix       = ".tmp"
+	lockSuffix       = ".lock"
 )
 
 // Manager manages the local cache of downloaded rulesets.
@@ -160,6 +162,41 @@ func (m *Manager) getRulesetCachePath(name, version string) string {
 	return filepath.Join(m.cacheDir, name, version)
 }
 
+// acquireLock acquires an exclusive file lock for the given ruleset path.
+// Returns the lock file which must be closed to release the lock.
+// This prevents race conditions when multiple processes try to update the same cache.
+func (m *Manager) acquireLock(rulesetPath string) (*os.File, error) {
+	lockPath := rulesetPath + lockSuffix
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return nil, fmt.Errorf("failed to create lock directory: %w", err)
+	}
+
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open lock file: %w", err)
+	}
+
+	// Acquire exclusive lock (blocking)
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		lockFile.Close()
+		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+
+	return lockFile, nil
+}
+
+// releaseLock releases the file lock and closes the lock file.
+func (m *Manager) releaseLock(lockFile *os.File) {
+	if lockFile == nil {
+		return
+	}
+	// Unlock before closing (best practice, though close also releases)
+	_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	_ = lockFile.Close()
+}
+
 // isCacheValid checks if the cached ruleset is valid (exists, not expired, checksum matches).
 func (m *Manager) isCacheValid(rulesetPath, metadataPath string) bool {
 	// Check if ruleset directory exists
@@ -199,7 +236,29 @@ func (m *Manager) updateLastAccessed(metadataPath string) error {
 }
 
 // downloadAndCache downloads a ruleset and caches it.
+// Uses file locking to prevent race conditions when multiple processes try to
+// update the same cache simultaneously.
 func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPath string) error {
+	// Acquire exclusive lock to prevent race conditions
+	lockFile, err := m.acquireLock(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to acquire cache lock: %w", err)
+	}
+	defer m.releaseLock(lockFile)
+
+	// Re-check if cache is valid after acquiring lock - another process may have
+	// updated it while we were waiting for the lock
+	metadataPath := filepath.Join(targetPath, metadataFileName)
+	if m.isCacheValid(targetPath, metadataPath) {
+		if err := utils.ValidateRuleDirNotEmpty(targetPath); err == nil {
+			log.Debug().
+				Str("ruleset", name).
+				Str("version", version).
+				Msg("Cache was updated by another process while waiting for lock")
+			return nil
+		}
+	}
+
 	// Download tarball and manifest
 	tarball, manifest, err := m.apiClient.DownloadRuleset(ctx, name, version)
 	if err != nil {
@@ -235,11 +294,17 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		return fmt.Errorf("failed to extract tarball: %w", err)
 	}
 
-	// Create cache metadata
+	// Create cache metadata. The version we record is the *manifest* version
+	// returned by the SCANOSS API (concrete, e.g. "v1.0.4"), NOT the operator's
+	// request label (which can be "latest" — opaque, indistinguishable across
+	// upstream rule pack updates). Using the manifest version makes the
+	// metadata file a faithful audit trail of what was actually downloaded;
+	// downstream consumers (e.g. crypto-mining-service) stamp it on every
+	// scan result so a re-mine after a rules update is detectable.
 	ttl := m.getTTL(version)
-	metadata := NewMetadata(name, version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
-	metadataPath := filepath.Join(tempPath, metadataFileName)
-	if err := metadata.Save(metadataPath); err != nil {
+	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
+	if err := metadata.Save(tempMetadataPath); err != nil {
 		if err := os.RemoveAll(tempPath); err != nil {
 			log.Error().
 				Err(err).

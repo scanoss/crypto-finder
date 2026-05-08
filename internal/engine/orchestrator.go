@@ -178,6 +178,12 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		)
 	}
 
+	// Step 5b: Stamp the ruleset that produced these findings. Best-effort:
+	// remote sources lift it from .cache-meta.json, local sources compute a
+	// content fingerprint, MultiSource picks the first non-empty. An empty
+	// RulesInfo is acceptable (ad-hoc local files with no metadata).
+	report.Rules = o.rulesManager.Info()
+
 	// Step 6: Process and enrich results
 	enrichedReport, err := o.processor.Process(report, languages, opts.Target)
 	if err != nil {

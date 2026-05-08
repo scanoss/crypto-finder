@@ -268,7 +268,7 @@ func TestMavenResolver_Resolve(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	project := t.TempDir()
-	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId></project>`
+	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency></dependencies></project>`
 	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
 		t.Fatalf("write pom.xml: %v", err)
 	}
@@ -358,11 +358,17 @@ exit 1
 		t.Fatalf("expected empty source directory for dependency without sources, got %q", withoutSources.Dir)
 	}
 
-	if len(result.Graph["com.acme:app"]) != 2 {
-		t.Fatalf("graph root children len = %d, want 2", len(result.Graph["com.acme:app"]))
+	// Graph / VersionedGraph are intentionally not populated by Maven anymore:
+	// `mvn dependency:tree` was minutes of work whose output had no consumer.
+	// They exist on ResolveResult only because other resolvers (Gradle, Cargo)
+	// still produce them. If a Maven downstream consumer ever needs the graph,
+	// re-enable Step 6 in maven_resolver.go behind a flag and restore these
+	// assertions.
+	if len(result.Graph) != 0 {
+		t.Fatalf("expected Graph to be empty (Maven no longer runs dependency:tree), got %d entries", len(result.Graph))
 	}
-	if len(result.VersionedGraph["com.acme:app@1.0.0"]) != 2 {
-		t.Fatalf("versioned graph root children len = %d, want 2", len(result.VersionedGraph["com.acme:app@1.0.0"]))
+	if len(result.VersionedGraph) != 0 {
+		t.Fatalf("expected VersionedGraph to be empty, got %d entries", len(result.VersionedGraph))
 	}
 }
 
@@ -371,7 +377,7 @@ func TestMavenResolver_Resolve_SourceFallbackDownloadsMissingJar(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	project := t.TempDir()
-	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId></project>`
+	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency></dependencies></project>`
 	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
 		t.Fatalf("write pom.xml: %v", err)
 	}
@@ -439,7 +445,7 @@ func TestMavenResolver_Resolve_SourceFallbackSkipsExistingJar(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	project := t.TempDir()
-	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId></project>`
+	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency></dependencies></project>`
 	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
 		t.Fatalf("write pom.xml: %v", err)
 	}
@@ -505,7 +511,7 @@ func TestMavenResolver_Resolve_SourceFallbackPartialSuccess(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	project := t.TempDir()
-	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId></project>`
+	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency></dependencies></project>`
 	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
 		t.Fatalf("write pom.xml: %v", err)
 	}
@@ -635,6 +641,41 @@ func TestMavenResolver_ParseModules(t *testing.T) {
 			t.Fatalf("modules = %v, want [exists]", modules)
 		}
 	})
+}
+
+func TestMavenResolver_Resolve_SkipsMavenWhenNoDependencies(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project := t.TempDir()
+	// pom.xml with NO dependencies - should skip Maven invocation entirely
+	pom := `<project><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId></project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+
+	// Create a fake mvn that fails if called
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+echo "ERROR: Maven should not be called for pom.xml without dependencies" >&2
+exit 1
+`)
+	prependPath(t, binDir)
+
+	r := NewMavenResolver()
+	result, err := r.Resolve(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if result.RootModule != "org.bouncycastle" {
+		t.Fatalf("RootModule = %q, want org.bouncycastle", result.RootModule)
+	}
+
+	// No dependencies should be found - the key is that we didn't call Maven
+	if len(result.Dependencies) != 0 {
+		t.Fatalf("Dependencies len = %d, want 0", len(result.Dependencies))
+	}
 }
 
 func TestMavenResolver_IsInterModuleFailure(t *testing.T) {

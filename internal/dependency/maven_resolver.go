@@ -8,7 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -20,16 +23,28 @@ import (
 const (
 	mavenDependencyPluginVersion   = "3.6.1"
 	sourceFallbackProgressInterval = 10
+	// sourceFallbackMaxWorkers caps concurrent isolated `mvn :get` invocations
+	// during per-dependency source fallback. Maven serializes writes to ~/.m2
+	// internally; on top of that each invocation forks a JVM, so going beyond
+	// ~8 yields diminishing returns and wastes RAM.
+	sourceFallbackMaxWorkers = 8
 )
 
 // pomProject represents the minimal pom.xml structure needed for resolution.
 type pomProject struct {
-	XMLName    xml.Name  `xml:"project"`
-	GroupID    string    `xml:"groupId"`
-	ArtifactID string    `xml:"artifactId"`
-	Parent     pomParent `xml:"parent"`
-	Modules    []string  `xml:"modules>module"`
-	Packaging  string    `xml:"packaging"`
+	XMLName      xml.Name        `xml:"project"`
+	GroupID      string          `xml:"groupId"`
+	ArtifactID   string          `xml:"artifactId"`
+	Parent       pomParent       `xml:"parent"`
+	Modules      []string        `xml:"modules>module"`
+	Packaging    string          `xml:"packaging"`
+	Dependencies []pomDependency `xml:"dependencies>dependency"`
+}
+
+// pomDependency represents a single <dependency> element in pom.xml.
+type pomDependency struct {
+	GroupID    string `xml:"groupId"`
+	ArtifactID string `xml:"artifactId"`
 }
 
 type pomParent struct {
@@ -100,6 +115,14 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		log.Info().Int("modules", len(modules)).Msg("Detected multi-module Maven project")
 	}
 
+	// Fast path: if the pom.xml declares no dependencies and this is not a
+	// multi-module project, skip the expensive Maven invocation entirely.
+	// This is common for library artifacts that have no transitive dependencies.
+	if !isMultiModule && !r.hasDeclaredDependencies(targetDir) {
+		log.Info().Msg("No dependencies declared in pom.xml, skipping Maven resolution")
+		return result, nil
+	}
+
 	depsResult, err := r.listDependencies(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Maven dependencies: %w", err)
@@ -138,14 +161,12 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		withSources++
 	}
 
-	// Step 6: Build dependency graph (best-effort, with --fail-never)
-	versionedGraph, err := r.dependencyTree(ctx, targetDir)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to build Maven dependency graph, call chain tracing may be limited")
-	} else {
-		result.VersionedGraph = versionedGraph
-		result.Graph = legacyGraphFromVersioned(versionedGraph)
-	}
+	// Step 6 — skipped: `mvn dependency:tree` was used to populate
+	// result.VersionedGraph / result.Graph, but no consumer reads those
+	// fields today (engine/callgraph builds packages from depResults +
+	// resolver.WorkspaceMembers, not from the tree). For large transitive
+	// trees this call alone takes minutes. Re-enable behind a flag if a
+	// downstream consumer ever needs the graph.
 
 	log.Info().
 		Int("total", len(deps)).
@@ -343,6 +364,27 @@ func (r *MavenResolver) parseModules(targetDir string) ([]string, bool) {
 	return modules, len(modules) > 0
 }
 
+// hasDeclaredDependencies checks if the pom.xml declares any dependencies.
+// Returns true if there are <dependency> elements OR if parsing fails (to be safe).
+// This enables skipping the expensive Maven invocation for library artifacts
+// that have no transitive dependencies to resolve.
+func (r *MavenResolver) hasDeclaredDependencies(targetDir string) bool {
+	pomPath := filepath.Join(targetDir, "pom.xml")
+	data, err := os.ReadFile(pomPath)
+	if err != nil {
+		// If we can't read the pom, assume there might be dependencies
+		return true
+	}
+
+	var pom pomProject
+	if err := xml.Unmarshal(data, &pom); err != nil {
+		// If we can't parse the pom, assume there might be dependencies
+		return true
+	}
+
+	return len(pom.Dependencies) > 0
+}
+
 // listDepsResult holds the result of a dependency listing attempt, including partial results.
 type listDepsResult struct {
 	deps    []Dependency
@@ -492,33 +534,65 @@ func (r *MavenResolver) downloadSources(ctx context.Context, targetDir string, d
 		return summary
 	}
 
+	workers := min(max(runtime.NumCPU()/2, 1), sourceFallbackMaxWorkers)
+	if len(missing) < workers {
+		workers = len(missing)
+	}
+
 	log.Info().
 		Int("missingSources", len(missing)).
 		Int("total", len(deps)).
+		Int("workers", workers).
 		Msg("Starting isolated Maven source fallback")
 
-	for i, dep := range missing {
-		downloaded, fetchErr := r.fetchDependencySource(ctx, dep, m2Repo)
-		if fetchErr != nil {
-			log.Debug().
-				Err(fetchErr).
-				Str("module", dep.Module).
-				Str("version", dep.Version).
-				Msg("Isolated Maven source fetch failed for dependency")
-		}
-		if downloaded {
-			summary.downloadedInFallback++
-		}
+	var (
+		downloaded int64 // atomic
+		attempted  int64 // atomic
+	)
+	depCh := make(chan Dependency, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for dep := range depCh {
+				ok, fetchErr := r.fetchDependencySource(ctx, dep, m2Repo)
+				if fetchErr != nil {
+					log.Debug().
+						Err(fetchErr).
+						Str("module", dep.Module).
+						Str("version", dep.Version).
+						Msg("Isolated Maven source fetch failed for dependency")
+				}
+				if ok {
+					atomic.AddInt64(&downloaded, 1)
+				}
+				done := atomic.AddInt64(&attempted, 1)
+				if done%sourceFallbackProgressInterval == 0 || done == int64(len(missing)) {
+					gotten := atomic.LoadInt64(&downloaded)
+					log.Info().
+						Int64("attempted", done).
+						Int64("downloaded", gotten).
+						Int64("stillMissing", done-gotten).
+						Msg("Isolated Maven source fallback progress")
+				}
+			}
+		}()
+	}
 
-		attempted := i + 1
-		if attempted%sourceFallbackProgressInterval == 0 || attempted == len(missing) {
-			log.Info().
-				Int("attempted", attempted).
-				Int("downloaded", summary.downloadedInFallback).
-				Int("stillMissing", attempted-summary.downloadedInFallback).
-				Msg("Isolated Maven source fallback progress")
+	for _, dep := range missing {
+		select {
+		case <-ctx.Done():
+			// Stop scheduling new fetches if the parent context is done.
+			// Already-running ones will see the cancellation themselves.
+			break
+		case depCh <- dep:
 		}
 	}
+	close(depCh)
+	wg.Wait()
+
+	summary.downloadedInFallback = int(atomic.LoadInt64(&downloaded))
 
 	summary.missingAfterFallback = len(r.missingSourceDependencies(deps, m2Repo, cache))
 	if summary.missingAfterFallback > 0 {
