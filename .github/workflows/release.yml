@@ -51,7 +51,7 @@ jobs:
             -v "$PWD:/work" \
             -w /work \
             --entrypoint goreleaser \
-            ghcr.io/goreleaser/goreleaser-cross:1.25.0 \
+            ghcr.io/goreleaser/goreleaser-cross:v1.25.9 \
             release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
