@@ -5,7 +5,7 @@
 # For manual builds from source, use the regular Dockerfile.slim instead.
 # ============================================================================
 
-FROM alpine:3.18
+FROM debian:bookworm-slim
 
 # Build arguments for version injection
 ARG VERSION=dev
@@ -14,7 +14,9 @@ ARG BUILD_DATE=unknown
 
 # Install minimal runtime dependencies
 # - ca-certificates: For HTTPS requests
-RUN apk add --no-cache ca-certificates && rm -rf /var/cache/apk/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the pre-built crypto-finder binary from GoReleaser's build context
 COPY crypto-finder /usr/local/bin/crypto-finder
