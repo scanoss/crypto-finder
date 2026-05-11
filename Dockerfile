@@ -1,10 +1,10 @@
 # ============================================================================
 # Stage 1: Build Go binary
 # ============================================================================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make gcc musl-dev
 
 # Set working directory
 WORKDIR /build
@@ -22,8 +22,8 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
 # Build the binary with version info injected
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s -X github.com/scanoss/crypto-finder/internal/version.Version=${VERSION} \
+RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
+    -ldflags="-w -s -extldflags '-static' -X github.com/scanoss/crypto-finder/internal/version.Version=${VERSION} \
     -X github.com/scanoss/crypto-finder/internal/version.GitCommit=${GIT_COMMIT} \
     -X github.com/scanoss/crypto-finder/internal/version.BuildDate=${BUILD_DATE}" \
     -o crypto-finder \
@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir semgrep==1.145.0
 
 # Install OpenGrep (minimum version 1.12.1)
-RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash
 
 # ============================================================================
 # Stage 3: Final image with Python runtime

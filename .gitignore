@@ -3,6 +3,7 @@
 build
 dist
 target
+bin/
 *results*.json
 coverage.out
 coverage.html
@@ -11,4 +12,3 @@ tmp/
 !.github
 !.idea
 demo/
-bin/

@@ -26,6 +26,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
+
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // Default configuration values.
@@ -38,13 +40,26 @@ const (
 	DefaultLatestCacheTTL   = 24 * time.Hour      // 24 hours for @latest
 	DefaultMaxStaleCacheAge = 30 * 24 * time.Hour // 30 days for stale cache fallback
 	MaxStaleCacheAge        = 90 * 24 * time.Hour // Maximum allowed: 90 days
+
+	// DefaultFindingsCacheBackend is the FindingsCache backend used when no
+	// override is provided via flag, env, or config file.
+	DefaultFindingsCacheBackend = "disk"
+
+	// DefaultFindingsCacheTable is the Postgres table name used by the
+	// PostgresFindingsCache when no override is provided.
+	DefaultFindingsCacheTable = "findings_cache"
 )
 
 // Config manages application configuration.
 type Config struct {
-	apiKey string
-	apiURL string
-	mu     sync.RWMutex
+	apiKey               string
+	apiURL               string
+	javaJDKMajor         string
+	javaJDKHomes         map[string]string
+	findingsCacheBackend string
+	findingsCacheDSN     string
+	findingsCacheTable   string
+	mu                   sync.RWMutex
 }
 
 var (
@@ -61,15 +76,6 @@ func GetInstance() *Config {
 	return instance
 }
 
-// ResetInstance resets the singleton instance.
-// Only for testing purposes.
-func ResetInstance() {
-	instanceMu.Lock()
-	defer instanceMu.Unlock()
-	instance = nil
-	once = sync.Once{}
-}
-
 // GetAPIKey returns the configured API key.
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()
@@ -82,6 +88,49 @@ func (c *Config) GetAPIURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.apiURL
+}
+
+// GetJavaJDKMajor returns the configured Java JDK major selector.
+func (c *Config) GetJavaJDKMajor() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.javaJDKMajor
+}
+
+// GetJavaJDKHomes returns the configured Java JDK homes keyed by major version.
+func (c *Config) GetJavaJDKHomes() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	homes := make(map[string]string, len(c.javaJDKHomes))
+	for major, path := range c.javaJDKHomes {
+		homes[major] = path
+	}
+	return homes
+}
+
+// GetFindingsCacheBackend returns the FindingsCache backend selector
+// ("disk" or "postgres").
+func (c *Config) GetFindingsCacheBackend() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheBackend
+}
+
+// GetFindingsCacheDSN returns the Postgres connection string used by the
+// PostgresFindingsCache. Empty when the backend is "disk".
+func (c *Config) GetFindingsCacheDSN() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheDSN
+}
+
+// GetFindingsCacheTable returns the Postgres table name used by the
+// PostgresFindingsCache.
+func (c *Config) GetFindingsCacheTable() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.findingsCacheTable
 }
 
 // SetAPIKey updates the API key and persists to config file.
@@ -106,16 +155,61 @@ func (c *Config) SetAPIURL(url string) error {
 	return c.writeConfig()
 }
 
+// InitOptions groups the runtime overrides accepted by Initialize so that
+// adding new flag-driven configuration does not change the function signature
+// at every call site.
+type InitOptions struct {
+	//nolint:gosec // G117: APIKey is a runtime override supplied by the operator, not a hardcoded secret.
+	APIKey               string
+	APIURL               string
+	FindingsCacheBackend string
+}
+
 // Initialize loads configuration from multiple sources.
 // Viper automatically handles priority (highest to lowest):
-// 1. Set() calls (used for CLI flags) - highest
-// 2. Environment variables (SCANOSS_API_KEY, SCANOSS_API_URL)
-// 3. Config file (~/.scanoss/crypto-finder/config.json)
-// 4. Defaults (SetDefault) - lowest
+//  1. Set() calls (used for CLI flags) - highest
+//  2. Environment variables (SCANOSS_API_KEY, SCANOSS_API_URL,
+//     SCANOSS_FINDINGS_CACHE_BACKEND, SCANOSS_FINDINGS_CACHE_DSN,
+//     SCANOSS_FINDINGS_CACHE_TABLE)
+//  3. Config file (~/.scanoss/crypto-finder/config.json)
+//  4. Defaults (SetDefault) - lowest
 //
 // The order of setup below doesn't affect priority - viper handles it automatically.
-func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
-	// Only setup config file path if not already set.
+func (c *Config) Initialize(opts InitOptions) error {
+	if err := c.setupViperConfig(); err != nil {
+		return err
+	}
+	if err := c.bindEnvVars(); err != nil {
+		return err
+	}
+	c.readConfigFile()
+	if err := c.applyRuntimeOverrides(opts); err != nil {
+		return err
+	}
+
+	javaJDKMajor, err := javaruntime.NormalizeMajor(viper.GetString("java_jdk_major"))
+	if err != nil {
+		return fmt.Errorf("invalid Java JDK major configuration: %w", err)
+	}
+	javaJDKHomes, err := javaruntime.NormalizeHomes(viper.GetStringMapString("java_jdk_homes"))
+	if err != nil {
+		return fmt.Errorf("invalid Java JDK homes configuration: %w", err)
+	}
+
+	c.mu.Lock()
+	c.apiKey = viper.GetString("api_key")
+	c.apiURL = viper.GetString("api_url")
+	c.javaJDKMajor = javaJDKMajor
+	c.javaJDKHomes = javaJDKHomes
+	c.findingsCacheBackend = viper.GetString("findings_cache_backend")
+	c.findingsCacheDSN = viper.GetString("findings_cache_dsn")
+	c.findingsCacheTable = viper.GetString("findings_cache_table")
+	c.mu.Unlock()
+
+	return nil
+}
+
+func (c *Config) setupViperConfig() error {
 	if viper.ConfigFileUsed() == "" {
 		configPath, err := GetConfigFilePath()
 		if err != nil {
@@ -131,45 +225,67 @@ func (c *Config) Initialize(apiKeyFlag, apiURLFlag string) error {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 
-		// Setup viper
 		viper.SetConfigFile(configPath)
 		viper.SetConfigType("json")
 		viper.SetConfigPermissions(0o600)
 	}
 
-	// Set defaults (lowest priority)
 	viper.SetDefault("api_url", DefaultAPIURL)
+	viper.SetDefault("java_jdk_major", javaruntime.AutoMajor)
+	viper.SetDefault("findings_cache_backend", DefaultFindingsCacheBackend)
+	viper.SetDefault("findings_cache_table", DefaultFindingsCacheTable)
+	return nil
+}
 
-	// Bind environment variables (2nd priority)
+func (c *Config) bindEnvVars() error {
 	viper.SetEnvPrefix("SCANOSS")
-	if err := viper.BindEnv("api_key"); err != nil {
-		return fmt.Errorf("failed to bind API key env var: %w", err)
+	envBindings := map[string]string{
+		"api_key":                "API key",
+		"api_url":                "API URL",
+		"java_jdk_major":         "Java JDK major",
+		"java_jdk_homes":         "Java JDK homes",
+		"findings_cache_backend": "FindingsCache backend",
+		"findings_cache_dsn":     "FindingsCache DSN",
+		"findings_cache_table":   "FindingsCache table",
 	}
-	if err := viper.BindEnv("api_url"); err != nil {
-		return fmt.Errorf("failed to bind API URL env var: %w", err)
+	for key, label := range envBindings {
+		if err := viper.BindEnv(key); err != nil {
+			return fmt.Errorf("failed to bind %s env var: %w", label, err)
+		}
 	}
+	return nil
+}
 
-	// Read config file (3rd priority)
-	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later
+func (c *Config) readConfigFile() {
+	//nolint:errcheck // Ignore errors - file might not exist yet, we will create it later.
 	_ = viper.ReadInConfig()
 
 	if err := c.ensureConfigPermissions(); err != nil {
 		log.Warn().Err(err).Msg("Failed to ensure config file permissions")
 	}
+}
 
-	// Apply CLI flags (highest priority)
-	if apiKeyFlag != "" {
-		viper.Set("api_key", apiKeyFlag)
+func (c *Config) applyRuntimeOverrides(opts InitOptions) error {
+	if opts.APIKey != "" {
+		viper.Set("api_key", opts.APIKey)
 	}
-	if apiURLFlag != "" {
-		viper.Set("api_url", apiURLFlag)
+	if opts.APIURL != "" {
+		viper.Set("api_url", opts.APIURL)
+	}
+	if opts.FindingsCacheBackend != "" {
+		viper.Set("findings_cache_backend", opts.FindingsCacheBackend)
 	}
 
-	c.mu.Lock()
-	c.apiKey = viper.GetString("api_key")
-	c.apiURL = viper.GetString("api_url")
-	c.mu.Unlock()
+	rawHomes := os.Getenv("SCANOSS_JAVA_JDK_HOMES")
+	if rawHomes == "" {
+		return nil
+	}
 
+	parsedHomes, err := javaruntime.ParseHomeEnv(rawHomes)
+	if err != nil {
+		return fmt.Errorf("invalid SCANOSS_JAVA_JDK_HOMES: %w", err)
+	}
+	viper.Set("java_jdk_homes", parsedHomes)
 	return nil
 }
 

@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -248,17 +247,14 @@ func TestManager_downloadAndCache_ManifestSaveError(t *testing.T) {
 	})
 
 	tempDir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("scanoss-ruleset-name", manifest.Name)
 		w.Header().Set("scanoss-ruleset-version", manifest.Version)
 		w.Header().Set("x-checksum-sha256", CalculateSHA256(tarball))
 		w.Header().Set("scanoss-ruleset-created-at", manifest.CreatedAt.Format(time.RFC3339))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarball)
-	}))
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	})
 	manager := &Manager{apiClient: apiClient, cacheDir: tempDir}
 
 	targetPath := filepath.Join(tempDir, "dca", "latest")
@@ -302,17 +298,14 @@ func TestManager_saveManifest_InvalidJSON(t *testing.T) {
 
 func TestManager_downloadAndCache_ExtractError(t *testing.T) {
 	invalidTarball := []byte("not-gzip")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("scanoss-ruleset-name", "dca")
 		w.Header().Set("scanoss-ruleset-version", "latest")
 		w.Header().Set("x-checksum-sha256", CalculateSHA256(invalidTarball))
 		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(invalidTarball)
-	}))
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	})
 	manager := &Manager{apiClient: apiClient, cacheDir: t.TempDir()}
 
 	if err := manager.downloadAndCache(context.Background(), "dca", "latest", filepath.Join(manager.cacheDir, "dca", "latest")); err == nil {

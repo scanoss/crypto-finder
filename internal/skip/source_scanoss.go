@@ -41,19 +41,6 @@ type scanossConfig struct {
 	} `json:"settings"`
 }
 
-// NewScanossConfigSource creates a new source that loads patterns from a scanoss.json file.
-//
-// Parameters:
-//   - configPath: Path to the scanoss.json file
-//
-// Returns:
-//   - *ScanossConfigSource: Source configured to load from the specified file
-func NewScanossConfigSource(configPath string) *ScanossConfigSource {
-	return &ScanossConfigSource{
-		configPath: configPath,
-	}
-}
-
 // NewScanossConfigSourceFromDir creates a new source that loads from scanoss.json in a directory.
 // This is a convenience constructor that builds the path to scanoss.json.
 //

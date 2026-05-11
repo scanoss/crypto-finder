@@ -40,7 +40,14 @@ crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
 ```json
 {
   "api_key": "your-scanoss-api-key",
-  "api_url": "https://api.scanoss.com"
+  "api_url": "https://api.scanoss.com",
+  "java_jdk_major": "auto",
+  "java_jdk_homes": {
+    "8": "/opt/jdks/jdk8",
+    "11": "/opt/jdks/jdk11",
+    "17": "/opt/jdks/jdk17",
+    "21": "/opt/jdks/jdk21"
+  }
 }
 ```
 
@@ -50,6 +57,68 @@ crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
 |----------|-------------|---------|
 | `SCANOSS_API_KEY` | SCANOSS API key for remote rulesets | `export SCANOSS_API_KEY=abc123` |
 | `SCANOSS_API_URL` | Custom API base URL | `export SCANOSS_API_URL=https://custom.com` |
+| `SCANOSS_JAVA_JDK_MAJOR` | Java JDK major for Java dependency resolution and type enrichment (`auto`, `8`, `11`, `17`, `21`) | `export SCANOSS_JAVA_JDK_MAJOR=21` |
+| `SCANOSS_JAVA_JDK_HOMES` | Comma-separated Java home mappings used for explicit JDK selection | `export SCANOSS_JAVA_JDK_HOMES=17=/opt/jdks/jdk17,21=/opt/jdks/jdk21` |
+| `SCANOSS_FINDINGS_CACHE_BACKEND` | FindingsCache backend (`disk` or `postgres`); default `disk` | `export SCANOSS_FINDINGS_CACHE_BACKEND=postgres` |
+| `SCANOSS_FINDINGS_CACHE_DSN` | Postgres connection string used when backend is `postgres` (required) | `export SCANOSS_FINDINGS_CACHE_DSN=postgres://user:pass@host:5432/db?sslmode=require` |
+| `SCANOSS_FINDINGS_CACHE_TABLE` | Optional table name override; default `findings_cache` | `export SCANOSS_FINDINGS_CACHE_TABLE=cf_findings_cache` |
+
+### Java Runtime Selection
+
+For Java dependency scans and call graph export, Crypto Finder can select a specific JDK major per scan:
+
+- CLI: `--java-jdk-major` and repeatable `--java-jdk-home <major>=<path>`
+- Environment/config: `SCANOSS_JAVA_JDK_MAJOR`, `SCANOSS_JAVA_JDK_HOMES`, or the matching config file keys
+- Supported majors: `8`, `11`, `17`, `21`
+- Standalone CLI default: `auto` (use ambient `JAVA_HOME` when available)
+
+Example:
+
+```bash
+crypto-finder scan \
+  --scan-dependencies \
+  --java-jdk-major 21 \
+  --java-jdk-home 17=/opt/jdks/jdk17 \
+  --java-jdk-home 21=/opt/jdks/jdk21 \
+  /path/to/java-project
+```
+
+### FindingsCache Backend
+
+Crypto Finder caches per-dependency scan results in a `FindingsCache` so warm scans skip the OpenGrep work for already-analysed dependencies. Two backends are supported:
+
+| Backend | Storage | When to use |
+|---------|---------|-------------|
+| `disk` (default) | `~/.scanoss/crypto-finder/cache/findings/` | Local development, single-machine repeated scans |
+| `postgres` | a Postgres database (`findings_cache` table) | Multi-worker fleet deployments where the cache must be shared across machines (mining service, CI clusters) |
+
+Selecting the backend:
+
+- CLI: `--findings-cache=disk` or `--findings-cache=postgres`
+- Environment: `SCANOSS_FINDINGS_CACHE_BACKEND=postgres`
+- Config file: `findings_cache_backend: postgres`
+
+When `postgres` is selected, the connection string MUST be provided via `SCANOSS_FINDINGS_CACHE_DSN`. The scan exits with a clear error if it is missing — there is no silent fallback to disk, because a misconfigured fleet would otherwise lose cache sharing without surfacing the bug.
+
+The table is bootstrapped on first use (idempotent `CREATE TABLE IF NOT EXISTS`); no separate migration step is required. The default table name is `findings_cache`; override with `SCANOSS_FINDINGS_CACHE_TABLE` if you run multiple deployments in the same database.
+
+Example:
+
+```bash
+export SCANOSS_FINDINGS_CACHE_DSN="postgres://cf:cf@db.internal:5432/scanoss?sslmode=require"
+
+crypto-finder scan \
+  --scan-dependencies \
+  --findings-cache=postgres \
+  --export-callgraph callgraph.json \
+  /path/to/project
+```
+
+Behaviour notes:
+
+- The cache key includes the rules hash, so changing rules invalidates entries automatically — no manual eviction needed.
+- Failures of the disk backend are non-fatal (a warning is logged and the scan continues without caching). Failures of the postgres backend (missing DSN, unreachable database, schema bootstrap error) are fatal.
+- The Postgres pool is opened per `crypto-finder scan` invocation and closed when the scan finishes. For long-lived workers (e.g. the crypto-mining-service), reuse a single binary process where possible to amortise pool setup.
 
 ## Project Configuration (scanoss.json)
 

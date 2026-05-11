@@ -136,8 +136,9 @@ func filterFinding(finding entities.Finding, targetDir string) *entities.Finding
 		return &finding
 	}
 
-	var liveAssets []entities.CryptographicAsset
-	for _, asset := range finding.CryptographicAssets {
+	liveAssets := make([]entities.CryptographicAsset, 0, len(finding.CryptographicAssets))
+	for i := range finding.CryptographicAssets {
+		asset := &finding.CryptographicAssets[i]
 		if IsInsideDeadRegion(regions, asset.StartLine, asset.EndLine) {
 			log.Debug().
 				Str("file", finding.FilePath).
@@ -146,7 +147,7 @@ func filterFinding(finding entities.Finding, targetDir string) *entities.Finding
 				Msg("Filtered finding inside preprocessor dead code block")
 			continue
 		}
-		liveAssets = append(liveAssets, asset)
+		liveAssets = append(liveAssets, *asset)
 	}
 
 	if len(liveAssets) == 0 {

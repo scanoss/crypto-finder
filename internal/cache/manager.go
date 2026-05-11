@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -40,6 +41,7 @@ const (
 	metadataFileName = ".cache-meta.json"
 	manifestFileName = "manifest.json"
 	tempSuffix       = ".tmp"
+	lockSuffix       = ".lock"
 )
 
 // Manager manages the local cache of downloaded rulesets.
@@ -160,6 +162,72 @@ func (m *Manager) getRulesetCachePath(name, version string) string {
 	return filepath.Join(m.cacheDir, name, version)
 }
 
+// acquireLock acquires an exclusive file lock for the given ruleset path.
+// Returns the lock file which must be closed to release the lock.
+// This prevents race conditions when multiple processes try to update the same cache.
+func (m *Manager) acquireLock(rulesetPath string) (*os.File, error) {
+	lockPath := rulesetPath + lockSuffix
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return nil, fmt.Errorf("failed to create lock directory: %w", err)
+	}
+
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open lock file: %w", err)
+	}
+
+	// Acquire exclusive lock (blocking)
+	lockFD, err := fileDescriptor(lockFile)
+	if err != nil {
+		if closeErr := lockFile.Close(); closeErr != nil {
+			log.Warn().
+				Err(closeErr).
+				Str("path", lockPath).
+				Msg("Failed to close lock file after descriptor error")
+		}
+		return nil, err
+	}
+	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
+		if closeErr := lockFile.Close(); closeErr != nil {
+			log.Warn().
+				Err(closeErr).
+				Str("path", lockPath).
+				Msg("Failed to close lock file after lock acquisition error")
+		}
+		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+
+	return lockFile, nil
+}
+
+// releaseLock releases the file lock and closes the lock file.
+func (m *Manager) releaseLock(lockFile *os.File) {
+	if lockFile == nil {
+		return
+	}
+	// Unlock before closing (best practice, though close also releases)
+	lockFD, err := fileDescriptor(lockFile)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("path", lockFile.Name()).
+			Msg("Failed to resolve cache lock file descriptor")
+	} else if err := syscall.Flock(lockFD, syscall.LOCK_UN); err != nil {
+		log.Warn().
+			Err(err).
+			Str("path", lockFile.Name()).
+			Msg("Failed to unlock cache lock file")
+	}
+	if err := lockFile.Close(); err != nil {
+		log.Warn().
+			Err(err).
+			Str("path", lockFile.Name()).
+			Msg("Failed to close cache lock file")
+	}
+}
+
 // isCacheValid checks if the cached ruleset is valid (exists, not expired, checksum matches).
 func (m *Manager) isCacheValid(rulesetPath, metadataPath string) bool {
 	// Check if ruleset directory exists
@@ -199,7 +267,27 @@ func (m *Manager) updateLastAccessed(metadataPath string) error {
 }
 
 // downloadAndCache downloads a ruleset and caches it.
+// Uses file locking to prevent race conditions when multiple processes try to
+// update the same cache simultaneously.
 func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPath string) error {
+	// Acquire exclusive lock to prevent race conditions
+	lockFile, err := m.acquireLock(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to acquire cache lock: %w", err)
+	}
+	defer m.releaseLock(lockFile)
+
+	// Re-check if cache is valid after acquiring lock - another process may have
+	// updated it while we were waiting for the lock
+	metadataPath := filepath.Join(targetPath, metadataFileName)
+	if m.hasUsableCache(targetPath, metadataPath) {
+		log.Debug().
+			Str("ruleset", name).
+			Str("version", version).
+			Msg("Cache was updated by another process while waiting for lock")
+		return nil
+	}
+
 	// Download tarball and manifest
 	tarball, manifest, err := m.apiClient.DownloadRuleset(ctx, name, version)
 	if err != nil {
@@ -222,67 +310,8 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		Str("checksum", manifest.ChecksumSHA256).
 		Msg("Checksum verified successfully")
 
-	// Extract to temporary directory first (atomic operation)
-	tempPath := targetPath + tempSuffix
-	if err := m.extractTarball(tarball, tempPath); err != nil {
-		if err := os.RemoveAll(tempPath); err != nil {
-			log.Error().
-				Err(err).
-				Str("ruleset", name).
-				Str("version", version).
-				Msg("Failed to clean up temporary directory")
-		}
-		return fmt.Errorf("failed to extract tarball: %w", err)
-	}
-
-	// Create cache metadata
-	ttl := m.getTTL(version)
-	metadata := NewMetadata(name, version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
-	metadataPath := filepath.Join(tempPath, metadataFileName)
-	if err := metadata.Save(metadataPath); err != nil {
-		if err := os.RemoveAll(tempPath); err != nil {
-			log.Error().
-				Err(err).
-				Str("ruleset", name).
-				Str("version", version).
-				Msg("Failed to clean up temporary directory")
-		}
-		return fmt.Errorf("failed to save metadata: %w", err)
-	}
-
-	// Save manifest.json reconstructed from response headers
-	manifestPath := filepath.Join(tempPath, manifestFileName)
-	if err := m.saveManifest(manifest, manifestPath); err != nil {
-		if err := os.RemoveAll(tempPath); err != nil {
-			log.Error().
-				Err(err).
-				Str("ruleset", name).
-				Str("version", version).
-				Msg("Failed to clean up temporary directory")
-		}
-		return fmt.Errorf("failed to save manifest: %w", err)
-	}
-
-	// Remove old cache if it exists
-	if _, err := os.Stat(targetPath); err == nil {
-		if err := os.RemoveAll(targetPath); err != nil {
-			log.Warn().
-				Err(err).
-				Str("path", targetPath).
-				Msg("Failed to remove old cache")
-		}
-	}
-
-	// Atomic rename from temp to final location
-	if err := os.Rename(tempPath, targetPath); err != nil {
-		if err := os.RemoveAll(tempPath); err != nil {
-			log.Error().
-				Err(err).
-				Str("ruleset", name).
-				Str("version", version).
-				Msg("Failed to clean up temporary directory")
-		}
-		return fmt.Errorf("failed to move cache to final location: %w", err)
+	if err := m.persistDownloadedRuleset(name, version, targetPath, tarball, manifest); err != nil {
+		return err
 	}
 
 	log.Info().
@@ -292,6 +321,83 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		Msg("Ruleset cached successfully")
 
 	return nil
+}
+
+func (m *Manager) hasUsableCache(rulesetPath, metadataPath string) bool {
+	if !m.isCacheValid(rulesetPath, metadataPath) {
+		return false
+	}
+	return utils.ValidateRuleDirNotEmpty(rulesetPath) == nil
+}
+
+func (m *Manager) persistDownloadedRuleset(name, version, targetPath string, tarball []byte, manifest *api.Manifest) error {
+	tempPath := targetPath + tempSuffix
+	if err := m.extractTarball(tarball, tempPath); err != nil {
+		m.cleanupTempPath(tempPath, name, version)
+		return fmt.Errorf("failed to extract tarball: %w", err)
+	}
+
+	if err := m.writeCacheMetadata(name, version, tempPath, manifest); err != nil {
+		m.cleanupTempPath(tempPath, name, version)
+		return err
+	}
+
+	manifestPath := filepath.Join(tempPath, manifestFileName)
+	if err := m.saveManifest(manifest, manifestPath); err != nil {
+		m.cleanupTempPath(tempPath, name, version)
+		return fmt.Errorf("failed to save manifest: %w", err)
+	}
+
+	if err := m.replaceCachedRuleset(targetPath, tempPath); err != nil {
+		m.cleanupTempPath(tempPath, name, version)
+		return err
+	}
+
+	return nil
+}
+
+func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *api.Manifest) error {
+	// Create cache metadata. The version we record is the *manifest* version
+	// returned by the SCANOSS API (concrete, e.g. "v1.0.4"), NOT the operator's
+	// request label (which can be "latest" — opaque, indistinguishable across
+	// upstream rule pack updates). Using the manifest version makes the
+	// metadata file a faithful audit trail of what was actually downloaded;
+	// downstream consumers (e.g. crypto-mining-service) stamp it on every
+	// scan result so a re-mine after a rules update is detectable.
+	ttl := m.getTTL(version)
+	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
+	if err := metadata.Save(tempMetadataPath); err != nil {
+		return fmt.Errorf("failed to save metadata: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) replaceCachedRuleset(targetPath, tempPath string) error {
+	if _, err := os.Stat(targetPath); err == nil {
+		if err := os.RemoveAll(targetPath); err != nil {
+			log.Warn().
+				Err(err).
+				Str("path", targetPath).
+				Msg("Failed to remove old cache")
+		}
+	}
+
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		return fmt.Errorf("failed to move cache to final location: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) cleanupTempPath(tempPath, name, version string) {
+	if err := os.RemoveAll(tempPath); err != nil {
+		log.Error().
+			Err(err).
+			Str("ruleset", name).
+			Str("version", version).
+			Msg("Failed to clean up temporary directory")
+	}
 }
 
 // extractTarball extracts a .tar.gz tarball to the specified directory.
@@ -471,6 +577,20 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 // newBytesReader creates an io.Reader from a byte slice.
 func newBytesReader(data []byte) io.Reader {
 	return &bytesReader{data: data, pos: 0}
+}
+
+func fileDescriptor(file *os.File) (int, error) {
+	if file == nil {
+		return 0, fmt.Errorf("resolve file descriptor: nil file")
+	}
+
+	fd := file.Fd()
+	maxInt := uintptr(^uint(0) >> 1)
+	if fd > maxInt {
+		return 0, fmt.Errorf("resolve file descriptor: %d exceeds int range", fd)
+	}
+
+	return int(fd), nil
 }
 
 type bytesReader struct {

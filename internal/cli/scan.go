@@ -21,62 +21,82 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
-	"github.com/pterm/pterm"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/cache"
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
+	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
 	defaultScanner        = opengrep.ScannerName
-	defaultFormat         = "json"
+	formatJSON            = "json"
+	formatText            = "text"
+	defaultFormat         = formatJSON
 	defaultTimeout        = "10m"
 	defaultRulesetName    = "dca"
 	defaultRulesetVersion = "latest"
+	ecosystemJava         = "java"
+
+	findingsCacheBackendDisk     = "disk"
+	findingsCacheBackendPostgres = "postgres"
 )
+
+// AllowedFindingsCacheBackends lists the FindingsCache backends supported by the tool.
+var AllowedFindingsCacheBackends = []string{findingsCacheBackendDisk, findingsCacheBackendPostgres}
 
 // AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
 var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
 // SupportedFormats lists the output formats supported by the tool.
-var SupportedFormats = []string{"json", "cyclonedx"} // Future: csv, html, sarif
+var SupportedFormats = []string{formatJSON, "cyclonedx"}
 
 var (
-	scanRules         []string
-	scanRuleDirs      []string
-	scanScanner       string
-	scanFormat        string
-	scanOutput        string
-	scanLanguages     []string
-	scanFailOnFind    bool
-	scanTimeout       string
-	scanNoRemoteRules bool
-	scanNoCache       bool
-	scanAPIKey        string
-	scanAPIURL        string
-	scanStrict        bool
-	scanMaxStaleAge   string
-	scanNoDedup       bool
-	scanInterfile     bool
+	scanRules           []string
+	scanRuleDirs        []string
+	scanScanner         string
+	scanFormat          string
+	scanOutput          string
+	scanLanguages       []string
+	scanFailOnFind      bool
+	scanTimeout         string
+	scanNoRemoteRules   bool
+	scanNoCache         bool
+	scanAPIKey          string
+	scanAPIURL          string
+	scanStrict          bool
+	scanMaxStaleAge     string
+	scanNoDedup         bool
+	scanInterfile       bool
+	scanDependencies    bool
+	scanIncludeTests    bool
+	scanDepEcosystem    string
+	scanExportCallgraph string
+	scanExportCgFormat  string
+	scanDepWorkers      int
+	scanJavaJDKMajor    string
+	scanJavaJDKHomes    []string
+	scanFindingsCache   string
 )
 
 var scanCmd = &cobra.Command{
@@ -133,6 +153,137 @@ func init() {
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
+	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
+	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
+	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
+
+	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
+	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
+	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
+	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
+	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
+	scanCmd.Flags().StringArrayVar(&scanJavaJDKHomes, "java-jdk-home", []string{}, "Java JDK home mapping in the form <major>=<path> (repeatable)")
+}
+
+func callGraphTargetDir(target string) (string, error) {
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return target, nil
+	}
+	return filepath.Dir(target), nil
+}
+
+func ecosystemFromHints(target string, languageHints []string) string {
+	if len(languageHints) > 0 {
+		switch languageHints[0] {
+		case "go", ecosystemJava, "python", "rust":
+			return languageHints[0]
+		}
+	}
+
+	targetDir, err := callGraphTargetDir(target)
+	if err == nil {
+		if ecosystem := scanutil.DetectEcosystem(targetDir); ecosystem != "" {
+			return ecosystem
+		}
+	}
+
+	switch filepath.Ext(target) {
+	case ".go":
+		return "go"
+	case ".java":
+		return ecosystemJava
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	default:
+		return ""
+	}
+}
+
+func resolveJavaRuntimeConfig(cfg *config.Config) (javaruntime.Config, error) {
+	major := cfg.GetJavaJDKMajor()
+	if scanJavaJDKMajor != "" {
+		major = scanJavaJDKMajor
+	}
+
+	homes := cfg.GetJavaJDKHomes()
+	if len(scanJavaJDKHomes) > 0 {
+		flagHomes, err := javaruntime.ParseHomeEntries(scanJavaJDKHomes)
+		if err != nil {
+			return javaruntime.Config{}, err
+		}
+		homes = javaruntime.MergeHomes(homes, flagHomes)
+	}
+
+	return javaruntime.NewConfig(major, homes)
+}
+
+func newCallGraphBuilder(ecosystem string, javaRuntime javaruntime.Config, includeTests bool) (*callgraph.Builder, error) {
+	cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(includeTests))
+	if cgParser == nil {
+		return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
+	}
+
+	cgBuilder := callgraph.NewBuilder(cgParser)
+	if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem, javaRuntime); typeResolver != nil {
+		if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
+			bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to create Java bytecode cache, bytecode indexing will not be cached")
+			} else {
+				javaResolver.SetBytecodeIndexCache(bytecodeCache)
+			}
+		}
+		cgBuilder.SetTypeResolver(typeResolver)
+	}
+
+	return cgBuilder, nil
+}
+
+func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
+	if includeTests {
+		return patterns
+	}
+	return skip.WithDefaultTestPatterns(patterns)
+}
+
+func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool) (*engine.DepScanResult, error) {
+	targetDir, err := callGraphTargetDir(target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve call graph target: %w", err)
+	}
+
+	ecosystem := ecosystemFromHints(target, languageHints)
+	if ecosystem == "" {
+		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
+	}
+
+	cgBuilder, err := newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
+	if err != nil {
+		return nil, err
+	}
+
+	rootModule := scanutil.DetectRootModule(targetDir, ecosystem)
+	graph, err := cgBuilder.BuildFromDirectories([]callgraph.PackageDir{{
+		Dir:        targetDir,
+		ImportPath: rootModule,
+	}}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build call graph: %w", err)
+	}
+
+	return &engine.DepScanResult{
+		Report:      report,
+		CallGraph:   graph,
+		RootModule:  rootModule,
+		Ecosystem:   ecosystem,
+		ProjectRoot: targetDir,
+	}, nil
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -140,14 +291,35 @@ func runScan(_ *cobra.Command, args []string) error {
 	target := args[0]
 
 	// Validate flags
-	if err := validateScanFlags(target); err != nil {
-		return err
+	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
+		RuleFiles:        scanRules,
+		RuleDirs:         scanRuleDirs,
+		NoRemoteRules:    scanNoRemoteRules,
+		Scanner:          scanScanner,
+		AllowedScanners:  AllowedScanners,
+		Interfile:        scanInterfile,
+		InterfileScanner: semgrep.ScannerName,
+		Format:           scanFormat,
+		SupportedFormats: SupportedFormats,
+		Languages:        scanLanguages,
+		ScanDependencies: scanDependencies,
+		ExportCallgraph:  scanExportCallgraph,
+	})
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
+	scanLanguages = normalizedLanguages
 
 	// Parse timeout
-	timeout, err := parseDuration(scanTimeout)
+	timeout, err := scanutil.ParseDuration(scanTimeout)
 	if err != nil {
-		return fmt.Errorf("invalid timeout format '%s': %w (use format like '10m', '1h', '30d', or '2w')", scanTimeout, err)
+		return failure.Wrap(
+			err,
+			failure.CodeInvalidTimeout,
+			failure.StageInput,
+			fmt.Sprintf("invalid timeout format '%s' (use format like '10m', '1h', '30d', or '2w')", scanTimeout),
+			failure.WithDetail("timeout", scanTimeout),
+		)
 	}
 
 	// Create context with timeout
@@ -169,6 +341,7 @@ func runScan(_ *cobra.Command, args []string) error {
 		// Fallback to just use default skipped directories
 		skipPatterns = skip.DefaultSkippedDirs
 	}
+	skipPatterns = applyTestSkipPatterns(skipPatterns, scanIncludeTests)
 
 	if len(skipPatterns) > 0 {
 		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), multiSourceSkipPatterns.Name())
@@ -178,8 +351,40 @@ func runScan(_ *cobra.Command, args []string) error {
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
 
 	cfg := config.GetInstance()
-	if err := cfg.Initialize(scanAPIKey, scanAPIURL); err != nil {
-		return fmt.Errorf("failed to initialize config: %w", err)
+	if err := cfg.Initialize(config.InitOptions{
+		APIKey:               scanAPIKey,
+		APIURL:               scanAPIURL,
+		FindingsCacheBackend: scanFindingsCache,
+	}); err != nil {
+		return failure.WrapUnknown(
+			err,
+			failure.CodeConfigInitializationFailed,
+			failure.StageConfig,
+			"failed to initialize config",
+		)
+	}
+	var (
+		javaRuntime         javaruntime.Config
+		javaRuntimeResolved bool
+	)
+	ensureJavaRuntime := func() error {
+		if javaRuntimeResolved {
+			return nil
+		}
+
+		resolvedRuntime, resolveErr := resolveJavaRuntimeConfig(cfg)
+		if resolveErr != nil {
+			return failure.WrapUnknown(
+				resolveErr,
+				failure.CodeJavaRuntimeConfigInvalid,
+				failure.StageConfig,
+				"failed to resolve Java runtime configuration",
+			)
+		}
+
+		javaRuntime = resolvedRuntime
+		javaRuntimeResolved = true
+		return nil
 	}
 
 	ruleSources := make([]rules.RuleSource, 0)
@@ -194,19 +399,35 @@ func runScan(_ *cobra.Command, args []string) error {
 		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
-			return fmt.Errorf("failed to create cache manager: %w", err)
+			return failure.WrapUnknown(
+				err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"failed to create cache manager",
+			)
 		}
 
 		cacheManager.SetNoCache(scanNoCache)
 		cacheManager.SetStrictMode(scanStrict)
 
 		// Parse and validate max stale age
-		maxStaleAge, err := parseDuration(scanMaxStaleAge)
+		maxStaleAge, err := scanutil.ParseDuration(scanMaxStaleAge)
 		if err != nil {
-			return fmt.Errorf("invalid --max-stale-age format '%s': %w (use format like '30d', '720h', or '2w')", scanMaxStaleAge, err)
+			return failure.Wrap(
+				err,
+				failure.CodeInvalidArguments,
+				failure.StageInput,
+				fmt.Sprintf("invalid --max-stale-age format '%s' (use format like '30d', '720h', or '2w')", scanMaxStaleAge),
+				failure.WithDetail("max_stale_age", scanMaxStaleAge),
+			)
 		}
 		if maxStaleAge > config.MaxStaleCacheAge {
-			return fmt.Errorf("--max-stale-age cannot exceed %s (got: %s)", config.MaxStaleCacheAge, maxStaleAge)
+			return failure.New(
+				failure.CodeInvalidArguments,
+				failure.StageInput,
+				fmt.Sprintf("--max-stale-age cannot exceed %s (got: %s)", config.MaxStaleCacheAge, maxStaleAge),
+				failure.WithDetail("max_stale_age", maxStaleAge.String()),
+			)
 		}
 		cacheManager.SetMaxStaleCacheAge(maxStaleAge)
 
@@ -230,7 +451,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	var rulesManager *rules.Manager
 	switch len(ruleSources) {
 	case 0:
-		return fmt.Errorf("no rule sources configured (use --rules, --rules-dir, or enable remote rules)")
+		return failure.New(
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"no rule sources configured (use --rules, --rules-dir, or enable remote rules)",
+		)
 	case 1:
 		rulesManager = rules.NewManager(ruleSources[0])
 		log.Info().Msgf("Rules manager configured with source: %s", ruleSources[0].Name())
@@ -251,9 +476,11 @@ func runScan(_ *cobra.Command, args []string) error {
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
 	scanOpts := engine.ScanOptions{
-		Target:       target,
-		ScannerName:  scanScanner,
-		LanguageHint: scanLanguages,
+		Target:                target,
+		ScannerName:           scanScanner,
+		LanguageHint:          scanLanguages,
+		JavaRuntime:           javaRuntime,
+		JavaRuntimeCacheToken: javaRuntime.CacheKeyToken(),
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
@@ -268,152 +495,238 @@ func runScan(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	var callGraphResult *engine.DepScanResult
+
+	// Dependency scanning phase.
+	//nolint:nestif // This orchestration intentionally branches by ecosystem/resolver/parser/caching availability.
+	if scanDependencies {
+		ecosystem := scanDepEcosystem
+		if ecosystem == "auto" {
+			ecosystem = ecosystemFromHints(target, scanLanguages)
+			if ecosystem == "" {
+				ecosystem = scanutil.DetectEcosystem(target)
+			}
+		}
+
+		if ecosystem != "" {
+			depRegistry := dependency.NewRegistry()
+			depRegistry.Register("go", dependency.NewGoResolver())
+			depRegistry.Register("java", dependency.NewJavaResolver())
+			depRegistry.Register("python", dependency.NewPipResolver())
+			depRegistry.Register("rust", dependency.NewCargoResolver())
+
+			resolver, resolverErr := depRegistry.Get(ecosystem)
+			if resolverErr != nil {
+				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
+			} else {
+				if ecosystem == "java" {
+					if err := ensureJavaRuntime(); err != nil {
+						return err
+					}
+					scanOpts.JavaRuntime = javaRuntime
+					scanOpts.JavaRuntimeCacheToken = javaRuntime.CacheKeyToken()
+				}
+				if javaResolver, ok := resolver.(dependency.JavaRuntimeConfigurer); ok {
+					javaResolver.SetJavaRuntime(javaRuntime)
+				}
+				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
+				if cgParser == nil {
+					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
+				} else {
+					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests)
+					if builderErr != nil {
+						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
+					} else {
+						findingsCache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
+						if cacheErr != nil {
+							return cacheErr
+						}
+						defer closeCache()
+
+						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
+						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
+							Workers:     scanDepWorkers,
+							ScanOptions: scanOpts,
+						})
+						if depErr != nil {
+							return failure.WrapUnknown(
+								depErr,
+								failure.CodeDependencyResolutionFailed,
+								failure.StageDependency,
+								"dependency scan failed",
+							)
+						}
+						report = depResult.Report
+						callGraphResult = depResult
+					}
+				}
+			}
+		} else {
+			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
+		}
+	}
+
+	engine.EnsureFindingSources(report)
+
+	if scanExportCallgraph != "" && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
+		if ecosystemFromHints(target, scanLanguages) == "java" {
+			if err := ensureJavaRuntime(); err != nil {
+				return err
+			}
+		}
+		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests)
+		if err != nil {
+			return failure.WrapUnknown(
+				err,
+				failure.CodeCallGraphBuildFailed,
+				failure.StageCallGraph,
+				"failed to build call graph for export",
+			)
+		}
+	}
+
+	if scanExportCallgraph != "" {
+		exportStart := time.Now()
+		log.Info().
+			Str("file", scanExportCallgraph).
+			Str("format", scanExportCgFormat).
+			Msg("Starting call graph export")
+		engine.AssignFindingIDs(report)
+		if callGraphResult != nil {
+			callGraphResult.Report = report
+		}
+		if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult); exportErr != nil {
+			return failure.WrapUnknown(
+				exportErr,
+				failure.CodeCallGraphExportFailed,
+				failure.StageExport,
+				"failed to export call graph",
+			)
+		}
+		log.Info().
+			Str("file", scanExportCallgraph).
+			Dur("duration", time.Since(exportStart)).
+			Msg("Call graph export complete")
+	}
 
 	report.Version = entities.InterimFormatVersion
 
 	oidEnricher := enricher.NewOIDEnricher()
+	oidStart := time.Now()
+	log.Info().Msg("Starting OID enrichment")
 	oidEnricher.EnrichReport(report)
+	log.Info().
+		Dur("duration", time.Since(oidStart)).
+		Msg("OID enrichment finished")
 
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
 	if err != nil {
-		return fmt.Errorf("failed to get output writer: %w", err)
+		return failure.WrapUnknown(
+			err,
+			failure.CodeOutputWriterUnavailable,
+			failure.StageOutput,
+			"failed to get output writer",
+		)
 	}
 
 	// Write output (to stdout or file)
+	writeStart := time.Now()
+	log.Info().
+		Str("destination", scanOutput).
+		Str("format", scanFormat).
+		Msg("Writing scan output")
 	if err := writer.Write(report, scanOutput); err != nil {
-		return fmt.Errorf("failed to write output: %w", err)
+		return failure.WrapUnknown(
+			err,
+			failure.CodeOutputWriteFailed,
+			failure.StageOutput,
+			"failed to write output",
+		)
 	}
+	log.Info().
+		Str("destination", scanOutput).
+		Dur("duration", time.Since(writeStart)).
+		Msg("Scan output write complete")
 
-	findingsCount := countFindings(report)
+	findingsCount := scanutil.CountFindings(report)
 	filesCount := len(report.Findings)
 
-	err = printScanSummary(filesCount, findingsCount)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to render scan summary")
+	if normalizedErrorOutputFormat() != formatJSON {
+		err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to render scan summary")
+		}
 	}
 
 	// Handle --fail-on-findings
 	if scanFailOnFind && findingsCount > 0 {
-		return fmt.Errorf("scan detected %d findings (--fail-on-findings enabled)", findingsCount)
+		return failure.New(
+			failure.CodeFindingsDetected,
+			failure.StagePolicy,
+			fmt.Sprintf("scan detected %d findings (--fail-on-findings enabled)", findingsCount),
+			failure.WithDetail("findings_count", fmt.Sprintf("%d", findingsCount)),
+		)
 	}
 
 	return nil
 }
 
-func validateScanFlags(target string) error {
-	// Validate target exists
-	if _, err := os.Stat(target); os.IsNotExist(err) {
-		return fmt.Errorf("target path does not exist: %s", target)
-	}
-
-	// Validate that at least one rule source is specified
-	// Either local rules OR remote rules (unless --no-remote-rules is set)
-	if len(scanRules) == 0 && len(scanRuleDirs) == 0 && scanNoRemoteRules {
-		return fmt.Errorf("no rules specified: use --rules <file>, --rules-dir <directory>, or enable remote rules")
-	}
-
-	for _, ruleDir := range scanRuleDirs {
-		if err := utils.ValidateRuleDirNotEmpty(ruleDir); err != nil {
-			return err
-		}
-	}
-
-	// Validate scanner
-	if !slices.Contains(AllowedScanners, scanScanner) {
-		return fmt.Errorf("invalid scanner name: %s", scanScanner)
-	}
-
-	// Validate interfile flag is only used with semgrep
-	if scanInterfile && scanScanner != semgrep.ScannerName {
-		return fmt.Errorf("--interfile flag is only supported with --scanner semgrep")
-	}
-
-	// Validate output format
-	if !slices.Contains(SupportedFormats, scanFormat) {
-		return fmt.Errorf("unsupported output format '%s' (supported: %v)", scanFormat, SupportedFormats)
-	}
-
-	// Normalize language hints to lowercase
-	for i, lang := range scanLanguages {
-		scanLanguages[i] = strings.ToLower(strings.TrimSpace(lang))
-	}
-
-	return nil
-}
-
-func countFindings(report *entities.InterimReport) int {
-	if report == nil {
-		return 0
-	}
-
-	count := 0
-	for _, finding := range report.Findings {
-		count += len(finding.CryptographicAssets)
-	}
-	return count
-}
-
-// printScanSummary displays scan summary in a user-friendly format.
-func printScanSummary(filesCount, findingsCount int) error {
-	stats := make([]pterm.BulletListItem, 0, 3)
-	stats = append(stats,
-		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Files with findings: %d", filesCount)},
-		pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Total crypto assets: %d", findingsCount)},
-	)
-
-	var scanOutputLocation string
-	if scanOutput != "" && scanOutput != "-" {
-		scanOutputLocation = scanOutput
-	} else {
-		scanOutputLocation = "<stdout>"
-	}
-
-	stats = append(stats, pterm.BulletListItem{Level: 1, Text: fmt.Sprintf("Output: %s", scanOutputLocation)})
-
-	pterm.DefaultSection.WithWriter(os.Stderr).Println("Scan Summary")
-	err := pterm.DefaultBulletList.WithItems(stats).WithWriter(os.Stderr).Render()
-	if err != nil {
-		return fmt.Errorf("failed to render scan summary: %w", err)
-	}
-
-	return nil
-}
-
-// parseDuration parses a duration string supporting standard Go formats plus:
-//   - "d" for days (e.g., "30d" = 720 hours)
-//   - "w" for weeks (e.g., "2w" = 336 hours)
+// newFindingsCache builds the FindingsCache backend selected by configuration.
 //
-// Standard formats (ns, us, ms, s, m, h) are parsed by time.ParseDuration.
-func parseDuration(s string) (time.Duration, error) {
-	// Try standard parsing first (supports: ns, us, ms, s, m, h)
-	d, err := time.ParseDuration(s)
-	if err == nil {
-		return d, nil
-	}
+// Failure semantics differ by backend:
+//   - For the disk backend, construction errors are non-fatal: a warning is
+//     logged and (nil, noop, nil) is returned so the dependency scan still
+//     runs without caching (preserves the historical behavior).
+//   - For the postgres backend, any failure (missing DSN, pool init, schema
+//     bootstrap) is fatal: the scan is aborted with a structured error so
+//     misconfiguration cannot silently fall back to an unshared cache.
+func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsCache, func(), error) {
+	noop := func() {}
+	backend := cfg.GetFindingsCacheBackend()
 
-	// Check for "d" (days) suffix
-	if strings.HasSuffix(s, "d") {
-		days := strings.TrimSuffix(s, "d")
-		var value float64
-		n, parseErr := fmt.Sscanf(days, "%f", &value)
-		if parseErr != nil || n != 1 {
-			return 0, fmt.Errorf("invalid duration format: %s", s)
+	switch backend {
+	case "", findingsCacheBackendDisk:
+		fc, err := engine.NewDiskFindingsCache()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create findings cache, dependency scans will not be cached")
+			return nil, noop, nil
 		}
-		return time.Duration(value*24) * time.Hour, nil
-	}
+		return fc, noop, nil
 
-	// Check for "w" (weeks) suffix
-	if strings.HasSuffix(s, "w") {
-		weeks := strings.TrimSuffix(s, "w")
-		var value float64
-		n, parseErr := fmt.Sscanf(weeks, "%f", &value)
-		if parseErr != nil || n != 1 {
-			return 0, fmt.Errorf("invalid duration format: %s", s)
+	case findingsCacheBackendPostgres:
+		dsn := cfg.GetFindingsCacheDSN()
+		if dsn == "" {
+			return nil, noop, failure.New(
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: SCANOSS_FINDINGS_CACHE_DSN must be set when --findings-cache=postgres",
+			)
 		}
-		return time.Duration(value*24*7) * time.Hour, nil
-	}
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return nil, noop, failure.WrapUnknown(err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: failed to create Postgres pool",
+			)
+		}
+		table := cfg.GetFindingsCacheTable()
+		if err := engine.EnsureSchema(ctx, pool, table); err != nil {
+			pool.Close()
+			return nil, noop, failure.WrapUnknown(err,
+				failure.CodeCacheInitializationFailed,
+				failure.StageConfig,
+				"findings cache: failed to ensure schema",
+			)
+		}
+		return engine.NewPostgresFindingsCache(pool, engine.WithTableName(table)), pool.Close, nil
 
-	// Return original error if no custom suffix matched
-	return 0, fmt.Errorf("invalid duration format: %s", s)
+	default:
+		return nil, noop, failure.New(
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("unknown findings-cache backend %q (allowed: %v)", backend, AllowedFindingsCacheBackends),
+		)
+	}
 }

@@ -61,7 +61,6 @@ func TestProcessor_Process(t *testing.T) {
 						Language: "go",
 						CryptographicAssets: []entities.CryptographicAsset{
 							{
-								MatchType: "semgrep",
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",
@@ -90,7 +89,6 @@ func TestProcessor_Process(t *testing.T) {
 						Language: "go",
 						CryptographicAssets: []entities.CryptographicAsset{
 							{
-								MatchType: "semgrep",
 								StartLine: 10,
 								EndLine:   10,
 								Match:     "AES.encrypt",

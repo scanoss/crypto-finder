@@ -213,3 +213,64 @@ func TestLocalRuleSource_Load_NestedDirectories(t *testing.T) {
 		t.Errorf("Expected 1 rule file in nested directory, got %d", len(paths))
 	}
 }
+
+func TestLocalRuleSource_Info(t *testing.T) {
+	t.Parallel()
+
+	// Two rule files with known content. The fingerprint must be:
+	//   * "local" sourced
+	//   * Non-empty checksum
+	//   * Identical regardless of input order (paths are sorted internally)
+	//   * Different when one file's content changes
+	tempDir := t.TempDir()
+	ruleA := filepath.Join(tempDir, "a.yaml")
+	ruleB := filepath.Join(tempDir, "b.yaml")
+	if err := os.WriteFile(ruleA, []byte("rules:\n  - id: A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ruleB, []byte("rules:\n  - id: B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	src1 := NewLocalRuleSource([]string{ruleA, ruleB}, nil)
+	if _, err := src1.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	info1 := src1.Info()
+	if info1.Source != "local" {
+		t.Errorf("Source = %q, want %q", info1.Source, "local")
+	}
+	if info1.ChecksumSHA256 == "" {
+		t.Error("ChecksumSHA256 should be non-empty after Load")
+	}
+
+	// Reverse-order input → identical checksum (sort happens in Info()).
+	src2 := NewLocalRuleSource([]string{ruleB, ruleA}, nil)
+	if _, err := src2.Load(); err != nil {
+		t.Fatalf("Load reversed: %v", err)
+	}
+	if got, want := src2.Info().ChecksumSHA256, info1.ChecksumSHA256; got != want {
+		t.Errorf("checksum diverged with reversed input order: got %q, want %q", got, want)
+	}
+
+	// Mutating one file's content → checksum changes.
+	if err := os.WriteFile(ruleA, []byte("rules:\n  - id: A_MODIFIED\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src3 := NewLocalRuleSource([]string{ruleA, ruleB}, nil)
+	if _, err := src3.Load(); err != nil {
+		t.Fatalf("Load after mutation: %v", err)
+	}
+	if src3.Info().ChecksumSHA256 == info1.ChecksumSHA256 {
+		t.Error("checksum did not change after rule content change")
+	}
+}
+
+func TestLocalRuleSource_Info_BeforeLoad(t *testing.T) {
+	t.Parallel()
+
+	src := NewLocalRuleSource([]string{"/nonexistent.yaml"}, nil)
+	if got := src.Info(); got.Source != "" {
+		t.Errorf("Info() before Load() should be zero-value, got %+v", got)
+	}
+}

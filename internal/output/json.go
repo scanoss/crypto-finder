@@ -19,6 +19,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -45,13 +46,6 @@ func NewJSONWriter() *JSONWriter {
 	}
 }
 
-// NewCompactJSONWriter creates a new JSON writer without pretty-printing.
-func NewCompactJSONWriter() *JSONWriter {
-	return &JSONWriter{
-		PrettyPrint: false,
-	}
-}
-
 // Write writes the interim report to JSON format.
 //
 // Destination handling:
@@ -67,18 +61,17 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		return fmt.Errorf("report cannot be nil")
 	}
 
-	// Marshal to JSON
-	var data []byte
-	var err error
+	// Marshal to JSON with HTML escaping disabled to preserve <init> etc.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
 	if w.PrettyPrint {
-		data, err = json.MarshalIndent(report, "", w.Indent)
-	} else {
-		data, err = json.Marshal(report)
+		enc.SetIndent("", w.Indent)
 	}
-
-	if err != nil {
+	if err := enc.Encode(report); err != nil {
 		return fmt.Errorf("failed to marshal report to JSON: %w", err)
 	}
+	data := buf.Bytes()
 
 	// Determine output destination
 	//nolint:nestif // Separate stdout and file paths are inherently nested

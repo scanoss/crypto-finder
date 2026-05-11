@@ -33,6 +33,12 @@ import (
 	api "github.com/scanoss/crypto-finder/internal/api"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
 func writeRulesetTarball(gzWriter *gzip.Writer) error {
 	tarWriter := tar.NewWriter(gzWriter)
 	defer func() {
@@ -79,11 +85,26 @@ func writeRuleFile(t *testing.T, rulePath string) {
 	}
 }
 
-// createMockTarballServer creates an httptest server that returns a minimal valid tarball.
-func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) *httptest.Server {
+func newMockAPIClient(handler func(http.ResponseWriter, *http.Request)) *api.Client {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			recorder := httptest.NewRecorder()
+			handler(recorder, req)
+			if err := req.Context().Err(); err != nil {
+				return nil, err
+			}
+			return recorder.Result(), nil
+		}),
+	}
+
+	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+}
+
+// createMockTarballClient creates an API client that returns a minimal valid tarball.
+func createMockTarballClient(t *testing.T, statusCode int, includeHeaders bool) *api.Client {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
 		var tarballData []byte
 
 		if statusCode == http.StatusOK {
@@ -109,7 +130,7 @@ func createMockTarballServer(t *testing.T, statusCode int, includeHeaders bool) 
 		if statusCode == http.StatusOK {
 			_, _ = w.Write(tarballData)
 		}
-	}))
+	})
 }
 
 func TestManager_GetRulesetPath_CacheHit(t *testing.T) {
@@ -133,10 +154,7 @@ func TestManager_GetRulesetPath_CacheHit(t *testing.T) {
 	}
 
 	// Create API client (shouldn't be called)
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -168,10 +186,7 @@ func TestManager_GetRulesetPath_CacheMiss(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Setup mock server
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -228,10 +243,7 @@ func TestManager_GetRulesetPath_NoCache(t *testing.T) {
 	}
 
 	// Setup mock server
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -279,11 +291,7 @@ func TestManager_GetRulesetPath_ExpiredCache(t *testing.T) {
 		t.Fatalf("Failed to save metadata: %v", err)
 	}
 
-	// Setup mock server
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -319,10 +327,7 @@ func TestManager_GetRulesetPath_DownloadError(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Setup mock server that returns error
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
@@ -362,10 +367,7 @@ func TestManager_GetRulesetPath_StaleCache_Success(t *testing.T) {
 	}
 
 	// Setup mock server that returns error (API unreachable)
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
@@ -418,10 +420,7 @@ func TestManager_GetRulesetPath_StaleCache_TooOld(t *testing.T) {
 	}
 
 	// Setup mock server that returns error
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
@@ -461,10 +460,7 @@ func TestManager_GetRulesetPath_StrictMode_NoFallback(t *testing.T) {
 	}
 
 	// Setup mock server that returns error
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
@@ -489,10 +485,7 @@ func TestManager_GetRulesetPath_StaleCache_NoCache(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Setup mock server that returns error
-	server := createMockTarballServer(t, http.StatusInternalServerError, false)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusInternalServerError, false)
 	manager := &Manager{
 		apiClient:        apiClient,
 		cacheDir:         tempDir,
@@ -514,10 +507,7 @@ func TestManager_SetNoCache(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -541,10 +531,7 @@ func TestManager_isCacheValid(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -617,10 +604,7 @@ func TestManager_getTTL(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	server := createMockTarballServer(t, http.StatusOK, true)
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	apiClient := createMockTarballClient(t, http.StatusOK, true)
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -684,15 +668,12 @@ func TestManager_ContextCancellation(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create server that delays response
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
 		// Cancel context before responding
 		cancel()
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	apiClient := api.NewClient(server.URL, "test-key")
+	})
 	manager := &Manager{
 		apiClient: apiClient,
 		cacheDir:  tempDir,
@@ -710,7 +691,7 @@ func TestManager_ContextCancellation(t *testing.T) {
 
 func Example_cacheWorkflow() {
 	// Setup
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
 		var buf bytes.Buffer
 		gzWriter := gzip.NewWriter(&buf)
 		if err := writeRulesetTarball(gzWriter); err != nil {
@@ -726,11 +707,9 @@ func Example_cacheWorkflow() {
 		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
-	}))
-	defer server.Close()
+	})
 
 	// Create client and manager
-	apiClient := api.NewClient(server.URL, "test-key")
 	tempDir, err := os.MkdirTemp("", "crypto-finder-cache-example")
 	if err != nil {
 		panic(err)

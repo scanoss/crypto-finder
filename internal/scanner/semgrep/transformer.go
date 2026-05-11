@@ -109,7 +109,6 @@ func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []s
 	}
 
 	asset := entities.CryptographicAsset{
-		MatchType: ScannerName,
 		StartLine: result.Start.Line,
 		EndLine:   result.End.Line,
 		Match:     strings.TrimSpace(result.Extra.Lines),

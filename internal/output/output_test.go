@@ -38,7 +38,6 @@ func createTestReport() *entities.InterimReport {
 				Language: "go",
 				CryptographicAssets: []entities.CryptographicAsset{
 					{
-						MatchType: "semgrep",
 						StartLine: 10,
 						EndLine:   10,
 						Match:     "AES.encrypt",
@@ -134,7 +133,7 @@ func TestJSONWriter_CompactFormat(t *testing.T) {
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "compact.json")
 
-	writer := NewCompactJSONWriter()
+	writer := &JSONWriter{PrettyPrint: false}
 	err := writer.Write(report, outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)

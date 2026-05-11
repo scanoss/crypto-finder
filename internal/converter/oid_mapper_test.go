@@ -39,11 +39,11 @@ func TestNewOIDMapper(t *testing.T) {
 	}
 
 	// Verify mappings were initialized
-	if mapper.GetNameOIDCount() == 0 {
+	if len(mapper.nameToOID) == 0 {
 		t.Error("nameToOID map is empty")
 	}
 
-	if mapper.GetFamilyOIDCount() == 0 {
+	if len(mapper.familyToOID) == 0 {
 		t.Error("familyToOID map is empty")
 	}
 }
@@ -528,7 +528,7 @@ func TestOIDMapper_NIST_CSOR_SHA_OIDs(t *testing.T) {
 	}
 }
 
-func TestOIDMapper_IsKnownAlgorithm(t *testing.T) {
+func TestOIDMapper_NameMapContainsExpectedAlgorithms(t *testing.T) {
 	mapper := NewOIDMapper()
 
 	tests := []struct {
@@ -544,15 +544,15 @@ func TestOIDMapper_IsKnownAlgorithm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mapper.IsKnownAlgorithm(tt.name)
+			_, got := mapper.nameToOID[normalizeAlgorithmName(tt.name)]
 			if got != tt.expected {
-				t.Errorf("IsKnownAlgorithm(%q) = %v, want %v", tt.name, got, tt.expected)
+				t.Errorf("nameToOID[%q] presence = %v, want %v", tt.name, got, tt.expected)
 			}
 		})
 	}
 }
 
-func TestOIDMapper_IsKnownFamily(t *testing.T) {
+func TestOIDMapper_FamilyMapContainsExpectedFamilies(t *testing.T) {
 	mapper := NewOIDMapper()
 
 	tests := []struct {
@@ -569,9 +569,9 @@ func TestOIDMapper_IsKnownFamily(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.family, func(t *testing.T) {
-			got := mapper.IsKnownFamily(tt.family)
+			_, got := mapper.familyToOID[normalizeAlgorithmName(tt.family)]
 			if got != tt.expected {
-				t.Errorf("IsKnownFamily(%q) = %v, want %v", tt.family, got, tt.expected)
+				t.Errorf("familyToOID[%q] presence = %v, want %v", tt.family, got, tt.expected)
 			}
 		})
 	}
@@ -762,8 +762,8 @@ func TestOIDMapper_NIST_CSOR_PostQuantum_OIDs(t *testing.T) {
 func TestOIDMapper_GetCounts(t *testing.T) {
 	mapper := NewOIDMapper()
 
-	nameCount := mapper.GetNameOIDCount()
-	familyCount := mapper.GetFamilyOIDCount()
+	nameCount := len(mapper.nameToOID)
+	familyCount := len(mapper.familyToOID)
 
 	// We should have a reasonable number of mappings
 	if nameCount < 85 {

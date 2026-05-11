@@ -19,6 +19,7 @@ package rules
 import (
 	"fmt"
 
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
@@ -34,6 +35,13 @@ type RuleSource interface {
 	// Name returns a human-readable identifier for this source.
 	// Used for logging and debugging purposes.
 	Name() string
+
+	// Info returns a snapshot of which ruleset this source loaded, used for
+	// stamping on the InterimReport so consumers can correlate findings to a
+	// specific rules version. Must be called after Load(); behavior before
+	// Load() is implementation-defined (typically returns the zero value).
+	// The zero value (Source == "") is acceptable when no version is knowable.
+	Info() entities.RulesInfo
 }
 
 // MultiSource aggregates rule paths from multiple sources.
@@ -88,4 +96,19 @@ func (m *MultiSource) Name() string {
 		return m.sources[0].Name()
 	}
 	return fmt.Sprintf("MultiSource(%d sources)", len(m.sources))
+}
+
+// Info returns the first non-empty RulesInfo across the configured sources.
+// We prefer the first non-empty over a "merged" representation because
+// downstream stamps a single (rules_version, checksum) on each result row;
+// a mixed-source scan is a niche operator decision and the chosen source is
+// the most informative single label. If you operate in mixed mode and want
+// reproducibility, prefer one source per scan.
+func (m *MultiSource) Info() entities.RulesInfo {
+	for _, s := range m.sources {
+		if info := s.Info(); info.Source != "" {
+			return info
+		}
+	}
+	return entities.RulesInfo{}
 }

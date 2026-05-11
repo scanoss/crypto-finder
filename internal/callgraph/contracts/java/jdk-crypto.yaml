@@ -1,0 +1,405 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jdk-crypto
+  description: "JDK Java Cryptography Architecture (JCA) and Java Cryptography Extension (JCE) standard library contracts"
+
+# JCA/JCE Knowledge Base — 44 contract entries + 31 hierarchy edges
+# Hand-curated for the callgraph-inferred-types v1 inference engine.
+# Schema version 2 — library block required.
+
+contracts:
+  # --- KeyGenerator ---
+  - method: javax.crypto.KeyGenerator.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.KeyGenerator
+      confidence: high
+
+  - method: javax.crypto.KeyGenerator.generateKey
+    arity: 0
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # --- KeyPairGenerator ---
+  - method: java.security.KeyPairGenerator.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyPairGenerator
+      confidence: high
+
+  - method: java.security.KeyPairGenerator.generateKeyPair
+    arity: 0
+    return:
+      type: java.security.KeyPair
+      confidence: high
+
+  # --- SecretKeyFactory ---
+  - method: javax.crypto.SecretKeyFactory.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.SecretKeyFactory
+      confidence: high
+
+  - method: javax.crypto.SecretKeyFactory.generateSecret
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # --- KeyFactory ---
+  - method: java.security.KeyFactory.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyFactory
+      confidence: high
+
+  - method: java.security.KeyFactory.generatePublic
+    arity: 1
+    return:
+      type: java.security.PublicKey
+      confidence: high
+
+  - method: java.security.KeyFactory.generatePrivate
+    arity: 1
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+
+  # --- Cipher ---
+  - method: javax.crypto.Cipher.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+
+  - method: javax.crypto.Cipher.getInstance
+    arity: 2
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+
+  - method: javax.crypto.Cipher.doFinal
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Cipher.doFinal
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Cipher.update
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # Cipher.unwrap — argument-conditional on arg[2] (the wrap mode constant)
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.SECRET_KEY"
+        - "Cipher.SECRET_KEY"
+        - "3"
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.PRIVATE_KEY"
+        - "Cipher.PRIVATE_KEY"
+        - "2"
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.PUBLIC_KEY"
+        - "Cipher.PUBLIC_KEY"
+        - "1"
+    return:
+      type: java.security.PublicKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.wrap
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- MessageDigest ---
+  - method: java.security.MessageDigest.getInstance
+    arity: 1
+    return:
+      type: java.security.MessageDigest
+      confidence: high
+
+  - method: java.security.MessageDigest.digest
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: java.security.MessageDigest.digest
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- Mac ---
+  - method: javax.crypto.Mac.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.Mac
+      confidence: high
+
+  - method: javax.crypto.Mac.doFinal
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Mac.doFinal
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- Signature ---
+  - method: java.security.Signature.getInstance
+    arity: 1
+    return:
+      type: java.security.Signature
+      confidence: high
+
+  - method: java.security.Signature.sign
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- KeyStore ---
+  - method: java.security.KeyStore.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyStore
+      confidence: high
+
+  - method: java.security.KeyStore.getKey
+    arity: 2
+    return:
+      type: java.security.Key
+      confidence: medium
+
+  - method: java.security.KeyStore.getCertificate
+    arity: 1
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+
+  # --- KeyAgreement ---
+  - method: javax.crypto.KeyAgreement.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.KeyAgreement
+      confidence: high
+
+  - method: javax.crypto.KeyAgreement.generateSecret
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.KeyAgreement.generateSecret
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # --- AlgorithmParameters ---
+  - method: java.security.AlgorithmParameters.getInstance
+    arity: 1
+    return:
+      type: java.security.AlgorithmParameters
+      confidence: high
+
+  # --- AlgorithmParameterGenerator ---
+  - method: java.security.AlgorithmParameterGenerator.getInstance
+    arity: 1
+    return:
+      type: java.security.AlgorithmParameterGenerator
+      confidence: high
+
+  # --- SecureRandom ---
+  - method: java.security.SecureRandom.getInstance
+    arity: 1
+    return:
+      type: java.security.SecureRandom
+      confidence: high
+
+  - method: java.security.SecureRandom.getInstanceStrong
+    arity: 0
+    return:
+      type: java.security.SecureRandom
+      confidence: high
+
+  # --- Constructor contracts ---
+
+  # SecretKeySpec constructors: (byte[], String) and (byte[], int, int, String)
+  - method: javax.crypto.spec.SecretKeySpec.<init>
+    arity: 2
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  - method: javax.crypto.spec.SecretKeySpec.<init>
+    arity: 4
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # IvParameterSpec constructor: (byte[])
+  - method: javax.crypto.spec.IvParameterSpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+
+  # GCMParameterSpec constructor: (int, byte[])
+  - method: javax.crypto.spec.GCMParameterSpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+
+  # RSAPublicKeySpec constructor: (BigInteger, BigInteger)
+  - method: java.security.spec.RSAPublicKeySpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.KeySpec
+      confidence: high
+
+  # RSAPrivateKeySpec constructor: (BigInteger, BigInteger)
+  - method: java.security.spec.RSAPrivateKeySpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.KeySpec
+      confidence: high
+
+  # X509EncodedKeySpec constructor: (byte[])
+  - method: java.security.spec.X509EncodedKeySpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.EncodedKeySpec
+      confidence: high
+
+  # PKCS8EncodedKeySpec constructor: (byte[])
+  - method: java.security.spec.PKCS8EncodedKeySpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.EncodedKeySpec
+      confidence: high
+
+hierarchy:
+  # JCA Key family
+  javax.crypto.SecretKey:
+    - java.security.Key
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.interfaces.RSAPrivateKey:
+    - java.security.PrivateKey
+    - java.security.interfaces.RSAKey
+  java.security.interfaces.RSAPublicKey:
+    - java.security.PublicKey
+    - java.security.interfaces.RSAKey
+
+  # KeySpec family
+  java.security.spec.EncodedKeySpec:
+    - java.security.spec.KeySpec
+  java.security.spec.X509EncodedKeySpec:
+    - java.security.spec.EncodedKeySpec
+  java.security.spec.PKCS8EncodedKeySpec:
+    - java.security.spec.EncodedKeySpec
+  java.security.spec.RSAPublicKeySpec:
+    - java.security.spec.KeySpec
+  java.security.spec.RSAPrivateKeySpec:
+    - java.security.spec.KeySpec
+
+  # Concrete spec classes that double as keys
+  javax.crypto.spec.SecretKeySpec:
+    - javax.crypto.SecretKey
+    - java.security.spec.KeySpec
+
+  # AlgorithmParameterSpec family
+  javax.crypto.spec.IvParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  javax.crypto.spec.GCMParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  javax.crypto.spec.PBEParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+
+  # Certificate family
+  java.security.cert.X509Certificate:
+    - java.security.cert.Certificate
+  java.security.cert.Certificate:
+    - java.lang.Object
+
+  # JCA engine classes
+  javax.crypto.Cipher:
+    - java.lang.Object
+  javax.crypto.KeyGenerator:
+    - java.lang.Object
+  javax.crypto.SecretKeyFactory:
+    - java.lang.Object
+  javax.crypto.Mac:
+    - java.lang.Object
+  javax.crypto.KeyAgreement:
+    - java.lang.Object
+  java.security.MessageDigest:
+    - java.security.MessageDigestSpi
+    - java.lang.Object
+  java.security.Signature:
+    - java.security.SignatureSpi
+    - java.lang.Object
+  java.security.KeyFactory:
+    - java.lang.Object
+  java.security.KeyPairGenerator:
+    - java.security.KeyPairGeneratorSpi
+    - java.lang.Object
+  java.security.KeyStore:
+    - java.lang.Object
+  java.security.AlgorithmParameters:
+    - java.lang.Object
+  java.security.AlgorithmParameterGenerator:
+    - java.lang.Object
+  java.security.SecureRandom:
+    - java.util.Random
+  java.util.Random:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+
+  # Root anchors
+  java.security.Key:
+    - java.lang.Object
+  java.security.spec.KeySpec:
+    - java.lang.Object
+  java.security.spec.AlgorithmParameterSpec:
+    - java.lang.Object

@@ -6,10 +6,10 @@
 # ============================================================================
 # Stage 1: Build Go binary
 # ============================================================================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine3.23 AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make gcc musl-dev
 
 # Set working directory
 WORKDIR /build
@@ -27,8 +27,8 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
 # Build the binary with version info injected
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s -X github.com/scanoss/crypto-finder/internal/version.Version=${VERSION} \
+RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
+    -ldflags="-w -s -extldflags '-static' -X github.com/scanoss/crypto-finder/internal/version.Version=${VERSION} \
     -X github.com/scanoss/crypto-finder/internal/version.GitCommit=${GIT_COMMIT} \
     -X github.com/scanoss/crypto-finder/internal/version.BuildDate=${BUILD_DATE}" \
     -o crypto-finder \
@@ -37,7 +37,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ============================================================================
 # Stage 2: Final minimal image (just the binary)
 # ============================================================================
-FROM alpine:3.18
+FROM alpine:3.23
 
 # Install minimal runtime dependencies
 # - ca-certificates: For HTTPS requests

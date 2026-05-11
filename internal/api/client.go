@@ -62,12 +62,21 @@ type Client struct {
 
 // NewClient creates a new API client.
 func NewClient(baseURL, apiKey string) *Client {
-	return &Client{
-		httpClient: &http.Client{
+	return NewClientWithHTTPClient(baseURL, apiKey, nil)
+}
+
+// NewClientWithHTTPClient creates a new API client with an optional custom HTTP client.
+func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{
 			Timeout: config.DefaultTimeout,
-		},
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		}
+	}
+
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    baseURL,
+		apiKey:     apiKey,
 	}
 }
 
@@ -139,6 +148,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	req.Header.Set(headerAPIKey, c.apiKey)
 	req.Header.Set(headerUserAgent, userAgentValue)
 
+	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

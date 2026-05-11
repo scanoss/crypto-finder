@@ -58,7 +58,7 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 
 	cfg := config.GetInstance()
 	// Initialize to load existing values from env/config file
-	if err := cfg.Initialize("", ""); err != nil {
+	if err := cfg.Initialize(config.InitOptions{}); err != nil {
 		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 

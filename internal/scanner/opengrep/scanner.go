@@ -22,16 +22,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/go-version"
-	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
@@ -80,14 +79,26 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	// Detect opengrep in PATH
 	path, err := lookPath(s.executablePath)
 	if err != nil {
-		return fmt.Errorf("opengrep not found in PATH: %w (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash)", err)
+		return failure.Wrap(
+			err,
+			failure.CodeScannerUnavailable,
+			failure.StageScan,
+			"opengrep not found in PATH (install with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 	s.executablePath = path
 
 	// Get opengrep version
 	s.version, err = s.detectVersion()
 	if err != nil {
-		return fmt.Errorf("failed to detect opengrep version: %w", err)
+		return failure.Wrap(
+			err,
+			failure.CodeScannerInitializationFailed,
+			failure.StageScan,
+			"failed to detect opengrep version",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Validate minimum version
@@ -119,7 +130,12 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 // Scan executes OpenGrep against the target with the given rule paths.
 func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
-		return nil, fmt.Errorf("no rule paths provided")
+		return nil, failure.New(
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"no rule paths provided",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// Apply timeout to context if not already set
@@ -147,7 +163,13 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Parse opengrep JSON output (uses same format as Semgrep)
 	opengrepResults, err := semgrep.ParseSemgrepCompatibleOutput(output)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse opengrep output: %w", err)
+		return nil, failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			"failed to parse opengrep output",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
@@ -196,7 +218,7 @@ func (s *Scanner) validateVersion() error {
 	}
 
 	if currentVer.LessThan(minVer) {
-		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash)", s.version, MinimumVersion)
+		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade with: curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash)", s.version, MinimumVersion)
 	}
 
 	return nil
@@ -206,7 +228,6 @@ func (s *Scanner) validateVersion() error {
 func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",            // JSON output format
-		"--no-git-ignore",   // Scan all files, don't respect .gitignore // TODO: Should be configurable?
 		"--taint-intrafile", // Enable taint analysis
 	}
 
@@ -229,17 +250,6 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the opengrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	var spinner *pterm.SpinnerPrinter
-	if scanner.ShouldUseSpinner() {
-		spinner, err = pterm.DefaultSpinner.
-			WithRemoveWhenDone(true).
-			WithWriter(os.Stderr).
-			Start("Running OpenGrep scan...")
-		if err != nil {
-			return nil, "", err
-		}
-	}
-
 	cmd := exec.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
@@ -258,22 +268,26 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
 
-	if spinner != nil {
-		if err != nil {
-			spinner.Fail(fmt.Sprintf("OpenGrep failed after %.2fs", duration.Seconds()))
-		} else {
-			spinner.Success(fmt.Sprintf("OpenGrep completed in %.2fs", duration.Seconds()))
-		}
-	}
-
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Error().
 				Dur("duration", duration).
 				Msg("opengrep execution timed out")
-			return nil, stderr, fmt.Errorf("opengrep execution timed out after %v", s.timeout)
+			return nil, stderr, failure.New(
+				failure.CodeScannerTimeout,
+				failure.StageScan,
+				fmt.Sprintf("opengrep execution timed out after %v", s.timeout),
+				failure.WithRetryable(true),
+				failure.WithDetail("scanner", ScannerName),
+			)
 		}
-		return nil, stderr, fmt.Errorf("opengrep execution canceled: %w", ctx.Err())
+		return nil, stderr, failure.Wrap(
+			ctx.Err(),
+			failure.CodeScannerCancelled,
+			failure.StageScan,
+			"opengrep execution canceled",
+			failure.WithDetail("scanner", ScannerName),
+		)
 	}
 
 	// OpenGrep exit codes (same as Semgrep):

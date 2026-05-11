@@ -18,6 +18,8 @@
 // and filtering of both local and remote rule sets.
 package rules
 
+import "github.com/scanoss/crypto-finder/internal/entities"
+
 // Manager orchestrates rule loading from multiple sources.
 // It provides a central coordination point for aggregating rules from various sources
 // (local files, remote URLs, etc.) and will handle caching and validation in the future.
@@ -57,4 +59,16 @@ func (m *Manager) Load() ([]string, error) {
 	// Use MultiSource to aggregate all sources
 	multiSource := NewMultiSource(m.sources...)
 	return multiSource.Load()
+}
+
+// Info returns the first non-empty RulesInfo across the configured sources,
+// matching MultiSource.Info semantics. Call after a successful Load() —
+// before that, returns the zero RulesInfo.
+func (m *Manager) Info() entities.RulesInfo {
+	for _, s := range m.sources {
+		if info := s.Info(); info.Source != "" {
+			return info
+		}
+	}
+	return entities.RulesInfo{}
 }

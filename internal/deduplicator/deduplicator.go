@@ -68,7 +68,8 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 	assetGroups := make(map[assetGroupKey][]entities.CryptographicAsset)
 	firstSeenKeys := make([]assetGroupKey, 0)
 
-	for _, asset := range assets {
+	for i := range assets {
+		asset := &assets[i]
 		// Generate the asset key using the entity's GetKey method
 		// This provides asset-type-specific identity based on identifying metadata fields
 		assetKey := asset.GetKey()
@@ -84,7 +85,7 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 			firstSeenKeys = append(firstSeenKeys, key)
 		}
 
-		assetGroups[key] = append(assetGroups[key], asset)
+		assetGroups[key] = append(assetGroups[key], *asset)
 	}
 
 	deduplicated := make([]entities.CryptographicAsset, 0, len(assetGroups))

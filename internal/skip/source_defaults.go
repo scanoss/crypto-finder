@@ -16,6 +16,8 @@
 
 package skip
 
+import "github.com/scanoss/crypto-finder/internal/utils"
+
 // DefaultSkippedDirs contains commonly excluded directories across projects.
 var DefaultSkippedDirs = []string{
 	"nbproject",
@@ -37,6 +39,19 @@ var DefaultSkippedDirs = []string{
 	"build",
 	"target",
 	"vendor",
+}
+
+// DefaultSkippedTestPatterns contains gitignore-style patterns for excluding test sources.
+var DefaultSkippedTestPatterns = []string{
+	"test/",
+	"tests/",
+	"src/test/",
+	"src/tests/",
+	"__tests__/",
+	"**/*Test.java",
+	"**/*Tests.java",
+	"**/*_test.go",
+	"**/test_*.py",
 }
 
 // DefaultsSource provides the built-in default skip patterns.
@@ -64,4 +79,32 @@ func (d *DefaultsSource) Load() ([]string, error) {
 // Name returns a descriptive name for this pattern source.
 func (d *DefaultsSource) Name() string {
 	return "defaults"
+}
+
+// WithDefaultTestPatterns appends the built-in test skip patterns and deduplicates the result.
+func WithDefaultTestPatterns(patterns []string) []string {
+	combined := append(append([]string{}, patterns...), DefaultSkippedTestPatterns...)
+	return utils.DeduplicateSliceOfStrings(combined)
+}
+
+// OnlyDefaultTestPatterns keeps only the built-in test skip patterns from the provided list.
+func OnlyDefaultTestPatterns(patterns []string) []string {
+	allowed := make(map[string]struct{}, len(DefaultSkippedTestPatterns))
+	for _, pattern := range DefaultSkippedTestPatterns {
+		allowed[pattern] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(patterns))
+	seen := make(map[string]struct{}, len(patterns))
+	for _, pattern := range patterns {
+		if _, ok := allowed[pattern]; !ok {
+			continue
+		}
+		if _, ok := seen[pattern]; ok {
+			continue
+		}
+		seen[pattern] = struct{}{}
+		filtered = append(filtered, pattern)
+	}
+	return filtered
 }

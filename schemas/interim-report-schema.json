@@ -8,8 +8,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.1\")",
-      "examples": ["1.1", "1.0"]
+      "description": "Version of the interim report schema (e.g., \"1.3\")",
+      "examples": ["1.3", "1.2", "1.1", "1.0"]
     },
     "tool": {
       "$ref": "#/$defs/ToolInfo"
@@ -71,22 +71,22 @@
       "type": "object",
       "description": "A single detected cryptographic element",
       "required": [
-        "match_type",
-        "line_number",
+        "start_line",
+        "end_line",
         "match",
         "status",
         "metadata"
       ],
       "properties": {
-        "match_type": {
-          "type": "string",
-          "description": "Detection method used",
-          "examples": ["semgrep", "cbom_toolkit", "keyword_search"]
-        },
-        "line_number": {
+        "start_line": {
           "type": "integer",
           "minimum": 1,
-          "description": "Line number where the asset was detected"
+          "description": "First line number where the asset was detected"
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Last line number where the asset was detected"
         },
         "match": {
           "type": "string",
@@ -114,12 +114,36 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "source": {
+          "type": "string",
+          "description": "How this finding was discovered (v1.2+)",
+          "enum": ["direct", "dependency"]
+        },
+        "dependency_info": {
+          "$ref": "#/$defs/DependencyInfo",
+          "description": "Attribution data when the finding originates from a dependency (v1.2+)"
         }
       },
       "oneOf": [
         {"required": ["rules"]},
         {"required": ["rule"]}
       ]
+    },
+    "DependencyInfo": {
+      "type": "object",
+      "description": "Attribution metadata for findings originating from dependencies",
+      "required": ["module", "version"],
+      "properties": {
+        "module": {
+          "type": "string",
+          "description": "Dependency module path (e.g., \"golang.org/x/crypto\")"
+        },
+        "version": {
+          "type": "string",
+          "description": "Dependency version (e.g., \"v0.17.0\")"
+        }
+      }
     },
     "RuleInfo": {
       "type": "object",

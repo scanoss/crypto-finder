@@ -25,7 +25,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.1"
+const InterimFormatVersion = "1.3"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -36,6 +36,13 @@ type InterimReport struct {
 
 	// Tool contains information about the scanner that generated this report
 	Tool ToolInfo `json:"tool"`
+
+	// Rules describes the ruleset that was used for this scan. Downstream
+	// systems (e.g. crypto-mining-service) stamp this on every persisted
+	// result so a re-mine can be triggered when the rules pack changes,
+	// and a finding's provenance is auditable. Empty when no rule source
+	// could supply a version (e.g. ad-hoc local files with no manifest).
+	Rules RulesInfo `json:"rules,omitempty"`
 
 	// Findings contains all detected cryptographic assets grouped by file
 	Findings []Finding `json:"findings"`
@@ -48,6 +55,31 @@ type ToolInfo struct {
 
 	// Version of the scanner tool (e.g., "1.45.0")
 	Version string `json:"version"`
+}
+
+// RulesInfo describes the ruleset that fed a scan. The Source field is
+// always set when Rules is populated; Name / Version / ChecksumSHA256 are
+// best-effort and may be empty depending on the source type.
+//
+// For remote rulesets, Version is the manifest version returned by the
+// SCANOSS API (e.g. "v1.0.0", "latest") and ChecksumSHA256 is the manifest
+// checksum, both lifted from .cache-meta.json. For local rulesets, Version
+// is empty and ChecksumSHA256 is a hash of the loaded rule file contents
+// in deterministic order.
+type RulesInfo struct {
+	// Source is "remote" or "local". Empty when no rules were loaded.
+	Source string `json:"source,omitempty"`
+
+	// Name of the ruleset (e.g. "dca"). Remote sources only.
+	Name string `json:"name,omitempty"`
+
+	// Version of the ruleset (e.g. "v1.0.0", "latest"). Remote sources only.
+	Version string `json:"version,omitempty"`
+
+	// ChecksumSHA256 is the content fingerprint of the ruleset.
+	// For remote sources: the manifest checksum reported by the API.
+	// For local sources: SHA256 of concatenated rule file contents in path-sorted order.
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
 }
 
 // Finding represents all cryptographic assets discovered in a single file.
@@ -65,10 +97,6 @@ type Finding struct {
 
 // CryptographicAsset represents a single detected cryptographic element.
 type CryptographicAsset struct {
-	// MatchType indicates the detection method used
-	// Values: "semgrep", "cbom_toolkit", "keyword_search"
-	MatchType string `json:"match_type"`
-
 	// StartLine is the first line number where the asset was detected
 	StartLine int `json:"start_line"`
 
@@ -94,6 +122,25 @@ type CryptographicAsset struct {
 	// Sources: NIST CSOR, PKCS#1, ANSI X9.62, etc.
 	// Example: "2.16.840.1.101.3.4.1.2" for AES-128-CBC
 	OID string `json:"oid,omitempty"`
+
+	// FindingID is a stable, short hash identifier for cross-referencing this finding
+	// with the callgraph export. Generated as SHA-256(file_path:start_line:rule_id)[:8].
+	FindingID string `json:"finding_id,omitempty"`
+
+	// Source indicates how this finding was discovered.
+	// Values: "direct" (found in user code), "dependency" (found in a dependency).
+	Source string `json:"source,omitempty"`
+
+	// DependencyInfo contains attribution data when the finding originates from a dependency.
+	DependencyInfo *DependencyInfo `json:"dependency_info,omitempty"`
+}
+
+// DependencyInfo contains attribution metadata for findings originating from dependencies.
+type DependencyInfo struct {
+	// Module is the dependency module path (e.g., "golang.org/x/crypto").
+	Module string `json:"module"`
+	// Version is the dependency version (e.g., "v0.17.0").
+	Version string `json:"version"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

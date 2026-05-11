@@ -4,7 +4,15 @@ Crypto Finder provides official Docker images for containerized scanning workflo
 
 ## Available Images
 
-### Full Image (Recommended)
+Crypto Finder provides a three-tier image strategy so you can choose the right trade-off between image size and functionality:
+
+| Image | Tag | Size | Use Case |
+|-------|-----|------|----------|
+| **Standard** | `latest` | ~800MB | Default: binary + OpenGrep + Semgrep |
+| **Slim** | `latest-slim` | ~15MB | Binary only, bring your own scanner |
+| **Deps** | `latest-deps` | ~3-4GB | All language toolchains for dependency scanning |
+
+### Standard Image (Recommended)
 
 Includes both OpenGrep and Semgrep scanners for maximum flexibility.
 
@@ -14,7 +22,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest
 
 **Features:**
 - OpenGrep 1.12.1+ included
-- Semgrep 1.119.0+ included
+- Semgrep 1.145.0+ included
 - All scanning capabilities available
 
 ### Slim Image
@@ -30,6 +38,22 @@ docker pull ghcr.io/scanoss/crypto-finder:latest-slim
 - Requires external OpenGrep or Semgrep
 - Smaller image size
 - Ideal for custom scanner versions
+
+### Deps Image (Dependency Scanning)
+
+Full image with all language toolchains for scanning third-party dependencies with `--scan-dependencies`.
+
+```bash
+docker pull ghcr.io/scanoss/crypto-finder:latest-deps
+```
+
+**Features:**
+- Everything in the standard image, plus:
+- **Go** toolchain for `go list` / `go mod graph` dependency resolution
+- **Java** (JDK 8, 11, 17, and 21 + Maven + Gradle) for JDK-aware Java dependency resolution and deterministic platform signature indexing
+- **Rust** (Cargo) for `cargo metadata` dependency resolution
+- **Python** (isolated virtualenv) for pip dependency resolution
+- Detects cryptographic usage in third-party dependencies with call chain tracing
 
 ## Basic Usage
 
@@ -164,6 +188,75 @@ jobs:
         with:
           name: crypto-cbom
           path: cbom.json
+```
+
+## Dependency Scanning
+
+The `latest-deps` image includes all language toolchains needed for dependency scanning. Use it with the `--scan-dependencies` flag.
+
+### Go Projects
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace/code:ro \
+  ghcr.io/scanoss/crypto-finder:latest-deps \
+  scan --scan-dependencies /workspace/code
+```
+
+### Java (Maven or Gradle) Projects
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace/code:ro \
+  ghcr.io/scanoss/crypto-finder:latest-deps \
+  scan --scan-dependencies /workspace/code
+```
+
+### Rust Projects
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace/code:ro \
+  ghcr.io/scanoss/crypto-finder:latest-deps \
+  scan --scan-dependencies /workspace/code
+```
+
+### Python Projects
+
+Python projects require installing dependencies before scanning, since pip needs them to be resolved:
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace/code:ro \
+  --entrypoint sh \
+  ghcr.io/scanoss/crypto-finder:latest-deps -c \
+  "pip install -r /workspace/code/requirements.txt 2>/dev/null; \
+   crypto-finder scan --scan-dependencies /workspace/code"
+```
+
+> **Note:** The deps image uses an isolated virtualenv for project dependencies, separate from the scanner tooling (semgrep), so `pip install` only affects the target project's environment.
+
+### CI/CD with Dependency Scanning (GitHub Actions)
+
+```yaml
+name: Crypto Scan with Dependencies
+
+on: [push, pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Crypto Finder with dependency scanning
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -e SCANOSS_API_KEY=${{ secrets.SCANOSS_API_KEY }} \
+            ghcr.io/scanoss/crypto-finder:latest-deps \
+            scan --scan-dependencies --output /workspace/results.json /workspace
 ```
 
 ## Advanced Docker Usage

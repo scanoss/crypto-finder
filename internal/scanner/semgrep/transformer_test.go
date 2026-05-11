@@ -745,10 +745,6 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 
 	asset := transformToCryptographicAsset(result, nil, "")
 
-	if asset.MatchType != "semgrep" {
-		t.Errorf("Expected match type 'semgrep', got '%s'", asset.MatchType)
-	}
-
 	if asset.StartLine != 20 {
 		t.Errorf("Expected start line 20, got %d", asset.StartLine)
 	}

@@ -20,13 +20,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog/log"
 )
+
+var humanErrorOutputEnabled atomic.Bool
+
+func init() {
+	humanErrorOutputEnabled.Store(true)
+}
+
+// SetHumanErrorOutputEnabled controls whether Semgrep-compatible scanner errors
+// are rendered for humans on stderr.
+func SetHumanErrorOutputEnabled(enabled bool) {
+	humanErrorOutputEnabled.Store(enabled)
+}
 
 // ParseSemgrepCompatibleOutput parses Semgrep's JSON output into the SemgrepOutput schema.
 // This function can be reused by other compatible scanners (e.g., OpenGrep).
@@ -107,7 +122,7 @@ func LogSemgrepCompatibleErrors(errors []entities.SemgrepError) bool {
 	}
 
 	// Display errors
-	if len(errorItems) > 0 {
+	if len(errorItems) > 0 && humanErrorOutputEnabled.Load() {
 		pterm.Error.Println("Scanner Errors")
 		err := pterm.DefaultBulletList.WithItems(errorItems).WithWriter(os.Stderr).Render()
 		if err != nil {
@@ -124,16 +139,64 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 	parsedOutput, err := ParseSemgrepCompatibleOutput(stdout)
 	if err != nil {
 		log.Error().Err(err).Msgf("failed to parse %s output", scannerName)
-		return err
+		return failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			fmt.Sprintf("failed to parse %s output", scannerName),
+			failure.WithDetail("scanner", scannerName),
+		)
+	}
+
+	// "No config given" is what semgrep/opengrep emits when none of the
+	// supplied rules target any language present in the scanned files —
+	// e.g., a Java ruleset run against a Kotlin-only artifact. Treat this
+	// as a cleanly empty result (zero findings) instead of a hard failure
+	// so the caller doesn't fail an entire mining job over a language gap.
+	if isNoApplicableRulesOnly(parsedOutput.Errors) {
+		log.Warn().
+			Int("exit_code", exitCode).
+			Dur("duration", duration).
+			Str("scanner", scannerName).
+			Msg("scanner found no rules applicable to detected languages; emitting empty result")
+		return nil
 	}
 
 	if LogSemgrepCompatibleErrors(parsedOutput.Errors) {
-		return fmt.Errorf("%s execution failed with exit code %d", scannerName, exitCode)
+		return failure.New(
+			failure.CodeScannerExecutionFailed,
+			failure.StageScan,
+			fmt.Sprintf("%s execution failed with exit code %d", scannerName, exitCode),
+			failure.WithDetail("scanner", scannerName),
+			failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+		)
 	}
 
 	log.Error().
 		Int("exit_code", exitCode).
 		Dur("duration", duration).
 		Msgf("%s failed with no error details", scannerName)
-	return fmt.Errorf("%s execution failed with exit code %d", scannerName, exitCode)
+	return failure.New(
+		failure.CodeScannerExecutionFailed,
+		failure.StageScan,
+		fmt.Sprintf("%s execution failed with exit code %d", scannerName, exitCode),
+		failure.WithDetail("scanner", scannerName),
+		failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+	)
+}
+
+// isNoApplicableRulesOnly reports whether every error in errs is a "No config
+// given" error. Semgrep/opengrep emits this when the supplied rules don't
+// target any language present in the scanned files; it's not a real failure,
+// just a signal that scanning produces zero findings here.
+func isNoApplicableRulesOnly(errs []entities.SemgrepError) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		if !strings.Contains(strings.ToLower(e.Message), "no config given") {
+			return false
+		}
+	}
+	return true
 }

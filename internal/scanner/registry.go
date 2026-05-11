@@ -14,6 +14,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+//revive:disable:var-naming // scanner is a domain package name and intentionally matches CLI/config terminology.
 package scanner
 
 import (
@@ -74,18 +75,6 @@ func (r *Registry) Get(name string) (Scanner, error) {
 	return scanner, nil
 }
 
-// Available returns a sorted list of all registered scanner names.
-//
-// Example:
-//
-//	available := registry.Available()
-//	// ["semgrep", "opengrep", "cbom-toolkit"]
-func (r *Registry) Available() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.available()
-}
-
 // available is an internal helper that returns available scanner names.
 // Caller must hold read lock.
 func (r *Registry) available() []string {
@@ -95,12 +84,4 @@ func (r *Registry) available() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// Has checks if a scanner with the given name is registered.
-func (r *Registry) Has(name string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	_, exists := r.scanners[name]
-	return exists
 }

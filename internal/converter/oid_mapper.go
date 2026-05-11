@@ -369,27 +369,3 @@ func constructAlgorithmName(family, paramSet, mode string) string {
 
 	return strings.Join(parts, "-")
 }
-
-// IsKnownAlgorithm checks if an algorithm name is in the mapping.
-func (m *OIDMapper) IsKnownAlgorithm(name string) bool {
-	normalized := normalizeAlgorithmName(name)
-	_, found := m.nameToOID[normalized]
-	return found
-}
-
-// IsKnownFamily checks if an algorithm family is in the mapping.
-func (m *OIDMapper) IsKnownFamily(family string) bool {
-	normalized := normalizeAlgorithmName(family)
-	_, found := m.familyToOID[normalized]
-	return found
-}
-
-// GetNameOIDCount returns the number of specific name mappings.
-func (m *OIDMapper) GetNameOIDCount() int {
-	return len(m.nameToOID)
-}
-
-// GetFamilyOIDCount returns the number of family mappings.
-func (m *OIDMapper) GetFamilyOIDCount() int {
-	return len(m.familyToOID)
-}

@@ -19,6 +19,8 @@ package rules
 import (
 	"errors"
 	"testing"
+
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 func TestNewManager(t *testing.T) {
@@ -121,6 +123,7 @@ func TestManager_Load_ErrorPropagation(t *testing.T) {
 type mockRuleSource struct {
 	loadFunc func() ([]string, error)
 	nameFunc func() string
+	infoFunc func() entities.RulesInfo
 }
 
 func (m *mockRuleSource) Load() ([]string, error) {
@@ -135,4 +138,11 @@ func (m *mockRuleSource) Name() string {
 		return m.nameFunc()
 	}
 	return "mock-source"
+}
+
+func (m *mockRuleSource) Info() entities.RulesInfo {
+	if m.infoFunc != nil {
+		return m.infoFunc()
+	}
+	return entities.RulesInfo{}
 }

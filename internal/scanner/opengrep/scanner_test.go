@@ -69,7 +69,6 @@ func TestBuildCommand(t *testing.T) {
 	// Verify required arguments
 	expectedArgs := map[string]bool{
 		"--json":             false,
-		"--no-git-ignore":    false,
 		"--taint-intrafile":  false,
 		"--config":           false,
 		"/rules/crypto.yaml": false,
