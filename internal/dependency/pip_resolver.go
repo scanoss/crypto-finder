@@ -197,7 +197,8 @@ func existsPath(path string) bool {
 	if path == "" {
 		return false
 	}
-	info, err := os.Stat(filepath.Clean(path)) // #nosec G304 -- path is cleaned before existence check
+	//nolint:gosec // G304,G703: path comes from local virtualenv discovery and is only stat'ed after cleaning.
+	info, err := os.Stat(filepath.Clean(path))
 	return err == nil && !info.IsDir()
 }
 

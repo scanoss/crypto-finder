@@ -179,7 +179,17 @@ func (m *Manager) acquireLock(rulesetPath string) (*os.File, error) {
 	}
 
 	// Acquire exclusive lock (blocking)
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	lockFD, err := fileDescriptor(lockFile)
+	if err != nil {
+		if closeErr := lockFile.Close(); closeErr != nil {
+			log.Warn().
+				Err(closeErr).
+				Str("path", lockPath).
+				Msg("Failed to close lock file after descriptor error")
+		}
+		return nil, err
+	}
+	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
 		if closeErr := lockFile.Close(); closeErr != nil {
 			log.Warn().
 				Err(closeErr).
@@ -198,7 +208,13 @@ func (m *Manager) releaseLock(lockFile *os.File) {
 		return
 	}
 	// Unlock before closing (best practice, though close also releases)
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+	lockFD, err := fileDescriptor(lockFile)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("path", lockFile.Name()).
+			Msg("Failed to resolve cache lock file descriptor")
+	} else if err := syscall.Flock(lockFD, syscall.LOCK_UN); err != nil {
 		log.Warn().
 			Err(err).
 			Str("path", lockFile.Name()).
@@ -561,6 +577,20 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 // newBytesReader creates an io.Reader from a byte slice.
 func newBytesReader(data []byte) io.Reader {
 	return &bytesReader{data: data, pos: 0}
+}
+
+func fileDescriptor(file *os.File) (int, error) {
+	if file == nil {
+		return 0, fmt.Errorf("resolve file descriptor: nil file")
+	}
+
+	fd := file.Fd()
+	maxInt := uintptr(^uint(0) >> 1)
+	if fd > maxInt {
+		return 0, fmt.Errorf("resolve file descriptor: %d exceeds int range", fd)
+	}
+
+	return int(fd), nil
 }
 
 type bytesReader struct {
