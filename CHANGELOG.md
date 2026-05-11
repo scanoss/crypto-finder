@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-11
+### Added
+- Postgres backend for the findings cache, selectable via `SCANOSS_FINDINGS_CACHE_BACKEND=postgres`, with `SCANOSS_FINDINGS_CACHE_DSN` and `SCANOSS_FINDINGS_CACHE_TABLE` (see `docs/CONFIGURATION.md`)
+- Gradle support for Java dependency scanning, including structured error output
+- Ruleset manifest stamping (version + checksum) on every scan, exposed in the `rules` field of the interim report for downstream auditing
+- Multi-ecosystem repository handling (e.g., Java + Python sources scanned together)
+- `name` field on CycloneDX evidence output entries (#26, #27)
+- Java callgraph improvements:
+  - Extensible multi-library knowledge base infrastructure (`internal/callgraph/contracts/`)
+  - Built-in JCA/JCE inferred-types knowledge base
+  - In-method field and variable assignment tracing for inferred return propagation
+  - Generic type resolution
+  - Initial reflection and interface dispatch support
+  - Entrypoint index in callgraph export
+  - `canonical_signature`, `return_type`, `parameter_types`, `visibility`, and `owner_visibility` fields on call nodes
+
+### Changed
+- Reshaped call chain schema for cross-library compatibility
+- Refactored Maven source fallback worker into composable helpers
+- Pinned `golangci-lint` via Makefile (`make lint-install` / `make lint`) in CI, replacing `golangci-lint-action`
+- Cache file-lock acquisition and release now log file-descriptor and unlock failures explicitly
+
+### Fixed
+- `Dockerfile.deps` environment paths
+- Gradle dependency resolution: pass `--no-parallel` to avoid intermittent build failures
+- Java mining stability: resolver edge cases and missing-source fallback
+
 ## [0.3.0] - 2026-02-23
 ### Added
 - Dependency scanning: detect cryptographic usage in third-party dependencies with call chain tracing
@@ -113,5 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.1]: https://github.com/scanoss/crypto-finder/compare/v0.2.0...v0.2.1
 [0.2.2]: https://github.com/scanoss/crypto-finder/compare/v0.2.1...v0.2.2
 [0.2.3]: https://github.com/scanoss/crypto-finder/compare/v0.2.2...v0.2.3
-[0.3.0]: https://github.com/scanoss/crypto-finder/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/scanoss/crypto-finder/compare/v0.2.3...v0.2.4
+[0.3.0]: https://github.com/scanoss/crypto-finder/compare/v0.2.4...v0.3.0
+[0.4.0]: https://github.com/scanoss/crypto-finder/compare/v0.3.0...v0.4.0
