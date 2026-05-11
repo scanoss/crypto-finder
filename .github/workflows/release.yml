@@ -47,7 +47,7 @@ jobs:
             -e MACOS_NOTARY_KEY_ID \
             -e MACOS_NOTARY_KEY \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.docker:/tmp/.docker:ro" \
+            -v "$HOME/.docker:/tmp/.docker" \
             -v "$PWD:/work" \
             -w /work \
             --entrypoint goreleaser \
