@@ -732,10 +732,10 @@ func hasFindings(report *entities.InterimReport) bool {
 }
 
 // detachDeadlineKeepCancel returns a context whose deadline is independent of
-// the parent's, but which is still cancelled when the parent is *explicitly*
-// cancelled (parent.Err() == context.Canceled). When the parent is cancelled
+// the parent's, but which is still canceled when the parent is *explicitly*
+// canceled (parent.Err() == context.Canceled). When the parent is canceled
 // because its own deadline expired (parent.Err() == context.DeadlineExceeded),
-// the returned context is *not* cancelled.
+// the returned context is *not* canceled.
 //
 // This lets long-running children (per-dep opengrep scans) ignore an exhausted
 // global scan budget while still honoring an interactive abort. Each child is

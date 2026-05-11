@@ -38,7 +38,7 @@ type RuleSource interface {
 
 	// Info returns a snapshot of which ruleset this source loaded, used for
 	// stamping on the InterimReport so consumers can correlate findings to a
-	// specific rules version. Must be called after Load(); behaviour before
+	// specific rules version. Must be called after Load(); behavior before
 	// Load() is implementation-defined (typically returns the zero value).
 	// The zero value (Source == "") is acceptable when no version is knowable.
 	Info() entities.RulesInfo

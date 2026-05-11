@@ -2,12 +2,7 @@
   "settings": {
     "skip": {
       "patterns": {
-        "scanning": [
-          "target/",
-          "testdata/",
-          "*_test.go",
-          "node_modules/"
-        ]
+        "scanning": ["target/", "testdata/", "*_test.go", "node_modules/"]
       },
       "sizes": {}
     }
@@ -19,6 +14,9 @@
       }
     ],
     "remove": [
+      {
+        "purl": "pkg:github/symbioticfi/relay"
+      },
       {
         "purl": "pkg:github/zaparooproject/zaparoo-core"
       },

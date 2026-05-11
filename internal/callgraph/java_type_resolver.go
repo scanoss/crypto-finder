@@ -1701,9 +1701,7 @@ func skipMethodTypeParameters(signature string, pos int) int {
 // signatures up to the closing ')'. Returns the parsed parameters and the
 // position after the ')'.
 func parseMethodSignatureParams(signature string, pos int) ([]TypeRef, int, error) {
-	// Lazily allocate so a parameterless signature returns nil, matching the
-	// cloneTypeRefs convention (nil for empty TypeRef slices).
-	var params []TypeRef
+	params := make([]TypeRef, 0, estimateMethodSignatureParamCount(signature, pos))
 	for pos < len(signature) && signature[pos] != ')' {
 		ref, newPos, err := parseSignatureType(signature, pos)
 		if err != nil {
@@ -1718,7 +1716,24 @@ func parseMethodSignatureParams(signature string, pos int) ([]TypeRef, int, erro
 	if pos >= len(signature) {
 		return nil, pos, fmt.Errorf("missing ')' in method signature %q", signature)
 	}
+	if len(params) == 0 {
+		return nil, pos + 1, nil
+	}
 	return params, pos + 1, nil
+}
+
+func estimateMethodSignatureParamCount(signature string, pos int) int {
+	count := 0
+	for pos < len(signature) && signature[pos] != ')' {
+		_, newPos, err := parseSignatureType(signature, pos)
+		if err != nil || newPos <= pos {
+			count++
+			break
+		}
+		count++
+		pos = newPos
+	}
+	return count
 }
 
 // parseSignatureType parses one JavaTypeSignature (BaseType, ClassTypeSignature,

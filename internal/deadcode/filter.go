@@ -136,7 +136,7 @@ func filterFinding(finding entities.Finding, targetDir string) *entities.Finding
 		return &finding
 	}
 
-	var liveAssets []entities.CryptographicAsset
+	liveAssets := make([]entities.CryptographicAsset, 0, len(finding.CryptographicAssets))
 	for i := range finding.CryptographicAssets {
 		asset := &finding.CryptographicAssets[i]
 		if IsInsideDeadRegion(regions, asset.StartLine, asset.EndLine) {

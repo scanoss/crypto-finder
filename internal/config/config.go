@@ -159,7 +159,6 @@ func (c *Config) SetAPIURL(url string) error {
 // adding new flag-driven configuration does not change the function signature
 // at every call site.
 type InitOptions struct {
-	//nolint:gosec // G117: APIKey is the user's runtime override, not a hardcoded credential
 	APIKey               string
 	APIURL               string
 	FindingsCacheBackend string

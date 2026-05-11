@@ -614,7 +614,7 @@ func TestDetachDeadlineKeepCancel(t *testing.T) {
 
 		select {
 		case <-child.Done():
-			t.Fatalf("child was cancelled despite parent only expiring (this is the bug we are fixing)")
+			t.Fatalf("child was canceled despite parent only expiring (this is the bug we are fixing)")
 		default:
 			// expected: child still alive
 		}
@@ -639,7 +639,7 @@ func TestDetachDeadlineKeepCancel(t *testing.T) {
 				t.Fatalf("child err = %v, want Canceled", child.Err())
 			}
 		case <-time.After(time.Second):
-			t.Fatalf("child was not cancelled after parent was explicitly cancelled")
+			t.Fatalf("child was not canceled after parent was explicitly canceled")
 		}
 	})
 
@@ -653,7 +653,7 @@ func TestDetachDeadlineKeepCancel(t *testing.T) {
 		case <-child.Done():
 			// expected
 		case <-time.After(time.Second):
-			t.Fatalf("child was not cancelled by its own cancel func")
+			t.Fatalf("child was not canceled by its own cancel func")
 		}
 	})
 }

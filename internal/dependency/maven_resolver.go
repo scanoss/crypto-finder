@@ -545,68 +545,97 @@ func (r *MavenResolver) downloadSources(ctx context.Context, targetDir string, d
 		Int("workers", workers).
 		Msg("Starting isolated Maven source fallback")
 
+	summary.downloadedInFallback = r.runIsolatedSourceFallback(ctx, missing, m2Repo, workers)
+	summary.missingAfterFallback = len(r.missingSourceDependencies(deps, m2Repo, cache))
+	r.logSourceFallbackOutcome(summary)
+
+	return summary
+}
+
+func (r *MavenResolver) runIsolatedSourceFallback(ctx context.Context, missing []Dependency, m2Repo string, workers int) int {
 	var (
 		downloaded int64 // atomic
 		attempted  int64 // atomic
 	)
+
 	depCh := make(chan Dependency, workers)
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for dep := range depCh {
-				ok, fetchErr := r.fetchDependencySource(ctx, dep, m2Repo)
-				if fetchErr != nil {
-					log.Debug().
-						Err(fetchErr).
-						Str("module", dep.Module).
-						Str("version", dep.Version).
-						Msg("Isolated Maven source fetch failed for dependency")
-				}
-				if ok {
-					atomic.AddInt64(&downloaded, 1)
-				}
-				done := atomic.AddInt64(&attempted, 1)
-				if done%sourceFallbackProgressInterval == 0 || done == int64(len(missing)) {
-					gotten := atomic.LoadInt64(&downloaded)
-					log.Info().
-						Int64("attempted", done).
-						Int64("downloaded", gotten).
-						Int64("stillMissing", done-gotten).
-						Msg("Isolated Maven source fallback progress")
-				}
-			}
-		}()
+		go r.runSourceFallbackWorker(ctx, depCh, m2Repo, len(missing), &downloaded, &attempted, &wg)
 	}
 
+	r.enqueueMissingSourceDependencies(ctx, depCh, missing)
+	close(depCh)
+	wg.Wait()
+
+	return int(atomic.LoadInt64(&downloaded))
+}
+
+func (r *MavenResolver) runSourceFallbackWorker(
+	ctx context.Context,
+	depCh <-chan Dependency,
+	m2Repo string,
+	total int,
+	downloaded, attempted *int64,
+	wg *sync.WaitGroup,
+) {
+	defer wg.Done()
+
+	for dep := range depCh {
+		ok, fetchErr := r.fetchDependencySource(ctx, dep, m2Repo)
+		if fetchErr != nil {
+			log.Debug().
+				Err(fetchErr).
+				Str("module", dep.Module).
+				Str("version", dep.Version).
+				Msg("Isolated Maven source fetch failed for dependency")
+		}
+		if ok {
+			atomic.AddInt64(downloaded, 1)
+		}
+
+		done := atomic.AddInt64(attempted, 1)
+		r.logSourceFallbackProgress(done, total, atomic.LoadInt64(downloaded))
+	}
+}
+
+func (r *MavenResolver) enqueueMissingSourceDependencies(ctx context.Context, depCh chan<- Dependency, missing []Dependency) {
 	for _, dep := range missing {
 		select {
 		case <-ctx.Done():
 			// Stop scheduling new fetches if the parent context is done.
 			// Already-running ones will see the cancellation themselves.
-			break
+			return
 		case depCh <- dep:
 		}
 	}
-	close(depCh)
-	wg.Wait()
+}
 
-	summary.downloadedInFallback = int(atomic.LoadInt64(&downloaded))
+func (r *MavenResolver) logSourceFallbackProgress(done int64, total int, downloaded int64) {
+	if done%sourceFallbackProgressInterval != 0 && done != int64(total) {
+		return
+	}
 
-	summary.missingAfterFallback = len(r.missingSourceDependencies(deps, m2Repo, cache))
+	log.Info().
+		Int64("attempted", done).
+		Int64("downloaded", downloaded).
+		Int64("stillMissing", done-downloaded).
+		Msg("Isolated Maven source fallback progress")
+}
+
+func (r *MavenResolver) logSourceFallbackOutcome(summary mavenSourceSummary) {
 	if summary.missingAfterFallback > 0 {
 		log.Warn().
 			Int("downloadedInFallback", summary.downloadedInFallback).
 			Int("missingAfterFallback", summary.missingAfterFallback).
 			Msg("Some Maven dependency sources remain unavailable after isolated fallback")
-	} else {
-		log.Info().
-			Int("downloadedInFallback", summary.downloadedInFallback).
-			Msg("Isolated Maven source fallback completed successfully")
+		return
 	}
 
-	return summary
+	log.Info().
+		Int("downloadedInFallback", summary.downloadedInFallback).
+		Msg("Isolated Maven source fallback completed successfully")
 }
 
 // findM2Repository returns the path to the local Maven repository.
@@ -752,50 +781,6 @@ func (r *MavenResolver) resolveSourceDir(dep Dependency, m2Repo string, cache *S
 	}
 
 	return dir
-}
-
-// dependencyTree runs `mvn dependency:tree` and parses the text output into an adjacency list.
-func (r *MavenResolver) dependencyTree(ctx context.Context, targetDir string) (map[string][]Ref, error) {
-	tmpFile, err := os.CreateTemp("", "mvn-tree-*.txt")
-	if err != nil {
-		return nil, fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Debug().Err(removeErr).Str("path", tmpPath).Msg("Failed to remove temporary file")
-		}
-	}()
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("close temp file: %w", err)
-	}
-
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn", "dependency:tree",
-		"-DoutputFile="+tmpPath,
-		"-DoutputType=text",
-		"-DappendOutput=true",
-		"--fail-never",
-	)
-	cmd.Dir = targetDir
-	if err := r.configureMavenCommand(cmd); err != nil {
-		return nil, err
-	}
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("mvn dependency:tree: %w\nstderr: %s", err, stderr.String())
-	}
-
-	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
-	data, err := os.ReadFile(tmpPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading dependency tree output: %w", err)
-	}
-
-	return r.parseTreeOutput(string(data)), nil
 }
 
 // parseTreeOutput parses the text output of `mvn dependency:tree`.

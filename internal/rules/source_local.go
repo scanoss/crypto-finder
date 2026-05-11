@@ -237,8 +237,14 @@ func (l *LocalRuleSource) Info() entities.RulesInfo {
 		}
 		// Length-prefix each file so two files concatenated can't collide
 		// with a single file containing their concatenation.
-		_, _ = fmt.Fprintf(h, "%d:", len(data))
-		_, _ = h.Write(data)
+		if _, err := fmt.Fprintf(h, "%d:", len(data)); err != nil {
+			log.Warn().Err(err).Str("rule_path", p).Msg("RulesInfo: failed to hash rule file size prefix")
+			return entities.RulesInfo{Source: "local"}
+		}
+		if _, err := h.Write(data); err != nil {
+			log.Warn().Err(err).Str("rule_path", p).Msg("RulesInfo: failed to hash rule file contents")
+			return entities.RulesInfo{Source: "local"}
+		}
 	}
 	return entities.RulesInfo{
 		Source:         "local",
