@@ -264,8 +264,12 @@ func TestMerge_CallgraphStampsDepInfo(t *testing.T) {
 
 	// Entry-point rows: same rule.
 	var targetEP, depEP map[string]any
-	_ = json.Unmarshal(out.EntryPointIndex[0], &targetEP)
-	_ = json.Unmarshal(out.EntryPointIndex[1], &depEP)
+	if err := json.Unmarshal(out.EntryPointIndex[0], &targetEP); err != nil {
+		t.Fatalf("unmarshal target entry point: %v", err)
+	}
+	if err := json.Unmarshal(out.EntryPointIndex[1], &depEP); err != nil {
+		t.Fatalf("unmarshal dep entry point: %v", err)
+	}
 	if _, ok := targetEP["dependency_info"]; ok {
 		t.Errorf("target entry_point should not have dependency_info")
 	}
@@ -287,10 +291,10 @@ func TestMerge_CallgraphStampsDepInfo(t *testing.T) {
 //
 // The three input chains exercise:
 //
-//   1. External-prefix chain — long L1 standalone shape; gets truncated
-//      to the 2 user-pkg frames before the target.
-//   2. Identical to (1) after prune — deduplicated.
-//   3. Chain that never enters the root module — dropped.
+//  1. External-prefix chain — long L1 standalone shape; gets truncated
+//     to the 2 user-pkg frames before the target.
+//  2. Identical to (1) after prune — deduplicated.
+//  3. Chain that never enters the root module — dropped.
 func TestMergeWithPolicy_PruneToRootModule(t *testing.T) {
 	target := []byte(`{
 		"version": "1.3",
@@ -394,7 +398,9 @@ func TestMergeWithPolicy_MaxChainsPerFinding(t *testing.T) {
 			CallChains [][]map[string]any `json:"call_chains"`
 		} `json:"finding_graphs"`
 	}
-	_ = json.Unmarshal(res.Callgraph, &out)
+	if err := json.Unmarshal(res.Callgraph, &out); err != nil {
+		t.Fatalf("unmarshal callgraph: %v", err)
+	}
 	if got := len(out.FindingGraphs[0].CallChains); got != 3 {
 		t.Errorf("capped chains=%d, want 3", got)
 	}
@@ -448,7 +454,9 @@ func TestMergeWithPolicy_RebuildEntryPointIndex(t *testing.T) {
 			} `json:"reachable_findings"`
 		} `json:"entry_point_index"`
 	}
-	_ = json.Unmarshal(res.Callgraph, &out)
+	if err := json.Unmarshal(res.Callgraph, &out); err != nil {
+		t.Fatalf("unmarshal callgraph: %v", err)
+	}
 	if len(out.EntryPointIndex) != 2 {
 		t.Fatalf("entry_point_index=%d, want 2 (external frame pruned), got %+v", len(out.EntryPointIndex), out.EntryPointIndex)
 	}

@@ -38,16 +38,16 @@
 // `crypto-finder scan --scan-dependencies` output on real Maven
 // artifacts):
 //
-//   1. Schema 5.x callgraph exports contain no top-level functions[] /
-//      edges[]. The graph is materialized as finding_graphs (one per
-//      cryptographic asset) with self-contained call_chains. Zero chains
-//      span multiple components — every chain lives entirely in one
-//      module, tagged by dependency_info on every frame.
+//  1. Schema 5.x callgraph exports contain no top-level functions[] /
+//     edges[]. The graph is materialized as finding_graphs (one per
+//     cryptographic asset) with self-contained call_chains. Zero chains
+//     span multiple components — every chain lives entirely in one
+//     module, tagged by dependency_info on every frame.
 //
-//   2. findings.json is a flat union: target findings (source=direct)
-//      interleaved with dep findings (source=dependency + dependency_info).
-//      finding_id is sha256(path:start_line:first_rule_id)[:8], with path
-//      prefixed by "module@version/" when the asset belongs to a dep.
+//  2. findings.json is a flat union: target findings (source=direct)
+//     interleaved with dep findings (source=dependency + dependency_info).
+//     finding_id is sha256(path:start_line:first_rule_id)[:8], with path
+//     prefixed by "module@version/" when the asset belongs to a dep.
 //
 // Both properties make Merge a structural concat + decorate pass — no
 // type resolution, no edge synthesis, no scanner invocation.
@@ -205,9 +205,9 @@ type findingsEnvelope struct {
 // passes through unchanged as RawMessage to keep us forward-compatible
 // with schema additions.
 type findingEntry struct {
-	FilePath            string          `json:"file_path"`
-	Language            string          `json:"language,omitempty"`
-	CryptographicAssets []assetEntry    `json:"cryptographic_assets"`
+	FilePath            string       `json:"file_path"`
+	Language            string       `json:"language,omitempty"`
+	CryptographicAssets []assetEntry `json:"cryptographic_assets"`
 }
 
 type assetEntry struct {
@@ -329,26 +329,8 @@ func generateFindingID(filePath string, startLine int, rules []ruleRef, depModul
 func mergeCallgraph(targetRaw []byte, deps []Dep, policy Policy) ([]byte, Summary, error) {
 	var summary Summary
 
-	// Detect "no callgraphs anywhere" early so we return nil bytes (caller
-	// can store SQL NULL) rather than an empty envelope.
-	hasAnyCG := len(targetRaw) > 0
-	if !hasAnyCG {
-		for _, d := range deps {
-			if len(d.Callgraph) > 0 {
-				hasAnyCG = true
-				break
-			}
-		}
-	}
-	if !hasAnyCG {
+	if !hasAnyCallgraph(targetRaw, deps) {
 		return nil, summary, nil
-	}
-
-	type cgEnvelope struct {
-		SchemaVersion   string            `json:"schema_version"`
-		ScanMetadata    json.RawMessage   `json:"scan_metadata,omitempty"`
-		FindingGraphs   []json.RawMessage `json:"finding_graphs"`
-		EntryPointIndex []json.RawMessage `json:"entry_point_index"`
 	}
 
 	out := cgEnvelope{
@@ -357,42 +339,22 @@ func mergeCallgraph(targetRaw []byte, deps []Dep, policy Policy) ([]byte, Summar
 	}
 
 	if len(targetRaw) > 0 {
-		stamped, err := processFragment(targetRaw, "", "", policy)
-		if err != nil {
-			return nil, summary, fmt.Errorf("unmarshal target callgraph: %w", err)
+		if err := appendFragment(&out, targetRaw, "", "", policy, "target"); err != nil {
+			return nil, summary, err
 		}
-		out.SchemaVersion = stamped.schemaVersion
-		out.ScanMetadata = stamped.scanMetadata
-		out.FindingGraphs = append(out.FindingGraphs, stamped.findingGraphs...)
-		out.EntryPointIndex = append(out.EntryPointIndex, stamped.entryPointIndex...)
 	}
 
 	for _, dep := range deps {
 		if len(dep.Callgraph) == 0 {
 			continue
 		}
-		stamped, err := processFragment(dep.Callgraph, dep.Module, dep.Version, policy)
-		if err != nil {
-			return nil, summary, fmt.Errorf("stamp dep %s@%s callgraph: %w", dep.Module, dep.Version, err)
+		if err := appendFragment(&out, dep.Callgraph, dep.Module, dep.Version, policy, "dep"); err != nil {
+			return nil, summary, fmt.Errorf("%s %s@%s callgraph: %w", fragmentAction(dep.Module), dep.Module, dep.Version, err)
 		}
-		if out.SchemaVersion == "" {
-			out.SchemaVersion = stamped.schemaVersion
-		}
-		out.FindingGraphs = append(out.FindingGraphs, stamped.findingGraphs...)
-		out.EntryPointIndex = append(out.EntryPointIndex, stamped.entryPointIndex...)
 	}
 
-	// Optional: rebuild entry_point_index from the (post-prune)
-	// finding_graphs so it reflects only the frames that survived
-	// pruning. crypto-finder's exporter does this unconditionally — we
-	// gate it behind a policy flag for backward compatibility with
-	// callers that just want the raw union.
-	if policy.RebuildEntryPointIndex {
-		rebuilt, err := rebuildEntryPointIndex(out.FindingGraphs)
-		if err != nil {
-			return nil, summary, fmt.Errorf("rebuild entry_point_index: %w", err)
-		}
-		out.EntryPointIndex = rebuilt
+	if err := maybeRebuildEntryPointIndex(&out, policy); err != nil {
+		return nil, summary, err
 	}
 
 	summary.SchemaVersion = out.SchemaVersion
@@ -407,6 +369,13 @@ func mergeCallgraph(targetRaw []byte, deps []Dep, policy Policy) ([]byte, Summar
 	return raw, summary, nil
 }
 
+type cgEnvelope struct {
+	SchemaVersion   string            `json:"schema_version"`
+	ScanMetadata    json.RawMessage   `json:"scan_metadata,omitempty"`
+	FindingGraphs   []json.RawMessage `json:"finding_graphs"`
+	EntryPointIndex []json.RawMessage `json:"entry_point_index"`
+}
+
 // stampedFragment is mergeCallgraph's intermediate output for one
 // fragment (target or dep): scan_metadata + finding_graphs +
 // entry_point_index, post-stamping and post-pruning.
@@ -415,6 +384,63 @@ type stampedFragment struct {
 	scanMetadata    json.RawMessage
 	findingGraphs   []json.RawMessage
 	entryPointIndex []json.RawMessage
+}
+
+func hasAnyCallgraph(targetRaw []byte, deps []Dep) bool {
+	if len(targetRaw) > 0 {
+		return true
+	}
+	for _, dep := range deps {
+		if len(dep.Callgraph) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func appendFragment(out *cgEnvelope, raw []byte, module, version string, policy Policy, fragmentKind string) error {
+	stamped, err := processFragment(raw, module, version, policy)
+	if err != nil {
+		if fragmentKind == "target" {
+			return fmt.Errorf("unmarshal target callgraph: %w", err)
+		}
+		return err
+	}
+
+	if fragmentKind == "target" {
+		out.ScanMetadata = stamped.scanMetadata
+	}
+	if out.SchemaVersion == "" {
+		out.SchemaVersion = stamped.schemaVersion
+	}
+	out.FindingGraphs = append(out.FindingGraphs, stamped.findingGraphs...)
+	out.EntryPointIndex = append(out.EntryPointIndex, stamped.entryPointIndex...)
+	return nil
+}
+
+func fragmentAction(module string) string {
+	if module == "" {
+		return "unmarshal"
+	}
+	return "stamp"
+}
+
+func maybeRebuildEntryPointIndex(out *cgEnvelope, policy Policy) error {
+	// Optional: rebuild entry_point_index from the (post-prune)
+	// finding_graphs so it reflects only the frames that survived
+	// pruning. crypto-finder's exporter does this unconditionally — we
+	// gate it behind a policy flag for backward compatibility with
+	// callers that just want the raw union.
+	if !policy.RebuildEntryPointIndex {
+		return nil
+	}
+
+	rebuilt, err := rebuildEntryPointIndex(out.FindingGraphs)
+	if err != nil {
+		return fmt.Errorf("rebuild entry_point_index: %w", err)
+	}
+	out.EntryPointIndex = rebuilt
+	return nil
 }
 
 // processFragment is the per-fragment pipeline: unmarshal → optionally
@@ -514,7 +540,7 @@ func processFragment(raw []byte, module, version string, policy Policy) (stamped
 // the dep_info tag doesn't perturb the dedup key.
 func processCallChains(chains []any, depTag map[string]string, rootPkg string, policy Policy) []any {
 	prune := policy.PruneToRootModule && rootPkg != ""
-	cap := policy.MaxChainsPerFinding
+	maxChains := policy.MaxChainsPerFinding
 
 	seen := make(map[string]bool, len(chains))
 	out := make([]any, 0, len(chains))
@@ -546,7 +572,7 @@ func processCallChains(chains []any, depTag map[string]string, rootPkg string, p
 		}
 
 		out = append(out, chain)
-		if cap > 0 && len(out) >= cap {
+		if maxChains > 0 && len(out) >= maxChains {
 			break
 		}
 	}
@@ -589,7 +615,10 @@ func truncateChainAtModule(chain []any, rootPkg string) []any {
 		if !ok {
 			continue
 		}
-		fn, _ := frame["function_name"].(string)
+		fn, ok := frameString(frame, "function_name")
+		if !ok {
+			continue
+		}
 		if fn == rootPkg || strings.HasPrefix(fn, prefix) {
 			return chain[i:]
 		}
@@ -667,95 +696,138 @@ func extractRootModule(scanMetadata json.RawMessage) string {
 // back to function_name — same precedence crypto-finder uses
 // (ensureEntryPointData).
 func rebuildEntryPointIndex(findingGraphs []json.RawMessage) ([]json.RawMessage, error) {
-	type epEntry struct {
-		function           string
-		canonicalSignature string
-		dependencyInfo     map[string]string
-		// findings keyed by finding_id, value=shallowest depth seen
-		findings map[string]int
-	}
 	index := make(map[string]*epEntry)
 	order := make([]string, 0)
 
 	for _, fgRaw := range findingGraphs {
-		var fg struct {
-			FindingID        string          `json:"finding_id"`
-			MatchedOperation json.RawMessage `json:"matched_operation"`
-			CallChains       [][]map[string]any `json:"call_chains"`
-		}
-		if err := json.Unmarshal(fgRaw, &fg); err != nil {
+		fg, err := unmarshalFindingGraphIndex(fgRaw)
+		if err != nil {
 			return nil, err
 		}
-		for _, chain := range fg.CallChains {
-			for pos, frame := range chain {
-				fn, _ := frame["function_name"].(string)
-				if fn == "" {
-					continue
-				}
-				canonical, _ := frame["canonical_signature"].(string)
-				key := canonical
-				if key == "" {
-					key = fn
-				}
-				ep, exists := index[key]
-				if !exists {
-					ep = &epEntry{
-						function:           fn,
-						canonicalSignature: canonical,
-						findings:           make(map[string]int),
-					}
-					if di, ok := frame["dependency_info"].(map[string]any); ok {
-						ep.dependencyInfo = mapToStringStrings(di)
-					}
-					index[key] = ep
-					order = append(order, key)
-				}
-				depth := len(chain) - pos
-				if cur, ok := ep.findings[fg.FindingID]; !ok || depth < cur {
-					ep.findings[fg.FindingID] = depth
-				}
-			}
+		if err := indexFindingGraph(fg, index, &order); err != nil {
+			return nil, err
 		}
 	}
 
 	out := make([]json.RawMessage, 0, len(order))
 	for _, key := range order {
-		ep := index[key]
-		class, method := splitFunctionName(ep.function)
-		entry := map[string]any{
-			"function": ep.function,
-			"class":    class,
-			"method":   method,
-		}
-		if ep.canonicalSignature != "" {
-			entry["canonical_signature"] = ep.canonicalSignature
-		}
-		if ep.dependencyInfo != nil {
-			entry["dependency_info"] = ep.dependencyInfo
-		}
-		// reachable_findings: sorted by finding_id for stable output.
-		refs := make([]map[string]any, 0, len(ep.findings))
-		ids := make([]string, 0, len(ep.findings))
-		for id := range ep.findings {
-			ids = append(ids, id)
-		}
-		sortStrings(ids)
-		for _, id := range ids {
-			refs = append(refs, map[string]any{
-				"finding_id":        id,
-				"chain_depth":       ep.findings[id],
-				"finding_graph_ref": id,
-			})
-		}
-		entry["reachable_findings"] = refs
-
-		buf, err := json.Marshal(entry)
+		buf, err := marshalEntryPoint(index[key])
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, buf)
 	}
 	return out, nil
+}
+
+type epEntry struct {
+	function           string
+	canonicalSignature string
+	dependencyInfo     map[string]string
+	// findings keyed by finding_id, value=shallowest depth seen
+	findings map[string]int
+}
+
+type findingGraphIndex struct {
+	FindingID  string             `json:"finding_id"`
+	CallChains [][]map[string]any `json:"call_chains"`
+}
+
+func unmarshalFindingGraphIndex(raw json.RawMessage) (findingGraphIndex, error) {
+	var fg findingGraphIndex
+	if err := json.Unmarshal(raw, &fg); err != nil {
+		return findingGraphIndex{}, err
+	}
+	return fg, nil
+}
+
+func indexFindingGraph(fg findingGraphIndex, index map[string]*epEntry, order *[]string) error {
+	for _, chain := range fg.CallChains {
+		if err := indexCallChain(fg.FindingID, chain, index, order); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func indexCallChain(findingID string, chain []map[string]any, index map[string]*epEntry, order *[]string) error {
+	for pos, frame := range chain {
+		fn, ok := frameString(frame, "function_name")
+		if !ok || fn == "" {
+			continue
+		}
+
+		canonical, _ := frameString(frame, "canonical_signature")
+		key := entryPointKey(fn, canonical)
+		ep := ensureEntryPoint(index, order, key, fn, canonical, frame)
+		recordFindingDepth(ep, findingID, len(chain)-pos)
+	}
+	return nil
+}
+
+func entryPointKey(functionName, canonical string) string {
+	if canonical != "" {
+		return canonical
+	}
+	return functionName
+}
+
+func ensureEntryPoint(index map[string]*epEntry, order *[]string, key, functionName, canonical string, frame map[string]any) *epEntry {
+	if ep, exists := index[key]; exists {
+		return ep
+	}
+
+	ep := &epEntry{
+		function:           functionName,
+		canonicalSignature: canonical,
+		findings:           make(map[string]int),
+	}
+	if di, ok := frame["dependency_info"].(map[string]any); ok {
+		ep.dependencyInfo = mapToStringStrings(di)
+	}
+	index[key] = ep
+	*order = append(*order, key)
+	return ep
+}
+
+func recordFindingDepth(ep *epEntry, findingID string, depth int) {
+	if cur, ok := ep.findings[findingID]; !ok || depth < cur {
+		ep.findings[findingID] = depth
+	}
+}
+
+func marshalEntryPoint(ep *epEntry) (json.RawMessage, error) {
+	class, method := splitFunctionName(ep.function)
+	entry := map[string]any{
+		"function": ep.function,
+		"class":    class,
+		"method":   method,
+	}
+	if ep.canonicalSignature != "" {
+		entry["canonical_signature"] = ep.canonicalSignature
+	}
+	if ep.dependencyInfo != nil {
+		entry["dependency_info"] = ep.dependencyInfo
+	}
+	entry["reachable_findings"] = reachableFindings(ep.findings)
+	return json.Marshal(entry)
+}
+
+func reachableFindings(findings map[string]int) []map[string]any {
+	refs := make([]map[string]any, 0, len(findings))
+	ids := make([]string, 0, len(findings))
+	for id := range findings {
+		ids = append(ids, id)
+	}
+	sortStrings(ids)
+	for _, id := range ids {
+		refs = append(refs, map[string]any{
+			"finding_id":        id,
+			"chain_depth":       findings[id],
+			"finding_graph_ref": id,
+		})
+	}
+	return refs
 }
 
 // splitFunctionName mirrors crypto-finder/internal/scan/export.go's
@@ -782,6 +854,15 @@ func mapToStringStrings(in map[string]any) map[string]string {
 		}
 	}
 	return out
+}
+
+func frameString(frame map[string]any, field string) (string, bool) {
+	value, ok := frame[field]
+	if !ok {
+		return "", false
+	}
+	str, ok := value.(string)
+	return str, ok
 }
 
 // sortStrings is sort.Strings inlined to keep the import surface small —
