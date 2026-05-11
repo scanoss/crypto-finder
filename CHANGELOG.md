@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-11
+
 ### Changed
 - Release builds now run through `ghcr.io/goreleaser/goreleaser-cross:1.25.0` with per-target CGO toolchains so GoReleaser can build the tree-sitter-backed binaries for Linux, macOS, and Windows reliably
 
@@ -146,3 +148,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.4]: https://github.com/scanoss/crypto-finder/compare/v0.2.3...v0.2.4
 [0.3.0]: https://github.com/scanoss/crypto-finder/compare/v0.2.4...v0.3.0
 [0.4.0]: https://github.com/scanoss/crypto-finder/compare/v0.3.0...v0.4.0
+[0.4.1]: https://github.com/scanoss/crypto-finder/compare/v0.4.0...v0.4.1
