@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Release builds now run through `ghcr.io/goreleaser/goreleaser-cross:1.25.0` with per-target CGO toolchains so GoReleaser can build the tree-sitter-backed binaries for Linux, macOS, and Windows reliably
+
 ## [0.4.0] - 2026-05-11
 ### Added
 - Postgres backend for the findings cache, selectable via `SCANOSS_FINDINGS_CACHE_BACKEND=postgres`, with `SCANOSS_FINDINGS_CACHE_DSN` and `SCANOSS_FINDINGS_CACHE_TABLE` (see `docs/CONFIGURATION.md`)
