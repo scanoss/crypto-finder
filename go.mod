@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/CycloneDX/cyclonedx-go v0.9.3
 	github.com/go-enry/go-enry/v2 v2.9.2
+	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.8.0
 	github.com/jackc/pgx/v5 v5.9.2

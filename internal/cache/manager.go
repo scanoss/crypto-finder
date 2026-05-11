@@ -27,9 +27,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
 
 	api "github.com/scanoss/crypto-finder/internal/api"
@@ -163,68 +163,33 @@ func (m *Manager) getRulesetCachePath(name, version string) string {
 }
 
 // acquireLock acquires an exclusive file lock for the given ruleset path.
-// Returns the lock file which must be closed to release the lock.
+// Returns the lock which must be released via releaseLock.
 // This prevents race conditions when multiple processes try to update the same cache.
-func (m *Manager) acquireLock(rulesetPath string) (*os.File, error) {
+func (m *Manager) acquireLock(rulesetPath string) (*flock.Flock, error) {
 	lockPath := rulesetPath + lockSuffix
 
-	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
 	}
 
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open lock file: %w", err)
-	}
-
-	// Acquire exclusive lock (blocking)
-	lockFD, err := fileDescriptor(lockFile)
-	if err != nil {
-		if closeErr := lockFile.Close(); closeErr != nil {
-			log.Warn().
-				Err(closeErr).
-				Str("path", lockPath).
-				Msg("Failed to close lock file after descriptor error")
-		}
-		return nil, err
-	}
-	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
-		if closeErr := lockFile.Close(); closeErr != nil {
-			log.Warn().
-				Err(closeErr).
-				Str("path", lockPath).
-				Msg("Failed to close lock file after lock acquisition error")
-		}
+	lock := flock.New(lockPath)
+	if err := lock.Lock(); err != nil {
 		return nil, fmt.Errorf("failed to acquire lock: %w", err)
 	}
 
-	return lockFile, nil
+	return lock, nil
 }
 
-// releaseLock releases the file lock and closes the lock file.
-func (m *Manager) releaseLock(lockFile *os.File) {
-	if lockFile == nil {
+// releaseLock releases the file lock.
+func (m *Manager) releaseLock(lock *flock.Flock) {
+	if lock == nil {
 		return
 	}
-	// Unlock before closing (best practice, though close also releases)
-	lockFD, err := fileDescriptor(lockFile)
-	if err != nil {
+	if err := lock.Unlock(); err != nil {
 		log.Warn().
 			Err(err).
-			Str("path", lockFile.Name()).
-			Msg("Failed to resolve cache lock file descriptor")
-	} else if err := syscall.Flock(lockFD, syscall.LOCK_UN); err != nil {
-		log.Warn().
-			Err(err).
-			Str("path", lockFile.Name()).
+			Str("path", lock.Path()).
 			Msg("Failed to unlock cache lock file")
-	}
-	if err := lockFile.Close(); err != nil {
-		log.Warn().
-			Err(err).
-			Str("path", lockFile.Name()).
-			Msg("Failed to close cache lock file")
 	}
 }
 
@@ -577,20 +542,6 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 // newBytesReader creates an io.Reader from a byte slice.
 func newBytesReader(data []byte) io.Reader {
 	return &bytesReader{data: data, pos: 0}
-}
-
-func fileDescriptor(file *os.File) (int, error) {
-	if file == nil {
-		return 0, fmt.Errorf("resolve file descriptor: nil file")
-	}
-
-	fd := file.Fd()
-	maxInt := uintptr(^uint(0) >> 1)
-	if fd > maxInt {
-		return 0, fmt.Errorf("resolve file descriptor: %d exceeds int range", fd)
-	}
-
-	return int(fd), nil
 }
 
 type bytesReader struct {
