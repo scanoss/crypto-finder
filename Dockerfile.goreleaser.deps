@@ -53,8 +53,39 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 # ── Python: isolated virtualenv for target project deps ──
 RUN python -m venv /opt/target-venv
 
+# ── Create non-root runtime user and migrate tool homes ──
+#
+# This image is consumed by downstream runtimes that run as the `crypto`
+# user. The scanner/tool installers above run as root and place state under
+# /root, so we must migrate those homes before dropping privileges.
+#
+# OpenGrep needs an extra step: its installer creates an ABSOLUTE symlink at
+# /root/.opengrep/cli/latest. After the move that symlink dangles. We locate
+# the real binary and pin a stable /usr/local/bin/opengrep symlink instead.
+RUN groupadd --system crypto && \
+    useradd --system --gid crypto --create-home --home-dir /home/crypto --shell /usr/sbin/nologin crypto && \
+    mkdir -p /workspace /home/crypto/.config /home/crypto/.cache && \
+    if [ -d /root/.cargo ]; then mv /root/.cargo /home/crypto/.cargo; fi && \
+    if [ -d /root/.rustup ]; then mv /root/.rustup /home/crypto/.rustup; fi && \
+    if [ -d /root/.opengrep ]; then mv /root/.opengrep /home/crypto/.opengrep; fi && \
+    OPENGREP_BIN=$(find /home/crypto/.opengrep -name opengrep -type f -executable 2>/dev/null | head -n1) && \
+    if [ -z "$OPENGREP_BIN" ]; then \
+        echo "ERROR: opengrep binary not found under /home/crypto/.opengrep" >&2; \
+        ls -laR /home/crypto/.opengrep >&2 || true; \
+        exit 1; \
+    fi && \
+    ln -sf "$OPENGREP_BIN" /usr/local/bin/opengrep && \
+    chown -R crypto:crypto /workspace /opt/target-venv /home/crypto
+
 # ── Unified PATH ──
-ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/root/.cargo/bin:$PATH:/root/.opengrep/cli/latest"
+ENV HOME=/home/crypto
+ENV CARGO_HOME=/home/crypto/.cargo
+ENV RUSTUP_HOME=/home/crypto/.rustup
+# Note: opengrep is reached via /usr/local/bin/opengrep (already on $PATH),
+# pinned by the symlink created during user setup above. We deliberately don't
+# append /home/crypto/.opengrep/cli/latest here because the installer creates a
+# root-owned absolute symlink there, which becomes invalid after migration.
+ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/home/crypto/.cargo/bin:$PATH"
 
 # Create workspace directory
 WORKDIR /workspace
@@ -70,6 +101,9 @@ LABEL org.opencontainers.image.version="${VERSION}"
 # Verify installations
 RUN crypto-finder version && semgrep --version && opengrep --version && \
     go version && mvn --version && cargo --version && pip --version
+
+# Run as non-root user at runtime
+USER crypto
 
 # Set entrypoint
 ENTRYPOINT ["crypto-finder"]
