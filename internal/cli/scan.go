@@ -177,10 +177,14 @@ func callGraphTargetDir(target string) (string, error) {
 }
 
 func ecosystemFromHints(target string, languageHints []string) string {
-	if len(languageHints) > 0 {
-		switch languageHints[0] {
+	// Pick the first supported ecosystem from the hints. Hints may include
+	// non-source languages (e.g. "html") alongside the real source language,
+	// so checking only languageHints[0] would miss "java" when sorted hints
+	// arrive as ["html", "java"].
+	for _, hint := range languageHints {
+		switch hint {
 		case "go", ecosystemJava, "python", "rust":
-			return languageHints[0]
+			return hint
 		}
 	}
 
@@ -349,6 +353,26 @@ func runScan(_ *cobra.Command, args []string) error {
 
 	// Create skip matcher for language detection
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
+
+	// Pre-detect source languages at the CLI layer when the user did not pass
+	// --languages. This makes the detected languages available to ancillary
+	// features (notably --export-callgraph) that need to know the source
+	// ecosystem before the scanner runs. Without this, repositories without
+	// a build manifest (pom.xml, build.gradle, setup.py, go.mod, Cargo.toml)
+	// fail callgraph export with "could not determine a supported ecosystem".
+	// The orchestrator will reuse these hints instead of redetecting.
+	if len(scanLanguages) == 0 {
+		detected, detectErr := language.NewEnryDetector(skipMatcher).Detect(target)
+		if detectErr != nil {
+			return failure.WrapUnknown(
+				detectErr,
+				failure.CodeLanguageDetectionFailed,
+				failure.StageScan,
+				"failed to detect languages",
+			)
+		}
+		scanLanguages = detected
+	}
 
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(config.InitOptions{
