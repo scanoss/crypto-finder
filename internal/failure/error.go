@@ -156,11 +156,16 @@ func WrapUnknown(err error, code Code, stage Stage, message string, opts ...Opti
 }
 
 // Error implements the error interface.
+// When both Message and Cause are present, the cause is appended so the
+// underlying reason surfaces in CLI output instead of being silently dropped.
 func (e *Error) Error() string {
 	if e == nil {
 		return ""
 	}
 	if e.Message != "" {
+		if e.Cause != nil {
+			return e.Message + ": " + e.Cause.Error()
+		}
 		return e.Message
 	}
 	if e.Cause != nil {
