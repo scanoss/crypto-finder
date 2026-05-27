@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -199,5 +200,32 @@ func TestRelatedCryptoMapper_ValidateRequiredFields(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRelatedCryptoMapper_SetsRawCryptoFunctionProperty(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":         "related-crypto-material",
+			"materialType":      "private-key",
+			"cryptoFunction":    "load",
+			"materialAlgorithm": "RSA",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	if component.Properties == nil || len(*component.Properties) != 1 {
+		t.Fatalf("Properties = %v, want one property", component.Properties)
+	}
+
+	property := (*component.Properties)[0]
+	if property != (cdx.Property{Name: scanossCryptoFunctionPropertyName, Value: "load"}) {
+		t.Fatalf("Property = %#v, want raw cryptoFunction property", property)
 	}
 }

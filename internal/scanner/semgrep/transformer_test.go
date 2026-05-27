@@ -511,6 +511,34 @@ func TestExtractCryptoMetadata(t *testing.T) {
 				"library":                         "crypto/ecdsa",
 				"materialSource":                  "generated",
 				"operation":                       "keygen",
+				"cryptoFunction":                  "keygen",
+			},
+		},
+		{
+			name: "Operation aliases to cryptoFunction",
+			cryptoMetadata: map[string]any{
+				"assetType": "algorithm",
+				"operation": "encrypt",
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":      "algorithm",
+				"operation":      "encrypt",
+				"cryptoFunction": "encrypt",
+			},
+		},
+		{
+			name: "Explicit cryptoFunction wins over operation",
+			cryptoMetadata: map[string]any{
+				"assetType":      "algorithm",
+				"operation":      "verify",
+				"cryptoFunction": "sign",
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":      "algorithm",
+				"operation":      "verify",
+				"cryptoFunction": "sign",
 			},
 		},
 	}

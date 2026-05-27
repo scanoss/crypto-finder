@@ -67,6 +67,7 @@ func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.Cryptog
 		CryptoProperties: cryptoProps,
 		// Properties and Evidence will be set by the converter
 	}
+	addCryptoFunctionProperty(component, asset)
 
 	return component, nil
 }

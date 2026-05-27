@@ -387,6 +387,10 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 			asset.Metadata[key] = value
 		}
 	}
+
+	if asset.Metadata["cryptoFunction"] == "" && asset.Metadata["operation"] != "" {
+		asset.Metadata["cryptoFunction"] = asset.Metadata["operation"]
+	}
 }
 
 // detectLanguage uses go-enry to detect the programming language of a file.
