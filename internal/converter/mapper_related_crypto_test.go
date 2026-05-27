@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	cdx "github.com/CycloneDX/cyclonedx-go"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -199,5 +201,130 @@ func TestRelatedCryptoMapper_ValidateRequiredFields(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRelatedCryptoMapper_SetsRawCryptoFunctionProperty(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":         "related-crypto-material",
+			"materialType":      "private-key",
+			"cryptoFunction":    "load",
+			"materialAlgorithm": "RSA",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	if component.Properties == nil || len(*component.Properties) != 1 {
+		t.Fatalf("Properties = %v, want one property", component.Properties)
+	}
+
+	property := (*component.Properties)[0]
+	if property != (cdx.Property{Name: scanossCryptoFunctionPropertyName, Value: "load"}) {
+		t.Fatalf("Property = %#v, want raw cryptoFunction property", property)
+	}
+}
+
+func TestRelatedCryptoMapper_SetsPublicKeySize(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":     "related-crypto-material",
+			"materialType":  "public-key",
+			"materialSize":  "2048",
+			"publicKeySize": "2048",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	props := component.CryptoProperties.RelatedCryptoMaterialProperties
+	if props == nil || props.Size == nil {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %v, want 2048", props)
+	}
+	if *props.Size != 2048 {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %d, want 2048", *props.Size)
+	}
+
+	if component.Properties == nil || len(*component.Properties) != 1 {
+		t.Fatalf("Properties = %v, want one property", component.Properties)
+	}
+
+	property := (*component.Properties)[0]
+	if property != (cdx.Property{Name: scanossPublicKeySizePropertyName, Value: "2048"}) {
+		t.Fatalf("Property = %#v, want public key size property", property)
+	}
+}
+
+func TestRelatedCryptoMapper_SetsPrivateKeySizeWithoutMaterialSize(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":      "related-crypto-material",
+			"materialType":   "private-key",
+			"privateKeySize": "4096",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	props := component.CryptoProperties.RelatedCryptoMaterialProperties
+	if props == nil || props.Size == nil {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %v, want 4096", props)
+	}
+	if *props.Size != 4096 {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %d, want 4096", *props.Size)
+	}
+
+	if component.Properties == nil || len(*component.Properties) != 1 {
+		t.Fatalf("Properties = %v, want one property", component.Properties)
+	}
+
+	property := (*component.Properties)[0]
+	if property != (cdx.Property{Name: scanossPrivateKeySizePropertyName, Value: "4096"}) {
+		t.Fatalf("Property = %#v, want private key size property", property)
+	}
+}
+
+func TestRelatedCryptoMapper_DoesNotInferSideSpecificSizeForAmbiguousMaterial(t *testing.T) {
+	mapper := NewRelatedCryptoMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":    "related-crypto-material",
+			"materialType": "key-pair",
+			"materialSize": "256",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	props := component.CryptoProperties.RelatedCryptoMaterialProperties
+	if props == nil || props.Size == nil {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %v, want 256", props)
+	}
+	if *props.Size != 256 {
+		t.Fatalf("RelatedCryptoMaterialProperties.Size = %d, want 256", *props.Size)
+	}
+
+	if component.Properties != nil {
+		t.Fatalf("Properties = %v, want nil for ambiguous material", component.Properties)
 	}
 }

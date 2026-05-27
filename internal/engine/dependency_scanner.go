@@ -106,10 +106,11 @@ func (ds *DependencyScanner) ScanWithDependencies(
 ) (*DepScanResult, error) {
 	pipelineStart := time.Now()
 
-	resolved, filteredRulePaths, rulesHash, err := ds.prepareDependencyScan(ctx, opts)
+	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+	defer cleanupRulePaths()
 	if len(resolved.Dependencies) == 0 {
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
@@ -151,11 +152,11 @@ func (ds *DependencyScanner) ScanWithDependencies(
 func (ds *DependencyScanner) prepareDependencyScan(
 	ctx context.Context,
 	opts DepScanOptions,
-) (*dependency.ResolveResult, []string, string, error) {
+) (*dependency.ResolveResult, []string, string, func(), error) {
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
 	resolved, err := ds.resolver.Resolve(ctx, opts.ScanOptions.Target)
 	if err != nil {
-		return nil, nil, "", failure.WrapUnknown(
+		return nil, nil, "", func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeDependencyResolutionFailed,
 			failure.StageDependency,
@@ -164,12 +165,12 @@ func (ds *DependencyScanner) prepareDependencyScan(
 	}
 	log.Info().Int("deps", len(resolved.Dependencies)).Msg("Resolved dependencies")
 	if len(resolved.Dependencies) == 0 {
-		return resolved, nil, "", nil
+		return resolved, nil, "", func() {}, nil
 	}
 
-	filteredRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem())
+	filteredRulePaths, cleanupRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem())
 	if err != nil {
-		return nil, nil, "", failure.WrapUnknown(
+		return nil, nil, "", func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeRulesLoadFailed,
 			failure.StageRules,
@@ -181,7 +182,7 @@ func (ds *DependencyScanner) prepareDependencyScan(
 		Str("ecosystem", ds.resolver.Ecosystem()).
 		Msg("Filtered rules by language")
 
-	return resolved, filteredRulePaths, ds.computeRulesHash(filteredRulePaths), nil
+	return resolved, filteredRulePaths, ds.computeRulesHash(filteredRulePaths), cleanupRulePaths, nil
 }
 
 func (ds *DependencyScanner) computeRulesHash(rulePaths []string) string {
@@ -277,18 +278,14 @@ func (ds *DependencyScanner) attributeDependencyResults(
 // loadFilteredRules loads all rules from the manager and filters them to only
 // include rules for the ecosystem's languages. This avoids loading Java/Python/C/Rust
 // rules when scanning Go dependencies, significantly reducing scanner overhead.
-func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, error) {
+func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, func(), error) {
 	allRules, err := ds.orchestrator.rulesManager.Load()
 	if err != nil {
-		return nil, err
+		return nil, func() {}, err
 	}
 
 	languages := ecosystemToLanguages(ecosystem)
-	if len(languages) == 0 {
-		return allRules, nil
-	}
-
-	return filterRulesByLanguages(allRules, languages), nil
+	return prepareRulePathsForScanner(allRules, languages)
 }
 
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.

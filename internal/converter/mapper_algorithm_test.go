@@ -257,104 +257,55 @@ func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		primitive         string
+		metadata          map[string]string
 		wantFunctions     []cdx.CryptoFunction
 		wantFunctionCount int
 	}{
 		{
-			name:              "Authenticated Encryption",
-			primitive:         "ae",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt, cdx.CryptoFunctionTag},
-			wantFunctionCount: 3,
-		},
-		{
-			name:              "Block Cipher",
-			primitive:         "block-cipher",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Hash Function",
-			primitive:         "hash",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionDigest},
+			name: "Explicit cryptoFunction sign",
+			metadata: map[string]string{
+				"cryptoFunction": "sign",
+			},
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionSign},
 			wantFunctionCount: 1,
 		},
 		{
-			name:              "Signature Algorithm",
-			primitive:         "signature",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionSign, cdx.CryptoFunctionVerify},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Key Derivation Function",
-			primitive:         "kdf",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionKeyderive},
+			name: "Operation fallback encrypt",
+			metadata: map[string]string{
+				"operation": "encrypt",
+			},
+			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt},
 			wantFunctionCount: 1,
 		},
 		{
-			name:              "DRBG (Random Generator)",
-			primitive:         "drbg",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionGenerate},
-			wantFunctionCount: 1,
-		},
-		{
-			name:              "Key Encapsulation Mechanism",
-			primitive:         "kem",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncapsulate, cdx.CryptoFunctionDecapsulate},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Message Authentication Code",
-			primitive:         "mac",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionTag, cdx.CryptoFunctionVerify},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Public Key Encryption",
-			primitive:         "pke",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Stream Cipher",
-			primitive:         "stream-cipher",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionEncrypt, cdx.CryptoFunctionDecrypt},
-			wantFunctionCount: 2,
-		},
-		{
-			name:              "Extendable Output Function",
-			primitive:         "xof",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionDigest},
-			wantFunctionCount: 1,
-		},
-		{
-			name:              "Key Agreement",
-			primitive:         "key-agree",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionKeygen},
-			wantFunctionCount: 1,
-		},
-		{
-			name:              "Combiner (combines multiple primitives)",
-			primitive:         "combiner",
+			name: "Legacy keyexchange maps to other",
+			metadata: map[string]string{
+				"operation": "keyexchange",
+			},
 			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionOther},
 			wantFunctionCount: 1,
 		},
 		{
-			name:              "Other Primitive",
-			primitive:         "other",
-			wantFunctions:     []cdx.CryptoFunction{cdx.CryptoFunctionOther},
-			wantFunctionCount: 1,
+			name:              "Missing cryptoFunction and operation omits cryptoFunctions",
+			metadata:          map[string]string{},
+			wantFunctions:     nil,
+			wantFunctionCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{
+				"assetType":          "algorithm",
+				"algorithmPrimitive": "signature",
+				"algorithmFamily":    "TestAlgorithm",
+			}
+			for key, value := range tt.metadata {
+				metadata[key] = value
+			}
+
 			asset := &entities.CryptographicAsset{
-				Metadata: map[string]string{
-					"assetType":          "algorithm",
-					"algorithmPrimitive": tt.primitive,
-					"algorithmFamily":    "TestAlgorithm",
-				},
+				Metadata: metadata,
 			}
 
 			component, err := mapper.MapToComponentWithEvidence(asset)
@@ -371,10 +322,16 @@ func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
 				t.Fatal("AlgorithmProperties is nil")
 			}
 
+			if tt.wantFunctionCount == 0 {
+				if algProps.CryptoFunctions != nil {
+					t.Fatalf("CryptoFunctions = %v, want nil", *algProps.CryptoFunctions)
+				}
+				return
+			}
+
 			if algProps.CryptoFunctions == nil {
 				t.Fatal("CryptoFunctions is nil")
 			}
-
 			functions := *algProps.CryptoFunctions
 			if len(functions) != tt.wantFunctionCount {
 				t.Errorf("CryptoFunctions count = %d, want %d", len(functions), tt.wantFunctionCount)
@@ -394,6 +351,36 @@ func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAlgorithmMapper_SetsRawCryptoFunctionProperty(t *testing.T) {
+	mapper := NewAlgorithmMapper()
+
+	asset := &entities.CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":          "algorithm",
+			"algorithmPrimitive": "signature",
+			"algorithmFamily":    "EdDSA",
+			"operation":          "sign",
+		},
+	}
+
+	component, err := mapper.MapToComponentWithEvidence(asset)
+	if err != nil {
+		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
+	}
+
+	if component.Properties == nil || len(*component.Properties) != 1 {
+		t.Fatalf("Properties = %v, want one property", component.Properties)
+	}
+
+	property := (*component.Properties)[0]
+	if property.Name != scanossCryptoFunctionPropertyName {
+		t.Fatalf("Property.Name = %q, want %q", property.Name, scanossCryptoFunctionPropertyName)
+	}
+	if property.Value != "sign" {
+		t.Fatalf("Property.Value = %q, want %q", property.Value, "sign")
 	}
 }
 

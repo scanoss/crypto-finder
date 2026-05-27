@@ -511,6 +511,82 @@ func TestExtractCryptoMetadata(t *testing.T) {
 				"library":                         "crypto/ecdsa",
 				"materialSource":                  "generated",
 				"operation":                       "keygen",
+				"cryptoFunction":                  "keygen",
+			},
+		},
+		{
+			name: "Operation aliases to cryptoFunction",
+			cryptoMetadata: map[string]any{
+				"assetType": "algorithm",
+				"operation": "encrypt",
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":      "algorithm",
+				"operation":      "encrypt",
+				"cryptoFunction": "encrypt",
+			},
+		},
+		{
+			name: "Explicit cryptoFunction wins over operation",
+			cryptoMetadata: map[string]any{
+				"assetType":      "algorithm",
+				"operation":      "verify",
+				"cryptoFunction": "sign",
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":      "algorithm",
+				"operation":      "verify",
+				"cryptoFunction": "sign",
+			},
+		},
+		{
+			name: "Public key material size aliases to publicKeySize",
+			cryptoMetadata: map[string]any{
+				"assetType":    "related-crypto-material",
+				"materialType": "public-key",
+				"materialSize": "$bits",
+			},
+			metavars: map[string]entities.MetavarInfo{
+				"$bits": {
+					AbstractContent: "2048",
+				},
+			},
+			wantMetadata: map[string]string{
+				"assetType":     "related-crypto-material",
+				"materialType":  "public-key",
+				"materialSize":  "2048",
+				"publicKeySize": "2048",
+			},
+		},
+		{
+			name: "Private key material size aliases to privateKeySize",
+			cryptoMetadata: map[string]any{
+				"assetType":    "related-crypto-material",
+				"materialType": "private-key",
+				"materialSize": float64(4096),
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":      "related-crypto-material",
+				"materialType":   "private-key",
+				"materialSize":   "4096",
+				"privateKeySize": "4096",
+			},
+		},
+		{
+			name: "Ambiguous key material does not infer side specific size",
+			cryptoMetadata: map[string]any{
+				"assetType":    "related-crypto-material",
+				"materialType": "key-pair",
+				"materialSize": "256",
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"assetType":    "related-crypto-material",
+				"materialType": "key-pair",
+				"materialSize": "256",
 			},
 		},
 	}

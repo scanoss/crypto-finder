@@ -387,6 +387,34 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 			asset.Metadata[key] = value
 		}
 	}
+
+	if asset.Metadata["cryptoFunction"] == "" && asset.Metadata["operation"] != "" {
+		asset.Metadata["cryptoFunction"] = asset.Metadata["operation"]
+	}
+
+	normalizeRelatedCryptoKeySizes(asset)
+}
+
+func normalizeRelatedCryptoKeySizes(asset *entities.CryptographicAsset) {
+	if asset == nil {
+		return
+	}
+
+	materialSize := strings.TrimSpace(asset.Metadata["materialSize"])
+	if materialSize == "" {
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(asset.Metadata["materialType"])) {
+	case "public-key":
+		if strings.TrimSpace(asset.Metadata["publicKeySize"]) == "" {
+			asset.Metadata["publicKeySize"] = materialSize
+		}
+	case "private-key":
+		if strings.TrimSpace(asset.Metadata["privateKeySize"]) == "" {
+			asset.Metadata["privateKeySize"] = materialSize
+		}
+	}
 }
 
 // detectLanguage uses go-enry to detect the programming language of a file.
