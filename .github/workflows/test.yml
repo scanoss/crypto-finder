@@ -20,9 +20,14 @@ jobs:
         run: docker build -t crypto-finder-test:latest -f Dockerfile.test .
 
       - name: Run tests with coverage
+        # Mount the host Docker socket and share the host network so
+        # testcontainers (Postgres findings-cache tests) can launch sibling
+        # containers and reach their published ports at localhost (DooD).
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            --network host \
             -w /workspace \
             crypto-finder-test:latest
 
