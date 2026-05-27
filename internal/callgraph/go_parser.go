@@ -25,6 +25,7 @@ const (
 	goNodeFieldIdentifier = "field_identifier"
 	goNodeTypeIdentifier  = "type_identifier"
 	goNodeParameterDecl   = "parameter_declaration"
+	goNodeResult          = "result"
 )
 
 // NewGoParser creates a new Go source parser backed by tree-sitter.
@@ -215,7 +216,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 			if params == nil {
 				params = child
 			}
-		case "result":
+		case goNodeResult:
 			result = child
 		case goNodeBlock:
 			body = child
@@ -266,7 +267,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 			} else if params == nil {
 				params = child
 			}
-		case "result":
+		case goNodeResult:
 			result = child
 		case goNodeBlock:
 			body = child

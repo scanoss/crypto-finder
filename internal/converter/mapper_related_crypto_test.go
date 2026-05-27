@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 

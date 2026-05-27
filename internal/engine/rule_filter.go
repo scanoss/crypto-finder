@@ -148,7 +148,7 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 	tempParent := ""
 	if rulesetRoot := rulesetVersionRoot(baseDir); rulesetRoot != "" {
 		tempParent = filepath.Join(rulesetRoot, ".crypto-finder-filtered")
-		if err := os.MkdirAll(tempParent, 0o755); err != nil {
+		if err := os.MkdirAll(tempParent, 0o750); err != nil {
 			return nil, nil, fmt.Errorf("create filtered rules temp parent: %w", err)
 		}
 	}
@@ -166,13 +166,13 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 	for _, ruleFile := range ruleFiles {
 		relPath, err := filepath.Rel(baseDir, ruleFile)
 		if err != nil {
-			_ = os.RemoveAll(tempRoot)
+			removeMaterializedRules(tempRoot)
 			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
 		}
 
 		destPath := filepath.Join(targetRoot, relPath)
 		if err := copyRuleFile(ruleFile, destPath); err != nil {
-			_ = os.RemoveAll(tempRoot)
+			removeMaterializedRules(tempRoot)
 			return nil, nil, err
 		}
 	}
@@ -183,31 +183,45 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 		Msg("Materialized filtered rules for scanner")
 
 	return []string{targetRoot}, func() {
-		if err := os.RemoveAll(tempRoot); err != nil {
-			log.Warn().Err(err).Str("path", tempRoot).Msg("Failed to clean up materialized filtered rules")
-		}
+		removeMaterializedRules(tempRoot)
 	}, nil
 }
 
-func copyRuleFile(srcPath, destPath string) error {
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return fmt.Errorf("create filtered rule directory for %s: %w", destPath, err)
+// removeMaterializedRules deletes a materialized rules directory, logging a
+// warning if cleanup fails rather than propagating the error.
+func removeMaterializedRules(tempRoot string) {
+	if err := os.RemoveAll(tempRoot); err != nil {
+		log.Warn().Err(err).Str("path", tempRoot).Msg("Failed to clean up materialized filtered rules")
+	}
+}
+
+func copyRuleFile(srcPath, destPath string) (err error) {
+	if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o750); mkErr != nil {
+		return fmt.Errorf("create filtered rule directory for %s: %w", destPath, mkErr)
 	}
 
 	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return fmt.Errorf("open source rule file %s: %w", srcPath, err)
 	}
-	defer srcFile.Close()
+	defer func() {
+		if closeErr := srcFile.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close source rule file %s: %w", srcPath, closeErr)
+		}
+	}()
 
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("create filtered rule file %s: %w", destPath, err)
 	}
-	defer destFile.Close()
+	defer func() {
+		if closeErr := destFile.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close filtered rule file %s: %w", destPath, closeErr)
+		}
+	}()
 
-	if _, err := io.Copy(destFile, srcFile); err != nil {
-		return fmt.Errorf("copy filtered rule file %s: %w", srcPath, err)
+	if _, copyErr := io.Copy(destFile, srcFile); copyErr != nil {
+		return fmt.Errorf("copy filtered rule file %s: %w", srcPath, copyErr)
 	}
 
 	return nil

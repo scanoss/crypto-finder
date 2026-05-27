@@ -116,8 +116,12 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
 	var rulePaths []string
-	cleanupRulePaths := func() {}
-	defer cleanupRulePaths()
+	var cleanupRulePaths func()
+	defer func() {
+		if cleanupRulePaths != nil {
+			cleanupRulePaths()
+		}
+	}()
 	if len(opts.RulePaths) > 0 {
 		rulePaths, cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
 		if err != nil {

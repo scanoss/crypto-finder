@@ -38,6 +38,33 @@ func resolveRawCryptoFunction(asset *entities.CryptographicAsset) string {
 	return strings.TrimSpace(asset.Metadata["operation"])
 }
 
+// rawCryptoFunctionMap maps normalized raw crypto function names to their
+// CycloneDX equivalents. Any non-empty value absent from this map resolves to
+// CryptoFunctionOther (see mapRawCryptoFunctionToCycloneDX).
+var rawCryptoFunctionMap = map[string]cdx.CryptoFunction{
+	"generate":      cdx.CryptoFunctionGenerate,
+	"keygen":        cdx.CryptoFunctionKeygen,
+	"keygeneration": cdx.CryptoFunctionKeygen,
+	"encrypt":       cdx.CryptoFunctionEncrypt,
+	"decrypt":       cdx.CryptoFunctionDecrypt,
+	"digest":        cdx.CryptoFunctionDigest,
+	"hash":          cdx.CryptoFunctionDigest,
+	"tag":           cdx.CryptoFunctionTag,
+	"keyderive":     cdx.CryptoFunctionKeyderive,
+	"derive":        cdx.CryptoFunctionKeyderive,
+	"derivekey":     cdx.CryptoFunctionKeyderive,
+	"keyderivation": cdx.CryptoFunctionKeyderive,
+	"sign":          cdx.CryptoFunctionSign,
+	"signature":     cdx.CryptoFunctionSign,
+	"verify":        cdx.CryptoFunctionVerify,
+	"verification":  cdx.CryptoFunctionVerify,
+	"keyver":        cdx.CryptoFunctionVerify,
+	"encapsulate":   cdx.CryptoFunctionEncapsulate,
+	"decapsulate":   cdx.CryptoFunctionDecapsulate,
+	"other":         cdx.CryptoFunctionOther,
+	"unknown":       cdx.CryptoFunctionUnknown,
+}
+
 func mapRawCryptoFunctionToCycloneDX(raw string) (cdx.CryptoFunction, bool) {
 	if strings.TrimSpace(raw) == "" {
 		return "", false
@@ -46,38 +73,13 @@ func mapRawCryptoFunctionToCycloneDX(raw string) (cdx.CryptoFunction, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	normalized = strings.NewReplacer("-", "", "_", "", " ", "").Replace(normalized)
 
-	switch normalized {
-	case "generate":
-		return cdx.CryptoFunctionGenerate, true
-	case "keygen", "keygeneration":
-		return cdx.CryptoFunctionKeygen, true
-	case "encrypt":
-		return cdx.CryptoFunctionEncrypt, true
-	case "decrypt":
-		return cdx.CryptoFunctionDecrypt, true
-	case "digest", "hash":
-		return cdx.CryptoFunctionDigest, true
-	case "tag":
-		return cdx.CryptoFunctionTag, true
-	case "keyderive", "derive", "derivekey", "keyderivation":
-		return cdx.CryptoFunctionKeyderive, true
-	case "sign", "signature":
-		return cdx.CryptoFunctionSign, true
-	case "verify", "verification", "keyver":
-		return cdx.CryptoFunctionVerify, true
-	case "encapsulate":
-		return cdx.CryptoFunctionEncapsulate, true
-	case "decapsulate":
-		return cdx.CryptoFunctionDecapsulate, true
-	case "other":
-		return cdx.CryptoFunctionOther, true
-	case "unknown":
-		return cdx.CryptoFunctionUnknown, true
-	case "keyexchange", "keyagree", "handshake", "load", "serialize", "deserialize", "configure", "init", "instantiate", "import", "export":
-		return cdx.CryptoFunctionOther, true
-	default:
-		return cdx.CryptoFunctionOther, true
+	if cryptoFunction, ok := rawCryptoFunctionMap[normalized]; ok {
+		return cryptoFunction, true
 	}
+
+	// Unrecognized but non-empty values (e.g. keyexchange, handshake, load,
+	// serialize, configure, init, instantiate, import, export) fall back to Other.
+	return cdx.CryptoFunctionOther, true
 }
 
 func addCryptoFunctionProperty(component *cdx.Component, asset *entities.CryptographicAsset) {
