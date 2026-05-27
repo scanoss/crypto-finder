@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/scanoss/crypto-finder/internal/config"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to
@@ -93,6 +97,193 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 		Msg("Filtered rules by detected languages")
 
 	return filtered
+}
+
+func prepareRulePathsForScanner(allRules, languages []string) ([]string, func(), error) {
+	candidateRules := allRules
+	if len(languages) > 0 {
+		candidateRules = filterRulesByLanguages(allRules, languages)
+	}
+
+	return optimizeRulePathsForScanner(candidateRules)
+}
+
+func optimizeRulePathsForScanner(rulePaths []string) ([]string, func(), error) {
+	if len(rulePaths) <= 1 {
+		return rulePaths, func() {}, nil
+	}
+
+	allDirs := true
+	for _, path := range rulePaths {
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			allDirs = false
+			break
+		}
+	}
+	if allDirs {
+		return rulePaths, func() {}, nil
+	}
+
+	expanded := expandRulePaths(rulePaths)
+	if len(expanded) <= 1 {
+		return expanded, func() {}, nil
+	}
+	for _, path := range expanded {
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			log.Debug().
+				Err(err).
+				Str("path", path).
+				Msg("Skipping rule materialization because a filtered rule path is unavailable")
+			return rulePaths, func() {}, nil
+		}
+	}
+
+	return materializeRuleFiles(expanded)
+}
+
+func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
+	baseDir := commonRuleBaseDir(ruleFiles)
+	tempParent := ""
+	if rulesetRoot := rulesetVersionRoot(baseDir); rulesetRoot != "" {
+		tempParent = filepath.Join(rulesetRoot, ".crypto-finder-filtered")
+		if err := os.MkdirAll(tempParent, 0o755); err != nil {
+			return nil, nil, fmt.Errorf("create filtered rules temp parent: %w", err)
+		}
+	}
+
+	tempRoot, err := os.MkdirTemp(tempParent, "run-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create filtered rules temp dir: %w", err)
+	}
+
+	targetRoot := tempRoot
+	if baseName := filepath.Base(baseDir); baseName != "" && baseName != "." && baseName != string(os.PathSeparator) {
+		targetRoot = filepath.Join(tempRoot, baseName)
+	}
+
+	for _, ruleFile := range ruleFiles {
+		relPath, err := filepath.Rel(baseDir, ruleFile)
+		if err != nil {
+			_ = os.RemoveAll(tempRoot)
+			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
+		}
+
+		destPath := filepath.Join(targetRoot, relPath)
+		if err := copyRuleFile(ruleFile, destPath); err != nil {
+			_ = os.RemoveAll(tempRoot)
+			return nil, nil, err
+		}
+	}
+
+	log.Info().
+		Int("sourceFiles", len(ruleFiles)).
+		Str("path", targetRoot).
+		Msg("Materialized filtered rules for scanner")
+
+	return []string{targetRoot}, func() {
+		if err := os.RemoveAll(tempRoot); err != nil {
+			log.Warn().Err(err).Str("path", tempRoot).Msg("Failed to clean up materialized filtered rules")
+		}
+	}, nil
+}
+
+func copyRuleFile(srcPath, destPath string) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create filtered rule directory for %s: %w", destPath, err)
+	}
+
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("open source rule file %s: %w", srcPath, err)
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create filtered rule file %s: %w", destPath, err)
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return fmt.Errorf("copy filtered rule file %s: %w", srcPath, err)
+	}
+
+	return nil
+}
+
+func commonRuleBaseDir(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	baseDir := filepath.Dir(paths[0])
+	for _, path := range paths[1:] {
+		baseDir = commonPathPrefix(baseDir, filepath.Dir(path))
+	}
+	if baseDir == "" {
+		return string(os.PathSeparator)
+	}
+	return baseDir
+}
+
+func commonPathPrefix(left, right string) string {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+
+	if left == right {
+		return left
+	}
+
+	leftParts := strings.Split(filepath.Clean(left), string(os.PathSeparator))
+	rightParts := strings.Split(filepath.Clean(right), string(os.PathSeparator))
+
+	size := min(len(leftParts), len(rightParts))
+	common := make([]string, 0, size)
+	for i := 0; i < size; i++ {
+		if leftParts[i] != rightParts[i] {
+			break
+		}
+		common = append(common, leftParts[i])
+	}
+
+	if len(common) == 0 {
+		if filepath.VolumeName(left) != "" {
+			return filepath.VolumeName(left) + string(os.PathSeparator)
+		}
+		return string(os.PathSeparator)
+	}
+
+	if common[0] == "" {
+		return string(os.PathSeparator) + filepath.Join(common[1:]...)
+	}
+
+	return filepath.Join(common...)
+}
+
+func rulesetVersionRoot(path string) string {
+	rulesetsDir, err := config.GetRulesetsDir()
+	if err != nil {
+		return ""
+	}
+
+	absPath := path
+	if resolved, err := filepath.Abs(path); err == nil {
+		absPath = resolved
+	}
+
+	rel, err := filepath.Rel(rulesetsDir, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	return filepath.Join(rulesetsDir, parts[0], parts[1])
 }
 
 func expandRulePaths(paths []string) []string {

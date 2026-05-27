@@ -116,8 +116,18 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
 	var rulePaths []string
+	cleanupRulePaths := func() {}
+	defer cleanupRulePaths()
 	if len(opts.RulePaths) > 0 {
-		rulePaths = opts.RulePaths
+		rulePaths, cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
+		if err != nil {
+			return nil, failure.WrapUnknown(
+				err,
+				failure.CodeRulesLoadFailed,
+				failure.StageRules,
+				"failed to prepare pre-loaded rules for scanner",
+			)
+		}
 		log.Debug().Int("count", len(rulePaths)).Msg("Using pre-loaded rule paths")
 	} else {
 		rulePaths, err = o.rulesManager.Load()
@@ -133,8 +143,14 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 		// Filter rules to only include those matching detected languages.
 		// This significantly reduces scanner overhead for large rule sets.
-		if len(languages) > 0 {
-			rulePaths = filterRulesByLanguages(rulePaths, languages)
+		rulePaths, cleanupRulePaths, err = prepareRulePathsForScanner(rulePaths, languages)
+		if err != nil {
+			return nil, failure.WrapUnknown(
+				err,
+				failure.CodeRulesLoadFailed,
+				failure.StageRules,
+				"failed to prepare filtered rules for scanner",
+			)
 		}
 	}
 

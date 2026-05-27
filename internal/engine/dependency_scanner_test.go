@@ -378,12 +378,16 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 		findingsCache: cache,
 	}
 
-	filtered, err := ds.loadFilteredRules("go")
+	filtered, cleanup, err := ds.loadFilteredRules("go")
 	if err != nil {
 		t.Fatalf("loadFilteredRules: %v", err)
 	}
-	if len(filtered) != 1 || filtered[0] != goRule {
+	defer cleanup()
+	if len(filtered) != 1 {
 		t.Fatalf("unexpected filtered rules: %#v", filtered)
+	}
+	if filtered[0] != goRule {
+		t.Fatalf("expected go rule path, got %#v", filtered)
 	}
 
 	dep := &dependency.Dependency{Module: "github.com/acme/dep", Version: "v1", Dir: t.TempDir()}

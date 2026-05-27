@@ -109,3 +109,77 @@ func TestFilterRulesByLanguages_DirectoryInput(t *testing.T) {
 		t.Fatalf("expected go rule path, got %#v", filtered)
 	}
 }
+
+func TestPrepareRulePathsForScanner_MaterializesFilteredFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	rulesDir := filepath.Join(root, "semgrep-rules")
+	if err := os.MkdirAll(filepath.Join(rulesDir, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_ = writeRuleFile(t, rulesDir, "go.yaml", `rules:
+  - id: go-rule
+    languages: [go]
+`)
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "nested"), "go-extra.yaml", `rules:
+  - id: go-extra
+    languages: [go]
+`)
+
+	paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"go"})
+	if err != nil {
+		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("prepareRulePathsForScanner() paths len = %d, want 1", len(paths))
+	}
+	defer cleanup()
+
+	info, err := os.Stat(paths[0])
+	if err != nil {
+		t.Fatalf("stat materialized path: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("materialized path must be a directory, got file: %s", paths[0])
+	}
+
+	goCopy := filepath.Join(paths[0], "go.yaml")
+	if _, err := os.Stat(goCopy); err != nil {
+		t.Fatalf("expected copied go rule at %s: %v", goCopy, err)
+	}
+
+	if _, err := os.Stat(filepath.Join(paths[0], "nested", "go-extra.yaml")); err != nil {
+		t.Fatalf("expected copied nested go rule: %v", err)
+	}
+}
+
+func TestPrepareRulePathsForScanner_CleanupRemovesMaterializedDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := writeRuleFile(t, dir, "first.yaml", `rules:
+  - id: first
+    languages: [go]
+`)
+	second := writeRuleFile(t, dir, "second.yaml", `rules:
+  - id: second
+    languages: [python]
+`)
+
+	paths, cleanup, err := prepareRulePathsForScanner([]string{first, second}, []string{"go", "python"})
+	if err != nil {
+		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("prepareRulePathsForScanner() paths len = %d, want 1", len(paths))
+	}
+
+	materializedRoot := paths[0]
+	cleanup()
+
+	if _, err := os.Stat(materializedRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected cleanup to remove %s, got err=%v", materializedRoot, err)
+	}
+}

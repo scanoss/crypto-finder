@@ -18,6 +18,7 @@ package converter
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -47,6 +48,7 @@ func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.Cryptog
 	relatedCryptoMaterialProps := &cdx.RelatedCryptoMaterialProperties{}
 
 	m.addType(relatedCryptoMaterialProps, asset)
+	m.addSize(relatedCryptoMaterialProps, asset)
 
 	assetType := cdx.CryptoAssetTypeRelatedCryptoMaterial
 	cryptoProps := &cdx.CryptoProperties{
@@ -68,6 +70,7 @@ func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.Cryptog
 		// Properties and Evidence will be set by the converter
 	}
 	addCryptoFunctionProperty(component, asset)
+	addKeySizeProperties(component, asset)
 
 	return component, nil
 }
@@ -119,4 +122,51 @@ func (m *RelatedCryptoMapper) addType(props *cdx.RelatedCryptoMaterialProperties
 		props.Type = cdx.RelatedCryptoMaterialType(relatedMaterialType)
 		return
 	}
+}
+
+func (m *RelatedCryptoMapper) addSize(props *cdx.RelatedCryptoMaterialProperties, asset *entities.CryptographicAsset) {
+	rawSize := resolveRelatedCryptoMaterialSize(asset)
+	if rawSize == "" {
+		return
+	}
+
+	size, err := strconv.Atoi(rawSize)
+	if err != nil || size <= 0 {
+		return
+	}
+
+	props.Size = &size
+}
+
+const (
+	scanossPublicKeySizePropertyName  = "scanoss:publicKeySize"
+	scanossPrivateKeySizePropertyName = "scanoss:privateKeySize"
+)
+
+func resolveRelatedCryptoMaterialSize(asset *entities.CryptographicAsset) string {
+	if asset == nil {
+		return ""
+	}
+
+	if materialSize := strings.TrimSpace(asset.Metadata["materialSize"]); materialSize != "" {
+		return materialSize
+	}
+
+	switch strings.ToLower(strings.TrimSpace(asset.Metadata["materialType"])) {
+	case "public-key":
+		return strings.TrimSpace(asset.Metadata["publicKeySize"])
+	case "private-key":
+		return strings.TrimSpace(asset.Metadata["privateKeySize"])
+	default:
+		return ""
+	}
+}
+
+func addKeySizeProperties(component *cdx.Component, asset *entities.CryptographicAsset) {
+	if asset == nil {
+		return
+	}
+
+	addCustomProperty(component, scanossPublicKeySizePropertyName, asset.Metadata["publicKeySize"])
+	addCustomProperty(component, scanossPrivateKeySizePropertyName, asset.Metadata["privateKeySize"])
 }

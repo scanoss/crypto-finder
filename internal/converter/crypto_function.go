@@ -86,12 +86,25 @@ func addCryptoFunctionProperty(component *cdx.Component, asset *entities.Cryptog
 		return
 	}
 
-	properties := []cdx.Property{
-		{
-			Name:  scanossCryptoFunctionPropertyName,
-			Value: raw,
-		},
+	addCustomProperty(component, scanossCryptoFunctionPropertyName, raw)
+}
+
+func addCustomProperty(component *cdx.Component, name, value string) {
+	if component == nil {
+		return
 	}
 
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(value) == "" {
+		return
+	}
+
+	property := cdx.Property{Name: name, Value: value}
+	if component.Properties == nil {
+		properties := []cdx.Property{property}
+		component.Properties = &properties
+		return
+	}
+
+	properties := append(*component.Properties, property)
 	component.Properties = &properties
 }
