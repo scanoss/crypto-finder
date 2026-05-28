@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -72,31 +73,33 @@ var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 var SupportedFormats = []string{formatJSON, "cyclonedx"}
 
 var (
-	scanRules           []string
-	scanRuleDirs        []string
-	scanScanner         string
-	scanFormat          string
-	scanOutput          string
-	scanLanguages       []string
-	scanFailOnFind      bool
-	scanTimeout         string
-	scanNoRemoteRules   bool
-	scanNoCache         bool
-	scanAPIKey          string
-	scanAPIURL          string
-	scanStrict          bool
-	scanMaxStaleAge     string
-	scanNoDedup         bool
-	scanInterfile       bool
-	scanDependencies    bool
-	scanIncludeTests    bool
-	scanDepEcosystem    string
-	scanExportCallgraph string
-	scanExportCgFormat  string
-	scanDepWorkers      int
-	scanJavaJDKMajor    string
-	scanJavaJDKHomes    []string
-	scanFindingsCache   string
+	scanRules               []string
+	scanRuleDirs            []string
+	scanScanner             string
+	scanFormat              string
+	scanOutput              string
+	scanLanguages           []string
+	scanFailOnFind          bool
+	scanTimeout             string
+	scanNoRemoteRules       bool
+	scanNoCache             bool
+	scanAPIKey              string
+	scanAPIURL              string
+	scanStrict              bool
+	scanMaxStaleAge         string
+	scanNoDedup             bool
+	scanInterfile           bool
+	scanDependencies        bool
+	scanIncludeTests        bool
+	scanNoDefaultExclusions bool     // --no-default-exclusions flag
+	scanExcludePatterns     []string // --exclude flag (repeatable)
+	scanDepEcosystem        string
+	scanExportCallgraph     string
+	scanExportCgFormat      string
+	scanDepWorkers          int
+	scanJavaJDKMajor        string
+	scanJavaJDKHomes        []string
+	scanFindingsCache       string
 )
 
 var scanCmd = &cobra.Command{
@@ -155,6 +158,16 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
+	scanCmd.Flags().BoolVar(&scanNoDefaultExclusions, "no-default-exclusions", false,
+		"Disable the built-in default directory exclusions (e.g. docs, vendor, node_modules, dist, build, ...). "+
+			"Affects the primary scan only; dependency scans still skip test patterns controlled by --include-tests. "+
+			"Language detection will walk the full tree, which may significantly slow down scans on large repos. "+
+			"Use --exclude to surgically re-add specific directories.")
+	scanCmd.Flags().StringSliceVar(&scanExcludePatterns, "exclude", nil,
+		"Glob pattern to skip during scanning (repeatable, e.g. --exclude vendor --exclude \"build/**\"). "+
+			"Same gitignore-style syntax as scanoss.json settings.skip.patterns.scanning. "+
+			"Patterns are added on top of the built-in defaults unless --no-default-exclusions is also set. "+
+			"Duplicates are removed automatically.")
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
 
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8)")
@@ -256,6 +269,79 @@ func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
 	return skip.WithDefaultTestPatterns(patterns)
 }
 
+// buildSkipPatterns assembles skip patterns from the configured sources,
+// honoring the --no-default-exclusions and --exclude CLI flags. Returns the
+// merged, deduplicated pattern list plus a human-readable label for logging.
+// The label and pattern list are derived from the same source slice so they
+// cannot drift.
+//
+// On MultiSource.Load failure the function falls back to:
+//   - skip.DefaultSkippedDirs when !noDefaults
+//   - empty list             when  noDefaults
+//
+// In both cases any user --exclude patterns are merged into the fallback so
+// they are not silently dropped along with the MultiSource error.
+func buildSkipPatterns(targetDir string, noDefaults bool, userExcludes []string) (patterns []string, sourceLabel string) {
+	sources := make([]skip.PatternSource, 0, 3)
+
+	if !noDefaults {
+		sources = append(sources, skip.NewDefaultsSource())
+	} else {
+		log.Warn().Msg(
+			"Default directory exclusions are disabled. Language detection will walk the full tree " +
+				"(including node_modules, vendor, dist, etc.), which may significantly increase scan time. " +
+				"Use --exclude node_modules --exclude vendor to re-add specific directories.",
+		)
+	}
+
+	sources = append(sources, skip.NewScanossConfigSourceFromDir(targetDir))
+
+	if len(userExcludes) > 0 {
+		sources = append(sources, skip.NewUserExcludeSource(userExcludes))
+	}
+
+	multi := skip.NewMultiSource(sources...)
+	label := multiSourceLabel(sources, multi)
+
+	loaded, loadErr := multi.Load()
+	if loadErr != nil {
+		log.Warn().Err(loadErr).Msgf("failed to load skip patterns from %s", label)
+
+		var fallback []string
+		if !noDefaults {
+			fallback = append(fallback, skip.DefaultSkippedDirs...)
+		}
+		// Re-merge user excludes — they were in the last source which failed
+		// alongside the others; preserve their explicit intent.
+		// UserExcludeSource.Load never returns an error (no I/O), so it is safe to ignore.
+		if len(userExcludes) > 0 {
+			us, _ := skip.NewUserExcludeSource(userExcludes).Load() //nolint:errcheck // UserExcludeSource.Load never returns an error (pure trim, no I/O)
+			fallback = append(fallback, us...)
+		}
+		return fallback, label // error swallowed to mirror pre-refactor behavior
+	}
+
+	return loaded, label
+}
+
+// multiSourceLabel produces a comma-joined name list for logging.
+// MultiSource.Name() returns the opaque "MultiSource(N sources)" for N>1;
+// a per-source name list is more actionable in the log line
+// "Using N skip patterns from <label>".
+//
+// The helper is intentionally local to scan.go; it is cosmetic and must not
+// modify MultiSource.Name() which has other callers.
+func multiSourceLabel(sources []skip.PatternSource, multi *skip.MultiSource) string {
+	if len(sources) <= 1 {
+		return multi.Name()
+	}
+	names := make([]string, 0, len(sources))
+	for _, s := range sources {
+		names = append(names, s.Name())
+	}
+	return strings.Join(names, ", ")
+}
+
 func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool) (*engine.DepScanResult, error) {
 	targetDir, err := callGraphTargetDir(target)
 	if err != nil {
@@ -332,23 +418,12 @@ func runScan(_ *cobra.Command, args []string) error {
 
 	targetDir := filepath.Dir(target)
 
-	// Load skip patterns from multiple sources
-	// We will use our default list and scanoss.json as, but also a custom source could be easily added implementing PatternSource interface
-	skipPatternsSources := []skip.PatternSource{
-		skip.NewDefaultsSource(),
-		skip.NewScanossConfigSourceFromDir(targetDir),
-	}
-	multiSourceSkipPatterns := skip.NewMultiSource(skipPatternsSources...)
-	skipPatterns, err := multiSourceSkipPatterns.Load()
-	if err != nil {
-		log.Warn().Err(err).Msgf("failed to load skip patterns from %s", multiSourceSkipPatterns.Name())
-		// Fallback to just use default skipped directories
-		skipPatterns = skip.DefaultSkippedDirs
-	}
+	// Load skip patterns from multiple sources, honoring --no-default-exclusions and --exclude.
+	skipPatterns, skipSrcLabel := buildSkipPatterns(targetDir, scanNoDefaultExclusions, scanExcludePatterns)
 	skipPatterns = applyTestSkipPatterns(skipPatterns, scanIncludeTests)
 
 	if len(skipPatterns) > 0 {
-		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), multiSourceSkipPatterns.Name())
+		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), skipSrcLabel)
 	}
 
 	// Create skip matcher for language detection
