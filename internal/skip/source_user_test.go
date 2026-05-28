@@ -25,11 +25,11 @@ func TestUserExcludeSource(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		input    []string
-		wantOut  []string
-		wantLen  int
-		wantNil  bool
+		name    string
+		input   []string
+		wantOut []string
+		wantLen int
+		wantNil bool
 	}{
 		{
 			name:    "emptyInput",
