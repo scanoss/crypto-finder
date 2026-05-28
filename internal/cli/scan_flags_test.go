@@ -321,53 +321,48 @@ func TestBuildSkipPatterns(t *testing.T) {
 			}
 		})
 	})
+}
 
-	// -----------------------------------------------------------------------
-	// Phase 4.4 — warn emission (R7, NF1)
-	// -----------------------------------------------------------------------
+// TestBuildSkipPatterns_WarnEmission tests warn log emission for R7/NF1.
+// This test is intentionally NOT parallelized because it replaces the
+// zerolog/log package-level Logger, which is not safe to swap under races.
+func TestBuildSkipPatterns_WarnEmission(t *testing.T) {
+	dir := t.TempDir()
 
-	t.Run("warnEmission", func(t *testing.T) {
-		// NOTE: This test replaces the zerolog/log package-level Logger to
-		// capture output. It is NOT parallelized because the global logger
-		// replacement is not thread-safe.
+	t.Run("noDefaultsTrue_emitsWarn", func(t *testing.T) {
+		var buf bytes.Buffer
+		captureLogger := zerolog.New(&buf).Level(zerolog.WarnLevel)
 
-		dir := t.TempDir()
+		old := zlog.Logger
+		zlog.Logger = captureLogger
+		defer func() { zlog.Logger = old }()
 
-		t.Run("noDefaultsTrue_emitsWarn", func(t *testing.T) {
-			var buf bytes.Buffer
-			captureLogger := zerolog.New(&buf).Level(zerolog.WarnLevel)
+		buildSkipPatterns(dir, true, nil)
 
-			old := zlog.Logger
-			zlog.Logger = captureLogger
-			defer func() { zlog.Logger = old }()
+		output := buf.String()
+		warnCount := countWarnLines(t, output, "Default directory exclusions are disabled")
+		if warnCount != 1 {
+			t.Errorf("expected exactly 1 warn containing %q, got %d. full output:\n%s",
+				"Default directory exclusions are disabled", warnCount, output)
+		}
+	})
 
-			buildSkipPatterns(dir, true, nil)
+	t.Run("noDefaultsFalse_noWarn", func(t *testing.T) {
+		var buf bytes.Buffer
+		captureLogger := zerolog.New(&buf).Level(zerolog.WarnLevel)
 
-			output := buf.String()
-			warnCount := countWarnLines(t, output, "Default directory exclusions are disabled")
-			if warnCount != 1 {
-				t.Errorf("expected exactly 1 warn containing %q, got %d. full output:\n%s",
-					"Default directory exclusions are disabled", warnCount, output)
-			}
-		})
+		old := zlog.Logger
+		zlog.Logger = captureLogger
+		defer func() { zlog.Logger = old }()
 
-		t.Run("noDefaultsFalse_noWarn", func(t *testing.T) {
-			var buf bytes.Buffer
-			captureLogger := zerolog.New(&buf).Level(zerolog.WarnLevel)
+		buildSkipPatterns(dir, false, nil)
 
-			old := zlog.Logger
-			zlog.Logger = captureLogger
-			defer func() { zlog.Logger = old }()
-
-			buildSkipPatterns(dir, false, nil)
-
-			output := buf.String()
-			warnCount := countWarnLines(t, output, "Default directory exclusions are disabled")
-			if warnCount != 0 {
-				t.Errorf("expected 0 warns containing %q when noDefaults=false, got %d. output:\n%s",
-					"Default directory exclusions are disabled", warnCount, output)
-			}
-		})
+		output := buf.String()
+		warnCount := countWarnLines(t, output, "Default directory exclusions are disabled")
+		if warnCount != 0 {
+			t.Errorf("expected 0 warns containing %q when noDefaults=false, got %d. output:\n%s",
+				"Default directory exclusions are disabled", warnCount, output)
+		}
 	})
 }
 
