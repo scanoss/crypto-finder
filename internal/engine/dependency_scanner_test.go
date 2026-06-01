@@ -153,24 +153,26 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 
 	sets := javaDS.collectPackageSets("/user/project", resolvedWorkspace, depResults)
-	// 2 workspace members + 1 dep with findings = 3 graphPackages; remaining Java deps stay type-only.
-	if len(sets.graphPackages) != 3 {
-		t.Fatalf("graphPackages len = %d, want 3 (2 workspace + 1 finding dep)", len(sets.graphPackages))
+	// 2 workspace members + 2 successfully scanned deps with source = 4 graphPackages.
+	// dep2 has no crypto findings, but it still needs full source parsing because
+	// it can be a bridge in A -> B(no crypto) -> C(crypto) reachability.
+	if len(sets.graphPackages) != 4 {
+		t.Fatalf("graphPackages len = %d, want 4 (2 workspace + 2 source deps)", len(sets.graphPackages))
 	}
-	if len(sets.typeOnlyPackages) != 3 {
-		t.Fatalf("typeOnlyPackages len = %d, want 3", len(sets.typeOnlyPackages))
+	if len(sets.typeOnlyPackages) != 2 {
+		t.Fatalf("typeOnlyPackages len = %d, want 2", len(sets.typeOnlyPackages))
 	}
-	if sets.graphPackages[2].Version != "v1" {
-		t.Fatalf("graphPackages[2].Version = %q, want v1", sets.graphPackages[2].Version)
+	if sets.graphPackages[2].Version != "v1" || sets.graphPackages[3].Version != "v2" {
+		t.Fatalf("unexpected graphPackages versions: %#v", sets.graphPackages)
 	}
-	if sets.typeOnlyPackages[0].Version != "v2" || sets.typeOnlyPackages[1].Version != "v3" || sets.typeOnlyPackages[2].Version != "v4" {
+	if sets.graphPackages[3].CompiledArtifactPath != "/artifacts/dep2.jar" {
+		t.Fatalf("expected compiled artifact path to propagate for source-parsed dep, got %#v", sets.graphPackages[3])
+	}
+	if sets.typeOnlyPackages[0].Version != "v3" || sets.typeOnlyPackages[1].Version != "v4" {
 		t.Fatalf("unexpected typeOnlyPackages versions: %#v", sets.typeOnlyPackages)
 	}
-	if sets.typeOnlyPackages[0].CompiledArtifactPath != "/artifacts/dep2.jar" {
-		t.Fatalf("expected compiled artifact path to propagate, got %#v", sets.typeOnlyPackages[0])
-	}
-	if sets.typeOnlyPackages[1].CompiledArtifactPath != "/artifacts/dep3.jar" {
-		t.Fatalf("expected compiled artifact path to propagate for source-less dep, got %#v", sets.typeOnlyPackages[1])
+	if sets.typeOnlyPackages[0].CompiledArtifactPath != "/artifacts/dep3.jar" {
+		t.Fatalf("expected compiled artifact path to propagate for source-less dep, got %#v", sets.typeOnlyPackages[0])
 	}
 
 	workspaceUsers := ds.buildUserPackages(resolvedWorkspace)

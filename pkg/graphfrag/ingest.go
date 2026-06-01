@@ -15,7 +15,8 @@ import (
 func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 	frag := Fragment{Component: component, Module: e.ScanMetadata.RootModule}
 
-	for _, fn := range e.Functions {
+	for i := range e.Functions {
+		fn := &e.Functions[i]
 		frag.Functions = append(frag.Functions, Function{Signature: fn.Key, FilePath: fn.FilePath})
 	}
 	for _, ie := range e.InternalEdges {
@@ -29,7 +30,8 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			CallSite:     ie.Line,
 		})
 	}
-	for _, ec := range e.ExternalCalls {
+	for i := range e.ExternalCalls {
+		ec := &e.ExternalCalls[i]
 		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
 			Caller:          ec.CallerKey,
 			TargetSignature: ec.TargetKey,

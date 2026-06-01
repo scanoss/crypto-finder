@@ -330,7 +330,7 @@ func (b *Builder) expandOverloadCandidates(callee FunctionID, methodsByQualified
 	return methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]
 }
 
-// interfaceDispatchAlias is one synthesised interface-dispatch edge target plus
+// interfaceDispatchAlias is one synthesized interface-dispatch edge target plus
 // the interface type that was expanded, so the edge can be classified and
 // grouped with its siblings downstream.
 type interfaceDispatchAlias struct {

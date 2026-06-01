@@ -26,6 +26,8 @@ type GraphFragmentExport struct {
 	CryptoAnnotations []GraphFragmentCryptoOp   `json:"crypto_annotations,omitempty"`
 }
 
+// GraphFragmentScanMetadata summarizes the scan that produced a graph-fragment
+// export and the payload counts emitted for that component.
 type GraphFragmentScanMetadata struct {
 	Ecosystem     string `json:"ecosystem,omitempty"`
 	RootModule    string `json:"root_module,omitempty"`
@@ -39,6 +41,8 @@ type GraphFragmentScanMetadata struct {
 	CryptoOps     int    `json:"crypto_operation_count"`
 }
 
+// GraphFragmentFunction is one function declaration included in a component's
+// graph-fragment export.
 type GraphFragmentFunction struct {
 	Key                string          `json:"key"`
 	FunctionName       string          `json:"function_name"`
@@ -82,6 +86,8 @@ type GraphFragmentExternal struct {
 	Arity              int    `json:"arity,omitempty"`
 }
 
+// GraphFragmentCryptoOp is one crypto finding annotation attached to a function
+// in the exported graph fragment.
 type GraphFragmentCryptoOp struct {
 	FunctionKey string `json:"function_key,omitempty"`
 	FindingID   string `json:"finding_id,omitempty"`

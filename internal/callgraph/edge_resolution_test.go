@@ -11,7 +11,7 @@ import (
 // name/arity dispatch guesses.
 //
 // Scenario: a controller calls an interface method directly. The direct edge to
-// the interface method is exact; the edges the builder synthesises to the
+// the interface method is exact; the edges the builder synthesizes to the
 // concrete implementations (by name+arity+namespace) are interface_dispatch.
 func TestBuildCallerIndex_ClassifiesEdgeResolution(t *testing.T) {
 	root := t.TempDir()
@@ -74,7 +74,7 @@ func TestBuildCallerIndex_ClassifiesEdgeResolution(t *testing.T) {
 
 	implRes, ok := graph.EdgeResolutions[EdgeResolutionKey(callerKey, implKey)]
 	if !ok {
-		t.Fatalf("expected an EdgeResolution for the synthesised impl edge %q", implKey)
+		t.Fatalf("expected an EdgeResolution for the synthesized impl edge %q", implKey)
 	}
 	if implRes.Kind != EdgeKindInterfaceDispatch {
 		t.Fatalf("impl edge kind = %q, want %q", implRes.Kind, EdgeKindInterfaceDispatch)

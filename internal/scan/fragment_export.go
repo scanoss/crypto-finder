@@ -19,6 +19,8 @@ import (
 // crypto-finder's contract with downstream consumers (the mining service, CI
 // plugins). This file only BUILDS that schema from a callgraph.
 
+// ExportGraphFragment writes the dependency scan result's call graph as a
+// graph-fragment export in the requested format.
 func ExportGraphFragment(path, format string, result *engine.DepScanResult) error {
 	if result == nil {
 		return fmt.Errorf("cannot export graph fragment: dep scan result is nil")
@@ -44,6 +46,8 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 	return nil
 }
 
+// BuildGraphFragmentExport projects a dependency scan result onto the public
+// graph-fragment export schema.
 func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
@@ -89,80 +93,112 @@ func buildGraphFragmentResolvedEdges(graph *callgraph.CallGraph) ([]graphfrag.Gr
 
 	internalByKey := map[string]graphfrag.GraphFragmentEdge{}
 	externalByKey := map[string]graphfrag.GraphFragmentExternal{}
-	calleeKeys := make([]string, 0, len(graph.Callers))
-	for calleeKey := range graph.Callers {
-		calleeKeys = append(calleeKeys, calleeKey)
+	for _, calleeKey := range sortedKeys(graph.Callers) {
+		addResolvedFragmentEdges(graph, calleeKey, internalByKey, externalByKey)
 	}
-	sort.Strings(calleeKeys)
 
-	for _, calleeKey := range calleeKeys {
-		callers := append([]string(nil), graph.Callers[calleeKey]...)
-		sort.Strings(callers)
-		for _, callerKey := range callers {
-			callerDecl := graph.Functions[callerKey]
-			if callerDecl == nil {
-				continue
-			}
-			line := findFragmentCallLine(callerDecl, calleeKey)
-			res := resolveFragmentEdge(graph, callerKey, calleeKey)
-			if _, ok := graph.Functions[calleeKey]; ok {
-				key := callerKey + "\x00" + calleeKey
-				internalByKey[key] = graphfrag.GraphFragmentEdge{
-					CallerKey:    callerKey,
-					CalleeKey:    calleeKey,
-					Line:         line,
-					Resolution:   res.Resolution,
-					DeclaredType: res.DeclaredType,
-					MethodName:   res.MethodName,
-					Arity:        res.Arity,
-				}
-				continue
-			}
+	return sortedFragmentEdges(internalByKey), sortedFragmentExternalCalls(externalByKey)
+}
 
-			external := graphfrag.GraphFragmentExternal{
-				CallerKey:    callerKey,
-				TargetKey:    calleeKey,
-				Line:         line,
-				Resolution:   res.Resolution,
-				DeclaredType: res.DeclaredType,
-				MethodName:   res.MethodName,
-				Arity:        res.Arity,
-			}
-			if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
-				external.TargetFunctionName = fullFunctionName(calleeID)
-			}
-			if call := findCallForCallee(callerDecl, calleeKey); call != nil {
-				external.Raw = call.Raw
-				if external.TargetFunctionName == "" {
-					external.TargetFunctionName = fullFunctionName(call.Callee)
-				}
-			}
-			key := callerKey + "\x00" + calleeKey
-			externalByKey[key] = external
+func addResolvedFragmentEdges(
+	graph *callgraph.CallGraph,
+	calleeKey string,
+	internalByKey map[string]graphfrag.GraphFragmentEdge,
+	externalByKey map[string]graphfrag.GraphFragmentExternal,
+) {
+	callers := append([]string(nil), graph.Callers[calleeKey]...)
+	sort.Strings(callers)
+	for _, callerKey := range callers {
+		callerDecl := graph.Functions[callerKey]
+		if callerDecl == nil {
+			continue
+		}
+		edgeKey := callerKey + "\x00" + calleeKey
+		line := findFragmentCallLine(callerDecl, calleeKey)
+		res := resolveFragmentEdge(graph, callerKey, calleeKey)
+		if _, ok := graph.Functions[calleeKey]; ok {
+			internalByKey[edgeKey] = buildFragmentInternalEdge(callerKey, calleeKey, line, res)
+			continue
+		}
+		externalByKey[edgeKey] = buildFragmentExternalCall(callerDecl, callerKey, calleeKey, line, res)
+	}
+}
+
+func buildFragmentInternalEdge(callerKey, calleeKey string, line int, res fragmentEdgeResolution) graphfrag.GraphFragmentEdge {
+	return graphfrag.GraphFragmentEdge{
+		CallerKey:    callerKey,
+		CalleeKey:    calleeKey,
+		Line:         line,
+		Resolution:   res.Resolution,
+		DeclaredType: res.DeclaredType,
+		MethodName:   res.MethodName,
+		Arity:        res.Arity,
+	}
+}
+
+func buildFragmentExternalCall(
+	callerDecl *callgraph.FunctionDecl,
+	callerKey string,
+	calleeKey string,
+	line int,
+	res fragmentEdgeResolution,
+) graphfrag.GraphFragmentExternal {
+	external := graphfrag.GraphFragmentExternal{
+		CallerKey:    callerKey,
+		TargetKey:    calleeKey,
+		Line:         line,
+		Resolution:   res.Resolution,
+		DeclaredType: res.DeclaredType,
+		MethodName:   res.MethodName,
+		Arity:        res.Arity,
+	}
+	external.TargetFunctionName = fragmentTargetFunctionName(callerDecl, calleeKey, &external)
+	return external
+}
+
+func fragmentTargetFunctionName(
+	callerDecl *callgraph.FunctionDecl,
+	calleeKey string,
+	external *graphfrag.GraphFragmentExternal,
+) string {
+	targetName := ""
+	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
+		targetName = fullFunctionName(calleeID)
+	}
+	if call := findCallForCallee(callerDecl, calleeKey); call != nil {
+		external.Raw = call.Raw
+		if targetName == "" {
+			targetName = fullFunctionName(call.Callee)
 		}
 	}
+	return targetName
+}
 
-	internalKeys := make([]string, 0, len(internalByKey))
-	for key := range internalByKey {
-		internalKeys = append(internalKeys, key)
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	sort.Strings(internalKeys)
-	internal := make([]graphfrag.GraphFragmentEdge, 0, len(internalKeys))
-	for _, key := range internalKeys {
-		internal = append(internal, internalByKey[key])
-	}
+	sort.Strings(keys)
+	return keys
+}
 
-	externalKeys := make([]string, 0, len(externalByKey))
-	for key := range externalByKey {
-		externalKeys = append(externalKeys, key)
+func sortedFragmentEdges(values map[string]graphfrag.GraphFragmentEdge) []graphfrag.GraphFragmentEdge {
+	keys := sortedKeys(values)
+	out := make([]graphfrag.GraphFragmentEdge, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, values[key])
 	}
-	sort.Strings(externalKeys)
-	external := make([]graphfrag.GraphFragmentExternal, 0, len(externalKeys))
-	for _, key := range externalKeys {
-		external = append(external, externalByKey[key])
-	}
+	return out
+}
 
-	return internal, external
+func sortedFragmentExternalCalls(values map[string]graphfrag.GraphFragmentExternal) []graphfrag.GraphFragmentExternal {
+	keys := sortedKeys(values)
+	out := make([]graphfrag.GraphFragmentExternal, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, values[key])
+	}
+	return out
 }
 
 type fragmentEdgeResolution struct {

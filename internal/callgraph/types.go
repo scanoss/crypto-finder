@@ -275,14 +275,14 @@ type CallGraph struct {
 type EdgeKind string
 
 const (
-	// EdgeKindExact: the receiver's static type was known and the method
+	// EdgeKindExact means the receiver's static type was known and the method
 	// resolved to a unique declared target (or an overload on that exact type).
 	EdgeKindExact EdgeKind = "exact"
-	// EdgeKindInterfaceDispatch: a synthesised edge from an interface/abstract
+	// EdgeKindInterfaceDispatch is a synthesized edge from an interface/abstract
 	// method call site to a concrete implementation matched by name+arity within
 	// a namespace root.
 	EdgeKindInterfaceDispatch EdgeKind = "interface_dispatch"
-	// EdgeKindNameOnly: a fluent-fallback edge matched by method name+arity (and
+	// EdgeKindNameOnly is a fluent-fallback edge matched by method name+arity (and
 	// namespace heuristics) with no receiver type anchor.
 	EdgeKindNameOnly EdgeKind = "name_only"
 )

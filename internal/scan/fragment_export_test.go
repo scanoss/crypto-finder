@@ -305,7 +305,8 @@ func findExternalCall(payload graphfrag.GraphFragmentExport, caller, target stri
 }
 
 func hasFragmentFunction(payload graphfrag.GraphFragmentExport, key string) bool {
-	for _, fn := range payload.Functions {
+	for i := range payload.Functions {
+		fn := &payload.Functions[i]
 		if fn.Key == key {
 			return true
 		}
@@ -314,7 +315,8 @@ func hasFragmentFunction(payload graphfrag.GraphFragmentExport, key string) bool
 }
 
 func hasExternalTarget(payload graphfrag.GraphFragmentExport, target string) bool {
-	for _, call := range payload.ExternalCalls {
+	for i := range payload.ExternalCalls {
+		call := &payload.ExternalCalls[i]
 		if call.TargetKey == target {
 			return true
 		}

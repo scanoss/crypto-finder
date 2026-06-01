@@ -73,33 +73,36 @@ var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 var SupportedFormats = []string{formatJSON, "cyclonedx"}
 
 var (
-	scanRules               []string
-	scanRuleDirs            []string
-	scanScanner             string
-	scanFormat              string
-	scanOutput              string
-	scanLanguages           []string
-	scanFailOnFind          bool
-	scanTimeout             string
-	scanNoRemoteRules       bool
-	scanNoCache             bool
-	scanAPIKey              string
-	scanAPIURL              string
-	scanStrict              bool
-	scanMaxStaleAge         string
-	scanNoDedup             bool
-	scanInterfile           bool
-	scanDependencies        bool
-	scanIncludeTests        bool
-	scanNoDefaultExclusions bool     // --no-default-exclusions flag
-	scanExcludePatterns     []string // --exclude flag (repeatable)
-	scanDepEcosystem        string
-	scanExportCallgraph     string
-	scanExportCgFormat      string
-	scanDepWorkers          int
-	scanJavaJDKMajor        string
-	scanJavaJDKHomes        []string
-	scanFindingsCache       string
+	scanRules                []string
+	scanRuleDirs             []string
+	scanScanner              string
+	scanFormat               string
+	scanOutput               string
+	scanLanguages            []string
+	scanFailOnFind           bool
+	scanTimeout              string
+	scanNoRemoteRules        bool
+	scanNoCache              bool
+	scanAPIKey               string
+	scanAPIURL               string
+	scanStrict               bool
+	scanMaxStaleAge          string
+	scanNoDedup              bool
+	scanInterfile            bool
+	scanDependencies         bool
+	scanIncludeTests         bool
+	scanNoDefaultExclusions  bool     // --no-default-exclusions flag
+	scanExcludePatterns      []string // --exclude flag (repeatable)
+	scanDepEcosystem         string
+	scanExportCallgraph      string
+	scanExportCgFormat       string
+	scanExportGraphFragment  string
+	scanExportGfFormat       string
+	scanDepWorkers           int
+	scanJavaJDKMajor         string
+	scanJavaJDKHomes         []string
+	scanJavaCompiledArtifact string
+	scanFindingsCache        string
 )
 
 var scanCmd = &cobra.Command{
@@ -174,8 +177,11 @@ func init() {
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
+	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
+	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
 	scanCmd.Flags().StringArrayVar(&scanJavaJDKHomes, "java-jdk-home", []string{}, "Java JDK home mapping in the form <major>=<path> (repeatable)")
+	scanCmd.Flags().StringVar(&scanJavaCompiledArtifact, "java-compiled-artifact", "", "Compiled Java artifact path used for standalone callgraph/type enrichment")
 }
 
 func callGraphTargetDir(target string) (string, error) {
@@ -342,7 +348,7 @@ func multiSourceLabel(sources []skip.PatternSource, multi *skip.MultiSource) str
 	return strings.Join(names, ", ")
 }
 
-func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool) (*engine.DepScanResult, error) {
+func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string) (*engine.DepScanResult, error) {
 	targetDir, err := callGraphTargetDir(target)
 	if err != nil {
 		return nil, fmt.Errorf("resolve call graph target: %w", err)
@@ -360,8 +366,9 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 
 	rootModule := scanutil.DetectRootModule(targetDir, ecosystem)
 	graph, err := cgBuilder.BuildFromDirectories([]callgraph.PackageDir{{
-		Dir:        targetDir,
-		ImportPath: rootModule,
+		Dir:                  targetDir,
+		ImportPath:           rootModule,
+		CompiledArtifactPath: compiledArtifact,
 	}}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build call graph: %w", err)
@@ -416,7 +423,15 @@ func runScan(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	targetDir := filepath.Dir(target)
+	targetDir, err := callGraphTargetDir(target)
+	if err != nil {
+		return failure.WrapUnknown(
+			err,
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("failed to resolve target directory for '%s'", target),
+		)
+	}
 
 	// Load skip patterns from multiple sources, honoring --no-default-exclusions and --exclude.
 	skipPatterns, skipSrcLabel := buildSkipPatterns(targetDir, scanNoDefaultExclusions, scanExcludePatterns)
@@ -667,13 +682,13 @@ func runScan(_ *cobra.Command, args []string) error {
 
 	engine.EnsureFindingSources(report)
 
-	if scanExportCallgraph != "" && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
+	if (scanExportCallgraph != "" || scanExportGraphFragment != "") && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
 		if ecosystemFromHints(target, scanLanguages) == "java" {
 			if err := ensureJavaRuntime(); err != nil {
 				return err
 			}
 		}
-		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests)
+		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact)
 		if err != nil {
 			return failure.WrapUnknown(
 				err,
@@ -684,16 +699,19 @@ func runScan(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
+		engine.AssignFindingIDs(report)
+		if callGraphResult != nil {
+			callGraphResult.Report = report
+		}
+	}
+
 	if scanExportCallgraph != "" {
 		exportStart := time.Now()
 		log.Info().
 			Str("file", scanExportCallgraph).
 			Str("format", scanExportCgFormat).
 			Msg("Starting call graph export")
-		engine.AssignFindingIDs(report)
-		if callGraphResult != nil {
-			callGraphResult.Report = report
-		}
 		if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,
@@ -706,6 +724,26 @@ func runScan(_ *cobra.Command, args []string) error {
 			Str("file", scanExportCallgraph).
 			Dur("duration", time.Since(exportStart)).
 			Msg("Call graph export complete")
+	}
+
+	if scanExportGraphFragment != "" {
+		exportStart := time.Now()
+		log.Info().
+			Str("file", scanExportGraphFragment).
+			Str("format", scanExportGfFormat).
+			Msg("Starting graph fragment export")
+		if exportErr := scanutil.ExportGraphFragment(scanExportGraphFragment, scanExportGfFormat, callGraphResult); exportErr != nil {
+			return failure.WrapUnknown(
+				exportErr,
+				failure.CodeCallGraphExportFailed,
+				failure.StageExport,
+				"failed to export graph fragment",
+			)
+		}
+		log.Info().
+			Str("file", scanExportGraphFragment).
+			Dur("duration", time.Since(exportStart)).
+			Msg("Graph fragment export complete")
 	}
 
 	report.Version = entities.InterimFormatVersion

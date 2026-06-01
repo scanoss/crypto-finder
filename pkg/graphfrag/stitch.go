@@ -123,107 +123,179 @@ func buildAdjacency(
 ) (map[graphNode][]graphNode, []SuppressedEdge) {
 	out := make(map[graphNode][]graphNode)
 	var suppressed []SuppressedEdge
-	inClosure := make(map[ComponentKey]bool, len(closure))
-	for _, key := range closure {
-		inClosure[key] = true
-	}
+	inClosure := componentSet(closure)
 
 	for _, key := range closure {
 		fragment := fragments[key]
+		componentSigs := indexComponentSignatures(key, fragment, out)
+		edges := collectCallEdges(fragment)
+		resolve := callEdgeResolver(key, componentSigs, inClosure, functionsBySignature)
 
-		componentSigs := make(map[string]bool, len(fragment.Functions))
-		for _, fn := range fragment.Functions {
-			node := graphNode{Component: key, Function: fn.Signature}
-			if _, ok := out[node]; !ok {
-				out[node] = nil
-			}
-			componentSigs[fn.Signature] = true
-		}
-
-		// resolve maps one edge to the concrete target nodes it could reach.
-		// Internal edges resolve within the component; external edges resolve to
-		// other components in the dependency closure.
-		resolve := func(e callEdge) []graphNode {
-			if e.internal {
-				if componentSigs[e.target] {
-					return []graphNode{{Component: key, Function: e.target}}
-				}
-				return nil
-			}
-			var targets []graphNode
-			for _, callee := range functionsBySignature[e.target] {
-				if callee.Component == key || !inClosure[callee.Component] {
-					continue
-				}
-				targets = append(targets, callee)
-			}
-			return targets
-		}
-
-		edges := make([]callEdge, 0, len(fragment.InternalEdges)+len(fragment.ExternalCalls))
-		for _, e := range fragment.InternalEdges {
-			edges = append(edges, callEdge{
-				caller: e.Caller, target: e.Callee, resolution: e.Resolution,
-				method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true,
-			})
-		}
-		for _, c := range fragment.ExternalCalls {
-			edges = append(edges, callEdge{
-				caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
-				method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false,
-			})
-		}
-
-		// Interface-dispatch candidates are deferred and grouped per call site so
-		// ambiguity (>1 impl in closure) is detected across all sibling edges,
-		// including siblings that cross the internal/external boundary.
-		dispatchGroups := make(map[dispatchGroupKey][]callEdge)
-		for _, e := range edges {
-			caller := graphNode{Component: key, Function: e.caller}
-			switch e.resolution {
-			case ResolutionExact:
-				for _, callee := range resolve(e) {
-					out[caller] = append(out[caller], callee)
-				}
-			case ResolutionInterfaceDispatch:
-				gk := dispatchGroupKey{Component: key, Caller: e.caller, CallSite: e.callSite, MethodName: e.method, Arity: e.arity}
-				dispatchGroups[gk] = append(dispatchGroups[gk], e)
-			case ResolutionNameOnly:
-				suppressed = append(suppressed, suppressedEdge(key, e, SuppressReasonNameOnly, candidateComponents(resolve(e))))
-			default: // ResolutionUnknown and any future unhandled kind: fail closed.
-				suppressed = append(suppressed, suppressedEdge(key, e, SuppressReasonUnknown, candidateComponents(resolve(e))))
-			}
-		}
-
-		for _, gk := range sortedDispatchKeys(dispatchGroups) {
-			caller := graphNode{Component: key, Function: gk.Caller}
-			distinct := map[graphNode]bool{}
-			var targets []graphNode
-			for _, e := range dispatchGroups[gk] {
-				for _, t := range resolve(e) {
-					if !distinct[t] {
-						distinct[t] = true
-						targets = append(targets, t)
-					}
-				}
-			}
-			switch {
-			case len(targets) == 1:
-				out[caller] = append(out[caller], targets[0])
-			case len(targets) > 1:
-				suppressed = append(suppressed, SuppressedEdge{
-					Caller:     CallFrame{Component: key, Function: gk.Caller},
-					MethodName: gk.MethodName,
-					Arity:      gk.Arity,
-					Reason:     SuppressReasonAmbiguousDispatch,
-					Candidates: candidateComponents(targets),
-				})
-				// len(targets) == 0: no implementation in closure -> unreachable,
-				// nothing to traverse and nothing to record.
-			}
-		}
+		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed)
+		applyDispatchGroups(key, dispatchGroups, resolve, out, &suppressed)
 	}
 	return out, suppressed
+}
+
+func componentSet(closure []ComponentKey) map[ComponentKey]bool {
+	out := make(map[ComponentKey]bool, len(closure))
+	for _, key := range closure {
+		out[key] = true
+	}
+	return out
+}
+
+func indexComponentSignatures(key ComponentKey, fragment Fragment, adjacency map[graphNode][]graphNode) map[string]bool {
+	componentSigs := make(map[string]bool, len(fragment.Functions))
+	for _, fn := range fragment.Functions {
+		node := graphNode{Component: key, Function: fn.Signature}
+		if _, ok := adjacency[node]; !ok {
+			adjacency[node] = nil
+		}
+		componentSigs[fn.Signature] = true
+	}
+	return componentSigs
+}
+
+func collectCallEdges(fragment Fragment) []callEdge {
+	edges := make([]callEdge, 0, len(fragment.InternalEdges)+len(fragment.ExternalCalls))
+	for _, e := range fragment.InternalEdges {
+		edges = append(edges, callEdge{
+			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
+			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true,
+		})
+	}
+	for _, c := range fragment.ExternalCalls {
+		edges = append(edges, callEdge{
+			caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
+			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false,
+		})
+	}
+	return edges
+}
+
+type edgeResolver func(callEdge) []graphNode
+
+// callEdgeResolver maps one edge to the concrete target nodes it could reach.
+// Internal edges resolve within the component; external edges resolve to other
+// components in the dependency closure.
+func callEdgeResolver(
+	key ComponentKey,
+	componentSigs map[string]bool,
+	inClosure map[ComponentKey]bool,
+	functionsBySignature map[string][]graphNode,
+) edgeResolver {
+	return func(e callEdge) []graphNode {
+		if e.internal {
+			if componentSigs[e.target] {
+				return []graphNode{{Component: key, Function: e.target}}
+			}
+			return nil
+		}
+		return externalTargets(key, e.target, inClosure, functionsBySignature)
+	}
+}
+
+func externalTargets(
+	current ComponentKey,
+	target string,
+	inClosure map[ComponentKey]bool,
+	functionsBySignature map[string][]graphNode,
+) []graphNode {
+	var targets []graphNode
+	for _, callee := range functionsBySignature[target] {
+		if callee.Component == current || !inClosure[callee.Component] {
+			continue
+		}
+		targets = append(targets, callee)
+	}
+	return targets
+}
+
+func applyImmediateEdgePolicy(
+	key ComponentKey,
+	edges []callEdge,
+	resolve edgeResolver,
+	adjacency map[graphNode][]graphNode,
+	suppressed *[]SuppressedEdge,
+) map[dispatchGroupKey][]callEdge {
+	// Interface-dispatch candidates are deferred and grouped per call site so
+	// ambiguity (>1 impl in closure) is detected across all sibling edges,
+	// including siblings that cross the internal/external boundary.
+	dispatchGroups := make(map[dispatchGroupKey][]callEdge)
+	for _, e := range edges {
+		caller := graphNode{Component: key, Function: e.caller}
+		switch e.resolution {
+		case ResolutionExact:
+			adjacency[caller] = append(adjacency[caller], resolve(e)...)
+		case ResolutionInterfaceDispatch:
+			gk := dispatchKey(key, e)
+			dispatchGroups[gk] = append(dispatchGroups[gk], e)
+		case ResolutionNameOnly:
+			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonNameOnly, candidateComponents(resolve(e))))
+		case ResolutionUnknown:
+			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonUnknown, candidateComponents(resolve(e))))
+		default: // Future unhandled kind: fail closed.
+			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonUnknown, candidateComponents(resolve(e))))
+		}
+	}
+	return dispatchGroups
+}
+
+func dispatchKey(key ComponentKey, e callEdge) dispatchGroupKey {
+	return dispatchGroupKey{
+		Component:  key,
+		Caller:     e.caller,
+		CallSite:   e.callSite,
+		MethodName: e.method,
+		Arity:      e.arity,
+	}
+}
+
+func applyDispatchGroups(
+	key ComponentKey,
+	groups map[dispatchGroupKey][]callEdge,
+	resolve edgeResolver,
+	adjacency map[graphNode][]graphNode,
+	suppressed *[]SuppressedEdge,
+) {
+	for _, gk := range sortedDispatchKeys(groups) {
+		targets := distinctTargets(groups[gk], resolve)
+		caller := graphNode{Component: key, Function: gk.Caller}
+		switch {
+		case len(targets) == 1:
+			adjacency[caller] = append(adjacency[caller], targets[0])
+		case len(targets) > 1:
+			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, targets))
+			// len(targets) == 0: no implementation in closure -> unreachable,
+			// nothing to traverse and nothing to record.
+		}
+	}
+}
+
+func distinctTargets(edges []callEdge, resolve edgeResolver) []graphNode {
+	distinct := map[graphNode]bool{}
+	var targets []graphNode
+	for _, e := range edges {
+		for _, t := range resolve(e) {
+			if distinct[t] {
+				continue
+			}
+			distinct[t] = true
+			targets = append(targets, t)
+		}
+	}
+	return targets
+}
+
+func ambiguousDispatchEdge(key ComponentKey, gk dispatchGroupKey, targets []graphNode) SuppressedEdge {
+	return SuppressedEdge{
+		Caller:     CallFrame{Component: key, Function: gk.Caller},
+		MethodName: gk.MethodName,
+		Arity:      gk.Arity,
+		Reason:     SuppressReasonAmbiguousDispatch,
+		Candidates: candidateComponents(targets),
+	}
 }
 
 func candidateComponents(targets []graphNode) []ComponentKey {
@@ -291,7 +363,7 @@ func trace(
 	visiting[current] = true
 	defer delete(visiting, current)
 
-	path = append(path, CallFrame{Component: current.Component, Function: current.Function})
+	path = append(path, CallFrame(current))
 	for _, op := range opsByNode[current] {
 		frames := append([]CallFrame(nil), path...)
 		out.Chains = append(out.Chains, FindingChain{
