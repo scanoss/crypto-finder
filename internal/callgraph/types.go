@@ -263,6 +263,72 @@ type CallGraph struct {
 	// JavaPlatformSignatures records whether Java platform signatures from the
 	// pinned runtime were available and used for this graph build.
 	JavaPlatformSignatures *JavaPlatformSignatureMetadata
+	// EdgeResolutions records how each caller->callee edge in Callers was
+	// resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey). An edge with
+	// no entry is an exact, directly-resolved source call. Consumers (the graph
+	// fragment export and the mining-service stitcher) use this to refuse to
+	// present over-broad name/arity dispatch guesses as typed reachability proof.
+	EdgeResolutions map[string]EdgeResolution
+}
+
+// EdgeKind classifies how confidently a caller->callee edge was resolved.
+type EdgeKind string
+
+const (
+	// EdgeKindExact: the receiver's static type was known and the method
+	// resolved to a unique declared target (or an overload on that exact type).
+	EdgeKindExact EdgeKind = "exact"
+	// EdgeKindInterfaceDispatch: a synthesised edge from an interface/abstract
+	// method call site to a concrete implementation matched by name+arity within
+	// a namespace root.
+	EdgeKindInterfaceDispatch EdgeKind = "interface_dispatch"
+	// EdgeKindNameOnly: a fluent-fallback edge matched by method name+arity (and
+	// namespace heuristics) with no receiver type anchor.
+	EdgeKindNameOnly EdgeKind = "name_only"
+)
+
+// edgeKindRank orders kinds by trust so a stronger classification is never
+// downgraded when the same edge is reached via multiple resolution paths.
+func edgeKindRank(k EdgeKind) int {
+	switch k {
+	case EdgeKindExact:
+		return 3
+	case EdgeKindInterfaceDispatch:
+		return 2
+	case EdgeKindNameOnly:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// EdgeResolution describes how one caller->callee edge was resolved, plus the
+// call-site identity needed to group ambiguous dispatch siblings downstream.
+type EdgeResolution struct {
+	Kind         EdgeKind
+	DeclaredType string // interface/static type for dispatch edges (e.g. "dep.Sink")
+	MethodName   string // base method name (no arity decoration)
+	Arity        int
+	CallSite     int // source line of the call expression
+}
+
+// EdgeResolutionKey is the stable map key for an edge resolution.
+func EdgeResolutionKey(callerKey, calleeKey string) string {
+	return callerKey + "\x00" + calleeKey
+}
+
+// functionArity parses the "#<n>" arity suffix from a decorated function name.
+// Returns 0 when the name carries no arity suffix.
+func functionArity(name string) int {
+	idx := strings.Index(name, "#")
+	if idx < 0 || idx >= len(name)-1 {
+		return 0
+	}
+	n := 0
+	for j := idx + 1; j < len(name) && name[j] >= '0' && name[j] <= '9'; j++ {
+		n = n*10 + int(name[j]-'0')
+	}
+	return n
 }
 
 // ExternalMethodSignatureKey returns the stable graph key for resolver-provided

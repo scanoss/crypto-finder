@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-01
+
+### Added
+- `pkg/graphfrag`: new public package owning the reusable graph-fragment model, the wire schema (`GraphFragmentExport`), `DecodeFragment`, and a tiered fail-closed stitcher that composes per-component fragments into transitive crypto-reachability chains. Downstream services consume this one contract instead of reimplementing schema/merge logic (mirrors `pkg/stitch`).
+- Call-graph edge **resolution classification**: each caller→callee edge is now tagged `exact`, `interface_dispatch`, or `name_only` at build time (`CallGraph.EdgeResolutions`), distinguishing exact typed calls from over-broad name+arity dispatch guesses (interface-dispatch expansion, fluent fallback).
+
+### Changed
+- Graph-fragment export schema bumped to `graph-fragment-1.1`: `internal_edges[]` and `external_calls[]` now carry `resolution`, `declared_type`, `method_name`, and `arity`. The fields are additive (1.0 fragments decode as unresolved/untrusted). See [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md#graph-fragment-export).
+
 ## [0.4.1] - 2026-05-11
 
 ### Changed

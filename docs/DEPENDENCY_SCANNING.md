@@ -199,6 +199,19 @@ Callers:    "crypto/aes.NewCipher"         → ["example.com/app.Encrypt"]
 
 The reverse index is what enables **backward tracing** — starting from a crypto finding and walking up to user code.
 
+#### Edge resolution kinds
+
+While building the caller index, the builder records **how** each edge was
+resolved in `CallGraph.EdgeResolutions`: `exact` (receiver type known, unique
+target or overload set on that type), `interface_dispatch` (an interface/abstract
+method expanded to concrete implementations by name+arity within a namespace
+root), or `name_only` (a fluent-fallback guess with no receiver-type anchor).
+This classification is emitted on the graph-fragment export (`graph-fragment-1.1`,
+see [Output Formats](OUTPUT_FORMATS.md#graph-fragment-export)) so a downstream
+stitcher (`pkg/graphfrag`) can fail closed on over-broad dispatch instead of
+reporting it as typed reachability. The dispatch heuristics below (interface
+expansion, fluent fallback) are exactly the edges tagged non-`exact`.
+
 #### Type resolution
 
 After building the caller index, the builder runs additional resolution passes to improve type accuracy:
