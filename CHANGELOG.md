@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Graph-fragment export bumped to **`graph-fragment-1.2`**: edges now carry the per-call data-flow (`entry_call` with `parameters`/`source_nodes`) and crypto annotations carry the full asset metadata (`crypto_call`, `oid`, `metadata`, `source`) — making a fragment self-contained enough to reconstruct the schema-5.x callgraph.
+- `pkg/graphfrag`: `Result.ToCallgraphExport()` renders a stitched result into a schema-5.x callgraph **equivalent to a live `--scan-dependencies --export-callgraph` run** (rich spanning chains, `entry_point_index`, dep-prefixed `finding_id`s), resolution-corrected (over-broad dispatch suppressed). `CallFrame` enriched with function identity + edge `entry_call`.
+- `pkg/graphfrag/equiv`: semantic diff tool for asserting a stitched callgraph equals the live one minus resolution-suppressed chains (the e2e equivalence gate).
+
 ## [0.6.0] - 2026-06-01
 
 ### Added
