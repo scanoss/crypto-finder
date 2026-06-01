@@ -334,3 +334,235 @@ func hasInternalEdge(payload graphfrag.GraphFragmentExport, caller, callee strin
 	}
 	return false
 }
+
+// ----------------------------------------------------------------------------
+// Phase 3.1 — RED tests for graph-fragment-1.2 population
+// ----------------------------------------------------------------------------
+
+// TestBuildGraphFragmentExport_EdgeEntryCallEqualsBuiltParams verifies that an
+// exported internal edge's entry_call.parameters equals what
+// buildCallSiteParameters returns for the same FunctionCall.
+func TestBuildGraphFragmentExport_EdgeEntryCallEqualsBuiltParams(t *testing.T) {
+	t.Parallel()
+
+	callerID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "init#0"}
+	calleeID := callgraph.FunctionID{Package: "com.lib", Type: "Cipher", Name: "getInstance#1"}
+
+	callee := &callgraph.FunctionDecl{
+		ID:         calleeID,
+		FilePath:   "Cipher.java",
+		StartLine:  1,
+		EndLine:    3,
+		Parameters: []callgraph.FunctionParameter{{Type: "String"}},
+		ReturnType: "Cipher",
+	}
+	theCall := callgraph.FunctionCall{
+		Callee:    calleeID,
+		FilePath:  "Service.java",
+		Line:      7,
+		Arguments: []string{`"AES"`},
+	}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			callerID.String(): {
+				ID:        callerID,
+				FilePath:  "Service.java",
+				StartLine: 1,
+				EndLine:   10,
+				Calls:     []callgraph.FunctionCall{theCall},
+			},
+			calleeID.String(): callee,
+		},
+		Callers: map[string][]string{
+			calleeID.String(): {callerID.String()},
+		},
+	}
+
+	result := &engine.DepScanResult{
+		CallGraph:   graph,
+		ProjectRoot: t.TempDir(),
+		RootModule:  "com.app:app",
+		Ecosystem:   "java",
+	}
+	payload := BuildGraphFragmentExport(result)
+
+	// Find the internal edge caller→callee.
+	edge := findInternalEdge(payload, callerID.String(), calleeID.String())
+	if edge == nil {
+		t.Fatal("internal edge callerID→calleeID not found in payload")
+	}
+	if edge.EntryCall == nil {
+		t.Fatal("edge.EntryCall is nil; expected parameters to be populated (graph-fragment-1.2)")
+	}
+
+	// Build expected parameters via the helper.
+	ctx := newExportBuildContext(result)
+	want := buildCallSiteParameters(ctx, &theCall)
+
+	if len(edge.EntryCall.Parameters) != len(want) {
+		t.Fatalf("EntryCall.Parameters len = %d, want %d", len(edge.EntryCall.Parameters), len(want))
+	}
+	for i := range edge.EntryCall.Parameters {
+		got := edge.EntryCall.Parameters[i]
+		w := want[i]
+		if got.ParameterIndex != w.ParameterIndex {
+			t.Errorf("[%d] ParameterIndex = %d, want %d", i, got.ParameterIndex, w.ParameterIndex)
+		}
+		if got.ArgumentExpression != w.ArgumentExpression {
+			t.Errorf("[%d] ArgumentExpression = %q, want %q", i, got.ArgumentExpression, w.ArgumentExpression)
+		}
+		if got.Type != w.Type {
+			t.Errorf("[%d] Type = %q, want %q", i, got.Type, w.Type)
+		}
+	}
+}
+
+// TestBuildGraphFragmentExport_CryptoOpCryptoCallIdentityMatchesFunctionDecl
+// verifies that the exported crypto_op.crypto_call identity fields
+// (function_name) match the containing/crypto FunctionDecl.
+func TestBuildGraphFragmentExport_CryptoOpCryptoCallIdentityMatchesFunctionDecl(t *testing.T) {
+	t.Parallel()
+
+	cryptoFnID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "doEncrypt#0"}
+	cipherID := callgraph.FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			cryptoFnID.String(): {
+				ID:         cryptoFnID,
+				FilePath:   "Service.java",
+				StartLine:  5,
+				EndLine:    12,
+				ReturnType: "void",
+				Calls: []callgraph.FunctionCall{{
+					Callee:    cipherID,
+					FilePath:  "Service.java",
+					Line:      8,
+					Arguments: []string{`"AES"`},
+				}},
+			},
+			cipherID.String(): {
+				ID:         cipherID,
+				FilePath:   "Cipher.java",
+				StartLine:  1,
+				EndLine:    3,
+				ReturnType: "Cipher",
+				Parameters: []callgraph.FunctionParameter{{Type: "String"}},
+			},
+		},
+		Callers: map[string][]string{
+			cipherID.String(): {cryptoFnID.String()},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
+		Rules: entities.RulesInfo{Version: "v-test"},
+		Findings: []entities.Finding{{
+			FilePath: "Service.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 8,
+				EndLine:   8,
+				Match:     `Cipher.getInstance("AES")`,
+				FindingID: "aabbccdd",
+				Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher.getinstance"}},
+				Metadata:  map[string]string{"api": "javax.crypto.Cipher.getInstance", "assetType": "algorithm"},
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+		Report:      report,
+		CallGraph:   graph,
+		ProjectRoot: t.TempDir(),
+		RootModule:  "com.app:app",
+		Ecosystem:   "java",
+	})
+
+	if len(payload.CryptoAnnotations) != 1 {
+		t.Fatalf("CryptoAnnotations len = %d, want 1", len(payload.CryptoAnnotations))
+	}
+	op := payload.CryptoAnnotations[0]
+
+	// (b) crypto_op.crypto_call identity fields must match the crypto FunctionDecl.
+	if op.CryptoCall == nil {
+		t.Fatal("CryptoCall is nil; expected it to be populated (graph-fragment-1.2)")
+	}
+	wantFunctionName := "javax.crypto.Cipher.getInstance"
+	if op.CryptoCall.FunctionName != wantFunctionName {
+		t.Errorf("CryptoCall.FunctionName = %q, want %q", op.CryptoCall.FunctionName, wantFunctionName)
+	}
+}
+
+// TestBuildGraphFragmentExport_CryptoOpAssetMetadataPopulated verifies that
+// crypto_op.oid, metadata, and source are populated from a known-asset fixture.
+func TestBuildGraphFragmentExport_CryptoOpAssetMetadataPopulated(t *testing.T) {
+	t.Parallel()
+
+	cryptoFnID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "doEncrypt#0"}
+	cipherID := callgraph.FunctionID{Package: "javax.crypto", Type: "Cipher", Name: "getInstance#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			cryptoFnID.String(): {
+				ID:        cryptoFnID,
+				FilePath:  "Service.java",
+				StartLine: 5,
+				EndLine:   12,
+				Calls: []callgraph.FunctionCall{{
+					Callee:   cipherID,
+					FilePath: "Service.java",
+					Line:     8,
+				}},
+			},
+		},
+		Callers: map[string][]string{
+			cipherID.String(): {cryptoFnID.String()},
+		},
+	}
+
+	report := &entities.InterimReport{
+		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
+		Rules: entities.RulesInfo{Version: "v-test"},
+		Findings: []entities.Finding{{
+			FilePath: "Service.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 8,
+				EndLine:   8,
+				Match:     `Cipher.getInstance("AES")`,
+				FindingID: "aabbccdd",
+				Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher.getinstance"}},
+				Metadata:  map[string]string{"api": "javax.crypto.Cipher.getInstance", "assetType": "algorithm", "algorithmFamily": "AES"},
+				OID:       "2.16.840.1.101.3.4.1.2",
+				Source:    "direct",
+			}},
+		}},
+	}
+
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+		Report:      report,
+		CallGraph:   graph,
+		ProjectRoot: t.TempDir(),
+		RootModule:  "com.app:app",
+		Ecosystem:   "java",
+	})
+
+	if len(payload.CryptoAnnotations) != 1 {
+		t.Fatalf("CryptoAnnotations len = %d, want 1", len(payload.CryptoAnnotations))
+	}
+	op := payload.CryptoAnnotations[0]
+
+	// (c) oid/metadata/source are populated for a known-asset fixture.
+	if op.OID != "2.16.840.1.101.3.4.1.2" {
+		t.Errorf("OID = %q, want 2.16.840.1.101.3.4.1.2", op.OID)
+	}
+	if op.Source != "direct" {
+		t.Errorf("Source = %q, want direct", op.Source)
+	}
+	if len(op.Metadata) == 0 {
+		t.Error("Metadata is empty; expected the asset metadata JSON to be stored")
+	}
+}
