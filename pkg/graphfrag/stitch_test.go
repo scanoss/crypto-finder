@@ -180,6 +180,51 @@ func TestStitch_UsesDependencyGraphVersionsForExternalCalls(t *testing.T) {
 	})
 }
 
+func TestStitch_DoesNotResolveExternalCallsThroughTransitiveDependencies(t *testing.T) {
+	fragments := map[ComponentKey]Fragment{
+		componentA: {
+			Component: componentA,
+			Functions: []Function{
+				{Signature: "com.acme.app.AppEntry.entry(): void"},
+			},
+			ExternalCalls: []ExternalCall{
+				{
+					Caller:          "com.acme.app.AppEntry.entry(): void",
+					TargetSignature: "net.crypto.CryptoSink.encrypt(): void",
+					Resolution:      ResolutionExact,
+				},
+			},
+		},
+		componentB: {
+			Component: componentB,
+			Functions: []Function{
+				{Signature: "org.bridge.Bridge.bridge(): void"},
+			},
+		},
+		componentC: {
+			Component: componentC,
+			Functions: []Function{
+				{Signature: "net.crypto.CryptoSink.encrypt(): void"},
+			},
+			CryptoOperations: []CryptoOperation{
+				{Function: "net.crypto.CryptoSink.encrypt(): void", FindingID: "transitive-only"},
+			},
+		},
+	}
+	deps := DependencyGraph{
+		componentA: {componentB},
+		componentB: {componentC},
+	}
+
+	res, err := Stitch(componentA, deps, fragments)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 0 {
+		t.Fatalf("chains len = %d, want 0 because C is not a direct dependency of A: %#v", len(res.Chains), res.Chains)
+	}
+}
+
 func assertChain(t *testing.T, got FindingChain, want []CallFrame) {
 	t.Helper()
 	if len(got.Frames) != len(want) {

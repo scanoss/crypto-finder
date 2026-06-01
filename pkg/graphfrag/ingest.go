@@ -23,7 +23,7 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		frag.InternalEdges = append(frag.InternalEdges, InternalEdge{
 			Caller:       ie.CallerKey,
 			Callee:       ie.CalleeKey,
-			Resolution:   ResolutionKind(ie.Resolution),
+			Resolution:   normalizeResolutionKind(ie.Resolution),
 			DeclaredType: ie.DeclaredType,
 			MethodName:   ie.MethodName,
 			Arity:        ie.Arity,
@@ -35,7 +35,7 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
 			Caller:          ec.CallerKey,
 			TargetSignature: ec.TargetKey,
-			Resolution:      ResolutionKind(ec.Resolution),
+			Resolution:      normalizeResolutionKind(ec.Resolution),
 			DeclaredType:    ec.DeclaredType,
 			MethodName:      ec.MethodName,
 			Arity:           ec.Arity,
@@ -51,6 +51,15 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		})
 	}
 	return frag
+}
+
+func normalizeResolutionKind(value string) ResolutionKind {
+	switch kind := ResolutionKind(value); kind {
+	case ResolutionExact, ResolutionInterfaceDispatch, ResolutionNameOnly, ResolutionUnknown:
+		return kind
+	default:
+		return ResolutionUnknown
+	}
 }
 
 // DecodeFragment parses one graph-fragment export (JSON) into a Fragment for the

@@ -18,7 +18,7 @@ func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]
 	}
 
 	functionsBySignature := indexFunctions(closure, fragments)
-	adjacency, suppressed := buildAdjacency(closure, fragments, functionsBySignature)
+	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature)
 	opsByNode := indexCryptoOperations(closure, fragments)
 
 	rootFragment := fragments[root]
@@ -112,24 +112,25 @@ type callEdge struct {
 // Policy (tiered, fail-closed by default):
 //   - exact              -> always traversed.
 //   - interface_dispatch -> traversed only if exactly one concrete impl is
-//     present in the dependency closure for that call site; >1 is ambiguous and
-//     fails closed (recorded). 0-in-closure is simply unreachable.
+//     present in the current component's direct dependencies for that call
+//     site; >1 is ambiguous and fails closed (recorded). 0 is simply
+//     unreachable.
 //   - name_only          -> never traversed (recorded).
 //   - unknown (zero)     -> never traversed (recorded); usually a producer bug.
 func buildAdjacency(
 	closure []ComponentKey,
+	deps DependencyGraph,
 	fragments map[ComponentKey]Fragment,
 	functionsBySignature map[string][]graphNode,
 ) (map[graphNode][]graphNode, []SuppressedEdge) {
 	out := make(map[graphNode][]graphNode)
 	var suppressed []SuppressedEdge
-	inClosure := componentSet(closure)
 
 	for _, key := range closure {
 		fragment := fragments[key]
 		componentSigs := indexComponentSignatures(key, fragment, out)
 		edges := collectCallEdges(fragment)
-		resolve := callEdgeResolver(key, componentSigs, inClosure, functionsBySignature)
+		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature)
 
 		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed)
 		applyDispatchGroups(key, dispatchGroups, resolve, out, &suppressed)
@@ -178,11 +179,11 @@ type edgeResolver func(callEdge) []graphNode
 
 // callEdgeResolver maps one edge to the concrete target nodes it could reach.
 // Internal edges resolve within the component; external edges resolve to other
-// components in the dependency closure.
+// components that are direct dependencies of the current component.
 func callEdgeResolver(
 	key ComponentKey,
 	componentSigs map[string]bool,
-	inClosure map[ComponentKey]bool,
+	directDeps map[ComponentKey]bool,
 	functionsBySignature map[string][]graphNode,
 ) edgeResolver {
 	return func(e callEdge) []graphNode {
@@ -192,19 +193,18 @@ func callEdgeResolver(
 			}
 			return nil
 		}
-		return externalTargets(key, e.target, inClosure, functionsBySignature)
+		return externalTargets(e.target, directDeps, functionsBySignature)
 	}
 }
 
 func externalTargets(
-	current ComponentKey,
 	target string,
-	inClosure map[ComponentKey]bool,
+	directDeps map[ComponentKey]bool,
 	functionsBySignature map[string][]graphNode,
 ) []graphNode {
 	var targets []graphNode
 	for _, callee := range functionsBySignature[target] {
-		if callee.Component == current || !inClosure[callee.Component] {
+		if !directDeps[callee.Component] {
 			continue
 		}
 		targets = append(targets, callee)

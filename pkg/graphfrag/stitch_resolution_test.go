@@ -102,8 +102,9 @@ func TestStitch_UnknownResolutionFailsClosed(t *testing.T) {
 }
 
 // TestStitch_InterfaceDispatchUniqueImplReaches proves that interface dispatch
-// is trusted when exactly one concrete implementation is present in the
-// dependency closure — the legitimate single-impl case we must NOT lose.
+// is trusted when exactly one concrete implementation is present in the current
+// component's direct dependencies — the legitimate single-impl case we must NOT
+// lose.
 func TestStitch_InterfaceDispatchUniqueImplReaches(t *testing.T) {
 	fragments := map[ComponentKey]Fragment{
 		componentA: {
@@ -216,11 +217,11 @@ func TestStitch_InterfaceDispatchAmbiguousDropsClosed(t *testing.T) {
 	}
 }
 
-// TestStitch_InterfaceDispatchUniqueInClosureReaches proves "unique" is judged
-// against the dependency closure, not the universe of fragments: a sibling
-// implementation that exists in storage but is NOT in the closure does not make
-// the call site ambiguous.
-func TestStitch_InterfaceDispatchUniqueInClosureReaches(t *testing.T) {
+// TestStitch_InterfaceDispatchUniqueInDirectDependenciesReaches proves "unique"
+// is judged against direct dependencies, not the universe of fragments: a
+// sibling implementation that exists in storage but is NOT a direct dependency
+// does not make the call site ambiguous.
+func TestStitch_InterfaceDispatchUniqueInDirectDependenciesReaches(t *testing.T) {
 	fragments := map[ComponentKey]Fragment{
 		componentA: {
 			Component: componentA,

@@ -254,18 +254,14 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 			implID.String():  {controllerID.String()}, // internal, interface_dispatch
 			extID.String():   {controllerID.String()}, // external (no decl), name_only
 		},
-		EdgeResolutions: map[string]callgraph.EdgeResolution{
-			callgraph.EdgeResolutionKey(controllerID.String(), ifaceID.String()): {
-				Kind: callgraph.EdgeKindExact, MethodName: "run", Arity: 0, CallSite: 3,
-			},
-			callgraph.EdgeResolutionKey(controllerID.String(), implID.String()): {
-				Kind: callgraph.EdgeKindInterfaceDispatch, DeclaredType: "com.dep.Sink", MethodName: "run", Arity: 0, CallSite: 3,
-			},
-			callgraph.EdgeResolutionKey(controllerID.String(), extID.String()): {
-				Kind: callgraph.EdgeKindNameOnly, MethodName: "chain", Arity: 0, CallSite: 3,
-			},
-		},
+		EdgeResolutions: map[string]callgraph.EdgeResolution{},
 	}
+	exactRes := callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact, MethodName: "run", Arity: 0, CallSite: 3}
+	ifaceRes := callgraph.EdgeResolution{Kind: callgraph.EdgeKindInterfaceDispatch, DeclaredType: "com.dep.Sink", MethodName: "run", Arity: 0, CallSite: 11}
+	extRes := callgraph.EdgeResolution{Kind: callgraph.EdgeKindNameOnly, MethodName: "chain", Arity: 0, CallSite: 12}
+	graph.EdgeResolutions[callgraph.EdgeResolutionKey(controllerID.String(), ifaceID.String(), exactRes)] = exactRes
+	graph.EdgeResolutions[callgraph.EdgeResolutionKey(controllerID.String(), implID.String(), ifaceRes)] = ifaceRes
+	graph.EdgeResolutions[callgraph.EdgeResolutionKey(controllerID.String(), extID.String(), extRes)] = extRes
 
 	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
@@ -280,9 +276,15 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 	if iface.DeclaredType != "com.dep.Sink" || iface.MethodName != "run" || iface.Arity != 0 {
 		t.Fatalf("internal interface edge metadata = %#v, want declared com.dep.Sink/run/0", iface)
 	}
+	if iface.Line != 11 {
+		t.Fatalf("internal interface edge line = %d, want recorded call site 11", iface.Line)
+	}
 	ext := findExternalCall(payload, controllerID.String(), extID.String())
 	if ext == nil || ext.Resolution != string(callgraph.EdgeKindNameOnly) {
 		t.Fatalf("external name-only call resolution = %#v, want name_only", ext)
+	}
+	if ext.Line != 12 {
+		t.Fatalf("external name-only call line = %d, want recorded call site 12", ext.Line)
 	}
 }
 

@@ -100,6 +100,26 @@ func TestDecodeFragment_UnknownResolutionFromLegacyFragment(t *testing.T) {
 	}
 }
 
+func TestDecodeFragment_InvalidResolutionNormalized(t *testing.T) {
+	const invalid = `{
+	  "schema_version": "graph-fragment-1.1",
+	  "functions": [{ "key": "a.(A).f#0" }],
+	  "external_calls": [{
+	    "caller_key": "a.(A).f#0",
+	    "target_key": "b.(B).g#0",
+	    "resolution": "typo"
+	  }]
+	}`
+
+	frag, err := DecodeFragment(ComponentKey{Purl: "pkg:maven/a/a", Version: "1"}, []byte(invalid))
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	if len(frag.ExternalCalls) != 1 || frag.ExternalCalls[0].Resolution != ResolutionUnknown {
+		t.Fatalf("invalid external edge resolution = %#v, want ResolutionUnknown", frag.ExternalCalls)
+	}
+}
+
 // TestStitch_EndToEnd_BouncyCastleFalsePositiveKilled reproduces the handover's
 // real finding through the full producer-schema -> adapter -> stitch path:
 //

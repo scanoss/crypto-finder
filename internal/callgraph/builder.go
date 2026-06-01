@@ -240,22 +240,23 @@ func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind Ed
 	if graph.EdgeResolutions == nil {
 		graph.EdgeResolutions = make(map[string]EdgeResolution)
 	}
-	key := EdgeResolutionKey(callerKey, calleeKey)
-	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
-		return
-	}
 	method, arity := "", 0
 	if calleeID, err := ParseFunctionID(calleeKey); err == nil {
 		method = BaseFunctionName(calleeID.Name)
 		arity = functionArity(calleeID.Name)
 	}
-	graph.EdgeResolutions[key] = EdgeResolution{
+	resolution := EdgeResolution{
 		Kind:         kind,
 		DeclaredType: declaredType,
 		MethodName:   method,
 		Arity:        arity,
 		CallSite:     callSite,
 	}
+	key := EdgeResolutionKey(callerKey, calleeKey, resolution)
+	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
+		return
+	}
+	graph.EdgeResolutions[key] = resolution
 }
 
 func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
@@ -372,9 +373,6 @@ func (b *Builder) expandInterfaceDispatch(
 	}
 
 	sort.Strings(keys)
-	if len(keys) > 8 {
-		keys = keys[:8]
-	}
 	results := make([]interfaceDispatchAlias, 0, len(keys))
 	for _, k := range keys {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -23,13 +24,13 @@ import (
 // graph-fragment export in the requested format.
 func ExportGraphFragment(path, format string, result *engine.DepScanResult) error {
 	if result == nil {
-		return fmt.Errorf("cannot export graph fragment: dep scan result is nil")
+		return fmt.Errorf("scan: cannot export graph fragment: dep scan result is nil")
 	}
 	if result.CallGraph == nil {
-		return fmt.Errorf("cannot export graph fragment: result.CallGraph is nil")
+		return fmt.Errorf("scan: cannot export graph fragment: result.CallGraph is nil")
 	}
 	if format != "json" {
-		return fmt.Errorf("unsupported graph fragment format %q (supported: json)", format)
+		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
 	}
 
 	payload := BuildGraphFragmentExport(result)
@@ -38,10 +39,10 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("failed to serialize graph fragment export: %w", err)
+		return fmt.Errorf("scan: failed to serialize graph fragment export: %w", err)
 	}
 	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
-		return fmt.Errorf("failed to write graph fragment to %s: %w", path, err)
+		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
 	}
 	return nil
 }
@@ -113,14 +114,17 @@ func addResolvedFragmentEdges(
 		if callerDecl == nil {
 			continue
 		}
-		edgeKey := callerKey + "\x00" + calleeKey
-		line := findFragmentCallLine(callerDecl, calleeKey)
-		res := resolveFragmentEdge(graph, callerKey, calleeKey)
-		if _, ok := graph.Functions[calleeKey]; ok {
-			internalByKey[edgeKey] = buildFragmentInternalEdge(callerKey, calleeKey, line, res)
-			continue
+		resolutions := resolveFragmentEdges(graph, callerKey, calleeKey)
+		for i := range resolutions {
+			res := resolutions[i]
+			edgeKey := callgraph.EdgeResolutionKey(callerKey, calleeKey, res.EdgeResolution)
+			line := fragmentEdgeLine(callerDecl, calleeKey, res)
+			if _, ok := graph.Functions[calleeKey]; ok {
+				internalByKey[edgeKey] = buildFragmentInternalEdge(callerKey, calleeKey, line, res)
+				continue
+			}
+			externalByKey[edgeKey] = buildFragmentExternalCall(callerDecl, callerKey, calleeKey, line, res)
 		}
-		externalByKey[edgeKey] = buildFragmentExternalCall(callerDecl, callerKey, calleeKey, line, res)
 	}
 }
 
@@ -202,29 +206,48 @@ func sortedFragmentExternalCalls(values map[string]graphfrag.GraphFragmentExtern
 }
 
 type fragmentEdgeResolution struct {
-	Resolution   string
-	DeclaredType string
-	MethodName   string
-	Arity        int
+	callgraph.EdgeResolution
+	Resolution string
 }
 
-// resolveFragmentEdge returns the resolution metadata for a caller->callee edge.
+// resolveFragmentEdges returns the resolution metadata for a caller->callee edge.
 // An edge with no recorded resolution is an exact, directly-resolved source
 // call (e.g. a typed re-resolution from the bytecode/type resolver), so it
 // defaults to exact rather than the fail-closed "unknown" — the producer is the
 // authority on resolution quality.
-func resolveFragmentEdge(graph *callgraph.CallGraph, callerKey, calleeKey string) fragmentEdgeResolution {
+func resolveFragmentEdges(graph *callgraph.CallGraph, callerKey, calleeKey string) []fragmentEdgeResolution {
 	if graph != nil {
-		if res, ok := graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerKey, calleeKey)]; ok {
-			return fragmentEdgeResolution{
-				Resolution:   string(res.Kind),
-				DeclaredType: res.DeclaredType,
-				MethodName:   res.MethodName,
-				Arity:        res.Arity,
+		prefix := callgraph.EdgeResolutionKeyPrefix(callerKey, calleeKey)
+		keys := make([]string, 0)
+		for key := range graph.EdgeResolutions {
+			if strings.HasPrefix(key, prefix) {
+				keys = append(keys, key)
 			}
 		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			out := make([]fragmentEdgeResolution, 0, len(keys))
+			for _, key := range keys {
+				out = append(out, newFragmentEdgeResolution(graph.EdgeResolutions[key]))
+			}
+			return out
+		}
 	}
-	return fragmentEdgeResolution{Resolution: string(callgraph.EdgeKindExact)}
+	return []fragmentEdgeResolution{newFragmentEdgeResolution(callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact})}
+}
+
+func newFragmentEdgeResolution(res callgraph.EdgeResolution) fragmentEdgeResolution {
+	return fragmentEdgeResolution{
+		EdgeResolution: res,
+		Resolution:     string(res.Kind),
+	}
+}
+
+func fragmentEdgeLine(callerDecl *callgraph.FunctionDecl, calleeKey string, res fragmentEdgeResolution) int {
+	if res.CallSite != 0 {
+		return res.CallSite
+	}
+	return findFragmentCallLine(callerDecl, calleeKey)
 }
 
 func findFragmentCallLine(callerDecl *callgraph.FunctionDecl, calleeKey string) int {

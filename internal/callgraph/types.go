@@ -5,6 +5,7 @@ package callgraph
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -263,11 +264,12 @@ type CallGraph struct {
 	// JavaPlatformSignatures records whether Java platform signatures from the
 	// pinned runtime were available and used for this graph build.
 	JavaPlatformSignatures *JavaPlatformSignatureMetadata
-	// EdgeResolutions records how each caller->callee edge in Callers was
-	// resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey). An edge with
-	// no entry is an exact, directly-resolved source call. Consumers (the graph
-	// fragment export and the mining-service stitcher) use this to refuse to
-	// present over-broad name/arity dispatch guesses as typed reachability proof.
+	// EdgeResolutions records how each caller->callee call-site/dispatch variant
+	// was resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey, resolution).
+	// An edge with no entry is an exact, directly-resolved source call. Consumers
+	// (the graph fragment export and the mining-service stitcher) use this to
+	// refuse to present over-broad name/arity dispatch guesses as typed
+	// reachability proof.
 	EdgeResolutions map[string]EdgeResolution
 }
 
@@ -312,9 +314,20 @@ type EdgeResolution struct {
 	CallSite     int // source line of the call expression
 }
 
-// EdgeResolutionKey is the stable map key for an edge resolution.
-func EdgeResolutionKey(callerKey, calleeKey string) string {
-	return callerKey + "\x00" + calleeKey
+// EdgeResolutionKey is the stable map key for one resolved caller->callee
+// call-site/dispatch variant.
+func EdgeResolutionKey(callerKey, calleeKey string, resolution EdgeResolution) string {
+	return EdgeResolutionKeyPrefix(callerKey, calleeKey) +
+		strconv.Itoa(resolution.CallSite) + "\x00" +
+		resolution.DeclaredType + "\x00" +
+		resolution.MethodName + "\x00" +
+		strconv.Itoa(resolution.Arity)
+}
+
+// EdgeResolutionKeyPrefix returns the stable prefix shared by all resolution
+// variants for one caller->callee pair.
+func EdgeResolutionKeyPrefix(callerKey, calleeKey string) string {
+	return callerKey + "\x00" + calleeKey + "\x00"
 }
 
 // functionArity parses the "#<n>" arity suffix from a decorated function name.

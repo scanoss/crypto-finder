@@ -107,7 +107,8 @@ const (
 	// ResolutionInterfaceDispatch means the target was found by expanding an
 	// interface/abstract method to concrete implementations matching name+arity
 	// within a namespace root. Trusted ONLY when exactly one implementation is
-	// present in the dependency closure; ambiguous (>1) call sites fail closed.
+	// present in the current component's direct dependencies; ambiguous (>1)
+	// call sites fail closed.
 	ResolutionInterfaceDispatch ResolutionKind = "interface_dispatch"
 
 	// ResolutionNameOnly means the target was guessed by method name + arity
@@ -165,7 +166,7 @@ const (
 	// SuppressReasonNameOnly: a name+arity guess with no receiver type anchor.
 	SuppressReasonNameOnly = "name_only"
 	// SuppressReasonAmbiguousDispatch: an interface call site with more than one
-	// concrete implementation present in the dependency closure.
+	// concrete implementation present in the current component's direct dependencies.
 	SuppressReasonAmbiguousDispatch = "interface_dispatch_ambiguous"
 )
 

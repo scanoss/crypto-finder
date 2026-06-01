@@ -67,12 +67,23 @@ func TestBuildCallerIndex_ClassifiesEdgeResolution(t *testing.T) {
 	ifaceKey := ifaceRun.ID.String()
 	implKey := implRun.ID.String()
 
-	directKind := graph.EdgeResolutions[EdgeResolutionKey(callerKey, ifaceKey)]
+	directKind := graph.EdgeResolutions[EdgeResolutionKey(callerKey, ifaceKey, EdgeResolution{
+		Kind:       EdgeKindExact,
+		MethodName: "run",
+		Arity:      0,
+		CallSite:   3,
+	})]
 	if directKind.Kind != EdgeKindExact {
 		t.Fatalf("direct edge kind = %q, want %q", directKind.Kind, EdgeKindExact)
 	}
 
-	implRes, ok := graph.EdgeResolutions[EdgeResolutionKey(callerKey, implKey)]
+	implRes, ok := graph.EdgeResolutions[EdgeResolutionKey(callerKey, implKey, EdgeResolution{
+		Kind:         EdgeKindInterfaceDispatch,
+		DeclaredType: "com.dep.Sink",
+		MethodName:   "run",
+		Arity:        0,
+		CallSite:     3,
+	})]
 	if !ok {
 		t.Fatalf("expected an EdgeResolution for the synthesized impl edge %q", implKey)
 	}
