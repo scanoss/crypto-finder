@@ -4,7 +4,10 @@
 package graphfrag
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"testing"
 )
 
@@ -282,5 +285,140 @@ func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	}
 	if _, ok := raw["entry_call"]; ok {
 		t.Error("node[0] JSON contains entry_call field, want omitted")
+	}
+}
+
+// testFindingID mirrors pkg/stitch.generateFindingID exactly:
+//
+//	sha256(path + ":" + startLine + ":" + ruleID)[:8]
+//
+// where path = module@version/filePath when module+version are non-empty.
+// This helper is duplicated (not imported) so the test pins equality to
+// the live formula independently of production code.
+func testFindingID(filePath string, startLine int, ruleID, module, version string) string {
+	path := filePath
+	if module != "" && version != "" {
+		path = module + "@" + version + "/" + filePath
+	}
+	h := sha256.Sum256([]byte(path + ":" + strconv.Itoa(startLine) + ":" + ruleID))
+	return hex.EncodeToString(h[:])[:8]
+}
+
+// buildPhase6FragmentsWithFilePath is like buildPhase6Fragments but adds
+// FilePath and StartLine to the CryptoOperation so the finding_id recompute
+// test has deterministic inputs.
+func buildPhase6FragmentsWithFilePath() map[ComponentKey]Fragment {
+	frags := buildPhase6Fragments()
+	dep := frags[phase6Dep1]
+	dep.CryptoOperations[0].FilePath = "Lib.java"
+	dep.CryptoOperations[0].StartLine = 30
+	frags[phase6Dep1] = dep
+	return frags
+}
+
+// TestToCallgraphExport_DepFindingIDPrefixed asserts that for a dep-component
+// crypto op, the emitted finding_id equals sha256(M@V/path:line:rule)[:8] and
+// the terminal node's file_path equals M@V/path (the prefixed form). This
+// mirrors the live `crypto-finder scan --scan-dependencies` behaviour
+// implemented in pkg/stitch.generateFindingID (stitch.go:300-311).
+func TestToCallgraphExport_DepFindingIDPrefixed(t *testing.T) {
+	frags := buildPhase6FragmentsWithFilePath()
+	deps := DependencyGraph{phase6Root: {phase6Dep1}}
+	res, err := Stitch(phase6Root, deps, frags)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 1 {
+		t.Fatalf("chains = %d, want 1", len(res.Chains))
+	}
+
+	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	out := res.ToCallgraphExport(phase6Root, meta)
+
+	if len(out.FindingGraphs) != 1 {
+		t.Fatalf("FindingGraphs len = %d, want 1", len(out.FindingGraphs))
+	}
+	fg := out.FindingGraphs[0]
+
+	// The crypto op belongs to phase6Dep1 (module "net.crypto:lib", version "2.0.0").
+	// Expected finding_id: sha256("net.crypto:lib@2.0.0/Lib.java:30:java.crypto.cipher.getinstance")[:8]
+	wantFindingID := testFindingID("Lib.java", 30, "java.crypto.cipher.getinstance", "net.crypto:lib", "2.0.0")
+	if fg.FindingID != wantFindingID {
+		t.Errorf("FindingGraph.FindingID = %q, want %q (dep-prefixed)", fg.FindingID, wantFindingID)
+	}
+
+	// The terminal node's file_path must be prefixed.
+	chain := fg.CallChains[0]
+	last := chain[len(chain)-1]
+	wantFilePath := "net.crypto:lib@2.0.0/Lib.java"
+	if last.FilePath != wantFilePath {
+		t.Errorf("terminal node FilePath = %q, want %q", last.FilePath, wantFilePath)
+	}
+}
+
+// TestToCallgraphExport_RootFindingIDUnprefixed asserts that for a root-component
+// crypto op (direct finding), the finding_id and file_path are NOT prefixed.
+func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
+	// Build a single-component closure: root has a crypto op on its own function.
+	rootFilePath := "App.java"
+	rootStartLine := 5
+	rootRuleID := "java.crypto.cipher.getinstance"
+
+	rootFrag := Fragment{
+		Component: phase6Root,
+		Module:    "com.acme:app",
+		Functions: []Function{
+			{
+				Signature:          "com.acme.App.doEncrypt#0",
+				FunctionName:       "com.acme.App.doEncrypt",
+				CanonicalSignature: "com.acme.App.doEncrypt(): void",
+				FilePath:           rootFilePath,
+				StartLine:          rootStartLine,
+			},
+		},
+		CryptoOperations: []CryptoOperation{
+			{
+				Function:  "com.acme.App.doEncrypt#0",
+				FindingID: "rootfid1",
+				RuleID:    rootRuleID,
+				Symbol:    "javax.crypto.Cipher.getInstance",
+				FilePath:  rootFilePath,
+				StartLine: rootStartLine,
+				CryptoCall: &CryptoCall{
+					FunctionName: "javax.crypto.Cipher.getInstance",
+					Line:         rootStartLine,
+				},
+				MatchedOperation: &MatchedOp{Kind: "call", Symbol: "javax.crypto.Cipher.getInstance"},
+			},
+		},
+	}
+
+	res, err := Stitch(phase6Root, DependencyGraph{}, map[ComponentKey]Fragment{phase6Root: rootFrag})
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 1 {
+		t.Fatalf("chains = %d, want 1", len(res.Chains))
+	}
+
+	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	out := res.ToCallgraphExport(phase6Root, meta)
+
+	if len(out.FindingGraphs) != 1 {
+		t.Fatalf("FindingGraphs len = %d, want 1", len(out.FindingGraphs))
+	}
+	fg := out.FindingGraphs[0]
+
+	// Root component: no prefix, so finding_id = sha256(filePath:line:rule)[:8]
+	wantFindingID := testFindingID(rootFilePath, rootStartLine, rootRuleID, "", "")
+	if fg.FindingID != wantFindingID {
+		t.Errorf("FindingGraph.FindingID = %q, want %q (unprefixed root)", fg.FindingID, wantFindingID)
+	}
+
+	// Terminal node's file_path must NOT be prefixed.
+	chain := fg.CallChains[0]
+	last := chain[len(chain)-1]
+	if last.FilePath != rootFilePath {
+		t.Errorf("terminal node FilePath = %q, want %q (unprefixed)", last.FilePath, rootFilePath)
 	}
 }

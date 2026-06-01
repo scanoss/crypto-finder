@@ -16,7 +16,10 @@
 package graphfrag
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -223,17 +226,25 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 
 	for i := range r.Chains {
 		fc := &r.Chains[i]
-		key := findingKey(fc.FindingID)
+		nodes, resolvedFindingID := buildExportChain(fc, root)
+		// Use the resolved (potentially dep-prefixed) finding_id as the group key.
+		// For root-component ops the resolved ID equals the original; for dep ops it
+		// is recomputed with the "module@version/" prefix to match live --scan-dependencies.
+		// When computeFindingID returned "" (legacy fragments with no FilePath/StartLine),
+		// fall back to the original FindingChain.FindingID so the chain is still emitted.
+		if resolvedFindingID == "" {
+			resolvedFindingID = fc.FindingID
+		}
+		key := findingKey(resolvedFindingID)
 		grp, exists := groupMap[key]
 		if !exists {
 			grp = &chainGroup{
-				findingID: fc.FindingID,
+				findingID: resolvedFindingID,
 				matchedOp: chainMatchedOp(fc),
 			}
 			groupMap[key] = grp
 			groupOrder = append(groupOrder, key)
 		}
-		nodes := buildExportChain(fc, root)
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
@@ -272,32 +283,71 @@ func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
 }
 
 // buildExportChain converts one FindingChain into the ordered slice of
-// ExportChainNodes, stamping dependency_info on non-root frames.
-func buildExportChain(fc *FindingChain, root ComponentKey) []ExportChainNode {
+// ExportChainNodes, stamping dependency_info on non-root frames. It also
+// returns the resolved finding_id for this chain: for dep-component terminal
+// ops it is recomputed with the "module@version/" prefix (matching live
+// `--scan-dependencies`); for root-component ops it is the original FindingID.
+//
+// The resolved finding_id is also applied to the terminal node's file_path,
+// which is prefixed in the same way so the cross-reference between
+// finding_graphs[].finding_id and the emitted chain node's file path is
+// consistent with the live scanner output.
+func buildExportChain(fc *FindingChain, root ComponentKey) ([]ExportChainNode, string) {
 	nodes := make([]ExportChainNode, 0, len(fc.Frames))
+	resolvedFindingID := fc.FindingID // default: use the stored (isolated-scan) ID
+
 	for i, frame := range fc.Frames {
 		node := buildExportNode(frame, root)
-		// Stamp crypto_call on the last frame from the chain's CryptoOperation.
-		// The CryptoCall is carried on the fragment; we stamp it here because
-		// FindingChain only stores FindingID/Symbol — the full CryptoCall is not
-		// yet threaded onto FindingChain itself. We find it via the fragment.
-		// NOTE: For Phase 6, the CryptoCall is accessed via the terminal frame's
-		// Function.Signature lookup. In the phase-6 closure the fragment is
-		// available through the closures of buildPhase6Fragments. However, since
-		// ToCallgraphExport receives only the Result (not the raw fragments), we
-		// store the CryptoCall on FindingChain in a follow-up or rely on the test
-		// to verify via the fragment. For now we carry it from the terminal
-		// frame's function — but we need to thread it. See design: "crypto_call on
-		// the last frame". The Fragment is not available here.
-		//
-		// RESOLUTION: Carry CryptoOperation on FindingChain so the converter can
-		// read CryptoCall from it. We add a CryptoOperation field to FindingChain.
-		if i == len(fc.Frames)-1 && fc.CryptoOp != nil && fc.CryptoOp.CryptoCall != nil {
-			node.CryptoCall = exportCryptoCall(fc.CryptoOp.CryptoCall)
+		if i == len(fc.Frames)-1 {
+			// Terminal frame: apply dep-path prefixing and finding_id recompute.
+			if fc.CryptoOp != nil {
+				if frame.Component != root {
+					// Non-root: prefix file_path and recompute finding_id.
+					module := moduleFromFrame(frame)
+					version := frame.Component.Version
+					prefixedPath := depPrefixedPath(fc.CryptoOp.FilePath, module, version)
+					node.FilePath = prefixedPath
+					resolvedFindingID = computeFindingID(prefixedPath, fc.CryptoOp.StartLine, fc.CryptoOp.RuleID)
+				} else {
+					// Root component: finding_id is hash of the unprefixed path.
+					resolvedFindingID = computeFindingID(fc.CryptoOp.FilePath, fc.CryptoOp.StartLine, fc.CryptoOp.RuleID)
+				}
+				if fc.CryptoOp.CryptoCall != nil {
+					node.CryptoCall = exportCryptoCall(fc.CryptoOp.CryptoCall)
+				}
+			}
 		}
 		nodes = append(nodes, node)
 	}
-	return nodes
+	return nodes, resolvedFindingID
+}
+
+// depPrefixedPath returns "module@version/filePath" when module and version are
+// non-empty, mirroring the path construction in pkg/stitch.generateFindingID
+// (stitch.go:302-304). Returns filePath unchanged when the component is root
+// (module or version empty) or when filePath is already empty.
+func depPrefixedPath(filePath, module, version string) string {
+	if filePath == "" || module == "" || version == "" {
+		return filePath
+	}
+	return module + "@" + version + "/" + filePath
+}
+
+// computeFindingID computes the 8-hex-char finding identifier, mirroring
+// pkg/stitch.generateFindingID (stitch.go:300-311):
+//
+//	sha256(path + ":" + startLine + ":" + ruleID)[:8]
+//
+// The caller is responsible for prefixing path with "module@version/" when the
+// finding belongs to a dep component (non-root). Returns the empty string when
+// path, startLine, and ruleID are all zero/empty (legacy 1.0/1.1 fragments
+// where FilePath/StartLine are not stored in CryptoOperation).
+func computeFindingID(path string, startLine int, ruleID string) string {
+	if path == "" && startLine == 0 && ruleID == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(path + ":" + strconv.Itoa(startLine) + ":" + ruleID))
+	return hex.EncodeToString(h[:])[:8]
 }
 
 // buildExportNode converts one CallFrame to an ExportChainNode.
@@ -314,16 +364,12 @@ func buildExportNode(frame CallFrame, root ComponentKey) ExportChainNode {
 		StartLine:          fn.StartLine,
 		EntryCall:          exportEntryCall(frame.EntryCall, fn),
 	}
-	// Stamp dependency_info on non-root frames (ADR-4).
+	// Stamp dependency_info on non-root frames (ADR-4). The module string comes
+	// from the CallFrame.Module (Fragment.Module, set at stitch time), falling
+	// back to the purl when absent.
 	if frame.Component != root {
 		node.DependencyInfo = &ExportDependencyInfo{
-			Module:  frame.Function.CanonicalSignature, // will be overridden below
-			Version: frame.Component.Version,
-		}
-		// Use the fragment Module string if available; fall back to purl.
-		module := moduleFromFrame(frame)
-		node.DependencyInfo = &ExportDependencyInfo{
-			Module:  module,
+			Module:  moduleFromFrame(frame),
 			Version: frame.Component.Version,
 		}
 	}

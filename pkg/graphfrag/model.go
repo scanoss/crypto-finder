@@ -275,6 +275,17 @@ type CryptoOperation struct {
 	RuleID    string
 	Symbol    string
 
+	// FilePath is the source file path (relative to the component root) where
+	// the crypto finding was detected. Used by the callgraph exporter to recompute
+	// finding_id with a dep-prefix when the op belongs to a non-root component.
+	// Populated from graph-fragment-1.2+ exports; empty on legacy fragments.
+	FilePath string
+	// StartLine is the source line of the crypto finding. Together with FilePath
+	// and RuleID it is the input to the finding_id hash:
+	//   sha256(path + ":" + startLine + ":" + ruleID)[:8]
+	// where path is prefixed with "module@version/" for dep components.
+	StartLine int
+
 	// CryptoCall carries the identity and argument data-flow of the matched
 	// crypto invocation (1.2+).
 	CryptoCall *CryptoCall
