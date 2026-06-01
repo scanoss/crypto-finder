@@ -19,7 +19,10 @@
 // (or decoded Fragments); the caller fetches and decompresses them.
 package graphfrag
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ComponentKey identifies one mined component version.
 type ComponentKey struct {
@@ -54,9 +57,117 @@ type Fragment struct {
 }
 
 // Function identifies one callable node inside a component graph.
+//
+// The Signature field (the fragment's function key, e.g. "org.bridge.(Bridge).bridge#0")
+// is the join key for edge resolution. The richer identity fields below are
+// populated from graph-fragment-1.2+ exports so the stitcher can emit them
+// verbatim in the schema-5.x output (callgraph_export.go). They are zero-value
+// on legacy 1.0/1.1 fragments — graceful degradation.
 type Function struct {
+	// Signature is the fragment's function key used by edges (e.g. "org.bridge.(Bridge).bridge#0").
 	Signature string
-	FilePath  string
+	// FunctionName is the fully-qualified human-readable function name (e.g. "org.bridge.Bridge.bridge").
+	FunctionName string
+	// CanonicalSignature is the canonical function signature (1.2+).
+	CanonicalSignature string
+	// ReturnType is the declared return type (1.2+).
+	ReturnType string
+	// ParameterTypes lists the declared parameter types in order (1.2+).
+	ParameterTypes []string
+	// Visibility is the declared access modifier of the function (1.2+).
+	Visibility string
+	// OwnerVisibility is the declared access modifier of the enclosing type (1.2+).
+	OwnerVisibility string
+	// StartLine is the first source line of the function body (1.2+).
+	StartLine int
+	// FilePath is the source file path, relative to the component root.
+	FilePath string
+}
+
+// CallSite carries the per-edge call-site invocation detail: the line number and
+// the resolved argument data-flow for each positional argument passed by the
+// caller at this edge. Mirrors the schema-5.x entry_call shape.
+type CallSite struct {
+	// Line is the source line of the call expression in the caller.
+	Line int
+	// Parameters carries the resolved argument data-flow for each positional argument.
+	Parameters []Parameter
+}
+
+// Parameter is one positional argument at a call site, including any resolved
+// data-flow provenance. Mirrors the schema-5.x callGraphParameter shape.
+type Parameter struct {
+	// ParameterIndex is the 0-based position of this argument.
+	ParameterIndex int
+	// Type is the declared parameter type in the callee's signature.
+	Type string
+	// VariableName is the local variable name if the argument was a simple identifier.
+	VariableName string
+	// ArgumentExpression is the raw source text of the argument expression.
+	ArgumentExpression string
+	// ResolvedValue is a simplified literal value when statically resolvable.
+	ResolvedValue string
+	// SourceNodes carries the data-flow provenance for this argument (recursive).
+	SourceNodes []SourceNode
+}
+
+// SourceNode is one node in the data-flow provenance graph. The SourceNodes
+// field makes this type recursive so PARAMETER→CALL_RESULT chains are fully
+// preserved. Mirrors the schema-5.x exportSourceNode shape.
+type SourceNode struct {
+	// Type classifies the origin: VALUE, VARIABLE, FIELD, PARAMETER, CALL_RESULT, EXPRESSION.
+	Type string
+	// Name is the variable/field/parameter name.
+	Name string
+	// DeclaredType is the type if known.
+	DeclaredType string
+	// Value is the actual value for VALUE nodes.
+	Value string
+	// ParameterIndex is set for PARAMETER nodes.
+	ParameterIndex *int
+	// CallTarget is set for CALL_RESULT nodes — the function that produced the value.
+	CallTarget string
+	// Location is where this source is defined.
+	Location *SourceLocation
+	// SourceNodes traces where THIS node's value came from (recursive).
+	SourceNodes []SourceNode
+}
+
+// SourceLocation identifies a position in source code.
+type SourceLocation struct {
+	FilePath string
+	Line     int
+}
+
+// CryptoCall carries the identity and call-site argument data-flow of a matched
+// crypto invocation. It is stored on CryptoOperation (1.2+) and mirrors the
+// schema-5.x callGraphCalledFunction shape.
+type CryptoCall struct {
+	// FunctionName is the fully qualified function name of the matched crypto call.
+	FunctionName string
+	// CanonicalSignature is the canonical function signature.
+	CanonicalSignature string
+	// ReturnType is the declared return type.
+	ReturnType string
+	// ParameterTypes lists the declared parameter types.
+	ParameterTypes []string
+	// Line is the source line of the matched crypto call.
+	Line int
+	// Parameters carries the resolved argument data-flow.
+	Parameters []Parameter
+}
+
+// MatchedOp records the matched operation kind, symbol, and expression for a
+// crypto finding — the same fields carried by the schema-5.x matched_operation.
+type MatchedOp struct {
+	// Kind is the operation kind: "call", "type_usage", or "expression".
+	Kind string
+	// Symbol is the fully qualified API symbol.
+	Symbol string
+	// Expression is the raw source expression that matched.
+	Expression string
+	// Line is the source line of the matched expression.
+	Line int
 }
 
 // InternalEdge connects two functions inside the same component fragment.
@@ -81,6 +192,10 @@ type InternalEdge struct {
 	MethodName   string
 	Arity        int
 	CallSite     int
+
+	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
+	// Nil on fragments exported with schema < 1.2.
+	EntryCall *CallSite
 }
 
 // ResolutionKind classifies how confidently the producer resolved a call to its
@@ -142,14 +257,37 @@ type ExternalCall struct {
 	// MethodName, and Arity it discriminates distinct call sites that happen to
 	// share a method name within the same caller.
 	CallSite int
+
+	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
+	// Nil on fragments exported with schema < 1.2.
+	EntryCall *CallSite
 }
 
 // CryptoOperation is a crypto finding attached to a function.
+//
+// The rich fields (CryptoCall, OID, Metadata, Source, MatchedOperation) are
+// populated from graph-fragment-1.2+ exports. They are zero/nil on legacy
+// fragments — the stitcher still emits structural chains, just without
+// data-flow / asset metadata (safe degradation).
 type CryptoOperation struct {
 	Function  string
 	FindingID string
 	RuleID    string
 	Symbol    string
+
+	// CryptoCall carries the identity and argument data-flow of the matched
+	// crypto invocation (1.2+).
+	CryptoCall *CryptoCall
+	// OID is the Object Identifier for the cryptographic algorithm (1.2+).
+	OID string
+	// Metadata is the raw asset metadata block from the scanner (1.2+).
+	// Stored verbatim so the serving layer can pass it through without re-serialization.
+	Metadata json.RawMessage
+	// Source indicates how the finding was discovered: "direct" or "indirect" (1.2+).
+	Source string
+	// MatchedOperation records the kind/symbol/expression of the matched crypto
+	// operation (1.2+).
+	MatchedOperation *MatchedOp
 }
 
 // ConfidenceHigh is the confidence of every chain emitted under the default
@@ -192,6 +330,12 @@ type FindingChain struct {
 	// Confidence is the weakest-link confidence of the traversed edges. Under
 	// the default policy this is always ConfidenceHigh.
 	Confidence string
+
+	// CryptoOp carries the full crypto operation from the terminal frame (1.2+).
+	// Populated by the stitcher from the fragment's CryptoOperation for the
+	// terminal node so the converter can emit crypto_call without re-reading the
+	// fragments.
+	CryptoOp *CryptoOperation
 }
 
 // SuppressedEdge is one call edge (or grouped call site) the stitcher declined
@@ -205,9 +349,26 @@ type SuppressedEdge struct {
 }
 
 // CallFrame is one frame in a stitched path.
+//
+// Signature is the fragment key used internally for graph traversal (matches
+// Function.Signature on the resolved node). Function carries the full identity
+// of the resolved node (1.2+; zero-value on legacy fragments). EntryCall is
+// the call-site argument data-flow for the edge traversed to ARRIVE at this
+// frame from the previous frame (nil on the root frame and on legacy fragments).
+// Module is the Maven/npm/etc. module string for the component (from
+// Fragment.Module), carried here so dependency_info can be stamped at
+// projection time without re-reading the original fragment.
 type CallFrame struct {
 	Component ComponentKey
-	Function  string
+	// Signature is the function key (fragment edge join key).
+	Signature string
+	// Function carries the full rich identity of this node (1.2+).
+	Function Function
+	// EntryCall is the call-site data-flow for the edge that led to this frame (1.2+).
+	EntryCall *CallSite
+	// Module is the fragment's root module string (e.g. "net.crypto:lib"), used
+	// to stamp dependency_info.module at projection time.
+	Module string
 }
 
 // ErrMissingFragment means the dependency closure references components whose
