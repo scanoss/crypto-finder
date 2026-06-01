@@ -250,6 +250,112 @@ Example:
 - Detailed cryptographic asset tracking
 - Security auditing and compliance
 
+## Graph Fragment Export
+
+When `--export-graph-fragment <file>` is enabled, Crypto Finder writes a
+**reusable structural graph fragment** for the scanned component: its call
+graph plus rules-versioned crypto annotations. Unlike the finding-centric call
+graph export (above), a fragment is designed to be mined and stored **per
+component**, then composed across a dependency tree at query time to answer
+"what crypto is transitively reachable from artifact X?" — without re-scanning.
+The pure model and the stitcher that composes fragments live in the public
+package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream services
+(e.g. a mining/catalog service) consume one contract instead of reimplementing
+schema knowledge.
+
+Current schema version: `graph-fragment-1.1`.
+
+### Structure
+
+| Field | Description |
+|-------|-------------|
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.1`). |
+| `scan_metadata` | Ecosystem, root module, tool/rules versions, and per-array counts. |
+| `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
+| `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). |
+| `external_calls[]` | Calls whose target may live in **another** component; resolved at stitch time against the dependency tree. |
+| `crypto_annotations[]` | Crypto findings attached to a function (`function_key`, `finding_id`, `rule_id`, `symbol`). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+
+### Edge resolution metadata (v1.1+)
+
+Every `internal_edges[]` and `external_calls[]` entry carries **resolution
+metadata** describing *how confidently* the edge was resolved. This lets a
+consumer distinguish exact typed calls from over-broad name/arity dispatch
+guesses, and refuse to present the latter as typed reachability proof.
+
+| Field | Description |
+|-------|-------------|
+| `resolution` | How the target was resolved: `exact`, `interface_dispatch`, or `name_only`. Absent ⇒ treat as unresolved/untrusted. |
+| `declared_type` | The static/interface type at the call site (e.g. the interface whose method was dispatched). Present on dispatch edges. |
+| `method_name` | The invoked method name, independent of the resolved target. |
+| `arity` | The argument count of the call. |
+
+`resolution` values:
+
+- **`exact`** — the receiver's static type was known and the method resolved to
+  a unique declared target on that type (or an overload set on that exact type).
+- **`interface_dispatch`** — the target was found by expanding an
+  interface/abstract method to concrete implementations matching name + arity
+  within a namespace root. Trustworthy only when exactly one implementation is
+  present in the dependency closure; otherwise it is an ambiguous guess.
+- **`name_only`** — the target was guessed by method name + arity (plus
+  namespace heuristics) with no receiver-type anchor (e.g. fluent-chain
+  fallback).
+
+`method_name` + `arity` + the call-site line let a consumer **group sibling
+candidates of one call site** so ambiguity can be detected across edges that
+span the component boundary. The reference consumer (`pkg/graphfrag`'s stitcher)
+applies a **tiered, fail-closed** policy: traverse `exact` edges and
+`interface_dispatch` edges with exactly one implementation in the dependency
+closure; **drop** ambiguous interface dispatch (>1 impl) and `name_only` edges,
+recording them rather than emitting a chain. This is what prevents a DRBG's
+`generate()` from name-colliding with `BCrypt.generate#3` (or
+`provider.get(...)` fanning out to unrelated `get(...)` methods) from being
+reported as reachable crypto.
+
+> Fragments exported by older versions (without `resolution`) decode as
+> unresolved and are treated as untrusted (fail-closed): under-report, never a
+> false positive.
+
+### Example
+
+```json
+{
+  "schema_version": "graph-fragment-1.1",
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160 },
+  "functions": [
+    { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
+  ],
+  "external_calls": [
+    {
+      "caller_key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1",
+      "target_key": "org.bouncycastle.operator.(InputDecryptorProvider).get#1",
+      "line": 90,
+      "resolution": "exact",
+      "method_name": "get",
+      "arity": 1
+    },
+    {
+      "caller_key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1",
+      "target_key": "org.bouncycastle.cms.(RecipientInformationStore).get#1",
+      "line": 90,
+      "resolution": "interface_dispatch",
+      "declared_type": "org.bouncycastle.operator.InputDecryptorProvider",
+      "method_name": "get",
+      "arity": 1
+    }
+  ],
+  "crypto_annotations": [
+    { "function_key": "org.bouncycastle.asn1.pkcs.(EncryptedPrivateKeyInfo).getEncryptedData#0", "finding_id": "abc123", "symbol": "getEncryptedData" }
+  ]
+}
+```
+
+In this slice, `decryptPrivateKeyInfo` has one **`exact`** edge to the real
+`InputDecryptorProvider.get` and one over-broad **`interface_dispatch`** edge to
+an unrelated `get#1` from the same call site (`line: 90`). A stitcher that sees
+more than one implementation for that call site drops the ambiguous group.
+
 ## CycloneDX CBOM Format
 
 CycloneDX 1.6 compatible Cryptography Bill of Materials format for standardized reporting.

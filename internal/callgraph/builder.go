@@ -75,8 +75,9 @@ func (b *Builder) PackageSeparator() string {
 func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	buildStart := time.Now()
 	graph := &CallGraph{
-		Functions: make(map[string]*FunctionDecl),
-		Callers:   make(map[string][]string),
+		Functions:       make(map[string]*FunctionDecl),
+		Callers:         make(map[string][]string),
+		EdgeResolutions: make(map[string]EdgeResolution),
 	}
 
 	// Phase 1: Parse source files only for packages that need full analysis
@@ -204,26 +205,58 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 			call := fn.Calls[i]
 			calleeKey := call.Callee.String()
 			addCaller(graph.Callers, calleeKey, callerKey)
+			recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
 
 			overloadTargets := b.expandOverloadCandidates(call.Callee, methodsByQualifiedArity)
 			resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 			resolvedTargets[0] = calleeKey
 			for _, target := range overloadTargets {
 				addCaller(graph.Callers, target, callerKey)
+				recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
 				resolvedTargets = append(resolvedTargets, target)
 			}
 
 			for _, target := range resolvedTargets {
 				for _, alias := range b.expandInterfaceDispatch(target, graph, methodsByName) {
-					addCaller(graph.Callers, alias, callerKey)
+					addCaller(graph.Callers, alias.CalleeKey, callerKey)
+					recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
 				}
 			}
 
 			for _, alias := range b.expandFluentFallback(call, graph, methodsByName) {
 				addCaller(graph.Callers, alias, callerKey)
+				recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
 			}
 		}
 	}
+}
+
+// recordEdgeResolution stores how a caller->callee edge was resolved, keeping
+// the highest-trust classification when the same edge is reached via multiple
+// paths (a direct exact call must never be downgraded to a dispatch guess).
+// MethodName and Arity are derived from the callee key so dispatch siblings of
+// one call site share a stable grouping identity downstream.
+func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, callSite int) {
+	if graph.EdgeResolutions == nil {
+		graph.EdgeResolutions = make(map[string]EdgeResolution)
+	}
+	method, arity := "", 0
+	if calleeID, err := ParseFunctionID(calleeKey); err == nil {
+		method = BaseFunctionName(calleeID.Name)
+		arity = functionArity(calleeID.Name)
+	}
+	resolution := EdgeResolution{
+		Kind:         kind,
+		DeclaredType: declaredType,
+		MethodName:   method,
+		Arity:        arity,
+		CallSite:     callSite,
+	}
+	key := EdgeResolutionKey(callerKey, calleeKey, resolution)
+	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
+		return
+	}
+	graph.EdgeResolutions[key] = resolution
 }
 
 func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
@@ -298,13 +331,21 @@ func (b *Builder) expandOverloadCandidates(callee FunctionID, methodsByQualified
 	return methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]
 }
 
+// interfaceDispatchAlias is one synthesized interface-dispatch edge target plus
+// the interface type that was expanded, so the edge can be classified and
+// grouped with its siblings downstream.
+type interfaceDispatchAlias struct {
+	CalleeKey    string
+	DeclaredType string
+}
+
 // expandInterfaceDispatch links interface method call-sites to concrete implementations
 // with matching method name/arity in the same namespace root.
 func (b *Builder) expandInterfaceDispatch(
 	calleeKey string,
 	graph *CallGraph,
 	methodsByName map[string][]*FunctionDecl,
-) []string {
+) []interfaceDispatchAlias {
 	calleeDecl, ok := graph.Functions[calleeKey]
 	if !ok || calleeDecl.OwnerType != ownerTypeInterface {
 		return nil
@@ -315,8 +356,9 @@ func (b *Builder) expandInterfaceDispatch(
 		return nil
 	}
 
+	declaredType := interfaceDeclaredType(calleeDecl.ID)
 	baseRoot := namespaceRoot(calleeDecl.ID.Package)
-	results := make([]string, 0, len(targets))
+	keys := make([]string, 0, len(targets))
 	for _, candidate := range targets {
 		if candidate.OwnerType == ownerTypeInterface {
 			continue
@@ -327,14 +369,27 @@ func (b *Builder) expandInterfaceDispatch(
 		if namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
-		results = append(results, candidate.ID.String())
+		keys = append(keys, candidate.ID.String())
 	}
 
-	sort.Strings(results)
-	if len(results) > 8 {
-		return results[:8]
+	sort.Strings(keys)
+	results := make([]interfaceDispatchAlias, 0, len(keys))
+	for _, k := range keys {
+		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
 	}
 	return results
+}
+
+// interfaceDeclaredType renders the fully-qualified interface type for a method
+// ID (e.g. {Package: "dep", Type: "Sink"} -> "dep.Sink").
+func interfaceDeclaredType(id FunctionID) string {
+	if id.Type == "" {
+		return id.Package
+	}
+	if id.Package == "" {
+		return id.Type
+	}
+	return id.Package + "." + id.Type
 }
 
 // expandFluentFallback links unresolved fluent-chain calls (foo().bar().baz()) to

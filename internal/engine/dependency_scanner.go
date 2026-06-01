@@ -470,17 +470,21 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 
 // packageSets separates dependencies into two groups for the two-phase callgraph build.
 type packageSets struct {
-	// graphPackages get full source parsing: user code + deps with crypto findings.
+	// graphPackages get full source parsing: user code + every dependency whose
+	// source was resolved and scanned successfully. Non-crypto dependencies must
+	// still be parsed here because they can be bridge nodes in a call chain
+	// (for example A -> B(no crypto) -> C(crypto)).
 	graphPackages []callgraph.PackageDir
 	// typeOnlyPackages are used only for bytecode type indexing (no source parsing).
-	// This preserves type resolution accuracy while avoiding expensive parsing of
-	// deps that have no crypto findings.
+	// This preserves type resolution accuracy for dependencies whose source is
+	// unavailable or whose scan failed, while avoiding duplicate source parsing for
+	// dependencies already listed in graphPackages.
 	typeOnlyPackages []callgraph.PackageDir
 }
 
 // collectPackageSets builds two lists of PackageDirs for the two-phase callgraph build.
-// graphPackages: user code + deps with findings (full source parsing).
-// typeOnlyPackages: deps without findings (bytecode type index only).
+// graphPackages: user code + successfully scanned deps with source, regardless of findings.
+// typeOnlyPackages: Java deps not source-parsed, used for bytecode type resolution only.
 func (ds *DependencyScanner) collectPackageSets(
 	userTarget string,
 	resolved *dependency.ResolveResult,
@@ -504,7 +508,10 @@ func (ds *DependencyScanner) collectPackageSets(
 		})
 	}
 
-	// Split deps: findings deps get full source parsing; others get bytecode-only type index.
+	// Source-available deps participate in reachability even when they have no
+	// direct crypto findings. A non-crypto dep can be the only bridge between
+	// user code and a crypto-bearing transitive dependency. Keep bytecode-only
+	// indexing as a fallback for Java deps that cannot be source-parsed.
 	for i := range depResults {
 		result := &depResults[i]
 		pkg := callgraph.PackageDir{
@@ -513,7 +520,7 @@ func (ds *DependencyScanner) collectPackageSets(
 			Version:              result.dep.Version,
 			CompiledArtifactPath: result.dep.CompiledArtifactPath,
 		}
-		if result.status == depScanStatusScanned && result.report != nil && hasFindings(result.report) && result.dep.Dir != "" {
+		if result.status == depScanStatusScanned && result.dep.Dir != "" {
 			sets.graphPackages = append(sets.graphPackages, pkg)
 			continue
 		}

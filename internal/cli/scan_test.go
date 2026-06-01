@@ -329,7 +329,7 @@ func Encrypt(key []byte) error {
 		}},
 	}
 
-	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, false)
+	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, false, "")
 	if err != nil {
 		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestEncrypt() {
 		}},
 	}
 
-	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, true)
+	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, true, "")
 	if err != nil {
 		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
 	}
