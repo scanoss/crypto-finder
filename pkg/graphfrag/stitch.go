@@ -25,7 +25,7 @@ func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]
 	out := Result{Suppressed: suppressed}
 	for _, fn := range rootFragment.Functions {
 		start := graphNode{Component: root, Function: fn.Signature}
-		trace(start, adjacency, opsByNode, nil, map[graphNode]bool{}, &out)
+		trace(start, adjacency, opsByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
 	return &out, nil
 }
@@ -290,7 +290,7 @@ func distinctTargets(edges []callEdge, resolve edgeResolver) []graphNode {
 
 func ambiguousDispatchEdge(key ComponentKey, gk dispatchGroupKey, targets []graphNode) SuppressedEdge {
 	return SuppressedEdge{
-		Caller:     CallFrame{Component: key, Function: gk.Caller},
+		Caller:     CallFrame{Component: key, Signature: gk.Caller},
 		MethodName: gk.MethodName,
 		Arity:      gk.Arity,
 		Reason:     SuppressReasonAmbiguousDispatch,
@@ -308,7 +308,7 @@ func candidateComponents(targets []graphNode) []ComponentKey {
 
 func suppressedEdge(from ComponentKey, e callEdge, reason string, candidates []ComponentKey) SuppressedEdge {
 	return SuppressedEdge{
-		Caller:     CallFrame{Component: from, Function: e.caller},
+		Caller:     CallFrame{Component: from, Signature: e.caller},
 		MethodName: e.method,
 		Arity:      e.arity,
 		Reason:     reason,
@@ -353,6 +353,8 @@ func trace(
 	current graphNode,
 	adjacency map[graphNode][]graphNode,
 	opsByNode map[graphNode][]CryptoOperation,
+	fragments map[ComponentKey]Fragment,
+	traversedEdgeEntryCall *CallSite,
 	path []CallFrame,
 	visiting map[graphNode]bool,
 	out *Result,
@@ -363,18 +365,71 @@ func trace(
 	visiting[current] = true
 	defer delete(visiting, current)
 
-	path = append(path, CallFrame(current))
-	for _, op := range opsByNode[current] {
+	// Build the frame for this node: stamp the resolved Function identity from
+	// the fragment and carry the EntryCall from the edge that led here.
+	frame := CallFrame{
+		Component: current.Component,
+		Signature: current.Function,
+		EntryCall: traversedEdgeEntryCall,
+	}
+	if frag, ok := fragments[current.Component]; ok {
+		frame.Module = frag.Module
+		for i := range frag.Functions {
+			if frag.Functions[i].Signature == current.Function {
+				frame.Function = frag.Functions[i]
+				break
+			}
+		}
+	}
+
+	path = append(path, frame)
+	for i := range opsByNode[current] {
+		op := opsByNode[current][i]
 		frames := append([]CallFrame(nil), path...)
-		out.Chains = append(out.Chains, FindingChain{
+		chain := FindingChain{
 			FindingID:  op.FindingID,
 			RuleID:     op.RuleID,
 			Symbol:     op.Symbol,
 			Frames:     frames,
 			Confidence: ConfidenceHigh,
-		})
+		}
+		// Carry the full CryptoOperation so the converter can emit crypto_call
+		// without re-reading the original fragments.
+		opCopy := op
+		chain.CryptoOp = &opCopy
+		out.Chains = append(out.Chains, chain)
 	}
 	for _, next := range adjacency[current] {
-		trace(next, adjacency, opsByNode, path, visiting, out)
+		// Carry the EntryCall from this edge to the next frame.
+		var nextEntryCall *CallSite
+		nextEntryCall = resolveEdgeEntryCall(current, next, fragments)
+		trace(next, adjacency, opsByNode, fragments, nextEntryCall, path, visiting, out)
 	}
+}
+
+// resolveEdgeEntryCall finds the EntryCall on the edge from `from` to `to`
+// within `from`'s component fragment. It searches both InternalEdges (same
+// component) and ExternalCalls (cross-component). Returns nil when the edge
+// carries no data-flow (legacy 1.0/1.1 fragments).
+func resolveEdgeEntryCall(from, to graphNode, fragments map[ComponentKey]Fragment) *CallSite {
+	frag, ok := fragments[from.Component]
+	if !ok {
+		return nil
+	}
+	if from.Component == to.Component {
+		for i := range frag.InternalEdges {
+			e := &frag.InternalEdges[i]
+			if e.Caller == from.Function && e.Callee == to.Function {
+				return e.EntryCall
+			}
+		}
+		return nil
+	}
+	for i := range frag.ExternalCalls {
+		e := &frag.ExternalCalls[i]
+		if e.Caller == from.Function && e.TargetSignature == to.Function {
+			return e.EntryCall
+		}
+	}
+	return nil
 }
