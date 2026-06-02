@@ -17,6 +17,7 @@
 package scan
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -168,8 +169,8 @@ func TestBuildCallSiteParameters(t *testing.T) {
 				if got[i].ResolvedValue != tc.want[i].ResolvedValue {
 					t.Errorf("[%d] ResolvedValue = %q, want %q", i, got[i].ResolvedValue, tc.want[i].ResolvedValue)
 				}
-				if len(got[i].SourceNodes) != len(tc.want[i].SourceNodes) {
-					t.Errorf("[%d] SourceNodes len = %d, want %d", i, len(got[i].SourceNodes), len(tc.want[i].SourceNodes))
+				if !reflect.DeepEqual(got[i].SourceNodes, tc.want[i].SourceNodes) {
+					t.Errorf("[%d] SourceNodes mismatch:\n got: %#v\nwant: %#v", i, got[i].SourceNodes, tc.want[i].SourceNodes)
 				}
 			}
 		})

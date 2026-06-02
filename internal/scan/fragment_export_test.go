@@ -288,6 +288,62 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 	}
 }
 
+func TestBuildGraphFragmentExport_EntryCallUsesMatchingCallSiteLine(t *testing.T) {
+	t.Parallel()
+
+	callerID := callgraph.FunctionID{Package: "app", Type: "Controller", Name: "handle#0"}
+	calleeID := callgraph.FunctionID{Package: "com.dep", Type: "Sink", Name: "run#1"}
+
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			callerID.String(): {
+				ID:        callerID,
+				FilePath:  "Controller.java",
+				StartLine: 1,
+				EndLine:   20,
+				Calls: []callgraph.FunctionCall{
+					{Callee: calleeID, FilePath: "Controller.java", Line: 3, Arguments: []string{"first"}, Raw: "sink.run(first)"},
+					{Callee: calleeID, FilePath: "Controller.java", Line: 9, Arguments: []string{"second"}, Raw: "sink.run(second)"},
+				},
+			},
+			calleeID.String(): {
+				ID:         calleeID,
+				FilePath:   "Sink.java",
+				StartLine:  1,
+				EndLine:    2,
+				Parameters: []callgraph.FunctionParameter{{Type: "String"}},
+			},
+		},
+		Callers: map[string][]string{
+			calleeID.String(): {callerID.String()},
+		},
+		EdgeResolutions: map[string]callgraph.EdgeResolution{},
+	}
+	resLine3 := callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact, MethodName: "run", Arity: 1, CallSite: 3}
+	resLine9 := callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact, MethodName: "run", Arity: 1, CallSite: 9}
+	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), calleeID.String(), resLine3)] = resLine3
+	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), calleeID.String(), resLine9)] = resLine9
+
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+
+	gotByLine := make(map[int]*graphfrag.GraphFragmentCallSite)
+	for i := range payload.InternalEdges {
+		edge := payload.InternalEdges[i]
+		if edge.CallerKey == callerID.String() && edge.CalleeKey == calleeID.String() {
+			gotByLine[edge.Line] = edge.EntryCall
+		}
+	}
+	for line, wantArg := range map[int]string{3: "first", 9: "second"} {
+		entryCall := gotByLine[line]
+		if entryCall == nil || len(entryCall.Parameters) != 1 {
+			t.Fatalf("line %d EntryCall = %#v, want one parameter", line, entryCall)
+		}
+		if entryCall.Parameters[0].ArgumentExpression != wantArg {
+			t.Fatalf("line %d ArgumentExpression = %q, want %q", line, entryCall.Parameters[0].ArgumentExpression, wantArg)
+		}
+	}
+}
+
 func findInternalEdge(payload graphfrag.GraphFragmentExport, caller, callee string) *graphfrag.GraphFragmentEdge {
 	for i := range payload.InternalEdges {
 		if payload.InternalEdges[i].CallerKey == caller && payload.InternalEdges[i].CalleeKey == callee {

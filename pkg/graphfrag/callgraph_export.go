@@ -80,6 +80,10 @@ type ExportEntryCall struct {
 	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the callee's canonical signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
+	// ReturnType is the callee's declared return type.
+	ReturnType string `json:"return_type,omitempty"`
+	// ParameterTypes lists the callee's declared parameter types.
+	ParameterTypes []string `json:"parameter_types,omitempty"`
 	// Line is the source line in the caller where the call is made.
 	Line int `json:"line,omitempty"`
 	// Parameters carries the resolved argument data-flow.
@@ -270,12 +274,20 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 // chainMatchedOp extracts the matched operation from the last frame's
 // CryptoOperation (via the first chain that has it) or returns nil.
 func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
-	// FindingChain carries Symbol; the MatchedOperation.Kind comes from the op
-	// stored on the fragment. We synthesize a minimal matched_operation from the
-	// chain's own Symbol so the export is self-contained.
-	if fc.Symbol == "" {
+	if fc != nil && fc.CryptoOp != nil && fc.CryptoOp.MatchedOperation != nil {
+		op := fc.CryptoOp.MatchedOperation
+		return &ExportMatchedOperation{
+			Kind:       op.Kind,
+			Symbol:     op.Symbol,
+			Expression: op.Expression,
+			Line:       op.Line,
+		}
+	}
+	if fc == nil || fc.Symbol == "" {
 		return nil
 	}
+	// Legacy fallback: FindingChain carries only Symbol, so synthesize the
+	// minimal schema-5.x call operation when no rich MatchedOperation exists.
 	return &ExportMatchedOperation{
 		Kind:   "call",
 		Symbol: fc.Symbol,
@@ -296,30 +308,35 @@ func buildExportChain(fc *FindingChain, root ComponentKey) ([]ExportChainNode, s
 	nodes := make([]ExportChainNode, 0, len(fc.Frames))
 	resolvedFindingID := fc.FindingID // default: use the stored (isolated-scan) ID
 
-	for i, frame := range fc.Frames {
+	for i := range fc.Frames {
+		frame := fc.Frames[i]
 		node := buildExportNode(frame, root)
-		if i == len(fc.Frames)-1 {
-			// Terminal frame: apply dep-path prefixing and finding_id recompute.
-			if fc.CryptoOp != nil {
-				if frame.Component != root {
-					// Non-root: prefix file_path and recompute finding_id.
-					module := moduleFromFrame(frame)
-					version := frame.Component.Version
-					prefixedPath := depPrefixedPath(fc.CryptoOp.FilePath, module, version)
-					node.FilePath = prefixedPath
-					resolvedFindingID = computeFindingID(prefixedPath, fc.CryptoOp.StartLine, fc.CryptoOp.RuleID)
-				} else {
-					// Root component: finding_id is hash of the unprefixed path.
-					resolvedFindingID = computeFindingID(fc.CryptoOp.FilePath, fc.CryptoOp.StartLine, fc.CryptoOp.RuleID)
-				}
-				if fc.CryptoOp.CryptoCall != nil {
-					node.CryptoCall = exportCryptoCall(fc.CryptoOp.CryptoCall)
-				}
-			}
+		if i == len(fc.Frames)-1 && fc.CryptoOp != nil {
+			resolvedFindingID = applyTerminalCryptoOp(&node, frame, fc.CryptoOp, root)
 		}
 		nodes = append(nodes, node)
 	}
 	return nodes, resolvedFindingID
+}
+
+func applyTerminalCryptoOp(node *ExportChainNode, frame CallFrame, op *CryptoOperation, root ComponentKey) string {
+	if frame.Component != root {
+		// Non-root: prefix file_path and recompute finding_id.
+		module := moduleFromFrame(frame)
+		version := frame.Component.Version
+		prefixedPath := depPrefixedPath(op.FilePath, module, version)
+		node.FilePath = prefixedPath
+		if op.CryptoCall != nil {
+			node.CryptoCall = exportCryptoCall(op.CryptoCall)
+		}
+		return computeFindingID(prefixedPath, op.StartLine, op.RuleID)
+	}
+
+	// Root component: finding_id is hash of the unprefixed path.
+	if op.CryptoCall != nil {
+		node.CryptoCall = exportCryptoCall(op.CryptoCall)
+	}
+	return computeFindingID(op.FilePath, op.StartLine, op.RuleID)
 }
 
 // depPrefixedPath returns "module@version/filePath" when module and version are
@@ -395,6 +412,8 @@ func exportEntryCall(cs *CallSite, fn Function) *ExportEntryCall {
 	ec := &ExportEntryCall{
 		FunctionName:       fn.FunctionName,
 		CanonicalSignature: fn.CanonicalSignature,
+		ReturnType:         fn.ReturnType,
+		ParameterTypes:     append([]string(nil), fn.ParameterTypes...),
 		Line:               cs.Line,
 	}
 	for i := range cs.Parameters {

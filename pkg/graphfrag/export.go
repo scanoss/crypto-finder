@@ -16,7 +16,7 @@ import "encoding/json"
 // external_calls) and full crypto-call identity + asset metadata on
 // crypto_annotations. All additions are additive: a 1.1 fragment decodes with
 // nil entry_call / nil CryptoCall fields, which the stitcher degrades to
-// structural-only chains (safe fail-closed behaviour).
+// structural-only chains (safe fail-closed behavior).
 const SchemaVersion = "graph-fragment-1.2"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by

@@ -23,8 +23,8 @@ func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]
 
 	rootFragment := fragments[root]
 	out := Result{Suppressed: suppressed}
-	for _, fn := range rootFragment.Functions {
-		start := graphNode{Component: root, Function: fn.Signature}
+	for i := range rootFragment.Functions {
+		start := graphNode{Component: root, Function: rootFragment.Functions[i].Signature}
 		trace(start, adjacency, opsByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
 	return &out, nil
@@ -33,6 +33,11 @@ func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]
 type graphNode struct {
 	Component ComponentKey
 	Function  string
+}
+
+type adjacencyEdge struct {
+	target    graphNode
+	entryCall *CallSite
 }
 
 func dependencyClosure(root ComponentKey, deps DependencyGraph) []ComponentKey {
@@ -70,9 +75,9 @@ func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment)
 	out := make(map[string][]graphNode)
 	for _, key := range closure {
 		fragment := fragments[key]
-		for _, fn := range fragment.Functions {
-			node := graphNode{Component: key, Function: fn.Signature}
-			out[fn.Signature] = append(out[fn.Signature], node)
+		for i := range fragment.Functions {
+			node := graphNode{Component: key, Function: fragment.Functions[i].Signature}
+			out[fragment.Functions[i].Signature] = append(out[fragment.Functions[i].Signature], node)
 		}
 	}
 	return out
@@ -103,6 +108,7 @@ type callEdge struct {
 	arity      int
 	callSite   int
 	internal   bool
+	entryCall  *CallSite
 }
 
 // buildAdjacency composes the traversable call graph from the fragment closure
@@ -122,8 +128,8 @@ func buildAdjacency(
 	deps DependencyGraph,
 	fragments map[ComponentKey]Fragment,
 	functionsBySignature map[string][]graphNode,
-) (map[graphNode][]graphNode, []SuppressedEdge) {
-	out := make(map[graphNode][]graphNode)
+) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
+	out := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
 
 	for _, key := range closure {
@@ -146,14 +152,14 @@ func componentSet(closure []ComponentKey) map[ComponentKey]bool {
 	return out
 }
 
-func indexComponentSignatures(key ComponentKey, fragment Fragment, adjacency map[graphNode][]graphNode) map[string]bool {
+func indexComponentSignatures(key ComponentKey, fragment Fragment, adjacency map[graphNode][]adjacencyEdge) map[string]bool {
 	componentSigs := make(map[string]bool, len(fragment.Functions))
-	for _, fn := range fragment.Functions {
-		node := graphNode{Component: key, Function: fn.Signature}
+	for i := range fragment.Functions {
+		node := graphNode{Component: key, Function: fragment.Functions[i].Signature}
 		if _, ok := adjacency[node]; !ok {
 			adjacency[node] = nil
 		}
-		componentSigs[fn.Signature] = true
+		componentSigs[fragment.Functions[i].Signature] = true
 	}
 	return componentSigs
 }
@@ -163,13 +169,13 @@ func collectCallEdges(fragment Fragment) []callEdge {
 	for _, e := range fragment.InternalEdges {
 		edges = append(edges, callEdge{
 			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
-			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true,
+			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true, entryCall: e.EntryCall,
 		})
 	}
 	for _, c := range fragment.ExternalCalls {
 		edges = append(edges, callEdge{
 			caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
-			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false,
+			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false, entryCall: c.EntryCall,
 		})
 	}
 	return edges
@@ -216,7 +222,7 @@ func applyImmediateEdgePolicy(
 	key ComponentKey,
 	edges []callEdge,
 	resolve edgeResolver,
-	adjacency map[graphNode][]graphNode,
+	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
@@ -227,7 +233,7 @@ func applyImmediateEdgePolicy(
 		caller := graphNode{Component: key, Function: e.caller}
 		switch e.resolution {
 		case ResolutionExact:
-			adjacency[caller] = append(adjacency[caller], resolve(e)...)
+			appendAdjacencyEdges(adjacency, caller, resolve(e), e.entryCall)
 		case ResolutionInterfaceDispatch:
 			gk := dispatchKey(key, e)
 			dispatchGroups[gk] = append(dispatchGroups[gk], e)
@@ -256,46 +262,65 @@ func applyDispatchGroups(
 	key ComponentKey,
 	groups map[dispatchGroupKey][]callEdge,
 	resolve edgeResolver,
-	adjacency map[graphNode][]graphNode,
+	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
 ) {
 	for _, gk := range sortedDispatchKeys(groups) {
-		targets := distinctTargets(groups[gk], resolve)
+		targets := distinctTargetEdges(groups[gk], resolve)
 		caller := graphNode{Component: key, Function: gk.Caller}
 		switch {
 		case len(targets) == 1:
 			adjacency[caller] = append(adjacency[caller], targets[0])
 		case len(targets) > 1:
-			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, targets))
+			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, candidateComponentsFromEdges(targets)))
 			// len(targets) == 0: no implementation in closure -> unreachable,
 			// nothing to traverse and nothing to record.
 		}
 	}
 }
 
-func distinctTargets(edges []callEdge, resolve edgeResolver) []graphNode {
+func appendAdjacencyEdges(
+	adjacency map[graphNode][]adjacencyEdge,
+	caller graphNode,
+	targets []graphNode,
+	entryCall *CallSite,
+) {
+	for _, target := range targets {
+		adjacency[caller] = append(adjacency[caller], adjacencyEdge{target: target, entryCall: entryCall})
+	}
+}
+
+func distinctTargetEdges(edges []callEdge, resolve edgeResolver) []adjacencyEdge {
 	distinct := map[graphNode]bool{}
-	var targets []graphNode
+	var targets []adjacencyEdge
 	for _, e := range edges {
 		for _, t := range resolve(e) {
 			if distinct[t] {
 				continue
 			}
 			distinct[t] = true
-			targets = append(targets, t)
+			targets = append(targets, adjacencyEdge{target: t, entryCall: e.entryCall})
 		}
 	}
 	return targets
 }
 
-func ambiguousDispatchEdge(key ComponentKey, gk dispatchGroupKey, targets []graphNode) SuppressedEdge {
+func ambiguousDispatchEdge(key ComponentKey, gk dispatchGroupKey, candidates []ComponentKey) SuppressedEdge {
 	return SuppressedEdge{
 		Caller:     CallFrame{Component: key, Signature: gk.Caller},
 		MethodName: gk.MethodName,
 		Arity:      gk.Arity,
 		Reason:     SuppressReasonAmbiguousDispatch,
-		Candidates: candidateComponents(targets),
+		Candidates: candidates,
 	}
+}
+
+func candidateComponentsFromEdges(edges []adjacencyEdge) []ComponentKey {
+	candidates := make([]ComponentKey, 0, len(edges))
+	for _, edge := range edges {
+		candidates = append(candidates, edge.target.Component)
+	}
+	return candidates
 }
 
 func candidateComponents(targets []graphNode) []ComponentKey {
@@ -341,9 +366,9 @@ func indexCryptoOperations(closure []ComponentKey, fragments map[ComponentKey]Fr
 	out := make(map[graphNode][]CryptoOperation)
 	for _, key := range closure {
 		fragment := fragments[key]
-		for _, op := range fragment.CryptoOperations {
-			node := graphNode{Component: key, Function: op.Function}
-			out[node] = append(out[node], op)
+		for i := range fragment.CryptoOperations {
+			node := graphNode{Component: key, Function: fragment.CryptoOperations[i].Function}
+			out[node] = append(out[node], fragment.CryptoOperations[i])
 		}
 	}
 	return out
@@ -351,7 +376,7 @@ func indexCryptoOperations(closure []ComponentKey, fragments map[ComponentKey]Fr
 
 func trace(
 	current graphNode,
-	adjacency map[graphNode][]graphNode,
+	adjacency map[graphNode][]adjacencyEdge,
 	opsByNode map[graphNode][]CryptoOperation,
 	fragments map[ComponentKey]Fragment,
 	traversedEdgeEntryCall *CallSite,
@@ -399,37 +424,8 @@ func trace(
 		chain.CryptoOp = &opCopy
 		out.Chains = append(out.Chains, chain)
 	}
-	for _, next := range adjacency[current] {
+	for _, edge := range adjacency[current] {
 		// Carry the EntryCall from this edge to the next frame.
-		var nextEntryCall *CallSite
-		nextEntryCall = resolveEdgeEntryCall(current, next, fragments)
-		trace(next, adjacency, opsByNode, fragments, nextEntryCall, path, visiting, out)
+		trace(edge.target, adjacency, opsByNode, fragments, edge.entryCall, path, visiting, out)
 	}
-}
-
-// resolveEdgeEntryCall finds the EntryCall on the edge from `from` to `to`
-// within `from`'s component fragment. It searches both InternalEdges (same
-// component) and ExternalCalls (cross-component). Returns nil when the edge
-// carries no data-flow (legacy 1.0/1.1 fragments).
-func resolveEdgeEntryCall(from, to graphNode, fragments map[ComponentKey]Fragment) *CallSite {
-	frag, ok := fragments[from.Component]
-	if !ok {
-		return nil
-	}
-	if from.Component == to.Component {
-		for i := range frag.InternalEdges {
-			e := &frag.InternalEdges[i]
-			if e.Caller == from.Function && e.Callee == to.Function {
-				return e.EntryCall
-			}
-		}
-		return nil
-	}
-	for i := range frag.ExternalCalls {
-		e := &frag.ExternalCalls[i]
-		if e.Caller == from.Function && e.TargetSignature == to.Function {
-			return e.EntryCall
-		}
-	}
-	return nil
 }

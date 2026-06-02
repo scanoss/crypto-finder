@@ -212,6 +212,52 @@ func TestToCallgraphExport_EntryCallOnFrame1(t *testing.T) {
 	}
 }
 
+func TestToCallgraphExport_EntryCallIncludesCalleeSignatureTypes(t *testing.T) {
+	res := &Result{
+		Chains: []FindingChain{{
+			FindingID: "find-entry-types",
+			Symbol:    "javax.crypto.SecretKeyFactory.getInstance",
+			Frames: []CallFrame{
+				{
+					Component: phase6Root,
+					Signature: "com.acme.App.entry#0",
+					Function: Function{
+						Signature:          "com.acme.App.entry#0",
+						FunctionName:       "com.acme.App.entry",
+						CanonicalSignature: "com.acme.App.entry(): void",
+						FilePath:           "App.java",
+					},
+				},
+				{
+					Component: phase6Dep1,
+					Signature: "net.crypto.Lib.makeKey#1",
+					Function: Function{
+						Signature:          "net.crypto.Lib.makeKey#1",
+						FunctionName:       "net.crypto.Lib.makeKey",
+						CanonicalSignature: "net.crypto.Lib.makeKey(String): SecretKey",
+						ReturnType:         "SecretKey",
+						ParameterTypes:     []string{"String"},
+						FilePath:           "Lib.java",
+					},
+					EntryCall: &CallSite{Line: 42},
+				},
+			},
+		}},
+	}
+
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"})
+	entryCall := out.FindingGraphs[0].CallChains[0][1].EntryCall
+	if entryCall == nil {
+		t.Fatal("EntryCall is nil, want non-nil")
+	}
+	if entryCall.ReturnType != "SecretKey" {
+		t.Fatalf("EntryCall.ReturnType = %q, want SecretKey", entryCall.ReturnType)
+	}
+	if len(entryCall.ParameterTypes) != 1 || entryCall.ParameterTypes[0] != "String" {
+		t.Fatalf("EntryCall.ParameterTypes = %#v, want [String]", entryCall.ParameterTypes)
+	}
+}
+
 // TestToCallgraphExport_CryptoCallOnLastNode asserts that the crypto_call on
 // the terminal node equals the CryptoOperation's CryptoCall.
 func TestToCallgraphExport_CryptoCallOnLastNode(t *testing.T) {
@@ -226,6 +272,42 @@ func TestToCallgraphExport_CryptoCallOnLastNode(t *testing.T) {
 	}
 	if last.CryptoCall.FunctionName != "javax.crypto.Cipher.getInstance" {
 		t.Errorf("CryptoCall.FunctionName = %q", last.CryptoCall.FunctionName)
+	}
+}
+
+func TestToCallgraphExport_PreservesStoredMatchedOperation(t *testing.T) {
+	res := &Result{
+		Chains: []FindingChain{{
+			FindingID: "find-type-usage",
+			Symbol:    "fallback.symbol",
+			Frames: []CallFrame{{
+				Component: phase6Root,
+				Signature: "com.acme.App.entry#0",
+				Function: Function{
+					Signature:    "com.acme.App.entry#0",
+					FunctionName: "com.acme.App.entry",
+					FilePath:     "App.java",
+				},
+			}},
+			CryptoOp: &CryptoOperation{
+				MatchedOperation: &MatchedOp{
+					Kind:       "type_usage",
+					Symbol:     "java.security.cert.X509Certificate",
+					Expression: "X509Certificate cert",
+					Line:       17,
+				},
+			},
+		}},
+	}
+
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"})
+	got := out.FindingGraphs[0].MatchedOperation
+	if got == nil {
+		t.Fatal("MatchedOperation is nil, want preserved operation")
+	}
+	if got.Kind != "type_usage" || got.Symbol != "java.security.cert.X509Certificate" ||
+		got.Expression != "X509Certificate cert" || got.Line != 17 {
+		t.Fatalf("MatchedOperation = %#v, want stored non-call operation", got)
 	}
 }
 
@@ -319,7 +401,7 @@ func buildPhase6FragmentsWithFilePath() map[ComponentKey]Fragment {
 // TestToCallgraphExport_DepFindingIDPrefixed asserts that for a dep-component
 // crypto op, the emitted finding_id equals sha256(M@V/path:line:rule)[:8] and
 // the terminal node's file_path equals M@V/path (the prefixed form). This
-// mirrors the live `crypto-finder scan --scan-dependencies` behaviour
+// mirrors the live `crypto-finder scan --scan-dependencies` behavior
 // implemented in pkg/stitch.generateFindingID (stitch.go:300-311).
 func TestToCallgraphExport_DepFindingIDPrefixed(t *testing.T) {
 	frags := buildPhase6FragmentsWithFilePath()

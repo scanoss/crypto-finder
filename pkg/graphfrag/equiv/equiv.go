@@ -156,7 +156,7 @@ var defaultIgnoreFields = []string{
 	"confidence",      // internal only, not present in schema-5.x output
 }
 
-// Options controls the behaviour of Compare.
+// Options controls the behavior of Compare.
 type Options struct {
 	// IgnoreFields is the set of JSON field names to treat as known divergences
 	// rather than hard failures when they differ between A and B nodes.
@@ -211,45 +211,15 @@ func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, op
 
 	// Per-finding comparison.
 	for _, fid := range allFindings {
-		aChains := aChainsByFinding[fid] // map[ChainKey][]ExportChainNodeJSON
-		bChains := bChainsByFinding[fid] // map[ChainKey][]ExportChainNodeJSON
-		if aChains == nil {
-			aChains = map[ChainKey][]ExportChainNodeJSON{}
-		}
-		if bChains == nil {
-			bChains = map[ChainKey][]ExportChainNodeJSON{}
-		}
-
-		// Build EXPECTED(B) = aChains MINUS suppressed chains.
-		expectedB := make(map[ChainKey][]ExportChainNodeJSON)
-		for key, ch := range aChains {
-			if !isChainSuppressed(key, ch, suppressed, opts.SuppressedChainKey) {
-				expectedB[key] = ch
-			}
-		}
-
-		// MissingInB: in EXPECTED(B) but not in bChains.
-		for key := range expectedB {
-			if _, ok := bChains[key]; !ok {
-				report.MissingInB = append(report.MissingInB, key)
-			}
-		}
-
-		// ExtraInB: in bChains but not in aChains (raw A, not just expected).
-		for key := range bChains {
-			if _, ok := aChains[key]; !ok {
-				report.ExtraInB = append(report.ExtraInB, key)
-			}
-		}
-
-		// Node field comparison: for chains present in both A and B.
-		for key, aChain := range aChains {
-			bChain, ok := bChains[key]
-			if !ok {
-				continue // already reported above
-			}
-			compareChainNodes(fid, key, aChain, bChain, ignore, report)
-		}
+		compareFindingForID(
+			fid,
+			aChainsByFinding[fid],
+			bChainsByFinding[fid],
+			suppressed,
+			opts.SuppressedChainKey,
+			ignore,
+			report,
+		)
 	}
 
 	// Entry point index consistency: validate B's index against B's chains.
@@ -258,6 +228,54 @@ func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, op
 	}
 
 	return report
+}
+
+func compareFindingForID(
+	fid string,
+	aChains map[ChainKey][]ExportChainNodeJSON,
+	bChains map[ChainKey][]ExportChainNodeJSON,
+	suppressed []graphfrag.SuppressedEdge,
+	suppressedChainKey func(ChainKey, []ExportChainNodeJSON) bool,
+	ignore map[string]bool,
+	report *DiffReport,
+) {
+	if aChains == nil {
+		aChains = map[ChainKey][]ExportChainNodeJSON{}
+	}
+	if bChains == nil {
+		bChains = map[ChainKey][]ExportChainNodeJSON{}
+	}
+
+	// Build EXPECTED(B) = aChains MINUS suppressed chains.
+	expectedB := make(map[ChainKey][]ExportChainNodeJSON)
+	for key, ch := range aChains {
+		if !isChainSuppressed(key, ch, suppressed, suppressedChainKey) {
+			expectedB[key] = ch
+		}
+	}
+
+	// MissingInB: in EXPECTED(B) but not in bChains.
+	for key := range expectedB {
+		if _, ok := bChains[key]; !ok {
+			report.MissingInB = append(report.MissingInB, key)
+		}
+	}
+
+	// ExtraInB: in bChains but not in EXPECTED(B), after suppression.
+	for key := range bChains {
+		if _, ok := expectedB[key]; !ok {
+			report.ExtraInB = append(report.ExtraInB, key)
+		}
+	}
+
+	// Node field comparison: only chains expected to survive and present in B.
+	for key, aChain := range expectedB {
+		bChain, ok := bChains[key]
+		if !ok {
+			continue // already reported above
+		}
+		compareChainNodes(fid, key, aChain, bChain, ignore, report)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -367,14 +385,15 @@ func adjacentPairSuppressed(caller, callee ExportChainNodeJSON, suppressed []gra
 	calleeMethod := lastSegment(callee.FunctionName)
 	calleeArity := len(callee.ParameterTypes)
 
-	for _, se := range suppressed {
+	for i := range suppressed {
+		se := &suppressed[i]
 		if se.Caller.Signature != callerID && se.Caller.Signature != caller.FunctionName {
 			continue
 		}
 		if se.MethodName != "" && se.MethodName != calleeMethod {
 			continue
 		}
-		if se.Arity > 0 && se.Arity != calleeArity {
+		if se.Arity > 0 && len(callee.ParameterTypes) > 0 && se.Arity != calleeArity {
 			continue
 		}
 		return true

@@ -1317,8 +1317,8 @@ class Sample {
 
 func calleeSummaries(calls []FunctionCall) []string {
 	out := make([]string, 0, len(calls))
-	for _, c := range calls {
-		out = append(out, c.Callee.String())
+	for i := range calls {
+		out = append(out, calls[i].Callee.String())
 	}
 	return out
 }

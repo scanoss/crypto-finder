@@ -363,14 +363,76 @@ func TestStitch_CallFrameEnrichedWith1_2Data(t *testing.T) {
 
 	// Terminal CryptoOperation must carry CryptoCall.
 	if len(res.Chains[0].Frames) > 0 {
-		// The CryptoOperation is on the last node; check via CryptoOperations from the fragment.
-		op := fragments[compB].CryptoOperations[0]
-		if op.CryptoCall == nil {
+		chain := res.Chains[0]
+		if chain.CryptoOp == nil || chain.CryptoOp.CryptoCall == nil {
 			t.Error("terminal CryptoOperation.CryptoCall is nil, want non-nil")
 		}
-		if op.CryptoCall.FunctionName != "javax.crypto.Cipher.getInstance" {
-			t.Errorf("CryptoCall.FunctionName = %q", op.CryptoCall.FunctionName)
+		if chain.CryptoOp != nil && chain.CryptoOp.CryptoCall != nil &&
+			chain.CryptoOp.CryptoCall.FunctionName != "javax.crypto.Cipher.getInstance" {
+			t.Errorf("CryptoCall.FunctionName = %q", chain.CryptoOp.CryptoCall.FunctionName)
 		}
+	}
+}
+
+func TestStitch_PreservesEntryCallIdentityForParallelEdges(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0.0"}
+	dep := ComponentKey{Purl: "pkg:maven/net.crypto/lib", Version: "2.0.0"}
+
+	fragments := map[ComponentKey]Fragment{
+		root: {
+			Component: root,
+			Functions: []Function{{
+				Signature:    "com.acme.App.entry#0",
+				FunctionName: "com.acme.App.entry",
+			}},
+			ExternalCalls: []ExternalCall{
+				{
+					Caller:          "com.acme.App.entry#0",
+					TargetSignature: "net.crypto.Lib.encrypt#0",
+					Resolution:      ResolutionExact,
+					EntryCall:       &CallSite{Line: 10, Parameters: []Parameter{{ParameterIndex: 0, VariableName: "first"}}},
+				},
+				{
+					Caller:          "com.acme.App.entry#0",
+					TargetSignature: "net.crypto.Lib.encrypt#0",
+					Resolution:      ResolutionExact,
+					EntryCall:       &CallSite{Line: 20, Parameters: []Parameter{{ParameterIndex: 0, VariableName: "second"}}},
+				},
+			},
+		},
+		dep: {
+			Component: dep,
+			Functions: []Function{{
+				Signature:    "net.crypto.Lib.encrypt#0",
+				FunctionName: "net.crypto.Lib.encrypt",
+			}},
+			CryptoOperations: []CryptoOperation{{
+				Function:  "net.crypto.Lib.encrypt#0",
+				FindingID: "parallel-edge-finding",
+				Symbol:    "javax.crypto.Cipher.getInstance",
+			}},
+		},
+	}
+
+	res, err := Stitch(root, DependencyGraph{root: {dep}}, fragments)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 2 {
+		t.Fatalf("chains = %d, want 2", len(res.Chains))
+	}
+
+	got := map[int]string{}
+	for _, chain := range res.Chains {
+		if len(chain.Frames) != 2 || chain.Frames[1].EntryCall == nil || len(chain.Frames[1].EntryCall.Parameters) != 1 {
+			t.Fatalf("chain frames/EntryCall = %#v, want dependency frame with one entry parameter", chain.Frames)
+		}
+		got[chain.Frames[1].EntryCall.Line] = chain.Frames[1].EntryCall.Parameters[0].VariableName
+	}
+	if got[10] != "first" || got[20] != "second" {
+		t.Fatalf("entry calls by line = %#v, want line 10 first and line 20 second", got)
 	}
 }
 

@@ -30,10 +30,10 @@ func node(fnName, canonicalSig string) ExportChainNodeJSON {
 	}
 }
 
-func nodeWith(fnName, canonicalSig, returnType, filePath string) ExportChainNodeJSON {
+func appNodeWith(returnType, filePath string) ExportChainNodeJSON {
 	return ExportChainNodeJSON{
-		FunctionName:       fnName,
-		CanonicalSignature: canonicalSig,
+		FunctionName:       "com.acme.App.entry",
+		CanonicalSignature: "com.acme.App.entry(): void",
 		ReturnType:         returnType,
 		FilePath:           filePath,
 	}
@@ -134,6 +134,52 @@ func TestCompare_SuppressedChainAbsentFromB(t *testing.T) {
 	}
 }
 
+func TestCompare_SuppressedChainPresentInBIsExtra(t *testing.T) {
+	caller := node("com.acme.App.call", "com.acme.App.call(): void")
+	nameOnly := node("com.acme.Legacy.dispatch", "com.acme.Legacy.dispatch(): void")
+	crypto := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
+
+	a := export(findingGraph("find-suppressed-extra",
+		chain(caller, nameOnly, crypto),
+	))
+	b := export(findingGraph("find-suppressed-extra",
+		chain(caller, nameOnly, crypto),
+	))
+	suppressed := []graphfrag.SuppressedEdge{
+		suppressedEdge("com.acme.App.call", "dispatch", 0),
+	}
+
+	report := Compare(a, b, suppressed, Options{})
+
+	if len(report.ExtraInB) != 1 {
+		t.Fatalf("ExtraInB = %v, want the suppressed chain that persisted in B", report.ExtraInB)
+	}
+	if len(report.NodeFieldMismatches) != 0 {
+		t.Fatalf("NodeFieldMismatches = %v, want no comparison for suppressed chain", report.NodeFieldMismatches)
+	}
+}
+
+func TestCompare_SuppressedArityIgnoredWhenParameterTypesOmitted(t *testing.T) {
+	caller := node("com.acme.App.call", "com.acme.App.call(): void")
+	callee := node("com.acme.Legacy.dispatch", "com.acme.Legacy.dispatch(): void")
+	callee.ParameterTypes = nil
+	crypto := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
+
+	a := export(findingGraph("find-suppressed-omitted-arity",
+		chain(caller, callee, crypto),
+	))
+	b := export(findingGraph("find-suppressed-omitted-arity"))
+	suppressed := []graphfrag.SuppressedEdge{
+		suppressedEdge("com.acme.App.call", "dispatch", 1),
+	}
+
+	report := Compare(a, b, suppressed, Options{})
+
+	if len(report.MissingInB) != 0 {
+		t.Fatalf("MissingInB = %v, want omitted parameter_types to allow arity suppression", report.MissingInB)
+	}
+}
+
 // TestCompare_SuppressedChainAbsentFromB_Triangulation verifies that a chain
 // NOT covered by any suppressed edge IS reported as MissingInB when absent from
 // B. This forces the suppression oracle to actually discriminate.
@@ -189,8 +235,8 @@ func TestCompare_ExtraInB(t *testing.T) {
 func TestCompare_NodeFieldMismatch(t *testing.T) {
 	// Both A and B have the same chain key (by canonical_signature) but a different
 	// return_type on the first node.
-	nodeInA := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "void", "App.java")
-	nodeInB := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "int", "App.java") // return_type differs
+	nodeInA := appNodeWith("void", "App.java")
+	nodeInB := appNodeWith("int", "App.java") // return_type differs
 
 	crypto := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
 
@@ -231,8 +277,8 @@ func TestCompare_IgnoredFieldDifference(t *testing.T) {
 	// file_path differs between A and B. Since file_path is in the default
 	// IgnoreFields list (live vs stitched paths diverge), this should not be a
 	// hard failure.
-	nodeInA := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "void", "src/main/App.java")
-	nodeInB := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "void", "/different/App.java")
+	nodeInA := appNodeWith("void", "src/main/App.java")
+	nodeInB := appNodeWith("void", "/different/App.java")
 
 	crypto := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
 
@@ -259,9 +305,9 @@ func TestCompare_IgnoredFieldDifference(t *testing.T) {
 // TestCompare_ExplicitIgnoreFields verifies that a caller-specified IgnoreFields
 // entry suppresses mismatches for that field.
 func TestCompare_ExplicitIgnoreFields(t *testing.T) {
-	nodeInA := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "void", "App.java")
+	nodeInA := appNodeWith("void", "App.java")
 	// return_type differs, but we will explicitly ignore it.
-	nodeInB := nodeWith("com.acme.App.entry", "com.acme.App.entry(): void", "int", "App.java")
+	nodeInB := appNodeWith("int", "App.java")
 
 	crypto := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
 
