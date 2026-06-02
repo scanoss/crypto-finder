@@ -17,7 +17,11 @@ import (
 // asset metadata) are mapped when present. Legacy 1.0/1.1 fragments decode with
 // nil/zero for the new fields — safe structural-only degradation.
 func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
-	frag := Fragment{Component: component, Module: e.ScanMetadata.RootModule}
+	frag := Fragment{
+		Component:        component,
+		Module:           e.ScanMetadata.RootModule,
+		GraphAlgoVersion: e.ScanMetadata.GraphAlgoVersion,
+	}
 
 	for i := range e.Functions {
 		fn := &e.Functions[i]
@@ -30,6 +34,7 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			Visibility:         fn.Visibility,
 			OwnerVisibility:    fn.OwnerVisibility,
 			StartLine:          fn.StartLine,
+			EndLine:            fn.EndLine,
 			FilePath:           fn.FilePath,
 		})
 	}

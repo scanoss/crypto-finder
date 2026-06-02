@@ -53,9 +53,10 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
 		ScanMetadata: graphfrag.GraphFragmentScanMetadata{
-			Ecosystem:  result.Ecosystem,
-			RootModule: result.RootModule,
-			ExportedAt: time.Now().UTC().Format(time.RFC3339),
+			Ecosystem:        result.Ecosystem,
+			RootModule:       result.RootModule,
+			GraphAlgoVersion: graphfrag.GraphAlgoVersion,
+			ExportedAt:       time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 	if result.Report != nil {

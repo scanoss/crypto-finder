@@ -19,6 +19,14 @@ import "encoding/json"
 // structural-only chains (safe fail-closed behavior).
 const SchemaVersion = "graph-fragment-1.2"
 
+// GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
+// is independent of the binary version (cf_version) and the wire schema
+// (SchemaVersion): it bumps ONLY when callgraph/inference construction changes
+// in a way that alters the structural graph. Consumers key their cached
+// structural graphs on this so a routine binary release does not invalidate the
+// cache — only a graph-affecting change does. Stamped into scan_metadata.
+const GraphAlgoVersion = "graph-algo-1"
+
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
 // crypto-finder's public contract; the scanner (internal/scan) builds it from a
@@ -35,16 +43,19 @@ type GraphFragmentExport struct {
 // GraphFragmentScanMetadata summarizes the scan that produced a graph-fragment
 // export and the payload counts emitted for that component.
 type GraphFragmentScanMetadata struct {
-	Ecosystem     string `json:"ecosystem,omitempty"`
-	RootModule    string `json:"root_module,omitempty"`
-	ToolName      string `json:"tool_name,omitempty"`
-	ToolVersion   string `json:"tool_version,omitempty"`
-	RulesVersion  string `json:"rules_version,omitempty"`
-	ExportedAt    string `json:"exported_at"`
-	FunctionCount int    `json:"function_count"`
-	InternalEdges int    `json:"internal_edge_count"`
-	ExternalCalls int    `json:"external_call_count"`
-	CryptoOps     int    `json:"crypto_operation_count"`
+	Ecosystem   string `json:"ecosystem,omitempty"`
+	RootModule  string `json:"root_module,omitempty"`
+	ToolName    string `json:"tool_name,omitempty"`
+	ToolVersion string `json:"tool_version,omitempty"`
+	// GraphAlgoVersion is the callgraph-construction algorithm version (see the
+	// GraphAlgoVersion const). Consumers cache structural graphs keyed on it.
+	GraphAlgoVersion string `json:"graph_algo_version,omitempty"`
+	RulesVersion     string `json:"rules_version,omitempty"`
+	ExportedAt       string `json:"exported_at"`
+	FunctionCount    int    `json:"function_count"`
+	InternalEdges    int    `json:"internal_edge_count"`
+	ExternalCalls    int    `json:"external_call_count"`
+	CryptoOps        int    `json:"crypto_operation_count"`
 }
 
 // GraphFragmentFunction is one function declaration included in a component's

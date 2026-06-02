@@ -49,6 +49,11 @@ type DependencyGraph map[ComponentKey][]ComponentKey
 type Fragment struct {
 	Component ComponentKey
 	Module    string
+	// GraphAlgoVersion is the callgraph-construction algorithm version that
+	// produced this structural graph (from scan_metadata). Consumers cache the
+	// structure keyed on it so it survives binary releases that don't change
+	// graph construction.
+	GraphAlgoVersion string
 
 	Functions        []Function
 	InternalEdges    []InternalEdge
@@ -80,6 +85,10 @@ type Function struct {
 	OwnerVisibility string
 	// StartLine is the first source line of the function body (1.2+).
 	StartLine int
+	// EndLine is the last source line of the function body (1.2+). With
+	// StartLine it gives the line range used to map a crypto finding to its
+	// containing function during annotate-only (no AST available then).
+	EndLine int
 	// FilePath is the source file path, relative to the component root.
 	FilePath string
 }
