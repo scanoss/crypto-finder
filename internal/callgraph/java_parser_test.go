@@ -1261,3 +1261,64 @@ func checkNoMalformedArrayType(t *testing.T, sn SourceNode) {
 		checkNoMalformedArrayType(t, child)
 	}
 }
+
+// TestJavaParser_FluentConstructorChain_ResolvesReceiverType covers the
+// fluent/constructor-chain resolution gap: a method invoked on a builder created
+// inline — `new X().setProvider("BC").method(...)` — must resolve to the
+// CONSTRUCTOR type X (so the callee key is the canonical `pkg.(X).method#arity`),
+// not leak the raw source expression into FunctionID.Type. Without the fix the
+// receiver is read as raw text and the edge dangles (unresolvable in the
+// graph-fragment stitch). Only chains ROOTED at `new X()` are resolved — the
+// builder/fluent assumption that intermediate calls return the builder — so no
+// false edges are introduced for variable- or static-rooted chains.
+func TestJavaParser_FluentConstructorChain_ResolvesReceiverType(t *testing.T) {
+	src := `package com.example;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8DecryptorProviderBuilder;
+class Sample {
+    public void run(Object certHolder, Object provider) {
+        new JcaX509CertificateConverter().setProvider("BC").getCertificate(certHolder);
+        new JceOpenSSLPKCS8DecryptorProviderBuilder().setProvider("BC").build(provider);
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+
+	var gotCert, gotBuild bool
+	for _, c := range fn.Calls {
+		// No call's resolved receiver type may carry raw source text.
+		if strings.Contains(c.Callee.Type, "new ") || strings.Contains(c.Callee.Type, "(") || strings.Contains(c.Callee.Type, "\n") {
+			t.Errorf("raw expression leaked into Callee.Type: %q (name=%q)", c.Callee.Type, c.Callee.Name)
+		}
+		if c.Callee.Type == "JcaX509CertificateConverter" && c.Callee.Name == "getCertificate#1" {
+			gotCert = true
+			if c.Callee.Package != "org.bouncycastle.cert.jcajce" {
+				t.Errorf("getCertificate package = %q, want org.bouncycastle.cert.jcajce", c.Callee.Package)
+			}
+		}
+		if c.Callee.Type == "JceOpenSSLPKCS8DecryptorProviderBuilder" && c.Callee.Name == "build#1" {
+			gotBuild = true
+			if c.Callee.Package != "org.bouncycastle.openssl.jcajce" {
+				t.Errorf("build package = %q, want org.bouncycastle.openssl.jcajce", c.Callee.Package)
+			}
+		}
+	}
+	if !gotCert {
+		t.Errorf("did not resolve new JcaX509CertificateConverter().setProvider(...).getCertificate(...) to (JcaX509CertificateConverter).getCertificate#1; calls=%+v", calleeSummaries(fn.Calls))
+	}
+	if !gotBuild {
+		t.Errorf("did not resolve new JceOpenSSLPKCS8DecryptorProviderBuilder().setProvider(...).build(...) to (JceOpenSSLPKCS8DecryptorProviderBuilder).build#1; calls=%+v", calleeSummaries(fn.Calls))
+	}
+}
+
+func calleeSummaries(calls []FunctionCall) []string {
+	out := make([]string, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, c.Callee.String())
+	}
+	return out
+}

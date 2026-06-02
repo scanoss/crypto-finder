@@ -30,6 +30,8 @@ const (
 	javaNodeFormalParameters     = "formal_parameters"
 	javaNodeArgumentList         = "argument_list"
 	javaNodeFieldAccess          = "field_access"
+	javaNodeObjectCreation       = "object_creation_expression"
+	javaNodeMethodInvocation     = "method_invocation"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
 	javaVarOriginKindParameter   = "parameter"
@@ -1278,7 +1280,8 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	var object, method string
 	line := int(node.StartPoint().Row) + 1
 
-	if objectNode := node.ChildByFieldName("object"); objectNode != nil {
+	objectNode := node.ChildByFieldName("object")
+	if objectNode != nil {
 		object = strings.TrimSpace(objectNode.Content(src))
 	}
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
@@ -1305,7 +1308,14 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 
 	args := p.extractJavaCallArguments(node, src)
-	callee := p.resolveCallee(object, javaMethodWithArity(method, len(args)), analysis, currentClass, varTypes)
+	// Resolve the receiver to a type when it is a constructor or a
+	// constructor-rooted fluent chain; otherwise use its source text. Raw above
+	// keeps the original expression for fluent-fallback heuristics.
+	resolveObject := object
+	if objectNode != nil {
+		resolveObject = resolveReceiverObject(objectNode, src)
+	}
+	callee := p.resolveCallee(resolveObject, javaMethodWithArity(method, len(args)), analysis, currentClass, varTypes)
 	if method == "newInstance" {
 		if target, ok := parseReflectionTargetFromArgs(args); ok {
 			callee = target
@@ -1322,29 +1332,73 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 }
 
-// parseObjectCreation handles `new ClassName(...)` expressions.
-func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin) *FunctionCall {
-	line := int(node.StartPoint().Row) + 1
-	var typeName string
-
+// objectCreationTypeName extracts the constructed type's name from an
+// `object_creation_expression` node (e.g. `new ArrayList<String>()` →
+// "ArrayList", `new com.foo.Bar()` → "com.foo.Bar"). Returns "" when no type
+// child is present.
+func objectCreationTypeName(node *sitter.Node, src []byte) string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
-		case goNodeTypeIdentifier:
-			typeName = child.Content(src)
-		case javaNodeScopedTypeIdentifier:
-			typeName = child.Content(src)
+		case goNodeTypeIdentifier, javaNodeScopedTypeIdentifier:
+			return child.Content(src)
 		case javaNodeGenericType:
 			// e.g., ArrayList<String> — get the base type
 			for j := 0; j < int(child.ChildCount()); j++ {
 				gc := child.Child(j)
 				if gc.Type() == goNodeTypeIdentifier {
-					typeName = gc.Content(src)
-					break
+					return gc.Content(src)
 				}
 			}
 		}
 	}
+	return ""
+}
+
+// resolveReceiverObject returns the string used to resolve a method
+// invocation's receiver into a callee key. For a plain identifier, field
+// access, or qualified name it returns the source text (resolved downstream via
+// varTypes / imports). For a receiver that is itself a constructor (`new X()`)
+// or a fluent chain rooted at one (`new X().setProvider("BC")...`) it returns
+// the constructor's type name, so resolveCallee maps the call to the canonical
+// `pkg.(X).method#arity` key instead of leaking the raw source expression into
+// FunctionID.Type. Only constructor-rooted chains are resolved (the
+// builder/fluent assumption that an intermediate call returns the builder);
+// variable- and static-rooted chains keep their source text to avoid inventing
+// false edges.
+func resolveReceiverObject(objectNode *sitter.Node, src []byte) string {
+	switch objectNode.Type() {
+	case javaNodeObjectCreation:
+		if t := objectCreationTypeName(objectNode, src); t != "" {
+			return t
+		}
+	case javaNodeMethodInvocation:
+		if t := constructorRootType(objectNode, src); t != "" {
+			return t
+		}
+	}
+	return strings.TrimSpace(objectNode.Content(src))
+}
+
+// constructorRootType walks a fluent chain of method invocations down to its
+// receiver and, if that root is a `new X()` expression, returns X's type name.
+// Returns "" for chains rooted at a variable, field, or static class.
+func constructorRootType(node *sitter.Node, src []byte) string {
+	switch node.Type() {
+	case javaNodeObjectCreation:
+		return objectCreationTypeName(node, src)
+	case javaNodeMethodInvocation:
+		if inner := node.ChildByFieldName("object"); inner != nil {
+			return constructorRootType(inner, src)
+		}
+	}
+	return ""
+}
+
+// parseObjectCreation handles `new ClassName(...)` expressions.
+func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin) *FunctionCall {
+	line := int(node.StartPoint().Row) + 1
+	typeName := objectCreationTypeName(node, src)
 
 	if typeName == "" {
 		return nil

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pkg/graphfrag`: `Result.ToCallgraphExport()` renders a stitched result into a schema-5.x callgraph **equivalent to a live `--scan-dependencies --export-callgraph` run** (rich spanning chains, `entry_point_index`, dep-prefixed `finding_id`s), resolution-corrected (over-broad dispatch suppressed). `CallFrame` enriched with function identity + edge `entry_call`.
 - `pkg/graphfrag/equiv`: semantic diff tool for asserting a stitched callgraph equals the live one minus resolution-suppressed chains (the e2e equivalence gate).
 
+### Fixed
+- Java call resolution: methods invoked on an **inline constructor or constructor-rooted fluent chain** — `new X().setProvider("BC").method(...)` — now resolve to the constructor type `X` (canonical callee key `pkg.(X).method#arity`) instead of leaking the raw source expression into the callee key. Previously these edges were unresolvable, so in the graph-fragment stitch they dangled and any crypto sink reachable only through them (e.g. `JcaX509CertificateConverter.getCertificate`, `JceOpenSSLPKCS8DecryptorProviderBuilder.build` → `CipherFactory.createCipher` → `AESEngine.newInstance`) was lost. Only chains rooted at `new X()` are resolved (the builder/fluent assumption that intermediate calls return the builder); variable- and static-rooted chains are unchanged, so no false edges are introduced. Surfaced by the graph-fragment ≡ live e2e equivalence gate on a real BouncyCastle project.
+
 ## [0.6.0] - 2026-06-01
 
 ### Added
