@@ -12,7 +12,7 @@
 // public contract — the scanner produces them, so the rules for consuming them
 // (which edges may extend a chain) belong with the contract owner. A
 // reimplementation in a downstream catalog/mining service would drift the
-// moment the schema bumps. Mirrors the rationale of pkg/stitch.
+// moment the schema bumps. Mirrors the original stitch finding_id rationale.
 //
 // The package is intentionally dependency-light: it does NOT import the scanner
 // or callgraph builder, read storage, or gzip. Inputs are exported fragments

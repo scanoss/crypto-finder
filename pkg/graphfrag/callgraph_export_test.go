@@ -370,7 +370,7 @@ func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	}
 }
 
-// testFindingID mirrors pkg/stitch.generateFindingID exactly:
+// testFindingID mirrors the canonical finding_id formula exactly:
 //
 //	sha256(path + ":" + startLine + ":" + ruleID)[:8]
 //
@@ -402,7 +402,7 @@ func buildPhase6FragmentsWithFilePath() map[ComponentKey]Fragment {
 // crypto op, the emitted finding_id equals sha256(M@V/path:line:rule)[:8] and
 // the terminal node's file_path equals M@V/path (the prefixed form). This
 // mirrors the live `crypto-finder scan --scan-dependencies` behavior
-// implemented in pkg/stitch.generateFindingID (stitch.go:300-311).
+// the canonical finding_id formula.
 func TestToCallgraphExport_DepFindingIDPrefixed(t *testing.T) {
 	frags := buildPhase6FragmentsWithFilePath()
 	deps := DependencyGraph{phase6Root: {phase6Dep1}}

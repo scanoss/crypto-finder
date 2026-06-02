@@ -340,7 +340,7 @@ func applyTerminalCryptoOp(node *ExportChainNode, frame CallFrame, op *CryptoOpe
 }
 
 // depPrefixedPath returns "module@version/filePath" when module and version are
-// non-empty, mirroring the path construction in pkg/stitch.generateFindingID
+// non-empty, mirroring the original dep-prefixed path construction
 // (stitch.go:302-304). Returns filePath unchanged when the component is root
 // (module or version empty) or when filePath is already empty.
 func depPrefixedPath(filePath, module, version string) string {
@@ -351,7 +351,7 @@ func depPrefixedPath(filePath, module, version string) string {
 }
 
 // computeFindingID computes the 8-hex-char finding identifier, mirroring
-// pkg/stitch.generateFindingID (stitch.go:300-311):
+// the canonical finding_id formula:
 //
 //	sha256(path + ":" + startLine + ":" + ruleID)[:8]
 //
