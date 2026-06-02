@@ -16,7 +16,7 @@ import (
 // All graph-fragment-1.2 fields (CanonicalSignature, EntryCall, CryptoCall,
 // asset metadata) are mapped when present. Legacy 1.0/1.1 fragments decode with
 // nil/zero for the new fields — safe structural-only degradation.
-func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
+func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 	frag := Fragment{
 		Component:        component,
 		Module:           e.ScanMetadata.RootModule,

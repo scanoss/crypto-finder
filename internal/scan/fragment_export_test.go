@@ -102,10 +102,10 @@ class Bridge {
 	})
 
 	bridgeKey := callgraph.FunctionID{Package: "org.bridge", Type: "Bridge", Name: "bridge#0"}.String()
-	if !hasFragmentFunction(payload, bridgeKey) {
+	if !hasFragmentFunction(&payload, bridgeKey) {
 		t.Fatalf("expected function %q in exported fragment: %#v", bridgeKey, payload.Functions)
 	}
-	if !hasExternalTarget(payload, "net.crypto.(CryptoSink).encrypt#0") {
+	if !hasExternalTarget(&payload, "net.crypto.(CryptoSink).encrypt#0") {
 		t.Fatalf("expected external call to CryptoSink.encrypt in exported fragment: %#v", payload.ExternalCalls)
 	}
 	if got := len(payload.CryptoAnnotations); got != 0 {
@@ -219,10 +219,10 @@ func TestBuildGraphFragmentExport_UsesResolvedCallerIndexEdges(t *testing.T) {
 
 	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
-	if !hasInternalEdge(payload, controllerID.String(), apiID.String()) {
+	if !hasInternalEdge(&payload, controllerID.String(), apiID.String()) {
 		t.Fatalf("expected direct caller-index edge to API method: %#v", payload.InternalEdges)
 	}
-	if !hasInternalEdge(payload, controllerID.String(), implID.String()) {
+	if !hasInternalEdge(&payload, controllerID.String(), implID.String()) {
 		t.Fatalf("expected resolved caller-index edge to implementation method: %#v", payload.InternalEdges)
 	}
 }
@@ -265,11 +265,11 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 
 	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
-	exact := findInternalEdge(payload, controllerID.String(), ifaceID.String())
+	exact := findInternalEdge(&payload, controllerID.String(), ifaceID.String())
 	if exact == nil || exact.Resolution != string(callgraph.EdgeKindExact) {
 		t.Fatalf("internal exact edge resolution = %#v, want exact", exact)
 	}
-	iface := findInternalEdge(payload, controllerID.String(), implID.String())
+	iface := findInternalEdge(&payload, controllerID.String(), implID.String())
 	if iface == nil || iface.Resolution != string(callgraph.EdgeKindInterfaceDispatch) {
 		t.Fatalf("internal interface edge = %#v, want interface_dispatch", iface)
 	}
@@ -279,7 +279,7 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 	if iface.Line != 11 {
 		t.Fatalf("internal interface edge line = %d, want recorded call site 11", iface.Line)
 	}
-	ext := findExternalCall(payload, controllerID.String(), extID.String())
+	ext := findExternalCall(&payload, controllerID.String(), extID.String())
 	if ext == nil || ext.Resolution != string(callgraph.EdgeKindNameOnly) {
 		t.Fatalf("external name-only call resolution = %#v, want name_only", ext)
 	}
@@ -344,7 +344,7 @@ func TestBuildGraphFragmentExport_EntryCallUsesMatchingCallSiteLine(t *testing.T
 	}
 }
 
-func findInternalEdge(payload graphfrag.GraphFragmentExport, caller, callee string) *graphfrag.GraphFragmentEdge {
+func findInternalEdge(payload *graphfrag.GraphFragmentExport, caller, callee string) *graphfrag.GraphFragmentEdge {
 	for i := range payload.InternalEdges {
 		if payload.InternalEdges[i].CallerKey == caller && payload.InternalEdges[i].CalleeKey == callee {
 			return &payload.InternalEdges[i]
@@ -353,7 +353,7 @@ func findInternalEdge(payload graphfrag.GraphFragmentExport, caller, callee stri
 	return nil
 }
 
-func findExternalCall(payload graphfrag.GraphFragmentExport, caller, target string) *graphfrag.GraphFragmentExternal {
+func findExternalCall(payload *graphfrag.GraphFragmentExport, caller, target string) *graphfrag.GraphFragmentExternal {
 	for i := range payload.ExternalCalls {
 		if payload.ExternalCalls[i].CallerKey == caller && payload.ExternalCalls[i].TargetKey == target {
 			return &payload.ExternalCalls[i]
@@ -362,7 +362,7 @@ func findExternalCall(payload graphfrag.GraphFragmentExport, caller, target stri
 	return nil
 }
 
-func hasFragmentFunction(payload graphfrag.GraphFragmentExport, key string) bool {
+func hasFragmentFunction(payload *graphfrag.GraphFragmentExport, key string) bool {
 	for i := range payload.Functions {
 		fn := &payload.Functions[i]
 		if fn.Key == key {
@@ -372,7 +372,7 @@ func hasFragmentFunction(payload graphfrag.GraphFragmentExport, key string) bool
 	return false
 }
 
-func hasExternalTarget(payload graphfrag.GraphFragmentExport, target string) bool {
+func hasExternalTarget(payload *graphfrag.GraphFragmentExport, target string) bool {
 	for i := range payload.ExternalCalls {
 		call := &payload.ExternalCalls[i]
 		if call.TargetKey == target {
@@ -382,7 +382,7 @@ func hasExternalTarget(payload graphfrag.GraphFragmentExport, target string) boo
 	return false
 }
 
-func hasInternalEdge(payload graphfrag.GraphFragmentExport, caller, callee string) bool {
+func hasInternalEdge(payload *graphfrag.GraphFragmentExport, caller, callee string) bool {
 	for _, edge := range payload.InternalEdges {
 		if edge.CallerKey == caller && edge.CalleeKey == callee {
 			return true
@@ -443,7 +443,7 @@ func TestBuildGraphFragmentExport_EdgeEntryCallEqualsBuiltParams(t *testing.T) {
 	payload := BuildGraphFragmentExport(result)
 
 	// Find the internal edge caller→callee.
-	edge := findInternalEdge(payload, callerID.String(), calleeID.String())
+	edge := findInternalEdge(&payload, callerID.String(), calleeID.String())
 	if edge == nil {
 		t.Fatal("internal edge callerID→calleeID not found in payload")
 	}
