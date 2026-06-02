@@ -67,6 +67,8 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 		return out
 	}
 
+	ctx := newExportBuildContext(result)
+
 	functionKeys := make([]string, 0, len(result.CallGraph.Functions))
 	for key := range result.CallGraph.Functions {
 		functionKeys = append(functionKeys, key)
@@ -77,9 +79,9 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 		decl := result.CallGraph.Functions[key]
 		out.Functions = append(out.Functions, buildGraphFragmentFunction(result.CallGraph, decl.ID, decl))
 	}
-	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(result.CallGraph)
+	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
 
-	out.CryptoAnnotations = buildGraphFragmentCryptoAnnotations(result)
+	out.CryptoAnnotations = buildGraphFragmentCryptoAnnotations(ctx, result)
 	out.ScanMetadata.FunctionCount = len(out.Functions)
 	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
 	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
@@ -87,26 +89,27 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	return out
 }
 
-func buildGraphFragmentResolvedEdges(graph *callgraph.CallGraph) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
-	if graph == nil {
+func buildGraphFragmentResolvedEdges(ctx *exportBuildContext) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
+	if ctx == nil || ctx.graph == nil {
 		return nil, nil
 	}
 
 	internalByKey := map[string]graphfrag.GraphFragmentEdge{}
 	externalByKey := map[string]graphfrag.GraphFragmentExternal{}
-	for _, calleeKey := range sortedKeys(graph.Callers) {
-		addResolvedFragmentEdges(graph, calleeKey, internalByKey, externalByKey)
+	for _, calleeKey := range sortedKeys(ctx.graph.Callers) {
+		addResolvedFragmentEdges(ctx, calleeKey, internalByKey, externalByKey)
 	}
 
 	return sortedFragmentEdges(internalByKey), sortedFragmentExternalCalls(externalByKey)
 }
 
 func addResolvedFragmentEdges(
-	graph *callgraph.CallGraph,
+	ctx *exportBuildContext,
 	calleeKey string,
 	internalByKey map[string]graphfrag.GraphFragmentEdge,
 	externalByKey map[string]graphfrag.GraphFragmentExternal,
 ) {
+	graph := ctx.graph
 	callers := append([]string(nil), graph.Callers[calleeKey]...)
 	sort.Strings(callers)
 	for _, callerKey := range callers {
@@ -119,16 +122,89 @@ func addResolvedFragmentEdges(
 			res := resolutions[i]
 			edgeKey := callgraph.EdgeResolutionKey(callerKey, calleeKey, res.EdgeResolution)
 			line := fragmentEdgeLine(callerDecl, calleeKey, res)
+			call := findCallForCalleeAtLine(callerDecl, calleeKey, line)
 			if _, ok := graph.Functions[calleeKey]; ok {
-				internalByKey[edgeKey] = buildFragmentInternalEdge(callerKey, calleeKey, line, res)
+				internalByKey[edgeKey] = buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 				continue
 			}
-			externalByKey[edgeKey] = buildFragmentExternalCall(callerDecl, callerKey, calleeKey, line, res)
+			externalByKey[edgeKey] = buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 		}
 	}
 }
 
-func buildFragmentInternalEdge(callerKey, calleeKey string, line int, res fragmentEdgeResolution) graphfrag.GraphFragmentEdge {
+// buildFragmentCallSiteEntryCall constructs the GraphFragmentCallSite for a
+// call edge using buildCallSiteParameters when a matching FunctionCall is found
+// in the callerDecl. Returns nil when the call cannot be located (e.g. the
+// callee is reachable only through the caller index, not through a recorded
+// FunctionCall in the source).
+func buildFragmentCallSiteEntryCall(ctx *exportBuildContext, call *callgraph.FunctionCall) *graphfrag.GraphFragmentCallSite {
+	if call == nil {
+		return nil
+	}
+	params := buildCallSiteParameters(ctx, call)
+	if len(params) == 0 && call.Line == 0 {
+		return nil
+	}
+	cs := &graphfrag.GraphFragmentCallSite{
+		Line: call.Line,
+	}
+	for _, p := range params {
+		cs.Parameters = append(cs.Parameters, convertCallGraphParameterToFragment(p))
+	}
+	return cs
+}
+
+// convertCallGraphParameterToFragment converts an internal callGraphParameter
+// (schema-5.x shape) into the equivalent GraphFragmentParameter for the
+// graph-fragment-1.2 schema.
+func convertCallGraphParameterToFragment(p callGraphParameter) graphfrag.GraphFragmentParameter {
+	fp := graphfrag.GraphFragmentParameter{
+		ParameterIndex:     p.ParameterIndex,
+		Type:               p.Type,
+		VariableName:       p.VariableName,
+		ArgumentExpression: p.ArgumentExpression,
+		ResolvedValue:      p.ResolvedValue,
+	}
+	for i := range p.SourceNodes {
+		fp.SourceNodes = append(fp.SourceNodes, convertExportSourceNodeToFragment(p.SourceNodes[i]))
+	}
+	return fp
+}
+
+// convertExportSourceNodeToFragment converts an internal exportSourceNode into
+// the equivalent GraphFragmentSourceNode (recursive).
+func convertExportSourceNodeToFragment(n exportSourceNode) graphfrag.GraphFragmentSourceNode {
+	fsn := graphfrag.GraphFragmentSourceNode{
+		Type:         n.Type,
+		Name:         n.Name,
+		DeclaredType: n.DeclaredType,
+		Value:        n.Value,
+		CallTarget:   n.CallTarget,
+	}
+	if n.ParameterIndex != nil {
+		idx := *n.ParameterIndex
+		fsn.ParameterIndex = &idx
+	}
+	if n.Location != nil {
+		fsn.Location = &graphfrag.GraphFragmentSourceLoc{
+			FilePath: n.Location.FilePath,
+			Line:     n.Location.Line,
+		}
+	}
+	for i := range n.SourceNodes {
+		fsn.SourceNodes = append(fsn.SourceNodes, convertExportSourceNodeToFragment(n.SourceNodes[i]))
+	}
+	return fsn
+}
+
+func buildFragmentInternalEdge(
+	ctx *exportBuildContext,
+	_ *callgraph.FunctionDecl,
+	call *callgraph.FunctionCall,
+	callerKey, calleeKey string,
+	line int,
+	res fragmentEdgeResolution,
+) graphfrag.GraphFragmentEdge {
 	return graphfrag.GraphFragmentEdge{
 		CallerKey:    callerKey,
 		CalleeKey:    calleeKey,
@@ -137,11 +213,14 @@ func buildFragmentInternalEdge(callerKey, calleeKey string, line int, res fragme
 		DeclaredType: res.DeclaredType,
 		MethodName:   res.MethodName,
 		Arity:        res.Arity,
+		EntryCall:    buildFragmentCallSiteEntryCall(ctx, call),
 	}
 }
 
 func buildFragmentExternalCall(
+	ctx *exportBuildContext,
 	callerDecl *callgraph.FunctionDecl,
+	call *callgraph.FunctionCall,
 	callerKey string,
 	calleeKey string,
 	line int,
@@ -155,8 +234,12 @@ func buildFragmentExternalCall(
 		DeclaredType: res.DeclaredType,
 		MethodName:   res.MethodName,
 		Arity:        res.Arity,
+		EntryCall:    buildFragmentCallSiteEntryCall(ctx, call),
 	}
 	external.TargetFunctionName = fragmentTargetFunctionName(callerDecl, calleeKey, &external)
+	if call != nil {
+		external.Raw = call.Raw
+	}
 	return external
 }
 
@@ -169,7 +252,7 @@ func fragmentTargetFunctionName(
 	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
 		targetName = fullFunctionName(calleeID)
 	}
-	if call := findCallForCallee(callerDecl, calleeKey); call != nil {
+	if call := findCallForCalleeAtLine(callerDecl, calleeKey, external.Line); call != nil {
 		external.Raw = call.Raw
 		if targetName == "" {
 			targetName = fullFunctionName(call.Callee)
@@ -260,24 +343,51 @@ func findFragmentCallLine(callerDecl *callgraph.FunctionDecl, calleeKey string) 
 	return callerDecl.StartLine
 }
 
+func findCallForCalleeAtLine(callerDecl *callgraph.FunctionDecl, calleeKey string, line int) *callgraph.FunctionCall {
+	if callerDecl == nil {
+		return nil
+	}
+	var fallback *callgraph.FunctionCall
+	for i := range callerDecl.Calls {
+		call := &callerDecl.Calls[i]
+		if !callMatchesCallee(call, calleeKey) {
+			continue
+		}
+		if line > 0 && call.Line == line {
+			return call
+		}
+		if fallback == nil {
+			fallback = call
+		}
+	}
+	return fallback
+}
+
 func findCallForCallee(callerDecl *callgraph.FunctionDecl, calleeKey string) *callgraph.FunctionCall {
 	if callerDecl == nil {
 		return nil
 	}
-	calleeID, err := callgraph.ParseFunctionID(calleeKey)
 	for i := range callerDecl.Calls {
 		call := &callerDecl.Calls[i]
-		if call.Callee.String() == calleeKey {
-			return call
-		}
-		if err == nil &&
-			call.Callee.Package == calleeID.Package &&
-			call.Callee.Type == calleeID.Type &&
-			callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name) {
+		if callMatchesCallee(call, calleeKey) {
 			return call
 		}
 	}
 	return nil
+}
+
+func callMatchesCallee(call *callgraph.FunctionCall, calleeKey string) bool {
+	if call == nil {
+		return false
+	}
+	calleeID, err := callgraph.ParseFunctionID(calleeKey)
+	if call.Callee.String() == calleeKey {
+		return true
+	}
+	return err == nil &&
+		call.Callee.Package == calleeID.Package &&
+		call.Callee.Type == calleeID.Type &&
+		callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name)
 }
 
 func buildGraphFragmentFunction(graph *callgraph.CallGraph, id callgraph.FunctionID, decl *callgraph.FunctionDecl) graphfrag.GraphFragmentFunction {
@@ -302,11 +412,10 @@ func buildGraphFragmentFunction(graph *callgraph.CallGraph, id callgraph.Functio
 	return fn
 }
 
-func buildGraphFragmentCryptoAnnotations(result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {
+func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return nil
 	}
-	ctx := newExportBuildContext(result)
 	var out []graphfrag.GraphFragmentCryptoOp
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
@@ -334,6 +443,8 @@ func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entitie
 		FilePath:   finding.FilePath,
 		StartLine:  asset.StartLine,
 		EndLine:    asset.EndLine,
+		OID:        asset.OID,
+		Source:     asset.Source,
 	}
 	if len(asset.Rules) > 0 {
 		op.RuleID = asset.Rules[0].ID
@@ -343,15 +454,66 @@ func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entitie
 		if op.Expression == "" {
 			op.Expression = matched.Expression
 		}
+		op.MatchedOperation = &graphfrag.GraphFragmentMatchedOp{
+			Kind:       matched.Kind,
+			Symbol:     matched.Symbol,
+			Expression: matched.Expression,
+			Line:       matched.Line,
+		}
 	}
+
+	// Marshal the asset Metadata map into a raw JSON block for verbatim passthrough.
+	if len(asset.Metadata) > 0 {
+		if raw, err := json.Marshal(asset.Metadata); err == nil {
+			op.Metadata = raw
+		}
+	}
+
 	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
 	if containingFn != nil {
 		op.FunctionKey = containingFn.ID.String()
-		if matched != nil && matched.Kind == matchedOperationCall {
-			if cryptoCall := findCryptoCall(ctx, ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine); cryptoCall != nil {
-				op.Symbol = cryptoCall.FunctionName
-			}
-		}
+		attachGraphFragmentCryptoCall(ctx, containingFn, matched, asset, &op)
 	}
 	return op
+}
+
+func attachGraphFragmentCryptoCall(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	matched *callGraphMatchedOperation,
+	asset entities.CryptographicAsset,
+	op *graphfrag.GraphFragmentCryptoOp,
+) {
+	if matched == nil || matched.Kind != matchedOperationCall {
+		return
+	}
+	cryptoCall := findCryptoCall(ctx, ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
+	if cryptoCall == nil {
+		return
+	}
+	op.Symbol = cryptoCall.FunctionName
+	if op.MatchedOperation != nil {
+		op.MatchedOperation.Symbol = cryptoCall.FunctionName
+	}
+	op.CryptoCall = buildGraphFragmentCryptoCall(cryptoCall)
+}
+
+// buildGraphFragmentCryptoCall converts an internal callGraphCalledFunction
+// (the matched crypto invocation) into a GraphFragmentCryptoCall for the
+// graph-fragment-1.2 schema. All parameter data-flow is carried verbatim.
+func buildGraphFragmentCryptoCall(called *callGraphCalledFunction) *graphfrag.GraphFragmentCryptoCall {
+	if called == nil {
+		return nil
+	}
+	cc := &graphfrag.GraphFragmentCryptoCall{
+		FunctionName:       called.FunctionName,
+		CanonicalSignature: called.CanonicalSignature,
+		ReturnType:         called.ReturnType,
+		ParameterTypes:     append([]string(nil), called.ParameterTypes...),
+		Line:               called.Line,
+	}
+	for _, p := range called.Parameters {
+		cc.Parameters = append(cc.Parameters, convertCallGraphParameterToFragment(p))
+	}
+	return cc
 }
