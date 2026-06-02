@@ -68,6 +68,7 @@ func init() {
 
 	// Subcommands
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(annotateCmd)
 	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configureCmd)

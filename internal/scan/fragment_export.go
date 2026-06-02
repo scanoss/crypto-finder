@@ -438,6 +438,29 @@ func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine
 
 func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) graphfrag.GraphFragmentCryptoOp {
 	matched := buildMatchedOperation(asset)
+	op := buildBaseGraphFragmentCryptoAnnotation(finding, asset, matched)
+
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	if containingFn != nil {
+		op.FunctionKey = containingFn.ID.String()
+		attachGraphFragmentCryptoCall(ctx, containingFn, matched, asset, &op)
+	}
+	return op
+}
+
+// buildBaseGraphFragmentCryptoAnnotation builds the detection-derived portion of
+// a crypto annotation — every field that depends only on the crypto finding
+// (finding_id, rule_id, expression, file_path, line range, oid, source,
+// metadata, matched_operation) and NOT on the call graph. It is shared by the
+// full-scan exporter (which then adds function_key + crypto_call from the live
+// graph) and the annotate-only path (which adds function_key from the imported
+// fragment). Keeping this one function authoritative is what guarantees these
+// fields are byte-identical across both paths for the same source + rules.
+func buildBaseGraphFragmentCryptoAnnotation(
+	finding entities.Finding,
+	asset entities.CryptographicAsset,
+	matched *callGraphMatchedOperation,
+) graphfrag.GraphFragmentCryptoOp {
 	op := graphfrag.GraphFragmentCryptoOp{
 		FindingID:  asset.FindingID,
 		Expression: asset.Match,
@@ -468,12 +491,6 @@ func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entitie
 		if raw, err := json.Marshal(asset.Metadata); err == nil {
 			op.Metadata = raw
 		}
-	}
-
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
-	if containingFn != nil {
-		op.FunctionKey = containingFn.ID.String()
-		attachGraphFragmentCryptoCall(ctx, containingFn, matched, asset, &op)
 	}
 	return op
 }
