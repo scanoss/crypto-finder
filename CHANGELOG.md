@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`crypto-finder annotate --import-fragment <fragment.json> --source <dir>`**: re-annotate a component against its **cached structural graph fragment without rebuilding the callgraph**. Runs only crypto detection over the source and maps each finding onto the imported graph (`Fragment.ContainingFunction`), emitting fresh `crypto_annotations`. For a large library this turns a rules-driven re-annotation from a full scan (~20 min on bcprov) into detection-only (~60 s); the annotations are byte-identical to a full `--export-graph-fragment` for unchanged rules. This is the producer half of "build the structural graph once, re-annotate cheaply when rules change".
+- **`graph_algo_version`** (`GraphAlgoVersion`, stamped into `scan_metadata`): the callgraph-construction algorithm version, independent of the binary version (`tool_version`) and wire schema (`schema_version`). Consumers cache the structural graph keyed on it, so a routine binary release no longer invalidates the cache — only a graph-affecting change does. `Function` now carries `EndLine` (with `StartLine`, the line range used to map a finding to its containing function during annotate).
+- `pkg/graphfrag`: entry-point-rooted stitch option (`StitchWithOptions` / `StitchOptions{EntryRootedOnly}`) — roots traces only at in-degree-0 functions in the dependency closure, preserving the reachable-finding set while drastically reducing roots for large libraries (serving latency). Default `Stitch` behaviour is unchanged.
+
+### Removed
+- `pkg/stitch` (the concat-merge stitcher) — superseded by `pkg/graphfrag`'s true cross-component synthesis. It assumed call chains never span component boundaries, which is false for real dependency trees; it had no remaining in-repo or downstream consumers.
+
+## [0.7.0] - 2026-06-02
+
+### Added
 - Graph-fragment export bumped to **`graph-fragment-1.2`**: edges now carry the per-call data-flow (`entry_call` with `parameters`/`source_nodes`) and crypto annotations carry the full asset metadata (`crypto_call`, `oid`, `metadata`, `source`) — making a fragment self-contained enough to reconstruct the schema-5.x callgraph.
 - `pkg/graphfrag`: `Result.ToCallgraphExport()` renders a stitched result into a schema-5.x callgraph **equivalent to a live `--scan-dependencies --export-callgraph` run** (rich spanning chains, `entry_point_index`, dep-prefixed `finding_id`s), resolution-corrected (over-broad dispatch suppressed). `CallFrame` enriched with function identity + edge `entry_call`.
 - `pkg/graphfrag/equiv`: semantic diff tool for asserting a stitched callgraph equals the live one minus resolution-suppressed chains (the e2e equivalence gate).

@@ -263,18 +263,68 @@ package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream services
 (e.g. a mining/catalog service) consume one contract instead of reimplementing
 schema knowledge.
 
-Current schema version: `graph-fragment-1.1`.
+Current schema version: `graph-fragment-1.2`.
+
+As of `graph-fragment-1.2`, a stored fragment is **self-contained enough to
+reconstruct the two serving artifacts a live `--scan-dependencies` run would
+produce**, without re-scanning — see *Serving artifacts* below.
 
 ### Structure
 
 | Field | Description |
 |-------|-------------|
-| `schema_version` | Fragment schema version (currently `graph-fragment-1.1`). |
-| `scan_metadata` | Ecosystem, root module, tool/rules versions, and per-array counts. |
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.2`). |
+| `scan_metadata` | Ecosystem, root module, tool/rules versions, `graph_algo_version` (callgraph-construction algorithm version; cache key for annotate-only re-annotation), and per-array counts. |
 | `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
-| `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). |
-| `external_calls[]` | Calls whose target may live in **another** component; resolved at stitch time against the dependency tree. |
-| `crypto_annotations[]` | Crypto findings attached to a function (`function_key`, `finding_id`, `rule_id`, `symbol`). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+| `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). Each edge may carry `entry_call` (1.2+, see below). |
+| `external_calls[]` | Calls whose target may live in **another** component; resolved at stitch time against the dependency tree. Each edge may carry `entry_call` (1.2+, see below). |
+| `crypto_annotations[]` | Crypto findings attached to a function. Beyond `function_key`/`finding_id`/`rule_id`/`symbol`, a 1.2 annotation carries the data-flow and metadata needed to reconstruct a findings entry (see *Crypto annotation fields (1.2+)* below). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+
+### Per-call data flow: `entry_call` (1.2+)
+
+Every `internal_edges[]` and `external_calls[]` entry may carry an `entry_call`
+describing the call-site argument data-flow for that edge — the same model the
+finding-centric call graph export uses (see *Call Graph Export* above):
+`entry_call.parameters[]` each have `parameter_index`, best-effort `type`,
+`argument_expression`, `resolved_value`, `variable_name` (simple identifiers
+only), and recursive `source_nodes` provenance. Carrying it **on the edge** is
+what lets the stitcher rebuild full per-frame value flow when composing chains
+across components, so a stitched chain matches a live run frame-for-frame.
+
+### Crypto annotation fields (1.2+)
+
+A `graph-fragment-1.2` `crypto_annotations[]` entry carries enough to
+reconstruct a full findings.json entry for the matched crypto call:
+
+| Field | Description |
+|-------|-------------|
+| `crypto_call` | Identity and call-site argument data-flow of the matched crypto call (`function_name`, `line`, `parameters[]` — same parameter model as `entry_call`). |
+| `oid` | Object Identifier for the cryptographic algorithm, when known. |
+| `metadata` | Raw asset metadata block from the scanner. |
+| `source` | How the finding was discovered: `direct` or `indirect`. |
+| `matched_operation` | Kind / symbol / `expression` of the matched crypto operation. |
+| `end_line` | Last source line of the crypto finding (often equal to its start line). |
+| `match` / expression | The exact source expression that triggered the detection. |
+
+### Serving artifacts: `ToCallgraphExport` / `ToFindingsEnvelope`
+
+Because a 1.2 fragment carries per-call data flow and full crypto-annotation
+metadata, `pkg/graphfrag` can render a stitched `Result` into the same two
+artifacts a live `--scan-dependencies` run produces — so a serving layer can
+answer reachability queries from stored fragments alone, without re-scanning:
+
+- **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
+  a schema-5.x callgraph, equivalent to a live
+  `--scan-dependencies --export-callgraph` run. Dep-component findings get
+  `module@version/`-prefixed `finding_id`s, matching live output.
+- **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
+  findings.json v1.3 envelope (asset metadata). Its `finding_id`s are computed
+  with the **same inputs** as `ToCallgraphExport`, so the two agree: a serving
+  layer joins assets (envelope) to call chains (callgraph) by `finding_id`.
+
+`pkg/graphfrag/equiv` is a semantic diff tool that asserts a stitched callgraph
+equals a live one minus the chains intentionally dropped by resolution
+suppression (see below) — the equivalence guarantee these renderers rely on.
 
 ### Edge resolution metadata (v1.1+)
 
@@ -321,8 +371,8 @@ reported as reachable crypto.
 
 ```json
 {
-  "schema_version": "graph-fragment-1.1",
-  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160 },
+  "schema_version": "graph-fragment-1.2",
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-1", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
   ],
@@ -333,7 +383,14 @@ reported as reachable crypto.
       "line": 90,
       "resolution": "exact",
       "method_name": "get",
-      "arity": 1
+      "arity": 1,
+      "entry_call": {
+        "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java",
+        "line": 90,
+        "parameters": [
+          { "parameter_index": 0, "type": "org.bouncycastle.operator.InputDecryptorProvider", "argument_expression": "inputDecryptorProvider" }
+        ]
+      }
     },
     {
       "caller_key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1",
@@ -346,7 +403,21 @@ reported as reachable crypto.
     }
   ],
   "crypto_annotations": [
-    { "function_key": "org.bouncycastle.asn1.pkcs.(EncryptedPrivateKeyInfo).getEncryptedData#0", "finding_id": "abc123", "symbol": "getEncryptedData" }
+    {
+      "function_key": "org.bouncycastle.asn1.pkcs.(EncryptedPrivateKeyInfo).getEncryptedData#0",
+      "finding_id": "abc123",
+      "symbol": "getEncryptedData",
+      "source": "direct",
+      "end_line": 142,
+      "match": "getEncryptedData()",
+      "oid": "1.2.840.113549.1.5.13",
+      "matched_operation": { "kind": "decrypt", "symbol": "getEncryptedData", "expression": "getEncryptedData()" },
+      "crypto_call": {
+        "function_name": "org.bouncycastle.asn1.pkcs.EncryptedPrivateKeyInfo.getEncryptedData",
+        "line": 142,
+        "parameters": []
+      }
+    }
   ]
 }
 ```
