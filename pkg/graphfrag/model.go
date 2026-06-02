@@ -285,6 +285,14 @@ type CryptoOperation struct {
 	//   sha256(path + ":" + startLine + ":" + ruleID)[:8]
 	// where path is prefixed with "module@version/" for dep components.
 	StartLine int
+	// EndLine is the last source line of the crypto finding (often == StartLine
+	// for single-line detections). Carried through so the serving layer can emit
+	// the findings.json `end_line` field. Populated from graph-fragment-1.2+.
+	EndLine int
+	// Match is the exact source expression that triggered the detection (the
+	// findings.json `match` field), e.g. `Cipher.getInstance("AES")`. Carried
+	// through so the serving layer can emit it. Populated from graph-fragment-1.2+.
+	Match string
 
 	// CryptoCall carries the identity and argument data-flow of the matched
 	// crypto invocation (1.2+).

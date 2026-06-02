@@ -69,6 +69,8 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			Symbol:           op.Symbol,
 			FilePath:         op.FilePath,
 			StartLine:        op.StartLine,
+			EndLine:          op.EndLine,
+			Match:            op.Expression,
 			CryptoCall:       toCryptoCall(op.CryptoCall),
 			OID:              op.OID,
 			Metadata:         op.Metadata,
