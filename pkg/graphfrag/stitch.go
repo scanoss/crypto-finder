@@ -5,12 +5,32 @@ package graphfrag
 
 import "sort"
 
+// StitchOptions tunes which root-fragment functions a stitch traces from. The
+// zero value reproduces the historical Stitch behavior (trace from every
+// root-fragment function), so adding fields here never changes existing callers.
+type StitchOptions struct {
+	// EntryRootedOnly, when true, traces only from root-fragment functions that
+	// have NO incoming edge in the dependency-closure adjacency (in-degree 0) —
+	// the graph's entry points. Tracing from every one of an 18k-function
+	// library's functions is intractable and, for serving, redundant: a finding
+	// reachable from a non-entry function is still reachable from the entry that
+	// calls it, so the set of reachable terminal findings is preserved while the
+	// number of traced roots collapses to the true entry points.
+	EntryRootedOnly bool
+}
+
 // Stitch composes reusable component graph fragments into root-to-crypto
 // reachability chains for root.
 //
 // This is the pure graph algorithm. It deliberately does not know about
-// storage, compression, or HTTP response DTOs.
+// storage, compression, or HTTP response DTOs. It traces from every
+// root-fragment function; for entry-point-only rooting use StitchWithOptions.
 func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]Fragment) (*Result, error) {
+	return StitchWithOptions(root, deps, fragments, StitchOptions{})
+}
+
+// StitchWithOptions is Stitch with an explicit rooting policy. See StitchOptions.
+func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]Fragment, opts StitchOptions) (*Result, error) {
 	closure := dependencyClosure(root, deps)
 	missing := missingFragments(closure, fragments)
 	if len(missing) > 0 {
@@ -22,12 +42,49 @@ func Stitch(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]
 	opsByNode := indexCryptoOperations(closure, fragments)
 
 	rootFragment := fragments[root]
+	roots := rootNodes(root, rootFragment, adjacency, opts.EntryRootedOnly)
+
 	out := Result{Suppressed: suppressed}
-	for i := range rootFragment.Functions {
-		start := graphNode{Component: root, Function: rootFragment.Functions[i].Signature}
+	for _, start := range roots {
 		trace(start, adjacency, opsByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
 	return &out, nil
+}
+
+// rootNodes selects the set of root-fragment functions to start traces from.
+// With entryRootedOnly false this is every root-fragment function (historical
+// behavior). With it true, only root-fragment functions with no incoming edge
+// in the closure adjacency (in-degree 0) are kept.
+func rootNodes(root ComponentKey, rootFragment Fragment, adjacency map[graphNode][]adjacencyEdge, entryRootedOnly bool) []graphNode {
+	roots := make([]graphNode, 0, len(rootFragment.Functions))
+	if !entryRootedOnly {
+		for i := range rootFragment.Functions {
+			roots = append(roots, graphNode{Component: root, Function: rootFragment.Functions[i].Signature})
+		}
+		return roots
+	}
+
+	hasIncoming := incomingNodes(adjacency)
+	for i := range rootFragment.Functions {
+		node := graphNode{Component: root, Function: rootFragment.Functions[i].Signature}
+		if hasIncoming[node] {
+			continue
+		}
+		roots = append(roots, node)
+	}
+	return roots
+}
+
+// incomingNodes returns the set of nodes that are the target of at least one
+// traversable edge in the adjacency — i.e. every node with in-degree >= 1.
+func incomingNodes(adjacency map[graphNode][]adjacencyEdge) map[graphNode]bool {
+	incoming := make(map[graphNode]bool)
+	for _, edges := range adjacency {
+		for _, edge := range edges {
+			incoming[edge.target] = true
+		}
+	}
+	return incoming
 }
 
 type graphNode struct {
