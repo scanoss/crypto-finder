@@ -78,10 +78,58 @@ Each YAML carries a `library:` block with `name`, optional `coordinates`, option
 contract's `SourceLibrary` field for diagnostic identification across libraries.
 
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
-INTERNAL to the loader; the partner-facing export schema is independent (currently 5.3).
+INTERNAL to the loader; the partner-facing export schema is independent (currently 6.0).
 
 To add a library:
 1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
 2. Set `schema_version: "2"`, `ecosystem: <name>`, and a unique `library.name`.
 3. Author contracts and hierarchy edges following the same shape as `jdk-crypto.yaml`.
 4. Tests run automatically — no Go code changes required.
+
+## Detection vs reachability (rules, supporting calls, new languages)
+
+There is a hard separation of concerns. Violating it is the most common mistake when
+extending this tool.
+
+- **Detection rules** (semgrep/opengrep, in the separate rules repo) detect **terminal
+  crypto operations only**, and carry **standard CycloneDX metadata** (assetType,
+  algorithmFamily/primitive/operation, etc.). Rules MUST NOT carry crypto-finder
+  routing concerns. In particular there is no `supporting-call` assetType and no
+  `supportingCall: "true"` sentinel — those are gone; do not reintroduce them.
+
+- **Supporting calls** (setup/lifecycle/config calls around a crypto object, e.g.
+  `digest.update`/`doFinal`, `Password.hash`/`addRandomSalt`/`getResult`) are **derived
+  structurally from the call graph**, not tagged by rules. See
+  `internal/scan/supporting_calls.go` (`deriveObjectLifecycleCalls`): a finding's
+  "object" is the var its terminal call is invoked on (`ReceiverVar`) or assigned to
+  (`AssignedVar`); supporting calls are the other calls on that var, the fluent-chain
+  links (`ChainID`), and the producing constructor. This scales to any library without
+  per-call rules.
+
+- **Reachability MUST NOT depend on `metadata.api`.** `api` is informational CBOM
+  metadata only. `matched_operation.kind` is classified from the matched **source text**
+  (`inferMatchedOperationKind`), and the crypto call is located by **position** (match
+  columns ∩ call-node columns) with a fluent-chain-root tie-break and a line-only
+  fallback (`findCryptoCallNode`). A missing or wrong `api` must never zero out a
+  finding's reachability. Do not re-add api-based selection/classification.
+
+### Adding a new language/framework parser
+
+For a new-language parser to get **full** reachability + supporting calls, populate these
+`callgraph.FunctionCall` fields (Java does this in `internal/callgraph/java_parser.go`;
+see `parseMethodInvocation` / `parseObjectCreation`):
+
+- `ReceiverVar` — the variable a method is invoked on (`x` in `x.foo()`); empty for
+  static/class receivers.
+- `AssignedVar` — the variable a call's result binds to; for fluent chains, set only on
+  the chain **root** (outermost call).
+- `ChainID` — a stable id shared by all links of one fluent chain.
+- `StartCol` / `EndCol` — **1-based, start inclusive, end exclusive** (opengrep's
+  convention; tree-sitter columns are 0-based, so `+1`). Pin the tool's column
+  convention with a real run, not a hand-built fixture
+  (`TestOpengrep_EndColConventionPinning`).
+
+Omitting any of these is safe — the system **degrades gracefully** to line-only
+matching and a chain-root/best-resolved heuristic — but precision on multi-call lines
+drops. Library-specific fluent/return-type resolution belongs in the contract KB above,
+not in the parser.
