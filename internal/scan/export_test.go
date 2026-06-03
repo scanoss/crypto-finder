@@ -230,8 +230,10 @@ func TestFindCryptoCallNode(t *testing.T) {
 			Calls: []callgraph.FunctionCall{
 				{Callee: hashID, ChainID: "c1", Line: 6, StartCol: 1, EndCol: 20, Raw: "Password.hash(p)"},
 				{Callee: saltID, ChainID: "c1", Line: 6, StartCol: 1, EndCol: 35, Raw: "Password.hash(p).addRandomSalt()"},
-				{Callee: bcryptID, ChainID: "c1", AssignedVar: "hash", Line: 6, StartCol: 1, EndCol: 50,
-					Raw: "Password.hash(p).addRandomSalt().withBcrypt()"},
+				{
+					Callee: bcryptID, ChainID: "c1", AssignedVar: "hash", Line: 6, StartCol: 1, EndCol: 50,
+					Raw: "Password.hash(p).addRandomSalt().withBcrypt()",
+				},
 				{Callee: getResultID, ReceiverVar: "hash", Line: 7, StartCol: 1, EndCol: 20, Raw: "hash.getResult()"},
 			},
 		}

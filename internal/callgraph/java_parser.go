@@ -32,6 +32,8 @@ const (
 	javaNodeFieldAccess          = "field_access"
 	javaNodeObjectCreation       = "object_creation_expression"
 	javaNodeMethodInvocation     = "method_invocation"
+	javaNodeVariableDeclarator   = "variable_declarator"
+	javaNodeAssignmentExpression = "assignment_expression"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
 	javaVarOriginKindParameter   = "parameter"
@@ -735,7 +737,7 @@ func parseFieldAssignmentNode(
 	paramMap map[string]int,
 	paramTypes map[string]string,
 ) *parsedFieldAssignment {
-	if node.Type() != "assignment_expression" {
+	if node.Type() != javaNodeAssignmentExpression {
 		return nil
 	}
 	left := node.ChildByFieldName("left")
@@ -826,7 +828,7 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 			// Extract variable names from declarators
 			for i := 0; i < int(node.ChildCount()); i++ {
 				child := node.Child(i)
-				if child.Type() == "variable_declarator" {
+				if child.Type() == javaNodeVariableDeclarator {
 					for j := 0; j < int(child.ChildCount()); j++ {
 						nameNode := child.Child(j)
 						if nameNode.Type() == javaNodeIdentifier {
@@ -904,7 +906,7 @@ func (p *JavaParser) collectDeclarationOrigins(
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() != "variable_declarator" {
+		if child.Type() != javaNodeVariableDeclarator {
 			continue
 		}
 		name, initializer := parseVariableDeclaratorOrigin(child, src)
@@ -1324,13 +1326,13 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 
 	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
-		Callee:          callee,
-		ReceiverVar:     receiverVarName(object, varTypes, varOrigins),
-		AssignedVar:     assignedVar,
-		ChainID:         chainID,
-		Raw:             raw,
-		FilePath:        filePath,
-		Line:            line,
+		Callee:      callee,
+		ReceiverVar: receiverVarName(object, varTypes, varOrigins),
+		AssignedVar: assignedVar,
+		ChainID:     chainID,
+		Raw:         raw,
+		FilePath:    filePath,
+		Line:        line,
 		// Convert tree-sitter 0-based byte columns to the internal 1-based
 		// convention. StartCol is inclusive; EndCol is exclusive (one past last
 		// byte of the call expression node on its start/end row).
@@ -1435,14 +1437,14 @@ func assignedVarFromParent(node *sitter.Node, src []byte) string {
 		return ""
 	}
 	switch parent.Type() {
-	case "variable_declarator":
+	case javaNodeVariableDeclarator:
 		for i := 0; i < int(parent.ChildCount()); i++ {
 			child := parent.Child(i)
 			if child.Type() == javaNodeIdentifier {
 				return child.Content(src)
 			}
 		}
-	case "assignment_expression":
+	case javaNodeAssignmentExpression:
 		if parent.ChildByFieldName("right") != node {
 			return ""
 		}
@@ -2177,7 +2179,7 @@ func (p *JavaParser) collectMethodBodyAssignmentNodes(
 	if node == nil {
 		return
 	}
-	if node.Type() == "assignment_expression" {
+	if node.Type() == javaNodeAssignmentExpression {
 		left := node.ChildByFieldName("left")
 		right := node.ChildByFieldName("right")
 		if left != nil && right != nil {

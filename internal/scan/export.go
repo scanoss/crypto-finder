@@ -805,12 +805,13 @@ func dedupSupportingCalls(calls []callGraphSupportingCall) []callGraphSupporting
 	}
 	seen := make(map[string]bool, len(calls))
 	out := make([]callGraphSupportingCall, 0, len(calls))
-	for _, c := range calls {
+	for i := range calls {
+		c := &calls[i]
 		if seen[c.SupportingID] {
 			continue
 		}
 		seen[c.SupportingID] = true
-		out = append(out, c)
+		out = append(out, *c)
 	}
 	return out
 }
@@ -874,7 +875,12 @@ func looksLikeTypeUsageExpression(expression string) bool {
 		return false
 	}
 	for _, r := range expression {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '$' || r == '.') {
+		if (r < 'a' || r > 'z') &&
+			(r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') &&
+			r != '_' &&
+			r != '$' &&
+			r != '.' {
 			return false
 		}
 	}
@@ -891,10 +897,10 @@ func looksLikeInvocationExpression(expression string) bool {
 // corresponds to the crypto finding, matched by the finding's line range.
 // findCryptoCallNode selects the FunctionCall within the containing function
 // that corresponds to the crypto finding, matched by the finding's line range.
-// When multiple calls share a line (fluent chains), it prefers the resolved call
-// that best matches the finding's declared api. It is the structural anchor both
-// for building the finding's crypto-call display and for deriving the crypto
-// object's lifecycle/supporting calls.
+// When multiple calls share a line (fluent chains), it uses position and chain
+// structure only. It is the structural anchor both for building the finding's
+// crypto-call display and for deriving the crypto object's lifecycle/supporting
+// calls.
 //
 // Selection algorithm (position + structure, no api):
 //
@@ -907,12 +913,13 @@ func looksLikeInvocationExpression(expression string) bool {
 //     c.StartCol < asset.EndCol && asset.StartCol < c.EndCol.
 //     If the filter yields 0 matches, use the full line-only set (never worse).
 //
-//  3. Tie-break to chain ROOT among survivors:
-//     a. Prefer candidate with matching ChainID whose AssignedVar != "" (chain root).
-//        If none carries AssignedVar, prefer longest Raw (outermost expression).
-//     b. Among non-chain candidates, prefer resolved callee, then has-arguments,
-//        then has-ArgumentSources.
-//     c. Deterministic final tiebreak: lowest StartCol, then slice order.
+//  3. Tie-break to chain ROOT among survivors.
+//     - Prefer a chain candidate whose AssignedVar != "" (chain root).
+//     - If no chain candidate carries AssignedVar, prefer the longest Raw
+//     expression (outermost expression).
+//     - Among non-chain candidates, prefer resolved callee, then arguments, then
+//     ArgumentSources.
+//     - Deterministic final tiebreak: lowest StartCol, then slice order.
 //
 //  4. Column-absent fallback (any side has zero columns): skip step 2, run 1+3.
 //
@@ -929,39 +936,53 @@ func findCryptoCallNode(
 	}
 
 	// Step 1: line-range candidate set.
-	var lineCandidates []*callgraph.FunctionCall
-	for i := range containingFn.Calls {
-		c := &containingFn.Calls[i]
-		if c.Line < startLine || c.Line > endLine {
-			continue
-		}
-		lineCandidates = append(lineCandidates, c)
-	}
+	lineCandidates := cryptoCallLineCandidates(containingFn, startLine, endLine)
 	if len(lineCandidates) == 0 {
 		return nil
 	}
 
 	// Step 2: column intersection filter (when both sides carry column info).
-	candidates := lineCandidates
-	assetHasCols := asset.StartCol > 0 && asset.EndCol > 0
-	if assetHasCols {
-		var colFiltered []*callgraph.FunctionCall
-		for _, c := range lineCandidates {
-			if c.StartCol > 0 && c.EndCol > 0 {
-				// Half-open intersection: [c.StartCol, c.EndCol) ∩ [asset.StartCol, asset.EndCol)
-				if c.StartCol < asset.EndCol && asset.StartCol < c.EndCol {
-					colFiltered = append(colFiltered, c)
-				}
-			}
-		}
-		if len(colFiltered) > 0 {
-			candidates = colFiltered
-		}
-		// If colFiltered is empty, fall back to full line set (candidates stays as lineCandidates).
-	}
+	candidates := cryptoCallColumnCandidates(lineCandidates, asset)
 
 	// Step 3: tie-break.
 	return pickBestCandidate(graph, candidates)
+}
+
+func cryptoCallLineCandidates(containingFn *callgraph.FunctionDecl, startLine, endLine int) []*callgraph.FunctionCall {
+	var candidates []*callgraph.FunctionCall
+	for i := range containingFn.Calls {
+		c := &containingFn.Calls[i]
+		if c.Line < startLine || c.Line > endLine {
+			continue
+		}
+		candidates = append(candidates, c)
+	}
+	return candidates
+}
+
+func cryptoCallColumnCandidates(
+	lineCandidates []*callgraph.FunctionCall,
+	asset entities.CryptographicAsset,
+) []*callgraph.FunctionCall {
+	if asset.StartCol <= 0 || asset.EndCol <= 0 {
+		return lineCandidates
+	}
+
+	var colFiltered []*callgraph.FunctionCall
+	for _, c := range lineCandidates {
+		if c.StartCol <= 0 || c.EndCol <= 0 {
+			continue
+		}
+		// Half-open intersection: [c.StartCol, c.EndCol) ∩ [asset.StartCol, asset.EndCol)
+		if c.StartCol < asset.EndCol && asset.StartCol < c.EndCol {
+			colFiltered = append(colFiltered, c)
+		}
+	}
+	if len(colFiltered) == 0 {
+		// If colFiltered is empty, fall back to full line set.
+		return lineCandidates
+	}
+	return colFiltered
 }
 
 // pickBestCandidate selects the best call from a candidate set using the
@@ -977,45 +998,48 @@ func pickBestCandidate(graph *callgraph.CallGraph, candidates []*callgraph.Funct
 	// Step 3a: prefer chain root (AssignedVar set) within a shared ChainID.
 	// If multiple ChainIDs are present (unlikely), pick root of the first chain.
 	// Among non-chain candidates (ChainID == ""), fall through to step 3b.
-	chainRoots := make([]*callgraph.FunctionCall, 0, len(candidates))
-	for _, c := range candidates {
-		if c.ChainID != "" && c.AssignedVar != "" {
-			chainRoots = append(chainRoots, c)
-		}
-	}
-	if len(chainRoots) == 1 {
-		return chainRoots[0]
-	}
-	if len(chainRoots) > 1 {
-		// Multiple chain roots: deterministic tiebreak — lowest StartCol, then slice order.
-		best := chainRoots[0]
-		for _, c := range chainRoots[1:] {
-			if c.StartCol < best.StartCol {
-				best = c
-			}
-		}
-		return best
+	if chainRoot := bestChainRootCandidate(candidates); chainRoot != nil {
+		return chainRoot
 	}
 
 	// Step 3a (fallback): no AssignedVar on any chain candidate — prefer longest Raw
 	// (outermost expression text in a fluent chain).
-	chainCandidates := make([]*callgraph.FunctionCall, 0, len(candidates))
-	for _, c := range candidates {
-		if c.ChainID != "" {
-			chainCandidates = append(chainCandidates, c)
-		}
-	}
-	if len(chainCandidates) > 0 {
-		best := chainCandidates[0]
-		for _, c := range chainCandidates[1:] {
-			if len(c.Raw) > len(best.Raw) {
-				best = c
-			}
-		}
-		return best
+	if chainCandidate := longestChainCandidate(candidates); chainCandidate != nil {
+		return chainCandidate
 	}
 
 	// Step 3b: non-chain candidates — score by resolved / args / sources.
+	return bestScoredCandidate(graph, candidates)
+}
+
+func bestChainRootCandidate(candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
+	var best *callgraph.FunctionCall
+	for _, c := range candidates {
+		if c.ChainID == "" || c.AssignedVar == "" {
+			continue
+		}
+		// Multiple chain roots: deterministic tiebreak — lowest StartCol, then slice order.
+		if best == nil || c.StartCol < best.StartCol {
+			best = c
+		}
+	}
+	return best
+}
+
+func longestChainCandidate(candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
+	var best *callgraph.FunctionCall
+	for _, c := range candidates {
+		if c.ChainID == "" {
+			continue
+		}
+		if best == nil || len(c.Raw) > len(best.Raw) {
+			best = c
+		}
+	}
+	return best
+}
+
+func bestScoredCandidate(graph *callgraph.CallGraph, candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
 	type scored struct {
 		call  *callgraph.FunctionCall
 		score int
@@ -2061,25 +2085,29 @@ func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, 
 }
 
 func exportDisplaySymbolAndAliases(id callgraph.FunctionID, functionName string) (string, []string) {
-	display := functionName
-	if callgraph.BaseFunctionName(id.Name) == "<init>" {
-		typeName := sanitizeSymbol(id.Type)
-		if typeName != "" && !strings.Contains(typeName, "(") {
-			simpleName := typeName
-			if dot := strings.LastIndex(simpleName, "."); dot >= 0 {
-				simpleName = simpleName[dot+1:]
-			}
-			if id.Package != "" {
-				display = id.Package + "." + typeName + "." + simpleName
-			} else {
-				display = typeName + "." + simpleName
-			}
-		}
-	}
+	display := constructorDisplaySymbol(id, functionName)
 	if display == "" || display == functionName {
 		return display, nil
 	}
 	return display, []string{display}
+}
+
+func constructorDisplaySymbol(id callgraph.FunctionID, fallback string) string {
+	if callgraph.BaseFunctionName(id.Name) != "<init>" {
+		return fallback
+	}
+	typeName := sanitizeSymbol(id.Type)
+	if typeName == "" || strings.Contains(typeName, "(") {
+		return fallback
+	}
+	simpleName := typeName
+	if dot := strings.LastIndex(simpleName, "."); dot >= 0 {
+		simpleName = simpleName[dot+1:]
+	}
+	if id.Package == "" {
+		return typeName + "." + simpleName
+	}
+	return id.Package + "." + typeName + "." + simpleName
 }
 
 // cloneExportInferredReturn returns a deep copy of an exportInferredReturn,

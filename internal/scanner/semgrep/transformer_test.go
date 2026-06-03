@@ -927,11 +927,11 @@ func TestTransformToCryptographicAsset_ColumnThreading(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		startCol   int
-		endCol     int
-		wantStart  int
-		wantEnd    int
+		name      string
+		startCol  int
+		endCol    int
+		wantStart int
+		wantEnd   int
 	}{
 		{
 			name:      "non-zero columns are preserved",

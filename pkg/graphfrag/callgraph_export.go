@@ -359,7 +359,7 @@ func buildExportChain(fc *FindingChain, root ComponentKey) ([]ExportChainNode, s
 	resolvedFindingID := fc.FindingID // default: use the stored (isolated-scan) ID
 
 	for i := range fc.Frames {
-		frame := fc.Frames[i]
+		frame := &fc.Frames[i]
 		node := buildExportNode(frame, root)
 		if i == len(fc.Frames)-1 && fc.CryptoOp != nil {
 			resolvedFindingID = applyTerminalCryptoOp(&node, frame, fc.CryptoOp, root)
@@ -369,7 +369,7 @@ func buildExportChain(fc *FindingChain, root ComponentKey) ([]ExportChainNode, s
 	return nodes, resolvedFindingID
 }
 
-func applyTerminalCryptoOp(node *ExportChainNode, frame CallFrame, op *CryptoOperation, root ComponentKey) string {
+func applyTerminalCryptoOp(node *ExportChainNode, frame *CallFrame, op *CryptoOperation, root ComponentKey) string {
 	if frame.Component != root {
 		// Non-root: prefix file_path and recompute finding_id.
 		module := moduleFromFrame(frame)
@@ -418,7 +418,7 @@ func computeFindingID(path string, startLine int, ruleID string) string {
 }
 
 // buildExportNode converts one CallFrame to an ExportChainNode.
-func buildExportNode(frame CallFrame, root ComponentKey) ExportChainNode {
+func buildExportNode(frame *CallFrame, root ComponentKey) ExportChainNode {
 	fn := frame.Function
 	node := ExportChainNode{
 		FunctionKey:        fn.Signature,
@@ -449,7 +449,7 @@ func buildExportNode(frame CallFrame, root ComponentKey) ExportChainNode {
 // moduleFromFrame derives the dependency_info.module string for a frame. It
 // uses the Module field carried on the CallFrame (populated from Fragment.Module
 // at stitch time). If the module is empty, it falls back to the purl string.
-func moduleFromFrame(frame CallFrame) string {
+func moduleFromFrame(frame *CallFrame) string {
 	if frame.Module != "" {
 		return frame.Module
 	}

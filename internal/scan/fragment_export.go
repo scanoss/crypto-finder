@@ -466,12 +466,14 @@ func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.D
 			if isSupportingCryptoAsset(asset) {
 				continue
 			}
-			for _, sc := range deriveSupportingCallsForFinding(ctx, finding, asset) {
+			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
+			for i := range supportingCalls {
+				sc := &supportingCalls[i]
 				if seen[sc.SupportingID] {
 					continue
 				}
 				seen[sc.SupportingID] = true
-				out = append(out, fragmentSupportingFromInternal(sc))
+				out = append(out, fragmentSupportingFromInternal(*sc))
 			}
 		}
 	}
@@ -514,7 +516,9 @@ func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine
 			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
 			chains := buildCallChains(ctx, containingFn, nil)
 			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)
-			for _, sc := range deriveSupportingCallsForFinding(ctx, finding, asset) {
+			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
+			for i := range supportingCalls {
+				sc := &supportingCalls[i]
 				addGraphFragmentSupportingReachability(entries, chains, sc.SupportingID)
 			}
 		}

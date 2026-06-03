@@ -20,7 +20,7 @@ func findCallByMethod(fn *FunctionDecl, method, rawContains string) *FunctionCal
 }
 
 func containsSubstr(s, sub string) bool {
-	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+	return sub == "" || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
 }
 
 func indexOf(s, sub string) int {

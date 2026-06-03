@@ -135,4 +135,3 @@ func findGraphFragmentEntryPoint(entries []graphfrag.GraphFragmentCryptoEntryPoi
 	}
 	return nil
 }
-
