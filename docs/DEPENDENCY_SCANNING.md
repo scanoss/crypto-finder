@@ -206,11 +206,13 @@ resolved in `CallGraph.EdgeResolutions`: `exact` (receiver type known, unique
 target or overload set on that type), `interface_dispatch` (an interface/abstract
 method expanded to concrete implementations by name+arity within a namespace
 root), or `name_only` (a fluent-fallback guess with no receiver-type anchor).
-This classification is emitted on the graph-fragment export (`graph-fragment-1.2`,
-see [Output Formats](OUTPUT_FORMATS.md#graph-fragment-export)) so a downstream
-stitcher (`pkg/graphfrag`) can fail closed on over-broad dispatch instead of
-reporting it as typed reachability. The dispatch heuristics below (interface
-expansion, fluent fallback) are exactly the edges tagged non-`exact`.
+This classification is emitted on the graph-fragment export (`graph-fragment-1.3`,
+see [Output Formats](OUTPUT_FORMATS.md#graph-fragment-export)) so downstream
+consumers can fail closed on over-broad dispatch instead of reporting it as
+typed reachability. The dispatch heuristics below (interface expansion, fluent
+fallback) are exactly the edges tagged non-`exact`. The same fragment also
+exposes `crypto_entry_points[]` and `supporting_calls[]` so consumers can use a
+stable API index rather than the removed `entry_point_index` projection.
 
 #### Type resolution
 

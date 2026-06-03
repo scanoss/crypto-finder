@@ -40,13 +40,14 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	functionsBySignature := indexFunctions(closure, fragments)
 	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature)
 	opsByNode := indexCryptoOperations(closure, fragments)
+	supportingByNode := indexSupportingCalls(closure, fragments)
 
 	rootFragment := fragments[root]
 	roots := rootNodes(root, rootFragment, adjacency, opts.EntryRootedOnly)
 
 	out := Result{Suppressed: suppressed}
 	for _, start := range roots {
-		trace(start, adjacency, opsByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
+		trace(start, adjacency, opsByNode, supportingByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
 	return &out, nil
 }
@@ -431,10 +432,23 @@ func indexCryptoOperations(closure []ComponentKey, fragments map[ComponentKey]Fr
 	return out
 }
 
+func indexSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[graphNode][]SupportingCall {
+	out := make(map[graphNode][]SupportingCall)
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.SupportingCalls {
+			node := graphNode{Component: key, Function: fragment.SupportingCalls[i].Function}
+			out[node] = append(out[node], fragment.SupportingCalls[i])
+		}
+	}
+	return out
+}
+
 func trace(
 	current graphNode,
 	adjacency map[graphNode][]adjacencyEdge,
 	opsByNode map[graphNode][]CryptoOperation,
+	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
 	traversedEdgeEntryCall *CallSite,
 	path []CallFrame,
@@ -465,6 +479,23 @@ func trace(
 	}
 
 	path = append(path, frame)
+	for i := range supportingByNode[current] {
+		support := supportingByNode[current][i]
+		support.Function = frame.Signature
+		if support.FunctionName == "" {
+			support.FunctionName = frame.Function.FunctionName
+		}
+		if support.CanonicalSignature == "" {
+			support.CanonicalSignature = frame.Function.CanonicalSignature
+		}
+		if support.DisplaySymbol == "" {
+			support.DisplaySymbol = frame.Function.DisplaySymbol
+		}
+		if len(support.Aliases) == 0 {
+			support.Aliases = append([]string(nil), frame.Function.Aliases...)
+		}
+		out.SupportingCalls = append(out.SupportingCalls, support)
+	}
 	for i := range opsByNode[current] {
 		op := opsByNode[current][i]
 		frames := append([]CallFrame(nil), path...)
@@ -483,6 +514,6 @@ func trace(
 	}
 	for _, edge := range adjacency[current] {
 		// Carry the EntryCall from this edge to the next frame.
-		trace(edge.target, adjacency, opsByNode, fragments, edge.entryCall, path, visiting, out)
+		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, edge.entryCall, path, visiting, out)
 	}
 }

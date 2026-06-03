@@ -1,0 +1,310 @@
+rules:
+  - id: java.password4j.terminal.hash
+    message: Detected Password4J terminal password hashing operation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withBcrypt()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withScrypt()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withPBKDF2()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withArgon2()
+          - pattern: Password.hash($PASSWORD).withBCrypt()
+          - pattern: Password.hash($PASSWORD).withBcrypt()
+          - pattern: Password.hash($PASSWORD).withSCrypt()
+          - pattern: Password.hash($PASSWORD).withScrypt()
+          - pattern: Password.hash($PASSWORD).withPBKDF2()
+          - pattern: Password.hash($PASSWORD).withArgon2()
+          - patterns:
+              - pattern-inside: |
+                  HashBuilder $BUILDER = Password.hash(...);
+                  ...
+              - pattern-either:
+                  - pattern: $BUILDER.withBcrypt()
+                  - pattern: $BUILDER.withScrypt()
+                  - pattern: $BUILDER.withPBKDF2()
+                  - pattern: $BUILDER.withArgon2()
+          - patterns:
+              - pattern-inside: |
+                  com.password4j.HashBuilder $BUILDER = Password.hash(...);
+                  ...
+              - pattern-either:
+                  - pattern: $BUILDER.withBcrypt()
+                  - pattern: $BUILDER.withScrypt()
+                  - pattern: $BUILDER.withPBKDF2()
+                  - pattern: $BUILDER.withArgon2()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: kdf
+        algorithmFamily: password-hashing
+        algorithmName: Password4J password hashing
+        operation: digest
+        library: Password4J
+        api: com.password4j.HashBuilder.with*
+
+  - id: java.password4j.terminal.check
+    message: Detected Password4J password verification operation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - pattern: Password.check($PASSWORD, $HASH).withBcrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withScrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withPBKDF2()
+          - pattern: Password.check($PASSWORD, $HASH).withBCrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withSCrypt()
+          - patterns:
+              - pattern-inside: |
+                  HashChecker $CHECKER = Password.check(...);
+                  ...
+              - pattern-either:
+                  - pattern: $CHECKER.withBcrypt()
+                  - pattern: $CHECKER.withScrypt()
+                  - pattern: $CHECKER.withPBKDF2()
+          - patterns:
+              - pattern-inside: |
+                  com.password4j.HashChecker $CHECKER = Password.check(...);
+                  ...
+              - pattern-either:
+                  - pattern: $CHECKER.withBcrypt()
+                  - pattern: $CHECKER.withScrypt()
+                  - pattern: $CHECKER.withPBKDF2()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: kdf
+        algorithmFamily: password-hashing
+        algorithmName: Password4J password verification
+        operation: verify
+        library: Password4J
+        api: com.password4j.HashChecker.with*
+
+  - id: java.password4j.supporting.hash-start
+    message: Detected Password4J password hash builder start
+    severity: INFO
+    languages: [java]
+    pattern: Password.hash($PASSWORD)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: Password4J
+        api: com.password4j.Password.hash
+
+  - id: java.password4j.supporting.check-start
+    message: Detected Password4J password check builder start
+    severity: INFO
+    languages: [java]
+    pattern: Password.check($PASSWORD, $HASH)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: Password4J
+        api: com.password4j.Password.check
+
+  - id: java.password4j.supporting.add-random-salt
+    message: Detected Password4J random salt configuration
+    severity: INFO
+    languages: [java]
+    pattern-either:
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withBcrypt()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withScrypt()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withPBKDF2()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withCompressedPBKDF2()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withMessageDigest()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withArgon2()
+      - patterns:
+          - pattern-inside: |
+              HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern-either:
+              - pattern: $BUILDER.addRandomSalt()
+              - pattern: $BUILDER.addRandomSalt($LENGTH)
+      - patterns:
+          - pattern-inside: |
+              com.password4j.HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern-either:
+              - pattern: $BUILDER.addRandomSalt()
+              - pattern: $BUILDER.addRandomSalt($LENGTH)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: Password4J
+        api: com.password4j.HashBuilder.addRandomSalt
+
+  - id: java.password4j.supporting.add-salt
+    message: Detected Password4J explicit salt configuration
+    severity: INFO
+    languages: [java]
+    pattern-either:
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withBcrypt()
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withScrypt()
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withPBKDF2()
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withCompressedPBKDF2()
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withMessageDigest()
+      - pattern: Password.hash($PASSWORD).addSalt($SALT).withArgon2()
+      - patterns:
+          - pattern-inside: |
+              HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern: $BUILDER.addSalt($SALT)
+      - patterns:
+          - pattern-inside: |
+              com.password4j.HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern: $BUILDER.addSalt($SALT)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: Password4J
+        api: com.password4j.HashBuilder.addSalt
+
+  - id: java.password4j.supporting.add-pepper
+    message: Detected Password4J pepper configuration
+    severity: INFO
+    languages: [java]
+    pattern-either:
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withBcrypt()
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withScrypt()
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withPBKDF2()
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withCompressedPBKDF2()
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withMessageDigest()
+      - pattern: Password.hash($PASSWORD).addPepper($PEPPER).withArgon2()
+      - patterns:
+          - pattern-inside: |
+              HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern: $BUILDER.addPepper($PEPPER)
+      - patterns:
+          - pattern-inside: |
+              com.password4j.HashBuilder $BUILDER = Password.hash(...);
+              ...
+          - pattern: $BUILDER.addPepper($PEPPER)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: Password4J
+        api: com.password4j.HashBuilder.addPepper
+
+  - id: java.password4j.supporting.hash-result
+    message: Detected Password4J hash result extraction
+    severity: INFO
+    languages: [java]
+    pattern-either:
+      - pattern: Password.hash(...).withBcrypt().getResult()
+      - pattern: Password.hash(...).withScrypt().getResult()
+      - pattern: Password.hash(...).withPBKDF2().getResult()
+      - pattern: Password.hash(...).withCompressedPBKDF2().getResult()
+      - pattern: Password.hash(...).withMessageDigest().getResult()
+      - pattern: Password.hash(...).withArgon2().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withBcrypt().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withScrypt().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withPBKDF2().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withCompressedPBKDF2().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withMessageDigest().getResult()
+      - pattern: Password.hash($PASSWORD).addRandomSalt().withArgon2().getResult()
+      - patterns:
+          - pattern-inside: |
+              Hash $HASH = ...;
+              ...
+          - pattern: $HASH.getResult()
+      - patterns:
+          - pattern-inside: |
+              com.password4j.Hash $HASH = ...;
+              ...
+          - pattern: $HASH.getResult()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: context
+        library: Password4J
+        api: com.password4j.Hash.getResult
+  - id: java.bouncycastle.keygen.ec
+    message: Detected Bouncy Castle EC key-pair generation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  ECKeyPairGenerator $GEN = new ECKeyPairGenerator();
+                  ...
+              - pattern: $GEN.generateKeyPair()
+          - patterns:
+              - pattern-inside: |
+                  org.bouncycastle.crypto.generators.ECKeyPairGenerator $GEN = new org.bouncycastle.crypto.generators.ECKeyPairGenerator();
+                  ...
+              - pattern: $GEN.generateKeyPair()
+          - pattern: (new ECKeyPairGenerator()).generateKeyPair()
+          - pattern: (new org.bouncycastle.crypto.generators.ECKeyPairGenerator()).generateKeyPair()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: key-agree
+        algorithmFamily: ECDH
+        algorithmName: Bouncy Castle EC key pair generation
+        operation: keygen
+        library: BouncyCastle
+        api: org.bouncycastle.crypto.generators.ECKeyPairGenerator.generateKeyPair
+
+  - id: java.bouncycastle.supporting.ec-params
+    message: Detected Bouncy Castle EC key-generation parameter setup
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - pattern: $GEN.init($PARAMS)
+          - pattern: new ECKeyGenerationParameters(...)
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: supporting-call
+        supportingCall: "true"
+        category: config
+        library: BouncyCastle
+        api: org.bouncycastle.crypto.generators.ECKeyPairGenerator.init

@@ -36,6 +36,8 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			StartLine:          fn.StartLine,
 			EndLine:            fn.EndLine,
 			FilePath:           fn.FilePath,
+			DisplaySymbol:      fn.DisplaySymbol,
+			Aliases:            append([]string(nil), fn.Aliases...),
 		})
 	}
 	for i := range e.InternalEdges {
@@ -83,7 +85,71 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			MatchedOperation: toMatchedOp(op.MatchedOperation),
 		})
 	}
+	for i := range e.SupportingCalls {
+		s := &e.SupportingCalls[i]
+		frag.SupportingCalls = append(frag.SupportingCalls, SupportingCall{
+			Function:           s.FunctionKey,
+			SupportingID:       s.SupportingID,
+			Category:           s.Category,
+			FilePath:           s.FilePath,
+			StartLine:          s.StartLine,
+			EndLine:            s.EndLine,
+			FunctionName:       s.FunctionName,
+			CanonicalSignature: s.CanonicalSignature,
+			DisplaySymbol:      s.DisplaySymbol,
+			Aliases:            append([]string(nil), s.Aliases...),
+			SupportingCall:     toCryptoCall(s.SupportingCall),
+			Metadata:           s.Metadata,
+			MatchedOperation:   toMatchedOp(s.MatchedOperation),
+		})
+	}
+	for i := range e.CryptoEntryPoints {
+		ep := &e.CryptoEntryPoints[i]
+		frag.CryptoEntryPoints = append(frag.CryptoEntryPoints, CryptoEntryPoint{
+			FunctionKey:              ep.FunctionKey,
+			FunctionName:             ep.FunctionName,
+			CanonicalSignature:       ep.CanonicalSignature,
+			DisplaySymbol:            ep.DisplaySymbol,
+			Aliases:                  append([]string(nil), ep.Aliases...),
+			ReturnType:               ep.ReturnType,
+			ParameterTypes:           append([]string(nil), ep.ParameterTypes...),
+			Visibility:               ep.Visibility,
+			OwnerVisibility:          ep.OwnerVisibility,
+			ReachableFindings:        toReachableFindings(ep.ReachableFindings),
+			ReachableSupportingCalls: toReachableSupportingCalls(ep.ReachableSupportingCalls),
+		})
+	}
 	return frag
+}
+
+func toReachableFindings(src []GraphFragmentReachableFinding) []ReachableFinding {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ReachableFinding, len(src))
+	for i := range src {
+		out[i] = ReachableFinding{
+			FindingID:       src[i].FindingID,
+			ChainDepth:      src[i].ChainDepth,
+			FindingGraphRef: src[i].FindingGraphRef,
+		}
+	}
+	return out
+}
+
+func toReachableSupportingCalls(src []GraphFragmentReachableSupportingCall) []ReachableSupportingCall {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ReachableSupportingCall, len(src))
+	for i := range src {
+		out[i] = ReachableSupportingCall{
+			SupportingID:      src[i].SupportingID,
+			ChainDepth:        src[i].ChainDepth,
+			SupportingCallRef: src[i].SupportingCallRef,
+		}
+	}
+	return out
 }
 
 // toCallSite converts a GraphFragmentCallSite pointer to a CallSite pointer.
@@ -147,6 +213,8 @@ func toCryptoCall(src *GraphFragmentCryptoCall) *CryptoCall {
 		CanonicalSignature: src.CanonicalSignature,
 		ReturnType:         src.ReturnType,
 		ParameterTypes:     src.ParameterTypes,
+		DisplaySymbol:      src.DisplaySymbol,
+		Aliases:            append([]string(nil), src.Aliases...),
 		Line:               src.Line,
 	}
 	for i := range src.Parameters {

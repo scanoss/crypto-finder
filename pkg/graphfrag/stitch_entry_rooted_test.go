@@ -9,7 +9,7 @@ import (
 )
 
 // reachableFindingIDs collects the distinct terminal-crypto finding IDs present
-// in a stitch result. It is the set the serving layer cares about: which crypto
+// in a stitch result. It is the set consumers care about: which crypto
 // operations are reachable from a traced root, regardless of how many distinct
 // paths reach them.
 func reachableFindingIDs(res *Result) []string {

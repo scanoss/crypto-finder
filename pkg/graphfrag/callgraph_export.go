@@ -1,18 +1,17 @@
 // Copyright (C) 2026 SCANOSS.COM
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Package graphfrag — schema-5.x JSON converter.
+// Package graphfrag — schema-6.0 JSON converter.
 //
-// ToCallgraphExport projects a stitched Result into the schema-5.x JSON shape
-// used by crypto-finder's customer-facing callgraph export (and consumed by the
-// mining-service render layer). The schema-5.x structs are intentionally
-// duplicated here as exported types: they are pkg/graphfrag's public contract
-// for the serving path, keeping the package's schema+semantics together with
-// their owner.
+// ToCallgraphExport projects a stitched Result into the schema-6.0 JSON shape
+// used by crypto-finder's customer-facing callgraph export. The schema-6.0
+// structs are intentionally duplicated here as exported types: they are
+// pkg/graphfrag's public contract, keeping the package's schema+semantics
+// together with their owner.
 //
 // Relationship to internal/scan/export.go: the unexported callGraphChainNode,
 // callGraphEntryCall, etc. types in export.go share the same JSON field names
-// and semantics. This file is the promoted copy for the stitched/serving path.
+// and semantics. This file is the promoted copy for stitched graph results.
 package graphfrag
 
 import (
@@ -25,7 +24,7 @@ import (
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
-	// SchemaVersion is the schema_version value to emit (e.g. "5.3").
+	// SchemaVersion is the schema_version value to emit (e.g. "6.0").
 	SchemaVersion string
 	// RootModule is the Maven/npm/etc. module string for the root component.
 	RootModule string
@@ -33,13 +32,14 @@ type ScanMeta struct {
 	Ecosystem string
 }
 
-// CallgraphExport is the schema-5.x JSON envelope produced by ToCallgraphExport.
+// CallgraphExport is the schema-6.0 JSON envelope produced by ToCallgraphExport.
 // It mirrors the callGraphExportV2 shape in internal/scan/export.go.
 type CallgraphExport struct {
-	SchemaVersion   string               `json:"schema_version"`
-	ScanMetadata    ExportScanMeta       `json:"scan_metadata"`
-	FindingGraphs   []ExportFindingGraph `json:"finding_graphs"`
-	EntryPointIndex []ExportEntryPoint   `json:"entry_point_index,omitempty"`
+	SchemaVersion     string                   `json:"schema_version"`
+	ScanMetadata      ExportScanMeta           `json:"scan_metadata"`
+	FindingGraphs     []ExportFindingGraph     `json:"finding_graphs"`
+	SupportingCalls   []ExportSupportingCall   `json:"supporting_calls,omitempty"`
+	CryptoEntryPoints []ExportCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
 }
 
 // ExportScanMeta is the scan_metadata block inside a CallgraphExport.
@@ -58,7 +58,7 @@ type ExportFindingGraph struct {
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
 }
 
-// ExportMatchedOperation mirrors the schema-5.x matched_operation shape.
+// ExportMatchedOperation mirrors the schema-6.0 matched_operation shape.
 type ExportMatchedOperation struct {
 	Kind       string `json:"kind"`
 	Symbol     string `json:"symbol,omitempty"`
@@ -66,14 +66,14 @@ type ExportMatchedOperation struct {
 	Line       int    `json:"line,omitempty"`
 }
 
-// ExportDependencyInfo mirrors the schema-5.x dependency_info shape. It is
+// ExportDependencyInfo mirrors the schema-6.0 dependency_info shape. It is
 // stamped on non-root frames using the frame's Component module string.
 type ExportDependencyInfo struct {
 	Module  string `json:"module"`
 	Version string `json:"version,omitempty"`
 }
 
-// ExportEntryCall is the schema-5.x entry_call shape on a chain node. It
+// ExportEntryCall is the schema-6.0 entry_call shape on a chain node. It
 // carries the caller's invocation detail for the edge that led to this frame.
 type ExportEntryCall struct {
 	// FunctionName is the fully qualified callee function name.
@@ -84,13 +84,17 @@ type ExportEntryCall struct {
 	ReturnType string `json:"return_type,omitempty"`
 	// ParameterTypes lists the callee's declared parameter types.
 	ParameterTypes []string `json:"parameter_types,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	// Aliases are alternate customer-facing names.
+	Aliases []string `json:"aliases,omitempty"`
 	// Line is the source line in the caller where the call is made.
 	Line int `json:"line,omitempty"`
 	// Parameters carries the resolved argument data-flow.
 	Parameters []ExportParameter `json:"parameters,omitempty"`
 }
 
-// ExportCryptoCall is the schema-5.x crypto_call shape on the terminal node.
+// ExportCryptoCall is the schema-6.0 crypto_call shape on the terminal node.
 // It mirrors callGraphCalledFunction in internal/scan/export.go.
 type ExportCryptoCall struct {
 	// FunctionName is the fully qualified matched crypto function name.
@@ -101,13 +105,17 @@ type ExportCryptoCall struct {
 	ReturnType string `json:"return_type,omitempty"`
 	// ParameterTypes lists the declared parameter types.
 	ParameterTypes []string `json:"parameter_types,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	// Aliases are alternate customer-facing names.
+	Aliases []string `json:"aliases,omitempty"`
 	// Line is the source line of the matched crypto call.
 	Line int `json:"line"`
 	// Parameters carries the resolved argument data-flow.
 	Parameters []ExportParameter `json:"parameters,omitempty"`
 }
 
-// ExportParameter is the schema-5.x callGraphParameter shape.
+// ExportParameter is the schema-6.0 callGraphParameter shape.
 type ExportParameter struct {
 	ParameterIndex     int                `json:"parameter_index"`
 	Type               string             `json:"type,omitempty"`
@@ -117,7 +125,7 @@ type ExportParameter struct {
 	SourceNodes        []ExportSourceNode `json:"source_nodes,omitempty"`
 }
 
-// ExportSourceNode is the schema-5.x exportSourceNode shape. The SourceNodes
+// ExportSourceNode is the schema-6.0 exportSourceNode shape. The SourceNodes
 // field makes it recursive so PARAMETER→CALL_RESULT chains are preserved.
 type ExportSourceNode struct {
 	Type           string             `json:"type"`
@@ -136,9 +144,11 @@ type ExportSourceLoc struct {
 	Line     int    `json:"line,omitempty"`
 }
 
-// ExportChainNode is one node in a schema-5.x call chain. It mirrors
+// ExportChainNode is one node in a schema-6.0 call chain. It mirrors
 // callGraphChainNode in internal/scan/export.go.
 type ExportChainNode struct {
+	// FunctionKey is the canonical graph-fragment join key.
+	FunctionKey string `json:"function_key,omitempty"`
 	// FunctionName is the human-readable fully qualified function name.
 	FunctionName string `json:"function_name"`
 	// CanonicalSignature is the canonical function signature.
@@ -151,6 +161,10 @@ type ExportChainNode struct {
 	Visibility string `json:"visibility,omitempty"`
 	// OwnerVisibility is the access modifier of the enclosing type.
 	OwnerVisibility string `json:"owner_visibility,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	// Aliases are alternate customer-facing names.
+	Aliases []string `json:"aliases,omitempty"`
 	// FilePath is the source file path.
 	FilePath string `json:"file_path"`
 	// StartLine is the first line of the function body.
@@ -164,11 +178,12 @@ type ExportChainNode struct {
 	CryptoCall *ExportCryptoCall `json:"crypto_call,omitempty"`
 }
 
-// ExportEntryPoint is one entry in the entry_point_index. It mirrors
-// callGraphEntryPoint in internal/scan/export.go.
-type ExportEntryPoint struct {
-	// Function is the fully qualified function name.
-	Function string `json:"function"`
+// ExportCryptoEntryPoint is one entry in crypto_entry_points.
+type ExportCryptoEntryPoint struct {
+	// FunctionKey is the canonical graph-fragment join key.
+	FunctionKey string `json:"function_key"`
+	// FunctionName is the fully qualified function name.
+	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the canonical function signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
 	// Class is the enclosing class name.
@@ -183,9 +198,19 @@ type ExportEntryPoint struct {
 	Visibility string `json:"visibility,omitempty"`
 	// OwnerVisibility is the access modifier of the enclosing type.
 	OwnerVisibility string `json:"owner_visibility,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	// Aliases are alternate customer-facing names.
+	Aliases []string `json:"aliases,omitempty"`
 	// ReachableFindings lists all crypto findings reachable from this entry point.
-	ReachableFindings []ExportReachableFinding `json:"reachable_findings"`
+	ReachableFindings []ExportReachableFinding `json:"reachable_findings,omitempty"`
+	// ReachableSupportingCalls lists non-finding context calls reachable from this entry point.
+	ReachableSupportingCalls []ExportReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
 }
+
+// ExportEntryPoint is kept as a Go-level compatibility alias for callers that
+// referenced the old type name; the JSON field is crypto_entry_points.
+type ExportEntryPoint = ExportCryptoEntryPoint
 
 // ExportReachableFinding is one reachable crypto finding entry inside an
 // ExportEntryPoint.
@@ -201,11 +226,35 @@ type ExportReachableFinding struct {
 	FindingGraphRef string `json:"finding_graph_ref"`
 }
 
-// ToCallgraphExport converts the stitched Result into a schema-5.x JSON
+// ExportReachableSupportingCall is one reachable supporting call entry inside
+// an ExportCryptoEntryPoint.
+type ExportReachableSupportingCall struct {
+	SupportingID      string `json:"supporting_id"`
+	ChainDepth        int    `json:"chain_depth"`
+	SupportingCallRef string `json:"supporting_call_ref,omitempty"`
+}
+
+// ExportSupportingCall is one top-level non-finding crypto-adjacent call.
+type ExportSupportingCall struct {
+	SupportingID       string                  `json:"supporting_id"`
+	FunctionKey        string                  `json:"function_key,omitempty"`
+	FunctionName       string                  `json:"function_name,omitempty"`
+	CanonicalSignature string                  `json:"canonical_signature,omitempty"`
+	DisplaySymbol      string                  `json:"display_symbol,omitempty"`
+	Aliases            []string                `json:"aliases,omitempty"`
+	Category           string                  `json:"category,omitempty"`
+	FilePath           string                  `json:"file_path,omitempty"`
+	StartLine          int                     `json:"start_line,omitempty"`
+	EndLine            int                     `json:"end_line,omitempty"`
+	MatchedOperation   *ExportMatchedOperation `json:"matched_operation,omitempty"`
+	SupportingCall     *ExportCryptoCall       `json:"supporting_call,omitempty"`
+}
+
+// ToCallgraphExport converts the stitched Result into a schema-6.0 JSON
 // structure for root, stamped with meta. It groups chains by FindingID into
 // finding_graphs[], stamps dependency_info on non-root frames, emits
 // entry_call from frame.EntryCall and crypto_call on the terminal node, then
-// builds the entry_point_index from all surviving chains.
+// builds crypto_entry_points from all surviving chains.
 //
 // The output is resolution-corrected by construction: only chains that passed
 // buildAdjacency's fail-closed policy are present in r.Chains.
@@ -267,7 +316,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		})
 	}
 
-	out.EntryPointIndex = buildCallgraphEntryPointIndex(out.FindingGraphs)
+	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
+	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 	return out
 }
 
@@ -287,7 +337,7 @@ func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
 		return nil
 	}
 	// Legacy fallback: FindingChain carries only Symbol, so synthesize the
-	// minimal schema-5.x call operation when no rich MatchedOperation exists.
+	// minimal schema-6.0 call operation when no rich MatchedOperation exists.
 	return &ExportMatchedOperation{
 		Kind:   "call",
 		Symbol: fc.Symbol,
@@ -371,12 +421,15 @@ func computeFindingID(path string, startLine int, ruleID string) string {
 func buildExportNode(frame CallFrame, root ComponentKey) ExportChainNode {
 	fn := frame.Function
 	node := ExportChainNode{
+		FunctionKey:        fn.Signature,
 		FunctionName:       fn.FunctionName,
 		CanonicalSignature: fn.CanonicalSignature,
 		ReturnType:         fn.ReturnType,
 		ParameterTypes:     fn.ParameterTypes,
 		Visibility:         fn.Visibility,
 		OwnerVisibility:    fn.OwnerVisibility,
+		DisplaySymbol:      fn.DisplaySymbol,
+		Aliases:            append([]string(nil), fn.Aliases...),
 		FilePath:           fn.FilePath,
 		StartLine:          fn.StartLine,
 		EntryCall:          exportEntryCall(frame.EntryCall, fn),
@@ -414,6 +467,8 @@ func exportEntryCall(cs *CallSite, fn Function) *ExportEntryCall {
 		CanonicalSignature: fn.CanonicalSignature,
 		ReturnType:         fn.ReturnType,
 		ParameterTypes:     append([]string(nil), fn.ParameterTypes...),
+		DisplaySymbol:      fn.DisplaySymbol,
+		Aliases:            append([]string(nil), fn.Aliases...),
 		Line:               cs.Line,
 	}
 	for i := range cs.Parameters {
@@ -432,6 +487,8 @@ func exportCryptoCall(cc *CryptoCall) *ExportCryptoCall {
 		CanonicalSignature: cc.CanonicalSignature,
 		ReturnType:         cc.ReturnType,
 		ParameterTypes:     cc.ParameterTypes,
+		DisplaySymbol:      cc.DisplaySymbol,
+		Aliases:            append([]string(nil), cc.Aliases...),
 		Line:               cc.Line,
 	}
 	for i := range cc.Parameters {
@@ -474,7 +531,47 @@ func exportSourceNode(sn SourceNode) ExportSourceNode {
 	return esn
 }
 
-// --- Entry point index (mirrors export.go:buildEntryPointIndex) ---
+func exportSupportingCalls(src []SupportingCall) []ExportSupportingCall {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ExportSupportingCall, 0, len(src))
+	for i := range src {
+		s := src[i]
+		out = append(out, ExportSupportingCall{
+			SupportingID:       s.SupportingID,
+			FunctionKey:        s.Function,
+			FunctionName:       s.FunctionName,
+			CanonicalSignature: s.CanonicalSignature,
+			DisplaySymbol:      s.DisplaySymbol,
+			Aliases:            append([]string(nil), s.Aliases...),
+			Category:           s.Category,
+			FilePath:           s.FilePath,
+			StartLine:          s.StartLine,
+			EndLine:            s.EndLine,
+			MatchedOperation:   exportMatchedOp(s.MatchedOperation),
+			SupportingCall:     exportCryptoCall(s.SupportingCall),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SupportingID < out[j].SupportingID
+	})
+	return out
+}
+
+func exportMatchedOp(op *MatchedOp) *ExportMatchedOperation {
+	if op == nil {
+		return nil
+	}
+	return &ExportMatchedOperation{
+		Kind:       op.Kind,
+		Symbol:     op.Symbol,
+		Expression: op.Expression,
+		Line:       op.Line,
+	}
+}
+
+// --- Crypto entry points (replaces entry_point_index) ---
 
 type epFindingRef struct {
 	findingID string
@@ -483,6 +580,7 @@ type epFindingRef struct {
 }
 
 type epData struct {
+	functionKey        string
 	function           string
 	canonicalSignature string
 	class              string
@@ -491,16 +589,22 @@ type epData struct {
 	parameterTypes     []string
 	visibility         string
 	ownerVisibility    string
+	displaySymbol      string
+	aliases            []string
 	findings           map[string]epFindingRef // findingID → shallowest ref
+	supporting         map[string]ExportReachableSupportingCall
 }
 
-// buildCallgraphEntryPointIndex folds all surviving chains into an entry-point
+// buildCallgraphCryptoEntryPoints folds all surviving chains into an entry-point
 // index keyed by canonical_signature (or function_name when canonical is
-// empty). It mirrors the logic in internal/scan/export.go:buildEntryPointIndex.
-func buildCallgraphEntryPointIndex(findingGraphs []ExportFindingGraph) []ExportEntryPoint {
+// empty). It replaces the legacy entry_point_index projection.
+func buildCallgraphCryptoEntryPoints(findingGraphs []ExportFindingGraph, supportingCalls []ExportSupportingCall) []ExportCryptoEntryPoint {
 	index := make(map[string]*epData)
 	for i := range findingGraphs {
 		addFindingGraphToEPI(index, &findingGraphs[i])
+	}
+	for i := range supportingCalls {
+		addSupportingCallToEPI(index, supportingCalls[i])
 	}
 	return flattenEPI(index)
 }
@@ -529,7 +633,10 @@ func addChainToEPI(index map[string]*epData, fg *ExportFindingGraph, chain []Exp
 }
 
 func ensureEPData(index map[string]*epData, node *ExportChainNode) *epData {
-	key := node.CanonicalSignature
+	key := node.FunctionKey
+	if key == "" {
+		key = node.CanonicalSignature
+	}
 	if key == "" {
 		key = node.FunctionName
 	}
@@ -539,6 +646,7 @@ func ensureEPData(index map[string]*epData, node *ExportChainNode) *epData {
 	}
 	class, method := splitFnName(node.FunctionName)
 	ep := &epData{
+		functionKey:        key,
 		function:           node.FunctionName,
 		canonicalSignature: node.CanonicalSignature,
 		class:              class,
@@ -547,7 +655,10 @@ func ensureEPData(index map[string]*epData, node *ExportChainNode) *epData {
 		parameterTypes:     node.ParameterTypes,
 		visibility:         node.Visibility,
 		ownerVisibility:    node.OwnerVisibility,
+		displaySymbol:      node.DisplaySymbol,
+		aliases:            append([]string(nil), node.Aliases...),
 		findings:           make(map[string]epFindingRef),
+		supporting:         make(map[string]ExportReachableSupportingCall),
 	}
 	index[key] = ep
 	return ep
@@ -569,6 +680,12 @@ func mergeEPData(ep *epData, node *ExportChainNode) {
 	if ep.ownerVisibility == "" {
 		ep.ownerVisibility = node.OwnerVisibility
 	}
+	if ep.displaySymbol == "" {
+		ep.displaySymbol = node.DisplaySymbol
+	}
+	if len(ep.aliases) == 0 {
+		ep.aliases = append([]string(nil), node.Aliases...)
+	}
 }
 
 func recordEPFinding(ep *epData, fg *ExportFindingGraph, depth int) {
@@ -586,8 +703,42 @@ func recordEPFinding(ep *epData, fg *ExportFindingGraph, depth int) {
 	}
 }
 
-func flattenEPI(index map[string]*epData) []ExportEntryPoint {
-	result := make([]ExportEntryPoint, 0, len(index))
+func addSupportingCallToEPI(index map[string]*epData, support ExportSupportingCall) {
+	key := support.FunctionKey
+	if key == "" {
+		key = support.CanonicalSignature
+	}
+	if key == "" {
+		key = support.FunctionName
+	}
+	if key == "" || support.SupportingID == "" {
+		return
+	}
+	ep := index[key]
+	if ep == nil {
+		class, method := splitFnName(support.FunctionName)
+		ep = &epData{
+			functionKey:        key,
+			function:           support.FunctionName,
+			canonicalSignature: support.CanonicalSignature,
+			class:              class,
+			method:             method,
+			displaySymbol:      support.DisplaySymbol,
+			aliases:            append([]string(nil), support.Aliases...),
+			findings:           make(map[string]epFindingRef),
+			supporting:         make(map[string]ExportReachableSupportingCall),
+		}
+		index[key] = ep
+	}
+	ep.supporting[support.SupportingID] = ExportReachableSupportingCall{
+		SupportingID:      support.SupportingID,
+		ChainDepth:        1,
+		SupportingCallRef: support.SupportingID,
+	}
+}
+
+func flattenEPI(index map[string]*epData) []ExportCryptoEntryPoint {
+	result := make([]ExportCryptoEntryPoint, 0, len(index))
 	for _, ep := range index {
 		findings := make([]ExportReachableFinding, 0, len(ep.findings))
 		for _, ref := range ep.findings {
@@ -601,22 +752,41 @@ func flattenEPI(index map[string]*epData) []ExportEntryPoint {
 		sort.Slice(findings, func(i, j int) bool {
 			return findings[i].FindingID < findings[j].FindingID
 		})
-		result = append(result, ExportEntryPoint{
-			Function:           ep.function,
-			CanonicalSignature: ep.canonicalSignature,
-			Class:              ep.class,
-			Method:             ep.method,
-			ReturnType:         ep.returnType,
-			ParameterTypes:     ep.parameterTypes,
-			Visibility:         ep.visibility,
-			OwnerVisibility:    ep.ownerVisibility,
-			ReachableFindings:  findings,
+		supporting := flattenReachableSupporting(ep.supporting)
+		result = append(result, ExportCryptoEntryPoint{
+			FunctionKey:              ep.functionKey,
+			FunctionName:             ep.function,
+			CanonicalSignature:       ep.canonicalSignature,
+			Class:                    ep.class,
+			Method:                   ep.method,
+			ReturnType:               ep.returnType,
+			ParameterTypes:           ep.parameterTypes,
+			Visibility:               ep.visibility,
+			OwnerVisibility:          ep.ownerVisibility,
+			DisplaySymbol:            ep.displaySymbol,
+			Aliases:                  append([]string(nil), ep.aliases...),
+			ReachableFindings:        findings,
+			ReachableSupportingCalls: supporting,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Function < result[j].Function
+		return result[i].FunctionKey < result[j].FunctionKey
 	})
 	return result
+}
+
+func flattenReachableSupporting(values map[string]ExportReachableSupportingCall) []ExportReachableSupportingCall {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ExportReachableSupportingCall, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SupportingID < out[j].SupportingID
+	})
+	return out
 }
 
 // splitFnName extracts class and method from a fully qualified function name.

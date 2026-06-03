@@ -71,7 +71,7 @@ func findAsset(env FindingsEnvelope, filePath string) *FindingAsset {
 // match/end_line/oid/metadata are carried through verbatim.
 func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	app, deps, fragments := buildEnvelopeFixture()
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 
 	env := ToFindingsEnvelope(app, deps, fragments, meta)
 
@@ -111,7 +111,7 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 // (where the dep-prefix path construction is non-trivial).
 func TestToFindingsEnvelope_FindingIDMatchesCallgraphExport(t *testing.T) {
 	app, deps, fragments := buildEnvelopeFixture()
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 
 	res, err := Stitch(app, deps, fragments)
 	if err != nil {

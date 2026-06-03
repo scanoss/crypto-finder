@@ -142,13 +142,13 @@ func buildPhase6Result(t *testing.T) *Result {
 func TestToCallgraphExport_SchemaVersion(t *testing.T) {
 	res := buildPhase6Result(t)
 	meta := ScanMeta{
-		SchemaVersion: "5.3",
+		SchemaVersion: "6.0",
 		RootModule:    "com.acme:app",
 		Ecosystem:     "java",
 	}
 	out := res.ToCallgraphExport(phase6Root, meta)
 	if out.SchemaVersion == "" {
-		t.Fatal("SchemaVersion is empty, want non-empty (e.g. 5.3)")
+		t.Fatal("SchemaVersion is empty, want non-empty (e.g. 6.0)")
 	}
 }
 
@@ -158,7 +158,7 @@ func TestToCallgraphExport_SchemaVersion(t *testing.T) {
 //   - the second node (dep frame) has dependency_info.module == "net.crypto:lib"
 func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 	res := buildPhase6Result(t)
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	if len(out.FindingGraphs) != 1 {
@@ -193,7 +193,7 @@ func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 // structurally matches the CallSite from frame[1].
 func TestToCallgraphExport_EntryCallOnFrame1(t *testing.T) {
 	res := buildPhase6Result(t)
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	chain := out.FindingGraphs[0].CallChains[0]
@@ -245,7 +245,7 @@ func TestToCallgraphExport_EntryCallIncludesCalleeSignatureTypes(t *testing.T) {
 		}},
 	}
 
-	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"})
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"})
 	entryCall := out.FindingGraphs[0].CallChains[0][1].EntryCall
 	if entryCall == nil {
 		t.Fatal("EntryCall is nil, want non-nil")
@@ -262,7 +262,7 @@ func TestToCallgraphExport_EntryCallIncludesCalleeSignatureTypes(t *testing.T) {
 // the terminal node equals the CryptoOperation's CryptoCall.
 func TestToCallgraphExport_CryptoCallOnLastNode(t *testing.T) {
 	res := buildPhase6Result(t)
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	chain := out.FindingGraphs[0].CallChains[0]
@@ -300,7 +300,7 @@ func TestToCallgraphExport_PreservesStoredMatchedOperation(t *testing.T) {
 		}},
 	}
 
-	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"})
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"})
 	got := out.FindingGraphs[0].MatchedOperation
 	if got == nil {
 		t.Fatal("MatchedOperation is nil, want preserved operation")
@@ -311,26 +311,26 @@ func TestToCallgraphExport_PreservesStoredMatchedOperation(t *testing.T) {
 	}
 }
 
-// TestToCallgraphExport_EntryPointIndex asserts that entry_point_index has one
+// TestToCallgraphExport_CryptoEntryPoints asserts that crypto_entry_points has one
 // entry for this 3-frame chain with chain_depth=3 (len(chain) - pos=0 = 3).
-func TestToCallgraphExport_EntryPointIndex(t *testing.T) {
+func TestToCallgraphExport_CryptoEntryPoints(t *testing.T) {
 	res := buildPhase6Result(t)
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
-	if len(out.EntryPointIndex) == 0 {
-		t.Fatal("EntryPointIndex is empty, want at least one entry")
+	if len(out.CryptoEntryPoints) == 0 {
+		t.Fatal("CryptoEntryPoints is empty, want at least one entry")
 	}
 	// Find the entry for the root entry function.
 	var found *ExportEntryPoint
-	for i := range out.EntryPointIndex {
-		if out.EntryPointIndex[i].Function == "com.acme.App.entry" {
-			found = &out.EntryPointIndex[i]
+	for i := range out.CryptoEntryPoints {
+		if out.CryptoEntryPoints[i].FunctionName == "com.acme.App.entry" {
+			found = &out.CryptoEntryPoints[i]
 			break
 		}
 	}
 	if found == nil {
-		t.Fatalf("no entry_point_index entry for com.acme.App.entry; got %#v", out.EntryPointIndex)
+		t.Fatalf("no crypto_entry_points entry for com.acme.App.entry; got %#v", out.CryptoEntryPoints)
 	}
 	if len(found.ReachableFindings) == 0 {
 		t.Fatal("ReachableFindings is empty, want 1 finding")
@@ -346,7 +346,7 @@ func TestToCallgraphExport_EntryPointIndex(t *testing.T) {
 // EntryCall produces a node without the entry_call JSON field.
 func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	res := buildPhase6Result(t)
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	// node[0] is the root frame and has no EntryCall.
@@ -414,7 +414,7 @@ func TestToCallgraphExport_DepFindingIDPrefixed(t *testing.T) {
 		t.Fatalf("chains = %d, want 1", len(res.Chains))
 	}
 
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	if len(out.FindingGraphs) != 1 {
@@ -483,7 +483,7 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 		t.Fatalf("chains = %d, want 1", len(res.Chains))
 	}
 
-	meta := ScanMeta{SchemaVersion: "5.3", RootModule: "com.acme:app", Ecosystem: "java"}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
 	out := res.ToCallgraphExport(phase6Root, meta)
 
 	if len(out.FindingGraphs) != 1 {

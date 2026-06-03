@@ -90,7 +90,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 When `--export-callgraph` is enabled, Crypto Finder also writes a separate finding-centric call graph JSON file. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version `4.3` adds Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
+Schema note: call graph export version `6.0` is the current customer-facing reachability contract. It removes the legacy `entry_point_index` projection and makes `crypto_entry_points[]` canonical. Version `4.3` added Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
 
 - Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
@@ -102,6 +102,10 @@ Schema note: call graph export version `4.3` adds Java runtime provenance in `sc
 - `source_nodes` can span multiple wrapper hops. A local `PARAMETER` node may contain nested upstream provenance such as `PARAMETER -> PARAMETER -> VALUE`, and propagated nested nodes keep `location.file_path` plus `location.line` when known.
 - Method-call provenance is preserved as `CALL_RESULT` nodes. When the parser can resolve the invoked method, the node also exports `call_target`, and any traceable receiver value is nested under that `CALL_RESULT` via `source_nodes` (for example `CALL_RESULT -> PARAMETER alg -> VALUE SignatureAlgorithm.HS256`).
 - Findings missing a containing function or crypto-call match are still exported with `finding_location` and `unresolved_reason`.
+- `crypto_entry_points[]` is the stitch/API index. Each entry carries `function_key`, canonical/display symbols, aliases, and `reachable_findings[]` / `reachable_supporting_calls[]`.
+- `supporting_calls[]` carries config/lifecycle/context crypto-adjacent calls, such as builder options or parameter setup. These calls are not findings and do not inflate `finding_graphs[]`.
+- Constructor joins remain canonical (`<init>`), while display fields and aliases expose IBM-style names such as `com.acme.Factory.Factory`.
+- `entry_point_index` is not emitted by schema `6.0`. Consumers should migrate to `crypto_entry_points[]`.
 
 Example:
 
@@ -255,30 +259,30 @@ Example:
 When `--export-graph-fragment <file>` is enabled, Crypto Finder writes a
 **reusable structural graph fragment** for the scanned component: its call
 graph plus rules-versioned crypto annotations. Unlike the finding-centric call
-graph export (above), a fragment is designed to be mined and stored **per
-component**, then composed across a dependency tree at query time to answer
-"what crypto is transitively reachable from artifact X?" — without re-scanning.
-The pure model and the stitcher that composes fragments live in the public
-package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream services
-(e.g. a mining/catalog service) consume one contract instead of reimplementing
-schema knowledge.
+graph export (above), a fragment is designed to be composed with other fragments
+across a dependency tree to answer "what crypto is transitively reachable from
+artifact X?" The pure model and the stitcher that composes fragments live in the
+public package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream
+consumers can use one contract instead of reimplementing schema knowledge.
 
-Current schema version: `graph-fragment-1.2`.
+Current schema version: `graph-fragment-1.3`.
 
-As of `graph-fragment-1.2`, a stored fragment is **self-contained enough to
-reconstruct the two serving artifacts a live `--scan-dependencies` run would
-produce**, without re-scanning — see *Serving artifacts* below.
+As of `graph-fragment-1.3`, a fragment is **self-contained enough to reconstruct
+the two artifacts a live `--scan-dependencies` run would produce** — see
+*Rendered artifacts* below.
 
 ### Structure
 
 | Field | Description |
 |-------|-------------|
-| `schema_version` | Fragment schema version (currently `graph-fragment-1.2`). |
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.3`). |
 | `scan_metadata` | Ecosystem, root module, tool/rules versions, `graph_algo_version` (callgraph-construction algorithm version; cache key for annotate-only re-annotation), and per-array counts. |
 | `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
 | `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). Each edge may carry `entry_call` (1.2+, see below). |
 | `external_calls[]` | Calls whose target may live in **another** component; resolved at stitch time against the dependency tree. Each edge may carry `entry_call` (1.2+, see below). |
-| `crypto_annotations[]` | Crypto findings attached to a function. Beyond `function_key`/`finding_id`/`rule_id`/`symbol`, a 1.2 annotation carries the data-flow and metadata needed to reconstruct a findings entry (see *Crypto annotation fields (1.2+)* below). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+| `crypto_annotations[]` | Terminal crypto findings attached to a function. Beyond `function_key`/`finding_id`/`rule_id`/`symbol`, a 1.2+ annotation carries the data-flow and metadata needed to reconstruct a findings entry (see *Crypto annotation fields (1.2+)* below). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+| `supporting_calls[]` | Non-finding config/lifecycle/context calls useful for explaining crypto behavior without increasing finding counts. |
+| `crypto_entry_points[]` | Canonical reachability index: API functions plus display aliases and links to reachable findings/supporting calls. |
 
 ### Per-call data flow: `entry_call` (1.2+)
 
@@ -293,7 +297,7 @@ across components, so a stitched chain matches a live run frame-for-frame.
 
 ### Crypto annotation fields (1.2+)
 
-A `graph-fragment-1.2` `crypto_annotations[]` entry carries enough to
+A `graph-fragment-1.2+` `crypto_annotations[]` entry carries enough to
 reconstruct a full findings.json entry for the matched crypto call:
 
 | Field | Description |
@@ -306,21 +310,20 @@ reconstruct a full findings.json entry for the matched crypto call:
 | `end_line` | Last source line of the crypto finding (often equal to its start line). |
 | `match` / expression | The exact source expression that triggered the detection. |
 
-### Serving artifacts: `ToCallgraphExport` / `ToFindingsEnvelope`
+### Rendered artifacts: `ToCallgraphExport` / `ToFindingsEnvelope`
 
-Because a 1.2 fragment carries per-call data flow and full crypto-annotation
-metadata, `pkg/graphfrag` can render a stitched `Result` into the same two
-artifacts a live `--scan-dependencies` run produces — so a serving layer can
-answer reachability queries from stored fragments alone, without re-scanning:
+Because a 1.3 fragment carries per-call data flow, full crypto-annotation,
+supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
+`Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a schema-5.x callgraph, equivalent to a live
+  a schema-6.0 callgraph, equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
   findings.json v1.3 envelope (asset metadata). Its `finding_id`s are computed
-  with the **same inputs** as `ToCallgraphExport`, so the two agree: a serving
-  layer joins assets (envelope) to call chains (callgraph) by `finding_id`.
+  with the **same inputs** as `ToCallgraphExport`, so the two agree: consumers
+  join assets (envelope) to call chains (callgraph) by `finding_id`.
 
 `pkg/graphfrag/equiv` is a semantic diff tool that asserts a stitched callgraph
 equals a live one minus the chains intentionally dropped by resolution
@@ -371,8 +374,8 @@ reported as reachable crypto.
 
 ```json
 {
-  "schema_version": "graph-fragment-1.2",
-  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-1", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160 },
+  "schema_version": "graph-fragment-1.3",
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-1", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
   ],
@@ -400,6 +403,23 @@ reported as reachable crypto.
       "declared_type": "org.bouncycastle.operator.InputDecryptorProvider",
       "method_name": "get",
       "arity": 1
+    }
+  ],
+  "supporting_calls": [
+    {
+      "supporting_id": "cfg123",
+      "function_key": "org.example.(Builder).configure#0",
+      "category": "config",
+      "matched_operation": { "kind": "call", "symbol": "org.example.Builder.withParameter" }
+    }
+  ],
+  "crypto_entry_points": [
+    {
+      "function_key": "org.example.(Facade).encrypt#1",
+      "function_name": "org.example.Facade.encrypt",
+      "display_symbol": "org.example.Facade.encrypt",
+      "reachable_findings": [{ "finding_id": "abc123", "chain_depth": 3, "finding_graph_ref": "abc123" }],
+      "reachable_supporting_calls": [{ "supporting_id": "cfg123", "chain_depth": 2 }]
     }
   ],
   "crypto_annotations": [

@@ -124,6 +124,8 @@ func fragmentCryptoCallFromModel(cc *graphfrag.CryptoCall) *graphfrag.GraphFragm
 		CanonicalSignature: cc.CanonicalSignature,
 		ReturnType:         cc.ReturnType,
 		ParameterTypes:     cc.ParameterTypes,
+		DisplaySymbol:      cc.DisplaySymbol,
+		Aliases:            append([]string(nil), cc.Aliases...),
 		Line:               cc.Line,
 	}
 	for i := range cc.Parameters {

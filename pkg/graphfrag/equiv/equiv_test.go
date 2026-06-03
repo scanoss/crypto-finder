@@ -1,7 +1,7 @@
 // Copyright (C) 2026 SCANOSS.COM
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Package equiv provides a semantic diff tool for schema-5.x callgraph exports.
+// Package equiv provides a semantic diff tool for schema-6.0 callgraph exports.
 // Tests verify all five table-driven scenarios from the SDD spec:
 //
 //	(a) identical A,B -> no divergences
@@ -52,7 +52,7 @@ func findingGraph(findingID string, chains ...[]ExportChainNodeJSON) ExportFindi
 
 func export(graphs ...ExportFindingGraphJSON) CallgraphExportJSON {
 	return CallgraphExportJSON{
-		SchemaVersion: "5.3",
+		SchemaVersion: "6.0",
 		FindingGraphs: graphs,
 	}
 }
@@ -328,15 +328,15 @@ func TestCompare_ExplicitIgnoreFields(t *testing.T) {
 	}
 }
 
-// TestCompare_EntryPointIndexConsistency verifies that B's entry_point_index is
+// TestCompare_CryptoEntryPointsConsistency verifies that B's crypto_entry_points is
 // checked against B's surviving chains.
-func TestCompare_EntryPointIndexConsistency(t *testing.T) {
+func TestCompare_CryptoEntryPointsConsistency(t *testing.T) {
 	nodeA := node("com.acme.App.entry", "com.acme.App.entry(): void")
 	nodeB := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
 
-	// B has an entry_point_index that references a finding not present in any chain.
-	phantom := ExportEntryPointJSON{
-		Function:           "com.acme.App.phantom",
+	// B has an crypto_entry_points that references a finding not present in any chain.
+	phantom := ExportCryptoEntryPointJSON{
+		FunctionName:       "com.acme.App.phantom",
 		CanonicalSignature: "com.acme.App.phantom(): void",
 		ReachableFindings: []ExportReachableFindingJSON{
 			{FindingID: "find-ghost", ChainDepth: 1},
@@ -345,11 +345,11 @@ func TestCompare_EntryPointIndexConsistency(t *testing.T) {
 
 	a := export(findingGraph("find-008", chain(nodeA, nodeB)))
 	b := CallgraphExportJSON{
-		SchemaVersion: "5.3",
+		SchemaVersion: "6.0",
 		FindingGraphs: []ExportFindingGraphJSON{
 			findingGraph("find-008", chain(nodeA, nodeB)),
 		},
-		EntryPointIndex: []ExportEntryPointJSON{phantom},
+		CryptoEntryPoints: []ExportCryptoEntryPointJSON{phantom},
 	}
 
 	report := Compare(a, b, nil, Options{})

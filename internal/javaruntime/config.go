@@ -12,8 +12,8 @@ import (
 const (
 	// AutoMajor uses the ambient JAVA_HOME instead of requiring an explicit JDK major.
 	AutoMajor = "auto"
-	// DefaultMiningMajor is the default JDK major for upstream mining and API retrieval.
-	DefaultMiningMajor = "21"
+	// DefaultJavaMajor is the default JDK major for Java source and signature analysis.
+	DefaultJavaMajor = "21"
 )
 
 const cacheKeyAuto = "jdk-auto"

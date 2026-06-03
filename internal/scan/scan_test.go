@@ -339,8 +339,8 @@ func TestExportCallGraph(t *testing.T) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("invalid json output: %v", err)
 		}
-		if payload.SchemaVersion != "5.3" {
-			t.Fatalf("schema_version = %q, want 5.3", payload.SchemaVersion)
+		if payload.SchemaVersion != "6.0" {
+			t.Fatalf("schema_version = %q, want 6.0", payload.SchemaVersion)
 		}
 		if len(payload.FindingGraphs) != 1 {
 			t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
@@ -540,7 +540,10 @@ func TestExportCallGraph_NonCallMatchedOperationOmitsCryptoCall(t *testing.T) {
 			CryptographicAssets: []entities.CryptographicAsset{{
 				StartLine: 12,
 				EndLine:   12,
-				Match:     "X509Certificate cert = Assert.notNull(chain.get(0), \"The first X509Certificate cannot be null.\");",
+				// Match is a bare type reference (no parentheses) so that
+				// inferMatchedOperationKind classifies this as "type_usage"
+				// from source text alone (api-free, per position-based-anchoring spec).
+				Match:     "X509Certificate",
 				Rules:     []entities.RuleInfo{{ID: "java.jca.certificate.x509.usage", Message: "X509 usage", Severity: "INFO"}},
 				Status:    "pending",
 				Metadata:  map[string]string{"api": "X509Certificate"},
@@ -1834,7 +1837,7 @@ func TestValidateFlags(t *testing.T) {
 	}
 }
 
-func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
+func TestExportCallGraph_CryptoEntryPointsBuiltFromChains(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -1956,18 +1959,18 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 		t.Fatalf("json: %v", err)
 	}
 
-	if payload.SchemaVersion != "5.3" {
-		t.Fatalf("schema_version = %q, want 5.3", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.0" {
+		t.Fatalf("schema_version = %q, want 6.0", payload.SchemaVersion)
 	}
 
-	if len(payload.EntryPointIndex) == 0 {
-		t.Fatal("entry_point_index is empty, expected entry points")
+	if len(payload.CryptoEntryPoints) == 0 {
+		t.Fatal("crypto_entry_points is empty, expected entry points")
 	}
 
 	// Build a lookup for assertions
-	epMap := make(map[string]callGraphEntryPoint)
-	for _, ep := range payload.EntryPointIndex {
-		epMap[ep.Function] = ep
+	epMap := make(map[string]callGraphCryptoEntryPoint)
+	for _, ep := range payload.CryptoEntryPoints {
+		epMap[ep.FunctionName] = ep
 	}
 
 	// Controller should be an entry point reaching both findings
@@ -2032,7 +2035,7 @@ func TestExportCallGraph_EntryPointIndexBuiltFromChains(t *testing.T) {
 	}
 }
 
-func TestExportCallGraph_EntryPointIndexPreservesOverloadedFunctions(t *testing.T) {
+func TestExportCallGraph_CryptoEntryPointsPreservesOverloadedFunctions(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -2132,9 +2135,9 @@ func TestExportCallGraph_EntryPointIndexPreservesOverloadedFunctions(t *testing.
 		t.Fatalf("json: %v", err)
 	}
 
-	var overloaded []callGraphEntryPoint
-	for _, ep := range payload.EntryPointIndex {
-		if ep.Function == "com.app.Service.process" {
+	var overloaded []callGraphCryptoEntryPoint
+	for _, ep := range payload.CryptoEntryPoints {
+		if ep.FunctionName == "com.app.Service.process" {
 			overloaded = append(overloaded, ep)
 		}
 	}
@@ -2239,7 +2242,7 @@ func TestExportCallGraph_NormalizesExternalConstructorReturnType(t *testing.T) {
 	}
 }
 
-func TestExportCallGraph_EntryPointIndexEmptyWhenNoChains(t *testing.T) {
+func TestExportCallGraph_CryptoEntryPointsEmptyWhenNoChains(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -2286,12 +2289,12 @@ func TestExportCallGraph_EntryPointIndexEmptyWhenNoChains(t *testing.T) {
 		t.Fatalf("json: %v", err)
 	}
 
-	if len(payload.EntryPointIndex) != 0 {
-		t.Fatalf("entry_point_index should be empty for unresolved findings, got %d entries", len(payload.EntryPointIndex))
+	if len(payload.CryptoEntryPoints) != 0 {
+		t.Fatalf("crypto_entry_points should be empty for unresolved findings, got %d entries", len(payload.CryptoEntryPoints))
 	}
 }
 
-func keys(m map[string]callGraphEntryPoint) []string {
+func keys(m map[string]callGraphCryptoEntryPoint) []string {
 	result := make([]string, 0, len(m))
 	for k := range m {
 		result = append(result, k)

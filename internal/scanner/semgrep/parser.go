@@ -152,7 +152,7 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 	// supplied rules target any language present in the scanned files —
 	// e.g., a Java ruleset run against a Kotlin-only artifact. Treat this
 	// as a cleanly empty result (zero findings) instead of a hard failure
-	// so the caller doesn't fail an entire mining job over a language gap.
+	// so the caller doesn't fail an entire scan over a language gap.
 	if isNoApplicableRulesOnly(parsedOutput.Errors) {
 		log.Warn().
 			Int("exit_code", exitCode).

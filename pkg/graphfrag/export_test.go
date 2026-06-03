@@ -187,10 +187,10 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_2 verifies the schema version constant has been bumped.
-func TestSchemaVersion_Is_1_2(t *testing.T) {
+// TestSchemaVersion_Is_1_3 verifies the schema version constant has been bumped.
+func TestSchemaVersion_Is_1_3(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.2" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.2", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.3" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.3", SchemaVersion)
 	}
 }

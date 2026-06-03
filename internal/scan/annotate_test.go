@@ -85,8 +85,8 @@ type ComponentKey = graphfrag.ComponentKey
 // load-bearing invariant test: a full --export-graph-fragment scan AND a
 // re-annotate against that exported fragment MUST produce byte-identical
 // crypto_annotations (same finding_id, function_key, oid, metadata, match,
-// matched_operation, crypto_call). The serving layer joins assets↔chains by
-// finding_id, so any drift breaks the join.
+// matched_operation, crypto_call). Consumers join assets↔chains by finding_id,
+// so any drift breaks the join.
 func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing.T) {
 	t.Parallel()
 

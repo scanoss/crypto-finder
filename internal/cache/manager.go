@@ -327,8 +327,8 @@ func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *a
 	// request label (which can be "latest" — opaque, indistinguishable across
 	// upstream rule pack updates). Using the manifest version makes the
 	// metadata file a faithful audit trail of what was actually downloaded;
-	// downstream consumers (e.g. crypto-mining-service) stamp it on every
-	// scan result so a re-mine after a rules update is detectable.
+	// downstream consumers can stamp it on scan results so a rules update is
+	// detectable.
 	ttl := m.getTTL(version)
 	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
 	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
