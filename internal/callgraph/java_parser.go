@@ -1322,14 +1322,131 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		}
 	}
 
+	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
 		Callee:          callee,
+		ReceiverVar:     receiverVarName(object, varTypes, varOrigins),
+		AssignedVar:     assignedVar,
+		ChainID:         chainID,
 		Raw:             raw,
 		FilePath:        filePath,
 		Line:            line,
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
+}
+
+// receiverVarName returns the receiver as a local-variable name when the method
+// invocation's receiver is a plain identifier bound to a known variable or
+// parameter (e.g. `digest` in `digest.update(...)`). It deliberately returns ""
+// for class receivers such as `Cipher` in `Cipher.getInstance(...)` so that the
+// object-lifecycle derivation never attributes a static call to a crypto object.
+func receiverVarName(object string, varTypes map[string]string, varOrigins map[string]varOrigin) string {
+	if !isSimpleJavaIdentifier(object) {
+		return ""
+	}
+	if _, ok := varTypes[object]; ok {
+		return object
+	}
+	if _, ok := varOrigins[object]; ok {
+		return object
+	}
+	return ""
+}
+
+// isSimpleJavaIdentifier reports whether expr is a single Java identifier (no
+// dots, calls, or operators).
+func isSimpleJavaIdentifier(expr string) bool {
+	if expr == "" {
+		return false
+	}
+	for i, r := range expr {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_', r == '$':
+			continue
+		case i > 0 && r >= '0' && r <= '9':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// callChainContext derives, for a method-invocation or object-creation node, the
+// fluent-chain grouping id and the variable its result is assigned to.
+//
+//   - ChainID is non-empty only when the node participates in a multi-link fluent
+//     chain such as `Password.hash(p).addRandomSalt().withBcrypt()`; every link of
+//     the chain shares the chain root's byte offset.
+//   - AssignedVar is populated only on the chain root (the outermost call), and
+//     only when that root is the right-hand side of a variable declaration or
+//     assignment (e.g. `Hash hash = ...withBcrypt()` → "hash").
+func callChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
+	root := chainRootNode(node)
+	if root != node {
+		// Inner link of a chain: share the root's id, no assignment.
+		return fmt.Sprintf("%d", root.StartByte()), ""
+	}
+	if isCallNode(node.ChildByFieldName("object")) {
+		// Chain root that has inner links below it.
+		chainID = fmt.Sprintf("%d", root.StartByte())
+	}
+	return chainID, assignedVarFromParent(root, src)
+}
+
+// chainRootNode walks up through enclosing method invocations whose receiver is
+// the current node, returning the outermost call of the fluent chain.
+func chainRootNode(node *sitter.Node) *sitter.Node {
+	root := node
+	for {
+		parent := root.Parent()
+		if parent == nil || parent.Type() != javaNodeMethodInvocation {
+			break
+		}
+		if parent.ChildByFieldName("object") != root {
+			break
+		}
+		root = parent
+	}
+	return root
+}
+
+// isCallNode reports whether the node is a method invocation or object creation.
+func isCallNode(node *sitter.Node) bool {
+	if node == nil {
+		return false
+	}
+	t := node.Type()
+	return t == javaNodeMethodInvocation || t == javaNodeObjectCreation
+}
+
+// assignedVarFromParent returns the local-variable name a call result is bound
+// to when the call is the initializer of a variable declarator or the right side
+// of a simple assignment; otherwise "".
+func assignedVarFromParent(node *sitter.Node, src []byte) string {
+	parent := node.Parent()
+	if parent == nil {
+		return ""
+	}
+	switch parent.Type() {
+	case "variable_declarator":
+		for i := 0; i < int(parent.ChildCount()); i++ {
+			child := parent.Child(i)
+			if child.Type() == javaNodeIdentifier {
+				return child.Content(src)
+			}
+		}
+	case "assignment_expression":
+		if parent.ChildByFieldName("right") != node {
+			return ""
+		}
+		left := parent.ChildByFieldName("left")
+		if left != nil && left.Type() == javaNodeIdentifier {
+			return strings.TrimSpace(left.Content(src))
+		}
+	}
+	return ""
 }
 
 // objectCreationTypeName extracts the constructed type's name from an
@@ -1407,8 +1524,11 @@ func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath
 	args := p.extractJavaCallArguments(node, src)
 	callee := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, len(args)), analysis, currentClass, nil)
 
+	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
 		Callee:          callee,
+		AssignedVar:     assignedVar,
+		ChainID:         chainID,
 		Raw:             "new " + typeName,
 		FilePath:        filePath,
 		Line:            line,

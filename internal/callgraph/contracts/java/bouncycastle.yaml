@@ -1,0 +1,64 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: bouncycastle
+  coordinates:
+    - "org.bouncycastle:bcprov-jdk18on"
+    - "org.bouncycastle:bcprov-jdk15on"
+  version_range: ">=1.50,<2.0"
+  description: "Bouncy Castle lightweight cryptography API contracts"
+
+contracts:
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.<init>
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.generators.ECKeyPairGenerator
+      confidence: high
+
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.generateKeyPair
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.AsymmetricCipherKeyPair
+      confidence: high
+
+  - method: org.bouncycastle.crypto.AsymmetricCipherKeyPair.getPublic
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.CipherParameters
+      confidence: high
+
+  - method: org.bouncycastle.crypto.AsymmetricCipherKeyPair.getPrivate
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.CipherParameters
+      confidence: high
+
+  - method: org.bouncycastle.crypto.params.ECPrivateKeyParameters.<init>
+    arity: 2
+    return:
+      type: org.bouncycastle.crypto.params.ECPrivateKeyParameters
+      confidence: high
+
+  - method: org.bouncycastle.crypto.params.ECPublicKeyParameters.<init>
+    arity: 2
+    return:
+      type: org.bouncycastle.crypto.params.ECPublicKeyParameters
+      confidence: high
+
+hierarchy:
+  org.bouncycastle.crypto.generators.ECKeyPairGenerator:
+    - java.lang.Object
+  org.bouncycastle.crypto.AsymmetricCipherKeyPair:
+    - java.lang.Object
+  org.bouncycastle.crypto.CipherParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.AsymmetricKeyParameter:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ECKeyParameters:
+    - org.bouncycastle.crypto.params.AsymmetricKeyParameter
+  org.bouncycastle.crypto.params.ECPrivateKeyParameters:
+    - org.bouncycastle.crypto.params.ECKeyParameters
+  org.bouncycastle.crypto.params.ECPublicKeyParameters:
+    - org.bouncycastle.crypto.params.ECKeyParameters
+  java.lang.Object: []

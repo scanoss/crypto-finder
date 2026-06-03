@@ -2,11 +2,14 @@ package scan
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +21,7 @@ import (
 )
 
 const (
-	callGraphSchemaVersion   = "5.3"
+	callGraphSchemaVersion   = "6.0"
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -37,6 +40,7 @@ type exportBuildContext struct {
 	containingFunctionCache map[string]cachedContainingFunction
 	callChainCache          map[string][][]callGraphChainNode
 	callChainRemainingUses  map[string]int
+	fragmentEdgeResolutions map[string][]fragmentEdgeResolution
 	userPackages            map[string]bool
 	packageSeparator        string
 }
@@ -47,10 +51,11 @@ type cachedContainingFunction struct {
 }
 
 type callGraphExportV2 struct {
-	SchemaVersion   string                   `json:"schema_version"`
-	ScanMetadata    callGraphExportScanMeta  `json:"scan_metadata"`
-	FindingGraphs   []callGraphExportFinding `json:"finding_graphs"`
-	EntryPointIndex []callGraphEntryPoint    `json:"entry_point_index,omitempty"`
+	SchemaVersion     string                      `json:"schema_version"`
+	ScanMetadata      callGraphExportScanMeta     `json:"scan_metadata"`
+	FindingGraphs     []callGraphExportFinding    `json:"finding_graphs"`
+	SupportingCalls   []callGraphSupportingCall   `json:"supporting_calls,omitempty"`
+	CryptoEntryPoints []callGraphCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
 }
 
 type callGraphExportScanMeta struct {
@@ -88,6 +93,8 @@ type callGraphCalledFunction struct {
 	ReturnTypeRef      *exportTypeRef        `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string              `json:"parameter_types,omitempty"`
 	ParameterTypeRefs  []exportTypeRef       `json:"parameter_type_refs,omitempty"`
+	DisplaySymbol      string                `json:"display_symbol,omitempty"`
+	Aliases            []string              `json:"aliases,omitempty"`
 	Line               int                   `json:"line"`
 	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
 	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
@@ -116,6 +123,8 @@ type callGraphEntryCall struct {
 	ReturnTypeRef      *exportTypeRef        `json:"return_type_ref,omitempty"`
 	ParameterTypes     []string              `json:"parameter_types,omitempty"`
 	ParameterTypeRefs  []exportTypeRef       `json:"parameter_type_refs,omitempty"`
+	DisplaySymbol      string                `json:"display_symbol,omitempty"`
+	Aliases            []string              `json:"aliases,omitempty"`
 	FilePath           string                `json:"file_path"`
 	Line               int                   `json:"line"`
 	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
@@ -157,6 +166,7 @@ type exportSourceLocation struct {
 }
 
 type callGraphChainNode struct {
+	FunctionKey        string                      `json:"function_key,omitempty"`
 	FunctionName       string                      `json:"function_name"`
 	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
 	ReturnType         string                      `json:"return_type,omitempty"`
@@ -165,6 +175,8 @@ type callGraphChainNode struct {
 	ParameterTypeRefs  []exportTypeRef             `json:"parameter_type_refs,omitempty"`
 	Visibility         string                      `json:"visibility,omitempty"`
 	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
+	DisplaySymbol      string                      `json:"display_symbol,omitempty"`
+	Aliases            []string                    `json:"aliases,omitempty"`
 	FilePath           string                      `json:"file_path"`
 	StartLine          int                         `json:"start_line,omitempty"`
 	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
@@ -173,18 +185,22 @@ type callGraphChainNode struct {
 	InferredReturn     *exportInferredReturn       `json:"inferred_return,omitempty"`
 }
 
-type callGraphEntryPoint struct {
-	Function           string                      `json:"function"`
-	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
-	Class              string                      `json:"class,omitempty"`
-	Method             string                      `json:"method"`
-	ReturnType         string                      `json:"return_type,omitempty"`
-	ReturnTypeRef      *exportTypeRef              `json:"return_type_ref,omitempty"`
-	ParameterTypes     []string                    `json:"parameter_types,omitempty"`
-	ParameterTypeRefs  []exportTypeRef             `json:"parameter_type_refs,omitempty"`
-	Visibility         string                      `json:"visibility,omitempty"`
-	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
-	ReachableFindings  []callGraphReachableFinding `json:"reachable_findings"`
+type callGraphCryptoEntryPoint struct {
+	FunctionKey              string                             `json:"function_key"`
+	FunctionName             string                             `json:"function_name,omitempty"`
+	CanonicalSignature       string                             `json:"canonical_signature,omitempty"`
+	Class                    string                             `json:"class,omitempty"`
+	Method                   string                             `json:"method"`
+	ReturnType               string                             `json:"return_type,omitempty"`
+	ReturnTypeRef            *exportTypeRef                     `json:"return_type_ref,omitempty"`
+	ParameterTypes           []string                           `json:"parameter_types,omitempty"`
+	ParameterTypeRefs        []exportTypeRef                    `json:"parameter_type_refs,omitempty"`
+	Visibility               string                             `json:"visibility,omitempty"`
+	OwnerVisibility          string                             `json:"owner_visibility,omitempty"`
+	DisplaySymbol            string                             `json:"display_symbol,omitempty"`
+	Aliases                  []string                           `json:"aliases,omitempty"`
+	ReachableFindings        []callGraphReachableFinding        `json:"reachable_findings,omitempty"`
+	ReachableSupportingCalls []callGraphReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
 }
 
 type callGraphReachableFinding struct {
@@ -192,6 +208,27 @@ type callGraphReachableFinding struct {
 	MatchedOperation *callGraphMatchedOperation `json:"matched_operation"`
 	ChainDepth       int                        `json:"chain_depth"`
 	FindingGraphRef  string                     `json:"finding_graph_ref"`
+}
+
+type callGraphReachableSupportingCall struct {
+	SupportingID      string `json:"supporting_id"`
+	ChainDepth        int    `json:"chain_depth"`
+	SupportingCallRef string `json:"supporting_call_ref,omitempty"`
+}
+
+type callGraphSupportingCall struct {
+	SupportingID       string                     `json:"supporting_id"`
+	FunctionKey        string                     `json:"function_key,omitempty"`
+	FunctionName       string                     `json:"function_name,omitempty"`
+	CanonicalSignature string                     `json:"canonical_signature,omitempty"`
+	DisplaySymbol      string                     `json:"display_symbol,omitempty"`
+	Aliases            []string                   `json:"aliases,omitempty"`
+	Category           string                     `json:"category,omitempty"`
+	FilePath           string                     `json:"file_path,omitempty"`
+	StartLine          int                        `json:"start_line,omitempty"`
+	EndLine            int                        `json:"end_line,omitempty"`
+	MatchedOperation   *callGraphMatchedOperation `json:"matched_operation,omitempty"`
+	SupportingCall     *callGraphCalledFunction   `json:"supporting_call,omitempty"`
 }
 
 type exportDependencyRoot struct {
@@ -306,7 +343,16 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 					Int("total", totalAssets).
 					Msg("Building finding graph")
 			}
+			if isSupportingCryptoAsset(asset) {
+				// Legacy rule-tagged supporting sentinel: it is neither a finding
+				// nor an independent entry. Supporting calls are now derived from
+				// the call graph (see deriveSupportingCallsForFinding), so we drop
+				// it here to keep the findings clean during the rule transition.
+				processedAssets++
+				continue
+			}
 			out.FindingGraphs = append(out.FindingGraphs, buildFindingGraph(ctx, finding, asset))
+			out.SupportingCalls = append(out.SupportingCalls, deriveSupportingCallsForFinding(ctx, finding, asset)...)
 			processedAssets++
 			if processedAssets%callGraphExportProgress == 0 || processedAssets == totalAssets {
 				log.Info().
@@ -322,18 +368,25 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		return out.FindingGraphs[i].FindingID < out.FindingGraphs[j].FindingID
 	})
 
-	out.EntryPointIndex = buildEntryPointIndex(out.FindingGraphs)
+	out.SupportingCalls = dedupSupportingCalls(out.SupportingCalls)
+	sort.SliceStable(out.SupportingCalls, func(i, j int) bool {
+		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
+	})
+	out.CryptoEntryPoints = buildCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 
 	return out
 }
 
-// buildEntryPointIndex creates an O(1) lookup from function name to reachable
+// buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
 // crypto operations. Every function that appears in any call chain is a
 // potential entry point — external code might call any of them.
-func buildEntryPointIndex(findingGraphs []callGraphExportFinding) []callGraphEntryPoint {
+func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
 	index := make(map[string]*entryPointData)
 	for i := range findingGraphs {
 		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
+	}
+	for i := range supportingCalls {
+		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
 	return flattenEntryPointIndex(index)
 }
@@ -355,6 +408,7 @@ type entryPointFindingRef struct {
 }
 
 type entryPointData struct {
+	functionKey        string
 	function           string
 	canonicalSignature string
 	class              string
@@ -365,7 +419,10 @@ type entryPointData struct {
 	parameterTypeRefs  []exportTypeRef
 	visibility         string
 	ownerVisibility    string
+	displaySymbol      string
+	aliases            []string
 	findings           map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
+	supporting         map[string]callGraphReachableSupportingCall
 }
 
 func addFindingGraphToEntryPointIndex(index map[string]*entryPointData, fg *callGraphExportFinding) {
@@ -391,7 +448,10 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 }
 
 func ensureEntryPointData(index map[string]*entryPointData, node *callGraphChainNode) *entryPointData {
-	key := node.CanonicalSignature
+	key := node.FunctionKey
+	if key == "" {
+		key = node.CanonicalSignature
+	}
 	if key == "" {
 		key = node.FunctionName
 	}
@@ -402,6 +462,7 @@ func ensureEntryPointData(index map[string]*entryPointData, node *callGraphChain
 
 	class, method := splitFunctionName(node.FunctionName)
 	ep := &entryPointData{
+		functionKey:        key,
 		function:           node.FunctionName,
 		canonicalSignature: node.CanonicalSignature,
 		class:              class,
@@ -412,7 +473,10 @@ func ensureEntryPointData(index map[string]*entryPointData, node *callGraphChain
 		parameterTypeRefs:  cloneExportTypeRefs(node.ParameterTypeRefs),
 		visibility:         node.Visibility,
 		ownerVisibility:    node.OwnerVisibility,
+		displaySymbol:      node.DisplaySymbol,
+		aliases:            cloneStringSlice(node.Aliases),
 		findings:           make(map[string]entryPointFindingRef),
+		supporting:         make(map[string]callGraphReachableSupportingCall),
 	}
 	index[key] = ep
 	return ep
@@ -443,6 +507,12 @@ func mergeEntryPointData(ep *entryPointData, node *callGraphChainNode) {
 	if ep.ownerVisibility == "" {
 		ep.ownerVisibility = node.OwnerVisibility
 	}
+	if ep.displaySymbol == "" {
+		ep.displaySymbol = node.DisplaySymbol
+	}
+	if len(ep.aliases) == 0 {
+		ep.aliases = cloneStringSlice(node.Aliases)
+	}
 }
 
 func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, depth int) {
@@ -462,27 +532,79 @@ func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, dep
 	}
 }
 
-func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphEntryPoint {
-	result := make([]callGraphEntryPoint, 0, len(index))
+func addSupportingCallToEntryPointIndex(index map[string]*entryPointData, support callGraphSupportingCall) {
+	key := support.FunctionKey
+	if key == "" {
+		key = support.CanonicalSignature
+	}
+	if key == "" {
+		key = support.FunctionName
+	}
+	if key == "" || support.SupportingID == "" {
+		return
+	}
+	ep := index[key]
+	if ep == nil {
+		class, method := splitFunctionName(support.FunctionName)
+		ep = &entryPointData{
+			functionKey:        key,
+			function:           support.FunctionName,
+			canonicalSignature: support.CanonicalSignature,
+			class:              class,
+			method:             method,
+			displaySymbol:      support.DisplaySymbol,
+			aliases:            cloneStringSlice(support.Aliases),
+			findings:           make(map[string]entryPointFindingRef),
+			supporting:         make(map[string]callGraphReachableSupportingCall),
+		}
+		index[key] = ep
+	}
+	ep.supporting[support.SupportingID] = callGraphReachableSupportingCall{
+		SupportingID:      support.SupportingID,
+		ChainDepth:        1,
+		SupportingCallRef: support.SupportingID,
+	}
+}
+
+func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoEntryPoint {
+	result := make([]callGraphCryptoEntryPoint, 0, len(index))
 	for _, ep := range index {
-		result = append(result, callGraphEntryPoint{
-			Function:           ep.function,
-			CanonicalSignature: ep.canonicalSignature,
-			Class:              ep.class,
-			Method:             ep.method,
-			ReturnType:         ep.returnType,
-			ReturnTypeRef:      cloneExportTypeRef(ep.returnTypeRef),
-			ParameterTypes:     cloneStringSlice(ep.parameterTypes),
-			ParameterTypeRefs:  cloneExportTypeRefs(ep.parameterTypeRefs),
-			Visibility:         ep.visibility,
-			OwnerVisibility:    ep.ownerVisibility,
-			ReachableFindings:  flattenReachableFindings(ep.findings),
+		result = append(result, callGraphCryptoEntryPoint{
+			FunctionKey:              ep.functionKey,
+			FunctionName:             ep.function,
+			CanonicalSignature:       ep.canonicalSignature,
+			Class:                    ep.class,
+			Method:                   ep.method,
+			ReturnType:               ep.returnType,
+			ReturnTypeRef:            cloneExportTypeRef(ep.returnTypeRef),
+			ParameterTypes:           cloneStringSlice(ep.parameterTypes),
+			ParameterTypeRefs:        cloneExportTypeRefs(ep.parameterTypeRefs),
+			Visibility:               ep.visibility,
+			OwnerVisibility:          ep.ownerVisibility,
+			DisplaySymbol:            ep.displaySymbol,
+			Aliases:                  cloneStringSlice(ep.aliases),
+			ReachableFindings:        flattenReachableFindings(ep.findings),
+			ReachableSupportingCalls: flattenReachableSupportingCalls(ep.supporting),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Function < result[j].Function
+		return result[i].FunctionKey < result[j].FunctionKey
 	})
 	return result
+}
+
+func flattenReachableSupportingCalls(values map[string]callGraphReachableSupportingCall) []callGraphReachableSupportingCall {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]callGraphReachableSupportingCall, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SupportingID < out[j].SupportingID
+	})
+	return out
 }
 
 func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGraphReachableFinding {
@@ -523,6 +645,7 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 		containingFunctionCache: make(map[string]cachedContainingFunction),
 		callChainCache:          make(map[string][][]callGraphChainNode),
 		callChainRemainingUses:  make(map[string]int),
+		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
 		userPackages:            exportUserPackages(result),
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
 	}
@@ -589,6 +712,119 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	return fg
+}
+
+// deriveSupportingCallsForFinding recovers a finding's supporting calls from the
+// call graph rather than from rule metadata. It locates the finding's terminal
+// crypto call, enumerates the lifecycle calls of the crypto object it identifies
+// (see deriveObjectLifecycleCalls), and renders each as a supporting-call entry.
+func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	if containingFn == nil {
+		return nil
+	}
+	matchedOperation := buildMatchedOperation(asset)
+	if matchedOperation == nil || matchedOperation.Kind != matchedOperationCall {
+		return nil
+	}
+	terminal := findCryptoCallNode(ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
+	if terminal == nil {
+		return nil
+	}
+	lifecycle := deriveObjectLifecycleCalls(containingFn, terminal)
+	out := make([]callGraphSupportingCall, 0, len(lifecycle))
+	for _, c := range lifecycle {
+		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
+	}
+	return out
+}
+
+// buildDerivedSupportingCall renders a single call-graph FunctionCall as a
+// supporting-call entry, carrying the call's resolved (or raw) symbol, line, and
+// argument data-flow. Category is intentionally left empty: semantic role
+// classification (config/lifecycle/output) is deferred to a later contract-KB
+// pass and is not inferred structurally here.
+func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, call *callgraph.FunctionCall) callGraphSupportingCall {
+	sourcePath := normalizeExportPath(ctx, call.FilePath).FilePath
+	meta := buildExportFunctionMetadata(ctx.graph, containingFn.ID, containingFn)
+	support := callGraphSupportingCall{
+		SupportingID:       supportingCallIDFromCall(sourcePath, call),
+		FunctionKey:        containingFn.ID.String(),
+		FunctionName:       meta.FunctionName,
+		CanonicalSignature: meta.CanonicalSignature,
+		DisplaySymbol:      meta.DisplaySymbol,
+		Aliases:            cloneStringSlice(meta.Aliases),
+		FilePath:           sourcePath,
+		StartLine:          call.Line,
+		EndLine:            call.Line,
+		MatchedOperation:   matchedOperationFromCall(call),
+	}
+
+	callee := ctx.graph.Functions[call.Callee.String()]
+	sc := &callGraphCalledFunction{
+		FunctionName: fullFunctionName(call.Callee),
+		Line:         call.Line,
+		Parameters:   mergeCallParameters(ctx, &call.Callee, callee, call.Arguments, call.ArgumentSources, sourcePath, call.Line),
+	}
+	applyExportFunctionMetadataToCalledFunction(sc, buildExportFunctionMetadata(ctx.graph, call.Callee, callee))
+	support.SupportingCall = sc
+	if support.MatchedOperation != nil && sc.FunctionName != "" {
+		support.MatchedOperation.Symbol = sc.FunctionName
+	}
+	return support
+}
+
+// matchedOperationFromCall builds a matched-operation descriptor for a derived
+// supporting call. Library-only calls that the graph could not resolve to a
+// fully-qualified target still surface via their source-level expression (Raw),
+// preserving completeness of the reported call list.
+func matchedOperationFromCall(call *callgraph.FunctionCall) *callGraphMatchedOperation {
+	symbol := fullFunctionName(call.Callee)
+	return &callGraphMatchedOperation{
+		Kind:       matchedOperationCall,
+		Symbol:     symbol,
+		Expression: call.Raw,
+		Line:       call.Line,
+	}
+}
+
+// supportingCallIDFromCall produces a stable short id for a derived supporting
+// call, mirroring the finding_id scheme (SHA-256(path:line:callee)[:8]).
+func supportingCallIDFromCall(sourcePath string, call *callgraph.FunctionCall) string {
+	input := sourcePath + ":" + strconv.Itoa(call.Line) + ":" + call.Callee.String()
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])[:8]
+}
+
+// dedupSupportingCalls removes duplicate supporting-call entries by SupportingID.
+// The same lifecycle call can be derived from multiple findings that share a
+// crypto object; we keep the first occurrence.
+func dedupSupportingCalls(calls []callGraphSupportingCall) []callGraphSupportingCall {
+	if len(calls) <= 1 {
+		return calls
+	}
+	seen := make(map[string]bool, len(calls))
+	out := make([]callGraphSupportingCall, 0, len(calls))
+	for _, c := range calls {
+		if seen[c.SupportingID] {
+			continue
+		}
+		seen[c.SupportingID] = true
+		out = append(out, c)
+	}
+	return out
+}
+
+func isSupportingCryptoAsset(asset entities.CryptographicAsset) bool {
+	if asset.Metadata == nil {
+		return false
+	}
+	if strings.EqualFold(asset.Metadata["supportingCall"], "true") ||
+		strings.EqualFold(asset.Metadata["supporting_call"], "true") {
+		return true
+	}
+	assetType := strings.TrimSpace(strings.ToLower(asset.Metadata["assetType"]))
+	return assetType == "supporting-call" || assetType == "supporting_call"
 }
 
 func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedOperation {
@@ -664,20 +900,22 @@ func looksLikeInvocationExpression(expression string) bool {
 
 // findCryptoCall identifies the function call within the containing function that
 // corresponds to the crypto finding, matched by the finding's line range.
-func findCryptoCall(
-	ctx *exportBuildContext,
+// findCryptoCallNode selects the FunctionCall within the containing function
+// that corresponds to the crypto finding, matched by the finding's line range.
+// When multiple calls share a line (fluent chains), it prefers the resolved call
+// that best matches the finding's declared api. It is the structural anchor both
+// for building the finding's crypto-call display and for deriving the crypto
+// object's lifecycle/supporting calls.
+func findCryptoCallNode(
 	graph *callgraph.CallGraph,
 	containingFn *callgraph.FunctionDecl,
 	asset entities.CryptographicAsset,
 	startLine, endLine int,
-) *callGraphCalledFunction {
+) *callgraph.FunctionCall {
 	if containingFn == nil {
 		return nil
 	}
 
-	// Find the call whose line falls within the finding's line range.
-	// When multiple calls share the same line (fluent chains), prefer the one
-	// that's resolved (has a class_name in the graph) and has parameters.
 	var bestCall *callgraph.FunctionCall
 	bestScore := -1
 	for i := range containingFn.Calls {
@@ -701,7 +939,17 @@ func findCryptoCall(
 			bestCall = c
 		}
 	}
+	return bestCall
+}
 
+func findCryptoCall(
+	ctx *exportBuildContext,
+	graph *callgraph.CallGraph,
+	containingFn *callgraph.FunctionDecl,
+	asset entities.CryptographicAsset,
+	startLine, endLine int,
+) *callGraphCalledFunction {
+	bestCall := findCryptoCallNode(graph, containingFn, asset, startLine, endLine)
 	if bestCall == nil {
 		return nil
 	}
@@ -1124,7 +1372,7 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 	// In standalone mode (no dependencies), return nil so the tracer
 	// traverses call chains to graph roots instead of stopping at the
 	// first root-module function. This produces deeper chains needed
-	// for entry_point_index: e.g., HttpClientBuilder.build → ... →
+	// for crypto_entry_points: e.g., HttpClientBuilder.build → ... →
 	// SSLContext.getInstance (depth 5) instead of just depth 1.
 	if len(result.Dependencies) == 0 {
 		return nil
@@ -1221,6 +1469,7 @@ func cloneCallGraphChain(chain []callGraphChainNode) []callGraphChainNode {
 		cloned[i].ReturnTypeRef = cloneExportTypeRef(chain[i].ReturnTypeRef)
 		cloned[i].ParameterTypeRefs = cloneExportTypeRefs(chain[i].ParameterTypeRefs)
 		cloned[i].ParameterTypes = cloneStringSlice(chain[i].ParameterTypes)
+		cloned[i].Aliases = cloneStringSlice(chain[i].Aliases)
 	}
 	return cloned
 }
@@ -1239,6 +1488,7 @@ func cloneEntryCall(call *callGraphEntryCall) *callGraphEntryCall {
 	}
 	cloned := *call
 	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
+	cloned.Aliases = cloneStringSlice(call.Aliases)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
 	cloned.ReturnTypeRef = cloneExportTypeRef(call.ReturnTypeRef)
 	cloned.ParameterTypeRefs = cloneExportTypeRefs(call.ParameterTypeRefs)
@@ -1251,6 +1501,7 @@ func cloneCalledFunction(call *callGraphCalledFunction) *callGraphCalledFunction
 	}
 	cloned := *call
 	cloned.ParameterTypes = cloneStringSlice(call.ParameterTypes)
+	cloned.Aliases = cloneStringSlice(call.Aliases)
 	cloned.Parameters = cloneCallGraphParameters(call.Parameters)
 	cloned.ReturnTypeRef = cloneExportTypeRef(call.ReturnTypeRef)
 	cloned.ParameterTypeRefs = cloneExportTypeRefs(call.ParameterTypeRefs)
@@ -1283,6 +1534,7 @@ func buildChainNode(
 	}
 	meta := buildExportFunctionMetadata(ctx.graph, id, fn)
 	return callGraphChainNode{
+		FunctionKey:        id.String(),
 		FunctionName:       meta.FunctionName,
 		CanonicalSignature: meta.CanonicalSignature,
 		ReturnType:         meta.ReturnType,
@@ -1291,6 +1543,8 @@ func buildChainNode(
 		ParameterTypeRefs:  cloneExportTypeRefs(meta.ParameterTypeRefs),
 		Visibility:         meta.Visibility,
 		OwnerVisibility:    meta.OwnerVisibility,
+		DisplaySymbol:      meta.DisplaySymbol,
+		Aliases:            cloneStringSlice(meta.Aliases),
 		FilePath:           location.FilePath,
 		StartLine:          startLine,
 		DependencyInfo:     location.DependencyInfo,
@@ -1477,6 +1731,8 @@ type exportFunctionMetadata struct {
 	ParameterTypeRefs  []exportTypeRef
 	Visibility         string
 	OwnerVisibility    string
+	DisplaySymbol      string
+	Aliases            []string
 	InferredReturn     *exportInferredReturn
 }
 
@@ -1511,6 +1767,7 @@ func buildExportFunctionMetadata(
 
 	meta.ReturnType = normalizeExportReturnType(id, meta.ReturnType)
 	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
+	meta.DisplaySymbol, meta.Aliases = exportDisplaySymbolAndAliases(id, meta.FunctionName)
 
 	// Populate inferred_return when the inference pass produced a result.
 	// Two suppression rules apply:
@@ -1746,6 +2003,8 @@ func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta expor
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
+	call.DisplaySymbol = meta.DisplaySymbol
+	call.Aliases = cloneStringSlice(meta.Aliases)
 	call.InferredReturn = cloneExportInferredReturn(meta.InferredReturn)
 }
 
@@ -1759,7 +2018,31 @@ func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, 
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
 	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
+	call.DisplaySymbol = meta.DisplaySymbol
+	call.Aliases = cloneStringSlice(meta.Aliases)
 	call.InferredReturn = cloneExportInferredReturn(meta.InferredReturn)
+}
+
+func exportDisplaySymbolAndAliases(id callgraph.FunctionID, functionName string) (string, []string) {
+	display := functionName
+	if callgraph.BaseFunctionName(id.Name) == "<init>" {
+		typeName := sanitizeSymbol(id.Type)
+		if typeName != "" && !strings.Contains(typeName, "(") {
+			simpleName := typeName
+			if dot := strings.LastIndex(simpleName, "."); dot >= 0 {
+				simpleName = simpleName[dot+1:]
+			}
+			if id.Package != "" {
+				display = id.Package + "." + typeName + "." + simpleName
+			} else {
+				display = typeName + "." + simpleName
+			}
+		}
+	}
+	if display == "" || display == functionName {
+		return display, nil
+	}
+	return display, []string{display}
 }
 
 // cloneExportInferredReturn returns a deep copy of an exportInferredReturn,

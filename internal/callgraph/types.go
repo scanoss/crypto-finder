@@ -194,6 +194,17 @@ type FunctionCall struct {
 	// ReceiverVar preserves the original receiver variable name for selector calls
 	// like `cipher.Encrypt()` when static type information is incomplete.
 	ReceiverVar string
+	// AssignedVar is the local variable this call's result is bound to, e.g.
+	// "digest" in `SHA3Digest digest = new SHA3Digest(256)`. Empty when the call
+	// result is not assigned to a variable. For fluent chains only the chain root
+	// (the outermost call) carries AssignedVar. Used to resolve the identity of a
+	// crypto object when deriving its lifecycle/supporting calls.
+	AssignedVar string
+	// ChainID groups the links of a single fluent method chain such as
+	// `Password.hash(p).addRandomSalt().withBcrypt()`. All invocations belonging
+	// to the same chain share a non-empty ChainID; standalone calls leave it
+	// empty. Used to enumerate the supporting links of a chain-rooted finding.
+	ChainID string
 	// Raw is the raw call expression text (e.g., "aes.NewCipher")
 	Raw string
 	// FilePath is the file containing this call
@@ -267,9 +278,8 @@ type CallGraph struct {
 	// EdgeResolutions records how each caller->callee call-site/dispatch variant
 	// was resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey, resolution).
 	// An edge with no entry is an exact, directly-resolved source call. Consumers
-	// (the graph fragment export and the mining-service stitcher) use this to
-	// refuse to present over-broad name/arity dispatch guesses as typed
-	// reachability proof.
+	// use this to refuse to present over-broad name/arity dispatch guesses as
+	// typed reachability proof.
 	EdgeResolutions map[string]EdgeResolution
 }
 

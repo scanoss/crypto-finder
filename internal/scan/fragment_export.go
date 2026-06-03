@@ -17,8 +17,8 @@ import (
 
 // The graph-fragment export schema (GraphFragmentExport and friends) lives in
 // the public package github.com/scanoss/crypto-finder/pkg/graphfrag: it is
-// crypto-finder's contract with downstream consumers (the mining service, CI
-// plugins). This file only BUILDS that schema from a callgraph.
+// crypto-finder's contract with downstream consumers. This file only BUILDS
+// that schema from a callgraph.
 
 // ExportGraphFragment writes the dependency scan result's call graph as a
 // graph-fragment export in the requested format.
@@ -83,10 +83,14 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
 
 	out.CryptoAnnotations = buildGraphFragmentCryptoAnnotations(ctx, result)
+	out.SupportingCalls = buildGraphFragmentSupportingCalls(ctx, result)
+	out.CryptoEntryPoints = buildGraphFragmentCryptoEntryPoints(ctx, result)
 	out.ScanMetadata.FunctionCount = len(out.Functions)
 	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
 	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
 	out.ScanMetadata.CryptoOps = len(out.CryptoAnnotations)
+	out.ScanMetadata.SupportingCalls = len(out.SupportingCalls)
+	out.ScanMetadata.CryptoEntryPoints = len(out.CryptoEntryPoints)
 	return out
 }
 
@@ -118,7 +122,7 @@ func addResolvedFragmentEdges(
 		if callerDecl == nil {
 			continue
 		}
-		resolutions := resolveFragmentEdges(graph, callerKey, calleeKey)
+		resolutions := resolveFragmentEdges(ctx, callerKey, calleeKey)
 		for i := range resolutions {
 			res := resolutions[i]
 			edgeKey := callgraph.EdgeResolutionKey(callerKey, calleeKey, res.EdgeResolution)
@@ -299,25 +303,34 @@ type fragmentEdgeResolution struct {
 // call (e.g. a typed re-resolution from the bytecode/type resolver), so it
 // defaults to exact rather than the fail-closed "unknown" — the producer is the
 // authority on resolution quality.
-func resolveFragmentEdges(graph *callgraph.CallGraph, callerKey, calleeKey string) []fragmentEdgeResolution {
-	if graph != nil {
-		prefix := callgraph.EdgeResolutionKeyPrefix(callerKey, calleeKey)
-		keys := make([]string, 0)
-		for key := range graph.EdgeResolutions {
-			if strings.HasPrefix(key, prefix) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		if len(keys) > 0 {
-			out := make([]fragmentEdgeResolution, 0, len(keys))
-			for _, key := range keys {
-				out = append(out, newFragmentEdgeResolution(graph.EdgeResolutions[key]))
-			}
+func resolveFragmentEdges(ctx *exportBuildContext, callerKey, calleeKey string) []fragmentEdgeResolution {
+	if ctx != nil {
+		if out := ctx.fragmentEdgeResolutions[fragmentEdgePairKey(callerKey, calleeKey)]; len(out) > 0 {
 			return out
 		}
 	}
 	return []fragmentEdgeResolution{newFragmentEdgeResolution(callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact})}
+}
+
+func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragmentEdgeResolution {
+	if graph == nil || len(graph.EdgeResolutions) == 0 {
+		return nil
+	}
+	index := make(map[string][]fragmentEdgeResolution)
+	keys := sortedKeys(graph.EdgeResolutions)
+	for _, key := range keys {
+		parts := strings.SplitN(key, "\x00", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		pairKey := fragmentEdgePairKey(parts[0], parts[1])
+		index[pairKey] = append(index[pairKey], newFragmentEdgeResolution(graph.EdgeResolutions[key]))
+	}
+	return index
+}
+
+func fragmentEdgePairKey(callerKey, calleeKey string) string {
+	return callerKey + "\x00" + calleeKey
 }
 
 func newFragmentEdgeResolution(res callgraph.EdgeResolution) fragmentEdgeResolution {
@@ -404,6 +417,8 @@ func buildGraphFragmentFunction(graph *callgraph.CallGraph, id callgraph.Functio
 		ParameterTypes:     meta.ParameterTypes,
 		Visibility:         meta.Visibility,
 		OwnerVisibility:    meta.OwnerVisibility,
+		DisplaySymbol:      meta.DisplaySymbol,
+		Aliases:            cloneStringSlice(meta.Aliases),
 	}
 	if decl != nil {
 		fn.FilePath = decl.FilePath
@@ -421,6 +436,9 @@ func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
+			if isSupportingCryptoAsset(asset) {
+				continue
+			}
 			out = append(out, buildGraphFragmentCryptoAnnotation(ctx, finding, asset))
 		}
 	}
@@ -436,6 +454,215 @@ func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine
 	return out
 }
 
+func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentSupporting {
+	if result == nil || result.Report == nil || result.CallGraph == nil {
+		return nil
+	}
+	var out []graphfrag.GraphFragmentSupporting
+	seen := make(map[string]bool)
+	for _, finding := range result.Report.Findings {
+		for i := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[i]
+			if isSupportingCryptoAsset(asset) {
+				continue
+			}
+			for _, sc := range deriveSupportingCallsForFinding(ctx, finding, asset) {
+				if seen[sc.SupportingID] {
+					continue
+				}
+				seen[sc.SupportingID] = true
+				out = append(out, fragmentSupportingFromInternal(sc))
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SupportingID < out[j].SupportingID
+	})
+	return out
+}
+
+// fragmentSupportingFromInternal maps an internal call-graph supporting-call
+// entry to its graph-fragment representation.
+func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.GraphFragmentSupporting {
+	return graphfrag.GraphFragmentSupporting{
+		SupportingID:       internal.SupportingID,
+		FunctionKey:        internal.FunctionKey,
+		FunctionName:       internal.FunctionName,
+		CanonicalSignature: internal.CanonicalSignature,
+		DisplaySymbol:      internal.DisplaySymbol,
+		Aliases:            cloneStringSlice(internal.Aliases),
+		Category:           internal.Category,
+		FilePath:           internal.FilePath,
+		StartLine:          internal.StartLine,
+		EndLine:            internal.EndLine,
+		MatchedOperation:   fragmentMatchedOperation(internal.MatchedOperation),
+		SupportingCall:     buildGraphFragmentCryptoCall(internal.SupportingCall),
+	}
+}
+
+func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoEntryPoint {
+	if result == nil || result.CallGraph == nil || result.Report == nil {
+		return nil
+	}
+	entries := make(map[string]*graphFragmentEntryPointData)
+	for _, finding := range result.Report.Findings {
+		for i := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[i]
+			if isSupportingCryptoAsset(asset) {
+				continue
+			}
+			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+			chains := buildCallChains(ctx, containingFn, nil)
+			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)
+			for _, sc := range deriveSupportingCallsForFinding(ctx, finding, asset) {
+				addGraphFragmentSupportingReachability(entries, chains, sc.SupportingID)
+			}
+		}
+	}
+	return flattenGraphFragmentEntryPoints(entries)
+}
+
+type graphFragmentEntryPointData struct {
+	functionKey        string
+	functionName       string
+	canonicalSignature string
+	displaySymbol      string
+	aliases            []string
+	returnType         string
+	parameterTypes     []string
+	visibility         string
+	ownerVisibility    string
+	findings           map[string]graphfrag.GraphFragmentReachableFinding
+	supporting         map[string]graphfrag.GraphFragmentReachableSupportingCall
+}
+
+func addGraphFragmentFindingReachability(
+	entries map[string]*graphFragmentEntryPointData,
+	chains [][]callGraphChainNode,
+	findingID string,
+) {
+	if findingID == "" {
+		return
+	}
+	for _, chain := range chains {
+		for pos := range chain {
+			entry := ensureGraphFragmentEntryPoint(entries, &chain[pos])
+			depth := len(chain) - pos
+			existing, ok := entry.findings[findingID]
+			if ok && depth >= existing.ChainDepth {
+				continue
+			}
+			entry.findings[findingID] = graphfrag.GraphFragmentReachableFinding{
+				FindingID:       findingID,
+				ChainDepth:      depth,
+				FindingGraphRef: findingID,
+			}
+		}
+	}
+}
+
+func addGraphFragmentSupportingReachability(
+	entries map[string]*graphFragmentEntryPointData,
+	chains [][]callGraphChainNode,
+	supportingID string,
+) {
+	if supportingID == "" {
+		return
+	}
+	for _, chain := range chains {
+		for pos := range chain {
+			entry := ensureGraphFragmentEntryPoint(entries, &chain[pos])
+			depth := len(chain) - pos
+			existing, ok := entry.supporting[supportingID]
+			if ok && depth >= existing.ChainDepth {
+				continue
+			}
+			entry.supporting[supportingID] = graphfrag.GraphFragmentReachableSupportingCall{
+				SupportingID:      supportingID,
+				ChainDepth:        depth,
+				SupportingCallRef: supportingID,
+			}
+		}
+	}
+}
+
+func ensureGraphFragmentEntryPoint(entries map[string]*graphFragmentEntryPointData, node *callGraphChainNode) *graphFragmentEntryPointData {
+	key := node.FunctionKey
+	if key == "" {
+		key = node.CanonicalSignature
+	}
+	if key == "" {
+		key = node.FunctionName
+	}
+	if entry := entries[key]; entry != nil {
+		return entry
+	}
+	entry := &graphFragmentEntryPointData{
+		functionKey:        key,
+		functionName:       node.FunctionName,
+		canonicalSignature: node.CanonicalSignature,
+		displaySymbol:      node.DisplaySymbol,
+		aliases:            cloneStringSlice(node.Aliases),
+		returnType:         node.ReturnType,
+		parameterTypes:     cloneStringSlice(node.ParameterTypes),
+		visibility:         node.Visibility,
+		ownerVisibility:    node.OwnerVisibility,
+		findings:           make(map[string]graphfrag.GraphFragmentReachableFinding),
+		supporting:         make(map[string]graphfrag.GraphFragmentReachableSupportingCall),
+	}
+	entries[key] = entry
+	return entry
+}
+
+func flattenGraphFragmentEntryPoints(entries map[string]*graphFragmentEntryPointData) []graphfrag.GraphFragmentCryptoEntryPoint {
+	if len(entries) == 0 {
+		return nil
+	}
+	keys := sortedKeys(entries)
+	out := make([]graphfrag.GraphFragmentCryptoEntryPoint, 0, len(keys))
+	for _, key := range keys {
+		entry := entries[key]
+		out = append(out, graphfrag.GraphFragmentCryptoEntryPoint{
+			FunctionKey:              entry.functionKey,
+			FunctionName:             entry.functionName,
+			CanonicalSignature:       entry.canonicalSignature,
+			DisplaySymbol:            entry.displaySymbol,
+			Aliases:                  cloneStringSlice(entry.aliases),
+			ReturnType:               entry.returnType,
+			ParameterTypes:           cloneStringSlice(entry.parameterTypes),
+			Visibility:               entry.visibility,
+			OwnerVisibility:          entry.ownerVisibility,
+			ReachableFindings:        flattenGraphFragmentReachableFindings(entry.findings),
+			ReachableSupportingCalls: flattenGraphFragmentReachableSupporting(entry.supporting),
+		})
+	}
+	return out
+}
+
+func flattenGraphFragmentReachableFindings(values map[string]graphfrag.GraphFragmentReachableFinding) []graphfrag.GraphFragmentReachableFinding {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := sortedKeys(values)
+	out := make([]graphfrag.GraphFragmentReachableFinding, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, values[key])
+	}
+	return out
+}
+
+func flattenGraphFragmentReachableSupporting(values map[string]graphfrag.GraphFragmentReachableSupportingCall) []graphfrag.GraphFragmentReachableSupportingCall {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := sortedKeys(values)
+	out := make([]graphfrag.GraphFragmentReachableSupportingCall, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, values[key])
+	}
+	return out
+}
+
 func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) graphfrag.GraphFragmentCryptoOp {
 	matched := buildMatchedOperation(asset)
 	op := buildBaseGraphFragmentCryptoAnnotation(finding, asset, matched)
@@ -446,6 +673,18 @@ func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entitie
 		attachGraphFragmentCryptoCall(ctx, containingFn, matched, asset, &op)
 	}
 	return op
+}
+
+func fragmentMatchedOperation(op *callGraphMatchedOperation) *graphfrag.GraphFragmentMatchedOp {
+	if op == nil {
+		return nil
+	}
+	return &graphfrag.GraphFragmentMatchedOp{
+		Kind:       op.Kind,
+		Symbol:     op.Symbol,
+		Expression: op.Expression,
+		Line:       op.Line,
+	}
 }
 
 // buildBaseGraphFragmentCryptoAnnotation builds the detection-derived portion of
@@ -528,6 +767,8 @@ func buildGraphFragmentCryptoCall(called *callGraphCalledFunction) *graphfrag.Gr
 		CanonicalSignature: called.CanonicalSignature,
 		ReturnType:         called.ReturnType,
 		ParameterTypes:     append([]string(nil), called.ParameterTypes...),
+		DisplaySymbol:      called.DisplaySymbol,
+		Aliases:            cloneStringSlice(called.Aliases),
 		Line:               called.Line,
 	}
 	for _, p := range called.Parameters {
