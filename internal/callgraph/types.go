@@ -211,6 +211,13 @@ type FunctionCall struct {
 	FilePath string
 	// Line is the line number of the call
 	Line int
+	// StartCol is the 1-based start column (inclusive) of this call expression.
+	// 0 when the parser is not column-aware (non-Java) — triggers line-only fallback.
+	// Converted from tree-sitter 0-based columns at the parser boundary by +1.
+	StartCol int
+	// EndCol is the 1-based end column (exclusive) of this call expression.
+	// 0 when unknown. Mirrors the opengrep/semgrep convention: exclusive end.
+	EndCol int
 	// Arguments are the raw argument expressions passed in this invocation.
 	Arguments []string
 	// ArgumentSources traces where each argument value comes from.

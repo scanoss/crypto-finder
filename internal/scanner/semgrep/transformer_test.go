@@ -17,6 +17,12 @@
 package semgrep
 
 import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -910,4 +916,150 @@ func TestCleanRuleID(t *testing.T) {
 			t.Errorf("cleanRuleID(%q) = %q, want %q", ruleID, got, ruleID)
 		}
 	})
+}
+
+// TestTransformToCryptographicAsset_ColumnThreading verifies that Start.Col and
+// End.Col from a SemgrepResult are preserved on the resulting CryptographicAsset
+// as StartCol / EndCol respectively.
+//
+// Task 1.1 (Strict TDD RED test): must fail until Task 1.2 adds the fields.
+func TestTransformToCryptographicAsset_ColumnThreading(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		startCol   int
+		endCol     int
+		wantStart  int
+		wantEnd    int
+	}{
+		{
+			name:      "non-zero columns are preserved",
+			startCol:  5,
+			endCol:    15,
+			wantStart: 5,
+			wantEnd:   15,
+		},
+		{
+			name:      "zero columns pass through without error",
+			startCol:  0,
+			endCol:    0,
+			wantStart: 0,
+			wantEnd:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &entities.SemgrepResult{
+				CheckID: "java.crypto.sha3",
+				Start:   entities.SemgrepLocation{Line: 7, Col: tt.startCol},
+				End:     entities.SemgrepLocation{Line: 7, Col: tt.endCol},
+				Extra: entities.SemgrepExtra{
+					Lines:    "SHA3Digest digest = new SHA3Digest(256)",
+					Severity: "warning",
+					Metadata: entities.SemgrepMetadata{
+						Crypto: map[string]any{
+							"assetType": "algorithm",
+						},
+					},
+					Metavars: map[string]entities.MetavarInfo{},
+				},
+			}
+
+			asset := transformToCryptographicAsset(result, nil, "")
+
+			if asset.StartCol != tt.wantStart {
+				t.Errorf("StartCol = %d, want %d", asset.StartCol, tt.wantStart)
+			}
+			if asset.EndCol != tt.wantEnd {
+				t.Errorf("EndCol = %d, want %d", asset.EndCol, tt.wantEnd)
+			}
+		})
+	}
+}
+
+// TestOpengrep_EndColConventionPinning pins the opengrep/semgrep column-number
+// convention so that intersection math throughout this change is grounded in a
+// verified, documented contract rather than an assumption.
+//
+// Observed from real opengrep output (parser_test.go fixture):
+//
+//	"start": {"line": 1, "col": 1, "offset": 0}
+//	"end":   {"line": 1, "col": 10, "offset": 9}
+//
+// The 9-byte match starting at byte-offset 0 ends with offset 9 (exclusive).
+// Col 1 is the first column on the line; col 10 is one past the last matched
+// char. Therefore:
+//
+//   - Start.Col is 1-based INCLUSIVE (col 1 == first character of the line).
+//   - End.Col   is 1-based EXCLUSIVE (one past the last matched character).
+//
+// This matches the half-open interval convention used throughout the position-
+// based anchoring design: [StartCol, EndCol) with both values 1-based.
+// No +1 adjustment is needed when storing End.Col on CryptographicAsset.EndCol.
+//
+// TestOpengrep_EndColConventionPinning runs the real opengrep/semgrep binary to
+// PIN the column convention the position-based anchoring relies on: 1-based
+// columns with End.Col exclusive (one past the last matched character). This is
+// deliberately a live run — a hand-built fixture can only prove self-consistency,
+// not what the tool actually emits, and a future tool change to inclusive ends
+// would silently break the half-open intersection math in findCryptoCallNode.
+// Skips when no scanner binary is available (CI parity with the other
+// integration tests).
+func TestOpengrep_EndColConventionPinning(t *testing.T) {
+	t.Parallel()
+
+	bin, err := exec.LookPath("opengrep")
+	if err != nil {
+		if bin, err = exec.LookPath("semgrep"); err != nil {
+			t.Skip("neither opengrep nor semgrep in PATH; skipping column-convention pin")
+		}
+	}
+
+	// `new StringBuilder()` is exactly 19 characters; the pattern matches that
+	// span exactly. If End.Col is exclusive, End.Col - Start.Col == 19; if it were
+	// inclusive it would be 18. That difference is the whole point of the test.
+	const matched = "new StringBuilder()"
+	dir := t.TempDir()
+	target := filepath.Join(dir, "A.java")
+	src := "class A {\n    Object m() { return new StringBuilder(); }\n}\n"
+	if err := os.WriteFile(target, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ruleFile := filepath.Join(dir, "rule.yaml")
+	rule := "rules:\n- id: col-pin\n  languages: [java]\n  message: pin\n  severity: INFO\n  pattern: new StringBuilder()\n"
+	if err := os.WriteFile(ruleFile, []byte(rule), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// opengrep uses a `scan` subcommand and rejects --metrics; semgrep accepts the
+	// flat form with --metrics off. Branch on the binary.
+	var args []string
+	if strings.Contains(filepath.Base(bin), "opengrep") {
+		args = []string{"scan", "--json", "--config", ruleFile, dir}
+	} else {
+		args = []string{"--json", "--metrics", "off", "--config", ruleFile, dir}
+	}
+	out, runErr := exec.CommandContext(context.Background(), bin, args...).Output()
+	if runErr != nil {
+		t.Skipf("%s present but unusable in this environment: %v", bin, runErr)
+	}
+
+	var parsed entities.SemgrepOutput
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Skipf("could not parse %s JSON output (env issue?): %v", bin, err)
+	}
+	if len(parsed.Results) == 0 {
+		t.Skipf("%s produced no results (env issue?)", bin)
+	}
+
+	r := parsed.Results[0]
+	if r.Start.Col < 1 {
+		t.Errorf("Start.Col = %d, want >= 1 (columns must be 1-based)", r.Start.Col)
+	}
+	if span := r.End.Col - r.Start.Col; span != len(matched) {
+		t.Errorf("End.Col(%d) - Start.Col(%d) = %d, want %d (len %q): End.Col must be EXCLUSIVE for the half-open intersection in findCryptoCallNode to be correct",
+			r.End.Col, r.Start.Col, span, len(matched), matched)
+	}
 }

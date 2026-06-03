@@ -38,10 +38,9 @@ type InterimReport struct {
 	Tool ToolInfo `json:"tool"`
 
 	// Rules describes the ruleset that was used for this scan. Downstream
-	// systems (e.g. crypto-mining-service) stamp this on every persisted
-	// result so a re-mine can be triggered when the rules pack changes,
-	// and a finding's provenance is auditable. Empty when no rule source
-	// could supply a version (e.g. ad-hoc local files with no manifest).
+	// systems can stamp this on persisted results so a rules-pack update is
+	// detectable and a finding's provenance is auditable. Empty when no rule
+	// source could supply a version (e.g. ad-hoc local files with no manifest).
 	Rules RulesInfo `json:"rules,omitempty"`
 
 	// Findings contains all detected cryptographic assets grouped by file
@@ -102,6 +101,15 @@ type CryptographicAsset struct {
 
 	// EndLine is the last line number where the asset was detected
 	EndLine int `json:"end_line"`
+
+	// StartCol is the 1-based column of the match start (inclusive). 0 = unknown.
+	// Populated from the scanner's Start.Col field; non-Java/non-column-aware
+	// scanners leave this zero and the system falls back to line-only matching.
+	StartCol int `json:"start_col,omitempty"`
+
+	// EndCol is the 1-based column one past the match end (exclusive). 0 = unknown.
+	// Uses the same convention as opengrep/semgrep: End.Col = start + len(match).
+	EndCol int `json:"end_col,omitempty"`
 
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
@@ -165,6 +173,7 @@ type RuleInfo struct {
 // The key is constructed using asset-type-specific identifying fields:
 //   - algorithm: algorithmName if available, otherwise algorithmFamily + mode + padding, otherwise algorithmFamily
 //   - related-crypto-material: materialType
+//   - supporting-call: api when available, otherwise operation or cryptoFunction
 //   - protocol: protocolType
 //   - certificate: certificateSerialNumber (or location-based fallback when missing)
 //
@@ -178,6 +187,8 @@ func (c *CryptographicAsset) GetKey() string {
 		return c.getAlgorithmKey()
 	case "related-crypto-material":
 		return c.getRelatedCryptoMaterialKey()
+	case "supporting-call", "supporting_call":
+		return c.getSupportingCallKey()
 	case "protocol":
 		return c.getProtocolKey()
 	case "certificate":
@@ -239,6 +250,31 @@ func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
 	}
 
 	return fmt.Sprintf("related-crypto-material:%s%s", materialType, metadataSuffix)
+}
+
+// getSupportingCallKey generates a key for lifecycle/configuration calls that
+// support a crypto finding. Different APIs on the same source line must remain
+// distinct so fluent chains can expose each supporting call separately.
+func (c *CryptographicAsset) getSupportingCallKey() string {
+	api := strings.TrimSpace(c.Metadata["api"])
+	operation := strings.TrimSpace(c.Metadata["operation"])
+	cryptoFunction := strings.TrimSpace(c.Metadata["cryptoFunction"])
+
+	excludeKeys := []string{"api", "operation", "cryptoFunction"}
+	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
+
+	if api != "" {
+		return fmt.Sprintf("supporting-call:%s%s", api, metadataSuffix)
+	}
+	if operation != "" {
+		return fmt.Sprintf("supporting-call:%s%s", operation, metadataSuffix)
+	}
+	if cryptoFunction != "" {
+		return fmt.Sprintf("supporting-call:%s%s", cryptoFunction, metadataSuffix)
+	}
+
+	location := fmt.Sprintf("%d:%d", c.StartLine, c.EndLine)
+	return fmt.Sprintf("supporting-call:location:%s%s", location, metadataSuffix)
 }
 
 // getProtocolKey generates a key for protocol assets using protocolType and optional version.

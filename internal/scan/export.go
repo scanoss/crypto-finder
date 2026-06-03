@@ -833,63 +833,52 @@ func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedO
 		line = asset.EndLine
 	}
 
+	// symbol (metadata.api) is kept as informational CBOM output only — it is
+	// NOT used for kind classification. Kind is derived from source text alone.
 	symbol := strings.TrimSpace(asset.Metadata["api"])
 	expression := strings.TrimSpace(asset.Match)
 
 	return &callGraphMatchedOperation{
-		Kind:       inferMatchedOperationKind(symbol, expression),
+		Kind:       inferMatchedOperationKind(expression),
 		Symbol:     symbol,
 		Expression: expression,
 		Line:       line,
 	}
 }
 
-func inferMatchedOperationKind(symbol, expression string) string {
-	symbol = strings.TrimSpace(symbol)
+// inferMatchedOperationKind classifies a matched operation from the source text
+// of the match expression alone. metadata.api / rule symbol is NOT consulted —
+// it is informational CBOM metadata and must not gate kind classification.
+//
+// Precedence (purely from source text):
+//  1. looksLikeInvocationExpression → "call"  (parentheses present)
+//  2. looksLikeTypeUsageExpression  → "type_usage" (bare identifier/dotted type)
+//  3. default                       → "expression"
+func inferMatchedOperationKind(expression string) string {
 	expression = strings.TrimSpace(expression)
-
-	if symbol != "" {
-		switch {
-		case looksLikeConstructorOperation(symbol, expression):
-			return matchedOperationCall
-		case looksLikeMethodOperation(symbol, expression):
-			return matchedOperationCall
-		case looksLikeTypeUsageOperation(symbol, expression):
-			return "type_usage"
-		default:
-			return "expression"
-		}
-	}
 
 	if looksLikeInvocationExpression(expression) {
 		return matchedOperationCall
 	}
+	if looksLikeTypeUsageExpression(expression) {
+		return "type_usage"
+	}
 	return "expression"
 }
 
-func looksLikeConstructorOperation(symbol, expression string) bool {
-	if symbol == "" || strings.Contains(symbol, ".") {
+// looksLikeTypeUsageExpression reports whether expression is a bare type
+// reference: non-empty, contains no '(' (no invocation), and consists only of
+// identifier and dot characters (e.g. "MessageDigest", "javax.crypto.Cipher").
+func looksLikeTypeUsageExpression(expression string) bool {
+	if expression == "" || strings.Contains(expression, "(") {
 		return false
 	}
-
-	return strings.Contains(expression, "new "+symbol+"(") || strings.Contains(expression, symbol+"(")
-}
-
-func looksLikeMethodOperation(symbol, expression string) bool {
-	if symbol == "" || !strings.Contains(symbol, ".") {
-		return false
+	for _, r := range expression {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '$' || r == '.') {
+			return false
+		}
 	}
-
-	method := symbol[strings.LastIndex(symbol, ".")+1:]
-	return method != "" && strings.Contains(expression, method+"(")
-}
-
-func looksLikeTypeUsageOperation(symbol, expression string) bool {
-	if symbol == "" || strings.Contains(symbol, ".") {
-		return false
-	}
-
-	return strings.Contains(expression, symbol) && !looksLikeConstructorOperation(symbol, expression)
+	return true
 }
 
 func looksLikeInvocationExpression(expression string) bool {
@@ -906,6 +895,29 @@ func looksLikeInvocationExpression(expression string) bool {
 // that best matches the finding's declared api. It is the structural anchor both
 // for building the finding's crypto-call display and for deriving the crypto
 // object's lifecycle/supporting calls.
+//
+// Selection algorithm (position + structure, no api):
+//
+//  1. Candidate set: all calls in containingFn.Calls whose Line falls within
+//     [startLine, endLine].
+//
+//  2. Column filter (when both asset and call have non-zero columns):
+//     keep candidates whose [StartCol, EndCol) intersects [asset.StartCol,
+//     asset.EndCol) using the half-open test:
+//     c.StartCol < asset.EndCol && asset.StartCol < c.EndCol.
+//     If the filter yields 0 matches, use the full line-only set (never worse).
+//
+//  3. Tie-break to chain ROOT among survivors:
+//     a. Prefer candidate with matching ChainID whose AssignedVar != "" (chain root).
+//        If none carries AssignedVar, prefer longest Raw (outermost expression).
+//     b. Among non-chain candidates, prefer resolved callee, then has-arguments,
+//        then has-ArgumentSources.
+//     c. Deterministic final tiebreak: lowest StartCol, then slice order.
+//
+//  4. Column-absent fallback (any side has zero columns): skip step 2, run 1+3.
+//
+// CRITICAL: the returned call MUST be the chain root when a ChainID is present,
+// because deriveObjectLifecycleCalls keys off the root's AssignedVar/ChainID.
 func findCryptoCallNode(
 	graph *callgraph.CallGraph,
 	containingFn *callgraph.FunctionDecl,
@@ -916,30 +928,127 @@ func findCryptoCallNode(
 		return nil
 	}
 
-	var bestCall *callgraph.FunctionCall
-	bestScore := -1
+	// Step 1: line-range candidate set.
+	var lineCandidates []*callgraph.FunctionCall
 	for i := range containingFn.Calls {
 		c := &containingFn.Calls[i]
 		if c.Line < startLine || c.Line > endLine {
 			continue
 		}
-		score := 0
-		if _, ok := graph.Functions[c.Callee.String()]; ok {
-			score += 2 // resolved callee
+		lineCandidates = append(lineCandidates, c)
+	}
+	if len(lineCandidates) == 0 {
+		return nil
+	}
+
+	// Step 2: column intersection filter (when both sides carry column info).
+	candidates := lineCandidates
+	assetHasCols := asset.StartCol > 0 && asset.EndCol > 0
+	if assetHasCols {
+		var colFiltered []*callgraph.FunctionCall
+		for _, c := range lineCandidates {
+			if c.StartCol > 0 && c.EndCol > 0 {
+				// Half-open intersection: [c.StartCol, c.EndCol) ∩ [asset.StartCol, asset.EndCol)
+				if c.StartCol < asset.EndCol && asset.StartCol < c.EndCol {
+					colFiltered = append(colFiltered, c)
+				}
+			}
 		}
-		if len(c.Arguments) > 0 {
-			score++ // has arguments (crypto calls usually have params)
+		if len(colFiltered) > 0 {
+			candidates = colFiltered
 		}
-		if len(c.ArgumentSources) > 0 {
-			score++ // has source tracing
-		}
-		score += scoreCallCandidate(asset, c)
-		if score > bestScore {
-			bestScore = score
-			bestCall = c
+		// If colFiltered is empty, fall back to full line set (candidates stays as lineCandidates).
+	}
+
+	// Step 3: tie-break.
+	return pickBestCandidate(graph, candidates)
+}
+
+// pickBestCandidate selects the best call from a candidate set using the
+// chain-root / best-resolved heuristic with a deterministic final tiebreak.
+func pickBestCandidate(graph *callgraph.CallGraph, candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+
+	// Step 3a: prefer chain root (AssignedVar set) within a shared ChainID.
+	// If multiple ChainIDs are present (unlikely), pick root of the first chain.
+	// Among non-chain candidates (ChainID == ""), fall through to step 3b.
+	chainRoots := make([]*callgraph.FunctionCall, 0, len(candidates))
+	for _, c := range candidates {
+		if c.ChainID != "" && c.AssignedVar != "" {
+			chainRoots = append(chainRoots, c)
 		}
 	}
-	return bestCall
+	if len(chainRoots) == 1 {
+		return chainRoots[0]
+	}
+	if len(chainRoots) > 1 {
+		// Multiple chain roots: deterministic tiebreak — lowest StartCol, then slice order.
+		best := chainRoots[0]
+		for _, c := range chainRoots[1:] {
+			if c.StartCol < best.StartCol {
+				best = c
+			}
+		}
+		return best
+	}
+
+	// Step 3a (fallback): no AssignedVar on any chain candidate — prefer longest Raw
+	// (outermost expression text in a fluent chain).
+	chainCandidates := make([]*callgraph.FunctionCall, 0, len(candidates))
+	for _, c := range candidates {
+		if c.ChainID != "" {
+			chainCandidates = append(chainCandidates, c)
+		}
+	}
+	if len(chainCandidates) > 0 {
+		best := chainCandidates[0]
+		for _, c := range chainCandidates[1:] {
+			if len(c.Raw) > len(best.Raw) {
+				best = c
+			}
+		}
+		return best
+	}
+
+	// Step 3b: non-chain candidates — score by resolved / args / sources.
+	type scored struct {
+		call  *callgraph.FunctionCall
+		score int
+	}
+	scored0 := make([]scored, len(candidates))
+	for i, c := range candidates {
+		s := 0
+		if graph != nil {
+			if _, ok := graph.Functions[c.Callee.String()]; ok {
+				s += 4 // resolved callee is the strongest signal
+			}
+		}
+		if len(c.Arguments) > 0 {
+			s += 2
+		}
+		if len(c.ArgumentSources) > 0 {
+			s++
+		}
+		scored0[i] = scored{c, s}
+	}
+
+	// Step 3c: deterministic final tiebreak — lowest StartCol, then slice order.
+	best := scored0[0]
+	for _, sc := range scored0[1:] {
+		if sc.score > best.score {
+			best = sc
+			continue
+		}
+		if sc.score == best.score && sc.call.StartCol > 0 && (best.call.StartCol == 0 || sc.call.StartCol < best.call.StartCol) {
+			best = sc
+		}
+	}
+	return best.call
 }
 
 func findCryptoCall(
@@ -964,78 +1073,6 @@ func findCryptoCall(
 	applyExportFunctionMetadataToCalledFunction(result, buildExportFunctionMetadata(graph, bestCall.Callee, callee))
 
 	return result
-}
-
-func scoreCallCandidate(asset entities.CryptographicAsset, call *callgraph.FunctionCall) int {
-	if call == nil {
-		return 0
-	}
-
-	api := strings.TrimSpace(asset.Metadata["api"])
-	if api == "" {
-		return 0
-	}
-
-	methodName := baseCallMethodName(call.Callee.Name)
-	typeName := simpleTypeName(call.Callee.Type)
-	packageBase := simplePackageName(call.Callee.Package)
-
-	if dot := strings.LastIndex(api, "."); dot >= 0 {
-		owner := api[:dot]
-		method := api[dot+1:]
-		if methodName != method {
-			return 0
-		}
-		if owner == "" {
-			return 8
-		}
-		if typeName == owner || packageBase == owner {
-			return 10
-		}
-		if strings.HasSuffix(call.Callee.Type, "."+owner) || strings.HasSuffix(call.Callee.Package, "/"+owner) {
-			return 10
-		}
-		return 6
-	}
-
-	if typeName == api && methodName == "<init>" {
-		return 10
-	}
-
-	return 0
-}
-
-func baseCallMethodName(name string) string {
-	if name == "" {
-		return ""
-	}
-	if hash := strings.Index(name, "#"); hash >= 0 {
-		return name[:hash]
-	}
-	return name
-}
-
-func simpleTypeName(typeName string) string {
-	if typeName == "" {
-		return ""
-	}
-	if dot := strings.LastIndex(typeName, "."); dot >= 0 {
-		return typeName[dot+1:]
-	}
-	return typeName
-}
-
-func simplePackageName(packageName string) string {
-	if packageName == "" {
-		return ""
-	}
-	if slash := strings.LastIndex(packageName, "/"); slash >= 0 {
-		packageName = packageName[slash+1:]
-	}
-	if dot := strings.LastIndex(packageName, "."); dot >= 0 {
-		return packageName[dot+1:]
-	}
-	return packageName
 }
 
 // mergeCallParameters combines declared parameter types, argument expressions,

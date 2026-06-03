@@ -1331,6 +1331,11 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		Raw:             raw,
 		FilePath:        filePath,
 		Line:            line,
+		// Convert tree-sitter 0-based byte columns to the internal 1-based
+		// convention. StartCol is inclusive; EndCol is exclusive (one past last
+		// byte of the call expression node on its start/end row).
+		StartCol:        int(node.StartPoint().Column) + 1,
+		EndCol:          int(node.EndPoint().Column) + 1,
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
@@ -1526,12 +1531,17 @@ func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath
 
 	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
-		Callee:          callee,
-		AssignedVar:     assignedVar,
-		ChainID:         chainID,
-		Raw:             "new " + typeName,
-		FilePath:        filePath,
-		Line:            line,
+		Callee:      callee,
+		AssignedVar: assignedVar,
+		ChainID:     chainID,
+		Raw:         "new " + typeName,
+		FilePath:    filePath,
+		Line:        line,
+		// Convert tree-sitter 0-based byte columns to the internal 1-based
+		// convention. StartCol is inclusive; EndCol is exclusive (one past last
+		// byte of the object_creation_expression node).
+		StartCol:        int(node.StartPoint().Column) + 1,
+		EndCol:          int(node.EndPoint().Column) + 1,
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}

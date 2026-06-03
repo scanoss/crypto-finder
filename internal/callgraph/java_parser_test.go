@@ -1322,3 +1322,96 @@ func calleeSummaries(calls []FunctionCall) []string {
 	}
 	return out
 }
+
+// TestJavaParser_FunctionCallColumnPopulation verifies that the Java parser
+// populates StartCol and EndCol on FunctionCall entries, converting from
+// tree-sitter 0-based columns to the internal 1-based convention by adding 1.
+//
+// Task 2.1 (Strict TDD RED test): must fail until Task 2.2 adds the fields.
+func TestJavaParser_FunctionCallColumnPopulation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		src         string
+		wantMethod  string // base method name to look for
+		wantStartGt int    // StartCol must be > 0 (1-based, inclusive)
+		wantEndGt   int    // EndCol must be > StartCol (1-based, exclusive)
+	}{
+		{
+			name: "method_invocation columns populated",
+			// "SHA3Digest digest = new SHA3Digest(256);" is on line 5,
+			// "digest.update(data, 0, data.length);" is on line 6.
+			// We only care that update() has StartCol>0 and EndCol>StartCol.
+			src: `package com.example;
+class Service {
+    void run() {
+        org.bouncycastle.crypto.digests.SHA3Digest digest = new org.bouncycastle.crypto.digests.SHA3Digest(256);
+        digest.update(data, 0, data.length);
+    }
+}
+`,
+			wantMethod:  "update",
+			wantStartGt: 0,
+			wantEndGt:   0,
+		},
+		{
+			name: "object_creation columns populated",
+			// new SHA3Digest(256) is an object creation; StartCol and EndCol
+			// must be non-zero and EndCol > StartCol.
+			src: `package com.example;
+class Service {
+    void run() {
+        org.bouncycastle.crypto.digests.SHA3Digest digest = new org.bouncycastle.crypto.digests.SHA3Digest(256);
+    }
+}
+`,
+			wantMethod:  "<init>",
+			wantStartGt: 0,
+			wantEndGt:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "Service.java"), []byte(tt.src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			p := NewJavaParser()
+			analyses, err := p.ParseDirectory(dir, "com.example")
+			if err != nil {
+				t.Fatalf("ParseDirectory error: %v", err)
+			}
+			if len(analyses) == 0 {
+				t.Fatal("no analyses returned")
+			}
+
+			var found *FunctionCall
+			for i := range analyses[0].Functions {
+				fn := &analyses[0].Functions[i]
+				for j := range fn.Calls {
+					c := &fn.Calls[j]
+					if BaseFunctionName(c.Callee.Name) == tt.wantMethod {
+						found = c
+						break
+					}
+				}
+				if found != nil {
+					break
+				}
+			}
+			if found == nil {
+				t.Fatalf("did not find call to %q in parsed output", tt.wantMethod)
+			}
+
+			if found.StartCol <= tt.wantStartGt {
+				t.Errorf("StartCol = %d, want > %d (1-based, tree-sitter col+1)", found.StartCol, tt.wantStartGt)
+			}
+			if found.EndCol <= found.StartCol {
+				t.Errorf("EndCol(%d) must be > StartCol(%d)", found.EndCol, found.StartCol)
+			}
+		})
+	}
+}

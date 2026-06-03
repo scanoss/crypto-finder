@@ -111,10 +111,15 @@ func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []s
 	asset := entities.CryptographicAsset{
 		StartLine: result.Start.Line,
 		EndLine:   result.End.Line,
-		Match:     strings.TrimSpace(result.Extra.Lines),
-		Rules:     []entities.RuleInfo{ruleInfo}, // Now an array to support multiple rules
-		Metadata:  make(map[string]string),
-		Status:    "pending", // TODO: Implement status logic
+		// StartCol/EndCol are threaded directly from the scanner output.
+		// opengrep/semgrep reports 1-based columns; End.Col is exclusive
+		// (one past the last matched character). No conversion needed.
+		StartCol: result.Start.Col,
+		EndCol:   result.End.Col,
+		Match:    strings.TrimSpace(result.Extra.Lines),
+		Rules:    []entities.RuleInfo{ruleInfo}, // Now an array to support multiple rules
+		Metadata: make(map[string]string),
+		Status:   "pending", // TODO: Implement status logic
 	}
 
 	// Extract cryptographic details from rule metadata
