@@ -20,8 +20,22 @@ type fragEdge struct {
 	calleeKey string
 	raw       string
 	line      int
+	startCol  int
+	endCol    int
 	identity  objectIdentity
 	entryCall *graphfrag.CallSite
+}
+
+// view projects the edge onto the shared candidateView so the annotate path runs
+// the same position/chain terminal selection as the live exporter.
+func (e fragEdge) view() candidateView {
+	return candidateView{
+		StartCol:    e.startCol,
+		EndCol:      e.endCol,
+		ChainID:     e.identity.ChainID,
+		AssignedVar: e.identity.AssignedVar,
+		RawLen:      len(e.raw),
+	}
 }
 
 // functionName derives the dotted callee name from the edge's callee key, the
@@ -45,6 +59,8 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 			calleeKey: e.TargetSignature,
 			raw:       e.Raw,
 			line:      e.CallSite,
+			startCol:  e.StartCol,
+			endCol:    e.EndCol,
 			identity:  objectIdentity{ReceiverVar: e.ReceiverVar, AssignedVar: e.AssignedVar, ChainID: e.ChainID},
 			entryCall: e.EntryCall,
 		})
@@ -55,6 +71,8 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 			callerKey: e.Caller,
 			calleeKey: e.Callee,
 			line:      e.CallSite,
+			startCol:  e.StartCol,
+			endCol:    e.EndCol,
 			identity:  objectIdentity{ReceiverVar: e.ReceiverVar, AssignedVar: e.AssignedVar, ChainID: e.ChainID},
 			entryCall: e.EntryCall,
 		})
@@ -152,34 +170,77 @@ func appendUniqueAnnotateSupporting(
 	}
 }
 
-// terminalEdgeIndex finds the edge that is the terminal crypto call for asset:
-// an edge on the finding's line whose resolved function name matches the asset's
-// crypto symbol. Falls back to any edge on the finding's line so the object
-// identity (receiver/chain) can still seed the lifecycle grouping.
+// edgeCandidateViews projects every edge onto the shared candidateView so the
+// annotate path runs the identical position/chain terminal selection as the live
+// exporter.
+func edgeCandidateViews(edges []fragEdge) []candidateView {
+	views := make([]candidateView, len(edges))
+	for i := range edges {
+		views[i] = edges[i].view()
+	}
+	return views
+}
+
+// terminalEdgeIndex selects the edge that is the terminal crypto call for asset,
+// running the SAME position/chain selection policy (terminal_selection.go) as the
+// live exporter (findCryptoCallNode) over the cached fragment's edges. Because
+// graph-fragment 1.4 edges now carry call columns (start_col/end_col), the
+// column-intersection anchor is identical on both paths — so a finding's terminal,
+// and therefore its derived supporting calls, match a live
+// `scan --export-graph-fragment` even on multi-call / fluent-chain lines.
+//
+// Steps mirror findCryptoCallNode:
+//  1. line-range candidates (edges on the finding's line);
+//  2. column intersection (shared columnFilterIndices);
+//  3. chain-root, then longest-chain tie-break (shared);
+//  4. fallback for legacy column-less fragments (schema < 1.4, every column 0) or
+//     non-chain calls: see annotateNonChainEdgeIndex.
 func terminalEdgeIndex(edges []fragEdge, asset entities.CryptographicAsset) int {
+	lineIdx := make([]int, 0, len(edges))
+	for i := range edges {
+		if edges[i].line == asset.StartLine {
+			lineIdx = append(lineIdx, i)
+		}
+	}
+	if len(lineIdx) == 0 {
+		return -1
+	}
+
+	views := edgeCandidateViews(edges)
+	colIdx := columnFilterIndices(views, lineIdx, asset.StartCol, asset.EndCol)
+
+	if i := chainRootIndexAmong(views, colIdx); i >= 0 {
+		return i
+	}
+	if i := longestChainIndexAmong(views, colIdx); i >= 0 {
+		return i
+	}
+	return annotateNonChainEdgeIndex(edges, views, colIdx, asset)
+}
+
+// annotateNonChainEdgeIndex is the column-less / non-chain fallback used when
+// neither columns nor fluent-chain structure single out a terminal. The live path
+// uses graph-aware scoring (resolved callee / args) here; the annotate path has no
+// live graph, so it uses the one resolved-name signal it carries — the rule's
+// crypto symbol (exact or glob, e.g. "...HashBuilder.with*") — and otherwise the
+// deterministic lowest-StartCol candidate, matching the live path's final
+// tie-break.
+func annotateNonChainEdgeIndex(edges []fragEdge, views []candidateView, idxs []int, asset entities.CryptographicAsset) int {
+	if len(idxs) == 0 {
+		return -1
+	}
 	var symbol string
 	if op := buildMatchedOperation(asset); op != nil {
 		symbol = op.Symbol
 	}
-	// Among edges on the finding's line, prefer the one whose resolved name
-	// matches the asset's crypto symbol (exact or glob, e.g. "...HashBuilder.with*").
-	// Otherwise fall back to the outermost fluent link — the link with the longest
-	// Raw expression — which is the actual terminal of a chain. Picking the
-	// outermost link matters: it carries the chain's result-binding (AssignedVar),
-	// which seeds the lifecycle identity for separate-statement siblings.
-	best := -1
-	for i := range edges {
-		if edges[i].line != asset.StartLine {
-			continue
-		}
-		if symbol != "" && symbolMatchesFunction(symbol, edges[i].functionName()) {
-			return i
-		}
-		if best == -1 || len(edges[i].raw) > len(edges[best].raw) {
-			best = i
+	if symbol != "" {
+		for _, i := range idxs {
+			if symbolMatchesFunction(symbol, edges[i].functionName()) {
+				return i
+			}
 		}
 	}
-	return best
+	return lowestStartColIndexAmong(views, idxs)
 }
 
 // symbolMatchesFunction reports whether a crypto-rule api symbol matches a

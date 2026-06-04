@@ -133,3 +133,51 @@ class Sample {
 		t.Errorf("getResult ReceiverVar = %q, want %q", getResult.ReceiverVar, "hash")
 	}
 }
+
+// TestJavaParser_StaticReceiver_NoReceiverVar guards the correctness invariant in
+// receiverVarName: a call whose receiver is a class/type (a static call such as
+// Cipher.getInstance(...) or MessageDigest.getInstance(...)) must record an EMPTY
+// ReceiverVar. If it leaked the type name as a receiver, the object-lifecycle
+// derivation would wrongly attribute the static factory call to a crypto object's
+// lifecycle. A local variable receiver (cipher.doFinal(...)) must still be
+// recorded, so the two cases are asserted together.
+func TestJavaParser_StaticReceiver_NoReceiverVar(t *testing.T) {
+	src := `package com.example;
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
+class Sample {
+    public byte[] encrypt(byte[] data, byte[] keyBytes) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        return cipher.doFinal(data);
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+	fn := findFunctionByName(fns, "encrypt")
+	if fn == nil {
+		t.Fatal("encrypt not found")
+	}
+
+	// Static factory call: receiver is the class `Cipher`, not a variable.
+	getInstance := findCallByMethod(fn, "getInstance", "Cipher.getInstance")
+	if getInstance == nil {
+		t.Fatal("Cipher.getInstance call not found")
+	}
+	if getInstance.ReceiverVar != "" {
+		t.Errorf("Cipher.getInstance ReceiverVar = %q, want empty (static call must not be attributed to an object)",
+			getInstance.ReceiverVar)
+	}
+
+	// Sanity counterpart: a call on the local variable `cipher` IS attributed.
+	for _, method := range []string{"init", "doFinal"} {
+		call := findCallByMethod(fn, method, "cipher.")
+		if call == nil {
+			t.Fatalf("call to cipher.%s not found", method)
+		}
+		if call.ReceiverVar != "cipher" {
+			t.Errorf("cipher.%s ReceiverVar = %q, want %q", method, call.ReceiverVar, "cipher")
+		}
+	}
+}

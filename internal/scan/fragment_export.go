@@ -232,6 +232,8 @@ func buildFragmentInternalEdge(
 		edge.ReceiverVar = call.ReceiverVar
 		edge.AssignedVar = call.AssignedVar
 		edge.ChainID = call.ChainID
+		edge.StartCol = call.StartCol
+		edge.EndCol = call.EndCol
 	}
 	return edge
 }
@@ -261,6 +263,8 @@ func buildFragmentExternalCall(
 		external.ReceiverVar = call.ReceiverVar
 		external.AssignedVar = call.AssignedVar
 		external.ChainID = call.ChainID
+		external.StartCol = call.StartCol
+		external.EndCol = call.EndCol
 	}
 	return external
 }

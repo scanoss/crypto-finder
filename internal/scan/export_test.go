@@ -259,3 +259,115 @@ func TestFindCryptoCallNode(t *testing.T) {
 		}
 	})
 }
+
+// TestBestChainRootCandidate isolates the chain-root tie-break (step 3a): only
+// chain candidates with AssignedVar set are eligible, non-chain candidates are
+// ignored, and ties between multiple chain roots resolve to the lowest StartCol.
+func TestBestChainRootCandidate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no chain candidate carries AssignedVar - returns nil", func(t *testing.T) {
+		candidates := []*callgraph.FunctionCall{
+			{ChainID: "c1", StartCol: 1, Raw: "a()"},                 // chain link, no AssignedVar
+			{ChainID: "", AssignedVar: "x", StartCol: 2, Raw: "b()"}, // non-chain, ignored
+		}
+		if got := bestChainRootCandidate(candidates); got != nil {
+			t.Errorf("got %q, want nil (no eligible chain root)", got.Raw)
+		}
+	})
+
+	t.Run("picks the chain candidate with AssignedVar", func(t *testing.T) {
+		root := &callgraph.FunctionCall{ChainID: "c1", AssignedVar: "hash", StartCol: 1, Raw: "root()"}
+		candidates := []*callgraph.FunctionCall{
+			{ChainID: "c1", StartCol: 1, Raw: "link()"},
+			root,
+		}
+		if got := bestChainRootCandidate(candidates); got != root {
+			t.Errorf("got %v, want the AssignedVar-bearing root", got)
+		}
+	})
+
+	t.Run("multiple chain roots - lowest StartCol wins", func(t *testing.T) {
+		low := &callgraph.FunctionCall{ChainID: "c1", AssignedVar: "a", StartCol: 5, Raw: "low()"}
+		high := &callgraph.FunctionCall{ChainID: "c2", AssignedVar: "b", StartCol: 12, Raw: "high()"}
+		candidates := []*callgraph.FunctionCall{high, low}
+		if got := bestChainRootCandidate(candidates); got != low {
+			t.Errorf("got StartCol=%d, want StartCol=5 (lowest)", got.StartCol)
+		}
+	})
+}
+
+// TestLongestChainCandidate isolates the longest-Raw fallback (step 3a fallback):
+// used when no chain candidate carries AssignedVar. Non-chain candidates are
+// ignored; among chain candidates the longest Raw (outermost expression) wins.
+func TestLongestChainCandidate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no chain candidates - returns nil", func(t *testing.T) {
+		candidates := []*callgraph.FunctionCall{
+			{ChainID: "", Raw: "standalone()"},
+		}
+		if got := longestChainCandidate(candidates); got != nil {
+			t.Errorf("got %q, want nil (no chain candidates)", got.Raw)
+		}
+	})
+
+	t.Run("longest Raw among chain links wins", func(t *testing.T) {
+		outer := &callgraph.FunctionCall{ChainID: "c1", Raw: "Password.hash(p).addRandomSalt().withBcrypt()"}
+		candidates := []*callgraph.FunctionCall{
+			{ChainID: "c1", Raw: "Password.hash(p)"},
+			{ChainID: "", Raw: "this.is.a.very.long.non.chain.call.that.should.be.ignored()"},
+			outer,
+		}
+		if got := longestChainCandidate(candidates); got != outer {
+			t.Errorf("got %q, want the outermost chain link", got.Raw)
+		}
+	})
+}
+
+// TestBestScoredCandidate isolates the non-chain scoring path (step 3b/3c):
+// resolved callee (+4) dominates args (+2) and sources (+1); a score tie resolves
+// to the lowest non-zero StartCol; and a nil graph must not panic.
+func TestBestScoredCandidate(t *testing.T) {
+	t.Parallel()
+
+	resolvedID := callgraph.FunctionID{Type: "Resolved", Name: "m#0"}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			resolvedID.String(): {ID: resolvedID},
+		},
+	}
+
+	t.Run("resolved callee outranks args+sources", func(t *testing.T) {
+		resolved := &callgraph.FunctionCall{Callee: resolvedID, StartCol: 30, Raw: "resolved()"}
+		richUnresolved := &callgraph.FunctionCall{
+			Callee:          callgraph.FunctionID{Type: "Unknown", Name: "m#2"},
+			Arguments:       []string{"a", "b"},
+			ArgumentSources: [][]callgraph.SourceNode{{}},
+			StartCol:        10,
+			Raw:             "unknown(a, b)",
+		}
+		candidates := []*callgraph.FunctionCall{richUnresolved, resolved}
+		if got := bestScoredCandidate(graph, candidates); got != resolved {
+			t.Errorf("got %q, want the resolved callee (score 4 beats 2+1)", got.Raw)
+		}
+	})
+
+	t.Run("score tie - lowest StartCol wins", func(t *testing.T) {
+		left := &callgraph.FunctionCall{Callee: callgraph.FunctionID{Type: "A", Name: "m#0"}, StartCol: 8, Raw: "a()"}
+		right := &callgraph.FunctionCall{Callee: callgraph.FunctionID{Type: "B", Name: "m#0"}, StartCol: 3, Raw: "b()"}
+		candidates := []*callgraph.FunctionCall{left, right}
+		if got := bestScoredCandidate(graph, candidates); got != right {
+			t.Errorf("got StartCol=%d, want StartCol=3 (lowest on a score tie)", got.StartCol)
+		}
+	})
+
+	t.Run("nil graph does not panic", func(t *testing.T) {
+		candidates := []*callgraph.FunctionCall{
+			{Callee: resolvedID, Arguments: []string{"x"}, StartCol: 1, Raw: "x()"},
+		}
+		if got := bestScoredCandidate(nil, candidates); got == nil {
+			t.Error("bestScoredCandidate(nil, ...) returned nil, want the single candidate")
+		}
+	})
+}

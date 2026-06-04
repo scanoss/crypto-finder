@@ -196,6 +196,11 @@ type GraphFragmentEdge struct {
 	ReceiverVar string `json:"receiver_var,omitempty"`
 	AssignedVar string `json:"assigned_var,omitempty"`
 	ChainID     string `json:"chain_id,omitempty"`
+	// StartCol/EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive) so the annotate path runs the same column-intersection
+	// terminal selection as the live exporter (1.4+). 0 on schema < 1.4.
+	StartCol int `json:"start_col,omitempty"`
+	EndCol   int `json:"end_col,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
@@ -218,6 +223,11 @@ type GraphFragmentExternal struct {
 	ReceiverVar string `json:"receiver_var,omitempty"`
 	AssignedVar string `json:"assigned_var,omitempty"`
 	ChainID     string `json:"chain_id,omitempty"`
+	// StartCol/EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive) so the annotate path runs the same column-intersection
+	// terminal selection as the live exporter (1.4+). 0 on schema < 1.4.
+	StartCol int `json:"start_col,omitempty"`
+	EndCol   int `json:"end_col,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`

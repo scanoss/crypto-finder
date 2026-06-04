@@ -188,7 +188,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration) (*entities
 		Languages:        annotateLanguages,
 	})
 	if err != nil {
-		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, "failed to validate annotate flags")
 	}
 	languages := normalizedLanguages
 

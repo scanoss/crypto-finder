@@ -60,6 +60,8 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			ReceiverVar:  e.ReceiverVar,
 			AssignedVar:  e.AssignedVar,
 			ChainID:      e.ChainID,
+			StartCol:     e.StartCol,
+			EndCol:       e.EndCol,
 			EntryCall:    fromCallSite(e.EntryCall),
 		})
 	}
@@ -77,6 +79,8 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			ReceiverVar:  e.ReceiverVar,
 			AssignedVar:  e.AssignedVar,
 			ChainID:      e.ChainID,
+			StartCol:     e.StartCol,
+			EndCol:       e.EndCol,
 			EntryCall:    fromCallSite(e.EntryCall),
 		})
 	}

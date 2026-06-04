@@ -145,6 +145,58 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 	}
 }
 
+// TestTerminalEdgeIndex_ColumnAwareSelection pins the column-parity mechanism:
+// the annotate path runs the same column-intersection + chain-root selection as
+// the live exporter (findCryptoCallNode), so it picks the correct terminal on a
+// line that carries multiple calls — the case the old line-only heuristic could
+// not disambiguate. The legacy subtest proves graceful fallback when a cached
+// fragment predates columns (every column 0).
+func TestTerminalEdgeIndex_ColumnAwareSelection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("two calls on one line - column intersection selects the matching edge", func(t *testing.T) {
+		edges := []fragEdge{
+			{raw: "a.foo()", line: 5, startCol: 1, endCol: 10},
+			{raw: "b.bar()", line: 5, startCol: 20, endCol: 30},
+		}
+		asset := entities.CryptographicAsset{StartLine: 5, EndLine: 5, StartCol: 20, EndCol: 30}
+		if got := terminalEdgeIndex(edges, asset); got != 1 {
+			t.Fatalf("terminalEdgeIndex = %d, want 1 (column span selects second edge)", got)
+		}
+	})
+
+	t.Run("fluent chain on one line - chain root (AssignedVar) selected", func(t *testing.T) {
+		edges := []fragEdge{
+			{raw: "Password.hash(p)", line: 6, startCol: 1, endCol: 17, identity: objectIdentity{ChainID: "c1"}},
+			{
+				raw: "Password.hash(p).addRandomSalt().withBcrypt()", line: 6, startCol: 1, endCol: 46,
+				identity: objectIdentity{ChainID: "c1", AssignedVar: "hash"},
+			},
+		}
+		asset := entities.CryptographicAsset{StartLine: 6, EndLine: 6, StartCol: 1, EndCol: 46}
+		if got := terminalEdgeIndex(edges, asset); got != 1 {
+			t.Fatalf("terminalEdgeIndex = %d, want 1 (chain root with AssignedVar)", got)
+		}
+	})
+
+	t.Run("legacy column-less fragment - falls back to rule symbol match", func(t *testing.T) {
+		finishID := callgraph.FunctionID{Package: "com.app", Type: "Maker", Name: "finish#0"}
+		otherID := callgraph.FunctionID{Package: "java.lang", Type: "String", Name: "getBytes#0"}
+		edges := []fragEdge{
+			{calleeKey: otherID.String(), raw: "x.getBytes()", line: 7}, // no columns
+			{calleeKey: finishID.String(), raw: "a.finish()", line: 7},  // no columns
+		}
+		asset := entities.CryptographicAsset{
+			StartLine: 7, EndLine: 7,
+			Match:    "a.finish()",
+			Metadata: map[string]string{"api": fullFunctionName(finishID)},
+		}
+		if got := terminalEdgeIndex(edges, asset); got != 1 {
+			t.Fatalf("terminalEdgeIndex = %d, want 1 (symbol match in column-less fallback)", got)
+		}
+	})
+}
+
 // TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment models the
 // mining-service reality: the cached fragment is structural-only (code graph,
 // NO crypto operations — those are rules-versioned elsewhere). Carry-forward

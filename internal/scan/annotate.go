@@ -152,7 +152,7 @@ func fragmentCryptoCallFromModel(cc *graphfrag.CryptoCall) *graphfrag.GraphFragm
 		ReturnType:         cc.ReturnType,
 		ParameterTypes:     cc.ParameterTypes,
 		DisplaySymbol:      cc.DisplaySymbol,
-		Aliases:            append([]string(nil), cc.Aliases...),
+		Aliases:            cloneStringSlice(cc.Aliases),
 		Line:               cc.Line,
 	}
 	for i := range cc.Parameters {

@@ -220,6 +220,15 @@ type InternalEdge struct {
 	AssignedVar string
 	ChainID     string
 
+	// StartCol, EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive — the opengrep/tree-sitter convention). They let the annotate
+	// path run the SAME column-intersection terminal selection as the live exporter
+	// (findCryptoCallNode) instead of a line-only heuristic, so cache-derived
+	// supporting calls match a live scan on multi-call/fluent-chain lines. 0 on
+	// fragments exported with schema < 1.4 — selection falls back to line-only.
+	StartCol int
+	EndCol   int
+
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *CallSite
@@ -298,6 +307,12 @@ type ExternalCall struct {
 	ReceiverVar string
 	AssignedVar string
 	ChainID     string
+
+	// StartCol, EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive). See InternalEdge.StartCol. 0 on fragments exported with
+	// schema < 1.4 — selection falls back to line-only.
+	StartCol int
+	EndCol   int
 
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.

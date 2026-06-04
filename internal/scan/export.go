@@ -802,6 +802,13 @@ func supportingCallIDFromCall(sourcePath string, call *callgraph.FunctionCall) s
 // parts. Shared by the live exporter (supportingCallIDFromCall) and the
 // annotate-from-fragment path so an id derived from a cached edge matches the id
 // a live scan derived from the corresponding call: sha256(path:line:calleeKey).
+//
+// The id is intentionally truncated to 8 hex chars (32 bits) to mirror the
+// finding_id scheme — the input (path:line:calleeKey) is unique per call site,
+// so collisions are bounded by the number of distinct call sites in a single
+// scan, well within the 32-bit space for realistic projects. dedupSupportingCalls
+// keys on this id; a collision would silently coalesce two entries, so widen the
+// prefix here if call-site volume ever approaches the birthday bound (~2^16).
 func supportingIDFromParts(sourcePath string, line int, calleeKey string) string {
 	input := sourcePath + ":" + strconv.Itoa(line) + ":" + calleeKey
 	hash := sha256.Sum256([]byte(input))
@@ -972,29 +979,37 @@ func cryptoCallLineCandidates(containingFn *callgraph.FunctionDecl, startLine, e
 	return candidates
 }
 
+// callCandidateViews projects call graph FunctionCalls onto the shared
+// candidateView so the live path runs the same position/chain selection policy
+// (terminal_selection.go) as the annotate-from-cache path.
+func callCandidateViews(calls []*callgraph.FunctionCall) []candidateView {
+	views := make([]candidateView, len(calls))
+	for i, c := range calls {
+		views[i] = candidateView{
+			StartCol:    c.StartCol,
+			EndCol:      c.EndCol,
+			ChainID:     c.ChainID,
+			AssignedVar: c.AssignedVar,
+			RawLen:      len(c.Raw),
+		}
+	}
+	return views
+}
+
 func cryptoCallColumnCandidates(
 	lineCandidates []*callgraph.FunctionCall,
 	asset entities.CryptographicAsset,
 ) []*callgraph.FunctionCall {
-	if asset.StartCol <= 0 || asset.EndCol <= 0 {
+	views := callCandidateViews(lineCandidates)
+	keep := columnFilterIndices(views, identityIndices(len(lineCandidates)), asset.StartCol, asset.EndCol)
+	if len(keep) == len(lineCandidates) {
 		return lineCandidates
 	}
-
-	var colFiltered []*callgraph.FunctionCall
-	for _, c := range lineCandidates {
-		if c.StartCol <= 0 || c.EndCol <= 0 {
-			continue
-		}
-		// Half-open intersection: [c.StartCol, c.EndCol) ∩ [asset.StartCol, asset.EndCol)
-		if c.StartCol < asset.EndCol && asset.StartCol < c.EndCol {
-			colFiltered = append(colFiltered, c)
-		}
+	out := make([]*callgraph.FunctionCall, len(keep))
+	for k, i := range keep {
+		out[k] = lineCandidates[i]
 	}
-	if len(colFiltered) == 0 {
-		// If colFiltered is empty, fall back to full line set.
-		return lineCandidates
-	}
-	return colFiltered
+	return out
 }
 
 // pickBestCandidate selects the best call from a candidate set using the
@@ -1025,30 +1040,19 @@ func pickBestCandidate(graph *callgraph.CallGraph, candidates []*callgraph.Funct
 }
 
 func bestChainRootCandidate(candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
-	var best *callgraph.FunctionCall
-	for _, c := range candidates {
-		if c.ChainID == "" || c.AssignedVar == "" {
-			continue
-		}
-		// Multiple chain roots: deterministic tiebreak — lowest StartCol, then slice order.
-		if best == nil || c.StartCol < best.StartCol {
-			best = c
-		}
+	views := callCandidateViews(candidates)
+	if i := chainRootIndexAmong(views, identityIndices(len(candidates))); i >= 0 {
+		return candidates[i]
 	}
-	return best
+	return nil
 }
 
 func longestChainCandidate(candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {
-	var best *callgraph.FunctionCall
-	for _, c := range candidates {
-		if c.ChainID == "" {
-			continue
-		}
-		if best == nil || len(c.Raw) > len(best.Raw) {
-			best = c
-		}
+	views := callCandidateViews(candidates)
+	if i := longestChainIndexAmong(views, identityIndices(len(candidates))); i >= 0 {
+		return candidates[i]
 	}
-	return best
+	return nil
 }
 
 func bestScoredCandidate(graph *callgraph.CallGraph, candidates []*callgraph.FunctionCall) *callgraph.FunctionCall {

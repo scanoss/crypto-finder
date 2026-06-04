@@ -53,6 +53,8 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			ReceiverVar:  ie.ReceiverVar,
 			AssignedVar:  ie.AssignedVar,
 			ChainID:      ie.ChainID,
+			StartCol:     ie.StartCol,
+			EndCol:       ie.EndCol,
 			EntryCall:    toCallSite(ie.EntryCall),
 		}
 		frag.InternalEdges = append(frag.InternalEdges, edge)
@@ -71,6 +73,8 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			ReceiverVar:     ec.ReceiverVar,
 			AssignedVar:     ec.AssignedVar,
 			ChainID:         ec.ChainID,
+			StartCol:        ec.StartCol,
+			EndCol:          ec.EndCol,
 			EntryCall:       toCallSite(ec.EntryCall),
 		})
 	}
