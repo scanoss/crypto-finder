@@ -50,6 +50,9 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			MethodName:   ie.MethodName,
 			Arity:        ie.Arity,
 			CallSite:     ie.Line,
+			ReceiverVar:  ie.ReceiverVar,
+			AssignedVar:  ie.AssignedVar,
+			ChainID:      ie.ChainID,
 			EntryCall:    toCallSite(ie.EntryCall),
 		}
 		frag.InternalEdges = append(frag.InternalEdges, edge)
@@ -59,11 +62,15 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
 			Caller:          ec.CallerKey,
 			TargetSignature: ec.TargetKey,
+			Raw:             ec.Raw,
 			Resolution:      normalizeResolutionKind(ec.Resolution),
 			DeclaredType:    ec.DeclaredType,
 			MethodName:      ec.MethodName,
 			Arity:           ec.Arity,
 			CallSite:        ec.Line,
+			ReceiverVar:     ec.ReceiverVar,
+			AssignedVar:     ec.AssignedVar,
+			ChainID:         ec.ChainID,
 			EntryCall:       toCallSite(ec.EntryCall),
 		})
 	}

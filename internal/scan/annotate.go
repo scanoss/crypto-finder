@@ -60,16 +60,43 @@ func BuildAnnotateExport(report *entities.InterimReport, fragment graphfrag.Frag
 	out.ScanMetadata.RulesVersion = report.Rules.Version
 
 	opsByFindingID := indexFragmentOpsByFindingID(fragment)
+	edgesByCaller := fragmentEdgesByCaller(fragment)
 
 	for _, finding := range report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			out.CryptoAnnotations = append(out.CryptoAnnotations, buildAnnotateCryptoOp(finding, asset, fragment, opsByFindingID))
+			// Mirror the full exporter (buildGraphFragmentCryptoAnnotations):
+			// rule-tagged supporting/config assets are NOT terminal crypto
+			// operations and must stay out of crypto_annotations. The full
+			// export routes them through the call-graph-derived supporting_calls
+			// instead; annotate has no call graph to derive from, so it simply
+			// drops them — keeping crypto_annotations byte-identical to a full
+			// `scan --export-graph-fragment` for the same source + rules.
+			if isSupportingCryptoAsset(asset) {
+				continue
+			}
+			op := buildAnnotateCryptoOp(finding, asset, fragment, opsByFindingID)
+			// When the imported fragment is structural-only (the mining-service
+			// cache stores the code graph without crypto operations), carry-forward
+			// finds no prior crypto_call. Re-derive the terminal crypto_call from
+			// the terminal edge so a new rule's finding still carries the same
+			// invocation detail a full scan would emit — no live callgraph.
+			if op.CryptoCall == nil {
+				op.CryptoCall = annotateTerminalCryptoCall(fragment, edgesByCaller, finding, asset)
+			}
+			out.CryptoAnnotations = append(out.CryptoAnnotations, op)
 		}
 	}
 
 	sortGraphFragmentCryptoOps(out.CryptoAnnotations)
 	out.ScanMetadata.CryptoOps = len(out.CryptoAnnotations)
+
+	// Re-derive object-lifecycle supporting calls from the cached fragment's
+	// enriched edges (graph-fragment-1.4) — no live call graph — so a rules
+	// refresh reproduces the full export's supporting_calls, including for
+	// findings a new rule introduces.
+	out.SupportingCalls = deriveAnnotateSupportingCalls(report, fragment)
+	out.ScanMetadata.SupportingCalls = len(out.SupportingCalls)
 	return out
 }
 

@@ -622,3 +622,102 @@ func TestBuildGraphFragmentExport_CryptoOpAssetMetadataPopulated(t *testing.T) {
 		t.Error("Metadata is empty; expected the asset metadata JSON to be stored")
 	}
 }
+
+// TestBuildGraphFragmentExport_CarriesObjectIdentity guards the graph-fragment-1.4
+// enrichment: edges must carry the call-site object identity (ReceiverVar /
+// AssignedVar / ChainID) so object-lifecycle supporting calls can be re-derived
+// from the cached fragment alone (the annotate path). It covers BOTH the
+// receiver-var lifecycle (the dominant JCA idiom) and the fluent-chain case,
+// whose intermediate links are unresolved in a standalone scan and must still
+// recover their shared ChainID (regression guard for chainIDForLine).
+func TestBuildGraphFragmentExport_CarriesObjectIdentity(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := `package com.app;
+
+class App {
+    void run() {
+        Foo f = new Foo();
+        f.init();
+        f.execute();
+        Builder.start("x").configure().build();
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "App.java"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilder(callgraph.NewJavaParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "com.app:app"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+		CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
+	})
+
+	// Receiver-var lifecycle: the constructor binds AssignedVar=f, and the
+	// init/execute calls are invoked on ReceiverVar=f.
+	var sawAssigned, sawReceiver bool
+	for _, e := range payload.ExternalCalls {
+		if e.AssignedVar == "f" {
+			sawAssigned = true
+		}
+		if e.ReceiverVar == "f" {
+			sawReceiver = true
+		}
+	}
+	if !sawAssigned {
+		t.Errorf("no edge carried AssignedVar=f (constructor object identity lost): %+v", payload.ExternalCalls)
+	}
+	if !sawReceiver {
+		t.Errorf("no edge carried ReceiverVar=f (lifecycle object identity lost): %+v", payload.ExternalCalls)
+	}
+
+	// Fluent chain: all three links (start/configure/build) share one ChainID.
+	// Before chainIDForLine recovery, only the head link carried it.
+	byChain := map[string]int{}
+	for _, e := range payload.ExternalCalls {
+		if e.ChainID != "" {
+			byChain[e.ChainID]++
+		}
+	}
+	var maxGroup int
+	for _, n := range byChain {
+		if n > maxGroup {
+			maxGroup = n
+		}
+	}
+	if maxGroup < 3 {
+		t.Errorf("expected a fluent chain group of >=3 edges sharing a ChainID, got groups %+v (chainIDForLine recovery regressed)", byChain)
+	}
+}
+
+// TestChainIDForLine directly guards the fluent-chain ChainID recovery helper:
+// when an edge's exact callee lookup fails (unresolved fluent intermediate in a
+// standalone scan), the edge must still recover its group id from any chained
+// call on the same line — they all share one ChainID. Reproducing the full
+// key-divergence hermetically is unreliable, so this unit-tests the helper that
+// the export's recovery fallback depends on.
+func TestChainIDForLine(t *testing.T) {
+	t.Parallel()
+
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Package: "com.x", Type: "B", Name: "start#1"}, Line: 8, ChainID: "167"},
+			{Callee: callgraph.FunctionID{Package: "com.x", Type: "B", Name: "configure#0"}, Line: 8, ChainID: "167"},
+			{Callee: callgraph.FunctionID{Package: "com.x", Type: "B", Name: "build#0"}, Line: 8, ChainID: "167"},
+			{Callee: callgraph.FunctionID{Package: "com.x", Type: "C", Name: "noChain#0"}, Line: 12, ChainID: ""},
+		},
+	}
+	if got := chainIDForLine(fn, 8); got != "167" {
+		t.Errorf("chainIDForLine(line 8) = %q, want 167 (shared fluent chain id)", got)
+	}
+	if got := chainIDForLine(fn, 12); got != "" {
+		t.Errorf("chainIDForLine(line 12) = %q, want empty (no chained call there)", got)
+	}
+	if got := chainIDForLine(nil, 8); got != "" {
+		t.Errorf("chainIDForLine(nil) = %q, want empty", got)
+	}
+}

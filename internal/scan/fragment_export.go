@@ -129,10 +129,18 @@ func addResolvedFragmentEdges(
 			line := fragmentEdgeLine(callerDecl, calleeKey, res)
 			call := findCallForCalleeAtLine(callerDecl, calleeKey, line)
 			if _, ok := graph.Functions[calleeKey]; ok {
-				internalByKey[edgeKey] = buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+				edge := buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+				if edge.ChainID == "" {
+					edge.ChainID = chainIDForLine(callerDecl, line)
+				}
+				internalByKey[edgeKey] = edge
 				continue
 			}
-			externalByKey[edgeKey] = buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+			external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+			if external.ChainID == "" {
+				external.ChainID = chainIDForLine(callerDecl, line)
+			}
+			externalByKey[edgeKey] = external
 		}
 	}
 }
@@ -210,7 +218,7 @@ func buildFragmentInternalEdge(
 	line int,
 	res fragmentEdgeResolution,
 ) graphfrag.GraphFragmentEdge {
-	return graphfrag.GraphFragmentEdge{
+	edge := graphfrag.GraphFragmentEdge{
 		CallerKey:    callerKey,
 		CalleeKey:    calleeKey,
 		Line:         line,
@@ -220,6 +228,12 @@ func buildFragmentInternalEdge(
 		Arity:        res.Arity,
 		EntryCall:    buildFragmentCallSiteEntryCall(ctx, call),
 	}
+	if call != nil {
+		edge.ReceiverVar = call.ReceiverVar
+		edge.AssignedVar = call.AssignedVar
+		edge.ChainID = call.ChainID
+	}
+	return edge
 }
 
 func buildFragmentExternalCall(
@@ -244,6 +258,9 @@ func buildFragmentExternalCall(
 	external.TargetFunctionName = fragmentTargetFunctionName(callerDecl, calleeKey, &external)
 	if call != nil {
 		external.Raw = call.Raw
+		external.ReceiverVar = call.ReceiverVar
+		external.AssignedVar = call.AssignedVar
+		external.ChainID = call.ChainID
 	}
 	return external
 }
@@ -355,6 +372,26 @@ func findFragmentCallLine(callerDecl *callgraph.FunctionDecl, calleeKey string) 
 		return call.Line
 	}
 	return callerDecl.StartLine
+}
+
+// chainIDForLine recovers the fluent-chain id for an edge whose exact callee
+// lookup failed. The links of a fluent chain (e.g. Password.hash(p)
+// .addRandomSalt().withBcrypt()) all share the same line AND the same ChainID,
+// but the intermediate links are often left unresolved in a standalone scan, so
+// the resolved edge key diverges from the underlying FunctionCall.Callee and the
+// key-based lookup misses. Recovering by line is safe precisely because every
+// chained call on that line carries the SAME ChainID — picking any of them
+// yields the correct group id. Returns "" when no chained call sits on the line.
+func chainIDForLine(fn *callgraph.FunctionDecl, line int) string {
+	if fn == nil || line <= 0 {
+		return ""
+	}
+	for i := range fn.Calls {
+		if fn.Calls[i].Line == line && fn.Calls[i].ChainID != "" {
+			return fn.Calls[i].ChainID
+		}
+	}
+	return ""
 }
 
 func findCallForCalleeAtLine(callerDecl *callgraph.FunctionDecl, calleeKey string, line int) *callgraph.FunctionCall {

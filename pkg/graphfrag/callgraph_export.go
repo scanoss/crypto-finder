@@ -22,9 +22,19 @@ import (
 	"strings"
 )
 
+// CallgraphSchemaVersion is the canonical schema_version of the callgraph
+// export envelope (the `--export-callgraph` / stitch reachability format). It is
+// the single source of truth for both the live CLI export (internal/scan) and
+// the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
+// — a consumer that serves stitched output stamps the SAME version a live
+// `--scan-dependencies --export-callgraph` run produces.
+const CallgraphSchemaVersion = "6.0"
+
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
-	// SchemaVersion is the schema_version value to emit (e.g. "6.0").
+	// SchemaVersion overrides the emitted schema_version. Normally left empty:
+	// ToCallgraphExport stamps CallgraphSchemaVersion (the format owns its own
+	// version). Set this only to force a non-canonical value (tests/migration).
 	SchemaVersion string
 	// RootModule is the Maven/npm/etc. module string for the root component.
 	RootModule string
@@ -259,8 +269,12 @@ type ExportSupportingCall struct {
 // The output is resolution-corrected by construction: only chains that passed
 // buildAdjacency's fail-closed policy are present in r.Chains.
 func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphExport {
+	schemaVersion := meta.SchemaVersion
+	if schemaVersion == "" {
+		schemaVersion = CallgraphSchemaVersion
+	}
 	out := CallgraphExport{
-		SchemaVersion: meta.SchemaVersion,
+		SchemaVersion: schemaVersion,
 		ScanMetadata: ExportScanMeta{
 			Ecosystem:  meta.Ecosystem,
 			RootModule: meta.RootModule,

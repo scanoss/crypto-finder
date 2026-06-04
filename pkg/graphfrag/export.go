@@ -21,7 +21,7 @@ import "encoding/json"
 // 1.3 adds customer-facing reachability projections: crypto_entry_points,
 // supporting_calls, and display aliases for constructor symbols. Canonical
 // function keys still use the internal <init> identity for joins.
-const SchemaVersion = "graph-fragment-1.3"
+const SchemaVersion = "graph-fragment-1.4"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -191,6 +191,11 @@ type GraphFragmentEdge struct {
 	DeclaredType string `json:"declared_type,omitempty"`
 	MethodName   string `json:"method_name,omitempty"`
 	Arity        int    `json:"arity,omitempty"`
+	// ReceiverVar/AssignedVar/ChainID carry the call-site object identity (1.4+)
+	// for cache-side object-lifecycle re-derivation. Empty on schema < 1.4.
+	ReceiverVar string `json:"receiver_var,omitempty"`
+	AssignedVar string `json:"assigned_var,omitempty"`
+	ChainID     string `json:"chain_id,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
@@ -208,6 +213,11 @@ type GraphFragmentExternal struct {
 	DeclaredType       string `json:"declared_type,omitempty"`
 	MethodName         string `json:"method_name,omitempty"`
 	Arity              int    `json:"arity,omitempty"`
+	// ReceiverVar/AssignedVar/ChainID carry the call-site object identity (1.4+)
+	// for cache-side object-lifecycle re-derivation. Empty on schema < 1.4.
+	ReceiverVar string `json:"receiver_var,omitempty"`
+	AssignedVar string `json:"assigned_var,omitempty"`
+	ChainID     string `json:"chain_id,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`

@@ -211,6 +211,15 @@ type InternalEdge struct {
 	Arity        int
 	CallSite     int
 
+	// ReceiverVar, AssignedVar, ChainID carry the call-site object identity
+	// (1.4+). They let object-lifecycle supporting calls be re-derived from a
+	// cached fragment alone — no live callgraph — which is what lets the annotate
+	// path recompute supporting_calls for findings a new rule introduces. Empty
+	// on fragments exported with schema < 1.4.
+	ReceiverVar string
+	AssignedVar string
+	ChainID     string
+
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *CallSite
@@ -256,6 +265,11 @@ type ExternalCall struct {
 	Caller          string
 	TargetSignature string
 
+	// Raw is the source call expression (e.g. "gen.init"). Carried so the
+	// annotate path can reproduce a supporting call's matched_operation.expression
+	// from the cached fragment. Empty on fragments exported with schema < 1.4.
+	Raw string
+
 	// Resolution classifies how the producer resolved TargetSignature. The zero
 	// value (ResolutionUnknown) is fail-closed: the stitcher will not traverse it.
 	Resolution ResolutionKind
@@ -275,6 +289,15 @@ type ExternalCall struct {
 	// MethodName, and Arity it discriminates distinct call sites that happen to
 	// share a method name within the same caller.
 	CallSite int
+
+	// ReceiverVar, AssignedVar, ChainID carry the call-site object identity
+	// (1.4+). They let object-lifecycle supporting calls be re-derived from a
+	// cached fragment alone — no live callgraph — which is what lets the annotate
+	// path recompute supporting_calls for findings a new rule introduces. Empty
+	// on fragments exported with schema < 1.4.
+	ReceiverVar string
+	AssignedVar string
+	ChainID     string
 
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.

@@ -2,6 +2,43 @@ package scan
 
 import "github.com/scanoss/crypto-finder/internal/callgraph"
 
+// objectIdentity is the minimal per-call identity the object-lifecycle grouping
+// policy needs: the variable a call is invoked on, the variable its result is
+// bound to, and the fluent-chain group it belongs to. It is the shared currency
+// between the live-scan export (which projects it from callgraph.FunctionCall)
+// and the annotate-from-cache path (which projects it from a graph-fragment-1.4
+// edge's receiver_var/assigned_var/chain_id). Both paths run the SAME selection
+// policy (isLifecycleSibling) so they pick the identical set of supporting calls.
+type objectIdentity struct {
+	ReceiverVar string
+	AssignedVar string
+	ChainID     string
+}
+
+// isLifecycleSibling reports whether call belongs to the lifecycle of the crypto
+// object identified by terminal. It is the single source of truth for the
+// object-lifecycle selection policy; callers must exclude the terminal call
+// itself. A call is a lifecycle sibling when:
+//
+//   - it is invoked on one of the terminal's object variables (ReceiverVar match);
+//   - it is a sibling link of the same fluent chain (ChainID match);
+//   - it produced one of the terminal's object variables (AssignedVar match).
+func isLifecycleSibling(call, terminal objectIdentity) bool {
+	matchesObjectVar := func(v string) bool {
+		return v != "" && (v == terminal.ReceiverVar || v == terminal.AssignedVar)
+	}
+	if matchesObjectVar(call.ReceiverVar) {
+		return true
+	}
+	if terminal.ChainID != "" && call.ChainID == terminal.ChainID {
+		return true
+	}
+	if matchesObjectVar(call.AssignedVar) {
+		return true
+	}
+	return false
+}
+
 // deriveObjectLifecycleCalls returns the calls in fn that belong to the
 // lifecycle of the crypto object identified by a terminal crypto call. This is
 // the callgraph-derived replacement for rule-tagged "supporting calls": rules
@@ -29,12 +66,10 @@ func deriveObjectLifecycleCalls(fn *callgraph.FunctionDecl, terminal *callgraph.
 		return nil
 	}
 
-	objectVars := make(map[string]bool, 2)
-	if terminal.ReceiverVar != "" {
-		objectVars[terminal.ReceiverVar] = true
-	}
-	if terminal.AssignedVar != "" {
-		objectVars[terminal.AssignedVar] = true
+	terminalID := objectIdentity{
+		ReceiverVar: terminal.ReceiverVar,
+		AssignedVar: terminal.AssignedVar,
+		ChainID:     terminal.ChainID,
 	}
 
 	out := make([]*callgraph.FunctionCall, 0)
@@ -43,24 +78,10 @@ func deriveObjectLifecycleCalls(fn *callgraph.FunctionDecl, terminal *callgraph.
 		if c == terminal {
 			continue
 		}
-		if isObjectLifecycleCall(c, terminal, objectVars) {
+		callID := objectIdentity{ReceiverVar: c.ReceiverVar, AssignedVar: c.AssignedVar, ChainID: c.ChainID}
+		if isLifecycleSibling(callID, terminalID) {
 			out = append(out, c)
 		}
 	}
 	return out
-}
-
-// isObjectLifecycleCall reports whether call c belongs to the lifecycle of the
-// crypto object identified by the terminal call and its object variables.
-func isObjectLifecycleCall(c, terminal *callgraph.FunctionCall, objectVars map[string]bool) bool {
-	if c.ReceiverVar != "" && objectVars[c.ReceiverVar] {
-		return true
-	}
-	if terminal.ChainID != "" && c.ChainID == terminal.ChainID {
-		return true
-	}
-	if c.AssignedVar != "" && objectVars[c.AssignedVar] {
-		return true
-	}
-	return false
 }

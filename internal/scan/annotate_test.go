@@ -127,6 +127,75 @@ func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing
 	}
 }
 
+// TestBuildAnnotateExport_ExcludesSupportingCallAssets is the regression guard
+// for the supporting-call leak: a rule-tagged supporting/config asset
+// (metadata.supportingCall=true) is NOT a terminal crypto operation. The full
+// exporter routes it to the call-graph-derived supporting_calls and keeps it
+// OUT of crypto_annotations; annotate must do the same, or the re-annotation
+// path pollutes crypto_annotations with non-terminal operations and breaks
+// byte-identicality. The original byte-identical test passed without this case
+// because its fixture had no supporting asset — this fixes that blind spot.
+func TestBuildAnnotateExport_ExcludesSupportingCallAssets(t *testing.T) {
+	t.Parallel()
+
+	result, component := annotateGoldenFixture(t)
+
+	// Add a rule-tagged supporting-call asset on the same containing function
+	// (doEncrypt, lines 5-12) as the terminal Cipher.getInstance finding.
+	result.Report.Findings[0].CryptographicAssets = append(
+		result.Report.Findings[0].CryptographicAssets,
+		entities.CryptographicAsset{
+			StartLine: 7,
+			EndLine:   7,
+			Match:     "cipher.init(ENCRYPT_MODE, key)",
+			Rules:     []entities.RuleInfo{{ID: "java.crypto.cipher.init"}},
+			Metadata: map[string]string{
+				"api":            "javax.crypto.Cipher.init",
+				"assetType":      "supporting-call",
+				"supportingCall": "true",
+			},
+		},
+	)
+	// Re-stamp finding IDs so the new asset gets one, exactly like the pipeline.
+	engine.EnsureFindingSources(result.Report)
+	engine.AssignFindingIDs(result.Report)
+	supportingID := result.Report.Findings[0].CryptographicAssets[1].FindingID
+	if supportingID == "" {
+		t.Fatal("supporting asset did not receive a finding_id; fixture is broken")
+	}
+
+	full := BuildGraphFragmentExport(result)
+	fragmentJSON, err := json.Marshal(full)
+	if err != nil {
+		t.Fatalf("marshal full export: %v", err)
+	}
+	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	annotate := BuildAnnotateExport(result.Report, fragment)
+
+	// Byte-identical crypto_annotations must hold even WITH a supporting asset
+	// present — this is the case the old test never exercised.
+	fullJSON, _ := json.Marshal(full.CryptoAnnotations)
+	annotateJSON, _ := json.Marshal(annotate.CryptoAnnotations)
+	if !bytes.Equal(fullJSON, annotateJSON) {
+		t.Fatalf("crypto_annotations diverge with a supporting asset present.\n full:     %s\n annotate: %s", fullJSON, annotateJSON)
+	}
+
+	// The supporting-call asset must NOT appear as a terminal crypto_annotation
+	// in EITHER path (it belongs in supporting_calls, not crypto_annotations).
+	assertNoFindingID := func(label string, ops []graphfrag.GraphFragmentCryptoOp) {
+		for _, op := range ops {
+			if op.FindingID == supportingID {
+				t.Errorf("%s: supporting-call asset %s leaked into crypto_annotations", label, supportingID)
+			}
+		}
+	}
+	assertNoFindingID("full", full.CryptoAnnotations)
+	assertNoFindingID("annotate", annotate.CryptoAnnotations)
+}
+
 // TestBuildAnnotateExport_DoesNotBuildCallgraph asserts the annotate path emits
 // only scan_metadata + crypto_annotations and never reconstructs functions or
 // edges (the expensive callgraph work it exists to skip).

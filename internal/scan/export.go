@@ -18,10 +18,14 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const (
-	callGraphSchemaVersion   = "6.0"
+	// callGraphSchemaVersion is sourced from pkg/graphfrag so the live
+	// --export-callgraph CLI path and the stitch path (ToCallgraphExport) always
+	// stamp the same schema_version — single source of truth, no drift.
+	callGraphSchemaVersion   = graphfrag.CallgraphSchemaVersion
 	matchedOperationCall     = "call"
 	sourceNodeTypeParameter  = "PARAMETER"
 	sourceNodeTypeValue      = "VALUE"
@@ -791,7 +795,15 @@ func matchedOperationFromCall(call *callgraph.FunctionCall) *callGraphMatchedOpe
 // supportingCallIDFromCall produces a stable short id for a derived supporting
 // call, mirroring the finding_id scheme (SHA-256(path:line:callee)[:8]).
 func supportingCallIDFromCall(sourcePath string, call *callgraph.FunctionCall) string {
-	input := sourcePath + ":" + strconv.Itoa(call.Line) + ":" + call.Callee.String()
+	return supportingIDFromParts(sourcePath, call.Line, call.Callee.String())
+}
+
+// supportingIDFromParts computes the stable supporting-call id from its raw
+// parts. Shared by the live exporter (supportingCallIDFromCall) and the
+// annotate-from-fragment path so an id derived from a cached edge matches the id
+// a live scan derived from the corresponding call: sha256(path:line:calleeKey).
+func supportingIDFromParts(sourcePath string, line int, calleeKey string) string {
+	input := sourcePath + ":" + strconv.Itoa(line) + ":" + calleeKey
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[:8]
 }

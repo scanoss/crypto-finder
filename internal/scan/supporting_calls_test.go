@@ -99,3 +99,36 @@ func TestDeriveObjectLifecycleCalls_KeygenObjectAndConstructor(t *testing.T) {
 		t.Errorf("derived = %v, want %v", got, want)
 	}
 }
+
+// TestIsLifecycleSibling pins the shared object-lifecycle selection policy used
+// by BOTH the live-scan export and the annotate-from-cache path. If the two
+// paths ever diverge on which calls are "supporting", served reachability stops
+// matching a live scan — so this policy is the single source of truth.
+func TestIsLifecycleSibling(t *testing.T) {
+	t.Parallel()
+
+	genTerminal := objectIdentity{ReceiverVar: "gen"} // gen.generateKeyPair()
+	chainTerminal := objectIdentity{ChainID: "167"}   // ...withBcrypt() in chain 167
+
+	cases := []struct {
+		name     string
+		call     objectIdentity
+		terminal objectIdentity
+		want     bool
+	}{
+		{"receiver-var match (gen.init on gen)", objectIdentity{ReceiverVar: "gen"}, genTerminal, true},
+		{"assigned-var match (constructor binds gen)", objectIdentity{AssignedVar: "gen"}, genTerminal, true},
+		{"chain match (sibling fluent link)", objectIdentity{ChainID: "167"}, chainTerminal, true},
+		{"different receiver var", objectIdentity{ReceiverVar: "other"}, genTerminal, false},
+		{"different chain id", objectIdentity{ChainID: "999"}, chainTerminal, false},
+		{"empty call identity never matches", objectIdentity{}, genTerminal, false},
+		{"empty chain ids do not group", objectIdentity{ChainID: ""}, objectIdentity{ChainID: ""}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLifecycleSibling(tc.call, tc.terminal); got != tc.want {
+				t.Errorf("isLifecycleSibling(%+v, %+v) = %v, want %v", tc.call, tc.terminal, got, tc.want)
+			}
+		})
+	}
+}
