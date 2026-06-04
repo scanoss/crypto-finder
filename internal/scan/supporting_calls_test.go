@@ -107,8 +107,8 @@ func TestDeriveObjectLifecycleCalls_KeygenObjectAndConstructor(t *testing.T) {
 func TestIsLifecycleSibling(t *testing.T) {
 	t.Parallel()
 
-	genTerminal := objectIdentity{ReceiverVar: "gen"} // gen.generateKeyPair()
-	chainTerminal := objectIdentity{ChainID: "167"}   // ...withBcrypt() in chain 167
+	genTerminal := objectIdentity{ReceiverVar: "gen"} // terminal call on the generator receiver
+	chainTerminal := objectIdentity{ChainID: "167"}   // terminal link in fluent chain 167
 
 	cases := []struct {
 		name     string

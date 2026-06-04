@@ -224,13 +224,15 @@ func indexComponentSignatures(key ComponentKey, fragment Fragment, adjacency map
 
 func collectCallEdges(fragment Fragment) []callEdge {
 	edges := make([]callEdge, 0, len(fragment.InternalEdges)+len(fragment.ExternalCalls))
-	for _, e := range fragment.InternalEdges {
+	for i := range fragment.InternalEdges {
+		e := &fragment.InternalEdges[i]
 		edges = append(edges, callEdge{
 			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
 			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true, entryCall: e.EntryCall,
 		})
 	}
-	for _, c := range fragment.ExternalCalls {
+	for i := range fragment.ExternalCalls {
+		c := &fragment.ExternalCalls[i]
 		edges = append(edges, callEdge{
 			caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
 			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false, entryCall: c.EntryCall,

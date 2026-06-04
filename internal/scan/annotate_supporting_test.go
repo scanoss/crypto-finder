@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -107,7 +108,7 @@ func TestAnnotateSupportingCalls_ByteIdenticalToFullExport(t *testing.T) {
 	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
 	annotate := BuildAnnotateExport(report, fragment)
 
-	if got, want := marshalSorted(t, annotate.SupportingCalls), marshalSorted(t, full.SupportingCalls); string(got) != string(want) {
+	if got, want := marshalSorted(t, annotate.SupportingCalls), marshalSorted(t, full.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("supporting_calls diverge (identity case).\n full:     %s\n annotate: %s", want, got)
 	}
 }
@@ -139,7 +140,7 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 	// Annotate the R1-era fragment with the R2 report — no live callgraph.
 	annotateR2 := BuildAnnotateExport(reportR2, fragmentR1)
 
-	if got, want := marshalSorted(t, annotateR2.SupportingCalls), marshalSorted(t, fullR2.SupportingCalls); string(got) != string(want) {
+	if got, want := marshalSorted(t, annotateR2.SupportingCalls), marshalSorted(t, fullR2.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("changed-rules supporting_calls diverge: a new rule's finding did not re-derive its lifecycle from the cached fragment.\n full@R2:     %s\n annotate@R2: %s", want, got)
 	}
 }
@@ -167,7 +168,7 @@ func TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment(t *testing.T) {
 
 	annotate := BuildAnnotateExport(report, fragment)
 
-	if got, want := marshalSorted(t, annotate.CryptoAnnotations), marshalSorted(t, full.CryptoAnnotations); string(got) != string(want) {
+	if got, want := marshalSorted(t, annotate.CryptoAnnotations), marshalSorted(t, full.CryptoAnnotations); !bytes.Equal(got, want) {
 		t.Fatalf("crypto_annotations diverge from a structural-only fragment (crypto_call not re-derived).\n full:     %s\n annotate: %s", want, got)
 	}
 }

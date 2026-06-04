@@ -383,7 +383,8 @@ func hasExternalTarget(payload *graphfrag.GraphFragmentExport, target string) bo
 }
 
 func hasInternalEdge(payload *graphfrag.GraphFragmentExport, caller, callee string) bool {
-	for _, edge := range payload.InternalEdges {
+	for i := range payload.InternalEdges {
+		edge := &payload.InternalEdges[i]
 		if edge.CallerKey == caller && edge.CalleeKey == callee {
 			return true
 		}

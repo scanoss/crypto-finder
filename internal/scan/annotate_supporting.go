@@ -14,7 +14,7 @@ import (
 
 // fragEdge is a caller's outgoing call site projected from a graph-fragment-1.4
 // edge (internal or external), normalized to the fields the supporting-call
-// derivation needs. It is the cache-side analogue of a callgraph.FunctionCall.
+// derivation needs. It is the cache-side analog of a callgraph.FunctionCall.
 type fragEdge struct {
 	callerKey string
 	calleeKey string
@@ -76,44 +76,80 @@ func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment grap
 
 	var out []graphfrag.GraphFragmentSupporting
 	seen := make(map[string]bool)
-	for _, finding := range report.Findings {
-		for i := range finding.CryptographicAssets {
-			asset := finding.CryptographicAssets[i]
-			if isSupportingCryptoAsset(asset) {
-				continue
-			}
-			fn, ok := annotateContainingFunction(fragment, finding.FilePath, asset.StartLine)
-			if !ok {
-				continue
-			}
-			edges := edgesByCaller[fn.Signature]
-			terminalIdx := terminalEdgeIndex(edges, asset)
-			if terminalIdx < 0 {
-				continue
-			}
-			terminalID := edges[terminalIdx].identity
-			for j := range edges {
-				if j == terminalIdx {
-					continue
-				}
-				if !isLifecycleSibling(edges[j].identity, terminalID) {
-					continue
-				}
-				// The supporting call lives in the finding's file; use the
-				// detection finding's (normalized, relative) path for the
-				// file_path and the path-derived supporting_id so both match the
-				// live exporter (the fragment's function FilePath is absolute).
-				sc := buildAnnotateSupportingFromEdge(fn, finding.FilePath, edges[j])
-				if sc.SupportingID == "" || seen[sc.SupportingID] {
-					continue
-				}
-				seen[sc.SupportingID] = true
-				out = append(out, sc)
-			}
-		}
+	for i := range report.Findings {
+		appendAnnotateSupportingForFinding(&out, seen, fragment, edgesByCaller, report.Findings[i])
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].SupportingID < out[j].SupportingID })
 	return out
+}
+
+func appendAnnotateSupportingForFinding(
+	out *[]graphfrag.GraphFragmentSupporting,
+	seen map[string]bool,
+	fragment graphfrag.Fragment,
+	edgesByCaller map[string][]fragEdge,
+	finding entities.Finding,
+) {
+	for i := range finding.CryptographicAssets {
+		calls := annotateSupportingForAsset(fragment, edgesByCaller, finding, finding.CryptographicAssets[i])
+		appendUniqueAnnotateSupporting(out, seen, calls)
+	}
+}
+
+func annotateSupportingForAsset(
+	fragment graphfrag.Fragment,
+	edgesByCaller map[string][]fragEdge,
+	finding entities.Finding,
+	asset entities.CryptographicAsset,
+) []graphfrag.GraphFragmentSupporting {
+	if isSupportingCryptoAsset(asset) {
+		return nil
+	}
+	fn, ok := annotateContainingFunction(fragment, finding.FilePath, asset.StartLine)
+	if !ok {
+		return nil
+	}
+	edges := edgesByCaller[fn.Signature]
+	terminalIdx := terminalEdgeIndex(edges, asset)
+	if terminalIdx < 0 {
+		return nil
+	}
+	return annotateLifecycleSiblings(fn, finding.FilePath, edges, terminalIdx)
+}
+
+func annotateLifecycleSiblings(
+	fn graphfrag.Function,
+	sourcePath string,
+	edges []fragEdge,
+	terminalIdx int,
+) []graphfrag.GraphFragmentSupporting {
+	terminalID := edges[terminalIdx].identity
+	out := make([]graphfrag.GraphFragmentSupporting, 0, len(edges))
+	for i := range edges {
+		if i == terminalIdx || !isLifecycleSibling(edges[i].identity, terminalID) {
+			continue
+		}
+		// The supporting call lives in the finding's file; use the detection
+		// finding's normalized, relative path for file_path and the
+		// path-derived supporting_id so both match the live exporter.
+		out = append(out, buildAnnotateSupportingFromEdge(fn, sourcePath, edges[i]))
+	}
+	return out
+}
+
+func appendUniqueAnnotateSupporting(
+	out *[]graphfrag.GraphFragmentSupporting,
+	seen map[string]bool,
+	calls []graphfrag.GraphFragmentSupporting,
+) {
+	for i := range calls {
+		id := calls[i].SupportingID
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		*out = append(*out, calls[i])
+	}
 }
 
 // terminalEdgeIndex finds the edge that is the terminal crypto call for asset:
@@ -189,13 +225,7 @@ func buildAnnotateSupportingFromEdge(fn graphfrag.Function, sourcePath string, e
 // new rule's finding gets a crypto_call from the cached structural fragment
 // without a live callgraph.
 func fragmentCryptoCallFromEdge(e fragEdge) *graphfrag.GraphFragmentCryptoCall {
-	calleeID, _ := callgraph.ParseFunctionID(e.calleeKey)
-	funcName := fullFunctionName(calleeID)
-	if funcName == "" {
-		funcName = e.functionName()
-	}
-	returnType := normalizeExportReturnType(calleeID, "")
-	displaySymbol, aliases := exportDisplaySymbolAndAliases(calleeID, funcName)
+	funcName, returnType, displaySymbol, aliases := fragmentCallMetadata(e)
 
 	call := &graphfrag.GraphFragmentCryptoCall{
 		FunctionName:       funcName,
@@ -211,6 +241,21 @@ func fragmentCryptoCallFromEdge(e fragEdge) *graphfrag.GraphFragmentCryptoCall {
 		}
 	}
 	return call
+}
+
+func fragmentCallMetadata(e fragEdge) (string, string, string, []string) {
+	calleeID, err := callgraph.ParseFunctionID(e.calleeKey)
+	if err != nil {
+		return e.calleeKey, "", e.calleeKey, nil
+	}
+
+	funcName := fullFunctionName(calleeID)
+	if funcName == "" {
+		funcName = e.calleeKey
+	}
+	returnType := normalizeExportReturnType(calleeID, "")
+	displaySymbol, aliases := exportDisplaySymbolAndAliases(calleeID, funcName)
+	return funcName, returnType, displaySymbol, aliases
 }
 
 // annotateTerminalCryptoCall re-derives the terminal crypto_call for a finding
