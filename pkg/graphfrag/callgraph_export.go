@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.0"
+const CallgraphSchemaVersion = "6.1"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -64,6 +64,12 @@ type ExportFindingGraph struct {
 	FindingID string `json:"finding_id"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
 	MatchedOperation *ExportMatchedOperation `json:"matched_operation,omitempty"`
+	// SupportingCallIDs are the supporting_id values of this finding's
+	// object-lifecycle supporting calls (6.1+) — the precise finding->supporting
+	// foreign key, carried from the terminal CryptoOperation. Each id resolves to
+	// a top-level supporting_calls entry. The served API surfaces these as a
+	// per-asset breadcrumb.
+	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 	// CallChains is the set of surviving root-to-crypto paths for this finding.
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
 }
@@ -284,9 +290,10 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	// Group chains by FindingID.
 	type findingKey string
 	type chainGroup struct {
-		findingID  string
-		matchedOp  *ExportMatchedOperation
-		callChains [][]ExportChainNode
+		findingID         string
+		matchedOp         *ExportMatchedOperation
+		supportingCallIDs []string
+		callChains        [][]ExportChainNode
 	}
 	groupMap := make(map[findingKey]*chainGroup)
 	var groupOrder []findingKey
@@ -306,11 +313,17 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		grp, exists := groupMap[key]
 		if !exists {
 			grp = &chainGroup{
-				findingID: resolvedFindingID,
-				matchedOp: chainMatchedOp(fc),
+				findingID:         resolvedFindingID,
+				matchedOp:         chainMatchedOp(fc),
+				supportingCallIDs: chainSupportingCallIDs(fc),
 			}
 			groupMap[key] = grp
 			groupOrder = append(groupOrder, key)
+		}
+		// All chains for one finding share the same terminal crypto op; fill the
+		// FK from the first chain that carries it (legacy/empty fragments → nil).
+		if len(grp.supportingCallIDs) == 0 {
+			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
@@ -324,15 +337,28 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	for _, key := range groupOrder {
 		grp := groupMap[key]
 		out.FindingGraphs = append(out.FindingGraphs, ExportFindingGraph{
-			FindingID:        grp.findingID,
-			MatchedOperation: grp.matchedOp,
-			CallChains:       grp.callChains,
+			FindingID:         grp.findingID,
+			MatchedOperation:  grp.matchedOp,
+			SupportingCallIDs: grp.supportingCallIDs,
+			CallChains:        grp.callChains,
 		})
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 	return out
+}
+
+// chainSupportingCallIDs returns the terminal crypto operation's supporting-call
+// foreign key (6.1+), cloned. The stitcher populates FindingChain.CryptoOp from
+// the fragment's CryptoOperation for the terminal node, so the precise
+// finding->supporting ids persisted at annotate time ride straight through to the
+// finding_graph here. Returns nil for legacy fragments with no crypto op.
+func chainSupportingCallIDs(fc *FindingChain) []string {
+	if fc == nil || fc.CryptoOp == nil || len(fc.CryptoOp.SupportingCallIDs) == 0 {
+		return nil
+	}
+	return append([]string(nil), fc.CryptoOp.SupportingCallIDs...)
 }
 
 // chainMatchedOp extracts the matched operation from the last frame's

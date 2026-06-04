@@ -53,6 +53,13 @@ type Fragment struct {
 	// graph construction.
 	GraphAlgoVersion string
 
+	// RulesVersion is the rules_version of the crypto annotation attached to this
+	// fragment (the version under which CryptoOperations/SupportingCalls were
+	// computed). Empty for purely structural fragments (code graph with no
+	// annotation attached). Consumers that stitch a set mined under heterogeneous
+	// rules versions use it to report the highest contributing version.
+	RulesVersion string
+
 	Functions         []Function
 	InternalEdges     []InternalEdge
 	ExternalCalls     []ExternalCall
@@ -363,6 +370,14 @@ type CryptoOperation struct {
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
 	// operation (1.2+).
 	MatchedOperation *MatchedOp
+	// SupportingCallIDs are the supporting_id values of THIS finding's
+	// object-lifecycle supporting calls (graph-fragment 1.5+). It is the precise
+	// finding->supporting foreign key, captured at derivation time where object
+	// identity still exists. The top-level supporting_calls array is deduped
+	// across findings and carries no finding_id, so this is the only place the
+	// per-finding association survives persistence and stitch — the served
+	// callgraph's finding_graph.supporting_call_ids is sourced from here.
+	SupportingCallIDs []string
 }
 
 // SupportingCall is a non-finding crypto-adjacent call carried as context for

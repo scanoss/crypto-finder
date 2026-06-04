@@ -480,7 +480,13 @@ func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine
 			if isSupportingCryptoAsset(asset) {
 				continue
 			}
-			out = append(out, buildGraphFragmentCryptoAnnotation(ctx, finding, asset))
+			op := buildGraphFragmentCryptoAnnotation(ctx, finding, asset)
+			// Capture the per-finding supporting->finding FK while object identity
+			// still exists (graph-fragment 1.5). The top-level supporting_calls are
+			// deduped across findings and lose it; the annotate path re-derives the
+			// identical set from the cached edges.
+			op.SupportingCallIDs = supportingCallIDsOf(deriveSupportingCallsForFinding(ctx, finding, asset))
+			out = append(out, op)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {

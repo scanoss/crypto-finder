@@ -70,8 +70,9 @@ type CallgraphExportJSON struct {
 
 // ExportFindingGraphJSON is one finding_graph entry in a CallgraphExportJSON.
 type ExportFindingGraphJSON struct {
-	FindingID  string                  `json:"finding_id"`
-	CallChains [][]ExportChainNodeJSON `json:"call_chains,omitempty"`
+	FindingID         string                  `json:"finding_id"`
+	SupportingCallIDs []string                `json:"supporting_call_ids,omitempty"`
+	CallChains        [][]ExportChainNodeJSON `json:"call_chains,omitempty"`
 }
 
 // ExportChainNodeJSON is one node in a schema-6.0 call chain.
@@ -155,6 +156,10 @@ type DiffReport struct {
 	// EntryPointDivergences records crypto_entry_points entries in B that do not
 	// correspond to a surviving B chain/supporting call.
 	EntryPointDivergences []string
+	// SupportingCallIDDivergences records finding_graph.supporting_call_ids in B
+	// (the per-finding foreign key, 6.1+) that do not resolve to a top-level
+	// supporting_calls entry — a dangling reference the served API would expose.
+	SupportingCallIDDivergences []string
 	// KnownDivergences records differences in fields that are in the IgnoreFields
 	// list (default: file_path, inferred_return, confidence). These are documented
 	// v1 limitations, not hard failures.
@@ -245,7 +250,28 @@ func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, op
 		validateCryptoEntryPoints(b, bChainsByFinding, report)
 	}
 
+	// Foreign-key consistency: every per-finding supporting_call_id (6.1+) must
+	// resolve to a top-level supporting_calls entry.
+	validateSupportingCallIDs(b, report)
+
 	return report
+}
+
+// validateSupportingCallIDs checks that every finding_graph.supporting_call_ids
+// reference in B resolves to a top-level supporting_calls entry. A dangling id is
+// a broken foreign key the served API would surface as a per-asset breadcrumb
+// pointing at nothing.
+func validateSupportingCallIDs(b CallgraphExportJSON, report *DiffReport) {
+	supportingIDs := collectSupportingIDs(b.SupportingCalls)
+	for _, fg := range b.FindingGraphs {
+		for _, id := range fg.SupportingCallIDs {
+			if !supportingIDs[id] {
+				report.SupportingCallIDDivergences = append(report.SupportingCallIDDivergences,
+					fmt.Sprintf("finding_graph %q references supporting_call_id %q not present in supporting_calls",
+						fg.FindingID, id))
+			}
+		}
+	}
 }
 
 func compareFindingForID(

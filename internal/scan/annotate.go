@@ -84,6 +84,10 @@ func BuildAnnotateExport(report *entities.InterimReport, fragment graphfrag.Frag
 			if op.CryptoCall == nil {
 				op.CryptoCall = annotateTerminalCryptoCall(fragment, edgesByCaller, finding, asset)
 			}
+			// Re-derive this finding's supporting->finding FK from the cached edges
+			// (graph-fragment 1.5). Object-precise, so it matches the full export's
+			// crypto_annotation.supporting_call_ids for the same source + rules.
+			op.SupportingCallIDs = supportingIDsFromAnnotate(annotateSupportingForAsset(fragment, edgesByCaller, finding, asset))
 			out.CryptoAnnotations = append(out.CryptoAnnotations, op)
 		}
 	}

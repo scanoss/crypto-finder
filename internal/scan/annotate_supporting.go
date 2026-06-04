@@ -170,6 +170,32 @@ func appendUniqueAnnotateSupporting(
 	}
 }
 
+// supportingIDsFromAnnotate returns the sorted, de-duplicated supporting_id
+// values of one finding's derived supporting calls — the per-finding breadcrumb
+// stored on crypto_annotation.supporting_call_ids. It mirrors supportingCallIDsOf
+// (the live exporter's helper) for the fragment-shaped GraphFragmentSupporting, so
+// the annotate path and the full export produce identical ids per finding.
+func supportingIDsFromAnnotate(calls []graphfrag.GraphFragmentSupporting) []string {
+	if len(calls) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(calls))
+	ids := make([]string, 0, len(calls))
+	for i := range calls {
+		id := calls[i].SupportingID
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // edgeCandidateViews projects every edge onto the shared candidateView so the
 // annotate path runs the identical position/chain terminal selection as the live
 // exporter.

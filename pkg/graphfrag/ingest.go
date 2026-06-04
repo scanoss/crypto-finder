@@ -81,19 +81,20 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 	for i := range e.CryptoAnnotations {
 		op := &e.CryptoAnnotations[i]
 		frag.CryptoOperations = append(frag.CryptoOperations, CryptoOperation{
-			Function:         op.FunctionKey,
-			FindingID:        op.FindingID,
-			RuleID:           op.RuleID,
-			Symbol:           op.Symbol,
-			FilePath:         op.FilePath,
-			StartLine:        op.StartLine,
-			EndLine:          op.EndLine,
-			Match:            op.Expression,
-			CryptoCall:       toCryptoCall(op.CryptoCall),
-			OID:              op.OID,
-			Metadata:         op.Metadata,
-			Source:           op.Source,
-			MatchedOperation: toMatchedOp(op.MatchedOperation),
+			Function:          op.FunctionKey,
+			FindingID:         op.FindingID,
+			RuleID:            op.RuleID,
+			Symbol:            op.Symbol,
+			FilePath:          op.FilePath,
+			StartLine:         op.StartLine,
+			EndLine:           op.EndLine,
+			Match:             op.Expression,
+			CryptoCall:        toCryptoCall(op.CryptoCall),
+			OID:               op.OID,
+			Metadata:          op.Metadata,
+			Source:            op.Source,
+			MatchedOperation:  toMatchedOp(op.MatchedOperation),
+			SupportingCallIDs: append([]string(nil), op.SupportingCallIDs...),
 		})
 	}
 	for i := range e.SupportingCalls {

@@ -311,6 +311,47 @@ func TestToCallgraphExport_PreservesStoredMatchedOperation(t *testing.T) {
 	}
 }
 
+// TestToCallgraphExport_EmitsSupportingCallIDsFromCryptoOp asserts the served
+// finding_graph carries the per-finding supporting->finding foreign key (6.1),
+// sourced from the terminal CryptoOperation the stitcher populated. This is the
+// value the mining service surfaces as the per-asset supporting_call_ids
+// breadcrumb — it must ride through stitch, not be re-derived at serve time.
+func TestToCallgraphExport_EmitsSupportingCallIDsFromCryptoOp(t *testing.T) {
+	res := &Result{
+		Chains: []FindingChain{{
+			FindingID: "find-1",
+			Symbol:    "javax.crypto.Cipher.doFinal",
+			Frames: []CallFrame{{
+				Component: phase6Root,
+				Signature: "com.acme.App.entry#0",
+				Function: Function{
+					Signature:    "com.acme.App.entry#0",
+					FunctionName: "com.acme.App.entry",
+					FilePath:     "App.java",
+				},
+			}},
+			CryptoOp: &CryptoOperation{
+				SupportingCallIDs: []string{"sup_aaaa", "sup_bbbb"},
+			},
+		}},
+	}
+
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{SchemaVersion: "6.1", RootModule: "com.acme:app", Ecosystem: "java"})
+	if len(out.FindingGraphs) != 1 {
+		t.Fatalf("want 1 finding graph, got %d", len(out.FindingGraphs))
+	}
+	got := out.FindingGraphs[0].SupportingCallIDs
+	want := []string{"sup_aaaa", "sup_bbbb"}
+	if len(got) != len(want) {
+		t.Fatalf("supporting_call_ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("supporting_call_ids[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // TestToCallgraphExport_CryptoEntryPoints asserts that crypto_entry_points has one
 // entry for this 3-frame chain with chain_depth=3 (len(chain) - pos=0 = 3).
 func TestToCallgraphExport_CryptoEntryPoints(t *testing.T) {

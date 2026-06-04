@@ -78,11 +78,12 @@ type callGraphExportScanMeta struct {
 }
 
 type callGraphExportFinding struct {
-	FindingID        string                     `json:"finding_id"`
-	MatchedOperation *callGraphMatchedOperation `json:"matched_operation,omitempty"`
-	FindingLocation  *callGraphFindingLocation  `json:"finding_location,omitempty"`
-	UnresolvedReason string                     `json:"unresolved_reason,omitempty"`
-	CallChains       [][]callGraphChainNode     `json:"call_chains,omitempty"`
+	FindingID         string                     `json:"finding_id"`
+	MatchedOperation  *callGraphMatchedOperation `json:"matched_operation,omitempty"`
+	FindingLocation   *callGraphFindingLocation  `json:"finding_location,omitempty"`
+	UnresolvedReason  string                     `json:"unresolved_reason,omitempty"`
+	SupportingCallIDs []string                   `json:"supporting_call_ids,omitempty"`
+	CallChains        [][]callGraphChainNode     `json:"call_chains,omitempty"`
 }
 
 type callGraphDependencyContext struct {
@@ -355,8 +356,15 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 				processedAssets++
 				continue
 			}
-			out.FindingGraphs = append(out.FindingGraphs, buildFindingGraph(ctx, finding, asset))
-			out.SupportingCalls = append(out.SupportingCalls, deriveSupportingCallsForFinding(ctx, finding, asset)...)
+			// Derive once: the per-finding supporting calls are the precise
+			// finding->supporting link. Capture their ids onto the finding_graph
+			// HERE — the top-level slice is deduped across findings (line ~375)
+			// and loses which finding each call belongs to.
+			supporting := deriveSupportingCallsForFinding(ctx, finding, asset)
+			fg := buildFindingGraph(ctx, finding, asset)
+			fg.SupportingCallIDs = supportingCallIDsOf(supporting)
+			out.FindingGraphs = append(out.FindingGraphs, fg)
+			out.SupportingCalls = append(out.SupportingCalls, supporting...)
 			processedAssets++
 			if processedAssets%callGraphExportProgress == 0 || processedAssets == totalAssets {
 				log.Info().
@@ -741,6 +749,29 @@ func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.F
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
 	}
 	return out
+}
+
+// supportingCallIDsOf returns the sorted, de-duplicated supporting-call ids of a
+// single finding's derived supporting calls — the per-finding breadcrumb stored
+// on finding_graph.supporting_call_ids. It is computed at the point the
+// per-finding association still exists; the top-level supporting_calls array is
+// deduped across all findings (dedupSupportingCalls) and carries no finding_id,
+// so this foreign key cannot be reconstructed from the serialized array alone.
+func supportingCallIDsOf(calls []callGraphSupportingCall) []string {
+	if len(calls) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(calls))
+	ids := make([]string, 0, len(calls))
+	for _, c := range calls {
+		if _, ok := seen[c.SupportingID]; ok {
+			continue
+		}
+		seen[c.SupportingID] = struct{}{}
+		ids = append(ids, c.SupportingID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // buildDerivedSupportingCall renders a single call-graph FunctionCall as a

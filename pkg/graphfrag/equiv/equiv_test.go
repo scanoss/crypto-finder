@@ -106,6 +106,37 @@ func TestCompare_Identical(t *testing.T) {
 	}
 }
 
+// TestCompare_SupportingCallIDForeignKey verifies the 6.1 foreign-key check:
+// a finding_graph.supporting_call_ids entry that resolves to a top-level
+// supporting_calls entry is clean, while a dangling reference is reported as a
+// SupportingCallIDDivergence (the served API would otherwise surface a per-asset
+// breadcrumb pointing at nothing).
+func TestCompare_SupportingCallIDForeignKey(t *testing.T) {
+	withFK := func(fg ExportFindingGraphJSON, ids ...string) ExportFindingGraphJSON {
+		fg.SupportingCallIDs = ids
+		return fg
+	}
+	n := node("com.acme.App.entry", "com.acme.App.entry(): void")
+
+	t.Run("resolved reference is clean", func(t *testing.T) {
+		b := export(withFK(findingGraph("find-1", chain(n)), "sup_a"))
+		b.SupportingCalls = []ExportSupportingCallJSON{{SupportingID: "sup_a"}}
+		report := Compare(b, b, nil, Options{})
+		if len(report.SupportingCallIDDivergences) != 0 {
+			t.Errorf("SupportingCallIDDivergences = %v, want empty", report.SupportingCallIDDivergences)
+		}
+	})
+
+	t.Run("dangling reference is reported", func(t *testing.T) {
+		b := export(withFK(findingGraph("find-1", chain(n)), "sup_missing"))
+		b.SupportingCalls = []ExportSupportingCallJSON{{SupportingID: "sup_a"}}
+		report := Compare(b, b, nil, Options{})
+		if len(report.SupportingCallIDDivergences) != 1 {
+			t.Fatalf("SupportingCallIDDivergences = %v, want exactly 1 dangling FK", report.SupportingCallIDDivergences)
+		}
+	})
+}
+
 // TestCompare_SuppressedChainAbsentFromB verifies that a chain in A which
 // traverses a suppressed edge is not reported as MissingInB. Since the chain is
 // expected to be absent from B (it was suppressed), no regression is raised.

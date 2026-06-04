@@ -197,6 +197,51 @@ func TestTerminalEdgeIndex_ColumnAwareSelection(t *testing.T) {
 	})
 }
 
+// TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs pins the
+// served-path foreign key (graph-fragment 1.5): each crypto_annotation lists the
+// supporting_call ids of ITS finding, object-precise, and the annotate path
+// (no live graph, structural-only fragment) re-derives them identically. This is
+// what lets the stitch-built finding_graph surface supporting_call_ids per asset
+// without re-running lifecycle derivation at serve time.
+func TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs(t *testing.T) {
+	t.Parallel()
+	graph, dir := buildSupportingGraph(t)
+	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
+
+	full := BuildGraphFragmentExport(&engine.DepScanResult{
+		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
+	})
+	if len(full.CryptoAnnotations) != 1 {
+		t.Fatalf("want 1 crypto annotation, got %d", len(full.CryptoAnnotations))
+	}
+	op := full.CryptoAnnotations[0]
+	if len(op.SupportingCallIDs) == 0 {
+		t.Fatal("crypto_annotation.supporting_call_ids empty; the per-finding FK was not populated in the full export")
+	}
+	// Every id must resolve to a top-level supporting_calls entry.
+	top := make(map[string]bool, len(full.SupportingCalls))
+	for _, sc := range full.SupportingCalls {
+		top[sc.SupportingID] = true
+	}
+	for _, id := range op.SupportingCallIDs {
+		if !top[id] {
+			t.Errorf("supporting_call_id %q does not resolve to any top-level supporting_calls entry", id)
+		}
+	}
+
+	// The annotate path (structural-only fragment, no live graph) must re-derive
+	// the SAME supporting_call_ids — the Option-A precision guarantee end-to-end.
+	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
+	fragment.CryptoOperations = nil // exactly what component_code_graphs stores.
+	annotate := BuildAnnotateExport(report, fragment)
+	if len(annotate.CryptoAnnotations) != 1 {
+		t.Fatalf("annotate: want 1 crypto annotation, got %d", len(annotate.CryptoAnnotations))
+	}
+	if got, want := annotate.CryptoAnnotations[0].SupportingCallIDs, op.SupportingCallIDs; !equalStringSlices(got, want) {
+		t.Fatalf("annotate re-derived different supporting_call_ids: got %v, want %v", got, want)
+	}
+}
+
 // TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment models the
 // mining-service reality: the cached fragment is structural-only (code graph,
 // NO crypto operations — those are rules-versioned elsewhere). Carry-forward

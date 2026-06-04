@@ -21,7 +21,7 @@ import "encoding/json"
 // 1.3 adds customer-facing reachability projections: crypto_entry_points,
 // supporting_calls, and display aliases for constructor symbols. Canonical
 // function keys still use the internal <init> identity for joins.
-const SchemaVersion = "graph-fragment-1.4"
+const SchemaVersion = "graph-fragment-1.5"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -258,6 +258,13 @@ type GraphFragmentCryptoOp struct {
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
 	// operation (1.2+). Mirrors the schema-6.0 matched_operation shape.
 	MatchedOperation *GraphFragmentMatchedOp `json:"matched_operation,omitempty"`
+	// SupportingCallIDs are the supporting_id values of THIS finding's
+	// object-lifecycle supporting calls (1.5+) — the precise finding->supporting
+	// foreign key. Sorted, de-duplicated. Each id resolves to a top-level
+	// supporting_calls entry; the stitch-built callgraph surfaces these as
+	// finding_graph.supporting_call_ids and the served API as a per-asset
+	// breadcrumb.
+	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 }
 
 // GraphFragmentSupporting is a non-finding crypto-adjacent call such as
