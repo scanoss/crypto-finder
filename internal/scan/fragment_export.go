@@ -477,9 +477,6 @@ func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			if isSupportingCryptoAsset(asset) {
-				continue
-			}
 			op := buildGraphFragmentCryptoAnnotation(ctx, finding, asset)
 			// Capture the per-finding supporting->finding FK while object identity
 			// still exists (graph-fragment 1.5). The top-level supporting_calls are
@@ -510,9 +507,6 @@ func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.D
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			if isSupportingCryptoAsset(asset) {
-				continue
-			}
 			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
 			for i := range supportingCalls {
 				sc := &supportingCalls[i]
@@ -557,9 +551,6 @@ func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			if isSupportingCryptoAsset(asset) {
-				continue
-			}
 			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
 			chains := buildCallChains(ctx, containingFn, nil)
 			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)

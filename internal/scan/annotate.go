@@ -65,16 +65,6 @@ func BuildAnnotateExport(report *entities.InterimReport, fragment graphfrag.Frag
 	for _, finding := range report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			// Mirror the full exporter (buildGraphFragmentCryptoAnnotations):
-			// rule-tagged supporting/config assets are NOT terminal crypto
-			// operations and must stay out of crypto_annotations. The full
-			// export routes them through the call-graph-derived supporting_calls
-			// instead; annotate has no call graph to derive from, so it simply
-			// drops them — keeping crypto_annotations byte-identical to a full
-			// `scan --export-graph-fragment` for the same source + rules.
-			if isSupportingCryptoAsset(asset) {
-				continue
-			}
 			op := buildAnnotateCryptoOp(finding, asset, fragment, opsByFindingID)
 			// When the imported fragment is structural-only (the mining-service
 			// cache stores the code graph without crypto operations), carry-forward

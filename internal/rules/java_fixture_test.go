@@ -43,30 +43,6 @@ func TestJavaRulesFixturesClassifyPassword4JAndBouncyCastleSignals(t *testing.T)
 		t.Fatalf("password terminal metadata = %#v, want algorithm digest", passwordTerminal.Metadata.Crypto)
 	}
 
-	for _, tt := range []struct {
-		id  string
-		api string
-	}{
-		{"java.password4j.supporting.hash-start", "com.password4j.Password.hash"},
-		{"java.password4j.supporting.check-start", "com.password4j.Password.check"},
-		{"java.password4j.supporting.add-random-salt", "com.password4j.HashBuilder.addRandomSalt"},
-		{"java.password4j.supporting.hash-result", "com.password4j.Hash.getResult"},
-	} {
-		t.Run(tt.id, func(t *testing.T) {
-			t.Parallel()
-			passwordSupport := findFixtureRule(parsed.Rules, tt.id)
-			if passwordSupport == nil {
-				t.Fatalf("missing %s rule", tt.id)
-			}
-			if passwordSupport.Metadata.Crypto["assetType"] != "supporting-call" ||
-				passwordSupport.Metadata.Crypto["supportingCall"] != "true" ||
-				passwordSupport.Metadata.Crypto["api"] != tt.api {
-				t.Fatalf("password support metadata = %#v, want supporting-call api %s",
-					passwordSupport.Metadata.Crypto, tt.api)
-			}
-		})
-	}
-
 	bouncyKeygen := findFixtureRule(parsed.Rules, "java.bouncycastle.keygen.ec")
 	if bouncyKeygen == nil {
 		t.Fatal("missing java.bouncycastle.keygen.ec rule")

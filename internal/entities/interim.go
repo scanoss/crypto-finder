@@ -173,7 +173,6 @@ type RuleInfo struct {
 // The key is constructed using asset-type-specific identifying fields:
 //   - algorithm: algorithmName if available, otherwise algorithmFamily + mode + padding, otherwise algorithmFamily
 //   - related-crypto-material: materialType
-//   - supporting-call: api when available, otherwise operation or cryptoFunction
 //   - protocol: protocolType
 //   - certificate: certificateSerialNumber (or location-based fallback when missing)
 //
@@ -187,8 +186,6 @@ func (c *CryptographicAsset) GetKey() string {
 		return c.getAlgorithmKey()
 	case "related-crypto-material":
 		return c.getRelatedCryptoMaterialKey()
-	case "supporting-call", "supporting_call":
-		return c.getSupportingCallKey()
 	case "protocol":
 		return c.getProtocolKey()
 	case "certificate":
@@ -250,31 +247,6 @@ func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
 	}
 
 	return fmt.Sprintf("related-crypto-material:%s%s", materialType, metadataSuffix)
-}
-
-// getSupportingCallKey generates a key for lifecycle/configuration calls that
-// support a crypto finding. Different APIs on the same source line must remain
-// distinct so fluent chains can expose each supporting call separately.
-func (c *CryptographicAsset) getSupportingCallKey() string {
-	api := strings.TrimSpace(c.Metadata["api"])
-	operation := strings.TrimSpace(c.Metadata["operation"])
-	cryptoFunction := strings.TrimSpace(c.Metadata["cryptoFunction"])
-
-	excludeKeys := []string{"api", "operation", "cryptoFunction"}
-	metadataSuffix := c.getMetadataKeySuffix(excludeKeys)
-
-	if api != "" {
-		return fmt.Sprintf("supporting-call:%s%s", api, metadataSuffix)
-	}
-	if operation != "" {
-		return fmt.Sprintf("supporting-call:%s%s", operation, metadataSuffix)
-	}
-	if cryptoFunction != "" {
-		return fmt.Sprintf("supporting-call:%s%s", cryptoFunction, metadataSuffix)
-	}
-
-	location := fmt.Sprintf("%d:%d", c.StartLine, c.EndLine)
-	return fmt.Sprintf("supporting-call:location:%s%s", location, metadataSuffix)
 }
 
 // getProtocolKey generates a key for protocol assets using protocolType and optional version.

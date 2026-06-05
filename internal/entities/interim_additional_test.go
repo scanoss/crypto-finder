@@ -85,20 +85,6 @@ func TestCryptographicAsset_GetKey_AdditionalBranches(t *testing.T) {
 			wantContains: []string{"protocol:location:11:14", ":context=cfg"},
 		},
 		{
-			name: "supporting call uses api identity",
-			asset: CryptographicAsset{
-				Metadata: map[string]string{
-					"assetType": "supporting-call",
-					"api":       "com.password4j.HashBuilder.addRandomSalt",
-					"library":   "Password4J",
-				},
-			},
-			wantContains: []string{
-				"supporting-call:com.password4j.HashBuilder.addRandomSalt",
-				":library=Password4J",
-			},
-		},
-		{
 			name: "certificate with metadata suffix and trimmed serial",
 			asset: CryptographicAsset{
 				Metadata: map[string]string{

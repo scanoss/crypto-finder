@@ -615,65 +615,6 @@ func TestDeduplicateInterimReport_SameAssetTypeSameLine(t *testing.T) {
 	}
 }
 
-// TestDeduplicateInterimReport_SupportingCallsSameLineDifferentAPIs tests that
-// fluent supporting calls on the same source line remain separate when they
-// describe different APIs.
-func TestDeduplicateInterimReport_SupportingCallsSameLineDifferentAPIs(t *testing.T) {
-	report := &entities.InterimReport{
-		Version: "1.1",
-		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
-		Findings: []entities.Finding{
-			{
-				FilePath: "PasswordService.java",
-				Language: "java",
-				CryptographicAssets: []entities.CryptographicAsset{
-					{
-						StartLine: 26,
-						EndLine:   26,
-						Match:     `Password.hash(password).addRandomSalt(16).withBcrypt();`,
-						Rules:     []entities.RuleInfo{{ID: "java.password4j.supporting.hash-start"}},
-						Metadata: map[string]string{
-							"assetType": "supporting-call",
-							"api":       "com.password4j.Password.hash",
-							"library":   "Password4J",
-						},
-						Status: "pending",
-					},
-					{
-						StartLine: 26,
-						EndLine:   26,
-						Match:     `Password.hash(password).addRandomSalt(16).withBcrypt();`,
-						Rules:     []entities.RuleInfo{{ID: "java.password4j.supporting.add-random-salt"}},
-						Metadata: map[string]string{
-							"assetType": "supporting-call",
-							"api":       "com.password4j.HashBuilder.addRandomSalt",
-							"library":   "Password4J",
-						},
-						Status: "pending",
-					},
-				},
-			},
-		},
-	}
-
-	result := DeduplicateInterimReport(report)
-	assets := result.Findings[0].CryptographicAssets
-	if len(assets) != 2 {
-		t.Fatalf("Expected 2 supporting calls with different APIs, got %d", len(assets))
-	}
-
-	apis := make(map[string]bool)
-	for _, asset := range assets {
-		apis[asset.Metadata["api"]] = true
-	}
-	if !apis["com.password4j.Password.hash"] {
-		t.Errorf("Missing Password.hash supporting call")
-	}
-	if !apis["com.password4j.HashBuilder.addRandomSalt"] {
-		t.Errorf("Missing HashBuilder.addRandomSalt supporting call")
-	}
-}
-
 // TestDeduplicateInterimReport_DifferentSemanticProperties ensures assets with
 // different semantic properties (different algorithms) remain separate even at the same location.
 func TestDeduplicateInterimReport_DifferentSemanticProperties(t *testing.T) {

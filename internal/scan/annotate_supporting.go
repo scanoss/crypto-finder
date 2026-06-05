@@ -120,9 +120,6 @@ func annotateSupportingForAsset(
 	finding entities.Finding,
 	asset entities.CryptographicAsset,
 ) []graphfrag.GraphFragmentSupporting {
-	if isSupportingCryptoAsset(asset) {
-		return nil
-	}
 	fn, ok := annotateContainingFunction(fragment, finding.FilePath, asset.StartLine)
 	if !ok {
 		return nil

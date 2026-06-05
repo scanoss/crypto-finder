@@ -348,14 +348,6 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 					Int("total", totalAssets).
 					Msg("Building finding graph")
 			}
-			if isSupportingCryptoAsset(asset) {
-				// Legacy rule-tagged supporting sentinel: it is neither a finding
-				// nor an independent entry. Supporting calls are now derived from
-				// the call graph (see deriveSupportingCallsForFinding), so we drop
-				// it here to keep the findings clean during the rule transition.
-				processedAssets++
-				continue
-			}
 			// Derive once: the per-finding supporting calls are the precise
 			// finding->supporting link. Capture their ids onto the finding_graph
 			// HERE — the top-level slice is deduped across findings (line ~375)
@@ -864,18 +856,6 @@ func dedupSupportingCalls(calls []callGraphSupportingCall) []callGraphSupporting
 		out = append(out, *c)
 	}
 	return out
-}
-
-func isSupportingCryptoAsset(asset entities.CryptographicAsset) bool {
-	if asset.Metadata == nil {
-		return false
-	}
-	if strings.EqualFold(asset.Metadata["supportingCall"], "true") ||
-		strings.EqualFold(asset.Metadata["supporting_call"], "true") {
-		return true
-	}
-	assetType := strings.TrimSpace(strings.ToLower(asset.Metadata["assetType"]))
-	return assetType == "supporting-call" || assetType == "supporting_call"
 }
 
 func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedOperation {
