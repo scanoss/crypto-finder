@@ -167,3 +167,97 @@ func TestToCallgraphExport_UsesCryptoEntryPointsNotEntryPointIndex(t *testing.T)
 		t.Fatalf("SupportingCalls = %#v, want support-1", out.SupportingCalls)
 	}
 }
+
+func TestConstructorDisplayFromSymbol(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		symbol string
+		want   string
+	}{
+		{"constructor", "org.bouncycastle.crypto.params.AEADParameters.<init>", "org.bouncycastle.crypto.params.AEADParameters.AEADParameters"},
+		{"platform constructor", "java.security.SecureRandom.<init>", "java.security.SecureRandom.SecureRandom"},
+		{"inner class", "com.acme.Outer.Inner.<init>", "com.acme.Outer.Inner.Inner"},
+		{"not a constructor", "org.bouncycastle.crypto.engines.AESEngine.processBytes", ""},
+		{"plain method", "javax.crypto.Cipher.getInstance", ""},
+		{"empty", "", ""},
+		{"fluent chain prefix", "Jwts.builder().setId(id).<init>", ""},
+		{"arity marker prefix", "com.acme.Factory.<init>#0", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ConstructorDisplayFromSymbol(tc.symbol); got != tc.want {
+				t.Fatalf("ConstructorDisplayFromSymbol(%q) = %q, want %q", tc.symbol, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToCallgraphExport_MatchedOperationCarriesConstructorDisplaySymbol(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0.0"}
+	res := &Result{
+		Chains: []FindingChain{{
+			FindingID: "finding-1",
+			RuleID:    "java.crypto",
+			Symbol:    "org.bouncycastle.crypto.modes.GCMBlockCipher.<init>",
+			Frames: []CallFrame{{
+				Component: root,
+				Signature: "com.acme.(App).entry#0",
+				Function: Function{
+					Signature:          "com.acme.(App).entry#0",
+					FunctionName:       "com.acme.App.entry",
+					CanonicalSignature: "com.acme.App.entry(): void",
+					FilePath:           "App.java",
+					StartLine:          3,
+				},
+				Module: "com.acme:app",
+			}},
+			CryptoOp: &CryptoOperation{
+				Function:  "com.acme.(App).entry#0",
+				FindingID: "finding-1",
+				RuleID:    "java.crypto",
+				FilePath:  "App.java",
+				StartLine: 4,
+				MatchedOperation: &MatchedOp{
+					Kind:   "call",
+					Symbol: "org.bouncycastle.crypto.modes.GCMBlockCipher.<init>",
+				},
+			},
+		}},
+	}
+
+	out := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java"})
+	if len(out.FindingGraphs) != 1 || out.FindingGraphs[0].MatchedOperation == nil {
+		t.Fatalf("FindingGraphs = %#v, want one with a matched operation", out.FindingGraphs)
+	}
+	const want = "org.bouncycastle.crypto.modes.GCMBlockCipher.GCMBlockCipher"
+	if got := out.FindingGraphs[0].MatchedOperation.DisplaySymbol; got != want {
+		t.Fatalf("matched_operation.display_symbol = %q, want %q", got, want)
+	}
+}
+
+func TestExportSourceNode_CallTargetDisplaySymbolForConstructor(t *testing.T) {
+	t.Parallel()
+
+	ctor := exportSourceNode(SourceNode{
+		Type:       "CALL_RESULT",
+		Value:      "new AEADParameters(keyParam, 128, iv)",
+		CallTarget: "org.bouncycastle.crypto.params.AEADParameters.<init>",
+	})
+	const want = "org.bouncycastle.crypto.params.AEADParameters.AEADParameters"
+	if ctor.CallTargetDisplaySymbol != want {
+		t.Fatalf("CALL_RESULT call_target_display_symbol = %q, want %q", ctor.CallTargetDisplaySymbol, want)
+	}
+
+	plain := exportSourceNode(SourceNode{
+		Type:       "CALL_RESULT",
+		CallTarget: "org.bouncycastle.crypto.modes.GCMBlockCipher.processBytes",
+	})
+	if plain.CallTargetDisplaySymbol != "" {
+		t.Fatalf("non-constructor call_target_display_symbol = %q, want empty", plain.CallTargetDisplaySymbol)
+	}
+}

@@ -90,8 +90,8 @@ func TestBuildCallGraphExportV6_CryptoEntryPointsAndSourceNodes(t *testing.T) {
 		Ecosystem: "java",
 	})
 
-	if payload.SchemaVersion != "6.1" {
-		t.Fatalf("SchemaVersion = %q, want 6.1", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.2" {
+		t.Fatalf("SchemaVersion = %q, want 6.2", payload.SchemaVersion)
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

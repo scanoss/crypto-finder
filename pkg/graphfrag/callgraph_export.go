@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.1"
+const CallgraphSchemaVersion = "6.2"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -76,10 +76,13 @@ type ExportFindingGraph struct {
 
 // ExportMatchedOperation mirrors the schema-6.0 matched_operation shape.
 type ExportMatchedOperation struct {
-	Kind       string `json:"kind"`
-	Symbol     string `json:"symbol,omitempty"`
-	Expression string `json:"expression,omitempty"`
-	Line       int    `json:"line,omitempty"`
+	Kind   string `json:"kind"`
+	Symbol string `json:"symbol,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases
+	// (ClassName.ClassName). Derived from Symbol; empty for non-constructors.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	Expression    string `json:"expression,omitempty"`
+	Line          int    `json:"line,omitempty"`
 }
 
 // ExportDependencyInfo mirrors the schema-6.0 dependency_info shape. It is
@@ -144,14 +147,18 @@ type ExportParameter struct {
 // ExportSourceNode is the schema-6.0 exportSourceNode shape. The SourceNodes
 // field makes it recursive so PARAMETER→CALL_RESULT chains are preserved.
 type ExportSourceNode struct {
-	Type           string             `json:"type"`
-	Name           string             `json:"name,omitempty"`
-	DeclaredType   string             `json:"declared_type,omitempty"`
-	Value          string             `json:"value,omitempty"`
-	ParameterIndex *int               `json:"parameter_index,omitempty"`
-	CallTarget     string             `json:"call_target,omitempty"`
-	Location       *ExportSourceLoc   `json:"location,omitempty"`
-	SourceNodes    []ExportSourceNode `json:"source_nodes,omitempty"`
+	Type           string `json:"type"`
+	Name           string `json:"name,omitempty"`
+	DeclaredType   string `json:"declared_type,omitempty"`
+	Value          string `json:"value,omitempty"`
+	ParameterIndex *int   `json:"parameter_index,omitempty"`
+	CallTarget     string `json:"call_target,omitempty"`
+	// CallTargetDisplaySymbol is the customer-facing constructor alias
+	// (ClassName.ClassName) of CallTarget when it is a constructor (<init>);
+	// empty otherwise. Sibling of CallTarget, mirroring symbol/display_symbol.
+	CallTargetDisplaySymbol string             `json:"call_target_display_symbol,omitempty"`
+	Location                *ExportSourceLoc   `json:"location,omitempty"`
+	SourceNodes             []ExportSourceNode `json:"source_nodes,omitempty"`
 }
 
 // ExportSourceLoc is a source location reference.
@@ -367,10 +374,11 @@ func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
 	if fc != nil && fc.CryptoOp != nil && fc.CryptoOp.MatchedOperation != nil {
 		op := fc.CryptoOp.MatchedOperation
 		return &ExportMatchedOperation{
-			Kind:       op.Kind,
-			Symbol:     op.Symbol,
-			Expression: op.Expression,
-			Line:       op.Line,
+			Kind:          op.Kind,
+			Symbol:        op.Symbol,
+			DisplaySymbol: ConstructorDisplayFromSymbol(op.Symbol),
+			Expression:    op.Expression,
+			Line:          op.Line,
 		}
 	}
 	if fc == nil || fc.Symbol == "" {
@@ -379,8 +387,9 @@ func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
 	// Legacy fallback: FindingChain carries only Symbol, so synthesize the
 	// minimal schema-6.0 call operation when no rich MatchedOperation exists.
 	return &ExportMatchedOperation{
-		Kind:   "call",
-		Symbol: fc.Symbol,
+		Kind:          "call",
+		Symbol:        fc.Symbol,
+		DisplaySymbol: ConstructorDisplayFromSymbol(fc.Symbol),
 	}
 }
 
@@ -555,12 +564,13 @@ func exportParameter(p Parameter) ExportParameter {
 // exportSourceNode recursively converts a SourceNode to an ExportSourceNode.
 func exportSourceNode(sn SourceNode) ExportSourceNode {
 	esn := ExportSourceNode{
-		Type:           sn.Type,
-		Name:           sn.Name,
-		DeclaredType:   sn.DeclaredType,
-		Value:          sn.Value,
-		ParameterIndex: sn.ParameterIndex,
-		CallTarget:     sn.CallTarget,
+		Type:                    sn.Type,
+		Name:                    sn.Name,
+		DeclaredType:            sn.DeclaredType,
+		Value:                   sn.Value,
+		ParameterIndex:          sn.ParameterIndex,
+		CallTarget:              sn.CallTarget,
+		CallTargetDisplaySymbol: ConstructorDisplayFromSymbol(sn.CallTarget),
 	}
 	if sn.Location != nil {
 		esn.Location = &ExportSourceLoc{FilePath: sn.Location.FilePath, Line: sn.Location.Line}
@@ -604,11 +614,43 @@ func exportMatchedOp(op *MatchedOp) *ExportMatchedOperation {
 		return nil
 	}
 	return &ExportMatchedOperation{
-		Kind:       op.Kind,
-		Symbol:     op.Symbol,
-		Expression: op.Expression,
-		Line:       op.Line,
+		Kind:          op.Kind,
+		Symbol:        op.Symbol,
+		DisplaySymbol: ConstructorDisplayFromSymbol(op.Symbol),
+		Expression:    op.Expression,
+		Line:          op.Line,
 	}
+}
+
+// ConstructorDisplayFromSymbol derives the customer-facing constructor alias
+// (ClassName.ClassName) from a fully-qualified symbol whose terminal segment is
+// the JVM constructor marker "<init>". For
+// "org.bouncycastle.crypto.params.AEADParameters.<init>" it returns
+// "org.bouncycastle.crypto.params.AEADParameters.AEADParameters".
+//
+// It returns "" when the symbol is not a constructor or the type prefix is not a
+// clean dotted identifier (fluent chains, generics, arity markers), so callers
+// can rely on omitempty to drop the field for non-constructor targets. Deriving
+// the alias from the symbol string — rather than threading a separate field
+// through the fragment wire — keeps the live and annotate exporters byte-identical:
+// both apply this transform to the same Symbol/CallTarget value.
+func ConstructorDisplayFromSymbol(symbol string) string {
+	const initSuffix = ".<init>"
+	if !strings.HasSuffix(symbol, initSuffix) {
+		return ""
+	}
+	prefix := symbol[:len(symbol)-len(initSuffix)]
+	if prefix == "" || strings.ContainsAny(prefix, "(<> \t\r\n#") {
+		return ""
+	}
+	simple := prefix
+	if dot := strings.LastIndex(prefix, "."); dot >= 0 {
+		simple = prefix[dot+1:]
+	}
+	if simple == "" {
+		return ""
+	}
+	return prefix + "." + simple
 }
 
 // --- Crypto entry points (replaces entry_point_index) ---

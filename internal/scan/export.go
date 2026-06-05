@@ -115,10 +115,13 @@ type exportTypeRef struct {
 }
 
 type callGraphMatchedOperation struct {
-	Kind       string `json:"kind"`
-	Symbol     string `json:"symbol,omitempty"`
-	Expression string `json:"expression,omitempty"`
-	Line       int    `json:"line"`
+	Kind   string `json:"kind"`
+	Symbol string `json:"symbol,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases
+	// (ClassName.ClassName). Derived from Symbol; empty for non-constructors.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	Expression    string `json:"expression,omitempty"`
+	Line          int    `json:"line"`
 }
 
 type callGraphEntryCall struct {
@@ -160,6 +163,7 @@ type exportSourceNode struct {
 	Value                    string                `json:"value,omitempty"`
 	ParameterIndex           *int                  `json:"parameter_index,omitempty"`
 	CallTarget               string                `json:"call_target,omitempty"`
+	CallTargetDisplaySymbol  string                `json:"call_target_display_symbol,omitempty"`
 	CallTargetInferredReturn *exportInferredReturn `json:"call_target_inferred_return,omitempty"`
 	Location                 *exportSourceLocation `json:"location,omitempty"`
 	SourceNodes              []exportSourceNode    `json:"source_nodes,omitempty"`
@@ -692,6 +696,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 			unresolvedReason = "no_crypto_call_match"
 		} else {
 			fg.MatchedOperation.Symbol = cryptoCall.FunctionName
+			fg.MatchedOperation.DisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(cryptoCall.FunctionName)
 		}
 	}
 
@@ -797,6 +802,7 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	support.SupportingCall = sc
 	if support.MatchedOperation != nil && sc.FunctionName != "" {
 		support.MatchedOperation.Symbol = sc.FunctionName
+		support.MatchedOperation.DisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(sc.FunctionName)
 	}
 	return support
 }
@@ -808,10 +814,11 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 func matchedOperationFromCall(call *callgraph.FunctionCall) *callGraphMatchedOperation {
 	symbol := fullFunctionName(call.Callee)
 	return &callGraphMatchedOperation{
-		Kind:       matchedOperationCall,
-		Symbol:     symbol,
-		Expression: call.Raw,
-		Line:       call.Line,
+		Kind:          matchedOperationCall,
+		Symbol:        symbol,
+		DisplaySymbol: graphfrag.ConstructorDisplayFromSymbol(symbol),
+		Expression:    call.Raw,
+		Line:          call.Line,
 	}
 }
 
@@ -870,10 +877,11 @@ func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedO
 	expression := strings.TrimSpace(asset.Match)
 
 	return &callGraphMatchedOperation{
-		Kind:       inferMatchedOperationKind(expression),
-		Symbol:     symbol,
-		Expression: expression,
-		Line:       line,
+		Kind:          inferMatchedOperationKind(expression),
+		Symbol:        symbol,
+		DisplaySymbol: graphfrag.ConstructorDisplayFromSymbol(symbol),
+		Expression:    expression,
+		Line:          line,
 	}
 }
 
@@ -1191,6 +1199,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 		}
 		if n.CallTarget != nil {
 			result[i].CallTarget = fullFunctionName(*n.CallTarget)
+			result[i].CallTargetDisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(result[i].CallTarget)
 			// Option 1e: decorate CALL_RESULT nodes with the call target's
 			// inferred return type when it differs from the target's declared
 			// return type. This surfaces inferred types on argument provenance
@@ -1901,6 +1910,7 @@ func convertInferredReturnProvenance(nodes []callgraph.SourceNode) []exportSourc
 		}
 		if n.CallTarget != nil {
 			result[i].CallTarget = fullFunctionName(*n.CallTarget)
+			result[i].CallTargetDisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(result[i].CallTarget)
 		}
 	}
 	return result
