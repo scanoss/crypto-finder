@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-enry/go-enry/v2"
@@ -76,7 +77,7 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 
 	// Scan directory recursively
 	log.Debug().Str("path", targetPath).Msg("scanning directory recursively")
-	languageMap := make(map[string]bool)
+	languageCounts := make(map[string]int)
 
 	err = filepath.WalkDir(targetPath, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
@@ -113,7 +114,7 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 
 		if lang != "" {
 			log.Debug().Str("path", path).Str("language", lang).Msg("detected language")
-			languageMap[strings.ToLower(lang)] = true
+			languageCounts[strings.ToLower(lang)]++
 		}
 
 		return nil
@@ -122,15 +123,35 @@ func (d *EnryDetector) Detect(targetPath string) ([]string, error) {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
-	// Convert map to sorted slice
-	languages := make([]string, 0, len(languageMap))
-	for lang := range languageMap {
-		languages = append(languages, lang)
-	}
+	// Order languages by dominance (file count) so downstream ecosystem
+	// selection (ecosystemFromHints) picks the repo's primary language rather
+	// than an incidental helper script.
+	languages := orderLanguagesByDominance(languageCounts)
 
 	log.Info().Int("count", len(languages)).Strs("languages", languages).Msg("Auto-detected languages")
 
 	return languages, nil
+}
+
+// orderLanguagesByDominance flattens per-language file counts into a slice
+// ordered by file count descending, with ties broken alphabetically. The
+// alphabetical tie-break makes the result deterministic across runs (Go map
+// iteration order is randomized), and the count-descending order ensures the
+// repository's dominant language sorts first — so a lone ancillary script
+// (e.g. a single policy-check.py in a Java project) cannot flip the detected
+// ecosystem.
+func orderLanguagesByDominance(counts map[string]int) []string {
+	languages := make([]string, 0, len(counts))
+	for lang := range counts {
+		languages = append(languages, lang)
+	}
+	sort.SliceStable(languages, func(i, j int) bool {
+		if counts[languages[i]] != counts[languages[j]] {
+			return counts[languages[i]] > counts[languages[j]]
+		}
+		return languages[i] < languages[j]
+	})
+	return languages
 }
 
 // detectFile detects the programming language of a single file.

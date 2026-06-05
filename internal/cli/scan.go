@@ -196,10 +196,13 @@ func callGraphTargetDir(target string) (string, error) {
 }
 
 func ecosystemFromHints(target string, languageHints []string) string {
-	// Pick the first supported ecosystem from the hints. Hints may include
-	// non-source languages (e.g. "html") alongside the real source language,
-	// so checking only languageHints[0] would miss "java" when sorted hints
-	// arrive as ["html", "java"].
+	// Pick the first supported ecosystem from the hints. Auto-detected hints
+	// arrive ordered by dominance (file count, see EnryDetector.Detect), so the
+	// first supported entry is the repository's primary ecosystem — a lone
+	// helper script (e.g. policy-check.py in a Java repo) cannot win. Hints may
+	// also include unsupported languages (e.g. "xml"), so we scan past them
+	// instead of trusting languageHints[0] blindly. When hints come from an
+	// explicit --languages flag, the user's ordering is honored as-is.
 	for _, hint := range languageHints {
 		switch hint {
 		case "go", ecosystemJava, "python", "rust":
