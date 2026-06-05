@@ -592,8 +592,15 @@ func entryFunctionMatches(entries map[string]bool, ep ExportCryptoEntryPointJSON
 	return false
 }
 
-// collectEntryFunctions builds a map: findingID → set of entry function identities
-// (first node of each chain for that finding).
+// collectEntryFunctions builds a map: findingID → set of entry function identities.
+//
+// crypto_entry_points indexes EVERY node on a surviving chain, not just the head:
+// an entry point is "any function from which the finding is reachable", so an
+// intermediate node (e.g. a shared ancestor on a collapsed diamond) is a valid
+// entry point even though it is never chain[0]. The consistency check must
+// therefore accept any chain node, otherwise it spuriously flags every non-head
+// entry point — which both the live and stitched exporters legitimately emit (see
+// addEntryPointChain / addChainToEPI: both iterate the full chain).
 func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChainNodeJSON) map[string]map[string]bool {
 	out := make(map[string]map[string]bool)
 	for fid, chains := range bChainsByFinding {
@@ -601,8 +608,8 @@ func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChai
 			out[fid] = make(map[string]bool)
 		}
 		for _, ch := range chains {
-			if len(ch) > 0 {
-				out[fid][nodeIdentity(ch[0])] = true
+			for i := range ch {
+				out[fid][nodeIdentity(ch[i])] = true
 			}
 		}
 	}

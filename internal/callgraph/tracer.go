@@ -1,6 +1,10 @@
 package callgraph
 
-import "github.com/rs/zerolog/log"
+import (
+	"sort"
+
+	"github.com/rs/zerolog/log"
+)
 
 // traceMaxFrontier caps the BFS queue size as a safety valve against
 // pathological graphs. With the graph-global frontier set (see TraceBackLimited)
@@ -132,7 +136,17 @@ func (t *Tracer) enqueueCallers(
 	headKey string,
 	enqueued map[string]bool,
 ) []traceBFSItem {
-	for _, callerKey := range callers {
+	// Stable, signature-sorted caller iteration. graph.Callers is populated by
+	// append (source order), which is deterministic for a single parse but is NOT
+	// a contract the served stitcher can rely on: the stitcher rebuilds its reverse
+	// adjacency from a Go map (unordered) and must collapse re-convergent (diamond)
+	// branches to the SAME representative as live. Sorting both sides by caller
+	// signature makes the collapse identical regardless of how each side discovered
+	// its callers (live<->stitch parity contract). Cost is O(k log k) over a node's
+	// in-degree; the graph-global frontier set still bounds total work to O(V+E).
+	sortedCallers := append([]string(nil), callers...)
+	sort.Strings(sortedCallers)
+	for _, callerKey := range sortedCallers {
 		// Graph-global dedup: enqueue each function at most once. This also
 		// subsumes cycle prevention — a node already on the frontier (or
 		// expanded) is never revisited — so no per-path visited set is needed.
