@@ -968,7 +968,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
 		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr}}
 	}
-	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass); constructorNodes != nil {
+	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
 	}
 	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
@@ -1031,7 +1031,7 @@ func fieldConstructorSourceNodes(fa *fieldAssignment) []SourceNode {
 	}}
 }
 
-func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnalysis, currentClass string) []SourceNode {
+func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
 	typeName, argc, ok := parseJavaConstructorExpression(expr)
 	if !ok {
 		return nil
@@ -1041,7 +1041,39 @@ func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnaly
 		target := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, argc), analysis, currentClass, nil)
 		node.CallTarget = &target
 	}
+	// Recurse into the constructor's arguments so nested constructors and
+	// variables (e.g. `new ECKeyGenerationParameters(domainParams, new SecureRandom())`)
+	// surface their own call_target provenance instead of being collapsed into the
+	// outer constructor's value text. Without this, an argument that is itself a
+	// constructor of a non-finding parameter-object (ECDomainParameters, SecureRandom)
+	// would never appear as its own node. traceExpression's depth guard bounds the recursion.
+	node.SourceNodes = p.traceConstructorArgumentSources(expr, analysis, currentClass, varTypes, origins, depth)
 	return []SourceNode{node}
+}
+
+// traceConstructorArgumentSources splits a `new Type(arg0, arg1, ...)` expression
+// into its top-level arguments and traces each one's provenance. It returns the
+// flattened provenance for every argument (nil when the expression has no
+// resolvable argument list).
+func (p *JavaParser) traceConstructorArgumentSources(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(expr), "new "))
+	open := strings.Index(trimmed, "(")
+	closeIdx := strings.LastIndex(trimmed, ")")
+	if open <= 0 || closeIdx <= open {
+		return nil
+	}
+	// Strip inline comments before splitting so an inline `// note` between
+	// arguments is not glued onto the next argument's expression text.
+	argList := stripJavaExpressionComments(trimmed[open : closeIdx+1])
+	var sources []SourceNode
+	for _, arg := range parseArgumentsFromDelimitedContent(argList) {
+		arg = strings.TrimSpace(arg)
+		if arg == "" {
+			continue
+		}
+		sources = append(sources, p.traceExpression(arg, analysis, currentClass, varTypes, origins, depth+1)...)
+	}
+	return sources
 }
 
 func (p *JavaParser) traceMethodCallExpression(

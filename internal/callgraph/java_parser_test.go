@@ -440,6 +440,131 @@ func TestJavaParser_TraceExpression_ConstructorCallTarget(t *testing.T) {
 	}
 }
 
+// TestJavaParser_TraceExpression_ConstructorRecursesIntoArguments verifies that
+// nested constructor arguments are broken out into their own provenance nodes —
+// the fix for ECDomainParameters/SecureRandom being dropped when used as
+// arguments to a non-finding parameter-object constructor.
+func TestJavaParser_TraceExpression_ConstructorRecursesIntoArguments(t *testing.T) {
+	p := NewJavaParser()
+
+	analysis := &FileAnalysis{
+		PackagePath: "com.example",
+		Imports: map[string]string{
+			"ECKeyGenerationParameters": "org.bouncycastle.crypto.params",
+			"ECDomainParameters":        "org.bouncycastle.crypto.params",
+			"SecureRandom":              "java.security",
+		},
+	}
+	origins := map[string]varOrigin{
+		"domainParams": {
+			typeName:    "ECDomainParameters",
+			kind:        "local_variable",
+			initializer: "new ECDomainParameters(curve, g, n, h)",
+			paramIndex:  -1,
+		},
+	}
+
+	nodes := p.traceExpression(
+		"new ECKeyGenerationParameters(domainParams, new SecureRandom())",
+		analysis, "com.example", nil, origins, 0,
+	)
+	if len(nodes) != 1 {
+		t.Fatalf("traceExpression returned %#v, want single CALL_RESULT node", nodes)
+	}
+	top := nodes[0]
+	if top.CallTarget == nil || top.CallTarget.Type != "ECKeyGenerationParameters" {
+		t.Fatalf("top node call target = %#v, want ECKeyGenerationParameters constructor", top.CallTarget)
+	}
+
+	// Both the variable-backed nested constructor (ECDomainParameters, reached via
+	// domainParams' initializer) and the inline nested constructor (SecureRandom)
+	// must now surface as call_target nodes somewhere in the provenance subtree.
+	want := map[string]bool{"ECDomainParameters": false, "SecureRandom": false}
+	var walk func(n SourceNode)
+	walk = func(n SourceNode) {
+		if n.CallTarget != nil {
+			if _, ok := want[n.CallTarget.Type]; ok {
+				want[n.CallTarget.Type] = true
+			}
+		}
+		for _, child := range n.SourceNodes {
+			walk(child)
+		}
+	}
+	walk(top)
+	for typ, found := range want {
+		if !found {
+			t.Fatalf("constructor argument %q was not broken out into a call_target node; provenance = %#v", typ, top)
+		}
+	}
+}
+
+// TestJavaParser_ConstructorArgs_StripInlineComments verifies that an inline
+// comment between constructor arguments does not get glued onto the following
+// argument's expression — which previously produced a garbage call_target.
+func TestJavaParser_ConstructorArgs_StripInlineComments(t *testing.T) {
+	p := NewJavaParser()
+	analysis := &FileAnalysis{
+		PackagePath: "com.example",
+		Imports: map[string]string{
+			"RSAKeyGenerationParameters": "org.bouncycastle.crypto.params",
+			"SecureRandom":               "java.security",
+		},
+	}
+	expr := "new RSAKeyGenerationParameters(\n" +
+		"    java.math.BigInteger.valueOf(65537), // public exponent\n" +
+		"    new SecureRandom(),\n" +
+		"    keySize,\n" +
+		"    80 // certainty\n" +
+		")"
+
+	nodes := p.traceExpression(expr, analysis, "com.example", nil, nil, 0)
+	if len(nodes) != 1 {
+		t.Fatalf("traceExpression returned %#v, want single node", nodes)
+	}
+
+	var secureRandomClean, garbage bool
+	var walk func(n SourceNode)
+	walk = func(n SourceNode) {
+		if n.CallTarget != nil {
+			switch {
+			case n.CallTarget.Type == "SecureRandom" && n.CallTarget.Package == "java.security":
+				secureRandomClean = true
+			case strings.Contains(n.CallTarget.Type, "//") ||
+				strings.Contains(n.CallTarget.Type, "exponent") ||
+				strings.Contains(n.CallTarget.Type, "certainty"):
+				garbage = true
+			}
+		}
+		for _, c := range n.SourceNodes {
+			walk(c)
+		}
+	}
+	walk(nodes[0])
+
+	if !secureRandomClean {
+		t.Fatalf("expected a clean java.security.SecureRandom call target; provenance = %#v", nodes[0])
+	}
+	if garbage {
+		t.Fatalf("comment text leaked into a call target; provenance = %#v", nodes[0])
+	}
+}
+
+func TestStripJavaExpressionComments(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"a, b", "a, b"},
+		{"BigInteger.valueOf(65537), // public exponent\n new SecureRandom()", "BigInteger.valueOf(65537), \n new SecureRandom()"},
+		{"a /* block */ b", "a  b"},
+		{"\"http://example.com\"", "\"http://example.com\""},
+		{"'/' , x", "'/' , x"},
+	}
+	for _, tc := range cases {
+		if got := stripJavaExpressionComments(tc.in); got != tc.want {
+			t.Errorf("stripJavaExpressionComments(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestJavaParser_ConstructorOverloadsIncludeArity(t *testing.T) {
 	dir := t.TempDir()
 	src := `package com.example;
