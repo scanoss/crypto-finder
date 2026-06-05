@@ -760,12 +760,13 @@ func supportingCallIDsOf(calls []callGraphSupportingCall) []string {
 	}
 	seen := make(map[string]struct{}, len(calls))
 	ids := make([]string, 0, len(calls))
-	for _, c := range calls {
-		if _, ok := seen[c.SupportingID]; ok {
+	for i := range calls {
+		supportingID := calls[i].SupportingID
+		if _, ok := seen[supportingID]; ok {
 			continue
 		}
-		seen[c.SupportingID] = struct{}{}
-		ids = append(ids, c.SupportingID)
+		seen[supportingID] = struct{}{}
+		ids = append(ids, supportingID)
 	}
 	sort.Strings(ids)
 	return ids
