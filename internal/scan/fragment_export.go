@@ -78,7 +78,7 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 
 	for _, key := range functionKeys {
 		decl := result.CallGraph.Functions[key]
-		out.Functions = append(out.Functions, buildGraphFragmentFunction(result.CallGraph, decl.ID, decl))
+		out.Functions = append(out.Functions, buildGraphFragmentFunction(ctx, decl.ID, decl))
 	}
 	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
 
@@ -445,8 +445,17 @@ func callMatchesCallee(call *callgraph.FunctionCall, calleeKey string) bool {
 		callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name)
 }
 
-func buildGraphFragmentFunction(graph *callgraph.CallGraph, id callgraph.FunctionID, decl *callgraph.FunctionDecl) graphfrag.GraphFragmentFunction {
-	meta := buildExportFunctionMetadata(graph, id, decl)
+// buildGraphFragmentFunction projects one call-graph function onto its
+// graph-fragment representation. The function's FilePath is relativized with the
+// SAME normalization the live callgraph export applies to chain-node paths
+// (normalizeExportPath -> relativeToRoot(projectRoot, ...)). This is load-bearing:
+// the served reachability API surfaces a fragment function's FilePath verbatim as
+// the chain-frame file_path, so storing the raw parser path (the ephemeral
+// absolute scan/workspace path) would leak that path to downstream consumers and
+// diverge from the live export. The synthetic <clinit> function flows through here
+// too, so its path is relativized as well.
+func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID, decl *callgraph.FunctionDecl) graphfrag.GraphFragmentFunction {
+	meta := buildExportFunctionMetadata(ctx.graph, id, decl)
 	fn := graphfrag.GraphFragmentFunction{
 		Key:                id.String(),
 		FunctionName:       meta.FunctionName,
@@ -462,7 +471,7 @@ func buildGraphFragmentFunction(graph *callgraph.CallGraph, id callgraph.Functio
 		Aliases:            cloneStringSlice(meta.Aliases),
 	}
 	if decl != nil {
-		fn.FilePath = decl.FilePath
+		fn.FilePath = normalizeExportPath(ctx, decl.FilePath).FilePath
 		fn.StartLine = decl.StartLine
 		fn.EndLine = decl.EndLine
 	}

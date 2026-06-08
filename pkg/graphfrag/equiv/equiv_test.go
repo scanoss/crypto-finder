@@ -301,13 +301,15 @@ func TestCompare_NodeFieldMismatch(t *testing.T) {
 	}
 }
 
-// TestCompare_IgnoredFieldDifference verifies that a difference in an ignored
-// field (e.g. file_path, which is in the default IgnoreFields list) goes into
-// KnownDivergences, not NodeFieldMismatches.
-func TestCompare_IgnoredFieldDifference(t *testing.T) {
-	// file_path differs between A and B. Since file_path is in the default
-	// IgnoreFields list (live vs stitched paths diverge), this should not be a
-	// hard failure.
+// TestCompare_FilePathDifferenceIsHardMismatch verifies that file_path is now a
+// HARD-compared field: a difference between A (live) and B (stitched) is a node
+// field mismatch, not an ignored known-divergence. file_path was historically in
+// the default IgnoreFields list because the stitched fragment carried the raw
+// absolute scan/workspace path while the live export relativized; now that
+// buildGraphFragmentFunction relativizes the fragment's function path with the
+// same normalization the live export uses, both sides emit component-relative
+// paths and any residual difference is a real divergence.
+func TestCompare_FilePathDifferenceIsHardMismatch(t *testing.T) {
 	nodeInA := appNodeWith("void", "src/main/App.java")
 	nodeInB := appNodeWith("void", "/different/App.java")
 
@@ -320,16 +322,20 @@ func TestCompare_IgnoredFieldDifference(t *testing.T) {
 		chain(nodeInB, crypto),
 	))
 
-	// Use default Options (file_path is ignored by default).
+	// Use default Options: file_path is no longer ignored.
 	report := Compare(a, b, nil, Options{})
 
-	// No hard mismatch.
-	if len(report.NodeFieldMismatches) != 0 {
-		t.Errorf("NodeFieldMismatches = %v, want empty (file_path is ignored)", report.NodeFieldMismatches)
+	if len(report.NodeFieldMismatches) == 0 {
+		t.Error("NodeFieldMismatches is empty, want file_path difference flagged as a hard mismatch")
 	}
-	// But the divergence is recorded.
-	if len(report.KnownDivergences) == 0 {
-		t.Error("KnownDivergences is empty, want file_path difference to be recorded")
+	found := false
+	for _, m := range report.NodeFieldMismatches {
+		if m.Field == "file_path" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no NodeFieldMismatch for field file_path; got %v", report.NodeFieldMismatches)
 	}
 }
 

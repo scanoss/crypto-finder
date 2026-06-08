@@ -35,9 +35,10 @@ func decodeEquiv(t *testing.T, v any) equiv.CallgraphExportJSON {
 }
 
 // assertEquivClean fails on any HARD divergence between A (live) and B (stitched):
-// missing/extra chains, node field mismatches, crypto_entry_points inconsistency,
-// or a dangling supporting_call_ids foreign key. KnownDivergences (file_path,
-// inferred_return, confidence — documented v1 limitations) are allowed.
+// missing/extra chains, node field mismatches (now including file_path, which both
+// sides relativize identically), crypto_entry_points inconsistency, or a dangling
+// supporting_call_ids foreign key. KnownDivergences (inferred_return, confidence —
+// documented v1 limitations) are allowed.
 func assertEquivClean(t *testing.T, rep *equiv.DiffReport) {
 	t.Helper()
 	if len(rep.MissingInB) != 0 {
@@ -118,6 +119,85 @@ func TestEquivalence_SingleComponent_StitchMatchesLive(t *testing.T) {
 
 	rep := equiv.Compare(decodeEquiv(t, live), decodeEquiv(t, stitched), res.Suppressed, equiv.Options{})
 	assertEquivClean(t, rep)
+}
+
+// TestEquivalence_StitchedChainPaths_AreComponentRelative is the leaked-path
+// guard. A standalone mine runs in an ephemeral, absolute workspace directory
+// (e.g. /var/lib/mining/workspaces/pkg_maven_..._<random>); the cached fragment
+// must NOT carry that absolute path on its functions, because the served
+// reachability API surfaces a fragment function's file_path verbatim as the
+// chain-frame file_path. Before the fix, buildGraphFragmentFunction stored the
+// raw parser path (the absolute workspace path) with no relativization, while
+// the live export relativized every chain-node path via normalizeExportPath —
+// so the stitched chain frames leaked the absolute scan path.
+//
+// This asserts every stitched chain-node file_path is component-relative (no
+// leading "/", no workspace/TempDir prefix) AND equal to the live export's
+// path for the same function.
+func TestEquivalence_StitchedChainPaths_AreComponentRelative(t *testing.T) {
+	t.Parallel()
+	key := graphfrag.ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0"}
+	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
+
+	// The TempDir is the absolute "workspace" the mine runs in. liveCallgraphExport
+	// and buildModuleFragment each create their own TempDir; we capture the live
+	// one to confirm its absolute prefix never appears in stitched output.
+	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, report)
+	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, report)
+	res, err := graphfrag.Stitch(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag})
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	stitched := res.ToCallgraphExport(key, graphfrag.ScanMeta{RootModule: "com.app:app", Ecosystem: "java"})
+
+	stitchedEq := decodeEquiv(t, stitched)
+	if len(stitchedEq.FindingGraphs) == 0 {
+		t.Fatal("no stitched finding_graphs to inspect")
+	}
+
+	// Collect live chain-node paths keyed by canonical_signature for cross-check.
+	liveEq := decodeEquiv(t, live)
+	livePathBySig := map[string]string{}
+	for _, fg := range liveEq.FindingGraphs {
+		for _, chain := range fg.CallChains {
+			for i := range chain {
+				node := &chain[i]
+				sig := node.CanonicalSignature
+				if sig == "" {
+					sig = node.FunctionName
+				}
+				if node.FilePath != "" {
+					livePathBySig[sig] = node.FilePath
+				}
+			}
+		}
+	}
+
+	sawPath := false
+	for _, fg := range stitchedEq.FindingGraphs {
+		for _, chain := range fg.CallChains {
+			for i := range chain {
+				node := &chain[i]
+				if node.FilePath == "" {
+					continue
+				}
+				sawPath = true
+				if strings.HasPrefix(node.FilePath, "/") {
+					t.Errorf("stitched chain-node file_path is absolute (leaked workspace path): %q (function %q)", node.FilePath, node.CanonicalSignature)
+				}
+				sig := node.CanonicalSignature
+				if sig == "" {
+					sig = node.FunctionName
+				}
+				if want, ok := livePathBySig[sig]; ok && node.FilePath != want {
+					t.Errorf("stitched file_path %q != live file_path %q for function %q", node.FilePath, want, sig)
+				}
+			}
+		}
+	}
+	if !sawPath {
+		t.Fatal("no chain-node file_paths present in stitched output; assertion is vacuous")
+	}
 }
 
 // chainShapes returns the set of root-to-crypto chain shapes in a callgraph

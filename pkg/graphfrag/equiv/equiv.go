@@ -40,11 +40,14 @@
 //
 // Known v1 divergences (default IgnoreFields):
 //
-//   - "file_path": entry_call.file_path is not populated by callgraph_export.go.
 //   - "inferred_return": not stored in graph-fragment-1.2, absent on all nodes.
 //   - "confidence": schema-6.0 has no confidence field (internal only).
 //
-// These go to KnownDivergences, not NodeFieldMismatches.
+// These go to KnownDivergences, not NodeFieldMismatches. file_path is NOT in
+// this list: the stitched fragment now relativizes function paths with the same
+// normalization the live export uses (buildGraphFragmentFunction ->
+// normalizeExportPath), so both sides emit component-relative paths and any
+// file_path difference is a real, hard divergence.
 package equiv
 
 import (
@@ -162,7 +165,7 @@ type DiffReport struct {
 	// supporting_calls entry — a dangling reference the served API would expose.
 	SupportingCallIDDivergences []string
 	// KnownDivergences records differences in fields that are in the IgnoreFields
-	// list (default: file_path, inferred_return, confidence). These are documented
+	// list (default: inferred_return, confidence). These are documented
 	// v1 limitations, not hard failures.
 	KnownDivergences []string
 }
@@ -174,7 +177,6 @@ type DiffReport struct {
 // defaultIgnoreFields is the set of fields ignored by default in v1 because
 // they are documented divergences between live and stitched exports.
 var defaultIgnoreFields = []string{
-	"file_path",       // entry_call.file_path not populated in callgraph_export.go
 	"inferred_return", // not stored in graph-fragment-1.2
 	"confidence",      // internal only, not present in schema-6.0 output
 }
