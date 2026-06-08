@@ -63,8 +63,9 @@ func assertEquivClean(t *testing.T, rep *equiv.DiffReport) {
 // liveCallgraphExport parses one module's source with the real builder and runs
 // the live callgraph export path (buildCallGraphExportV2) — the schema-6.1
 // callgraph a `crypto-finder --export-callgraph` of that component produces.
-func liveCallgraphExport(t *testing.T, importPath, file, src string, report *entities.InterimReport) callGraphExportV2 {
+func liveCallgraphExport(t *testing.T, file, src string, report *entities.InterimReport) callGraphExportV2 {
 	t.Helper()
+	const importPath = "com.app:app"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, file), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
@@ -95,7 +96,7 @@ func TestEquivalence_SingleComponent_StitchMatchesLive(t *testing.T) {
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
 	// A — live export of the component scanned directly.
-	live := liveCallgraphExport(t, "com.app:app", "Svc.java", supportingFixtureSrc, report)
+	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, report)
 
 	// B — stitched export from the component's cached fragment (no live callgraph
 	// at stitch time; the structure comes from the decoded fragment).

@@ -57,7 +57,7 @@ func TestEquivalence_Diamond_ReconvergentPathsCollapse(t *testing.T) {
 	report := reportForTerminal(t, 21, `javax.crypto.Cipher.getInstance("AES")`, "javax.crypto.Cipher.getInstance")
 
 	// A — live export of the component scanned directly (bounded backward tracer).
-	live := liveCallgraphExport(t, "com.app:app", "Svc.java", diamondFixtureSrc, report)
+	live := liveCallgraphExport(t, "Svc.java", diamondFixtureSrc, report)
 
 	// B — stitched export from the component's cached fragment. Mirror the serving
 	// path, which uses EntryRootedOnly=true (trace only from in-degree-0 entries).
@@ -104,7 +104,7 @@ func TestEquivalence_EntryRooted_SupportingCallsMatchLive(t *testing.T) {
 	key := graphfrag.ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0"}
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
-	live := liveCallgraphExport(t, "com.app:app", "Svc.java", supportingFixtureSrc, report)
+	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, report)
 
 	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, report)
 	res, err := graphfrag.StitchWithOptions(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag}, graphfrag.StitchOptions{EntryRootedOnly: true})
