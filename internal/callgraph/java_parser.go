@@ -309,19 +309,20 @@ func (p *JavaParser) collectJavaClassDecls(
 }
 
 // parseClassInitDecl emits ONE synthetic `<clinit>` FunctionDecl for a class
-// whose body contains a `static_initializer` block OR a static
-// `field_declaration` with an initializer value. It models the JVM class-init
+// whose body contains a `static_initializer` block OR a `field_declaration`
+// (static or instance) with an initializer value. It models a class-init
 // context so crypto findings that sit outside any method/constructor body — in
-// static blocks or static field initializers — have a real containing function
-// and a class-load entry point.
+// static blocks, static field initializers, or instance field initializers —
+// have a real containing function and a class-load entry point.
 //
 // The decl spans the WHOLE class body. ContainingFunction picks the
 // tightest-span function for a line, so real methods/constructors (always
-// tighter than the class body) still win; only orphan findings in static
-// blocks / static field initializers fall through to `<clinit>`.
+// tighter than the class body) still win; only orphan findings in
+// initializer code that lives directly in the class body fall through to
+// `<clinit>`.
 //
 // Calls are aggregated from the class-init context ONLY — each
-// `static_initializer` block body and each static `field_declaration`
+// `static_initializer` block body and each initialized `field_declaration`
 // initializer expression — never from method or constructor bodies, which own
 // their own calls. It is naturally in-degree 0 (nothing calls `<clinit>` in
 // source), so it becomes an entry point, which is correct: the JVM runs it at
@@ -365,12 +366,21 @@ func (p *JavaParser) parseClassInitDecl(
 }
 
 // classInitNodes returns the direct-child nodes of a class body that carry
-// class-initialization code whose calls belong to `<clinit>`: every
-// `static_initializer` block and every static `field_declaration` that has an
-// initializer value. Instance field initializers belong to `<init>`, not
-// `<clinit>`. A bare static field declaration with no initializer (e.g.
-// `static int x;`) contributes nothing and is skipped, so a class with only
-// such fields gets no `<clinit>`.
+// initialization code whose calls and crypto belong to the synthetic
+// `<clinit>` class-init context: every `static_initializer` block and every
+// `field_declaration` (static OR instance) that has an initializer value.
+//
+// Instance field initializers run in `<init>` at the JVM level, but they live
+// in the CLASS BODY, outside any constructor's source line range — so a finding
+// in `private Foo f = new Bar();` has no method/constructor container and would
+// otherwise surface as a blank frame. Folding initialized instance fields into
+// the class-init node gives those findings a real, reachable container; the
+// node spans the whole class body and ContainingFunction's tightest-span
+// selection still lets real methods/constructors win for their own lines.
+//
+// A bare field declaration with no initializer (e.g. `int x;` or `static int
+// x;`) contributes nothing and is skipped, so a class with only such fields and
+// no static block still gets no `<clinit>`.
 func classInitNodes(body *sitter.Node, src []byte) []*sitter.Node {
 	var nodes []*sitter.Node
 	for i := 0; i < int(body.ChildCount()); i++ {
@@ -379,7 +389,7 @@ func classInitNodes(body *sitter.Node, src []byte) []*sitter.Node {
 		case javaNodeStaticInitializer:
 			nodes = append(nodes, child)
 		case javaNodeFieldDeclaration:
-			if javaNodeHasModifier(child, src, "static") && fieldDeclarationHasInitializer(child) {
+			if fieldDeclarationHasInitializer(child) {
 				nodes = append(nodes, child)
 			}
 		}
@@ -659,32 +669,6 @@ func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func javaNodeHasModifier(node *sitter.Node, src []byte, modifier string) bool {
-	if node == nil {
-		return false
-	}
-	if javaModifierInNode(node.ChildByFieldName("modifiers"), src, modifier) {
-		return true
-	}
-	return javaModifierInNode(node, src, modifier)
-}
-
-func javaModifierInNode(node *sitter.Node, src []byte, modifier string) bool {
-	if node == nil {
-		return false
-	}
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		if child.Type() == modifier || strings.TrimSpace(child.Content(src)) == modifier {
-			return true
-		}
-		if javaModifierInNode(child, src, modifier) {
-			return true
-		}
-	}
-	return false
 }
 
 func parseJavaMemberVisibility(node *sitter.Node, src []byte, ownerType, functionType string) string {

@@ -99,14 +99,15 @@ class Sample {
 }
 
 // TestJavaParser_ClassInit_NotEmittedWithoutInitializers verifies the synthetic
-// <clinit> is NOT emitted for a class that has neither a static_initializer nor
-// an initialized static field (avoids node-count blowup). Instance field
-// initializers belong to <init>, not <clinit>.
-func TestJavaParser_ClassInit_NotEmittedWithoutStaticInitializers(t *testing.T) {
+// <clinit> is NOT emitted for a class that has NO initializer code at all —
+// neither a static_initializer block, an initialized static field, NOR an
+// initialized instance field (avoids node-count blowup). A bare field with no
+// initializer value contributes no class-init code.
+func TestJavaParser_ClassInit_NotEmittedWithoutInitializers(t *testing.T) {
 	src := `package com.example;
 class Bare {
     int plain;
-    String name = Registry.lookup("1.2.3");
+    String name;
     void doWork() {
         Cipher.getInstance("AES");
     }
@@ -114,7 +115,51 @@ class Bare {
 `
 	fns := parseJavaInline(t, src)
 	if clinit := findFunctionByName(fns, clinitMethodName); clinit != nil {
-		t.Errorf("class with no static block and no initialized static field emitted a <clinit> at [%d,%d]; want none", clinit.StartLine, clinit.EndLine)
+		t.Errorf("class with no initializer code emitted a <clinit> at [%d,%d]; want none", clinit.StartLine, clinit.EndLine)
+	}
+}
+
+// TestJavaParser_ClassInit_InstanceFieldInitializer is the BouncyCastle regression
+// guard: crypto in an INSTANCE field initializer (e.g.
+// `private final Foo agreement = new Bar();`) lives in the class body OUTSIDE any
+// constructor's line range, so before the fix it had no containing function and
+// surfaced downstream as a blank, reachable-but-empty frame. The synthetic
+// <clinit> now folds instance-field initializers into the class-init context so
+// such findings map to a real function spanning the class body and stay
+// reachable from a class-init entry point. (JVM-semantically instance-field inits
+// run in <init>, but for containment/reachability the class-init node is the
+// correct catch-all for class-body code outside any method/constructor body.)
+func TestJavaParser_ClassInit_InstanceFieldInitializer(t *testing.T) {
+	src := `package com.example;
+class Holder {
+    private final Foo agreement = new Bar();
+    public Holder() {}
+    void work() {
+        agreement.use();
+    }
+}
+`
+	fns := parseJavaInline(t, src)
+
+	clinit := findFunctionByName(fns, clinitMethodName)
+	if clinit == nil {
+		t.Fatal("class with an instance-field object-creation initializer emitted no <clinit>; want one covering the field-init line")
+	}
+
+	// The instance-field initializer is on line 3; its tightest container must be
+	// the <clinit>, not nil (the bug) — the constructor on line 4 spans only its
+	// own body and does NOT cover the class-body field line.
+	if !lineInRange(clinit, 3) {
+		t.Errorf("instance-field-init line 3 not in <clinit> range [%d,%d]", clinit.StartLine, clinit.EndLine)
+	}
+	if tightest := tightestContainer(fns, 3); tightest != clinit {
+		t.Errorf("line 3 (instance-field init) tightest container = %v, want <clinit>", describeFn(tightest))
+	}
+
+	// The field-initializer call (new Bar()) belongs to <clinit>: an object
+	// creation surfaces as an <init> constructor call whose Raw names the type.
+	if findCallByMethod(clinit, constructorMethodName, "Bar") == nil {
+		t.Error("<clinit> Calls missing instance-field-initializer object creation new Bar()")
 	}
 }
 
