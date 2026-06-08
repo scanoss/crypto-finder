@@ -130,7 +130,8 @@ func chainShapes(cg equiv.CallgraphExportJSON) map[string]bool {
 	for _, fg := range cg.FindingGraphs {
 		for _, chain := range fg.CallChains {
 			parts := make([]string, len(chain))
-			for i, node := range chain {
+			for i := range chain {
+				node := &chain[i]
 				sig := node.CanonicalSignature
 				if sig == "" {
 					sig = node.FunctionName

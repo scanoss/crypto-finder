@@ -682,10 +682,21 @@ type epData struct {
 // empty). It replaces the legacy entry_point_index projection.
 func buildCallgraphCryptoEntryPoints(findingGraphs []ExportFindingGraph, supportingCalls []ExportSupportingCall) []ExportCryptoEntryPoint {
 	index := make(map[string]*epData)
+	supportingByID := make(map[string]ExportSupportingCall, len(supportingCalls))
+	for i := range supportingCalls {
+		if supportingCalls[i].SupportingID != "" {
+			supportingByID[supportingCalls[i].SupportingID] = supportingCalls[i]
+		}
+	}
+	referencedSupporting := make(map[string]struct{}, len(supportingByID))
 	for i := range findingGraphs {
 		addFindingGraphToEPI(index, &findingGraphs[i])
+		addFindingGraphSupportingToEPI(index, &findingGraphs[i], supportingByID, referencedSupporting)
 	}
 	for i := range supportingCalls {
+		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
+			continue
+		}
 		addSupportingCallToEPI(index, supportingCalls[i])
 	}
 	return flattenEPI(index)
@@ -711,6 +722,38 @@ func addChainToEPI(index map[string]*epData, fg *ExportFindingGraph, chain []Exp
 		}
 		ep := ensureEPData(index, node)
 		recordEPFinding(ep, fg, len(chain)-pos)
+	}
+}
+
+func addFindingGraphSupportingToEPI(
+	index map[string]*epData,
+	fg *ExportFindingGraph,
+	supportingByID map[string]ExportSupportingCall,
+	referencedSupporting map[string]struct{},
+) {
+	if fg == nil || len(fg.SupportingCallIDs) == 0 {
+		return
+	}
+	for _, chain := range fg.CallChains {
+		if len(chain) == 0 {
+			continue
+		}
+		for pos := range chain {
+			node := &chain[pos]
+			if node.FunctionName == "" {
+				continue
+			}
+			ep := ensureEPData(index, node)
+			depth := len(chain) - pos
+			for _, supportingID := range fg.SupportingCallIDs {
+				support, ok := supportingByID[supportingID]
+				if !ok {
+					continue
+				}
+				referencedSupporting[supportingID] = struct{}{}
+				recordEPSupporting(ep, support, depth)
+			}
+		}
 	}
 }
 
@@ -785,6 +828,21 @@ func recordEPFinding(ep *epData, fg *ExportFindingGraph, depth int) {
 	}
 }
 
+func recordEPSupporting(ep *epData, support ExportSupportingCall, depth int) {
+	if ep == nil || support.SupportingID == "" {
+		return
+	}
+	existing, exists := ep.supporting[support.SupportingID]
+	if exists && depth >= existing.ChainDepth {
+		return
+	}
+	ep.supporting[support.SupportingID] = ExportReachableSupportingCall{
+		SupportingID:      support.SupportingID,
+		ChainDepth:        depth,
+		SupportingCallRef: support.SupportingID,
+	}
+}
+
 func addSupportingCallToEPI(index map[string]*epData, support ExportSupportingCall) {
 	key := support.FunctionKey
 	if key == "" {
@@ -812,11 +870,7 @@ func addSupportingCallToEPI(index map[string]*epData, support ExportSupportingCa
 		}
 		index[key] = ep
 	}
-	ep.supporting[support.SupportingID] = ExportReachableSupportingCall{
-		SupportingID:      support.SupportingID,
-		ChainDepth:        1,
-		SupportingCallRef: support.SupportingID,
-	}
+	recordEPSupporting(ep, support, 1)
 }
 
 func flattenEPI(index map[string]*epData) []ExportCryptoEntryPoint {

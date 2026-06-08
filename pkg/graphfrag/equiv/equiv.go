@@ -77,6 +77,7 @@ type ExportFindingGraphJSON struct {
 
 // ExportChainNodeJSON is one node in a schema-6.0 call chain.
 type ExportChainNodeJSON struct {
+	FunctionKey        string   `json:"function_key,omitempty"`
 	FunctionName       string   `json:"function_name"`
 	CanonicalSignature string   `json:"canonical_signature,omitempty"`
 	ReturnType         string   `json:"return_type,omitempty"`
@@ -347,8 +348,8 @@ func indexChainsByFinding(graphs []ExportFindingGraphJSON) map[string]map[ChainK
 // canonical_signature when non-empty, otherwise function_name.
 func canonicalChainKey(chain []ExportChainNodeJSON) ChainKey {
 	parts := make([]string, len(chain))
-	for i, n := range chain {
-		parts[i] = nodeIdentity(n)
+	for i := range chain {
+		parts[i] = nodeIdentity(chain[i])
 	}
 	return ChainKey(strings.Join(parts, " -> "))
 }
@@ -552,7 +553,8 @@ func validateCryptoEntryPoints(
 						epID, rf.FindingID))
 				continue
 			}
-			// Check: the entry function must appear as the first node in at least one chain for this finding.
+			// Check: the entry function must appear as a reachable node in at
+			// least one chain for this finding.
 			if !entryFunctionMatches(bEntryFunctions[rf.FindingID], ep) {
 				report.EntryPointDivergences = append(report.EntryPointDivergences,
 					fmt.Sprintf("crypto_entry_points entry %q for finding %q: function not found as entry in any B chain",
@@ -609,9 +611,30 @@ func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChai
 		}
 		for _, ch := range chains {
 			for i := range ch {
-				out[fid][nodeIdentity(ch[i])] = true
+				for _, key := range nodeIdentityCandidates(ch[i]) {
+					out[fid][key] = true
+				}
 			}
 		}
+	}
+	return out
+}
+
+func nodeIdentityCandidates(node ExportChainNodeJSON) []string {
+	candidates := []string{
+		nodeIdentity(node),
+		node.FunctionKey,
+		node.CanonicalSignature,
+		node.FunctionName,
+	}
+	out := make([]string, 0, len(candidates))
+	seen := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		out = append(out, candidate)
 	}
 	return out
 }

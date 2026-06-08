@@ -411,6 +411,48 @@ func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	}
 }
 
+func TestBuildCallgraphCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing.T) {
+	entry := ExportChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
+	terminal := ExportChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
+	points := buildCallgraphCryptoEntryPoints(
+		[]ExportFindingGraph{{
+			FindingID: "finding-1",
+			MatchedOperation: &ExportMatchedOperation{
+				Kind:   "call",
+				Symbol: "com.password4j.Hash.withBcrypt",
+				Line:   42,
+			},
+			SupportingCallIDs: []string{"support-1"},
+			CallChains:        [][]ExportChainNode{{entry, terminal}},
+		}},
+		[]ExportSupportingCall{{
+			SupportingID: "support-1",
+			FunctionKey:  terminal.FunctionKey,
+			FunctionName: terminal.FunctionName,
+		}},
+	)
+
+	entryPoint := findExportEntryPointByFunctionKey(points, entry.FunctionKey)
+	if entryPoint == nil {
+		t.Fatalf("missing entry point %q: %#v", entry.FunctionKey, points)
+	}
+	if len(entryPoint.ReachableSupportingCalls) != 1 {
+		t.Fatalf("entry reachable_supporting_calls = %#v, want support-1", entryPoint.ReachableSupportingCalls)
+	}
+	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
+		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
+	}
+}
+
+func findExportEntryPointByFunctionKey(points []ExportCryptoEntryPoint, key string) *ExportCryptoEntryPoint {
+	for i := range points {
+		if points[i].FunctionKey == key {
+			return &points[i]
+		}
+	}
+	return nil
+}
+
 // testFindingID mirrors the canonical finding_id formula exactly:
 //
 //	sha256(path + ":" + startLine + ":" + ruleID)[:8]

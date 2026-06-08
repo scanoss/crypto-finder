@@ -390,10 +390,21 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 // potential entry point — external code might call any of them.
 func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
 	index := make(map[string]*entryPointData)
+	supportingByID := make(map[string]callGraphSupportingCall, len(supportingCalls))
+	for i := range supportingCalls {
+		if supportingCalls[i].SupportingID != "" {
+			supportingByID[supportingCalls[i].SupportingID] = supportingCalls[i]
+		}
+	}
+	referencedSupporting := make(map[string]struct{}, len(supportingByID))
 	for i := range findingGraphs {
 		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
+		addFindingGraphSupportingToEntryPointIndex(index, &findingGraphs[i], supportingByID, referencedSupporting)
 	}
 	for i := range supportingCalls {
+		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
+			continue
+		}
 		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
 	return flattenEntryPointIndex(index)
@@ -452,6 +463,38 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 			continue
 		}
 		recordEntryPointFinding(ensureEntryPointData(index, node), fg, len(chain)-pos)
+	}
+}
+
+func addFindingGraphSupportingToEntryPointIndex(
+	index map[string]*entryPointData,
+	fg *callGraphExportFinding,
+	supportingByID map[string]callGraphSupportingCall,
+	referencedSupporting map[string]struct{},
+) {
+	if fg == nil || len(fg.SupportingCallIDs) == 0 {
+		return
+	}
+	for _, chain := range fg.CallChains {
+		if len(chain) == 0 {
+			continue
+		}
+		for pos := range chain {
+			node := &chain[pos]
+			if node.FunctionName == "" {
+				continue
+			}
+			ep := ensureEntryPointData(index, node)
+			depth := len(chain) - pos
+			for _, supportingID := range fg.SupportingCallIDs {
+				support, ok := supportingByID[supportingID]
+				if !ok {
+					continue
+				}
+				referencedSupporting[supportingID] = struct{}{}
+				recordEntryPointSupporting(ep, support, depth)
+			}
+		}
 	}
 }
 
@@ -540,6 +583,21 @@ func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, dep
 	}
 }
 
+func recordEntryPointSupporting(ep *entryPointData, support callGraphSupportingCall, depth int) {
+	if ep == nil || support.SupportingID == "" {
+		return
+	}
+	existing, exists := ep.supporting[support.SupportingID]
+	if exists && depth >= existing.ChainDepth {
+		return
+	}
+	ep.supporting[support.SupportingID] = callGraphReachableSupportingCall{
+		SupportingID:      support.SupportingID,
+		ChainDepth:        depth,
+		SupportingCallRef: support.SupportingID,
+	}
+}
+
 func addSupportingCallToEntryPointIndex(index map[string]*entryPointData, support callGraphSupportingCall) {
 	key := support.FunctionKey
 	if key == "" {
@@ -567,11 +625,7 @@ func addSupportingCallToEntryPointIndex(index map[string]*entryPointData, suppor
 		}
 		index[key] = ep
 	}
-	ep.supporting[support.SupportingID] = callGraphReachableSupportingCall{
-		SupportingID:      support.SupportingID,
-		ChainDepth:        1,
-		SupportingCallRef: support.SupportingID,
-	}
+	recordEntryPointSupporting(ep, support, 1)
 }
 
 func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoEntryPoint {

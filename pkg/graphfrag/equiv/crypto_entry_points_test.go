@@ -49,3 +49,33 @@ func TestCompare_CryptoEntryPointConsistency(t *testing.T) {
 		t.Fatal("expected divergence for crypto_entry_points reference to phantom finding")
 	}
 }
+
+func TestCompare_CryptoEntryPointFunctionNameOnlyMatchesCanonicalChainNode(t *testing.T) {
+	t.Parallel()
+
+	chain := []ExportChainNodeJSON{{
+		FunctionName:       "com.acme.App.entry",
+		CanonicalSignature: "com.acme.App.entry(): void",
+	}}
+	graph := ExportFindingGraphJSON{
+		FindingID:  "finding-1",
+		CallChains: [][]ExportChainNodeJSON{chain},
+	}
+	a := CallgraphExportJSON{
+		SchemaVersion: "6.0",
+		FindingGraphs: []ExportFindingGraphJSON{graph},
+	}
+	b := CallgraphExportJSON{
+		SchemaVersion: "6.0",
+		FindingGraphs: []ExportFindingGraphJSON{graph},
+		CryptoEntryPoints: []ExportCryptoEntryPointJSON{{
+			FunctionName:      "com.acme.App.entry",
+			ReachableFindings: []ExportReachableFindingJSON{{FindingID: "finding-1", ChainDepth: 1}},
+		}},
+	}
+
+	report := Compare(a, b, nil, Options{})
+	if len(report.EntryPointDivergences) != 0 {
+		t.Fatalf("EntryPointDivergences = %#v, want none", report.EntryPointDivergences)
+	}
+}

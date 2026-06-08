@@ -371,3 +371,47 @@ func TestBestScoredCandidate(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing.T) {
+	t.Parallel()
+
+	entry := callGraphChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
+	terminal := callGraphChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
+	points := buildCryptoEntryPoints(
+		[]callGraphExportFinding{{
+			FindingID: "finding-1",
+			MatchedOperation: &callGraphMatchedOperation{
+				Kind:   matchedOperationCall,
+				Symbol: "com.password4j.Hash.withBcrypt",
+				Line:   42,
+			},
+			SupportingCallIDs: []string{"support-1"},
+			CallChains:        [][]callGraphChainNode{{entry, terminal}},
+		}},
+		[]callGraphSupportingCall{{
+			SupportingID: "support-1",
+			FunctionKey:  terminal.FunctionKey,
+			FunctionName: terminal.FunctionName,
+		}},
+	)
+
+	entryPoint := findCryptoEntryPointByFunctionKey(points, entry.FunctionKey)
+	if entryPoint == nil {
+		t.Fatalf("missing entry point %q: %#v", entry.FunctionKey, points)
+	}
+	if len(entryPoint.ReachableSupportingCalls) != 1 {
+		t.Fatalf("entry reachable_supporting_calls = %#v, want support-1", entryPoint.ReachableSupportingCalls)
+	}
+	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
+		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
+	}
+}
+
+func findCryptoEntryPointByFunctionKey(points []callGraphCryptoEntryPoint, key string) *callGraphCryptoEntryPoint {
+	for i := range points {
+		if points[i].FunctionKey == key {
+			return &points[i]
+		}
+	}
+	return nil
+}

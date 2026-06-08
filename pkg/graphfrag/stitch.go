@@ -629,7 +629,7 @@ func backwardBFS(opNode graphNode, reverse map[graphNode][]reverseEdge, entrySet
 	return results
 }
 
-// emitChain materialises one completed backward chain into a FindingChain and
+// emitChain materializes one completed backward chain into a FindingChain and
 // flushes the supporting calls of its nodes (entry->op order, deduped via
 // supportingSeen). Frame construction is byte-identical to the previous forward
 // DFS: same Function identity resolution, same EntryCall, same supporting-call
@@ -655,7 +655,7 @@ func emitChain(
 			continue
 		}
 		supportingSeen[node] = true
-		flushSupportingCalls(node, frames[i], supportingByNode, out)
+		flushSupportingCalls(node, &frames[i], supportingByNode, out)
 	}
 
 	for i := range opsByNode[opNode] {
@@ -697,7 +697,7 @@ func buildFrame(node graphNode, entryCall *CallSite, fragments map[ComponentKey]
 
 // flushSupportingCalls appends the supporting calls of one node to out, stamping
 // frame identity exactly as the previous forward DFS did.
-func flushSupportingCalls(node graphNode, frame CallFrame, supportingByNode map[graphNode][]SupportingCall, out *Result) {
+func flushSupportingCalls(node graphNode, frame *CallFrame, supportingByNode map[graphNode][]SupportingCall, out *Result) {
 	for i := range supportingByNode[node] {
 		support := supportingByNode[node][i]
 		support.Function = frame.Signature
@@ -742,7 +742,7 @@ func trace(
 	frame := buildFrame(current, traversedEdgeEntryCall, fragments)
 
 	path = append(path, frame)
-	flushSupportingCalls(current, frame, supportingByNode, out)
+	flushSupportingCalls(current, &frame, supportingByNode, out)
 	for i := range opsByNode[current] {
 		op := opsByNode[current][i]
 		chain := FindingChain{
