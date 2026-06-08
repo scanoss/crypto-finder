@@ -38,10 +38,9 @@ type InterimReport struct {
 	Tool ToolInfo `json:"tool"`
 
 	// Rules describes the ruleset that was used for this scan. Downstream
-	// systems (e.g. crypto-mining-service) stamp this on every persisted
-	// result so a re-mine can be triggered when the rules pack changes,
-	// and a finding's provenance is auditable. Empty when no rule source
-	// could supply a version (e.g. ad-hoc local files with no manifest).
+	// systems can stamp this on persisted results so a rules-pack update is
+	// detectable and a finding's provenance is auditable. Empty when no rule
+	// source could supply a version (e.g. ad-hoc local files with no manifest).
 	Rules RulesInfo `json:"rules,omitempty"`
 
 	// Findings contains all detected cryptographic assets grouped by file
@@ -102,6 +101,15 @@ type CryptographicAsset struct {
 
 	// EndLine is the last line number where the asset was detected
 	EndLine int `json:"end_line"`
+
+	// StartCol is the 1-based column of the match start (inclusive). 0 = unknown.
+	// Populated from the scanner's Start.Col field; non-Java/non-column-aware
+	// scanners leave this zero and the system falls back to line-only matching.
+	StartCol int `json:"start_col,omitempty"`
+
+	// EndCol is the 1-based column one past the match end (exclusive). 0 = unknown.
+	// Uses the same convention as opengrep/semgrep: End.Col = start + len(match).
+	EndCol int `json:"end_col,omitempty"`
 
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`

@@ -49,6 +49,12 @@ type Contract struct {
 	When          *Condition // nil = unconditional contract
 	Return        ContractReturn
 	SourceLibrary string // populated by Load() from the v2 YAML library.name field
+	// Role is a reserved, currently-unconsumed classification of a method's part
+	// in a crypto object's lifecycle (e.g. "config", "lifecycle", "output").
+	// Supporting calls are derived structurally from the call graph today;
+	// populating Role is the planned extension point for semantic categorization
+	// of those calls without re-introducing per-finding rules.
+	Role string
 }
 
 // Condition constrains when this contract applies based on an argument value.
@@ -90,6 +96,8 @@ type yamlContract struct {
 	Arity  int        `yaml:"arity"`
 	When   *yamlWhen  `yaml:"when"`
 	Return yamlReturn `yaml:"return"`
+	// Role is reserved for future supporting-call categorization; see Contract.Role.
+	Role string `yaml:"role,omitempty"`
 }
 
 type yamlWhen struct {
@@ -210,6 +218,7 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 			When:          when,
 			Return:        ContractReturn{Type: c.Return.Type, Confidence: c.Return.Confidence},
 			SourceLibrary: raw.Library.Name,
+			Role:          c.Role,
 		})
 	}
 	return nil

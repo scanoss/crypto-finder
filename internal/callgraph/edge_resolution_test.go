@@ -6,9 +6,8 @@ import (
 )
 
 // TestBuildCallerIndex_ClassifiesEdgeResolution proves the builder records HOW
-// each caller->callee edge was resolved, so the fragment export (and the
-// mining-service stitcher) can distinguish exact typed edges from over-broad
-// name/arity dispatch guesses.
+// each caller->callee edge was resolved, so downstream consumers can distinguish
+// exact typed edges from over-broad name/arity dispatch guesses.
 //
 // Scenario: a controller calls an interface method directly. The direct edge to
 // the interface method is exact; the edges the builder synthesizes to the

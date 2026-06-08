@@ -1,6 +1,17 @@
 package callgraph
 
-import "github.com/rs/zerolog/log"
+import (
+	"sort"
+
+	"github.com/rs/zerolog/log"
+)
+
+// traceMaxFrontier caps the BFS queue size as a safety valve against
+// pathological graphs. With the graph-global frontier set (see TraceBackLimited)
+// each function is enqueued at most once, so the queue is bounded by the number
+// of functions and this cap should never fire in practice — it exists purely to
+// guarantee bounded memory if that invariant is ever violated.
+const traceMaxFrontier = 1_000_000
 
 // Tracer walks a CallGraph backwards from crypto findings to user entry points.
 type Tracer struct {
@@ -9,8 +20,7 @@ type Tracer struct {
 }
 
 type traceBFSItem struct {
-	chain   []CallChainStep
-	visited map[string]bool
+	chain []CallChainStep
 }
 
 // NewTracer creates a new backward tracer for the given call graph.
@@ -32,18 +42,32 @@ func (t *Tracer) TraceBackLimited(target FunctionID, userPackages map[string]boo
 
 	var results []CallChain
 
+	// enqueued is a graph-GLOBAL frontier set: a function is added to the queue
+	// at most once across the entire traversal. This keeps the work O(V+E)
+	// instead of O(paths), which on high-fan-in graphs (large crypto libraries
+	// such as BouncyCastle) is the difference between bounded time and a hang.
+	// The tradeoff is that re-convergent (diamond) paths through a shared
+	// ancestor collapse to the first (shortest) path that reached it — which is
+	// the right answer for reachability and was already lossy under maxChains.
+	enqueued := map[string]bool{targetKey: true}
+
 	initial := traceBFSItem{
 		chain: []CallChainStep{{
 			Function: target,
 			FilePath: t.graph.Functions[targetKey].FilePath,
 			Line:     t.graph.Functions[targetKey].StartLine,
 		}},
-		visited: map[string]bool{targetKey: true},
 	}
 
 	queue := []traceBFSItem{initial}
 
 	for len(queue) > 0 {
+		if len(queue) >= traceMaxFrontier {
+			log.Warn().Str("target", targetKey).Int("frontier", len(queue)).
+				Msg("Call-chain frontier cap reached; truncating trace")
+			return results, true
+		}
+
 		current := queue[0]
 		queue = queue[1:]
 
@@ -52,36 +76,40 @@ func (t *Tracer) TraceBackLimited(target FunctionID, userPackages map[string]boo
 			continue
 		}
 
-		// Get the current head of the chain (the function we're tracing from)
-		head := current.chain[0]
-		headKey := head.Function.String()
-		if t.shouldStopAtUserBoundary(current, userPackages) {
+		headKey := current.chain[0].Function.String()
+		callers := t.graph.Callers[headKey]
+
+		collect, expand := t.classifyTraceItem(current, callers, userPackages)
+		if collect {
 			var truncated bool
 			results, truncated = appendTraceResult(results, current.chain, maxChains)
 			if truncated {
 				return results, true
 			}
-			continue
 		}
-
-		// Find all callers of the head function
-		callers := t.graph.Callers[headKey]
-		if len(callers) == 0 {
-			// Root function (no callers) — chain is complete if it reached user code
-			if t.rootChainIsComplete(current, userPackages) {
-				var truncated bool
-				results, truncated = appendTraceResult(results, current.chain, maxChains)
-				if truncated {
-					return results, true
-				}
-			}
-			continue
+		if expand {
+			queue = t.enqueueCallers(queue, current, callers, headKey, enqueued)
 		}
-
-		queue = t.enqueueCallers(queue, current, callers, headKey)
 	}
 
 	return results, false
+}
+
+// classifyTraceItem decides what to do with a dequeued chain:
+//   - collect=true: the chain is complete and should be recorded (it reached a
+//     user-package boundary, or a graph root that reached user code).
+//   - expand=true: the chain head has callers that should be enqueued.
+//
+// A graph root whose chain never reached user code yields both false — the item
+// is simply dropped.
+func (t *Tracer) classifyTraceItem(current traceBFSItem, callers []string, userPackages map[string]bool) (collect, expand bool) {
+	if t.shouldStopAtUserBoundary(current, userPackages) {
+		return true, false
+	}
+	if len(callers) == 0 {
+		return t.rootChainIsComplete(current, userPackages), false
+	}
+	return false, true
 }
 
 func appendTraceResult(results []CallChain, chain []CallChainStep, maxChains int) ([]CallChain, bool) {
@@ -106,9 +134,23 @@ func (t *Tracer) enqueueCallers(
 	current traceBFSItem,
 	callers []string,
 	headKey string,
+	enqueued map[string]bool,
 ) []traceBFSItem {
-	for _, callerKey := range callers {
-		if current.visited[callerKey] {
+	// Stable, signature-sorted caller iteration. graph.Callers is populated by
+	// append (source order), which is deterministic for a single parse but is NOT
+	// a contract the served stitcher can rely on: the stitcher rebuilds its reverse
+	// adjacency from a Go map (unordered) and must collapse re-convergent (diamond)
+	// branches to the SAME representative as live. Sorting both sides by caller
+	// signature makes the collapse identical regardless of how each side discovered
+	// its callers (live<->stitch parity contract). Cost is O(k log k) over a node's
+	// in-degree; the graph-global frontier set still bounds total work to O(V+E).
+	sortedCallers := append([]string(nil), callers...)
+	sort.Strings(sortedCallers)
+	for _, callerKey := range sortedCallers {
+		// Graph-global dedup: enqueue each function at most once. This also
+		// subsumes cycle prevention — a node already on the frontier (or
+		// expanded) is never revisited — so no per-path visited set is needed.
+		if enqueued[callerKey] {
 			continue
 		}
 
@@ -116,6 +158,7 @@ func (t *Tracer) enqueueCallers(
 		if !exists {
 			continue
 		}
+		enqueued[callerKey] = true
 
 		callLine := findCallLine(callerFn, headKey)
 
@@ -127,16 +170,7 @@ func (t *Tracer) enqueueCallers(
 		})
 		newChain = append(newChain, current.chain...)
 
-		newVisited := make(map[string]bool, len(current.visited)+1)
-		for k, v := range current.visited {
-			newVisited[k] = v
-		}
-		newVisited[callerKey] = true
-
-		queue = append(queue, traceBFSItem{
-			chain:   newChain,
-			visited: newVisited,
-		})
+		queue = append(queue, traceBFSItem{chain: newChain})
 	}
 	return queue
 }

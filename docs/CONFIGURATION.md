@@ -90,7 +90,7 @@ Crypto Finder caches per-dependency scan results in a `FindingsCache` so warm sc
 | Backend | Storage | When to use |
 |---------|---------|-------------|
 | `disk` (default) | `~/.scanoss/crypto-finder/cache/findings/` | Local development, single-machine repeated scans |
-| `postgres` | a Postgres database (`findings_cache` table) | Multi-worker fleet deployments where the cache must be shared across machines (mining service, CI clusters) |
+| `postgres` | a Postgres database (`findings_cache` table) | Multi-worker fleet deployments where the cache must be shared across machines |
 
 Selecting the backend:
 
@@ -118,7 +118,7 @@ Behaviour notes:
 
 - The cache key includes the rules hash, so changing rules invalidates entries automatically — no manual eviction needed.
 - Failures of the disk backend are non-fatal (a warning is logged and the scan continues without caching). Failures of the postgres backend (missing DSN, unreachable database, schema bootstrap error) are fatal.
-- The Postgres pool is opened per `crypto-finder scan` invocation and closed when the scan finishes. For long-lived workers (e.g. the crypto-mining-service), reuse a single binary process where possible to amortise pool setup.
+- The Postgres pool is opened per `crypto-finder scan` invocation and closed when the scan finishes. For long-lived workers, reuse a single binary process where possible to amortise pool setup.
 
 ## Project Configuration (scanoss.json)
 

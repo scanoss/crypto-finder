@@ -1,7 +1,7 @@
 // Copyright (C) 2026 SCANOSS.COM
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Package equiv provides a semantic diff tool for schema-5.x callgraph exports.
+// Package equiv provides a semantic diff tool for schema-6.0 callgraph exports.
 // Tests verify all five table-driven scenarios from the SDD spec:
 //
 //	(a) identical A,B -> no divergences
@@ -52,7 +52,7 @@ func findingGraph(findingID string, chains ...[]ExportChainNodeJSON) ExportFindi
 
 func export(graphs ...ExportFindingGraphJSON) CallgraphExportJSON {
 	return CallgraphExportJSON{
-		SchemaVersion: "5.3",
+		SchemaVersion: "6.0",
 		FindingGraphs: graphs,
 	}
 }
@@ -104,6 +104,37 @@ func TestCompare_Identical(t *testing.T) {
 	if len(report.EntryPointDivergences) != 0 {
 		t.Errorf("EntryPointDivergences = %v, want empty", report.EntryPointDivergences)
 	}
+}
+
+// TestCompare_SupportingCallIDForeignKey verifies the 6.1 foreign-key check:
+// a finding_graph.supporting_call_ids entry that resolves to a top-level
+// supporting_calls entry is clean, while a dangling reference is reported as a
+// SupportingCallIDDivergence (the served API would otherwise surface a per-asset
+// breadcrumb pointing at nothing).
+func TestCompare_SupportingCallIDForeignKey(t *testing.T) {
+	withFK := func(fg ExportFindingGraphJSON, ids ...string) ExportFindingGraphJSON {
+		fg.SupportingCallIDs = ids
+		return fg
+	}
+	n := node("com.acme.App.entry", "com.acme.App.entry(): void")
+
+	t.Run("resolved reference is clean", func(t *testing.T) {
+		b := export(withFK(findingGraph("find-1", chain(n)), "sup_a"))
+		b.SupportingCalls = []ExportSupportingCallJSON{{SupportingID: "sup_a"}}
+		report := Compare(b, b, nil, Options{})
+		if len(report.SupportingCallIDDivergences) != 0 {
+			t.Errorf("SupportingCallIDDivergences = %v, want empty", report.SupportingCallIDDivergences)
+		}
+	})
+
+	t.Run("dangling reference is reported", func(t *testing.T) {
+		b := export(withFK(findingGraph("find-1", chain(n)), "sup_missing"))
+		b.SupportingCalls = []ExportSupportingCallJSON{{SupportingID: "sup_a"}}
+		report := Compare(b, b, nil, Options{})
+		if len(report.SupportingCallIDDivergences) != 1 {
+			t.Fatalf("SupportingCallIDDivergences = %v, want exactly 1 dangling FK", report.SupportingCallIDDivergences)
+		}
+	})
 }
 
 // TestCompare_SuppressedChainAbsentFromB verifies that a chain in A which
@@ -328,15 +359,15 @@ func TestCompare_ExplicitIgnoreFields(t *testing.T) {
 	}
 }
 
-// TestCompare_EntryPointIndexConsistency verifies that B's entry_point_index is
+// TestCompare_CryptoEntryPointsConsistency verifies that B's crypto_entry_points is
 // checked against B's surviving chains.
-func TestCompare_EntryPointIndexConsistency(t *testing.T) {
+func TestCompare_CryptoEntryPointsConsistency(t *testing.T) {
 	nodeA := node("com.acme.App.entry", "com.acme.App.entry(): void")
 	nodeB := node("com.acme.Crypto.encrypt", "com.acme.Crypto.encrypt(): void")
 
-	// B has an entry_point_index that references a finding not present in any chain.
-	phantom := ExportEntryPointJSON{
-		Function:           "com.acme.App.phantom",
+	// B has an crypto_entry_points that references a finding not present in any chain.
+	phantom := ExportCryptoEntryPointJSON{
+		FunctionName:       "com.acme.App.phantom",
 		CanonicalSignature: "com.acme.App.phantom(): void",
 		ReachableFindings: []ExportReachableFindingJSON{
 			{FindingID: "find-ghost", ChainDepth: 1},
@@ -345,11 +376,11 @@ func TestCompare_EntryPointIndexConsistency(t *testing.T) {
 
 	a := export(findingGraph("find-008", chain(nodeA, nodeB)))
 	b := CallgraphExportJSON{
-		SchemaVersion: "5.3",
+		SchemaVersion: "6.0",
 		FindingGraphs: []ExportFindingGraphJSON{
 			findingGraph("find-008", chain(nodeA, nodeB)),
 		},
-		EntryPointIndex: []ExportEntryPointJSON{phantom},
+		CryptoEntryPoints: []ExportCryptoEntryPointJSON{phantom},
 	}
 
 	report := Compare(a, b, nil, Options{})

@@ -7,12 +7,10 @@
 // single component, plus the pure stitcher that composes a dependency closure
 // of those fragments into root-to-crypto reachability chains.
 //
-// Why this lives in crypto-finder (not a downstream service): the graph
-// fragment schema and the resolution-quality semantics are crypto-finder's
-// public contract — the scanner produces them, so the rules for consuming them
-// (which edges may extend a chain) belong with the contract owner. A
-// reimplementation in a downstream catalog/mining service would drift the
-// moment the schema bumps. Mirrors the rationale of pkg/stitch.
+// Why this lives in crypto-finder: the graph fragment schema and the
+// resolution-quality semantics are crypto-finder's public contract — the
+// scanner produces them, so the rules for consuming them (which edges may
+// extend a chain) belong with the contract owner.
 //
 // The package is intentionally dependency-light: it does NOT import the scanner
 // or callgraph builder, read storage, or gzip. Inputs are exported fragments
@@ -49,11 +47,25 @@ type DependencyGraph map[ComponentKey][]ComponentKey
 type Fragment struct {
 	Component ComponentKey
 	Module    string
+	// GraphAlgoVersion is the callgraph-construction algorithm version that
+	// produced this structural graph (from scan_metadata). Consumers cache the
+	// structure keyed on it so it survives binary releases that don't change
+	// graph construction.
+	GraphAlgoVersion string
 
-	Functions        []Function
-	InternalEdges    []InternalEdge
-	ExternalCalls    []ExternalCall
-	CryptoOperations []CryptoOperation
+	// RulesVersion is the rules_version of the crypto annotation attached to this
+	// fragment (the version under which CryptoOperations/SupportingCalls were
+	// computed). Empty for purely structural fragments (code graph with no
+	// annotation attached). Consumers that stitch a set mined under heterogeneous
+	// rules versions use it to report the highest contributing version.
+	RulesVersion string
+
+	Functions         []Function
+	InternalEdges     []InternalEdge
+	ExternalCalls     []ExternalCall
+	CryptoOperations  []CryptoOperation
+	SupportingCalls   []SupportingCall
+	CryptoEntryPoints []CryptoEntryPoint
 }
 
 // Function identifies one callable node inside a component graph.
@@ -61,7 +73,7 @@ type Fragment struct {
 // The Signature field (the fragment's function key, e.g. "org.bridge.(Bridge).bridge#0")
 // is the join key for edge resolution. The richer identity fields below are
 // populated from graph-fragment-1.2+ exports so the stitcher can emit them
-// verbatim in the schema-5.x output (callgraph_export.go). They are zero-value
+// verbatim in the schema-6.0 output (callgraph_export.go). They are zero-value
 // on legacy 1.0/1.1 fragments — graceful degradation.
 type Function struct {
 	// Signature is the fragment's function key used by edges (e.g. "org.bridge.(Bridge).bridge#0").
@@ -80,13 +92,22 @@ type Function struct {
 	OwnerVisibility string
 	// StartLine is the first source line of the function body (1.2+).
 	StartLine int
+	// EndLine is the last source line of the function body (1.2+). With
+	// StartLine it gives the line range used to map a crypto finding to its
+	// containing function during annotate-only (no AST available then).
+	EndLine int
 	// FilePath is the source file path, relative to the component root.
 	FilePath string
+	// DisplaySymbol is the customer-facing symbol. Constructors use
+	// ClassName.ClassName while Signature/CanonicalSignature retain <init>.
+	DisplaySymbol string
+	// Aliases contains alternate customer-facing names for this function.
+	Aliases []string
 }
 
 // CallSite carries the per-edge call-site invocation detail: the line number and
 // the resolved argument data-flow for each positional argument passed by the
-// caller at this edge. Mirrors the schema-5.x entry_call shape.
+// caller at this edge. Mirrors the schema-6.0 entry_call shape.
 type CallSite struct {
 	// Line is the source line of the call expression in the caller.
 	Line int
@@ -95,7 +116,7 @@ type CallSite struct {
 }
 
 // Parameter is one positional argument at a call site, including any resolved
-// data-flow provenance. Mirrors the schema-5.x callGraphParameter shape.
+// data-flow provenance. Mirrors the schema-6.0 callGraphParameter shape.
 type Parameter struct {
 	// ParameterIndex is the 0-based position of this argument.
 	ParameterIndex int
@@ -113,7 +134,7 @@ type Parameter struct {
 
 // SourceNode is one node in the data-flow provenance graph. The SourceNodes
 // field makes this type recursive so PARAMETER→CALL_RESULT chains are fully
-// preserved. Mirrors the schema-5.x exportSourceNode shape.
+// preserved. Mirrors the schema-6.0 exportSourceNode shape.
 type SourceNode struct {
 	// Type classifies the origin: VALUE, VARIABLE, FIELD, PARAMETER, CALL_RESULT, EXPRESSION.
 	Type string
@@ -141,7 +162,7 @@ type SourceLocation struct {
 
 // CryptoCall carries the identity and call-site argument data-flow of a matched
 // crypto invocation. It is stored on CryptoOperation (1.2+) and mirrors the
-// schema-5.x callGraphCalledFunction shape.
+// schema-6.0 callGraphCalledFunction shape.
 type CryptoCall struct {
 	// FunctionName is the fully qualified function name of the matched crypto call.
 	FunctionName string
@@ -151,6 +172,10 @@ type CryptoCall struct {
 	ReturnType string
 	// ParameterTypes lists the declared parameter types.
 	ParameterTypes []string
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string
+	// Aliases are alternate customer-facing names.
+	Aliases []string
 	// Line is the source line of the matched crypto call.
 	Line int
 	// Parameters carries the resolved argument data-flow.
@@ -158,7 +183,7 @@ type CryptoCall struct {
 }
 
 // MatchedOp records the matched operation kind, symbol, and expression for a
-// crypto finding — the same fields carried by the schema-5.x matched_operation.
+// crypto finding — the same fields carried by the schema-6.0 matched_operation.
 type MatchedOp struct {
 	// Kind is the operation kind: "call", "type_usage", or "expression".
 	Kind string
@@ -192,6 +217,24 @@ type InternalEdge struct {
 	MethodName   string
 	Arity        int
 	CallSite     int
+
+	// ReceiverVar, AssignedVar, ChainID carry the call-site object identity
+	// (1.4+). They let object-lifecycle supporting calls be re-derived from a
+	// cached fragment alone — no live callgraph — which is what lets the annotate
+	// path recompute supporting_calls for findings a new rule introduces. Empty
+	// on fragments exported with schema < 1.4.
+	ReceiverVar string
+	AssignedVar string
+	ChainID     string
+
+	// StartCol, EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive — the opengrep/tree-sitter convention). They let the annotate
+	// path run the SAME column-intersection terminal selection as the live exporter
+	// (findCryptoCallNode) instead of a line-only heuristic, so cache-derived
+	// supporting calls match a live scan on multi-call/fluent-chain lines. 0 on
+	// fragments exported with schema < 1.4 — selection falls back to line-only.
+	StartCol int
+	EndCol   int
 
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
@@ -238,6 +281,11 @@ type ExternalCall struct {
 	Caller          string
 	TargetSignature string
 
+	// Raw is the source call expression (e.g. "gen.init"). Carried so the
+	// annotate path can reproduce a supporting call's matched_operation.expression
+	// from the cached fragment. Empty on fragments exported with schema < 1.4.
+	Raw string
+
 	// Resolution classifies how the producer resolved TargetSignature. The zero
 	// value (ResolutionUnknown) is fail-closed: the stitcher will not traverse it.
 	Resolution ResolutionKind
@@ -257,6 +305,21 @@ type ExternalCall struct {
 	// MethodName, and Arity it discriminates distinct call sites that happen to
 	// share a method name within the same caller.
 	CallSite int
+
+	// ReceiverVar, AssignedVar, ChainID carry the call-site object identity
+	// (1.4+). They let object-lifecycle supporting calls be re-derived from a
+	// cached fragment alone — no live callgraph — which is what lets the annotate
+	// path recompute supporting_calls for findings a new rule introduces. Empty
+	// on fragments exported with schema < 1.4.
+	ReceiverVar string
+	AssignedVar string
+	ChainID     string
+
+	// StartCol, EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive). See InternalEdge.StartCol. 0 on fragments exported with
+	// schema < 1.4 — selection falls back to line-only.
+	StartCol int
+	EndCol   int
 
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
@@ -286,12 +349,12 @@ type CryptoOperation struct {
 	// where path is prefixed with "module@version/" for dep components.
 	StartLine int
 	// EndLine is the last source line of the crypto finding (often == StartLine
-	// for single-line detections). Carried through so the serving layer can emit
-	// the findings.json `end_line` field. Populated from graph-fragment-1.2+.
+	// for single-line detections). Carried through so renderers can emit the
+	// findings.json `end_line` field. Populated from graph-fragment-1.2+.
 	EndLine int
 	// Match is the exact source expression that triggered the detection (the
 	// findings.json `match` field), e.g. `Cipher.getInstance("AES")`. Carried
-	// through so the serving layer can emit it. Populated from graph-fragment-1.2+.
+	// through so renderers can emit it. Populated from graph-fragment-1.2+.
 	Match string
 
 	// CryptoCall carries the identity and argument data-flow of the matched
@@ -300,13 +363,70 @@ type CryptoOperation struct {
 	// OID is the Object Identifier for the cryptographic algorithm (1.2+).
 	OID string
 	// Metadata is the raw asset metadata block from the scanner (1.2+).
-	// Stored verbatim so the serving layer can pass it through without re-serialization.
+	// Stored verbatim so renderers can pass it through without re-serialization.
 	Metadata json.RawMessage
 	// Source indicates how the finding was discovered: "direct" or "indirect" (1.2+).
 	Source string
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
 	// operation (1.2+).
 	MatchedOperation *MatchedOp
+	// SupportingCallIDs are the supporting_id values of THIS finding's
+	// object-lifecycle supporting calls (graph-fragment 1.5+). It is the precise
+	// finding->supporting foreign key, captured at derivation time where object
+	// identity still exists. The top-level supporting_calls array is deduped
+	// across findings and carries no finding_id, so this is the only place the
+	// per-finding association survives persistence and stitch — the served
+	// callgraph's finding_graph.supporting_call_ids is sourced from here.
+	SupportingCallIDs []string
+}
+
+// SupportingCall is a non-finding crypto-adjacent call carried as context for
+// reachability. It is intentionally separate from CryptoOperation so config and
+// lifecycle calls do not inflate finding counts.
+type SupportingCall struct {
+	Function           string
+	SupportingID       string
+	Category           string
+	FilePath           string
+	StartLine          int
+	EndLine            int
+	FunctionName       string
+	CanonicalSignature string
+	DisplaySymbol      string
+	Aliases            []string
+	SupportingCall     *CryptoCall
+	Metadata           json.RawMessage
+	MatchedOperation   *MatchedOp
+}
+
+// CryptoEntryPoint is the decoded entrypoint/stitch projection from
+// graph-fragment-1.3.
+type CryptoEntryPoint struct {
+	FunctionKey              string
+	FunctionName             string
+	CanonicalSignature       string
+	DisplaySymbol            string
+	Aliases                  []string
+	ReturnType               string
+	ParameterTypes           []string
+	Visibility               string
+	OwnerVisibility          string
+	ReachableFindings        []ReachableFinding
+	ReachableSupportingCalls []ReachableSupportingCall
+}
+
+// ReachableFinding links an entrypoint to a reachable terminal finding.
+type ReachableFinding struct {
+	FindingID       string
+	ChainDepth      int
+	FindingGraphRef string
+}
+
+// ReachableSupportingCall links an entrypoint to a reachable supporting call.
+type ReachableSupportingCall struct {
+	SupportingID      string
+	ChainDepth        int
+	SupportingCallRef string
 }
 
 // ConfidenceHigh is the confidence of every chain emitted under the default
@@ -331,7 +451,8 @@ const (
 // Rendering into crypto-finder's customer-facing callgraph schema is a later
 // adapter concern.
 type Result struct {
-	Chains []FindingChain
+	Chains          []FindingChain
+	SupportingCalls []SupportingCall
 
 	// Suppressed records call edges the policy refused to traverse. It is the
 	// audit trail for fail-closed decisions and the data source for a future

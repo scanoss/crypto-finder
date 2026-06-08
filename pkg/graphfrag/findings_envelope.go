@@ -22,10 +22,10 @@ const FindingsSchemaVersion = "1.3"
 
 // FindingsEnvelope is the findings.json v1.3 envelope reconstructed from a
 // dependency closure of graph fragments. It is the asset-metadata companion to
-// ToCallgraphExport: the serving layer joins assets (here) to call chains
-// (callgraph export) by finding_id, so the two MUST agree on finding_id — which
-// they do by construction, since both derive it from the same CryptoOperation
-// fields via computeFindingID/depPrefixedPath.
+// ToCallgraphExport: consumers join assets (here) to call chains (callgraph
+// export) by finding_id, so the two MUST agree on finding_id — which they do by
+// construction, since both derive it from the same CryptoOperation fields via
+// computeFindingID/depPrefixedPath.
 type FindingsEnvelope struct {
 	Version  string        `json:"version"`
 	Findings []FindingFile `json:"findings"`
@@ -55,7 +55,7 @@ type FindingAsset struct {
 // component and its transitive dependency closure, from the stored crypto
 // annotations in each fragment. Unlike ToCallgraphExport (which emits only
 // reachable findings), this emits EVERY crypto operation in the closure —
-// reachability decoration is the serving layer's job.
+// reachability decoration happens in the callgraph export.
 //
 // finding_id, file_path, and source are computed to match a live
 // `--scan-dependencies` run:
@@ -64,7 +64,7 @@ type FindingAsset struct {
 //
 // finding_id is computed with the SAME inputs as ToCallgraphExport
 // (computeFindingID over the resolved path + start_line + rule_id), so the
-// serving layer's asset->call_chains join by finding_id holds.
+// asset->call_chains join by finding_id holds.
 func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]Fragment, meta ScanMeta) FindingsEnvelope {
 	closure := dependencyClosure(root, deps)
 

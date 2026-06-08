@@ -133,6 +133,13 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if err := InferReturnTypes(graph, kb); err != nil {
 		return nil, fmt.Errorf("callgraph: infer return types: %w", err)
 	}
+	// Correct fluent-chain link callees using KB return-type propagation. Runs
+	// after the KB is loaded so chains rooted at a library call (e.g.
+	// Password.hash(p).addRandomSalt().withBcrypt()) resolve their intermediate
+	// links through the contract KB instead of mis-guessing against wildcard
+	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
+	// return types and runs before the KB is available.
+	resolveFluentChainCalleesByContract(graph, kb)
 	inferenceDuration := time.Since(inferenceStart)
 
 	log.Info().
@@ -573,6 +580,143 @@ func resolveFluentChainsByReturnType(graph *CallGraph) {
 	if totalResolved > 0 {
 		log.Info().Int("resolved", totalResolved).Msg("Resolved fluent chain calls via return types")
 	}
+}
+
+// resolveFluentChainCalleesByContract corrects the callees of fluent method-chain
+// links using the contract KB. The parser resolves constructor-rooted chains and
+// typed-variable receivers, but a chain rooted at a static/library call such as
+// `Password.hash(p).addRandomSalt().withBcrypt()` leaves its intermediate links
+// untyped — resolveCallee then mis-guesses them against wildcard imports.
+//
+// Using the ChainID grouping recorded by the parser, this pass walks each chain
+// innermost-first, seeds the receiver type from the root link's KB return type,
+// and rewrites each subsequent link to <receiverType>.method when the KB knows
+// that method, propagating the contract return type to the next link. It is
+// conservative: a link is only rewritten when the KB confirms the method exists
+// on the propagated receiver type, so chains the KB does not describe are left
+// untouched.
+func resolveFluentChainCalleesByContract(graph *CallGraph, kb *contracts.KnowledgeBase) {
+	if kb == nil {
+		return
+	}
+	// The reconciliation below writes resolved edges into the caller index.
+	// BuildFromDirectories always initializes it, but callers that invoke this
+	// pass on a hand-built graph (unit tests) may not — guard against a nil map.
+	if graph.Callers == nil {
+		graph.Callers = make(map[string][]string)
+	}
+	resolved := 0
+	for callerKey, fn := range graph.Functions {
+		resolved += resolveChainCalleesInFunction(graph, callerKey, fn, kb)
+	}
+	if resolved > 0 {
+		log.Info().Int("resolved", resolved).Msg("Resolved fluent chain link callees via contract KB")
+	}
+}
+
+func resolveChainCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase) int {
+	chains := make(map[string][]int)
+	order := make([]string, 0)
+	for i := range fn.Calls {
+		cid := fn.Calls[i].ChainID
+		if cid == "" {
+			continue
+		}
+		if _, seen := chains[cid]; !seen {
+			order = append(order, cid)
+		}
+		chains[cid] = append(chains[cid], i)
+	}
+
+	resolved := 0
+	for _, cid := range order {
+		idxs := chains[cid]
+		if len(idxs) < 2 {
+			continue
+		}
+		// Order links innermost-first: an outer link's Raw strictly contains the
+		// inner link's Raw as a prefix, so Raw length is monotonic with depth.
+		sort.SliceStable(idxs, func(a, b int) bool {
+			return len(fn.Calls[idxs[a]].Raw) < len(fn.Calls[idxs[b]].Raw)
+		})
+		resolved += resolveChainLinkCallees(graph, callerKey, fn, idxs, kb)
+	}
+	return resolved
+}
+
+func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDecl, idxs []int, kb *contracts.KnowledgeBase) int {
+	// Seed the receiver type from the root (innermost) link's KB return type.
+	rootFQN, rootArity := splitMethodArity(&fn.Calls[idxs[0]].Callee)
+	currentType := unconditionalContractReturn(kb.ContractsFor(rootFQN, rootArity))
+
+	resolved := 0
+	for pos := 1; pos < len(idxs); pos++ {
+		if currentType == "" {
+			break
+		}
+		call := &fn.Calls[idxs[pos]]
+		base, arity := methodBaseArity(call.Callee.Name)
+		ctrs := kb.ContractsFor(currentType+"."+base, arity)
+		if len(ctrs) == 0 {
+			break // not a known method of the propagated type; stop, do not guess
+		}
+		pkg, typ := splitQualifiedTypeName(currentType)
+		rewritten := FunctionID{Package: pkg, Type: typ, Name: fmt.Sprintf("%s#%d", base, arity)}
+		oldKey := call.Callee.String()
+		if newKey := rewritten.String(); newKey != oldKey {
+			call.Callee = rewritten
+			// Reconcile the caller index with the rewrite. buildCallerIndex ran in
+			// Phase 1 with the pre-resolution (messy, name-only fallback) key; move
+			// this caller to the resolved key and record it as an exact edge so the
+			// fragment export and the stitcher see the clean KB-resolved target
+			// instead of the stale fallback. Without this the index and the
+			// FunctionCall.Callee diverge and the exported edge carries a synthesized
+			// key with no object identity.
+			addCaller(graph.Callers, newKey, callerKey, oldKey)
+			recordEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", call.Line)
+			resolved++
+		}
+		currentType = unconditionalContractReturn(ctrs)
+	}
+	return resolved
+}
+
+// methodBaseArity splits a decorated method name ("withBcrypt#0") into its base
+// name and arity. Arity is -1 when the name is not arity-qualified.
+func methodBaseArity(name string) (string, int) {
+	idx := strings.LastIndex(name, "#")
+	if idx < 0 {
+		return name, -1
+	}
+	arity := 0
+	for _, ch := range name[idx+1:] {
+		if ch < '0' || ch > '9' {
+			return name, -1
+		}
+		arity = arity*10 + int(ch-'0')
+	}
+	return name[:idx], arity
+}
+
+// splitQualifiedTypeName splits a fully-qualified type name into package and
+// simple type (e.g. "com.password4j.HashBuilder" -> "com.password4j",
+// "HashBuilder").
+func splitQualifiedTypeName(fqn string) (pkg, typ string) {
+	if idx := strings.LastIndex(fqn, "."); idx >= 0 {
+		return fqn[:idx], fqn[idx+1:]
+	}
+	return "", fqn
+}
+
+// unconditionalContractReturn returns the return type of the first unconditional
+// contract in the set, or "" when none applies.
+func unconditionalContractReturn(ctrs []contracts.Contract) string {
+	for i := range ctrs {
+		if ctrs[i].When == nil {
+			return ctrs[i].Return.Type
+		}
+	}
+	return ""
 }
 
 // buildTypePackageIndex maps simple type names to their packages.

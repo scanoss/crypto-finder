@@ -16,8 +16,12 @@ import (
 // All graph-fragment-1.2 fields (CanonicalSignature, EntryCall, CryptoCall,
 // asset metadata) are mapped when present. Legacy 1.0/1.1 fragments decode with
 // nil/zero for the new fields — safe structural-only degradation.
-func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
-	frag := Fragment{Component: component, Module: e.ScanMetadata.RootModule}
+func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
+	frag := Fragment{
+		Component:        component,
+		Module:           e.ScanMetadata.RootModule,
+		GraphAlgoVersion: e.ScanMetadata.GraphAlgoVersion,
+	}
 
 	for i := range e.Functions {
 		fn := &e.Functions[i]
@@ -30,7 +34,10 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			Visibility:         fn.Visibility,
 			OwnerVisibility:    fn.OwnerVisibility,
 			StartLine:          fn.StartLine,
+			EndLine:            fn.EndLine,
 			FilePath:           fn.FilePath,
+			DisplaySymbol:      fn.DisplaySymbol,
+			Aliases:            append([]string(nil), fn.Aliases...),
 		})
 	}
 	for i := range e.InternalEdges {
@@ -43,6 +50,11 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			MethodName:   ie.MethodName,
 			Arity:        ie.Arity,
 			CallSite:     ie.Line,
+			ReceiverVar:  ie.ReceiverVar,
+			AssignedVar:  ie.AssignedVar,
+			ChainID:      ie.ChainID,
+			StartCol:     ie.StartCol,
+			EndCol:       ie.EndCol,
 			EntryCall:    toCallSite(ie.EntryCall),
 		}
 		frag.InternalEdges = append(frag.InternalEdges, edge)
@@ -52,33 +64,104 @@ func (e GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
 			Caller:          ec.CallerKey,
 			TargetSignature: ec.TargetKey,
+			Raw:             ec.Raw,
 			Resolution:      normalizeResolutionKind(ec.Resolution),
 			DeclaredType:    ec.DeclaredType,
 			MethodName:      ec.MethodName,
 			Arity:           ec.Arity,
 			CallSite:        ec.Line,
+			ReceiverVar:     ec.ReceiverVar,
+			AssignedVar:     ec.AssignedVar,
+			ChainID:         ec.ChainID,
+			StartCol:        ec.StartCol,
+			EndCol:          ec.EndCol,
 			EntryCall:       toCallSite(ec.EntryCall),
 		})
 	}
 	for i := range e.CryptoAnnotations {
 		op := &e.CryptoAnnotations[i]
 		frag.CryptoOperations = append(frag.CryptoOperations, CryptoOperation{
-			Function:         op.FunctionKey,
-			FindingID:        op.FindingID,
-			RuleID:           op.RuleID,
-			Symbol:           op.Symbol,
-			FilePath:         op.FilePath,
-			StartLine:        op.StartLine,
-			EndLine:          op.EndLine,
-			Match:            op.Expression,
-			CryptoCall:       toCryptoCall(op.CryptoCall),
-			OID:              op.OID,
-			Metadata:         op.Metadata,
-			Source:           op.Source,
-			MatchedOperation: toMatchedOp(op.MatchedOperation),
+			Function:          op.FunctionKey,
+			FindingID:         op.FindingID,
+			RuleID:            op.RuleID,
+			Symbol:            op.Symbol,
+			FilePath:          op.FilePath,
+			StartLine:         op.StartLine,
+			EndLine:           op.EndLine,
+			Match:             op.Expression,
+			CryptoCall:        toCryptoCall(op.CryptoCall),
+			OID:               op.OID,
+			Metadata:          op.Metadata,
+			Source:            op.Source,
+			MatchedOperation:  toMatchedOp(op.MatchedOperation),
+			SupportingCallIDs: append([]string(nil), op.SupportingCallIDs...),
+		})
+	}
+	for i := range e.SupportingCalls {
+		s := &e.SupportingCalls[i]
+		frag.SupportingCalls = append(frag.SupportingCalls, SupportingCall{
+			Function:           s.FunctionKey,
+			SupportingID:       s.SupportingID,
+			Category:           s.Category,
+			FilePath:           s.FilePath,
+			StartLine:          s.StartLine,
+			EndLine:            s.EndLine,
+			FunctionName:       s.FunctionName,
+			CanonicalSignature: s.CanonicalSignature,
+			DisplaySymbol:      s.DisplaySymbol,
+			Aliases:            append([]string(nil), s.Aliases...),
+			SupportingCall:     toCryptoCall(s.SupportingCall),
+			Metadata:           s.Metadata,
+			MatchedOperation:   toMatchedOp(s.MatchedOperation),
+		})
+	}
+	for i := range e.CryptoEntryPoints {
+		ep := &e.CryptoEntryPoints[i]
+		frag.CryptoEntryPoints = append(frag.CryptoEntryPoints, CryptoEntryPoint{
+			FunctionKey:              ep.FunctionKey,
+			FunctionName:             ep.FunctionName,
+			CanonicalSignature:       ep.CanonicalSignature,
+			DisplaySymbol:            ep.DisplaySymbol,
+			Aliases:                  append([]string(nil), ep.Aliases...),
+			ReturnType:               ep.ReturnType,
+			ParameterTypes:           append([]string(nil), ep.ParameterTypes...),
+			Visibility:               ep.Visibility,
+			OwnerVisibility:          ep.OwnerVisibility,
+			ReachableFindings:        toReachableFindings(ep.ReachableFindings),
+			ReachableSupportingCalls: toReachableSupportingCalls(ep.ReachableSupportingCalls),
 		})
 	}
 	return frag
+}
+
+func toReachableFindings(src []GraphFragmentReachableFinding) []ReachableFinding {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ReachableFinding, len(src))
+	for i := range src {
+		out[i] = ReachableFinding{
+			FindingID:       src[i].FindingID,
+			ChainDepth:      src[i].ChainDepth,
+			FindingGraphRef: src[i].FindingGraphRef,
+		}
+	}
+	return out
+}
+
+func toReachableSupportingCalls(src []GraphFragmentReachableSupportingCall) []ReachableSupportingCall {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ReachableSupportingCall, len(src))
+	for i := range src {
+		out[i] = ReachableSupportingCall{
+			SupportingID:      src[i].SupportingID,
+			ChainDepth:        src[i].ChainDepth,
+			SupportingCallRef: src[i].SupportingCallRef,
+		}
+	}
+	return out
 }
 
 // toCallSite converts a GraphFragmentCallSite pointer to a CallSite pointer.
@@ -142,6 +225,8 @@ func toCryptoCall(src *GraphFragmentCryptoCall) *CryptoCall {
 		CanonicalSignature: src.CanonicalSignature,
 		ReturnType:         src.ReturnType,
 		ParameterTypes:     src.ParameterTypes,
+		DisplaySymbol:      src.DisplaySymbol,
+		Aliases:            append([]string(nil), src.Aliases...),
 		Line:               src.Line,
 	}
 	for i := range src.Parameters {

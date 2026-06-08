@@ -125,3 +125,74 @@ func parseArgumentsFromDelimitedContent(content string) []string {
 	}
 	return splitTopLevelCommaList(inner)
 }
+
+// stripJavaExpressionComments removes `//` line comments and `/* */` block
+// comments from a Java expression while preserving comment-like sequences that
+// appear inside string or char literals (e.g. "http://example"). It is used
+// before splitting/tracing multi-line argument lists, where inline comments
+// (e.g. `new RSAKeyGenerationParameters(BigInteger.valueOf(65537), // exponent`)
+// would otherwise be glued onto the following argument's expression text.
+func stripJavaExpressionComments(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		switch {
+		case runes[i] == '"' || runes[i] == '\'':
+			i = writeJavaLiteral(&b, runes, i)
+		case isCommentStart(runes, i, '/'):
+			i = skipLineComment(runes, i) // line comment: drop to end-of-line (newline kept by caller)
+		case isCommentStart(runes, i, '*'):
+			i = skipBlockComment(runes, i)
+		default:
+			b.WriteRune(runes[i])
+		}
+	}
+	return b.String()
+}
+
+// isCommentStart reports whether runes[i:] opens a comment of the given second
+// character ('/' for line comments, '*' for block comments).
+func isCommentStart(runes []rune, i int, second rune) bool {
+	return runes[i] == '/' && i+1 < len(runes) && runes[i+1] == second
+}
+
+// writeJavaLiteral copies a string or char literal beginning at the opening
+// quote runes[i] into b (honoring backslash escapes) and returns the index of
+// its closing quote (or the final rune if the literal is unterminated).
+func writeJavaLiteral(b *strings.Builder, runes []rune, i int) int {
+	quote := runes[i]
+	b.WriteRune(runes[i])
+	for i++; i < len(runes); i++ {
+		b.WriteRune(runes[i])
+		if runes[i] == '\\' && i+1 < len(runes) {
+			i++
+			b.WriteRune(runes[i])
+			continue
+		}
+		if runes[i] == quote {
+			break
+		}
+	}
+	return i
+}
+
+// skipLineComment returns the index of the last rune of a `//` comment — the
+// rune just before the newline — leaving the newline for the caller to emit.
+func skipLineComment(runes []rune, i int) int {
+	for i+1 < len(runes) && runes[i+1] != '\n' {
+		i++
+	}
+	return i
+}
+
+// skipBlockComment returns the index of the closing `/` of a `/* */` comment
+// (or the final rune if unterminated).
+func skipBlockComment(runes []rune, i int) int {
+	for i += 2; i+1 < len(runes); i++ {
+		if runes[i] == '*' && runes[i+1] == '/' {
+			return i + 1
+		}
+	}
+	return len(runes) - 1
+}

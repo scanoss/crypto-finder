@@ -69,8 +69,8 @@ func TestExportSchema_Is52(t *testing.T) {
 		t.Fatalf("invalid json: %v", err)
 	}
 
-	if payload.SchemaVersion != "5.3" {
-		t.Fatalf("schema_version = %q, want 5.3", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.2" {
+		t.Fatalf("schema_version = %q, want 6.2", payload.SchemaVersion)
 	}
 }
 
@@ -305,11 +305,11 @@ func TestExportFunctionMetadata_InferredReturnPopulated(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Schema version 5.3
+// Schema version 6.0
 // ---------------------------------------------------------------------------
 
 // TestExportSchemaVersionIs53 asserts that the call graph export carries
-// callGraphSchemaVersion = "5.3" (schema bump from 5.2, Batch 7).
+// callGraphSchemaVersion = "6.0" (schema bump from 5.2, Batch 7).
 func TestExportSchemaVersionIs53(t *testing.T) {
 	t.Parallel()
 
@@ -361,8 +361,8 @@ func TestExportSchemaVersionIs53(t *testing.T) {
 		t.Fatalf("invalid json: %v", err)
 	}
 
-	if payload.SchemaVersion != "5.3" {
-		t.Fatalf("schema_version = %q, want 5.3", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.2" {
+		t.Fatalf("schema_version = %q, want 6.2", payload.SchemaVersion)
 	}
 }
 

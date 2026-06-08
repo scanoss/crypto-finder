@@ -1,13 +1,13 @@
 // Copyright (C) 2026 SCANOSS.COM
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Package equiv provides a semantic equivalence diff tool for schema-5.x
+// Package equiv provides a semantic equivalence diff tool for schema-6.0
 // callgraph exports produced by crypto-finder.
 //
-// Compare takes two decoded schema-5.x callgraph exports — A (live
-// `scan --scan-dependencies --export-callgraph`) and B (emulated mining:
-// graphfrag.Stitch -> ToCallgraphExport) — plus the suppressed edges from the
-// same stitch run, and returns a DiffReport describing any differences.
+// Compare takes two decoded schema-6.0 callgraph exports — A (live
+// `scan --scan-dependencies --export-callgraph`) and B (graphfrag.Stitch ->
+// ToCallgraphExport) — plus the suppressed edges from the same stitch run, and
+// returns a DiffReport describing any differences.
 //
 // The comparison is SEMANTIC, not byte-equal:
 //
@@ -18,7 +18,8 @@
 //   - Chains in B not in A → ExtraInB (false synthesis).
 //   - For chains present in both A and B, node fields are compared. Differences
 //     in ignored fields go to KnownDivergences; others to NodeFieldMismatches.
-//   - B's entry_point_index is validated against B's surviving chain set.
+//   - B's crypto_entry_points are validated against B's surviving chain set
+//     and top-level supporting_calls.
 //
 // Suppression oracle (heuristic):
 //
@@ -41,7 +42,7 @@
 //
 //   - "file_path": entry_call.file_path is not populated by callgraph_export.go.
 //   - "inferred_return": not stored in graph-fragment-1.2, absent on all nodes.
-//   - "confidence": schema-5.x has no confidence field (internal only).
+//   - "confidence": schema-6.0 has no confidence field (internal only).
 //
 // These go to KnownDivergences, not NodeFieldMismatches.
 package equiv
@@ -54,26 +55,29 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// JSON mirror types (schema-5.x decoded form)
+// JSON mirror types (schema-6.0 decoded form)
 // ---------------------------------------------------------------------------
 
-// CallgraphExportJSON is the decoded form of a schema-5.x callgraph export.
+// CallgraphExportJSON is the decoded form of a schema-6.0 callgraph export.
 // Both A (live scan) and B (stitched) are decoded into this type before
 // comparison so the diff operates on a common representation.
 type CallgraphExportJSON struct {
-	SchemaVersion   string                   `json:"schema_version"`
-	FindingGraphs   []ExportFindingGraphJSON `json:"finding_graphs"`
-	EntryPointIndex []ExportEntryPointJSON   `json:"entry_point_index,omitempty"`
+	SchemaVersion     string                       `json:"schema_version"`
+	FindingGraphs     []ExportFindingGraphJSON     `json:"finding_graphs"`
+	CryptoEntryPoints []ExportCryptoEntryPointJSON `json:"crypto_entry_points,omitempty"`
+	SupportingCalls   []ExportSupportingCallJSON   `json:"supporting_calls,omitempty"`
 }
 
 // ExportFindingGraphJSON is one finding_graph entry in a CallgraphExportJSON.
 type ExportFindingGraphJSON struct {
-	FindingID  string                  `json:"finding_id"`
-	CallChains [][]ExportChainNodeJSON `json:"call_chains,omitempty"`
+	FindingID         string                  `json:"finding_id"`
+	SupportingCallIDs []string                `json:"supporting_call_ids,omitempty"`
+	CallChains        [][]ExportChainNodeJSON `json:"call_chains,omitempty"`
 }
 
-// ExportChainNodeJSON is one node in a schema-5.x call chain.
+// ExportChainNodeJSON is one node in a schema-6.0 call chain.
 type ExportChainNodeJSON struct {
+	FunctionKey        string   `json:"function_key,omitempty"`
 	FunctionName       string   `json:"function_name"`
 	CanonicalSignature string   `json:"canonical_signature,omitempty"`
 	ReturnType         string   `json:"return_type,omitempty"`
@@ -83,17 +87,32 @@ type ExportChainNodeJSON struct {
 	FilePath           string   `json:"file_path,omitempty"`
 }
 
-// ExportEntryPointJSON is one entry_point_index entry.
-type ExportEntryPointJSON struct {
-	Function           string                       `json:"function"`
-	CanonicalSignature string                       `json:"canonical_signature,omitempty"`
-	ReachableFindings  []ExportReachableFindingJSON `json:"reachable_findings,omitempty"`
+// ExportCryptoEntryPointJSON is one crypto_entry_points entry.
+type ExportCryptoEntryPointJSON struct {
+	FunctionKey         string                              `json:"function_key"`
+	FunctionName        string                              `json:"function_name,omitempty"`
+	CanonicalSignature  string                              `json:"canonical_signature,omitempty"`
+	ReachableFindings   []ExportReachableFindingJSON        `json:"reachable_findings,omitempty"`
+	ReachableSupporting []ExportReachableSupportingCallJSON `json:"reachable_supporting_calls,omitempty"`
 }
 
 // ExportReachableFindingJSON is one reachable finding inside an entry point.
 type ExportReachableFindingJSON struct {
 	FindingID  string `json:"finding_id"`
 	ChainDepth int    `json:"chain_depth"`
+}
+
+// ExportReachableSupportingCallJSON is one supporting-call reference inside a
+// crypto entry point.
+type ExportReachableSupportingCallJSON struct {
+	SupportingID string `json:"supporting_id"`
+	ChainDepth   int    `json:"chain_depth"`
+}
+
+// ExportSupportingCallJSON is one top-level supporting call.
+type ExportSupportingCallJSON struct {
+	SupportingID string `json:"supporting_id"`
+	FunctionKey  string `json:"function_key,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -135,9 +154,13 @@ type DiffReport struct {
 	// NodeFieldMismatches records per-node field differences for chains present
 	// in both A and B, for fields that are NOT in the IgnoreFields list.
 	NodeFieldMismatches []FieldMismatch
-	// EntryPointDivergences records entry_point_index entries in B that do not
-	// correspond to a surviving B chain's entry function and finding.
+	// EntryPointDivergences records crypto_entry_points entries in B that do not
+	// correspond to a surviving B chain/supporting call.
 	EntryPointDivergences []string
+	// SupportingCallIDDivergences records finding_graph.supporting_call_ids in B
+	// (the per-finding foreign key, 6.1+) that do not resolve to a top-level
+	// supporting_calls entry — a dangling reference the served API would expose.
+	SupportingCallIDDivergences []string
 	// KnownDivergences records differences in fields that are in the IgnoreFields
 	// list (default: file_path, inferred_return, confidence). These are documented
 	// v1 limitations, not hard failures.
@@ -153,7 +176,7 @@ type DiffReport struct {
 var defaultIgnoreFields = []string{
 	"file_path",       // entry_call.file_path not populated in callgraph_export.go
 	"inferred_return", // not stored in graph-fragment-1.2
-	"confidence",      // internal only, not present in schema-5.x output
+	"confidence",      // internal only, not present in schema-6.0 output
 }
 
 // Options controls the behavior of Compare.
@@ -222,12 +245,34 @@ func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, op
 		)
 	}
 
-	// Entry point index consistency: validate B's index against B's chains.
-	if len(b.EntryPointIndex) > 0 {
-		validateEntryPointIndex(b, bChainsByFinding, report)
+	// Crypto entry point consistency: validate B's index against B's chains and
+	// supporting calls.
+	if len(b.CryptoEntryPoints) > 0 {
+		validateCryptoEntryPoints(b, bChainsByFinding, report)
 	}
 
+	// Foreign-key consistency: every per-finding supporting_call_id (6.1+) must
+	// resolve to a top-level supporting_calls entry.
+	validateSupportingCallIDs(b, report)
+
 	return report
+}
+
+// validateSupportingCallIDs checks that every finding_graph.supporting_call_ids
+// reference in B resolves to a top-level supporting_calls entry. A dangling id is
+// a broken foreign key the served API would surface as a per-asset breadcrumb
+// pointing at nothing.
+func validateSupportingCallIDs(b CallgraphExportJSON, report *DiffReport) {
+	supportingIDs := collectSupportingIDs(b.SupportingCalls)
+	for _, fg := range b.FindingGraphs {
+		for _, id := range fg.SupportingCallIDs {
+			if !supportingIDs[id] {
+				report.SupportingCallIDDivergences = append(report.SupportingCallIDDivergences,
+					fmt.Sprintf("finding_graph %q references supporting_call_id %q not present in supporting_calls",
+						fg.FindingID, id))
+			}
+		}
+	}
 }
 
 func compareFindingForID(
@@ -303,8 +348,8 @@ func indexChainsByFinding(graphs []ExportFindingGraphJSON) map[string]map[ChainK
 // canonical_signature when non-empty, otherwise function_name.
 func canonicalChainKey(chain []ExportChainNodeJSON) ChainKey {
 	parts := make([]string, len(chain))
-	for i, n := range chain {
-		parts[i] = nodeIdentity(n)
+	for i := range chain {
+		parts[i] = nodeIdentity(chain[i])
 	}
 	return ChainKey(strings.Join(parts, " -> "))
 }
@@ -480,42 +525,84 @@ func joinStrings(ss []string) string {
 // Entry point index consistency
 // ---------------------------------------------------------------------------
 
-// validateEntryPointIndex checks that every entry in B's entry_point_index has
+// validateCryptoEntryPoints checks that every entry in B's crypto_entry_points has
 // at least one corresponding chain in B's finding graphs. Entry points that
 // reference findings not present in any B chain are flagged as divergences.
-func validateEntryPointIndex(
+func validateCryptoEntryPoints(
 	b CallgraphExportJSON,
 	bChainsByFinding map[string]map[ChainKey][]ExportChainNodeJSON,
 	report *DiffReport,
 ) {
 	// Build the set of entry function identities from B's chains.
 	bEntryFunctions := collectEntryFunctions(bChainsByFinding)
+	supportingIDs := collectSupportingIDs(b.SupportingCalls)
 
-	for _, ep := range b.EntryPointIndex {
+	for _, ep := range b.CryptoEntryPoints {
 		epID := ep.CanonicalSignature
 		if epID == "" {
-			epID = ep.Function
+			epID = ep.FunctionKey
+		}
+		if epID == "" {
+			epID = ep.FunctionName
 		}
 		for _, rf := range ep.ReachableFindings {
 			// Check: the finding must appear in B's chains.
 			if _, ok := bChainsByFinding[rf.FindingID]; !ok {
 				report.EntryPointDivergences = append(report.EntryPointDivergences,
-					fmt.Sprintf("entry_point_index entry %q references finding %q not present in any B chain",
+					fmt.Sprintf("crypto_entry_points entry %q references finding %q not present in any B chain",
 						epID, rf.FindingID))
 				continue
 			}
-			// Check: the entry function must appear as the first node in at least one chain for this finding.
-			if !bEntryFunctions[rf.FindingID][epID] {
+			// Check: the entry function must appear as a reachable node in at
+			// least one chain for this finding.
+			if !entryFunctionMatches(bEntryFunctions[rf.FindingID], ep) {
 				report.EntryPointDivergences = append(report.EntryPointDivergences,
-					fmt.Sprintf("entry_point_index entry %q for finding %q: function not found as entry in any B chain",
+					fmt.Sprintf("crypto_entry_points entry %q for finding %q: function not found as entry in any B chain",
 						epID, rf.FindingID))
+			}
+		}
+		for _, rs := range ep.ReachableSupporting {
+			if !supportingIDs[rs.SupportingID] {
+				report.EntryPointDivergences = append(report.EntryPointDivergences,
+					fmt.Sprintf("crypto_entry_points entry %q references supporting call %q not present in supporting_calls",
+						epID, rs.SupportingID))
 			}
 		}
 	}
 }
 
-// collectEntryFunctions builds a map: findingID → set of entry function identities
-// (first node of each chain for that finding).
+func collectSupportingIDs(calls []ExportSupportingCallJSON) map[string]bool {
+	out := make(map[string]bool, len(calls))
+	for _, call := range calls {
+		if call.SupportingID != "" {
+			out[call.SupportingID] = true
+		}
+	}
+	return out
+}
+
+func entryFunctionMatches(entries map[string]bool, ep ExportCryptoEntryPointJSON) bool {
+	if entries == nil {
+		return false
+	}
+	candidates := []string{ep.FunctionKey, ep.CanonicalSignature, ep.FunctionName}
+	for _, candidate := range candidates {
+		if candidate != "" && entries[candidate] {
+			return true
+		}
+	}
+	return false
+}
+
+// collectEntryFunctions builds a map: findingID → set of entry function identities.
+//
+// crypto_entry_points indexes EVERY node on a surviving chain, not just the head:
+// an entry point is "any function from which the finding is reachable", so an
+// intermediate node (e.g. a shared ancestor on a collapsed diamond) is a valid
+// entry point even though it is never chain[0]. The consistency check must
+// therefore accept any chain node, otherwise it spuriously flags every non-head
+// entry point — which both the live and stitched exporters legitimately emit (see
+// addEntryPointChain / addChainToEPI: both iterate the full chain).
 func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChainNodeJSON) map[string]map[string]bool {
 	out := make(map[string]map[string]bool)
 	for fid, chains := range bChainsByFinding {
@@ -523,10 +610,31 @@ func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChai
 			out[fid] = make(map[string]bool)
 		}
 		for _, ch := range chains {
-			if len(ch) > 0 {
-				out[fid][nodeIdentity(ch[0])] = true
+			for i := range ch {
+				for _, key := range nodeIdentityCandidates(ch[i]) {
+					out[fid][key] = true
+				}
 			}
 		}
+	}
+	return out
+}
+
+func nodeIdentityCandidates(node ExportChainNodeJSON) []string {
+	candidates := []string{
+		nodeIdentity(node),
+		node.FunctionKey,
+		node.CanonicalSignature,
+		node.FunctionName,
+	}
+	out := make([]string, 0, len(candidates))
+	seen := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		out = append(out, candidate)
 	}
 	return out
 }

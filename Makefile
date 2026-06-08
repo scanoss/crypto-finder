@@ -8,6 +8,7 @@ BUILD_DIR := ./target
 BINARY_NAME := crypto-finder
 DOCKER_IMAGE := ghcr.io/scanoss/crypto-finder
 GOLANGCI_LINT_VERSION := $(shell cat .golangci-lint-version)
+GOLANGCI_LINT_VERSION_NO_V := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
 GOLANGCI_LINT_BIN := ./bin/golangci-lint
 LDFLAGS := -ldflags="-s -w \
 	-X github.com/scanoss/crypto-finder/internal/version.Version=$(VERSION) \
@@ -37,7 +38,34 @@ lint: ## Lints the code
 
 lint-install: ## Install pinned golangci-lint version
 	@mkdir -p ./bin
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ./bin $(GOLANGCI_LINT_VERSION)
+	@set -e; \
+		tmp=$$(mktemp); \
+		trap 'rm -rf "$$tmp"' EXIT; \
+		rm -f "$$tmp"; \
+		mkdir -p "$$tmp"; \
+		os=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+		arch=$$(uname -m); \
+		case "$$arch" in \
+			x86_64|amd64) arch=amd64 ;; \
+			aarch64|arm64) arch=arm64 ;; \
+			i386|i686) arch=386 ;; \
+			armv6l) arch=armv6 ;; \
+			armv7l) arch=armv7 ;; \
+			*) echo "unsupported architecture: $$arch"; exit 1 ;; \
+		esac; \
+		archive="golangci-lint-$(GOLANGCI_LINT_VERSION_NO_V)-$${os}-$${arch}.tar.gz"; \
+		checksums="golangci-lint-$(GOLANGCI_LINT_VERSION_NO_V)-checksums.txt"; \
+		base_url="https://github.com/golangci/golangci-lint/releases/download/$(GOLANGCI_LINT_VERSION)"; \
+		curl -sSfL "$$base_url/$$archive" -o "$$tmp/$$archive"; \
+		curl -sSfL "$$base_url/$$checksums" -o "$$tmp/$$checksums"; \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			(cd "$$tmp" && grep "  $$archive$$" "$$checksums" | sha256sum -c -); \
+		else \
+			(cd "$$tmp" && grep "  $$archive$$" "$$checksums" | shasum -a 256 -c -); \
+		fi; \
+		tar -xzf "$$tmp/$$archive" -C "$$tmp"; \
+		cp "$$tmp/golangci-lint-$(GOLANGCI_LINT_VERSION_NO_V)-$${os}-$${arch}/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
+		chmod +x "$(GOLANGCI_LINT_BIN)"
 
 build: ## Builds the CLI with version info
 	@echo "Building SCANOSS Crypto Finder CLI ($(VERSION))..."

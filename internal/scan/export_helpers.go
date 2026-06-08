@@ -23,7 +23,7 @@ import (
 )
 
 // buildCallSiteParameters constructs the unified parameters slice for a call
-// site by delegating to mergeCallParameters — the same path that the schema-5.x
+// site by delegating to mergeCallParameters — the same path that the schema-6.0
 // call-graph builder uses for entry_call and crypto_call. This function is the
 // shared helper called by both ExportCallGraph (via buildEntryCall) and
 // ExportGraphFragment (via buildGraphFragmentResolvedEdges) to guarantee

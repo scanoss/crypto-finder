@@ -404,9 +404,11 @@ func TestLoadEmbedded_Java_HierarchyReachability(t *testing.T) {
 
 	// Known opaque root types that need no hierarchy entry:
 	// - byte[] is a JVM primitive array, not a reference type in the hierarchy
+	// - boolean is a JVM primitive (e.g. terminal HashChecker.with* verify calls)
 	// - java.lang.Object is the universal root
 	opaqueRoots := map[string]struct{}{
 		"byte[]":           {},
+		"boolean":          {},
 		"java.lang.Object": {},
 	}
 

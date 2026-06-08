@@ -32,6 +32,8 @@ const (
 	javaNodeFieldAccess          = "field_access"
 	javaNodeObjectCreation       = "object_creation_expression"
 	javaNodeMethodInvocation     = "method_invocation"
+	javaNodeVariableDeclarator   = "variable_declarator"
+	javaNodeAssignmentExpression = "assignment_expression"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
 	javaVarOriginKindParameter   = "parameter"
@@ -735,7 +737,7 @@ func parseFieldAssignmentNode(
 	paramMap map[string]int,
 	paramTypes map[string]string,
 ) *parsedFieldAssignment {
-	if node.Type() != "assignment_expression" {
+	if node.Type() != javaNodeAssignmentExpression {
 		return nil
 	}
 	left := node.ChildByFieldName("left")
@@ -826,7 +828,7 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 			// Extract variable names from declarators
 			for i := 0; i < int(node.ChildCount()); i++ {
 				child := node.Child(i)
-				if child.Type() == "variable_declarator" {
+				if child.Type() == javaNodeVariableDeclarator {
 					for j := 0; j < int(child.ChildCount()); j++ {
 						nameNode := child.Child(j)
 						if nameNode.Type() == javaNodeIdentifier {
@@ -904,7 +906,7 @@ func (p *JavaParser) collectDeclarationOrigins(
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() != "variable_declarator" {
+		if child.Type() != javaNodeVariableDeclarator {
 			continue
 		}
 		name, initializer := parseVariableDeclaratorOrigin(child, src)
@@ -966,7 +968,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
 		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr}}
 	}
-	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass); constructorNodes != nil {
+	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
 	}
 	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
@@ -1029,7 +1031,7 @@ func fieldConstructorSourceNodes(fa *fieldAssignment) []SourceNode {
 	}}
 }
 
-func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnalysis, currentClass string) []SourceNode {
+func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
 	typeName, argc, ok := parseJavaConstructorExpression(expr)
 	if !ok {
 		return nil
@@ -1039,7 +1041,39 @@ func (p *JavaParser) traceConstructorExpression(expr string, analysis *FileAnaly
 		target := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, argc), analysis, currentClass, nil)
 		node.CallTarget = &target
 	}
+	// Recurse into the constructor's arguments so nested constructors and
+	// variables (e.g. `new ECKeyGenerationParameters(domainParams, new SecureRandom())`)
+	// surface their own call_target provenance instead of being collapsed into the
+	// outer constructor's value text. Without this, an argument that is itself a
+	// constructor of a non-finding parameter-object (ECDomainParameters, SecureRandom)
+	// would never appear as its own node. traceExpression's depth guard bounds the recursion.
+	node.SourceNodes = p.traceConstructorArgumentSources(expr, analysis, currentClass, varTypes, origins, depth)
 	return []SourceNode{node}
+}
+
+// traceConstructorArgumentSources splits a `new Type(arg0, arg1, ...)` expression
+// into its top-level arguments and traces each one's provenance. It returns the
+// flattened provenance for every argument (nil when the expression has no
+// resolvable argument list).
+func (p *JavaParser) traceConstructorArgumentSources(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(expr), "new "))
+	open := strings.Index(trimmed, "(")
+	closeIdx := strings.LastIndex(trimmed, ")")
+	if open <= 0 || closeIdx <= open {
+		return nil
+	}
+	// Strip inline comments before splitting so an inline `// note` between
+	// arguments is not glued onto the next argument's expression text.
+	argList := stripJavaExpressionComments(trimmed[open : closeIdx+1])
+	var sources []SourceNode
+	for _, arg := range parseArgumentsFromDelimitedContent(argList) {
+		arg = strings.TrimSpace(arg)
+		if arg == "" {
+			continue
+		}
+		sources = append(sources, p.traceExpression(arg, analysis, currentClass, varTypes, origins, depth+1)...)
+	}
+	return sources
 }
 
 func (p *JavaParser) traceMethodCallExpression(
@@ -1322,14 +1356,136 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		}
 	}
 
+	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
-		Callee:          callee,
-		Raw:             raw,
-		FilePath:        filePath,
-		Line:            line,
+		Callee:      callee,
+		ReceiverVar: receiverVarName(object, varTypes, varOrigins),
+		AssignedVar: assignedVar,
+		ChainID:     chainID,
+		Raw:         raw,
+		FilePath:    filePath,
+		Line:        line,
+		// Convert tree-sitter 0-based byte columns to the internal 1-based
+		// convention. StartCol is inclusive; EndCol is exclusive (one past last
+		// byte of the call expression node on its start/end row).
+		StartCol:        int(node.StartPoint().Column) + 1,
+		EndCol:          int(node.EndPoint().Column) + 1,
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
+}
+
+// receiverVarName returns the receiver as a local-variable name when the method
+// invocation's receiver is a plain identifier bound to a known variable or
+// parameter (e.g. `digest` in `digest.update(...)`). It deliberately returns ""
+// for class receivers such as `Cipher` in `Cipher.getInstance(...)` so that the
+// object-lifecycle derivation never attributes a static call to a crypto object.
+func receiverVarName(object string, varTypes map[string]string, varOrigins map[string]varOrigin) string {
+	if !isSimpleJavaIdentifier(object) {
+		return ""
+	}
+	if _, ok := varTypes[object]; ok {
+		return object
+	}
+	if _, ok := varOrigins[object]; ok {
+		return object
+	}
+	return ""
+}
+
+// isSimpleJavaIdentifier reports whether expr is a single Java identifier (no
+// dots, calls, or operators).
+func isSimpleJavaIdentifier(expr string) bool {
+	if expr == "" {
+		return false
+	}
+	for i, r := range expr {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_', r == '$':
+			continue
+		case i > 0 && r >= '0' && r <= '9':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// callChainContext derives, for a method-invocation or object-creation node, the
+// fluent-chain grouping id and the variable its result is assigned to.
+//
+//   - ChainID is non-empty only when the node participates in a multi-link fluent
+//     chain such as `Password.hash(p).addRandomSalt().withBcrypt()`; every link of
+//     the chain shares the chain root's byte offset.
+//   - AssignedVar is populated only on the chain root (the outermost call), and
+//     only when that root is the right-hand side of a variable declaration or
+//     assignment (e.g. `Hash hash = ...withBcrypt()` → "hash").
+func callChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
+	root := chainRootNode(node)
+	if root != node {
+		// Inner link of a chain: share the root's id, no assignment.
+		return fmt.Sprintf("%d", root.StartByte()), ""
+	}
+	if isCallNode(node.ChildByFieldName("object")) {
+		// Chain root that has inner links below it.
+		chainID = fmt.Sprintf("%d", root.StartByte())
+	}
+	return chainID, assignedVarFromParent(root, src)
+}
+
+// chainRootNode walks up through enclosing method invocations whose receiver is
+// the current node, returning the outermost call of the fluent chain.
+func chainRootNode(node *sitter.Node) *sitter.Node {
+	root := node
+	for {
+		parent := root.Parent()
+		if parent == nil || parent.Type() != javaNodeMethodInvocation {
+			break
+		}
+		if parent.ChildByFieldName("object") != root {
+			break
+		}
+		root = parent
+	}
+	return root
+}
+
+// isCallNode reports whether the node is a method invocation or object creation.
+func isCallNode(node *sitter.Node) bool {
+	if node == nil {
+		return false
+	}
+	t := node.Type()
+	return t == javaNodeMethodInvocation || t == javaNodeObjectCreation
+}
+
+// assignedVarFromParent returns the local-variable name a call result is bound
+// to when the call is the initializer of a variable declarator or the right side
+// of a simple assignment; otherwise "".
+func assignedVarFromParent(node *sitter.Node, src []byte) string {
+	parent := node.Parent()
+	if parent == nil {
+		return ""
+	}
+	switch parent.Type() {
+	case javaNodeVariableDeclarator:
+		for i := 0; i < int(parent.ChildCount()); i++ {
+			child := parent.Child(i)
+			if child.Type() == javaNodeIdentifier {
+				return child.Content(src)
+			}
+		}
+	case javaNodeAssignmentExpression:
+		if parent.ChildByFieldName("right") != node {
+			return ""
+		}
+		left := parent.ChildByFieldName("left")
+		if left != nil && left.Type() == javaNodeIdentifier {
+			return strings.TrimSpace(left.Content(src))
+		}
+	}
+	return ""
 }
 
 // objectCreationTypeName extracts the constructed type's name from an
@@ -1407,11 +1563,19 @@ func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath
 	args := p.extractJavaCallArguments(node, src)
 	callee := p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, len(args)), analysis, currentClass, nil)
 
+	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
-		Callee:          callee,
-		Raw:             "new " + typeName,
-		FilePath:        filePath,
-		Line:            line,
+		Callee:      callee,
+		AssignedVar: assignedVar,
+		ChainID:     chainID,
+		Raw:         "new " + typeName,
+		FilePath:    filePath,
+		Line:        line,
+		// Convert tree-sitter 0-based byte columns to the internal 1-based
+		// convention. StartCol is inclusive; EndCol is exclusive (one past last
+		// byte of the object_creation_expression node).
+		StartCol:        int(node.StartPoint().Column) + 1,
+		EndCol:          int(node.EndPoint().Column) + 1,
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
@@ -2047,7 +2211,7 @@ func (p *JavaParser) collectMethodBodyAssignmentNodes(
 	if node == nil {
 		return
 	}
-	if node.Type() == "assignment_expression" {
+	if node.Type() == javaNodeAssignmentExpression {
 		left := node.ChildByFieldName("left")
 		right := node.ChildByFieldName("right")
 		if left != nil && right != nil {

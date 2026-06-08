@@ -19,6 +19,7 @@ package language
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -94,6 +95,66 @@ func TestEnryDetector_DetectDirectory(t *testing.T) {
 
 	if !foundGo {
 		t.Logf("Go not detected in testdata, languages found: %v", languages)
+	}
+}
+
+func TestOrderLanguagesByDominance(t *testing.T) {
+	t.Parallel()
+
+	// Languages are ordered by file count descending so the repo's primary
+	// language wins over incidental helper scripts.
+	got := orderLanguagesByDominance(map[string]int{
+		"java":   97,
+		"xml":    5,
+		"python": 1,
+	})
+	want := []string{"java", "xml", "python"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("dominance order = %v, want %v", got, want)
+	}
+
+	// Ties are broken alphabetically for deterministic output.
+	got = orderLanguagesByDominance(map[string]int{"go": 2, "rust": 2, "c": 2})
+	want = []string{"c", "go", "rust"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tie-break order = %v, want %v", got, want)
+	}
+
+	// Empty input yields an empty (non-nil) slice.
+	if got := orderLanguagesByDominance(map[string]int{}); len(got) != 0 {
+		t.Fatalf("empty input = %v, want empty", got)
+	}
+}
+
+// TestEnryDetector_DominantLanguageFirst guards the regression where a lone
+// ancillary script (e.g. policy-check.py) flipped a Java repo's detected
+// ecosystem to Python, because Detect returned languages in nondeterministic
+// Go-map order and ecosystemFromHints picks the first supported hint.
+func TestEnryDetector_DominantLanguageFirst(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	// Three Java files dominate a single Python helper script.
+	for _, name := range []string{"A.java", "B.java", "C.java"} {
+		if err := os.WriteFile(filepath.Join(tempDir, name),
+			[]byte("public class X { public static void main(String[] a) {} }\n"), 0o644); err != nil {
+			t.Fatalf("Failed to create Java file: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "policy-check.py"),
+		[]byte("#!/usr/bin/env python3\nprint('hi')\n"), 0o644); err != nil {
+		t.Fatalf("Failed to create Python file: %v", err)
+	}
+
+	detector := NewEnryDetector(&noOpSkipMatcher{})
+	languages, err := detector.Detect(tempDir)
+	if err != nil {
+		t.Fatalf("Detect() failed: %v", err)
+	}
+
+	if len(languages) == 0 || languages[0] != "java" {
+		t.Fatalf("expected dominant 'java' first, got %v", languages)
 	}
 }
 

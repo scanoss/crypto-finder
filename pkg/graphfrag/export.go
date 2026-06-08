@@ -17,34 +17,53 @@ import "encoding/json"
 // crypto_annotations. All additions are additive: a 1.1 fragment decodes with
 // nil entry_call / nil CryptoCall fields, which the stitcher degrades to
 // structural-only chains (safe fail-closed behavior).
-const SchemaVersion = "graph-fragment-1.2"
+//
+// 1.3 adds customer-facing reachability projections: crypto_entry_points,
+// supporting_calls, and display aliases for constructor symbols. Canonical
+// function keys still use the internal <init> identity for joins.
+const SchemaVersion = "graph-fragment-1.5"
+
+// GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
+// is independent of the binary version (cf_version) and the wire schema
+// (SchemaVersion): it bumps ONLY when callgraph/inference construction changes
+// in a way that alters the structural graph. Consumers key their cached
+// structural graphs on this so a routine binary release does not invalidate the
+// cache — only a graph-affecting change does. Stamped into scan_metadata.
+const GraphAlgoVersion = "graph-algo-1"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
 // crypto-finder's public contract; the scanner (internal/scan) builds it from a
 // callgraph, and any consumer decodes it into a Fragment via DecodeFragment.
 type GraphFragmentExport struct {
-	SchemaVersion     string                    `json:"schema_version"`
-	ScanMetadata      GraphFragmentScanMetadata `json:"scan_metadata"`
-	Functions         []GraphFragmentFunction   `json:"functions"`
-	InternalEdges     []GraphFragmentEdge       `json:"internal_edges,omitempty"`
-	ExternalCalls     []GraphFragmentExternal   `json:"external_calls,omitempty"`
-	CryptoAnnotations []GraphFragmentCryptoOp   `json:"crypto_annotations,omitempty"`
+	SchemaVersion     string                          `json:"schema_version"`
+	ScanMetadata      GraphFragmentScanMetadata       `json:"scan_metadata"`
+	Functions         []GraphFragmentFunction         `json:"functions"`
+	InternalEdges     []GraphFragmentEdge             `json:"internal_edges,omitempty"`
+	ExternalCalls     []GraphFragmentExternal         `json:"external_calls,omitempty"`
+	CryptoAnnotations []GraphFragmentCryptoOp         `json:"crypto_annotations,omitempty"`
+	SupportingCalls   []GraphFragmentSupporting       `json:"supporting_calls,omitempty"`
+	CryptoEntryPoints []GraphFragmentCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
 }
 
 // GraphFragmentScanMetadata summarizes the scan that produced a graph-fragment
 // export and the payload counts emitted for that component.
 type GraphFragmentScanMetadata struct {
-	Ecosystem     string `json:"ecosystem,omitempty"`
-	RootModule    string `json:"root_module,omitempty"`
-	ToolName      string `json:"tool_name,omitempty"`
-	ToolVersion   string `json:"tool_version,omitempty"`
-	RulesVersion  string `json:"rules_version,omitempty"`
-	ExportedAt    string `json:"exported_at"`
-	FunctionCount int    `json:"function_count"`
-	InternalEdges int    `json:"internal_edge_count"`
-	ExternalCalls int    `json:"external_call_count"`
-	CryptoOps     int    `json:"crypto_operation_count"`
+	Ecosystem   string `json:"ecosystem,omitempty"`
+	RootModule  string `json:"root_module,omitempty"`
+	ToolName    string `json:"tool_name,omitempty"`
+	ToolVersion string `json:"tool_version,omitempty"`
+	// GraphAlgoVersion is the callgraph-construction algorithm version (see the
+	// GraphAlgoVersion const). Consumers cache structural graphs keyed on it.
+	GraphAlgoVersion  string `json:"graph_algo_version,omitempty"`
+	RulesVersion      string `json:"rules_version,omitempty"`
+	ExportedAt        string `json:"exported_at"`
+	FunctionCount     int    `json:"function_count"`
+	InternalEdges     int    `json:"internal_edge_count"`
+	ExternalCalls     int    `json:"external_call_count"`
+	CryptoOps         int    `json:"crypto_operation_count"`
+	SupportingCalls   int    `json:"supporting_call_count,omitempty"`
+	CryptoEntryPoints int    `json:"crypto_entry_point_count,omitempty"`
 }
 
 // GraphFragmentFunction is one function declaration included in a component's
@@ -63,12 +82,14 @@ type GraphFragmentFunction struct {
 	ParameterTypes     []string        `json:"parameter_types,omitempty"`
 	Visibility         string          `json:"visibility,omitempty"`
 	OwnerVisibility    string          `json:"owner_visibility,omitempty"`
+	DisplaySymbol      string          `json:"display_symbol,omitempty"`
+	Aliases            []string        `json:"aliases,omitempty"`
 	InferredReturn     json.RawMessage `json:"-"`
 }
 
 // GraphFragmentCallSite carries the per-edge call-site invocation detail: the
 // arguments the caller passed to the callee at this edge, mirroring the
-// schema-5.x entry_call shape. It lives on the edge (not the function) because
+// schema-6.0 entry_call shape. It lives on the edge (not the function) because
 // entry_call describes the caller→callee invocation.
 type GraphFragmentCallSite struct {
 	// Line is the source line of the call expression in the caller.
@@ -78,7 +99,7 @@ type GraphFragmentCallSite struct {
 	Parameters []GraphFragmentParameter `json:"parameters,omitempty"`
 }
 
-// GraphFragmentParameter mirrors the schema-5.x callGraphParameter shape so the
+// GraphFragmentParameter mirrors the schema-6.0 callGraphParameter shape so the
 // stitcher can emit entry_call.parameters[] verbatim.
 type GraphFragmentParameter struct {
 	// ParameterIndex is the 0-based position of this argument in the call.
@@ -96,7 +117,7 @@ type GraphFragmentParameter struct {
 }
 
 // GraphFragmentSourceNode is the recursive data-flow provenance node, mirroring
-// the schema-5.x exportSourceNode shape. The SourceNodes field makes this type
+// the schema-6.0 exportSourceNode shape. The SourceNodes field makes this type
 // recursive so PARAMETER→CALL_RESULT chains are fully preserved.
 type GraphFragmentSourceNode struct {
 	// Type classifies the origin: VALUE, VARIABLE, FIELD, PARAMETER, CALL_RESULT, EXPRESSION.
@@ -124,7 +145,7 @@ type GraphFragmentSourceLoc struct {
 }
 
 // GraphFragmentCryptoCall carries the identity and argument data-flow of the
-// matched crypto invocation, mirroring the schema-5.x callGraphCalledFunction
+// matched crypto invocation, mirroring the schema-6.0 callGraphCalledFunction
 // shape. It is a dedicated type (not reusing GraphFragmentCallSite) so it can
 // carry function identity fields alongside the call-site parameters.
 type GraphFragmentCryptoCall struct {
@@ -136,6 +157,10 @@ type GraphFragmentCryptoCall struct {
 	ReturnType string `json:"return_type,omitempty"`
 	// ParameterTypes lists the declared parameter types.
 	ParameterTypes []string `json:"parameter_types,omitempty"`
+	// DisplaySymbol is the customer-facing symbol, with constructor aliases.
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+	// Aliases are alternate customer-facing names.
+	Aliases []string `json:"aliases,omitempty"`
 	// Line is the source line of the matched crypto call.
 	Line int `json:"line,omitempty"`
 	// Parameters carries the resolved argument data-flow for each positional argument.
@@ -143,7 +168,7 @@ type GraphFragmentCryptoCall struct {
 }
 
 // GraphFragmentMatchedOp records the matched operation kind, symbol, and
-// expression for a crypto finding — the same fields carried by the schema-5.x
+// expression for a crypto finding — the same fields carried by the schema-6.0
 // matched_operation shape.
 type GraphFragmentMatchedOp struct {
 	// Kind is the operation kind: "call", "type_usage", or "expression".
@@ -166,6 +191,16 @@ type GraphFragmentEdge struct {
 	DeclaredType string `json:"declared_type,omitempty"`
 	MethodName   string `json:"method_name,omitempty"`
 	Arity        int    `json:"arity,omitempty"`
+	// ReceiverVar/AssignedVar/ChainID carry the call-site object identity (1.4+)
+	// for cache-side object-lifecycle re-derivation. Empty on schema < 1.4.
+	ReceiverVar string `json:"receiver_var,omitempty"`
+	AssignedVar string `json:"assigned_var,omitempty"`
+	ChainID     string `json:"chain_id,omitempty"`
+	// StartCol/EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive) so the annotate path runs the same column-intersection
+	// terminal selection as the live exporter (1.4+). 0 on schema < 1.4.
+	StartCol int `json:"start_col,omitempty"`
+	EndCol   int `json:"end_col,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
@@ -183,6 +218,16 @@ type GraphFragmentExternal struct {
 	DeclaredType       string `json:"declared_type,omitempty"`
 	MethodName         string `json:"method_name,omitempty"`
 	Arity              int    `json:"arity,omitempty"`
+	// ReceiverVar/AssignedVar/ChainID carry the call-site object identity (1.4+)
+	// for cache-side object-lifecycle re-derivation. Empty on schema < 1.4.
+	ReceiverVar string `json:"receiver_var,omitempty"`
+	AssignedVar string `json:"assigned_var,omitempty"`
+	ChainID     string `json:"chain_id,omitempty"`
+	// StartCol/EndCol carry the 1-based call-expression columns (start inclusive,
+	// end exclusive) so the annotate path runs the same column-intersection
+	// terminal selection as the live exporter (1.4+). 0 on schema < 1.4.
+	StartCol int `json:"start_col,omitempty"`
+	EndCol   int `json:"end_col,omitempty"`
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
@@ -211,6 +256,64 @@ type GraphFragmentCryptoOp struct {
 	// Source indicates how the finding was discovered: "direct" or "indirect" (1.2+).
 	Source string `json:"source,omitempty"`
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
-	// operation (1.2+). Mirrors the schema-5.x matched_operation shape.
+	// operation (1.2+). Mirrors the schema-6.0 matched_operation shape.
 	MatchedOperation *GraphFragmentMatchedOp `json:"matched_operation,omitempty"`
+	// SupportingCallIDs are the supporting_id values of THIS finding's
+	// object-lifecycle supporting calls (1.5+) — the precise finding->supporting
+	// foreign key. Sorted, de-duplicated. Each id resolves to a top-level
+	// supporting_calls entry; the stitch-built callgraph surfaces these as
+	// finding_graph.supporting_call_ids and the served API as a per-asset
+	// breadcrumb.
+	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
+}
+
+// GraphFragmentSupporting is a non-finding crypto-adjacent call such as
+// builder/config/lifecycle/context setup. It is useful for reachability context
+// but must not inflate crypto finding counts.
+type GraphFragmentSupporting struct {
+	SupportingID       string                   `json:"supporting_id"`
+	FunctionKey        string                   `json:"function_key,omitempty"`
+	FunctionName       string                   `json:"function_name,omitempty"`
+	CanonicalSignature string                   `json:"canonical_signature,omitempty"`
+	DisplaySymbol      string                   `json:"display_symbol,omitempty"`
+	Aliases            []string                 `json:"aliases,omitempty"`
+	Category           string                   `json:"category,omitempty"`
+	FilePath           string                   `json:"file_path,omitempty"`
+	StartLine          int                      `json:"start_line,omitempty"`
+	EndLine            int                      `json:"end_line,omitempty"`
+	MatchedOperation   *GraphFragmentMatchedOp  `json:"matched_operation,omitempty"`
+	SupportingCall     *GraphFragmentCryptoCall `json:"supporting_call,omitempty"`
+	Metadata           json.RawMessage          `json:"metadata,omitempty"`
+}
+
+// GraphFragmentCryptoEntryPoint is the catalog/customer stitch index: if a
+// caller reaches this function key (or one of its aliases), these findings and
+// supporting calls become reachable.
+type GraphFragmentCryptoEntryPoint struct {
+	FunctionKey              string                                 `json:"function_key"`
+	FunctionName             string                                 `json:"function_name,omitempty"`
+	CanonicalSignature       string                                 `json:"canonical_signature,omitempty"`
+	DisplaySymbol            string                                 `json:"display_symbol,omitempty"`
+	Aliases                  []string                               `json:"aliases,omitempty"`
+	ReturnType               string                                 `json:"return_type,omitempty"`
+	ParameterTypes           []string                               `json:"parameter_types,omitempty"`
+	Visibility               string                                 `json:"visibility,omitempty"`
+	OwnerVisibility          string                                 `json:"owner_visibility,omitempty"`
+	ReachableFindings        []GraphFragmentReachableFinding        `json:"reachable_findings,omitempty"`
+	ReachableSupportingCalls []GraphFragmentReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+}
+
+// GraphFragmentReachableFinding is a finding reachable from an entrypoint.
+type GraphFragmentReachableFinding struct {
+	FindingID       string `json:"finding_id"`
+	ChainDepth      int    `json:"chain_depth"`
+	FindingGraphRef string `json:"finding_graph_ref,omitempty"`
+}
+
+// GraphFragmentReachableSupportingCall is a supporting call reachable from an
+// entrypoint.
+type GraphFragmentReachableSupportingCall struct {
+	SupportingID      string `json:"supporting_id"`
+	ChainDepth        int    `json:"chain_depth"`
+	SupportingCallRef string `json:"supporting_call_ref,omitempty"`
 }

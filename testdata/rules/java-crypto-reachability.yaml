@@ -1,0 +1,121 @@
+rules:
+  - id: java.password4j.terminal.hash
+    message: Detected Password4J terminal password hashing operation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withBcrypt()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withScrypt()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withPBKDF2()
+          - pattern: Password.hash($PASSWORD).addRandomSalt().withArgon2()
+          - pattern: Password.hash($PASSWORD).withBCrypt()
+          - pattern: Password.hash($PASSWORD).withBcrypt()
+          - pattern: Password.hash($PASSWORD).withSCrypt()
+          - pattern: Password.hash($PASSWORD).withScrypt()
+          - pattern: Password.hash($PASSWORD).withPBKDF2()
+          - pattern: Password.hash($PASSWORD).withArgon2()
+          - patterns:
+              - pattern-inside: |
+                  HashBuilder $BUILDER = Password.hash(...);
+                  ...
+              - pattern-either:
+                  - pattern: $BUILDER.withBcrypt()
+                  - pattern: $BUILDER.withScrypt()
+                  - pattern: $BUILDER.withPBKDF2()
+                  - pattern: $BUILDER.withArgon2()
+          - patterns:
+              - pattern-inside: |
+                  com.password4j.HashBuilder $BUILDER = Password.hash(...);
+                  ...
+              - pattern-either:
+                  - pattern: $BUILDER.withBcrypt()
+                  - pattern: $BUILDER.withScrypt()
+                  - pattern: $BUILDER.withPBKDF2()
+                  - pattern: $BUILDER.withArgon2()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: kdf
+        algorithmFamily: password-hashing
+        algorithmName: Password4J password hashing
+        operation: digest
+        library: Password4J
+        api: com.password4j.HashBuilder.with*
+
+  - id: java.password4j.terminal.check
+    message: Detected Password4J password verification operation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - pattern: Password.check($PASSWORD, $HASH).withBcrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withScrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withPBKDF2()
+          - pattern: Password.check($PASSWORD, $HASH).withBCrypt()
+          - pattern: Password.check($PASSWORD, $HASH).withSCrypt()
+          - patterns:
+              - pattern-inside: |
+                  HashChecker $CHECKER = Password.check(...);
+                  ...
+              - pattern-either:
+                  - pattern: $CHECKER.withBcrypt()
+                  - pattern: $CHECKER.withScrypt()
+                  - pattern: $CHECKER.withPBKDF2()
+          - patterns:
+              - pattern-inside: |
+                  com.password4j.HashChecker $CHECKER = Password.check(...);
+                  ...
+              - pattern-either:
+                  - pattern: $CHECKER.withBcrypt()
+                  - pattern: $CHECKER.withScrypt()
+                  - pattern: $CHECKER.withPBKDF2()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: kdf
+        algorithmFamily: password-hashing
+        algorithmName: Password4J password verification
+        operation: verify
+        library: Password4J
+        api: com.password4j.HashChecker.with*
+
+  - id: java.bouncycastle.keygen.ec
+    message: Detected Bouncy Castle EC key-pair generation
+    severity: INFO
+    languages:
+      - java
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  ECKeyPairGenerator $GEN = new ECKeyPairGenerator();
+                  ...
+              - pattern: $GEN.generateKeyPair()
+          - patterns:
+              - pattern-inside: |
+                  org.bouncycastle.crypto.generators.ECKeyPairGenerator $GEN = new org.bouncycastle.crypto.generators.ECKeyPairGenerator();
+                  ...
+              - pattern: $GEN.generateKeyPair()
+          - pattern: (new ECKeyPairGenerator()).generateKeyPair()
+          - pattern: (new org.bouncycastle.crypto.generators.ECKeyPairGenerator()).generateKeyPair()
+    metadata:
+      category: security
+      subcategory: cryptography
+      confidence: HIGH
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: key-agree
+        algorithmFamily: ECDH
+        algorithmName: Bouncy Castle EC key pair generation
+        operation: keygen
+        library: BouncyCastle
+        api: org.bouncycastle.crypto.generators.ECKeyPairGenerator.generateKeyPair
