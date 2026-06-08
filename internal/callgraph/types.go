@@ -11,6 +11,11 @@ import (
 
 const constructorMethodName = "<init>"
 
+// clinitMethodName names the synthetic function that represents a Java class's
+// static initialization context — its `static { ... }` blocks and its
+// initialized `field_declaration` values. Mirrors the JVM `<clinit>` method.
+const clinitMethodName = "<clinit>"
+
 // Java visibility values exported in call graph metadata.
 const (
 	VisibilityPublic         = "public"

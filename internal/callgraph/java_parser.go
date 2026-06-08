@@ -39,6 +39,8 @@ const (
 	javaVarOriginKindParameter   = "parameter"
 	javaFunctionTypeMethod       = "method"
 	javaFunctionTypeConstructor  = "constructor"
+	javaFunctionTypeClassInit    = "class-init"
+	javaNodeStaticInitializer    = "static_initializer"
 	javaThisKeyword              = "this"
 )
 
@@ -298,7 +300,106 @@ func (p *JavaParser) collectJavaClassDecls(
 
 	disambiguateJavaMethodOverloads(methodDecls)
 	disambiguateJavaMethodOverloads(constructorDecls)
+
+	if clinit := p.parseClassInitDecl(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments); clinit != nil {
+		methodDecls = append(methodDecls, clinit)
+	}
+
 	return methodDecls, constructorDecls
+}
+
+// parseClassInitDecl emits ONE synthetic `<clinit>` FunctionDecl for a class
+// whose body contains a `static_initializer` block OR a `field_declaration` with
+// an initializer value. It models the JVM class-init context so crypto findings
+// that sit outside any method/constructor body — in static blocks or field
+// initializers — have a real containing function and a class-load entry point.
+//
+// The decl spans the WHOLE class body. ContainingFunction picks the
+// tightest-span function for a line, so real methods/constructors (always
+// tighter than the class body) still win; only orphan findings in static
+// blocks / field initializers fall through to `<clinit>`.
+//
+// Calls are aggregated from the class-init context ONLY — each
+// `static_initializer` block body and each `field_declaration` initializer
+// expression — never from method or constructor bodies, which own their own
+// calls. It is naturally in-degree 0 (nothing calls `<clinit>` in source), so it
+// becomes an entry point, which is correct: the JVM runs it at class load.
+func (p *JavaParser) parseClassInitDecl(
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	className string,
+	ownerVisibility string,
+	fieldTypes map[string]string,
+	fieldAssignments map[string]fieldAssignment,
+) *FunctionDecl {
+	initNodes := classInitNodes(body)
+	if len(initNodes) == 0 {
+		return nil
+	}
+
+	decl := &FunctionDecl{
+		ID: FunctionID{
+			Package: analysis.PackagePath,
+			Type:    className,
+			Name:    javaMethodWithArity(clinitMethodName, 0),
+		},
+		FilePath:        filePath,
+		StartLine:       int(body.StartPoint().Row) + 1,
+		EndLine:         int(body.EndPoint().Row) + 1,
+		OwnerType:       "class",
+		OwnerName:       className,
+		FunctionType:    javaFunctionTypeClassInit,
+		Visibility:      VisibilityPrivate,
+		OwnerVisibility: ownerVisibility,
+	}
+
+	for _, init := range initNodes {
+		decl.Calls = append(decl.Calls, p.extractCallsWithFieldTypes(init, init, src, filePath, analysis, className, fieldTypes, fieldAssignments)...)
+	}
+
+	return decl
+}
+
+// classInitNodes returns the direct-child nodes of a class body that carry
+// class-initialization code whose calls belong to `<clinit>`: every
+// `static_initializer` block and every `field_declaration` that has an
+// initializer value. A bare field declaration with no initializer (e.g.
+// `int x;`) contributes nothing and is skipped, so a class with only such
+// fields gets no `<clinit>`.
+func classInitNodes(body *sitter.Node) []*sitter.Node {
+	var nodes []*sitter.Node
+	for i := 0; i < int(body.ChildCount()); i++ {
+		child := body.Child(i)
+		switch child.Type() {
+		case javaNodeStaticInitializer:
+			nodes = append(nodes, child)
+		case javaNodeFieldDeclaration:
+			if fieldDeclarationHasInitializer(child) {
+				nodes = append(nodes, child)
+			}
+		}
+	}
+	return nodes
+}
+
+// fieldDeclarationHasInitializer reports whether a field_declaration node
+// contains a variable_declarator with an initializer (an `=` child), i.e. a
+// field assigned an expression value rather than merely declared.
+func fieldDeclarationHasInitializer(node *sitter.Node) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeVariableDeclarator {
+			continue
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			if child.Child(j).Type() == "=" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func appendJavaDecls(analysis *FileAnalysis, decls []*FunctionDecl) {
