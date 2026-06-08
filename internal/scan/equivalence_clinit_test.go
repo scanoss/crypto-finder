@@ -38,13 +38,13 @@ func TestEquivalence_StaticBlockFinding_MapsToClinit(t *testing.T) {
 	key := graphfrag.ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0"}
 
 	// Finding sits on line 5 — `Security.addProvider(...)` inside the static block.
-	report := reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", "java.security.Security.addProvider")
+	report := reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", map[string]string{"api": "", "assetType": "algorithm"})
 
 	// A — live export of the component scanned directly.
 	live := liveCallgraphExport(t, "Registrar.java", clinitFixtureSrc, report)
 
 	// B — stitched export from the component's cached fragment.
-	frag := buildModuleFragment(t, key, "com.app:app", "Registrar.java", clinitFixtureSrc, reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", "java.security.Security.addProvider"))
+	frag := buildModuleFragment(t, key, "com.app:app", "Registrar.java", clinitFixtureSrc, reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", map[string]string{"api": "", "assetType": "algorithm"}))
 	res, err := graphfrag.Stitch(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag})
 	if err != nil {
 		t.Fatalf("Stitch: %v", err)
@@ -102,8 +102,11 @@ func assertClinitFrame(t *testing.T, cg equiv.CallgraphExportJSON, label string)
 
 // reportForStaticBlock hand-builds a detection report with a single terminal
 // crypto finding on the given line of Registrar.java.
-func reportForStaticBlock(t *testing.T, line int, match, api string) *entities.InterimReport {
+func reportForStaticBlock(t *testing.T, line int, match string, metadata map[string]string) *entities.InterimReport {
 	t.Helper()
+	if metadata == nil {
+		metadata = map[string]string{"assetType": "algorithm"}
+	}
 	report := &entities.InterimReport{
 		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
 		Rules: entities.RulesInfo{Version: "v-test"},
@@ -115,7 +118,7 @@ func reportForStaticBlock(t *testing.T, line int, match, api string) *entities.I
 				EndLine:   line,
 				Match:     match,
 				Rules:     []entities.RuleInfo{{ID: "test.static.provider"}},
-				Metadata:  map[string]string{"api": api, "assetType": "algorithm"},
+				Metadata:  metadata,
 			}},
 		}},
 	}

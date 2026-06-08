@@ -4,15 +4,16 @@ import "testing"
 
 // TestJavaParser_ClassInit_SyntheticClinitFunction verifies the recall fix for
 // crypto findings that live OUTSIDE any method/constructor body: in a
-// `static { ... }` initializer block or in a `field_declaration` initializer.
+// `static { ... }` initializer block or in a static `field_declaration`
+// initializer.
 //
 // Before the fix such findings had no containing function (ContainingFunction
 // returned false), so they surfaced downstream as a degenerate single-node call
 // chain with a blank `{"function_name":"","file_path":""}` frame. The parser now
 // emits ONE synthetic `<clinit>` FunctionDecl per class that has a static block
-// or an initialized field, spanning the whole class body, so those orphan
-// findings map to a real function and become reachable from a class-init entry
-// point.
+// or an initialized static field, spanning the whole class body, so those
+// orphan findings map to a real function and become reachable from a class-init
+// entry point.
 func TestJavaParser_ClassInit_SyntheticClinitFunction(t *testing.T) {
 	src := `package com.example;
 class Sample {
@@ -98,13 +99,14 @@ class Sample {
 }
 
 // TestJavaParser_ClassInit_NotEmittedWithoutInitializers verifies the synthetic
-// <clinit> is NOT emitted for a class that has neither a static_initializer nor a
-// field_declaration with an initializer (avoids node-count blowup).
-func TestJavaParser_ClassInit_NotEmittedWithoutInitializers(t *testing.T) {
+// <clinit> is NOT emitted for a class that has neither a static_initializer nor
+// an initialized static field (avoids node-count blowup). Instance field
+// initializers belong to <init>, not <clinit>.
+func TestJavaParser_ClassInit_NotEmittedWithoutStaticInitializers(t *testing.T) {
 	src := `package com.example;
 class Bare {
     int plain;
-    String name;
+    String name = Registry.lookup("1.2.3");
     void doWork() {
         Cipher.getInstance("AES");
     }
@@ -112,7 +114,7 @@ class Bare {
 `
 	fns := parseJavaInline(t, src)
 	if clinit := findFunctionByName(fns, clinitMethodName); clinit != nil {
-		t.Errorf("class with no static block and no initialized field emitted a <clinit> at [%d,%d]; want none", clinit.StartLine, clinit.EndLine)
+		t.Errorf("class with no static block and no initialized static field emitted a <clinit> at [%d,%d]; want none", clinit.StartLine, clinit.EndLine)
 	}
 }
 
