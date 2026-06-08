@@ -41,7 +41,7 @@ func TestEquivalence_StaticBlockFinding_MapsToClinit(t *testing.T) {
 	report := reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", "java.security.Security.addProvider")
 
 	// A — live export of the component scanned directly.
-	live := liveCallgraphExport(t, "com.app:app", "Registrar.java", clinitFixtureSrc, report)
+	live := liveCallgraphExport(t, "Registrar.java", clinitFixtureSrc, report)
 
 	// B — stitched export from the component's cached fragment.
 	frag := buildModuleFragment(t, key, "com.app:app", "Registrar.java", clinitFixtureSrc, reportForStaticBlock(t, 5, "Security.addProvider(new BouncyCastleProvider())", "java.security.Security.addProvider"))
