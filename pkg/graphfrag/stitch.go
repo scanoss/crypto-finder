@@ -55,6 +55,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// bounded on high-fan-in libraries (BouncyCastle, 18k functions) where the
 		// old all-simple-paths forward DFS hangs.
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, roots, &out)
+		attachAnnotationSupportingCalls(closure, fragments, &out)
 		return &out, nil
 	}
 
@@ -66,7 +67,65 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	for _, start := range roots {
 		trace(start, adjacency, opsByNode, supportingByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
+	attachAnnotationSupportingCalls(closure, fragments, &out)
 	return &out, nil
+}
+
+// attachAnnotationSupportingCalls resolves each surviving finding's
+// supporting_call_ids (the per-finding FK the fragment's crypto annotation
+// declares) against the closure's supporting-call pool, adding any the chain
+// traversal did not already emit.
+//
+// flushSupportingCalls only emits supporting calls for nodes that appear on a
+// backward chain to a crypto op. Contract/lifecycle supporting calls — e.g.
+// Password4J's Password.hash / addRandomSalt / Hash.getResult, attached to a
+// synthesized terminal by deriveContractSupportingCalls at export time — are
+// upstream public-API callers that are NOT on any backward chain from the
+// terminal (the terminal has in-degree 0), so traversal alone silently drops
+// them and their supporting_call_ids dangle against an empty pool. Honoring the
+// fragment's pre-computed FK here is what makes the served callgraph match a
+// live --export-callgraph (which carries them in supporting_calls).
+func attachAnnotationSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fragment, out *Result) {
+	byID := make(map[string]SupportingCall)
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.SupportingCalls {
+			sc := fragment.SupportingCalls[i]
+			if sc.SupportingID == "" {
+				continue
+			}
+			if _, ok := byID[sc.SupportingID]; !ok {
+				byID[sc.SupportingID] = sc
+			}
+		}
+	}
+	if len(byID) == 0 {
+		return
+	}
+
+	seen := make(map[string]bool, len(out.SupportingCalls))
+	for i := range out.SupportingCalls {
+		if id := out.SupportingCalls[i].SupportingID; id != "" {
+			seen[id] = true
+		}
+	}
+	for i := range out.Chains {
+		op := out.Chains[i].CryptoOp
+		if op == nil {
+			continue
+		}
+		for _, id := range op.SupportingCallIDs {
+			if id == "" || seen[id] {
+				continue
+			}
+			sc, ok := byID[id]
+			if !ok {
+				continue
+			}
+			seen[id] = true
+			out.SupportingCalls = append(out.SupportingCalls, sc)
+		}
+	}
 }
 
 // rootNodes selects the set of root-fragment functions to start traces from.
