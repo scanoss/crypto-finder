@@ -27,12 +27,14 @@ contracts:
     return:
       type: org.bouncycastle.crypto.CipherParameters
       confidence: high
+    role: output
 
   - method: org.bouncycastle.crypto.AsymmetricCipherKeyPair.getPrivate
     arity: 0
     return:
       type: org.bouncycastle.crypto.CipherParameters
       confidence: high
+    role: output
 
   - method: org.bouncycastle.crypto.params.ECPrivateKeyParameters.<init>
     arity: 2
@@ -45,6 +47,73 @@ contracts:
     return:
       type: org.bouncycastle.crypto.params.ECPublicKeyParameters
       confidence: high
+
+  # role: config — lifecycle methods invoked ON a primitive/engine/generator
+  # instance. They attach as supporting calls to the synthesized constructor
+  # terminal of the same type (receiver == terminal class). return.type is the
+  # method's real signature (used for type inference); it does not affect the
+  # supporting-call lineage, which keys on the receiver type.
+  - method: org.bouncycastle.crypto.modes.GCMBlockCipher.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize
+    arity: 1
+    return: { type: int, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.RSAKeyPairGenerator.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.encodings.OAEPEncoding.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.signers.ECDSASigner.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.digests.SHA256Digest.getDigestSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.digests.KeccakDigest.getDigestSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.digests.KeccakDigest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: config
+
+  # The EC named-curve lookup terminal: declaring its return type lets the
+  # X9ECParameters getters below attach as role: output (receiver == return type).
+  - method: org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName
+    arity: 1
+    return: { type: org.bouncycastle.asn1.x9.X9ECParameters, confidence: high }
+
+  # role: output — reads of the terminal's product (the X9ECParameters returned
+  # by getByName). They attach as supporting calls to that terminal.
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getCurve
+    arity: 0
+    return: { type: org.bouncycastle.math.ec.ECCurve, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getG
+    arity: 0
+    return: { type: org.bouncycastle.math.ec.ECPoint, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getN
+    arity: 0
+    return: { type: java.math.BigInteger, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getH
+    arity: 0
+    return: { type: java.math.BigInteger, confidence: high }
+    role: output
 
 hierarchy:
   org.bouncycastle.crypto.generators.ECKeyPairGenerator:
@@ -61,4 +130,12 @@ hierarchy:
     - org.bouncycastle.crypto.params.ECKeyParameters
   org.bouncycastle.crypto.params.ECPublicKeyParameters:
     - org.bouncycastle.crypto.params.ECKeyParameters
+  org.bouncycastle.asn1.x9.X9ECParameters:
+    - java.lang.Object
+  org.bouncycastle.math.ec.ECCurve:
+    - java.lang.Object
+  org.bouncycastle.math.ec.ECPoint:
+    - java.lang.Object
+  java.math.BigInteger:
+    - java.lang.Object
   java.lang.Object: []
