@@ -897,6 +897,37 @@ func (ctx *exportBuildContext) contractReturnType(method string) string {
 	return ""
 }
 
+// typeOrAncestor reports whether candidate is typ itself or a transitive
+// supertype of typ in the contract hierarchy. It lets a role-tagged method
+// declared on a base class attach to a terminal of a subtype that inherits it
+// (e.g. GeneralDigest.update -> a SHA256Digest constructor terminal).
+func (ctx *exportBuildContext) typeOrAncestor(candidate, typ string) bool {
+	if candidate == "" || typ == "" {
+		return false
+	}
+	if candidate == typ {
+		return true
+	}
+	if ctx.kb == nil {
+		return false
+	}
+	seen := map[string]bool{typ: true}
+	queue := append([]string(nil), ctx.kb.Hierarchy[typ]...)
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		if p == candidate {
+			return true
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		queue = append(queue, ctx.kb.Hierarchy[p]...)
+	}
+	return false
+}
+
 // deriveContractSupportingCalls returns the fluent lifecycle methods of a
 // synthesized terminal as supporting calls, by contract type lineage. For
 // HashBuilder.withBcrypt (builder=HashBuilder, return=Hash): factory methods that
@@ -924,9 +955,12 @@ func deriveContractSupportingCalls(ctx *exportBuildContext, asset entities.Crypt
 				continue
 			}
 			recv := receiverType(c.Method)
-			isFactory := c.Return.Type == builderType          // produces the builder/checker
-			isConfig := recv == builderType                    // mutates the builder/checker
-			isOutput := returnType != "" && recv == returnType // reads the terminal's product
+			isFactory := c.Return.Type == builderType // produces the builder/checker
+			// config/output are inheritance-aware: a role method declared on a base
+			// class (e.g. GeneralDigest.update) attaches to a terminal of a subtype
+			// that inherits it (e.g. SHA256Digest), via the contract hierarchy.
+			isConfig := ctx.typeOrAncestor(recv, builderType)                    // invoked on the builder or a supertype
+			isOutput := returnType != "" && ctx.typeOrAncestor(recv, returnType) // reads the terminal's product or a supertype
 			if !isFactory && !isConfig && !isOutput {
 				continue
 			}

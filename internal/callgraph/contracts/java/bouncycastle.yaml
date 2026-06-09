@@ -89,6 +89,13 @@ contracts:
     arity: 3
     return: { type: void, confidence: high }
     role: config
+  # GeneralDigest is the abstract base of the SHA-1/SHA-2 family; update() is
+  # inherited (not overridden) by SHA256Digest et al. The inheritance-aware
+  # role attachment surfaces it on those subtype constructor terminals.
+  - method: org.bouncycastle.crypto.digests.GeneralDigest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: config
 
   # The EC named-curve lookup terminal: declaring its return type lets the
   # X9ECParameters getters below attach as role: output (receiver == return type).
@@ -137,5 +144,15 @@ hierarchy:
   org.bouncycastle.math.ec.ECPoint:
     - java.lang.Object
   java.math.BigInteger:
+    - java.lang.Object
+  # Digest inheritance so base-class lifecycle methods (GeneralDigest.update,
+  # KeccakDigest.update/getDigestSize) attach to subtype constructor terminals.
+  org.bouncycastle.crypto.digests.SHA256Digest:
+    - org.bouncycastle.crypto.digests.GeneralDigest
+  org.bouncycastle.crypto.digests.GeneralDigest:
+    - java.lang.Object
+  org.bouncycastle.crypto.digests.SHA3Digest:
+    - org.bouncycastle.crypto.digests.KeccakDigest
+  org.bouncycastle.crypto.digests.KeccakDigest:
     - java.lang.Object
   java.lang.Object: []
