@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -229,15 +230,8 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",            // JSON output format
 		"--taint-intrafile", // Enable taint analysis
-		// crypto-finder owns file selection: it walks the tree and passes its
-		// authoritative skip set below via --exclude (defaults, scanoss.json,
-		// --include-tests, --no-default-exclusions, --exclude). OpenGrep would
-		// otherwise apply its own built-in default .semgrepignore (which skips
-		// test/ paths) as a second, conflicting filter, silently dropping test
-		// sources even when --include-tests is set. Disable it so crypto-finder's
-		// skip logic is the single source of truth.
-		"--x-ignore-semgrepignore-files",
 	}
+	args = append(args, s.semgrepignoreControlArgs()...)
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -254,6 +248,25 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args = append(args, target)
 
 	return args
+}
+
+// semgrepignoreControlArgs disables OpenGrep's built-in default ignore file
+// handling so crypto-finder's own skip logic remains the single source of truth.
+func (s *Scanner) semgrepignoreControlArgs() []string {
+	help, err := commandOutput(s.executablePath, "scan", "--help")
+	if err != nil {
+		help, err = commandOutput(s.executablePath, "--help")
+	}
+	if err != nil {
+		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
+		return []string{"--experimental", "--semgrepignore-filename", os.DevNull}
+	}
+
+	helpText := string(help)
+	if strings.Contains(helpText, "--x-ignore-semgrepignore-files") {
+		return []string{"--x-ignore-semgrepignore-files"}
+	}
+	return []string{"--experimental", "--semgrepignore-filename", os.DevNull}
 }
 
 // execute runs the opengrep command and captures stdout/stderr.

@@ -736,8 +736,19 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 	// points can attach their fluent lifecycle methods as supporting calls.
 	if kb, err := contracts.LoadEmbedded(result.Ecosystem); err == nil {
 		ctx.kb = kb
+	} else {
+		log.Debug().
+			Err(err).
+			Str("ecosystem", result.Ecosystem).
+			Msg("failed to load embedded callgraph contracts")
 	}
 	if result.CallGraph != nil {
+		// declIndex is keyed by base FQN only (no arity/overload suffix), so the
+		// first encountered overload for a base FQN wins. deriveContractSupportingCalls
+		// therefore resolves contract methods by base FQN to whichever overload was
+		// indexed first; exact overload matching is not supported by this index.
+		// Future overload-aware lookup should store []*callgraph.FunctionDecl per
+		// base FQN instead.
 		ctx.declIndex = make(map[string]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
 		for _, fn := range result.CallGraph.Functions {
 			if fqn := exportFunctionFQN(fn.ID); fqn != "" {

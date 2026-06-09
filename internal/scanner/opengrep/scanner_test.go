@@ -18,6 +18,7 @@ package opengrep
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -57,6 +58,17 @@ func TestGetInfo(t *testing.T) {
 }
 
 func TestBuildCommand(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() {
+		commandOutput = originalCommandOutput
+	}()
+	commandOutput = func(_ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "scan" && args[1] == "--help" {
+			return []byte("--x-ignore-semgrepignore-files"), nil
+		}
+		return nil, nil
+	}
+
 	s := NewScanner()
 	s.skipPatterns = []string{"*.test", "vendor/*"}
 	s.extraArgs = []string{"--debug"}
@@ -109,6 +121,37 @@ func TestBuildCommand(t *testing.T) {
 	// Verify target is the last argument
 	if args[len(args)-1] != target {
 		t.Errorf("Expected target '%s' to be last argument, got '%s'", target, args[len(args)-1])
+	}
+}
+
+func TestBuildCommand_FallsBackWhenExperimentalIgnoreFlagUnsupported(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() {
+		commandOutput = originalCommandOutput
+	}()
+	commandOutput = func(_ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[0] == "scan" && args[1] == "--help" {
+			return []byte("--semgrepignore-filename"), nil
+		}
+		return nil, nil
+	}
+
+	s := NewScanner()
+	args := s.buildCommand("/tmp/target", []string{"/rules/crypto.yaml"})
+
+	for _, arg := range args {
+		if arg == "--x-ignore-semgrepignore-files" {
+			t.Fatal("experimental ignore flag should not be used when help output does not advertise it")
+		}
+	}
+	if !containsArg(args, "--semgrepignore-filename") {
+		t.Fatal("expected documented semgrepignore filename fallback")
+	}
+	if !containsArg(args, "--experimental") {
+		t.Fatal("expected experimental gate for semgrepignore filename fallback")
+	}
+	if !containsArg(args, os.DevNull) {
+		t.Fatalf("expected fallback semgrepignore file %q", os.DevNull)
 	}
 }
 
@@ -303,6 +346,15 @@ func splitOnce(s, sep string) []string {
 		parts = append(parts, s)
 	}
 	return parts
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Helper function to find first occurrence of substring.

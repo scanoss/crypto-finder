@@ -712,6 +712,15 @@ func runScan(_ *cobra.Command, args []string) error {
 	if callGraphResult != nil && callGraphResult.CallGraph != nil {
 		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
 			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths)
+		} else {
+			log.Debug().
+				Err(rerr).
+				Str("call_graph", fmt.Sprintf("%p", callGraphResult.CallGraph)).
+				Str("report", fmt.Sprintf("%p", report)).
+				Int("function_count", len(callGraphResult.CallGraph.Functions)).
+				Int("finding_count", len(report.Findings)).
+				Strs("rule_paths", rulePaths).
+				Msg("failed to load rules for synthesis")
 		}
 	}
 

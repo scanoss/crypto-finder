@@ -234,7 +234,8 @@ func buildRuleCryptoByAPI(rulePaths []string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	for _, p := range rulePaths {
 		for _, file := range expandRuleFiles(p) {
-			data, err := os.ReadFile(file) //nolint:gosec // rule paths come from the trusted ruleset manager
+			// Rule paths come from the trusted ruleset manager.
+			data, err := os.ReadFile(file)
 			if err != nil {
 				continue
 			}
@@ -246,8 +247,11 @@ func buildRuleCryptoByAPI(rulePaths []string) map[string]map[string]string {
 				if len(r.Metadata.Crypto) == 0 {
 					continue
 				}
-				api, _ := r.Metadata.Crypto["api"].(string)
+				api, ok := r.Metadata.Crypto["api"].(string)
 				api = strings.TrimSpace(api)
+				if !ok || api == "" {
+					continue
+				}
 				if !isQualifiedMethodSymbol(api) {
 					continue
 				}
@@ -293,7 +297,7 @@ func expandRuleFiles(path string) []string {
 		return []string{path}
 	}
 	var files []string
-	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+	if err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
@@ -301,7 +305,9 @@ func expandRuleFiles(path string) []string {
 			files = append(files, p)
 		}
 		return nil
-	})
+	}); err != nil {
+		log.Debug().Err(err).Str("path", path).Msg("failed to walk rule directory")
+	}
 	return files
 }
 
