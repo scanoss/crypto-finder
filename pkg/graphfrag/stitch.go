@@ -86,6 +86,15 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 // fragment's pre-computed FK here is what makes the served callgraph match a
 // live --export-callgraph (which carries them in supporting_calls).
 func attachAnnotationSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fragment, out *Result) {
+	byID := indexAnnotationSupportingCalls(closure, fragments)
+	if len(byID) == 0 {
+		return
+	}
+	seen := indexResultSupportingCalls(out)
+	attachMissingAnnotationSupportingCalls(byID, seen, out)
+}
+
+func indexAnnotationSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[string]SupportingCall {
 	byID := make(map[string]SupportingCall)
 	for _, key := range closure {
 		fragment := fragments[key]
@@ -99,32 +108,49 @@ func attachAnnotationSupportingCalls(closure []ComponentKey, fragments map[Compo
 			}
 		}
 	}
-	if len(byID) == 0 {
-		return
-	}
+	return byID
+}
 
+func indexResultSupportingCalls(out *Result) map[string]bool {
 	seen := make(map[string]bool, len(out.SupportingCalls))
 	for i := range out.SupportingCalls {
 		if id := out.SupportingCalls[i].SupportingID; id != "" {
 			seen[id] = true
 		}
 	}
+	return seen
+}
+
+func attachMissingAnnotationSupportingCalls(
+	byID map[string]SupportingCall,
+	seen map[string]bool,
+	out *Result,
+) {
 	for i := range out.Chains {
 		op := out.Chains[i].CryptoOp
 		if op == nil {
 			continue
 		}
-		for _, id := range op.SupportingCallIDs {
-			if id == "" || seen[id] {
-				continue
-			}
-			sc, ok := byID[id]
-			if !ok {
-				continue
-			}
-			seen[id] = true
-			out.SupportingCalls = append(out.SupportingCalls, sc)
+		appendMissingSupportingCalls(op.SupportingCallIDs, byID, seen, out)
+	}
+}
+
+func appendMissingSupportingCalls(
+	ids []string,
+	byID map[string]SupportingCall,
+	seen map[string]bool,
+	out *Result,
+) {
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
 		}
+		sc, ok := byID[id]
+		if !ok {
+			continue
+		}
+		seen[id] = true
+		out.SupportingCalls = append(out.SupportingCalls, sc)
 	}
 }
 
