@@ -12,3 +12,5 @@ tmp/
 !.github
 !.idea
 demo/
+# Local Pi runtime state
+.atl/

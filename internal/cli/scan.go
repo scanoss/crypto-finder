@@ -702,6 +702,28 @@ func runScan(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Type 2 libraries (fluent/builder/DSL, e.g. Password4J) carry their crypto
+	// semantic on the public API boundary, not in a detectable primitive call
+	// inside their own source. When such a library is itself being scanned,
+	// surface those API methods as crypto entry points using the ruleset's
+	// metadata.crypto (the single source of truth) joined on api↔definition.
+	// Gated structurally (method definition present, no in-body finding), so it
+	// is a no-op when scanning a consumer of the library or a Type 1 library.
+	if callGraphResult != nil && callGraphResult.CallGraph != nil {
+		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
+			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths)
+		} else {
+			log.Debug().
+				Err(rerr).
+				Str("call_graph", fmt.Sprintf("%p", callGraphResult.CallGraph)).
+				Str("report", fmt.Sprintf("%p", report)).
+				Int("function_count", len(callGraphResult.CallGraph.Functions)).
+				Int("finding_count", len(report.Findings)).
+				Strs("rule_paths", rulePaths).
+				Msg("failed to load rules for synthesis")
+		}
+	}
+
 	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
 		engine.AssignFindingIDs(report)
 		if callGraphResult != nil {

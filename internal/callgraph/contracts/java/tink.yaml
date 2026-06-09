@@ -1,0 +1,144 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: tink
+  coordinates:
+    - "com.google.crypto.tink:tink"
+    - "com.google.crypto.tink:tink-android"
+  version_range: ">=1.7,<2.0"
+  description: "Google Tink high-level crypto API contracts (KeysetHandle -> primitive -> operation)"
+
+# Tink hides primitives behind KeysetHandle.getPrimitive(<Primitive>.class). These
+# contracts let the callgraph resolve the fluent chain
+#   KeyTemplates.get(...) -> KeysetHandle.generateNew(...) -> getPrimitive(Aead.class)
+#   -> Aead.encrypt(...)
+# so reachability can reach the terminal crypto operation.
+
+contracts:
+  - method: com.google.crypto.tink.KeyTemplates.get
+    arity: 1
+    return:
+      type: com.google.crypto.tink.KeyTemplate
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.generateNew
+    arity: 1
+    return:
+      type: com.google.crypto.tink.KeysetHandle
+      confidence: high
+
+  # getPrimitive(Class<P>) — classic arity-1 form, conditional on the requested
+  # primitive class literal.
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["com.google.crypto.tink.Aead.class", "Aead.class"]
+    return:
+      type: com.google.crypto.tink.Aead
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["com.google.crypto.tink.Mac.class", "Mac.class"]
+    return:
+      type: com.google.crypto.tink.Mac
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["com.google.crypto.tink.PublicKeySign.class", "PublicKeySign.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeySign
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["com.google.crypto.tink.PublicKeyVerify.class", "PublicKeyVerify.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeyVerify
+      confidence: high
+
+  # getPrimitive(Configuration, Class<P>) — newer arity-2 form; class is arg[1].
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.Aead.class", "Aead.class"]
+    return:
+      type: com.google.crypto.tink.Aead
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.Mac.class", "Mac.class"]
+    return:
+      type: com.google.crypto.tink.Mac
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.PublicKeySign.class", "PublicKeySign.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeySign
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.PublicKeyVerify.class", "PublicKeyVerify.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeyVerify
+      confidence: high
+
+  # Terminal operations — truthful returns that terminate the chain.
+  - method: com.google.crypto.tink.Aead.encrypt
+    arity: 2
+    return:
+      type: "byte[]"
+      confidence: high
+
+  - method: com.google.crypto.tink.Aead.decrypt
+    arity: 2
+    return:
+      type: "byte[]"
+      confidence: high
+
+  - method: com.google.crypto.tink.Mac.computeMac
+    arity: 1
+    return:
+      type: "byte[]"
+      confidence: high
+
+  - method: com.google.crypto.tink.PublicKeySign.sign
+    arity: 1
+    return:
+      type: "byte[]"
+      confidence: high
+
+hierarchy:
+  com.google.crypto.tink.Aead:
+    - java.lang.Object
+  com.google.crypto.tink.Mac:
+    - java.lang.Object
+  com.google.crypto.tink.PublicKeySign:
+    - java.lang.Object
+  com.google.crypto.tink.PublicKeyVerify:
+    - java.lang.Object
+  com.google.crypto.tink.KeysetHandle:
+    - java.lang.Object
+  com.google.crypto.tink.KeyTemplate:
+    - java.lang.Object
+  java.lang.Object: []

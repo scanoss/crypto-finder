@@ -41,6 +41,13 @@ const ScannerName = "opengrep"
 // MinimumVersion is the minimum required version of OpenGrep.
 const MinimumVersion = "1.12.1"
 
+// noSemgrepignoreFilename is a sentinel basename passed to opengrep's
+// --semgrepignore-filename so it looks for an ignore file that never exists,
+// effectively disabling default .semgrepignore handling. It must be a bare
+// basename: opengrep (>=1.12.1) rejects an absolute path like os.DevNull with
+// "invalid segment" because the leading slash is not a valid path segment.
+const noSemgrepignoreFilename = ".crypto-finder-no-semgrepignore"
+
 // Package-level variables for testing (can be overridden in tests).
 var (
 	lookPath      = exec.LookPath
@@ -230,6 +237,7 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 		"--json",            // JSON output format
 		"--taint-intrafile", // Enable taint analysis
 	}
+	args = append(args, s.semgrepignoreControlArgs()...)
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -246,6 +254,25 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args = append(args, target)
 
 	return args
+}
+
+// semgrepignoreControlArgs disables OpenGrep's built-in default ignore file
+// handling so crypto-finder's own skip logic remains the single source of truth.
+func (s *Scanner) semgrepignoreControlArgs() []string {
+	help, err := commandOutput(s.executablePath, "scan", "--help")
+	if err != nil {
+		help, err = commandOutput(s.executablePath, "--help")
+	}
+	if err != nil {
+		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
+		return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
+	}
+
+	helpText := string(help)
+	if strings.Contains(helpText, "--x-ignore-semgrepignore-files") {
+		return []string{"--x-ignore-semgrepignore-files"}
+	}
+	return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
 }
 
 // execute runs the opengrep command and captures stdout/stderr.
