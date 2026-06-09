@@ -85,6 +85,24 @@ contracts:
       type: com.google.crypto.tink.Mac
       confidence: high
 
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.PublicKeySign.class", "PublicKeySign.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeySign
+      confidence: high
+
+  - method: com.google.crypto.tink.KeysetHandle.getPrimitive
+    arity: 2
+    when:
+      arg_index: 1
+      arg_value_in: ["com.google.crypto.tink.PublicKeyVerify.class", "PublicKeyVerify.class"]
+    return:
+      type: com.google.crypto.tink.PublicKeyVerify
+      confidence: high
+
   # Terminal operations — truthful returns that terminate the chain.
   - method: com.google.crypto.tink.Aead.encrypt
     arity: 2

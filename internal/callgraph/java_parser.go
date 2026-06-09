@@ -337,7 +337,7 @@ func (p *JavaParser) parseClassInitDecl(
 	fieldTypes map[string]string,
 	fieldAssignments map[string]fieldAssignment,
 ) *FunctionDecl {
-	initNodes := classInitNodes(body, src)
+	initNodes := classInitNodes(body)
 	if len(initNodes) == 0 {
 		return nil
 	}
@@ -381,7 +381,7 @@ func (p *JavaParser) parseClassInitDecl(
 // A bare field declaration with no initializer (e.g. `int x;` or `static int
 // x;`) contributes nothing and is skipped, so a class with only such fields and
 // no static block still gets no `<clinit>`.
-func classInitNodes(body *sitter.Node, src []byte) []*sitter.Node {
+func classInitNodes(body *sitter.Node) []*sitter.Node {
 	var nodes []*sitter.Node
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
