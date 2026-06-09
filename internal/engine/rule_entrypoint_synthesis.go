@@ -34,7 +34,13 @@ import (
 // origin is auditable downstream. The call-graph export keys off this id to
 // attach contract-derived supporting calls (the fluent lifecycle methods) to
 // these synthetic terminals.
-const SyntheticEntryPointRuleID = "crypto-finder.api-entry-point"
+const (
+	SyntheticEntryPointRuleID = "crypto-finder.api-entry-point"
+
+	extYAML      = ".yaml"
+	extYML       = ".yml"
+	languageJava = "java"
+)
 
 // SynthesizeRuleCryptoEntryPoints surfaces a library's public crypto API methods
 // as crypto entry points when the LIBRARY ITSELF is being mined. It exists for
@@ -73,10 +79,18 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 	// Index method definitions present in the scanned source by their base FQN
 	// (arity/overload decoration like "#0" or "#1$String" stripped), since the
 	// rule's metadata.crypto.api is the undecorated package.Type.method symbol.
+	// Index method definitions by base FQN, and separately by owning class FQN
+	// (package.Type). The class index lets a constructor api resolve even when
+	// the class declares no explicit constructor (the compiler-generated default
+	// has no <init> in the source AST, so it is absent from declsByFQN).
 	declsByFQN := make(map[string][]*callgraph.FunctionDecl)
+	declsByClass := make(map[string][]*callgraph.FunctionDecl)
 	for _, fn := range graph.Functions {
 		if fqn := baseFQN(functionFQN(fn.ID)); fqn != "" {
 			declsByFQN[fqn] = append(declsByFQN[fqn], fn)
+		}
+		if class := classFQN(fn.ID); class != "" {
+			declsByClass[class] = append(declsByClass[class], fn)
 		}
 	}
 
@@ -89,7 +103,16 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 	for api, meta := range apiCrypto {
 		decls := declsByFQN[api]
 		if len(decls) == 0 {
-			continue // api not defined in scanned source → not the library that owns it
+			// No source-declared method matches the api. A constructor api may
+			// still belong to a scanned class with only an implicit default
+			// constructor — surface it once at a representative class location.
+			if rep := implicitCtorRep(api, declsByClass); rep != nil {
+				asset := buildSyntheticAssetFromRule(api, meta, rep)
+				if appendSyntheticAsset(report, fileIdx, rep.FilePath, languageForPath(rep.FilePath), asset) {
+					added++
+				}
+			}
+			continue // otherwise: api not defined in scanned source → not the owning library
 		}
 		for _, fn := range decls {
 			if functionBodyHasFinding(report, fn) {
@@ -125,6 +148,44 @@ func functionFQN(id callgraph.FunctionID) string {
 	}
 }
 
+// classFQN renders the owning class of a FunctionID as a dotted package.Type
+// symbol (no method), e.g. "org.bouncycastle.crypto.engines.RSAEngine". Empty
+// when the function has no owning type (e.g. a package-level function).
+func classFQN(id callgraph.FunctionID) string {
+	switch {
+	case id.Package != "" && id.Type != "":
+		return id.Package + "." + id.Type
+	case id.Type != "":
+		return id.Type
+	default:
+		return ""
+	}
+}
+
+// implicitCtorRep resolves a constructor api ("package.Type.<init>") to a
+// representative declaration of its owning class when the class is scanned but
+// declares no explicit constructor (only a compiler-generated default exists,
+// absent from the source AST). It returns nil for non-constructor apis or
+// classes not present in the scan. The representative is the class member with
+// the lowest start line, giving a stable, auditable location near the class top.
+func implicitCtorRep(api string, declsByClass map[string][]*callgraph.FunctionDecl) *callgraph.FunctionDecl {
+	const ctorSuffix = ".<init>"
+	if !strings.HasSuffix(api, ctorSuffix) {
+		return nil
+	}
+	decls := declsByClass[strings.TrimSuffix(api, ctorSuffix)]
+	if len(decls) == 0 {
+		return nil
+	}
+	rep := decls[0]
+	for _, d := range decls[1:] {
+		if d.StartLine > 0 && (rep.StartLine <= 0 || d.StartLine < rep.StartLine) {
+			rep = d
+		}
+	}
+	return rep
+}
+
 // baseFQN strips the arity/overload decoration ("#0", "#1$String", …) from a
 // function FQN, leaving the bare package.Type.method symbol.
 func baseFQN(fqn string) string {
@@ -144,7 +205,8 @@ func functionBodyHasFinding(report *entities.InterimReport, fn *callgraph.Functi
 			!strings.HasSuffix(filepath.ToSlash(report.Findings[i].FilePath), fnPath) {
 			continue
 		}
-		for _, a := range report.Findings[i].CryptographicAssets {
+		for j := range report.Findings[i].CryptographicAssets {
+			a := &report.Findings[i].CryptographicAssets[j]
 			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine {
 				return true
 			}
@@ -196,7 +258,8 @@ func appendSyntheticAsset(
 	asset entities.CryptographicAsset,
 ) bool {
 	if idx, ok := fileIdx[filePath]; ok {
-		for _, existing := range report.Findings[idx].CryptographicAssets {
+		for i := range report.Findings[idx].CryptographicAssets {
+			existing := &report.Findings[idx].CryptographicAssets[i]
 			if existing.StartLine == asset.StartLine && existing.Metadata["api"] == asset.Metadata["api"] {
 				return false
 			}
@@ -234,35 +297,53 @@ func buildRuleCryptoByAPI(rulePaths []string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	for _, p := range rulePaths {
 		for _, file := range expandRuleFiles(p) {
-			// Rule paths come from the trusted ruleset manager.
-			data, err := os.ReadFile(file)
-			if err != nil {
-				continue
-			}
-			var rf ruleFileCryptoYAML
-			if yaml.Unmarshal(data, &rf) != nil {
-				continue
-			}
-			for _, r := range rf.Rules {
-				if len(r.Metadata.Crypto) == 0 {
-					continue
-				}
-				api, ok := r.Metadata.Crypto["api"].(string)
-				api = strings.TrimSpace(api)
-				if !ok || api == "" {
-					continue
-				}
-				if !isQualifiedMethodSymbol(api) {
-					continue
-				}
-				if _, seen := out[api]; seen {
-					continue // first declaration wins; deterministic enough for synthesis
-				}
-				out[api] = stringifyCryptoBlock(r.Metadata.Crypto)
-			}
+			addRuleCryptoFile(out, file)
 		}
 	}
 	return out
+}
+
+func addRuleCryptoFile(out map[string]map[string]string, file string) {
+	// Rule paths come from the trusted ruleset manager.
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+
+	var rf ruleFileCryptoYAML
+	if yaml.Unmarshal(data, &rf) != nil {
+		return
+	}
+
+	for _, r := range rf.Rules {
+		addRuleCrypto(out, r.Metadata.Crypto)
+	}
+}
+
+func addRuleCrypto(out map[string]map[string]string, crypto map[string]any) {
+	api, ok := cryptoAPI(crypto)
+	if !ok {
+		return
+	}
+	if _, seen := out[api]; seen {
+		return // first declaration wins; deterministic enough for synthesis
+	}
+	out[api] = stringifyCryptoBlock(crypto)
+}
+
+func cryptoAPI(crypto map[string]any) (string, bool) {
+	if len(crypto) == 0 {
+		return "", false
+	}
+	api, ok := crypto["api"].(string)
+	api = strings.TrimSpace(api)
+	if !ok || api == "" {
+		return "", false
+	}
+	if !isQualifiedMethodSymbol(api) {
+		return "", false
+	}
+	return api, true
 }
 
 // isQualifiedMethodSymbol reports whether s is a dotted package.Type.method-style
@@ -301,7 +382,7 @@ func expandRuleFiles(path string) []string {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
-		if ext := strings.ToLower(filepath.Ext(p)); ext == ".yaml" || ext == ".yml" {
+		if ext := strings.ToLower(filepath.Ext(p)); ext == extYAML || ext == extYML {
 			files = append(files, p)
 		}
 		return nil
@@ -314,8 +395,8 @@ func expandRuleFiles(path string) []string {
 // languageForPath maps a source file extension to the report Language tag.
 func languageForPath(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".java":
-		return "java"
+	case "." + languageJava:
+		return languageJava
 	case ".go":
 		return "go"
 	case ".py":

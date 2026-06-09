@@ -76,6 +76,70 @@ func TestSynthesize_FiresForOwningLibrary(t *testing.T) {
 	}
 }
 
+func bcprovAESEngineCtor() *callgraph.FunctionDecl {
+	return &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "org.bouncycastle.crypto.engines", Type: "AESEngine", Name: "<init>"},
+		FilePath:  "org/bouncycastle/crypto/engines/AESEngine.java",
+		StartLine: 42,
+		EndLine:   60,
+	}
+}
+
+func TestSynthesize_FiresForConstructor(t *testing.T) {
+	// A library public-API constructor (e.g. new AESEngine()) must surface as a
+	// synthetic entry point. The join key is the canonical FQN with ".<init>",
+	// NOT the Class.Class display form — this is the form functionFQN computes
+	// for a constructor definition and is what a boundary rule's api must use.
+	dir := t.TempDir()
+	api := "org.bouncycastle.crypto.engines.AESEngine.<init>"
+	rule := writeRule(t, dir, api, "AES")
+	report := &entities.InterimReport{}
+	graph := graphWith(bcprovAESEngineCtor())
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{rule})
+	if n != 1 {
+		t.Fatalf("expected 1 synthesized finding for constructor api, got %d", n)
+	}
+	if got := report.Findings[0].CryptographicAssets[0].Metadata["api"]; got != api {
+		t.Errorf("api = %q, want %q", got, api)
+	}
+}
+
+func TestSynthesize_FiresForImplicitConstructor(t *testing.T) {
+	// A class with no explicit constructor (only a default) has no <init> in the
+	// source AST — but if the class is scanned (another method is defined), a
+	// constructor boundary rule must still surface it. RSAEngine is the real case.
+	dir := t.TempDir()
+	api := "org.bouncycastle.crypto.engines.RSAEngine.<init>"
+	rule := writeRule(t, dir, api, "RSA")
+	report := &entities.InterimReport{}
+	// Only a method definition exists for the class — no <init>.
+	graph := graphWith(&callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "org.bouncycastle.crypto.engines", Type: "RSAEngine", Name: "init"},
+		FilePath:  "org/bouncycastle/crypto/engines/RSAEngine.java",
+		StartLine: 20,
+		EndLine:   30,
+	})
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{rule})
+	if n != 1 {
+		t.Fatalf("expected 1 synthesized finding for implicit constructor, got %d", n)
+	}
+	if got := report.Findings[0].CryptographicAssets[0].Metadata["api"]; got != api {
+		t.Errorf("api = %q, want %q", got, api)
+	}
+}
+
+func TestSynthesize_NoOpForImplicitCtorWhenClassAbsent(t *testing.T) {
+	// A constructor api whose class is not scanned at all must NOT synthesize.
+	dir := t.TempDir()
+	rule := writeRule(t, dir, "org.bouncycastle.crypto.engines.RSAEngine.<init>", "RSA")
+	report := &entities.InterimReport{}
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(nil), []string{rule}); n != 0 {
+		t.Fatalf("expected 0 synthesized findings when class absent, got %d", n)
+	}
+}
+
 func TestSynthesize_NoOpForConsumerScan(t *testing.T) {
 	// Definition absent (a consumer calls the method but does not define it).
 	dir := t.TempDir()
