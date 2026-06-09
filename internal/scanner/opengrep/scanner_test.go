@@ -68,16 +68,17 @@ func TestBuildCommand(t *testing.T) {
 
 	// Verify required arguments
 	expectedArgs := map[string]bool{
-		"--json":             false,
-		"--taint-intrafile":  false,
-		"--config":           false,
-		"/rules/crypto.yaml": false,
-		"/rules/hash.yaml":   false,
-		"--exclude":          false,
-		"*.test":             false,
-		"vendor/*":           false,
-		"--debug":            false,
-		"/tmp/target":        false,
+		"--json":                         false,
+		"--taint-intrafile":              false,
+		"--x-ignore-semgrepignore-files": false,
+		"--config":                       false,
+		"/rules/crypto.yaml":             false,
+		"/rules/hash.yaml":               false,
+		"--exclude":                      false,
+		"*.test":                         false,
+		"vendor/*":                       false,
+		"--debug":                        false,
+		"/tmp/target":                    false,
 	}
 
 	for _, arg := range args {

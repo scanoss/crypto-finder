@@ -229,6 +229,14 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",            // JSON output format
 		"--taint-intrafile", // Enable taint analysis
+		// crypto-finder owns file selection: it walks the tree and passes its
+		// authoritative skip set below via --exclude (defaults, scanoss.json,
+		// --include-tests, --no-default-exclusions, --exclude). OpenGrep would
+		// otherwise apply its own built-in default .semgrepignore (which skips
+		// test/ paths) as a second, conflicting filter, silently dropping test
+		// sources even when --include-tests is set. Disable it so crypto-finder's
+		// skip logic is the single source of truth.
+		"--x-ignore-semgrepignore-files",
 	}
 
 	for _, rulePath := range rulePaths {
