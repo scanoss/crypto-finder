@@ -22,7 +22,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -41,6 +40,13 @@ const ScannerName = "opengrep"
 
 // MinimumVersion is the minimum required version of OpenGrep.
 const MinimumVersion = "1.12.1"
+
+// noSemgrepignoreFilename is a sentinel basename passed to opengrep's
+// --semgrepignore-filename so it looks for an ignore file that never exists,
+// effectively disabling default .semgrepignore handling. It must be a bare
+// basename: opengrep (>=1.12.1) rejects an absolute path like os.DevNull with
+// "invalid segment" because the leading slash is not a valid path segment.
+const noSemgrepignoreFilename = ".crypto-finder-no-semgrepignore"
 
 // Package-level variables for testing (can be overridden in tests).
 var (
@@ -259,14 +265,14 @@ func (s *Scanner) semgrepignoreControlArgs() []string {
 	}
 	if err != nil {
 		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
-		return []string{"--experimental", "--semgrepignore-filename", os.DevNull}
+		return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
 	}
 
 	helpText := string(help)
 	if strings.Contains(helpText, "--x-ignore-semgrepignore-files") {
 		return []string{"--x-ignore-semgrepignore-files"}
 	}
-	return []string{"--experimental", "--semgrepignore-filename", os.DevNull}
+	return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
 }
 
 // execute runs the opengrep command and captures stdout/stderr.

@@ -18,7 +18,6 @@ package opengrep
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -150,8 +149,8 @@ func TestBuildCommand_FallsBackWhenExperimentalIgnoreFlagUnsupported(t *testing.
 	if !containsArg(args, "--experimental") {
 		t.Fatal("expected experimental gate for semgrepignore filename fallback")
 	}
-	if !containsArg(args, os.DevNull) {
-		t.Fatalf("expected fallback semgrepignore file %q", os.DevNull)
+	if !containsArg(args, noSemgrepignoreFilename) {
+		t.Fatalf("expected fallback semgrepignore file %q", noSemgrepignoreFilename)
 	}
 }
 
