@@ -76,13 +76,25 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 		return 0
 	}
 
-	// Index method definitions present in the scanned source by their base FQN
-	// (arity/overload decoration like "#0" or "#1$String" stripped), since the
-	// rule's metadata.crypto.api is the undecorated package.Type.method symbol.
-	// Index method definitions by base FQN, and separately by owning class FQN
-	// (package.Type). The class index lets a constructor api resolve even when
-	// the class declares no explicit constructor (the compiler-generated default
-	// has no <init> in the source AST, so it is absent from declsByFQN).
+	declsByFQN, declsByClass := indexGraphDeclarations(graph)
+	fileIdx := indexReportFiles(report)
+	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass)
+
+	if added > 0 {
+		log.Info().
+			Int("count", added).
+			Msg("Surfaced library public crypto API methods as entry points (from rule metadata.crypto)")
+	}
+	return added
+}
+
+// indexGraphDeclarations indexes method definitions present in the scanned
+// source by their base FQN and by owning class FQN. The class index lets a
+// constructor api resolve even when the class declares no explicit constructor
+// (the compiler-generated default has no <init> in the source AST).
+func indexGraphDeclarations(
+	graph *callgraph.CallGraph,
+) (map[string][]*callgraph.FunctionDecl, map[string][]*callgraph.FunctionDecl) {
 	declsByFQN := make(map[string][]*callgraph.FunctionDecl)
 	declsByClass := make(map[string][]*callgraph.FunctionDecl)
 	for _, fn := range graph.Functions {
@@ -93,44 +105,92 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 			declsByClass[class] = append(declsByClass[class], fn)
 		}
 	}
+	return declsByFQN, declsByClass
+}
 
+func indexReportFiles(report *entities.InterimReport) map[string]int {
 	fileIdx := make(map[string]int, len(report.Findings))
 	for i := range report.Findings {
 		fileIdx[report.Findings[i].FilePath] = i
 	}
+	return fileIdx
+}
 
+func synthesizeRuleCryptoAssets(
+	report *entities.InterimReport,
+	fileIdx map[string]int,
+	apiCrypto map[string]map[string]string,
+	declsByFQN map[string][]*callgraph.FunctionDecl,
+	declsByClass map[string][]*callgraph.FunctionDecl,
+) int {
 	added := 0
 	for api, meta := range apiCrypto {
-		decls := declsByFQN[api]
-		if len(decls) == 0 {
-			// No source-declared method matches the api. A constructor api may
-			// still belong to a scanned class with only an implicit default
-			// constructor — surface it once at a representative class location.
-			if rep := implicitCtorRep(api, declsByClass); rep != nil {
-				asset := buildSyntheticAssetFromRule(api, meta, rep)
-				if appendSyntheticAsset(report, fileIdx, rep.FilePath, languageForPath(rep.FilePath), asset) {
-					added++
-				}
-			}
-			continue // otherwise: api not defined in scanned source → not the owning library
-		}
-		for _, fn := range decls {
-			if functionBodyHasFinding(report, fn) {
-				continue // Type 1: primitive already detected inside the method
-			}
-			asset := buildSyntheticAssetFromRule(api, meta, fn)
-			if appendSyntheticAsset(report, fileIdx, fn.FilePath, languageForPath(fn.FilePath), asset) {
-				added++
-			}
-		}
-	}
-
-	if added > 0 {
-		log.Info().
-			Int("count", added).
-			Msg("Surfaced library public crypto API methods as entry points (from rule metadata.crypto)")
+		added += synthesizeAPIAssets(report, fileIdx, api, meta, declsByFQN[api], declsByClass)
 	}
 	return added
+}
+
+func synthesizeAPIAssets(
+	report *entities.InterimReport,
+	fileIdx map[string]int,
+	api string,
+	meta map[string]string,
+	decls []*callgraph.FunctionDecl,
+	declsByClass map[string][]*callgraph.FunctionDecl,
+) int {
+	if len(decls) == 0 {
+		return synthesizeImplicitCtorAsset(report, fileIdx, api, meta, declsByClass)
+	}
+	return synthesizeDeclaredAPIAssets(report, fileIdx, api, meta, decls)
+}
+
+func synthesizeImplicitCtorAsset(
+	report *entities.InterimReport,
+	fileIdx map[string]int,
+	api string,
+	meta map[string]string,
+	declsByClass map[string][]*callgraph.FunctionDecl,
+) int {
+	// No source-declared method matches the api. A constructor api may still
+	// belong to a scanned class with only an implicit default constructor.
+	rep := implicitCtorRep(api, declsByClass)
+	if rep == nil {
+		return 0
+	}
+	if appendSyntheticRuleAsset(report, fileIdx, api, meta, rep) {
+		return 1
+	}
+	return 0
+}
+
+func synthesizeDeclaredAPIAssets(
+	report *entities.InterimReport,
+	fileIdx map[string]int,
+	api string,
+	meta map[string]string,
+	decls []*callgraph.FunctionDecl,
+) int {
+	added := 0
+	for _, fn := range decls {
+		if functionBodyHasFinding(report, fn) {
+			continue // Type 1: primitive already detected inside the method.
+		}
+		if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn) {
+			added++
+		}
+	}
+	return added
+}
+
+func appendSyntheticRuleAsset(
+	report *entities.InterimReport,
+	fileIdx map[string]int,
+	api string,
+	meta map[string]string,
+	fn *callgraph.FunctionDecl,
+) bool {
+	asset := buildSyntheticAssetFromRule(api, meta, fn)
+	return appendSyntheticAsset(report, fileIdx, fn.FilePath, languageForPath(fn.FilePath), asset)
 }
 
 // functionFQN renders a FunctionID as the dotted fully-qualified name used in a
