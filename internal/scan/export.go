@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
@@ -47,6 +48,11 @@ type exportBuildContext struct {
 	fragmentEdgeResolutions map[string][]fragmentEdgeResolution
 	userPackages            map[string]bool
 	packageSeparator        string
+	// kb holds the ecosystem's callgraph contracts, used to attach contract-role
+	// supporting calls (fluent lifecycle methods) to synthesized terminal entry
+	// points. nil for ecosystems with no contracts.
+	kb        *contracts.KnowledgeBase
+	declIndex map[string]*callgraph.FunctionDecl // base FQN → definition
 }
 
 type cachedContainingFunction struct {
@@ -725,7 +731,43 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 		return len(ctx.dependencies[i].Dir) > len(ctx.dependencies[j].Dir)
 	})
 	ctx.populateCallChainUsageCounts(result.Report)
+
+	// Load contracts + index method definitions so synthesized terminal entry
+	// points can attach their fluent lifecycle methods as supporting calls.
+	if kb, err := contracts.LoadEmbedded(result.Ecosystem); err == nil {
+		ctx.kb = kb
+	}
+	if result.CallGraph != nil {
+		ctx.declIndex = make(map[string]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
+		for _, fn := range result.CallGraph.Functions {
+			if fqn := exportFunctionFQN(fn.ID); fqn != "" {
+				if _, exists := ctx.declIndex[fqn]; !exists {
+					ctx.declIndex[fqn] = fn
+				}
+			}
+		}
+	}
 	return ctx
+}
+
+// exportFunctionFQN renders a FunctionID as its undecorated package.Type.method
+// symbol (no arity/overload suffix), matching contract method keys.
+func exportFunctionFQN(id callgraph.FunctionID) string {
+	var fqn string
+	switch {
+	case id.Type != "" && id.Package != "":
+		fqn = id.Package + "." + id.Type + "." + id.Name
+	case id.Type != "":
+		fqn = id.Type + "." + id.Name
+	case id.Package != "":
+		fqn = id.Package + "." + id.Name
+	default:
+		fqn = id.Name
+	}
+	if i := strings.IndexByte(fqn, '#'); i >= 0 {
+		return fqn[:i]
+	}
+	return fqn
 }
 
 // --- Per-finding graph builder ---
@@ -782,6 +824,12 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 // crypto call, enumerates the lifecycle calls of the crypto object it identifies
 // (see deriveObjectLifecycleCalls), and renders each as a supporting-call entry.
 func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
+	// Synthesized terminal entry points (library API boundary, no in-source call
+	// chain) get their fluent lifecycle methods from the contract KB by type
+	// lineage, since there are no chain siblings to derive structurally.
+	if isSyntheticEntryPoint(asset) {
+		return deriveContractSupportingCalls(ctx, asset)
+	}
 	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
 	if containingFn == nil {
 		return nil
@@ -800,6 +848,114 @@ func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.F
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
 	}
 	return out
+}
+
+// isSyntheticEntryPoint reports whether an asset was produced by the rule-derived
+// API-boundary synthesis (engine.SynthesizeRuleCryptoEntryPoints).
+func isSyntheticEntryPoint(asset entities.CryptographicAsset) bool {
+	for _, r := range asset.Rules {
+		if r.ID == engine.SyntheticEntryPointRuleID {
+			return true
+		}
+	}
+	return false
+}
+
+// receiverType returns the owning type FQN of a fully-qualified method symbol,
+// e.g. "com.password4j.HashBuilder.withBcrypt" → "com.password4j.HashBuilder".
+func receiverType(method string) string {
+	if i := strings.LastIndex(method, "."); i >= 0 {
+		return method[:i]
+	}
+	return ""
+}
+
+// contractReturnType returns the contract-declared return type of a method FQN
+// (any arity), or "" when unknown.
+func (ctx *exportBuildContext) contractReturnType(method string) string {
+	if ctx.kb == nil {
+		return ""
+	}
+	for _, group := range ctx.kb.Contracts {
+		for i := range group {
+			if group[i].Method == method {
+				return group[i].Return.Type
+			}
+		}
+	}
+	return ""
+}
+
+// deriveContractSupportingCalls returns the fluent lifecycle methods of a
+// synthesized terminal as supporting calls, by contract type lineage. For
+// HashBuilder.withBcrypt (builder=HashBuilder, return=Hash): factory methods that
+// return the builder (Password.hash), config methods on the builder
+// (addRandomSalt/addSalt/addPepper), and output methods on the return type
+// (Hash.getResult). Gated on the method definition being present in the scanned
+// source; Category carries the contract role.
+func deriveContractSupportingCalls(ctx *exportBuildContext, asset entities.CryptographicAsset) []callGraphSupportingCall {
+	if ctx.kb == nil || len(ctx.kb.Contracts) == 0 || ctx.declIndex == nil {
+		return nil
+	}
+	terminalAPI := strings.TrimSpace(asset.Metadata["api"])
+	builderType := receiverType(terminalAPI)
+	if builderType == "" {
+		return nil
+	}
+	returnType := ctx.contractReturnType(terminalAPI)
+
+	var out []callGraphSupportingCall
+	seen := make(map[string]struct{})
+	for _, group := range ctx.kb.Contracts {
+		for i := range group {
+			c := group[i]
+			if c.Role == "" {
+				continue
+			}
+			recv := receiverType(c.Method)
+			isFactory := c.Return.Type == builderType          // produces the builder/checker
+			isConfig := recv == builderType                    // mutates the builder/checker
+			isOutput := returnType != "" && recv == returnType // reads the terminal's product
+			if !isFactory && !isConfig && !isOutput {
+				continue
+			}
+			if _, dup := seen[c.Method]; dup {
+				continue
+			}
+			decl := ctx.declIndex[c.Method]
+			if decl == nil {
+				continue // not defined in scanned source
+			}
+			seen[c.Method] = struct{}{}
+			out = append(out, buildContractSupportingCall(ctx, c, decl))
+		}
+	}
+	return out
+}
+
+// buildContractSupportingCall renders a contract-role method definition as a
+// supporting-call entry for a synthesized terminal.
+func buildContractSupportingCall(ctx *exportBuildContext, c contracts.Contract, decl *callgraph.FunctionDecl) callGraphSupportingCall {
+	sourcePath := normalizeExportPath(ctx, decl.FilePath).FilePath
+	meta := buildExportFunctionMetadata(ctx.graph, decl.ID, decl)
+	return callGraphSupportingCall{
+		SupportingID:       supportingIDFromParts(sourcePath, decl.StartLine, decl.ID.String()),
+		FunctionKey:        decl.ID.String(),
+		FunctionName:       meta.FunctionName,
+		CanonicalSignature: meta.CanonicalSignature,
+		DisplaySymbol:      meta.DisplaySymbol,
+		Aliases:            cloneStringSlice(meta.Aliases),
+		Category:           c.Role,
+		FilePath:           sourcePath,
+		StartLine:          decl.StartLine,
+		EndLine:            decl.StartLine,
+		MatchedOperation: &callGraphMatchedOperation{
+			Kind:   "type_usage",
+			Symbol: c.Method,
+			Line:   decl.StartLine,
+		},
+		SupportingCall: &callGraphCalledFunction{FunctionName: c.Method},
+	}
 }
 
 // supportingCallIDsOf returns the sorted, de-duplicated supporting-call ids of a
