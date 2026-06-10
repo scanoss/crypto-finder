@@ -201,7 +201,8 @@ def do_encrypt(key, iv, data):
     result = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor().update(data)
     return result
 `
-	// Detection report: the scanner found AES-GCM at line 36 (the Cipher call in do_encrypt).
+	// Detection report: the scanner found AES-GCM at line 39 (the Cipher call in do_encrypt).
+	// src line 39: result = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor().update(data)
 	report := &entities.InterimReport{
 		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
 		Rules: entities.RulesInfo{Version: "v-test"},
@@ -209,8 +210,8 @@ def do_encrypt(key, iv, data):
 			FilePath: "cipher.py",
 			Language: "python",
 			CryptographicAssets: []entities.CryptographicAsset{{
-				StartLine: 36,
-				EndLine:   36,
+				StartLine: 39,
+				EndLine:   39,
 				Match:     "Cipher(algorithms.AES(key), modes.GCM(iv))",
 				Rules:     []entities.RuleInfo{{ID: "python.cryptography.algorithm.ae.aes-gcm"}},
 				Metadata: map[string]string{
@@ -289,7 +290,8 @@ def do_encrypt_gcm(key, nonce, data):
     ct, tag = cipher.encrypt_and_digest(data)
     return ct, tag
 `
-	// Detection finding for AES.new at line 32 (do_encrypt_gcm calls new()).
+	// Detection finding for AES.new at line 36 (do_encrypt_gcm calls new()).
+	// src line 36: cipher = new(key, AES.MODE_GCM, nonce=nonce)
 	report := &entities.InterimReport{
 		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
 		Rules: entities.RulesInfo{Version: "v-test"},
@@ -297,8 +299,8 @@ def do_encrypt_gcm(key, nonce, data):
 			FilePath: "aes.py",
 			Language: "python",
 			CryptographicAssets: []entities.CryptographicAsset{{
-				StartLine: 37,
-				EndLine:   37,
+				StartLine: 36,
+				EndLine:   36,
 				Match:     "new(key, AES.MODE_GCM, nonce=nonce)",
 				Rules:     []entities.RuleInfo{{ID: "python.pycryptodome.algorithm.ae.aes-gcm"}},
 				Metadata: map[string]string{
@@ -382,8 +384,8 @@ def do_encrypt_gcm(key, nonce, data):
 			FilePath: "aes.py",
 			Language: "python",
 			CryptographicAssets: []entities.CryptographicAsset{{
-				StartLine: 37,
-				EndLine:   37,
+				StartLine: 36, // src line 36: cipher = new(key, AES.MODE_GCM, nonce=nonce)
+				EndLine:   36,
 				Match:     "new(key, AES.MODE_GCM, nonce=nonce)",
 				Rules:     []entities.RuleInfo{{ID: "python.pycryptodomex.algorithm.ae.aes-gcm"}},
 				Metadata: map[string]string{
@@ -456,7 +458,8 @@ def demo_generate_and_sign(bits, data):
     sig = key.sign_ssh_data(data)
     return sig
 `
-	// Detection finding: RSAKey.generate is called at line 37 in demo_generate_and_sign.
+	// Detection finding: RSAKey.generate is called at line 36 in demo_generate_and_sign.
+	// src line 36: key = RSAKey.generate(bits=bits)
 	report := &entities.InterimReport{
 		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
 		Rules: entities.RulesInfo{Version: "v-test"},
@@ -464,8 +467,8 @@ def demo_generate_and_sign(bits, data):
 			FilePath: "rsakey.py",
 			Language: "python",
 			CryptographicAssets: []entities.CryptographicAsset{{
-				StartLine: 37,
-				EndLine:   37,
+				StartLine: 36,
+				EndLine:   36,
 				Match:     "RSAKey.generate(bits=bits)",
 				Rules:     []entities.RuleInfo{{ID: "python.paramiko.algorithm.signature.rsa"}},
 				Metadata: map[string]string{

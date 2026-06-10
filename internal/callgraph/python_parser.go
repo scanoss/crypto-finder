@@ -456,6 +456,12 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 
 	chainID, assignedVar := pythonCallChainContext(node, src)
 
+	// Convert tree-sitter 0-based byte columns to the internal 1-based convention.
+	// StartCol is inclusive; EndCol is exclusive (one past last byte of the call
+	// expression node). Mirrors the opengrep convention used by the Java parser.
+	startCol := int(node.StartPoint().Column) + 1
+	endCol := int(node.EndPoint().Column) + 1
+
 	switch funcNode.Type() {
 	case goNodeIdentifier:
 		// Simple call like `sha256()` or imported class constructor like `Cipher()`
@@ -467,6 +473,8 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 					Raw:         raw,
 					FilePath:    filePath,
 					Line:        line,
+					StartCol:    startCol,
+					EndCol:      endCol,
 					Arguments:   args,
 					AssignedVar: assignedVar,
 					ChainID:     chainID,
@@ -478,6 +486,8 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 				Raw:         raw,
 				FilePath:    filePath,
 				Line:        line,
+				StartCol:    startCol,
+				EndCol:      endCol,
 				Arguments:   args,
 				AssignedVar: assignedVar,
 				ChainID:     chainID,
@@ -488,13 +498,15 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 			Raw:         raw,
 			FilePath:    filePath,
 			Line:        line,
+			StartCol:    startCol,
+			EndCol:      endCol,
 			Arguments:   args,
 			AssignedVar: assignedVar,
 			ChainID:     chainID,
 		}
 	case pythonNodeAttribute:
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
-		return p.parseAttributeCall(funcNode, src, filePath, line, args, analysis, localVars, chainID, assignedVar)
+		return p.parseAttributeCall(funcNode, src, filePath, line, startCol, endCol, args, analysis, localVars, chainID, assignedVar)
 	}
 
 	return nil
@@ -511,7 +523,9 @@ func looksLikePythonTypeName(name string) bool {
 
 // parseAttributeCall handles calls on attributes like `module.func()`, `obj.method()`,
 // or chained calls like `Cipher(a,b).encryptor().update(data)`.
-func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis, localVars map[string]bool, chainID, assignedVar string) *FunctionCall {
+// startCol and endCol are the 1-based column span of the FULL call expression node
+// (not just the attribute node), matching the Java parser's convention.
+func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, localVars map[string]bool, chainID, assignedVar string) *FunctionCall {
 	var object, method string
 	objectIsCall := false
 
@@ -549,6 +563,8 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 			Raw:         raw,
 			FilePath:    filePath,
 			Line:        line,
+			StartCol:    startCol,
+			EndCol:      endCol,
 			Arguments:   args,
 			ChainID:     chainID,
 			AssignedVar: assignedVar,
@@ -561,7 +577,7 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 
 	// Try to resolve through imports when the object is not itself a call result.
 	if !objectIsCall {
-		if fc := resolveImportedCall(object, method, raw, filePath, line, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
+		if fc := resolveImportedCall(object, method, raw, filePath, line, startCol, endCol, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
 			return fc
 		}
 	}
@@ -572,6 +588,8 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		Raw:         raw,
 		FilePath:    filePath,
 		Line:        line,
+		StartCol:    startCol,
+		EndCol:      endCol,
 		Arguments:   args,
 		ReceiverVar: receiverVar,
 		ChainID:     chainID,
@@ -589,7 +607,7 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 //     `AES.new(key, mode)` emits Package="Crypto.Cipher.AES" (not "Crypto.Cipher").
 //  2. Chained attribute: `cryptography.hazmat.primitives.hashes.SHA256()` — splits on
 //     the first dot and resolves the leading segment through imports.
-func resolveImportedCall(object, method, raw, filePath string, line int, args []string, receiverVar, chainID, assignedVar string, analysis *FileAnalysis) *FunctionCall {
+func resolveImportedCall(object, method, raw, filePath string, line, startCol, endCol int, args []string, receiverVar, chainID, assignedVar string, analysis *FileAnalysis) *FunctionCall {
 	if pkg, ok := analysis.Imports[object]; ok {
 		resolvedPkg := pkg
 		if analysis.FromImports[object] {
@@ -600,6 +618,8 @@ func resolveImportedCall(object, method, raw, filePath string, line int, args []
 			Raw:         raw,
 			FilePath:    filePath,
 			Line:        line,
+			StartCol:    startCol,
+			EndCol:      endCol,
 			Arguments:   args,
 			ReceiverVar: receiverVar,
 			ChainID:     chainID,
@@ -619,6 +639,8 @@ func resolveImportedCall(object, method, raw, filePath string, line int, args []
 				Raw:         raw,
 				FilePath:    filePath,
 				Line:        line,
+				StartCol:    startCol,
+				EndCol:      endCol,
 				Arguments:   args,
 				ReceiverVar: receiverVar,
 				ChainID:     chainID,

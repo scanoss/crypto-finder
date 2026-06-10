@@ -17,7 +17,7 @@ Produced by the `crypto-coverage-expansion` playbook for the Python ecosystem.
 | Class | Meaning | Action |
 |---|---|---|
 | ✅ Covered | Rules + contracts already exist | Mine now |
-| 🟡 Standard-API | Routes through Python stdlib (`hashlib`, `hmac`, `ssl`, `secrets`) or `cryptography.hazmat` — **detected for free** | Own rule optional for richer metadata |
+| 🟡 Standard-API | Routes through Python stdlib (`hashlib`, `hmac`, `ssl`, `secrets`) — **detected for free via stdlib rules**. Note: `cryptography.hazmat` itself is 🔴 Own-API and needs its own contract+rule; the 🟡 benefit applies to OTHER libraries that call hazmat internally and are caught transitively, NOT to pyca/cryptography itself. | Own rule optional for richer metadata |
 | 🔴 Own-API | Exposes its own non-standard/native API — **needs its own Semgrep rule** | Author rule first |
 | ⚪ Wrapper | Wraps a base lib; no distinct crypto API | Mine-only (caught by callgraph stitching) |
 
@@ -214,11 +214,11 @@ Wraps `cryptography` (pyca) internally since 17.0; also wraps OpenSSL via cffi. 
 
 | Priority | Library | Class | Reverse-deps | Contract needed | Rule needed |
 |---|---|---|---|---|---|
-| 1 | PyJWT | 🔴 | ~80 000 | no | yes |
-| 2 | bcrypt | 🔴 | ~55 000 | no | yes |
+| 1 | cryptography (pyca) | 🔴 | ~170 000 | yes (smoke done) | yes |
+| 2 | PyJWT | 🔴 | ~80 000 | no | yes |
 | 3 | pycryptodome | 🔴 | ~60 000 | yes | yes |
-| 4 | paramiko | 🔴 | ~50 000 | yes | yes |
-| 5 | cryptography (pyca) | 🔴 | ~170 000 | yes (smoke done) | yes |
+| 4 | bcrypt | 🔴 | ~55 000 | no | yes |
+| 5 | paramiko | 🔴 | ~50 000 | yes | yes |
 | 6 | PyNaCl | 🔴 | ~25 000 | no | yes |
 | 7 | argon2-cffi | 🔴 | ~20 000 | no | yes |
 | 8 | hashlib (stdlib) | 🟡 | ubiquitous | no | yes |

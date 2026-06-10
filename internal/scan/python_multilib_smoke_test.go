@@ -156,12 +156,13 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 				}},
 			},
 			{
-				// jwt.encode detection in auth.py at line 18.
+				// jwt.encode detection in auth.py at line 20.
+				// src line 20: return jwt.encode(payload, secret_key, algorithm="HS256")
 				FilePath: "auth.py",
 				Language: "python",
 				CryptographicAssets: []entities.CryptographicAsset{{
-					StartLine: 18,
-					EndLine:   18,
+					StartLine: 20,
+					EndLine:   20,
 					Match:     "jwt.encode(payload, secret_key, algorithm=\"HS256\")",
 					Rules:     []entities.RuleInfo{{ID: "python.pyjwt.algorithm.mac.jwt.encode-hmac"}},
 					Metadata: map[string]string{
@@ -174,12 +175,13 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 				}},
 			},
 			{
-				// AESGCM encrypt detection in crypto.py at line 11.
+				// AESGCM encrypt detection in crypto.py at line 9.
+				// src line 9: aesgcm = AESGCM(key)
 				FilePath: "crypto.py",
 				Language: "python",
 				CryptographicAssets: []entities.CryptographicAsset{{
-					StartLine: 11,
-					EndLine:   11,
+					StartLine: 9,
+					EndLine:   9,
 					Match:     "AESGCM(key)",
 					Rules:     []entities.RuleInfo{{ID: "python.cryptography.algorithm.ae.aes-gcm"}},
 					Metadata: map[string]string{
