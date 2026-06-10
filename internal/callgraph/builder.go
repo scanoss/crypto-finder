@@ -44,14 +44,27 @@ type PackageDir struct {
 type Builder struct {
 	parser       Parser
 	typeResolver TypeResolver
+	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
+	// Defaults to "java" for backward compatibility with NewBuilder.
+	ecosystem string
 }
 
 // NewBuilder creates a new call graph builder with the given parser.
+// Uses the "java" ecosystem KB for backward compatibility.
 // An optional TypeResolver can be set via SetTypeResolver for language-native
 // type resolution (bytecode analysis, go/types, etc.).
 func NewBuilder(parser Parser) *Builder {
+	return NewBuilderForEcosystem("java", parser)
+}
+
+// NewBuilderForEcosystem creates a new call graph builder for the given ecosystem.
+// The ecosystem string controls which embedded contract KB is loaded during
+// BuildFromDirectories (e.g. "java", "python"). An empty or unknown ecosystem
+// results in an empty KB (no contracts), which is valid and does not produce an error.
+func NewBuilderForEcosystem(ecosystem string, parser Parser) *Builder {
 	return &Builder{
-		parser: parser,
+		parser:    parser,
+		ecosystem: ecosystem,
 	}
 }
 
@@ -126,9 +139,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// In v1, only the Java parser populates ReturnSources; for other ecosystems the
 	// pass is a no-op since no function will have ReturnSources set.
 	inferenceStart := time.Now()
-	kb, err := contracts.LoadEmbedded("java")
+	kb, err := contracts.LoadEmbedded(b.ecosystem)
 	if err != nil {
-		return nil, fmt.Errorf("callgraph: load embedded Java KB: %w", err)
+		return nil, fmt.Errorf("callgraph: load embedded %s KB: %w", b.ecosystem, err)
 	}
 	if err := InferReturnTypes(graph, kb); err != nil {
 		return nil, fmt.Errorf("callgraph: infer return types: %w", err)
@@ -647,7 +660,7 @@ func resolveChainCalleesInFunction(graph *CallGraph, callerKey string, fn *Funct
 func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDecl, idxs []int, kb *contracts.KnowledgeBase) int {
 	// Seed the receiver type from the root (innermost) link's KB return type.
 	rootFQN, rootArity := splitMethodArity(&fn.Calls[idxs[0]].Callee)
-	currentType := unconditionalContractReturn(kb.ContractsFor(rootFQN, rootArity))
+	currentType := unconditionalContractReturn(kb.ContractsForTolerant(rootFQN, rootArity))
 
 	resolved := 0
 	for pos := 1; pos < len(idxs); pos++ {
@@ -656,7 +669,7 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 		}
 		call := &fn.Calls[idxs[pos]]
 		base, arity := methodBaseArity(call.Callee.Name)
-		ctrs := kb.ContractsFor(currentType+"."+base, arity)
+		ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
 		if len(ctrs) == 0 {
 			break // not a known method of the propagated type; stop, do not guess
 		}
