@@ -167,7 +167,9 @@ func TestPipResolver_ResolvePythonExecutable(t *testing.T) {
 		}
 		t.Setenv("VIRTUAL_ENV", venv)
 
-		got, err := r.resolvePythonExecutable()
+		// Use an empty project dir so local-venv auto-detection does not interfere.
+		emptyProjectDir := t.TempDir()
+		got, err := r.resolvePythonExecutable(emptyProjectDir)
 		if err != nil {
 			t.Fatalf("resolvePythonExecutable: %v", err)
 		}
@@ -183,7 +185,9 @@ func TestPipResolver_ResolvePythonExecutable(t *testing.T) {
 		prependPath(t, tmpBin)
 		t.Setenv("VIRTUAL_ENV", "")
 
-		got, err := r.resolvePythonExecutable()
+		// Use an empty project dir so local-venv auto-detection does not fire.
+		emptyProjectDir := t.TempDir()
+		got, err := r.resolvePythonExecutable(emptyProjectDir)
 		if err != nil {
 			t.Fatalf("resolvePythonExecutable: %v", err)
 		}
@@ -205,7 +209,9 @@ func TestPipResolver_ResolvePythonExecutable(t *testing.T) {
 		}
 		t.Setenv("VIRTUAL_ENV", "")
 
-		got, err := r.resolvePythonExecutable()
+		// Use an empty project dir so local-venv auto-detection does not fire.
+		emptyProjectDir := t.TempDir()
+		got, err := r.resolvePythonExecutable(emptyProjectDir)
 		if err != nil {
 			t.Fatalf("resolvePythonExecutable: %v", err)
 		}

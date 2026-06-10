@@ -59,7 +59,7 @@ func (r *PipResolver) Ecosystem() string {
 func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
-	pythonExec, err := r.resolvePythonExecutable()
+	pythonExec, err := r.resolvePythonExecutable(targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate Python interpreter: %w", err)
 	}
@@ -161,21 +161,53 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	return result, nil
 }
 
-func (r *PipResolver) resolvePythonExecutable() (string, error) {
+// resolvePythonExecutable returns the Python interpreter to use for the project
+// at projectDir. Resolution order (highest priority first):
+//
+//  1. VIRTUAL_ENV environment variable — set by `source .venv/bin/activate`.
+//     Honors the user's explicitly activated environment.
+//  2. <projectDir>/.venv/ — hidden local venv (pip/uv convention, most common).
+//  3. <projectDir>/venv/ — visible local venv (older pip/virtualenv convention).
+//  4. python3 / python in PATH — ambient interpreter (fallback).
+//
+// Using a project-local venv prevents ambient globally-installed packages from
+// leaking into the dependency list for a project that manages its own environment.
+func (r *PipResolver) resolvePythonExecutable(projectDir string) (string, error) {
+	// Priority 1: activated venv via VIRTUAL_ENV env var.
 	if virtualEnv := strings.TrimSpace(os.Getenv("VIRTUAL_ENV")); virtualEnv != "" {
 		for _, candidate := range virtualEnvPythonCandidates(virtualEnv) {
 			if candidate == "" {
 				continue
 			}
 			if existsPath(candidate) {
+				log.Debug().Str("venv", virtualEnv).Str("python", candidate).
+					Msg("Using activated VIRTUAL_ENV interpreter")
 				return candidate, nil
 			}
 		}
 	}
 
+	// Priority 2 & 3: project-local venv directories (auto-detected, not activated).
+	for _, venvDir := range []string{".venv", "venv"} {
+		venvPath := filepath.Join(filepath.Clean(projectDir), venvDir)
+		for _, candidate := range virtualEnvPythonCandidates(venvPath) {
+			if candidate == "" {
+				continue
+			}
+			if existsPath(candidate) {
+				log.Debug().Str("venv", venvPath).Str("python", candidate).
+					Msg("Using project-local venv interpreter (auto-detected)")
+				return candidate, nil
+			}
+		}
+	}
+
+	// Priority 4: ambient interpreter from PATH.
 	for _, candidate := range []string{"python3", pythonExecutable} {
 		path, err := r.lookPath(candidate)
 		if err == nil {
+			log.Debug().Str("python", path).
+				Msg("Using ambient PATH interpreter (no project-local venv found)")
 			return path, nil
 		}
 	}
