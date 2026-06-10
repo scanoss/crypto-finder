@@ -37,9 +37,10 @@ import (
 const (
 	SyntheticEntryPointRuleID = "crypto-finder.api-entry-point"
 
-	extYAML      = ".yaml"
-	extYML       = ".yml"
-	languageJava = "java"
+	extYAML         = ".yaml"
+	extYML          = ".yml"
+	languageJava    = "java"
+	ecosystemPython = "python"
 )
 
 // SynthesizeRuleCryptoEntryPoints surfaces a library's public crypto API methods
@@ -62,16 +63,19 @@ const (
 //	    whose primitive call is detectable inside them are already covered and
 //	    must not be double-counted).
 //
-// It is ecosystem-agnostic: the join key is the api↔definition match; nothing is
-// password4j- or language-specific. report is mutated in place; returns the
-// number of findings added. FindingIDs are assigned by the caller's existing
-// AssignFindingIDs pass.
-func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *callgraph.CallGraph, rulePaths []string) int {
+// The ecosystem parameter controls the qualified-symbol gate: "python" accepts
+// api symbols with >= 1 dot (e.g. bcrypt.hashpw, jwt.encode) while all other
+// ecosystems require >= 2 dots (Java convention, e.g. com.foo.Bar.method). Pass
+// "" to apply the default >= 2-dot gate.
+//
+// report is mutated in place; returns the number of findings added. FindingIDs
+// are assigned by the caller's existing AssignFindingIDs pass.
+func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *callgraph.CallGraph, rulePaths []string, ecosystem string) int {
 	if report == nil || graph == nil || len(rulePaths) == 0 {
 		return 0
 	}
 
-	apiCrypto := buildRuleCryptoByAPI(rulePaths)
+	apiCrypto := buildRuleCryptoByAPI(rulePaths, ecosystem)
 	if len(apiCrypto) == 0 {
 		return 0
 	}
@@ -83,6 +87,7 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 	if added > 0 {
 		log.Info().
 			Int("count", added).
+			Str("ecosystem", ecosystem).
 			Msg("Surfaced library public crypto API methods as entry points (from rule metadata.crypto)")
 	}
 	return added
@@ -350,20 +355,22 @@ type ruleFileCryptoYAML struct {
 // buildRuleCryptoByAPI walks the ruleset (files and/or directories) and indexes
 // every rule's metadata.crypto block by its `api` value, but only when `api`
 // looks like a fully-qualified method (the boundary-rule convention: a dotted
-// symbol). The returned map carries the crypto block stringified verbatim so the
-// synthetic finding metadata is identical to a call-site match. The rule remains
-// the single source of truth for the crypto semantics.
-func buildRuleCryptoByAPI(rulePaths []string) map[string]map[string]string {
+// symbol). The ecosystem parameter is forwarded to the qualified-symbol gate so
+// Python's 1-dot module-level functions are accepted. The returned map carries
+// the crypto block stringified verbatim so the synthetic finding metadata is
+// identical to a call-site match. The rule remains the single source of truth
+// for the crypto semantics.
+func buildRuleCryptoByAPI(rulePaths []string, ecosystem string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	for _, p := range rulePaths {
 		for _, file := range expandRuleFiles(p) {
-			addRuleCryptoFile(out, file)
+			addRuleCryptoFile(out, file, ecosystem)
 		}
 	}
 	return out
 }
 
-func addRuleCryptoFile(out map[string]map[string]string, file string) {
+func addRuleCryptoFile(out map[string]map[string]string, file, ecosystem string) {
 	// Rule paths come from the trusted ruleset manager.
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -376,12 +383,12 @@ func addRuleCryptoFile(out map[string]map[string]string, file string) {
 	}
 
 	for _, r := range rf.Rules {
-		addRuleCrypto(out, r.Metadata.Crypto)
+		addRuleCrypto(out, r.Metadata.Crypto, ecosystem)
 	}
 }
 
-func addRuleCrypto(out map[string]map[string]string, crypto map[string]any) {
-	api, ok := cryptoAPI(crypto)
+func addRuleCrypto(out map[string]map[string]string, crypto map[string]any, ecosystem string) {
+	api, ok := cryptoAPI(crypto, ecosystem)
 	if !ok {
 		return
 	}
@@ -391,7 +398,7 @@ func addRuleCrypto(out map[string]map[string]string, crypto map[string]any) {
 	out[api] = stringifyCryptoBlock(crypto)
 }
 
-func cryptoAPI(crypto map[string]any) (string, bool) {
+func cryptoAPI(crypto map[string]any, ecosystem string) (string, bool) {
 	if len(crypto) == 0 {
 		return "", false
 	}
@@ -400,18 +407,32 @@ func cryptoAPI(crypto map[string]any) (string, bool) {
 	if !ok || api == "" {
 		return "", false
 	}
-	if !isQualifiedMethodSymbol(api) {
+	if !isQualifiedMethodSymbol(api, ecosystem) {
 		return "", false
 	}
 	return api, true
 }
 
-// isQualifiedMethodSymbol reports whether s is a dotted package.Type.method-style
-// symbol (the boundary-rule api convention) rather than a short JCA-style name.
-// Requires at least two dots so "Cipher.getInstance" (Type 1) is excluded while
-// "com.password4j.HashBuilder.withBcrypt" qualifies.
-func isQualifiedMethodSymbol(s string) bool {
-	return s != "" && strings.Count(s, ".") >= 2 && !strings.ContainsAny(s, " ()/\"")
+// isQualifiedMethodSymbol reports whether s is a dotted symbol that qualifies as
+// a boundary-rule api entry point for the given ecosystem.
+//
+// For Python (ecosystem == "python"): requires exactly >= 1 dot — module-level
+// functions like bcrypt.hashpw and jwt.encode are valid public-API entry points.
+// Zero-dot bare names (e.g. "hashpw") and symbols containing spaces, parentheses,
+// slashes, or quotes are always rejected.
+//
+// For all other ecosystems (Java and the default): requires >= 2 dots so that
+// short JCA-style names like "Cipher.getInstance" (Type 1) are excluded while
+// deep Java FQNs like "com.password4j.HashBuilder.withBcrypt" qualify.
+func isQualifiedMethodSymbol(s, ecosystem string) bool {
+	if s == "" || strings.ContainsAny(s, " ()/\"") {
+		return false
+	}
+	minDots := 2
+	if ecosystem == ecosystemPython {
+		minDots = 1
+	}
+	return strings.Count(s, ".") >= minDots
 }
 
 // stringifyCryptoBlock renders a metadata.crypto block as map[string]string,

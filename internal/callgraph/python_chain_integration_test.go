@@ -53,9 +53,10 @@ func buildPythonGraph(t *testing.T, files map[string]string, importPath string) 
 // TestPythonChainIntegration_ChainResolvesViaContractKB is the primary T-2.3/T-2.4
 // integration proof. It builds a callgraph for a pyca cryptography Cipher fluent
 // chain and asserts that:
-//   (a) resolveFluentChainCalleesByContract rewrites the encryptor chain link
-//   (b) the PythonContractTypeResolver annotated Cipher.<init>'s return type
-//   (c) BuildFromDirectories returns no error
+//
+//	(a) resolveFluentChainCalleesByContract rewrites the encryptor chain link
+//	(b) the PythonContractTypeResolver annotated Cipher.<init>'s return type
+//	(c) BuildFromDirectories returns no error
 func TestPythonChainIntegration_ChainResolvesViaContractKB(t *testing.T) {
 	// Inline fluent chain — all three links share a ChainID:
 	//   Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor().update(data)

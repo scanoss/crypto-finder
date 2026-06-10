@@ -185,6 +185,11 @@ type FunctionDecl struct {
 	ReturnSources []SourceNode
 	// InferredReturn is the result of the post-build inference pass; nil when no inference fires.
 	InferredReturn *InferredReturn
+	// OwnerBases holds the direct base class names as declared in the source
+	// (e.g. ["PKey"] for "class RSAKey(PKey):"). Populated by the Python parser;
+	// always nil for Java/Go/Rust declarations. Used by expandPythonSubclassDispatch
+	// to expand a base-class call site to its concrete subclass overrides.
+	OwnerBases []string
 }
 
 // FunctionParameter describes a declared function parameter.
@@ -265,6 +270,7 @@ type FileAnalysis struct {
 	PackagePath           string
 	Imports               map[string]string // alias (or last path segment) -> full import path
 	ImportedTypes         map[string]bool   // imported symbol alias -> inferred class/type
+	FromImports           map[string]bool   // symbols introduced via `from X import Y` (Python only)
 	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
 	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
 	Functions             []FunctionDecl
@@ -310,6 +316,11 @@ const (
 	// EdgeKindNameOnly is a fluent-fallback edge matched by method name+arity (and
 	// namespace heuristics) with no receiver type anchor.
 	EdgeKindNameOnly EdgeKind = "name_only"
+	// EdgeKindPythonSubclassDispatch is a synthesized edge from a base-class method
+	// call site to a concrete subclass override. Populated by expandPythonSubclassDispatch
+	// using OwnerBases declared in the Python source. Python-only; Java dispatch uses
+	// EdgeKindInterfaceDispatch instead.
+	EdgeKindPythonSubclassDispatch EdgeKind = "python_subclass_dispatch"
 )
 
 // edgeKindRank orders kinds by trust so a stronger classification is never
@@ -319,6 +330,8 @@ func edgeKindRank(k EdgeKind) int {
 	case EdgeKindExact:
 		return 3
 	case EdgeKindInterfaceDispatch:
+		return 2
+	case EdgeKindPythonSubclassDispatch:
 		return 2
 	case EdgeKindNameOnly:
 		return 1

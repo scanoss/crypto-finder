@@ -16,6 +16,9 @@ import (
 const (
 	ownerTypeInterface = "interface"
 	javaStringType     = "String"
+	// ecosystemPython is the ecosystem identifier for Python callgraphs.
+	// Used to gate Python-specific dispatch (e.g. expandPythonSubclassDispatch).
+	ecosystemPython = "python"
 )
 
 // Parser extracts function declarations, calls, and imports from source files
@@ -219,6 +222,7 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 func (b *Builder) buildCallerIndex(graph *CallGraph) {
 	methodsByName := indexMethodsByName(graph)
 	methodsByQualifiedArity := indexMethodsByQualifiedArity(graph)
+	subclassByTypeName := indexSubclassByTypeName(graph)
 
 	for callerKey, fn := range graph.Functions {
 		for i := range fn.Calls {
@@ -240,6 +244,10 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 				for _, alias := range b.expandInterfaceDispatch(target, graph, methodsByName) {
 					addCaller(graph.Callers, alias.CalleeKey, callerKey)
 					recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
+				}
+				for _, alias := range b.expandPythonSubclassDispatch(target, graph, subclassByTypeName) {
+					addCaller(graph.Callers, alias.CalleeKey, callerKey)
+					recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
 				}
 			}
 
@@ -304,6 +312,93 @@ func indexMethodsByQualifiedArity(graph *CallGraph) map[string][]string {
 		)
 	}
 	return index
+}
+
+// indexSubclassByTypeName builds a map from base-class simple name → list of
+// FunctionDecl pointers belonging to subclass methods that declare that base.
+// Used exclusively by expandPythonSubclassDispatch. Only class-typed decls with
+// non-empty OwnerBases are indexed.
+func indexSubclassByTypeName(graph *CallGraph) map[string][]*FunctionDecl {
+	index := make(map[string][]*FunctionDecl)
+	for _, fn := range graph.Functions {
+		if fn.OwnerType != "class" || len(fn.OwnerBases) == 0 {
+			continue
+		}
+		for _, base := range fn.OwnerBases {
+			base = strings.TrimSpace(base)
+			if base == "" {
+				continue
+			}
+			index[base] = append(index[base], fn)
+		}
+	}
+	return index
+}
+
+// pythonSubclassDispatchAlias is one synthesized Python subclass dispatch edge
+// target plus the base class type that was expanded.
+type pythonSubclassDispatchAlias struct {
+	CalleeKey    string
+	DeclaredType string
+}
+
+// expandPythonSubclassDispatch links a base-class method call to concrete
+// subclass overrides. It fires ONLY when:
+//   - The resolved callee belongs to a "class"-typed decl (not module, not interface).
+//   - The ecosystem is "python" (Python-only; Java uses expandInterfaceDispatch).
+//   - At least one other class in the graph declares the callee's OwnerName (or Type)
+//     as a base via OwnerBases and defines the same method name+arity.
+//
+// Java interface dispatch is unchanged — it still uses OwnerType == "interface".
+func (b *Builder) expandPythonSubclassDispatch(
+	calleeKey string,
+	graph *CallGraph,
+	subclassByTypeName map[string][]*FunctionDecl,
+) []pythonSubclassDispatchAlias {
+	if b.ecosystem != ecosystemPython {
+		return nil
+	}
+
+	calleeDecl, ok := graph.Functions[calleeKey]
+	if !ok || calleeDecl.OwnerType != "class" || calleeDecl.ID.Type == "" {
+		return nil
+	}
+
+	// Look for subclass methods whose OwnerBases list includes this callee's Type.
+	candidates := subclassByTypeName[calleeDecl.ID.Type]
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	baseName := methodLookupName(calleeDecl.ID.Name)
+	baseArity := len(calleeDecl.Parameters)
+	declaredType := interfaceDeclaredType(calleeDecl.ID)
+
+	var keys []string
+	for _, candidate := range candidates {
+		// Must be a class method (not module) and match name+arity.
+		if candidate.OwnerType != "class" {
+			continue
+		}
+		if methodLookupName(candidate.ID.Name) != baseName {
+			continue
+		}
+		if len(candidate.Parameters) != baseArity {
+			continue
+		}
+		// Do not self-alias.
+		if candidate.ID.String() == calleeKey {
+			continue
+		}
+		keys = append(keys, candidate.ID.String())
+	}
+
+	sort.Strings(keys)
+	results := make([]pythonSubclassDispatchAlias, 0, len(keys))
+	for _, k := range keys {
+		results = append(results, pythonSubclassDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
+	}
+	return results
 }
 
 func addCaller(callers map[string][]string, calleeKey, callerKey string, oldCalleeKeys ...string) {

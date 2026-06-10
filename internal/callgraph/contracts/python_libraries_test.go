@@ -162,7 +162,10 @@ func TestLoadEmbedded_Python_Pycryptodome(t *testing.T) {
 			wantLib:    "pycryptodome",
 		},
 		{
-			method:     "Crypto.Protocol.KDF.PBKDF2",
+			// PBKDF2 is uppercase so the Python parser emits it as a constructor call:
+			// {Package: "Crypto.Protocol.KDF", Type: "PBKDF2", Name: "<init>"}
+			// → KB key must use <init> form.
+			method:     "Crypto.Protocol.KDF.PBKDF2.<init>",
 			arity:      3,
 			wantReturn: "builtins.bytes",
 			wantLib:    "pycryptodome",
@@ -245,6 +248,61 @@ func TestLoadEmbedded_Python_Paramiko(t *testing.T) {
 		}
 		if c.Return.Confidence != "high" {
 			t.Errorf("%s#%d confidence = %q, want %q", tt.method, tt.arity, c.Return.Confidence, "high")
+		}
+	}
+}
+
+// TestLoadEmbedded_Python_CryptodomeAlias verifies that the Cryptodome.* namespace
+// (pycryptodomex package) resolves the same contracts as the Crypto.* namespace
+// (pycryptodome). This covers TASK C: `from Cryptodome.Cipher import AES; AES.new(...)`
+// must resolve the same KB entry as `from Crypto.Cipher import AES; AES.new(...)`.
+func TestLoadEmbedded_Python_CryptodomeAlias(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	// These Cryptodome.* entries are the mirror of the Crypto.* entries in pycryptodome.yaml.
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+	}{
+		{
+			method:     "Cryptodome.Cipher.AES.new",
+			arity:      2,
+			wantReturn: "Cryptodome.Cipher.AES.AESCipher",
+		},
+		{
+			method:     "Cryptodome.Hash.SHA256.new",
+			arity:      0,
+			wantReturn: "Cryptodome.Hash.SHA256.SHA256Hash",
+		},
+		{
+			method:     "Cryptodome.PublicKey.RSA.generate",
+			arity:      1,
+			wantReturn: "Cryptodome.PublicKey.RSA.RsaKey",
+		},
+		{
+			method:     "Cryptodome.Protocol.KDF.PBKDF2.<init>",
+			arity:      3,
+			wantReturn: "builtins.bytes",
+		},
+		{
+			method:     "Cryptodome.Hash.HMAC.new",
+			arity:      2,
+			wantReturn: "Cryptodome.Hash.HMAC.HMAC",
+		},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("Cryptodome alias %s#%d: no contracts found (Cryptodome.* namespace not loaded)", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("Cryptodome alias %s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
 		}
 	}
 }

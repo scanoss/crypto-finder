@@ -111,6 +111,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 		PackagePath:   packagePath,
 		Imports:       make(map[string]string),
 		ImportedTypes: make(map[string]bool),
+		FromImports:   make(map[string]bool),
 	}
 
 	// Extract imports
@@ -201,6 +202,7 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 
 func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string) {
 	analysis.Imports[name] = modulePath
+	analysis.FromImports[name] = true
 	if looksLikePythonTypeName(name) {
 		analysis.ImportedTypes[name] = true
 	}
@@ -297,12 +299,16 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
 	var className string
 	var body *sitter.Node
+	var bases []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
 		case goNodeIdentifier:
 			className = child.Content(src)
+		case "argument_list":
+			// class Foo(Base1, Base2): the argument_list holds the superclass names.
+			bases = extractPythonBaseClassNames(child, src)
 		case "block":
 			body = child
 		}
@@ -313,27 +319,48 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	}
 
 	// Walk class body for method definitions.
-	p.extractClassMethods(body, src, filePath, packagePath, className, analysis)
+	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis)
+}
+
+// extractPythonBaseClassNames returns the simple identifier names from a
+// class_definition argument_list node (the "(Base1, Base2)" part).
+// Only direct identifier bases are collected; complex expressions (e.g. generics,
+// attribute access like "abc.ABC") are currently included as their full text.
+func extractPythonBaseClassNames(argListNode *sitter.Node, src []byte) []string {
+	var bases []string
+	for i := 0; i < int(argListNode.ChildCount()); i++ {
+		child := argListNode.Child(i)
+		switch child.Type() {
+		case goNodeIdentifier, "attribute":
+			name := child.Content(src)
+			if name != "" {
+				bases = append(bases, name)
+			}
+		}
+	}
+	return bases
 }
 
 // extractClassMethods extracts method declarations from a class body node.
-func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis) {
+func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis) {
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
 			decl := p.parseFunctionDef(child, src, filePath, packagePath, className, analysis)
 			if decl != nil {
+				decl.OwnerBases = bases
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case "decorated_definition":
-			p.extractDecoratedMethod(child, src, filePath, packagePath, className, analysis)
+			p.extractDecoratedMethod(child, src, filePath, packagePath, className, bases, analysis)
 		}
 	}
 }
 
 // extractDecoratedMethod extracts a method from a decorated_definition within a class.
-func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis) {
+// bases are the direct superclass names of className, propagated from processClass.
+func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis) {
 	for j := 0; j < int(node.ChildCount()); j++ {
 		inner := node.Child(j)
 		if inner.Type() != pythonNodeFunctionDefinition {
@@ -341,6 +368,7 @@ func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, fil
 		}
 		decl := p.parseFunctionDef(inner, src, filePath, packagePath, className, analysis)
 		if decl != nil {
+			decl.OwnerBases = bases
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
 	}
@@ -530,8 +558,23 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	// Try to resolve the object through imports (module-qualified calls).
 	if !objectIsCall {
 		if pkg, ok := analysis.Imports[object]; ok {
+			// When the symbol was introduced via `from X import Y`, the real
+			// module path for the call is X.Y, not X. For example:
+			//   from Crypto.Cipher import AES; AES.new(key, mode)
+			// must emit Package="Crypto.Cipher.AES", Name="new" so the KB join
+			// hits `Crypto.Cipher.AES.new` (not `Crypto.Cipher.new`).
+			// Plain `import hashlib; hashlib.sha256()` is NOT a from-import, so
+			// Package="hashlib" is preserved unchanged.
+			// Note: in the attribute-call path we always use the full X.Y form for
+			// from-imports regardless of capitalisation, because AES.new(...) is a
+			// module-level function call, not a constructor — constructors go through
+			// the direct-call path (parseCallExpr's identifier branch).
+			resolvedPkg := pkg
+			if analysis.FromImports[object] {
+				resolvedPkg = pkg + "." + object
+			}
 			return &FunctionCall{
-				Callee:      FunctionID{Package: pkg, Name: method},
+				Callee:      FunctionID{Package: resolvedPkg, Name: method},
 				Raw:         raw,
 				FilePath:    filePath,
 				Line:        line,
@@ -678,11 +721,13 @@ func pythonCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar
 // chain. Mirrors Java's chainRootNode.
 //
 // Python chain structure: `a().b().c()` AST:
-//   call[c()] → attribute[a().b().c] → call[b()] → attribute[a().b] → call[a()]
+//
+//	call[c()] → attribute[a().b().c] → call[b()] → attribute[a().b] → call[a()]
 //
 // Walking from `a()`:
-//   parent = attribute (a().b), parent.object == a() → continue
-//   parent of that attribute = call (b()), i.e. that call's function == attribute → continue upward
+//
+//	parent = attribute (a().b), parent.object == a() → continue
+//	parent of that attribute = call (b()), i.e. that call's function == attribute → continue upward
 func pythonChainRootNode(node *sitter.Node) *sitter.Node {
 	root := node
 	for {

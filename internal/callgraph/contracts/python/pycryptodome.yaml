@@ -225,7 +225,10 @@ contracts:
 
   # ── KDF (Crypto.Protocol.KDF) ─────────────────────────────────────────────────
 
-  - method: Crypto.Protocol.KDF.PBKDF2
+  # PBKDF2 starts uppercase so the Python parser treats it as a type constructor;
+  # the emitted callee FQN uses <init>, matching the call `from Crypto.Protocol.KDF
+  # import PBKDF2; PBKDF2(password, salt, 32)`.
+  - method: Crypto.Protocol.KDF.PBKDF2.<init>
     arity: 3
     return:
       type: builtins.bytes
@@ -239,7 +242,8 @@ contracts:
       confidence: high
     role: output
 
-  - method: Crypto.Protocol.KDF.HKDF
+  # HKDF starts uppercase — same constructor treatment as PBKDF2.
+  - method: Crypto.Protocol.KDF.HKDF.<init>
     arity: 3
     return:
       type: builtins.bytes
