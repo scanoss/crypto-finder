@@ -362,27 +362,57 @@ func (p *PythonParser) processDecorated(node *sitter.Node, src []byte, filePath,
 	}
 }
 
-// extractCalls walks a function body to find all call expressions.
+// extractCalls walks a function body to find all call expressions, collecting
+// local variable assignments first so ReceiverVar can be attributed correctly.
 func (p *PythonParser) extractCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) []FunctionCall {
+	// Build the set of local variable names from assignment statements in this body.
+	localVars := collectPythonLocalVars(body, src)
+
 	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, &calls)
+	p.walkForCalls(body, src, filePath, analysis, localVars, &calls)
 	return calls
 }
 
-func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, calls *[]FunctionCall) {
+// collectPythonLocalVars scans a function body for assignment targets to
+// populate the set of known local variable names. This is used to distinguish
+// receiver variables from module or type names.
+func collectPythonLocalVars(body *sitter.Node, src []byte) map[string]bool {
+	locals := make(map[string]bool)
+	collectPythonLocalVarsInNode(body, src, locals)
+	return locals
+}
+
+func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[string]bool) {
+	if node == nil {
+		return
+	}
+	if node.Type() == "assignment" {
+		left := node.ChildByFieldName("left")
+		if left != nil && left.Type() == goNodeIdentifier {
+			locals[left.Content(src)] = true
+		}
+		// Also handle augmented assignments (+=, etc.)
+	}
+	// Walk all children to catch assignments in nested blocks.
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectPythonLocalVarsInNode(node.Child(i), src, locals)
+	}
+}
+
+func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool, calls *[]FunctionCall) {
 	if node.Type() == "call" {
-		if call := p.parseCallExpr(node, src, filePath, analysis); call != nil {
+		if call := p.parseCallExpr(node, src, filePath, analysis, localVars); call != nil {
 			*calls = append(*calls, *call)
 		}
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, calls)
+		p.walkForCalls(node.Child(i), src, filePath, analysis, localVars, calls)
 	}
 }
 
 // parseCallExpr parses a call expression into a FunctionCall.
-func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) *FunctionCall {
+func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool) *FunctionCall {
 	if node.ChildCount() == 0 {
 		return nil
 	}
@@ -392,6 +422,8 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	raw := funcNode.Content(src)
 	args := p.extractPythonCallArguments(node, src)
 
+	chainID, assignedVar := pythonCallChainContext(node, src)
+
 	switch funcNode.Type() {
 	case goNodeIdentifier:
 		// Simple call like `sha256()` or imported class constructor like `Cipher()`
@@ -399,32 +431,38 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		if pkg, ok := analysis.Imports[name]; ok {
 			if analysis.ImportedTypes[name] {
 				return &FunctionCall{
-					Callee:    FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
-					Raw:       raw,
-					FilePath:  filePath,
-					Line:      line,
-					Arguments: args,
+					Callee:      FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
+					Raw:         raw,
+					FilePath:    filePath,
+					Line:        line,
+					Arguments:   args,
+					AssignedVar: assignedVar,
+					ChainID:     chainID,
 				}
 			}
 
 			return &FunctionCall{
-				Callee:    FunctionID{Package: pkg, Name: name},
-				Raw:       raw,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
+				Callee:      FunctionID{Package: pkg, Name: name},
+				Raw:         raw,
+				FilePath:    filePath,
+				Line:        line,
+				Arguments:   args,
+				AssignedVar: assignedVar,
+				ChainID:     chainID,
 			}
 		}
 		return &FunctionCall{
-			Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
-			Raw:       raw,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
+			Callee:      FunctionID{Package: analysis.PackagePath, Name: name},
+			Raw:         raw,
+			FilePath:    filePath,
+			Line:        line,
+			Arguments:   args,
+			AssignedVar: assignedVar,
+			ChainID:     chainID,
 		}
 	case "attribute":
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
-		return p.parseAttributeCall(funcNode, src, filePath, line, args, analysis)
+		return p.parseAttributeCall(funcNode, src, filePath, line, args, analysis, localVars, chainID, assignedVar)
 	}
 
 	return nil
@@ -439,9 +477,11 @@ func looksLikePythonTypeName(name string) bool {
 	return first >= 'A' && first <= 'Z'
 }
 
-// parseAttributeCall handles calls on attributes like `module.func()` or `obj.method()`.
-func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
+// parseAttributeCall handles calls on attributes like `module.func()`, `obj.method()`,
+// or chained calls like `Cipher(a,b).encryptor().update(data)`.
+func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis, localVars map[string]bool, chainID, assignedVar string) *FunctionCall {
 	var object, method string
+	objectIsCall := false
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -453,8 +493,14 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 				method = child.Content(src)
 			}
 		case "attribute":
-			// Chained attribute: `a.b.c()` — recurse
+			// Chained attribute: `a.b.c()` — recurse to get text
 			object = child.Content(src)
+		case "call":
+			// Chained call: `Cipher(a,b).encryptor()` — object is a call result.
+			// Use the raw text as a placeholder identifier; the ReceiverVar logic
+			// will not fire (it only fires for simple identifier locals).
+			object = child.Content(src)
+			objectIsCall = true
 		}
 	}
 
@@ -467,49 +513,88 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	// "self" calls are local method calls
 	if object == pythonSelfObjectName {
 		return &FunctionCall{
-			Callee:    FunctionID{Package: analysis.PackagePath, Name: method},
-			Raw:       raw,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
+			Callee:      FunctionID{Package: analysis.PackagePath, Name: method},
+			Raw:         raw,
+			FilePath:    filePath,
+			Line:        line,
+			Arguments:   args,
+			ChainID:     chainID,
+			AssignedVar: assignedVar,
 		}
 	}
 
-	// Try to resolve the object through imports
-	if pkg, ok := analysis.Imports[object]; ok {
-		return &FunctionCall{
-			Callee:    FunctionID{Package: pkg, Name: method},
-			Raw:       raw,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
-		}
-	}
+	// Determine ReceiverVar: only when object is a simple local variable (not a
+	// module import, not a type name, and not itself a call expression result).
+	receiverVar := pythonReceiverVarName(object, objectIsCall, analysis, localVars)
 
-	// Handle chained attribute access like `cryptography.hazmat.primitives.hashes.SHA256()`
-	// Try to resolve by splitting off the first segment
-	if dotIdx := strings.Index(object, "."); dotIdx > 0 {
-		firstSegment := object[:dotIdx]
-		if pkg, ok := analysis.Imports[firstSegment]; ok {
-			fullPath := pkg + "." + object[dotIdx+1:]
+	// Try to resolve the object through imports (module-qualified calls).
+	if !objectIsCall {
+		if pkg, ok := analysis.Imports[object]; ok {
 			return &FunctionCall{
-				Callee:    FunctionID{Package: fullPath, Name: method},
-				Raw:       raw,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
+				Callee:      FunctionID{Package: pkg, Name: method},
+				Raw:         raw,
+				FilePath:    filePath,
+				Line:        line,
+				Arguments:   args,
+				ReceiverVar: receiverVar,
+				ChainID:     chainID,
+				AssignedVar: assignedVar,
+			}
+		}
+
+		// Handle chained attribute access like `cryptography.hazmat.primitives.hashes.SHA256()`
+		// Try to resolve by splitting off the first segment.
+		if dotIdx := strings.Index(object, "."); dotIdx > 0 {
+			firstSegment := object[:dotIdx]
+			if pkg, ok := analysis.Imports[firstSegment]; ok {
+				fullPath := pkg + "." + object[dotIdx+1:]
+				return &FunctionCall{
+					Callee:      FunctionID{Package: fullPath, Name: method},
+					Raw:         raw,
+					FilePath:    filePath,
+					Line:        line,
+					Arguments:   args,
+					ReceiverVar: receiverVar,
+					ChainID:     chainID,
+					AssignedVar: assignedVar,
+				}
 			}
 		}
 	}
 
-	// Fallback: assume same package
+	// Fallback: assume same package (local object or unresolved chain result).
 	return &FunctionCall{
-		Callee:    FunctionID{Package: analysis.PackagePath, Type: object, Name: method},
-		Raw:       raw,
-		FilePath:  filePath,
-		Line:      line,
-		Arguments: args,
+		Callee:      FunctionID{Package: analysis.PackagePath, Type: object, Name: method},
+		Raw:         raw,
+		FilePath:    filePath,
+		Line:        line,
+		Arguments:   args,
+		ReceiverVar: receiverVar,
+		ChainID:     chainID,
+		AssignedVar: assignedVar,
 	}
+}
+
+// pythonReceiverVarName returns the receiver variable name when the object of a
+// method call is a known local variable. Returns "" for module imports, type
+// names (CapitalCase), or call expression results.
+func pythonReceiverVarName(object string, objectIsCall bool, analysis *FileAnalysis, localVars map[string]bool) string {
+	if objectIsCall || object == "" || object == pythonSelfObjectName {
+		return ""
+	}
+	// Module import — not a receiver variable.
+	if _, isImport := analysis.Imports[object]; isImport {
+		return ""
+	}
+	// Type name (CapitalCase) — not a receiver variable.
+	if looksLikePythonTypeName(object) {
+		return ""
+	}
+	// Must be a known local variable.
+	if localVars[object] {
+		return object
+	}
+	return ""
 }
 
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
@@ -554,6 +639,124 @@ func parsePythonParameters(node *sitter.Node, src []byte) []FunctionParameter {
 	}
 
 	return params
+}
+
+// pythonCallChainContext derives, for a Python call node, the fluent-chain
+// grouping ID and the variable name that this call's result is assigned to.
+//
+// ChainID is non-empty only when the call participates in a multi-link fluent
+// chain such as `Cipher(a, m).encryptor().update(x)`. All links of the chain
+// share the chain root's StartByte as a decimal string — exactly mirroring the
+// Java callChainContext derivation.
+//
+// AssignedVar is populated only on the chain root (the outermost call) when
+// that root is the right-hand side of an assignment statement, e.g.
+// `result = Cipher(a,m).encryptor()` → AssignedVar "result" on `encryptor()`.
+func pythonCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
+	root := pythonChainRootNode(node)
+	if root != node {
+		// Inner link: shares the root's byte offset, no assignment on this link.
+		return fmt.Sprintf("%d", root.StartByte()), ""
+	}
+	// Chain root: check whether it has inner links below it.
+	if isPythonCallNode(node.Child(0)) || isPythonAttributeCallNode(node) {
+		// Only set ChainID when there's actually a chain (the call's function is an
+		// attribute whose object is itself a call).
+		funcChild := node.Child(0)
+		if funcChild != nil && funcChild.Type() == "attribute" {
+			obj := funcChild.ChildByFieldName("object")
+			if obj != nil && obj.Type() == "call" {
+				chainID = fmt.Sprintf("%d", root.StartByte())
+			}
+		}
+	}
+	return chainID, pythonAssignedVarFromParent(root, src)
+}
+
+// pythonChainRootNode walks UP through enclosing Python call→attribute nodes
+// whose object is the current node, returning the outermost call of the fluent
+// chain. Mirrors Java's chainRootNode.
+//
+// Python chain structure: `a().b().c()` AST:
+//   call[c()] → attribute[a().b().c] → call[b()] → attribute[a().b] → call[a()]
+//
+// Walking from `a()`:
+//   parent = attribute (a().b), parent.object == a() → continue
+//   parent of that attribute = call (b()), i.e. that call's function == attribute → continue upward
+func pythonChainRootNode(node *sitter.Node) *sitter.Node {
+	root := node
+	for {
+		// node's parent is an "attribute" node whose "object" field is this node
+		attrParent := root.Parent()
+		if attrParent == nil || attrParent.Type() != "attribute" {
+			break
+		}
+		obj := attrParent.ChildByFieldName("object")
+		if obj != root {
+			break
+		}
+		// attrParent.parent should be a call node whose first child (function) is attrParent
+		callParent := attrParent.Parent()
+		if callParent == nil || callParent.Type() != "call" {
+			break
+		}
+		if callParent.Child(0) != attrParent {
+			break
+		}
+		root = callParent
+	}
+	return root
+}
+
+// isPythonCallNode reports whether node is a call expression.
+func isPythonCallNode(node *sitter.Node) bool {
+	return node != nil && node.Type() == "call"
+}
+
+// isPythonAttributeCallNode reports whether the call node's function child is
+// an attribute whose object is itself a call (i.e., a chained call).
+func isPythonAttributeCallNode(node *sitter.Node) bool {
+	if node == nil {
+		return false
+	}
+	fn := node.Child(0)
+	if fn == nil || fn.Type() != "attribute" {
+		return false
+	}
+	obj := fn.ChildByFieldName("object")
+	return obj != nil && obj.Type() == "call"
+}
+
+// pythonAssignedVarFromParent returns the variable name a Python call result is
+// bound to when the call is on the right-hand side of an assignment statement.
+// Returns "" for unassigned calls. Mirrors Java's assignedVarFromParent.
+//
+// Handles:
+//   - `cipher = Cipher(a, m)` — expression_statement → assignment
+//   - direct assignment in a block
+func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
+	parent := node.Parent()
+	if parent == nil {
+		return ""
+	}
+	if parent.Type() == "assignment" {
+		left := parent.ChildByFieldName("left")
+		if left != nil && left.Type() == goNodeIdentifier {
+			return left.Content(src)
+		}
+		return ""
+	}
+	// expression_statement wrapping an assignment
+	if parent.Type() == "expression_statement" {
+		gp := parent.Parent()
+		if gp != nil && gp.Type() == "assignment" {
+			left := gp.ChildByFieldName("left")
+			if left != nil && left.Type() == goNodeIdentifier {
+				return left.Content(src)
+			}
+		}
+	}
+	return ""
 }
 
 func parsePythonReturnType(defContent string) string {

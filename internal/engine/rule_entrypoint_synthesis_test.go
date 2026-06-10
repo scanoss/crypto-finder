@@ -189,6 +189,69 @@ func TestSynthesize_NoOpForNonStringAPI(t *testing.T) {
 	}
 }
 
+// ── T-1.5: Python FQN api synthesis gate (RED until T-1.6 confirms join works) ─
+
+// TestSynthesizeRuleCryptoEntryPoints_Python_FQNApiHitsGate guards REQ-2.1.
+// A Python rule whose api has >= 2 dots (FQN form) must produce a synthetic
+// crypto entry point when the matching method definition exists in the callgraph.
+// A short api (only 1 dot, e.g. "hashlib.sha256") must NOT produce any entry point.
+//
+// This test is RED until the Python FQN synthesis join is confirmed working (T-1.6).
+func TestSynthesizeRuleCryptoEntryPoints_Python_FQNApiHitsGate(t *testing.T) {
+	t.Parallel()
+
+	// Case 1: Python FQN api with >= 2 dots — must synthesize.
+	const pythonFQNApi = "cryptography.hazmat.primitives.ciphers.Cipher.encryptor"
+	dirFQN := t.TempDir()
+	ruleFQN := writeRule(t, dirFQN, pythonFQNApi, "AES")
+
+	// The FunctionDecl representing the Cipher.encryptor method definition in the
+	// Python callgraph. Package = module path, Type = class name, Name = method.
+	cipherEncryptorDecl := &callgraph.FunctionDecl{
+		ID: callgraph.FunctionID{
+			Package: "cryptography.hazmat.primitives.ciphers",
+			Type:    "Cipher",
+			Name:    "encryptor",
+		},
+		FilePath:  "cryptography/hazmat/primitives/ciphers/base.py",
+		StartLine: 105,
+		EndLine:   115,
+	}
+
+	reportFQN := &entities.InterimReport{}
+	graphFQN := graphWith(cipherEncryptorDecl)
+
+	n := SynthesizeRuleCryptoEntryPoints(reportFQN, graphFQN, []string{ruleFQN})
+	if n != 1 {
+		t.Errorf("FQN api (%q): expected 1 synthesized entry point, got %d", pythonFQNApi, n)
+	}
+	if n > 0 {
+		if got := reportFQN.Findings[0].CryptographicAssets[0].Metadata["api"]; got != pythonFQNApi {
+			t.Errorf("synthesized api = %q, want %q", got, pythonFQNApi)
+		}
+	}
+
+	// Case 2: Short api (1 dot) — stdlib/hashlib style (Type-1 rule) must NOT synthesize.
+	const shortAPI = "hashlib.sha256"
+	dirShort := t.TempDir()
+	ruleShort := writeRule(t, dirShort, shortAPI, "SHA-2")
+
+	hashlibSHA256Decl := &callgraph.FunctionDecl{
+		ID: callgraph.FunctionID{
+			Package: "hashlib",
+			Name:    "sha256",
+		},
+		FilePath:  "hashlib/__init__.py",
+		StartLine: 200,
+		EndLine:   205,
+	}
+
+	reportShort := &entities.InterimReport{}
+	if n2 := SynthesizeRuleCryptoEntryPoints(reportShort, graphWith(hashlibSHA256Decl), []string{ruleShort}); n2 != 0 {
+		t.Errorf("short api (%q): expected 0 synthesized entry points (fails >= 2-dot gate), got %d", shortAPI, n2)
+	}
+}
+
 func TestSynthesize_NoOpWhenBodyAlreadyDetected(t *testing.T) {
 	// Type 1: the method body already has a detected crypto finding, so it is
 	// already a natural entry point and must not be double-counted.

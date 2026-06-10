@@ -1,0 +1,147 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: paramiko
+  coordinates:
+    - paramiko
+  version_range: ">=2.0"
+  description: "Paramiko — SSH2 protocol library: RSA/DSA/ECDSA/Ed25519 keys, transport crypto"
+
+contracts:
+  # ── RSA keys (paramiko.rsakey) ────────────────────────────────────────────────
+
+  # RSAKey.generate(bits) → RSAKey
+  - method: paramiko.rsakey.RSAKey.generate
+    arity: 1
+    return:
+      type: paramiko.rsakey.RSAKey
+      confidence: high
+
+  # RSAKey.from_private_key_file(filename, password=None) → RSAKey
+  - method: paramiko.rsakey.RSAKey.from_private_key_file
+    arity: 1
+    return:
+      type: paramiko.rsakey.RSAKey
+      confidence: high
+
+  - method: paramiko.rsakey.RSAKey.from_private_key
+    arity: 1
+    return:
+      type: paramiko.rsakey.RSAKey
+      confidence: high
+
+  - method: paramiko.rsakey.RSAKey.sign_ssh_data
+    arity: 1
+    return:
+      type: paramiko.message.Message
+      confidence: high
+    role: output
+
+  # ── DSA keys (paramiko.dsskey) ────────────────────────────────────────────────
+
+  - method: paramiko.dsskey.DSSKey.generate
+    arity: 1
+    return:
+      type: paramiko.dsskey.DSSKey
+      confidence: high
+
+  - method: paramiko.dsskey.DSSKey.from_private_key_file
+    arity: 1
+    return:
+      type: paramiko.dsskey.DSSKey
+      confidence: high
+
+  # ── ECDSA keys (paramiko.ecdsakey) ────────────────────────────────────────────
+
+  - method: paramiko.ecdsakey.ECDSAKey.generate
+    arity: 0
+    return:
+      type: paramiko.ecdsakey.ECDSAKey
+      confidence: high
+
+  - method: paramiko.ecdsakey.ECDSAKey.from_private_key_file
+    arity: 1
+    return:
+      type: paramiko.ecdsakey.ECDSAKey
+      confidence: high
+
+  - method: paramiko.ecdsakey.ECDSAKey.sign_ssh_data
+    arity: 1
+    return:
+      type: paramiko.message.Message
+      confidence: high
+    role: output
+
+  # ── Ed25519 keys (paramiko.ed25519key) ────────────────────────────────────────
+
+  - method: paramiko.ed25519key.Ed25519Key.generate
+    arity: 0
+    return:
+      type: paramiko.ed25519key.Ed25519Key
+      confidence: high
+
+  - method: paramiko.ed25519key.Ed25519Key.from_private_key_file
+    arity: 1
+    return:
+      type: paramiko.ed25519key.Ed25519Key
+      confidence: high
+
+  - method: paramiko.ed25519key.Ed25519Key.sign_ssh_data
+    arity: 1
+    return:
+      type: paramiko.message.Message
+      confidence: high
+    role: output
+
+  # ── Transport (paramiko.transport.Transport) ──────────────────────────────────
+
+  # Transport.<init>(sock) → Transport (SSH connection)
+  - method: paramiko.transport.Transport.<init>
+    arity: 1
+    return:
+      type: paramiko.transport.Transport
+      confidence: high
+    role: factory
+
+  # ── SSH client (paramiko.client.SSHClient) ────────────────────────────────────
+
+  - method: paramiko.client.SSHClient.<init>
+    arity: 0
+    return:
+      type: paramiko.client.SSHClient
+      confidence: high
+    role: factory
+
+  # ── PKey base (paramiko.pkey.PKey) ────────────────────────────────────────────
+
+  - method: paramiko.pkey.PKey.from_private_key_file
+    arity: 1
+    return:
+      type: paramiko.pkey.PKey
+      confidence: high
+
+  - method: paramiko.pkey.PKey.from_private_key
+    arity: 1
+    return:
+      type: paramiko.pkey.PKey
+      confidence: high
+
+hierarchy:
+  paramiko.rsakey.RSAKey:
+    - paramiko.pkey.PKey
+  paramiko.dsskey.DSSKey:
+    - paramiko.pkey.PKey
+  paramiko.ecdsakey.ECDSAKey:
+    - paramiko.pkey.PKey
+  paramiko.ed25519key.Ed25519Key:
+    - paramiko.pkey.PKey
+  paramiko.pkey.PKey:
+    - builtins.object
+  paramiko.transport.Transport:
+    - builtins.object
+  paramiko.client.SSHClient:
+    - builtins.object
+  paramiko.message.Message:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object

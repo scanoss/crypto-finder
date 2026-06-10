@@ -1,0 +1,277 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pycryptodome
+  coordinates:
+    - pycryptodome
+    - pycryptodomex
+  version_range: ">=3.0"
+  description: "PyCryptodome / PyCryptodomex — Crypto.* namespace: symmetric, asymmetric, hash, MAC, KDF"
+
+contracts:
+  # ── AES symmetric cipher (Crypto.Cipher.AES) ─────────────────────────────────
+
+  # AES.new(key, mode, ...) returns an AES cipher object.
+  # Mode determines the cipher context type; we declare the common case (generic return).
+  - method: Crypto.Cipher.AES.new
+    arity: 2
+    return:
+      type: Crypto.Cipher.AES.AESCipher
+      confidence: high
+    role: factory
+
+  - method: Crypto.Cipher.AES.AESCipher.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Cipher.AES.AESCipher.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Cipher.AES.AESCipher.encrypt_and_digest
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: output
+
+  - method: Crypto.Cipher.AES.AESCipher.decrypt_and_verify
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ChaCha20 / ChaCha20Poly1305 ───────────────────────────────────────────────
+
+  - method: Crypto.Cipher.ChaCha20.new
+    arity: 1
+    return:
+      type: Crypto.Cipher.ChaCha20.ChaCha20Cipher
+      confidence: high
+    role: factory
+
+  - method: Crypto.Cipher.ChaCha20.ChaCha20Cipher.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Cipher.ChaCha20.ChaCha20Cipher.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Cipher.ChaCha20_Poly1305.new
+    arity: 1
+    return:
+      type: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher
+      confidence: high
+    role: factory
+
+  # ── Cryptographic hashes (Crypto.Hash.*) ──────────────────────────────────────
+
+  - method: Crypto.Hash.SHA256.new
+    arity: 0
+    return:
+      type: Crypto.Hash.SHA256.SHA256Hash
+      confidence: high
+    role: factory
+
+  - method: Crypto.Hash.SHA256.SHA256Hash.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Hash.SHA256.SHA256Hash.hexdigest
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: Crypto.Hash.SHA512.new
+    arity: 0
+    return:
+      type: Crypto.Hash.SHA512.SHA512Hash
+      confidence: high
+    role: factory
+
+  - method: Crypto.Hash.SHA512.SHA512Hash.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Hash.SHA3_256.new
+    arity: 0
+    return:
+      type: Crypto.Hash.SHA3_256.SHA3_256Hash
+      confidence: high
+    role: factory
+
+  # ── HMAC (Crypto.Hash.HMAC) ───────────────────────────────────────────────────
+
+  - method: Crypto.Hash.HMAC.new
+    arity: 2
+    return:
+      type: Crypto.Hash.HMAC.HMAC
+      confidence: high
+    role: factory
+
+  - method: Crypto.Hash.HMAC.HMAC.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Hash.HMAC.HMAC.hexdigest
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── RSA (Crypto.PublicKey.RSA) ────────────────────────────────────────────────
+
+  - method: Crypto.PublicKey.RSA.generate
+    arity: 1
+    return:
+      type: Crypto.PublicKey.RSA.RsaKey
+      confidence: high
+
+  - method: Crypto.PublicKey.RSA.import_key
+    arity: 1
+    return:
+      type: Crypto.PublicKey.RSA.RsaKey
+      confidence: high
+
+  - method: Crypto.PublicKey.RSA.RsaKey.export_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.PublicKey.RSA.RsaKey.public_key
+    arity: 0
+    return:
+      type: Crypto.PublicKey.RSA.RsaKey
+      confidence: high
+
+  # ── RSA signature (Crypto.Signature.pkcs1_15, pss) ───────────────────────────
+
+  - method: Crypto.Signature.pkcs1_15.new
+    arity: 1
+    return:
+      type: Crypto.Signature.pkcs1_15.PKCS115_SigScheme
+      confidence: high
+    role: factory
+
+  - method: Crypto.Signature.pkcs1_15.PKCS115_SigScheme.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Signature.pss.new
+    arity: 1
+    return:
+      type: Crypto.Signature.pss.PSS_SigScheme
+      confidence: high
+    role: factory
+
+  - method: Crypto.Signature.pss.PSS_SigScheme.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ECC (Crypto.PublicKey.ECC) ────────────────────────────────────────────────
+
+  - method: Crypto.PublicKey.ECC.generate
+    arity: 1
+    return:
+      type: Crypto.PublicKey.ECC.EccKey
+      confidence: high
+
+  - method: Crypto.PublicKey.ECC.import_key
+    arity: 1
+    return:
+      type: Crypto.PublicKey.ECC.EccKey
+      confidence: high
+
+  - method: Crypto.PublicKey.ECC.EccKey.export_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── KDF (Crypto.Protocol.KDF) ─────────────────────────────────────────────────
+
+  - method: Crypto.Protocol.KDF.PBKDF2
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Protocol.KDF.scrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Crypto.Protocol.KDF.HKDF
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+hierarchy:
+  Crypto.Cipher.AES.AESCipher:
+    - builtins.object
+  Crypto.Cipher.ChaCha20.ChaCha20Cipher:
+    - builtins.object
+  Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher:
+    - builtins.object
+  Crypto.Hash.SHA256.SHA256Hash:
+    - builtins.object
+  Crypto.Hash.SHA512.SHA512Hash:
+    - builtins.object
+  Crypto.Hash.SHA3_256.SHA3_256Hash:
+    - builtins.object
+  Crypto.Hash.HMAC.HMAC:
+    - builtins.object
+  Crypto.PublicKey.RSA.RsaKey:
+    - builtins.object
+  Crypto.PublicKey.ECC.EccKey:
+    - builtins.object
+  Crypto.Signature.pkcs1_15.PKCS115_SigScheme:
+    - builtins.object
+  Crypto.Signature.pss.PSS_SigScheme:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object

@@ -255,7 +255,7 @@ func newCallGraphBuilder(ecosystem string, javaRuntime javaruntime.Config, inclu
 		return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
 	}
 
-	cgBuilder := callgraph.NewBuilder(cgParser)
+	cgBuilder := callgraph.NewBuilderForEcosystem(ecosystem, cgParser)
 	if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem, javaRuntime); typeResolver != nil {
 		if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
 			bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
