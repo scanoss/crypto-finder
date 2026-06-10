@@ -21,6 +21,10 @@ type PythonParser struct {
 const (
 	pythonNodeDottedName         = "dotted_name"
 	pythonNodeFunctionDefinition = "function_definition"
+	pythonNodeAttribute          = "attribute"
+	pythonNodeAssignment         = "assignment"
+	pythonNodeCall               = "call"
+	pythonNodeArgumentList       = "argument_list"
 	pythonSelfObjectName         = "self"
 )
 
@@ -264,7 +268,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	ownerName := packagePath
 	functionType := "function"
 	if className != "" {
-		ownerType = "class"
+		ownerType = ownerTypeClass
 		ownerName = className
 		functionType = "method"
 	}
@@ -306,7 +310,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 		switch child.Type() {
 		case goNodeIdentifier:
 			className = child.Content(src)
-		case "argument_list":
+		case pythonNodeArgumentList:
 			// class Foo(Base1, Base2): the argument_list holds the superclass names.
 			bases = extractPythonBaseClassNames(child, src)
 		case "block":
@@ -331,7 +335,7 @@ func extractPythonBaseClassNames(argListNode *sitter.Node, src []byte) []string 
 	for i := 0; i < int(argListNode.ChildCount()); i++ {
 		child := argListNode.Child(i)
 		switch child.Type() {
-		case goNodeIdentifier, "attribute":
+		case goNodeIdentifier, pythonNodeAttribute:
 			name := child.Content(src)
 			if name != "" {
 				bases = append(bases, name)
@@ -414,7 +418,7 @@ func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[stri
 	if node == nil {
 		return
 	}
-	if node.Type() == "assignment" {
+	if node.Type() == pythonNodeAssignment {
 		left := node.ChildByFieldName("left")
 		if left != nil && left.Type() == goNodeIdentifier {
 			locals[left.Content(src)] = true
@@ -428,7 +432,7 @@ func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[stri
 }
 
 func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool, calls *[]FunctionCall) {
-	if node.Type() == "call" {
+	if node.Type() == pythonNodeCall {
 		if call := p.parseCallExpr(node, src, filePath, analysis, localVars); call != nil {
 			*calls = append(*calls, *call)
 		}
@@ -488,7 +492,7 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 			AssignedVar: assignedVar,
 			ChainID:     chainID,
 		}
-	case "attribute":
+	case pythonNodeAttribute:
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
 		return p.parseAttributeCall(funcNode, src, filePath, line, args, analysis, localVars, chainID, assignedVar)
 	}
@@ -520,10 +524,10 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 			} else {
 				method = child.Content(src)
 			}
-		case "attribute":
+		case pythonNodeAttribute:
 			// Chained attribute: `a.b.c()` — recurse to get text
 			object = child.Content(src)
-		case "call":
+		case pythonNodeCall:
 			// Chained call: `Cipher(a,b).encryptor()` — object is a call result.
 			// Use the raw text as a placeholder identifier; the ReceiverVar logic
 			// will not fire (it only fires for simple identifier locals).
@@ -555,53 +559,10 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	// module import, not a type name, and not itself a call expression result).
 	receiverVar := pythonReceiverVarName(object, objectIsCall, analysis, localVars)
 
-	// Try to resolve the object through imports (module-qualified calls).
+	// Try to resolve through imports when the object is not itself a call result.
 	if !objectIsCall {
-		if pkg, ok := analysis.Imports[object]; ok {
-			// When the symbol was introduced via `from X import Y`, the real
-			// module path for the call is X.Y, not X. For example:
-			//   from Crypto.Cipher import AES; AES.new(key, mode)
-			// must emit Package="Crypto.Cipher.AES", Name="new" so the KB join
-			// hits `Crypto.Cipher.AES.new` (not `Crypto.Cipher.new`).
-			// Plain `import hashlib; hashlib.sha256()` is NOT a from-import, so
-			// Package="hashlib" is preserved unchanged.
-			// Note: in the attribute-call path we always use the full X.Y form for
-			// from-imports regardless of capitalisation, because AES.new(...) is a
-			// module-level function call, not a constructor — constructors go through
-			// the direct-call path (parseCallExpr's identifier branch).
-			resolvedPkg := pkg
-			if analysis.FromImports[object] {
-				resolvedPkg = pkg + "." + object
-			}
-			return &FunctionCall{
-				Callee:      FunctionID{Package: resolvedPkg, Name: method},
-				Raw:         raw,
-				FilePath:    filePath,
-				Line:        line,
-				Arguments:   args,
-				ReceiverVar: receiverVar,
-				ChainID:     chainID,
-				AssignedVar: assignedVar,
-			}
-		}
-
-		// Handle chained attribute access like `cryptography.hazmat.primitives.hashes.SHA256()`
-		// Try to resolve by splitting off the first segment.
-		if dotIdx := strings.Index(object, "."); dotIdx > 0 {
-			firstSegment := object[:dotIdx]
-			if pkg, ok := analysis.Imports[firstSegment]; ok {
-				fullPath := pkg + "." + object[dotIdx+1:]
-				return &FunctionCall{
-					Callee:      FunctionID{Package: fullPath, Name: method},
-					Raw:         raw,
-					FilePath:    filePath,
-					Line:        line,
-					Arguments:   args,
-					ReceiverVar: receiverVar,
-					ChainID:     chainID,
-					AssignedVar: assignedVar,
-				}
-			}
+		if fc := resolveImportedCall(object, method, raw, filePath, line, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
+			return fc
 		}
 	}
 
@@ -616,6 +577,57 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		ChainID:     chainID,
 		AssignedVar: assignedVar,
 	}
+}
+
+// resolveImportedCall attempts to resolve a module-qualified attribute call by looking
+// up the object name (or its first dotted segment) in the file's import map.
+// Returns a *FunctionCall when resolution succeeds; returns nil to signal fallback.
+//
+// Resolution order:
+//  1. Direct import match: `import hashlib; hashlib.sha256()` → Package="hashlib".
+//     When introduced via `from X import Y`, the real path becomes X.Y so that
+//     `AES.new(key, mode)` emits Package="Crypto.Cipher.AES" (not "Crypto.Cipher").
+//  2. Chained attribute: `cryptography.hazmat.primitives.hashes.SHA256()` — splits on
+//     the first dot and resolves the leading segment through imports.
+func resolveImportedCall(object, method, raw, filePath string, line int, args []string, receiverVar, chainID, assignedVar string, analysis *FileAnalysis) *FunctionCall {
+	if pkg, ok := analysis.Imports[object]; ok {
+		resolvedPkg := pkg
+		if analysis.FromImports[object] {
+			resolvedPkg = pkg + "." + object
+		}
+		return &FunctionCall{
+			Callee:      FunctionID{Package: resolvedPkg, Name: method},
+			Raw:         raw,
+			FilePath:    filePath,
+			Line:        line,
+			Arguments:   args,
+			ReceiverVar: receiverVar,
+			ChainID:     chainID,
+			AssignedVar: assignedVar,
+		}
+	}
+
+	// Handle chained attribute access like `cryptography.hazmat.primitives.hashes.SHA256()`
+	// Try to resolve by splitting off the first segment.
+	dotIdx := strings.Index(object, ".")
+	if dotIdx > 0 {
+		firstSegment := object[:dotIdx]
+		if pkg, ok := analysis.Imports[firstSegment]; ok {
+			fullPath := pkg + "." + object[dotIdx+1:]
+			return &FunctionCall{
+				Callee:      FunctionID{Package: fullPath, Name: method},
+				Raw:         raw,
+				FilePath:    filePath,
+				Line:        line,
+				Arguments:   args,
+				ReceiverVar: receiverVar,
+				ChainID:     chainID,
+				AssignedVar: assignedVar,
+			}
+		}
+	}
+
+	return nil
 }
 
 // pythonReceiverVarName returns the receiver variable name when the object of a
@@ -643,7 +655,7 @@ func pythonReceiverVarName(object string, objectIsCall bool, analysis *FileAnaly
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() == "argument_list" {
+		if child.Type() == pythonNodeArgumentList {
 			return parseArgumentsFromDelimitedContent(child.Content(src))
 		}
 	}
@@ -706,9 +718,9 @@ func pythonCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar
 		// Only set ChainID when there's actually a chain (the call's function is an
 		// attribute whose object is itself a call).
 		funcChild := node.Child(0)
-		if funcChild != nil && funcChild.Type() == "attribute" {
+		if funcChild != nil && funcChild.Type() == pythonNodeAttribute {
 			obj := funcChild.ChildByFieldName("object")
-			if obj != nil && obj.Type() == "call" {
+			if obj != nil && obj.Type() == pythonNodeCall {
 				chainID = fmt.Sprintf("%d", root.StartByte())
 			}
 		}
@@ -733,7 +745,7 @@ func pythonChainRootNode(node *sitter.Node) *sitter.Node {
 	for {
 		// node's parent is an "attribute" node whose "object" field is this node
 		attrParent := root.Parent()
-		if attrParent == nil || attrParent.Type() != "attribute" {
+		if attrParent == nil || attrParent.Type() != pythonNodeAttribute {
 			break
 		}
 		obj := attrParent.ChildByFieldName("object")
@@ -742,7 +754,7 @@ func pythonChainRootNode(node *sitter.Node) *sitter.Node {
 		}
 		// attrParent.parent should be a call node whose first child (function) is attrParent
 		callParent := attrParent.Parent()
-		if callParent == nil || callParent.Type() != "call" {
+		if callParent == nil || callParent.Type() != pythonNodeCall {
 			break
 		}
 		if callParent.Child(0) != attrParent {
@@ -755,7 +767,7 @@ func pythonChainRootNode(node *sitter.Node) *sitter.Node {
 
 // isPythonCallNode reports whether node is a call expression.
 func isPythonCallNode(node *sitter.Node) bool {
-	return node != nil && node.Type() == "call"
+	return node != nil && node.Type() == pythonNodeCall
 }
 
 // isPythonAttributeCallNode reports whether the call node's function child is
@@ -765,11 +777,11 @@ func isPythonAttributeCallNode(node *sitter.Node) bool {
 		return false
 	}
 	fn := node.Child(0)
-	if fn == nil || fn.Type() != "attribute" {
+	if fn == nil || fn.Type() != pythonNodeAttribute {
 		return false
 	}
 	obj := fn.ChildByFieldName("object")
-	return obj != nil && obj.Type() == "call"
+	return obj != nil && obj.Type() == pythonNodeCall
 }
 
 // pythonAssignedVarFromParent returns the variable name a Python call result is
@@ -784,7 +796,7 @@ func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	if parent == nil {
 		return ""
 	}
-	if parent.Type() == "assignment" {
+	if parent.Type() == pythonNodeAssignment {
 		left := parent.ChildByFieldName("left")
 		if left != nil && left.Type() == goNodeIdentifier {
 			return left.Content(src)
@@ -794,7 +806,7 @@ func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	// expression_statement wrapping an assignment
 	if parent.Type() == "expression_statement" {
 		gp := parent.Parent()
-		if gp != nil && gp.Type() == "assignment" {
+		if gp != nil && gp.Type() == pythonNodeAssignment {
 			left := gp.ChildByFieldName("left")
 			if left != nil && left.Type() == goNodeIdentifier {
 				return left.Content(src)

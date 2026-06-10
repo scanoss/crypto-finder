@@ -103,7 +103,7 @@ def encrypt_data(key, iv, data):
 	}
 	if !foundEncryptorRewritten {
 		// Collect callee info for diagnostic.
-		var callees []string
+		callees := make([]string, 0, len(encryptFn.Calls))
 		for _, c := range encryptFn.Calls {
 			callees = append(callees, c.Callee.String())
 		}
@@ -217,7 +217,7 @@ def encrypt_arity_mismatch(key, iv, extra, data):
 		}
 	}
 	if !foundEncryptorRewritten {
-		var callees []string
+		callees := make([]string, 0, len(fn.Calls))
 		for _, c := range fn.Calls {
 			callees = append(callees, c.Callee.String())
 		}

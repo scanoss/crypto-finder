@@ -211,8 +211,8 @@ func TestStitch_ContractFKSupportingCallsSurviveHistoricalStitch(t *testing.T) {
 // supportingCallIDs is a test helper that extracts SupportingID values for readable failure messages.
 func supportingCallIDs(scs []SupportingCall) []string {
 	ids := make([]string, 0, len(scs))
-	for _, sc := range scs {
-		ids = append(ids, sc.SupportingID)
+	for i := range scs {
+		ids = append(ids, scs[i].SupportingID)
 	}
 	return ids
 }

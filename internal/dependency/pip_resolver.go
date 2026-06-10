@@ -175,30 +175,20 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 func (r *PipResolver) resolvePythonExecutable(projectDir string) (string, error) {
 	// Priority 1: activated venv via VIRTUAL_ENV env var.
 	if virtualEnv := strings.TrimSpace(os.Getenv("VIRTUAL_ENV")); virtualEnv != "" {
-		for _, candidate := range virtualEnvPythonCandidates(virtualEnv) {
-			if candidate == "" {
-				continue
-			}
-			if existsPath(candidate) {
-				log.Debug().Str("venv", virtualEnv).Str("python", candidate).
-					Msg("Using activated VIRTUAL_ENV interpreter")
-				return candidate, nil
-			}
+		if python := venvPythonCandidate(virtualEnv); python != "" {
+			log.Debug().Str("venv", virtualEnv).Str("python", python).
+				Msg("Using activated VIRTUAL_ENV interpreter")
+			return python, nil
 		}
 	}
 
 	// Priority 2 & 3: project-local venv directories (auto-detected, not activated).
 	for _, venvDir := range []string{".venv", "venv"} {
 		venvPath := filepath.Join(filepath.Clean(projectDir), venvDir)
-		for _, candidate := range virtualEnvPythonCandidates(venvPath) {
-			if candidate == "" {
-				continue
-			}
-			if existsPath(candidate) {
-				log.Debug().Str("venv", venvPath).Str("python", candidate).
-					Msg("Using project-local venv interpreter (auto-detected)")
-				return candidate, nil
-			}
+		if python := venvPythonCandidate(venvPath); python != "" {
+			log.Debug().Str("venv", venvPath).Str("python", python).
+				Msg("Using project-local venv interpreter (auto-detected)")
+			return python, nil
 		}
 	}
 
@@ -213,6 +203,18 @@ func (r *PipResolver) resolvePythonExecutable(projectDir string) (string, error)
 	}
 
 	return "", fmt.Errorf("neither python3 nor python is available in PATH")
+}
+
+// venvPythonCandidate returns the first existing Python executable found inside
+// the given virtual-environment directory, or "" when none is found.
+// Checks the standard platform-specific locations (bin/ on POSIX, Scripts/ on Windows).
+func venvPythonCandidate(venvDir string) string {
+	for _, candidate := range virtualEnvPythonCandidates(venvDir) {
+		if candidate != "" && existsPath(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func virtualEnvPythonCandidates(virtualEnv string) []string {

@@ -218,7 +218,7 @@ class Cipher:
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
 		// Diagnostic: show what FQNs are in the graph.
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}
@@ -284,7 +284,7 @@ class RSAKey:
 	report := &entities.InterimReport{}
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}
@@ -337,7 +337,7 @@ def new(key, mode, **kwargs):
 	report := &entities.InterimReport{}
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}
@@ -394,7 +394,7 @@ def new(key, mode, **kwargs):
 	report := &entities.InterimReport{}
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}
@@ -462,7 +462,7 @@ def gensalt(rounds=12, prefix=b"2b"):
 	report := &entities.InterimReport{}
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}
@@ -525,7 +525,7 @@ def decode(jwt_token, key, algorithms=None, options=None, audience=None, issuer=
 	report := &entities.InterimReport{}
 	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
 	if n == 0 {
-		var fqns []string
+		fqns := make([]string, 0, len(graph.Functions))
 		for k := range graph.Functions {
 			fqns = append(fqns, k)
 		}

@@ -47,7 +47,7 @@ import (
 // pyca/cryptography (AES-GCM encryption), PyJWT (JWT token handling), and
 // bcrypt (password hashing) in a single project. The sources are split across
 // two files to exercise multi-file project parsing.
-const representativeAppSrc_auth = `"""auth.py — authentication module using bcrypt and PyJWT."""
+const representativeAppSrcAuth = `"""auth.py — authentication module using bcrypt and PyJWT."""
 import bcrypt
 import jwt
 
@@ -74,7 +74,7 @@ def verify_jwt_token(token, secret_key):
     return jwt.decode(token, secret_key, algorithms=["HS256"])
 `
 
-const representativeAppSrc_crypto = `"""crypto.py — encryption module using pyca/cryptography AES-GCM."""
+const representativeAppSrcCrypto = `"""crypto.py — encryption module using pyca/cryptography AES-GCM."""
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import os
 
@@ -107,10 +107,10 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 
 	// Write both source files into a temp directory.
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "auth.py"), []byte(representativeAppSrc_auth), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "auth.py"), []byte(representativeAppSrcAuth), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "crypto.py"), []byte(representativeAppSrc_crypto), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "crypto.py"), []byte(representativeAppSrcCrypto), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,12 +233,12 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 	// Assert: CryptoOperations covers all three libraries.
 	libsFound := make(map[string]bool)
 	for _, op := range frag.CryptoOperations {
-		switch {
-		case op.RuleID == "python.bcrypt.algorithm.kdf.bcrypt.hashpw":
+		switch op.RuleID {
+		case "python.bcrypt.algorithm.kdf.bcrypt.hashpw":
 			libsFound["bcrypt"] = true
-		case op.RuleID == "python.pyjwt.algorithm.mac.jwt.encode-hmac":
+		case "python.pyjwt.algorithm.mac.jwt.encode-hmac":
 			libsFound["pyjwt"] = true
-		case op.RuleID == "python.cryptography.algorithm.ae.aes-gcm":
+		case "python.cryptography.algorithm.ae.aes-gcm":
 			libsFound["cryptography"] = true
 		}
 	}

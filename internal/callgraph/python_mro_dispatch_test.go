@@ -78,7 +78,7 @@ func TestExpandPythonSubclassDispatch_BaseCallAliasesToSubclass(t *testing.T) {
 		StartLine: 1, EndLine: 4,
 		OwnerType:  "class",
 		OwnerName:  "ECDSAKey",
-		OwnerBases: []string{"PKey"}, // ECDSAKey(PKey)
+		OwnerBases: []string{"PKey"}, // subclass of PKey
 		Parameters: []FunctionParameter{{Type: "filename"}},
 	}
 

@@ -15,6 +15,7 @@ import (
 
 const (
 	ownerTypeInterface = "interface"
+	ownerTypeClass     = "class"
 	javaStringType     = "String"
 	// ecosystemPython is the ecosystem identifier for Python callgraphs.
 	// Used to gate Python-specific dispatch (e.g. expandPythonSubclassDispatch).
@@ -321,7 +322,7 @@ func indexMethodsByQualifiedArity(graph *CallGraph) map[string][]string {
 func indexSubclassByTypeName(graph *CallGraph) map[string][]*FunctionDecl {
 	index := make(map[string][]*FunctionDecl)
 	for _, fn := range graph.Functions {
-		if fn.OwnerType != "class" || len(fn.OwnerBases) == 0 {
+		if fn.OwnerType != ownerTypeClass || len(fn.OwnerBases) == 0 {
 			continue
 		}
 		for _, base := range fn.OwnerBases {
@@ -360,7 +361,7 @@ func (b *Builder) expandPythonSubclassDispatch(
 	}
 
 	calleeDecl, ok := graph.Functions[calleeKey]
-	if !ok || calleeDecl.OwnerType != "class" || calleeDecl.ID.Type == "" {
+	if !ok || calleeDecl.OwnerType != ownerTypeClass || calleeDecl.ID.Type == "" {
 		return nil
 	}
 
@@ -377,7 +378,7 @@ func (b *Builder) expandPythonSubclassDispatch(
 	var keys []string
 	for _, candidate := range candidates {
 		// Must be a class method (not module) and match name+arity.
-		if candidate.OwnerType != "class" {
+		if candidate.OwnerType != ownerTypeClass {
 			continue
 		}
 		if methodLookupName(candidate.ID.Name) != baseName {

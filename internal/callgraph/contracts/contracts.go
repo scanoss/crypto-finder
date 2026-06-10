@@ -19,6 +19,11 @@ var javaFS embed.FS
 //go:embed python/*.yaml
 var pythonFS embed.FS
 
+const (
+	// ecosystemPython is the ecosystem identifier for the Python contract KB.
+	ecosystemPython = "python"
+)
+
 // Library holds the metadata for a single library KB source.
 // Populated by Load() from the v2 YAML library: block.
 // Nil on a KnowledgeBase produced by Merge() over multiple distinct libraries.
@@ -100,7 +105,7 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 	}
 
 	// Non-Python: no fallback — return nil immediately.
-	if kb.Ecosystem != "python" {
+	if kb.Ecosystem != ecosystemPython {
 		return nil
 	}
 
@@ -311,8 +316,8 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 	switch ecosystem {
 	case "java":
 		return &javaFS, "java"
-	case "python":
-		return &pythonFS, "python"
+	case ecosystemPython:
+		return &pythonFS, ecosystemPython
 	default:
 		return nil, ""
 	}
