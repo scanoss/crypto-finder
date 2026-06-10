@@ -40,9 +40,9 @@ func TestStitch_ContractFKSupportingCallsSurviveNonRootStitch(t *testing.T) {
 	appComponent := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0.0"}
 
 	const (
-		appEntrySig    = "com.acme.(App).main#1"
-		libTerminalSig = "com.password4j.(HashBuilder).withBcrypt#0"
-		libLifecycleSig = "com.password4j.(Password).hash#1"
+		appEntrySig        = "com.acme.(App).main#1"
+		libTerminalSig     = "com.password4j.(HashBuilder).withBcrypt#0"
+		libLifecycleSig    = "com.password4j.(Password).hash#1"
 		lifecycleSupportID = "lifecycle-sup-1"
 	)
 
@@ -72,10 +72,10 @@ func TestStitch_ContractFKSupportingCallsSurviveNonRootStitch(t *testing.T) {
 			// The terminal has a crypto operation with a FK to the lifecycle supporting call.
 			CryptoOperations: []CryptoOperation{
 				{
-					Function:          libTerminalSig,
-					FindingID:         "bcrypt-finding-1",
-					RuleID:            "java.password4j.HashBuilder.withBcrypt",
-					Symbol:            "com.password4j.HashBuilder.withBcrypt",
+					Function:  libTerminalSig,
+					FindingID: "bcrypt-finding-1",
+					RuleID:    "java.password4j.HashBuilder.withBcrypt",
+					Symbol:    "com.password4j.HashBuilder.withBcrypt",
 					// SupportingCallIDs carries the FK to the lifecycle supporting call.
 					// The lifecycle call is NOT on any backward chain from the terminal
 					// (terminal has in-degree 0 in this lib fragment — nothing internal calls it).
@@ -87,9 +87,9 @@ func TestStitch_ContractFKSupportingCallsSurviveNonRootStitch(t *testing.T) {
 			// lifecycle call (Password.hash builds the HashBuilder used by withBcrypt).
 			SupportingCalls: []SupportingCall{
 				{
-					Function:    libLifecycleSig,
+					Function:     libLifecycleSig,
 					SupportingID: lifecycleSupportID,
-					Category:    "factory",
+					Category:     "factory",
 				},
 			},
 		},

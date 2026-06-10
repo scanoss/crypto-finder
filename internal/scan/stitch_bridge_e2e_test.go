@@ -16,17 +16,26 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
-// buildModuleFragment parses one module's Java source with the real call-graph
-// builder (the same path a standalone mine uses), runs BuildGraphFragmentExport
-// with the supplied detection report, and decodes the result the way the mining
-// service does. report may be nil for a zero-crypto module.
-func buildModuleFragment(t *testing.T, key graphfrag.ComponentKey, importPath, file, src string, report *entities.InterimReport) graphfrag.Fragment {
+// buildModuleFragmentFor is the ecosystem-agnostic core of the e2e mine harness.
+// It parses one module's source with the supplied parser and ecosystem, runs
+// BuildGraphFragmentExport with the supplied detection report, and decodes the
+// result the way the mining service does. report may be nil for a zero-crypto
+// module. key is used only for error messages and the returned Fragment's
+// Component field.
+func buildModuleFragmentFor(
+	t *testing.T,
+	key graphfrag.ComponentKey,
+	importPath, file, src string,
+	report *entities.InterimReport,
+	parser callgraph.Parser,
+	ecosystem string,
+) graphfrag.Fragment {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, file), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	graph, err := callgraph.NewBuilder(callgraph.NewJavaParser()).
+	graph, err := callgraph.NewBuilderForEcosystem(ecosystem, parser).
 		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: importPath}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories(%s): %v", key.Purl, err)
@@ -35,7 +44,7 @@ func buildModuleFragment(t *testing.T, key graphfrag.ComponentKey, importPath, f
 		report = &entities.InterimReport{}
 	}
 	export := BuildGraphFragmentExport(&engine.DepScanResult{
-		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: importPath, Ecosystem: "java",
+		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: importPath, Ecosystem: ecosystem,
 	})
 	raw, err := json.Marshal(export)
 	if err != nil {
@@ -46,6 +55,55 @@ func buildModuleFragment(t *testing.T, key graphfrag.ComponentKey, importPath, f
 		t.Fatalf("DecodeFragment(%s): %v", key.Purl, err)
 	}
 	return frag
+}
+
+// buildModuleFragment parses one module's Java source with the real call-graph
+// builder (the same path a standalone mine uses), runs BuildGraphFragmentExport
+// with the supplied detection report, and decodes the result the way the mining
+// service does. report may be nil for a zero-crypto module.
+//
+// This is a Java-specific convenience wrapper around buildModuleFragmentFor.
+// Python callers should use buildModuleFragmentFor directly with
+// callgraph.NewPythonParser() and ecosystem "python".
+func buildModuleFragment(t *testing.T, key graphfrag.ComponentKey, importPath, file, src string, report *entities.InterimReport) graphfrag.Fragment {
+	t.Helper()
+	return buildModuleFragmentFor(t, key, importPath, file, src, report, callgraph.NewJavaParser(), "java")
+}
+
+// TestE2EHarness_Python_Parameterization verifies that buildModuleFragmentFor
+// works with the Python parser and ecosystem, producing a non-empty Fragment.
+// This is the acceptance test for T-4.1 (harness parameterization).
+func TestE2EHarness_Python_Parameterization(t *testing.T) {
+	t.Parallel()
+
+	// A minimal Python source with a single function.
+	src := `from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+def encrypt(key, iv, data):
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    encryptor = cipher.encryptor()
+    return encryptor.update(data) + encryptor.finalize()
+`
+	key := graphfrag.ComponentKey{Purl: "pkg:pypi/cryptography", Version: "43.0.0"}
+	frag := buildModuleFragmentFor(t, key, "cryptography.hazmat.primitives.ciphers", "cipher.py", src, nil,
+		callgraph.NewPythonParser(), "python")
+
+	// The fragment must have at least the encrypt function.
+	if len(frag.Functions) == 0 {
+		t.Fatal("T-4.1: expected non-empty Functions from Python harness")
+	}
+
+	// Verify the Java path is unchanged: existing Java test still calls buildModuleFragment.
+	javaKey := graphfrag.ComponentKey{Purl: "pkg:maven/com.test/test", Version: "1.0"}
+	javaSrc := `package com.test;
+class Hello {
+    void greet() {}
+}
+`
+	javaFrag := buildModuleFragment(t, javaKey, "com.test:test", "Hello.java", javaSrc, nil)
+	if len(javaFrag.Functions) == 0 {
+		t.Fatal("T-4.1: expected non-empty Functions from Java harness (regression check)")
+	}
 }
 
 // TestStitch_RealParse_ZeroCryptoBridgeReachesTransitiveCrypto is the end-to-end
