@@ -255,7 +255,7 @@ func newCallGraphBuilder(ecosystem string, javaRuntime javaruntime.Config, inclu
 		return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
 	}
 
-	cgBuilder := callgraph.NewBuilder(cgParser)
+	cgBuilder := callgraph.NewBuilderForEcosystem(ecosystem, cgParser)
 	if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem, javaRuntime); typeResolver != nil {
 		if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
 			bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
@@ -711,7 +711,7 @@ func runScan(_ *cobra.Command, args []string) error {
 	// is a no-op when scanning a consumer of the library or a Type 1 library.
 	if callGraphResult != nil && callGraphResult.CallGraph != nil {
 		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
-			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths)
+			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
 		} else {
 			log.Debug().
 				Err(rerr).

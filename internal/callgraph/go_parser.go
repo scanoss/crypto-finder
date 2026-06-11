@@ -598,7 +598,7 @@ func (p *GoParser) extractReturnType(node *sitter.Node, src []byte) string {
 func (p *GoParser) extractCallArguments(node *sitter.Node, src []byte) []string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		if child.Type() == "argument_list" {
+		if child.Type() == javaNodeArgumentList {
 			return parseArgumentsFromDelimitedContent(child.Content(src))
 		}
 	}

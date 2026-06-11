@@ -303,3 +303,47 @@ func TestPythonParser_DunderMethodSkip(t *testing.T) {
 		t.Error("__str__ should be skipped")
 	}
 }
+
+// TestPythonParser_FunctionCallCarriesNonZeroColumns verifies that FunctionCall
+// structs produced by the Python parser populate StartCol and EndCol (parity with
+// the Java parser). Zero values indicate the column-aware path was skipped, which
+// would cause column-based disambiguation in annotate_supporting.go to fall back
+// to line-only matching.
+func TestPythonParser_FunctionCallCarriesNonZeroColumns(t *testing.T) {
+	src := `import hashlib
+from cryptography.hazmat.primitives.ciphers import Cipher
+
+def encrypt(key, data):
+    digest = hashlib.sha256(key)
+    cipher = Cipher(key, None)
+    return cipher.encryptor()
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "col_check.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "mypkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) == 0 {
+		t.Fatal("expected at least one analysis")
+	}
+
+	for _, analysis := range analyses {
+		for _, fn := range analysis.Functions {
+			for _, call := range fn.Calls {
+				if call.StartCol == 0 || call.EndCol == 0 {
+					t.Errorf("call %s.%s at line %d has zero StartCol=%d or EndCol=%d; Python parser must populate column spans",
+						call.Callee.Package, call.Callee.Name, call.Line, call.StartCol, call.EndCol)
+				}
+				if call.StartCol > call.EndCol {
+					t.Errorf("call %s.%s at line %d: StartCol=%d > EndCol=%d (invalid span)",
+						call.Callee.Package, call.Callee.Name, call.Line, call.StartCol, call.EndCol)
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,281 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pyca-cryptography
+  coordinates:
+    - cryptography
+  version_range: ">=3.0"
+  description: "pyca/cryptography — hazmat symmetric ciphers, hashes, HMAC, asymmetric (RSA/EC/Ed), KDF"
+
+contracts:
+  # ── Symmetric ciphers (hazmat.primitives.ciphers) ────────────────────────────
+
+  # Cipher(algorithm, mode) constructor — builder root
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.<init>
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.ciphers.Cipher
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.encryptor
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.ciphers.CipherContext
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.decryptor
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.ciphers.CipherContext
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # AEAD ciphers: AEADEncryptionContext (GCM, ChaCha20Poly1305)
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.AESGCM
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── Cryptographic hashes (hazmat.primitives.hashes) ──────────────────────────
+
+  # Hash(algorithm, backend=None) constructor — generic constructor
+  - method: cryptography.hazmat.primitives.hashes.Hash.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.hashes.Hash
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.hashes.Hash.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.hashes.Hash.copy
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.hashes.Hash
+      confidence: high
+
+  # ── HMAC (hazmat.primitives.hmac) ────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.<init>
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.hmac.HMAC
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.copy
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.hmac.HMAC
+      confidence: high
+
+  # ── RSA key generation / serialization ───────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── Elliptic-curve key generation ────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── Ed25519 / Ed448 ──────────────────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey
+      confidence: high
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey
+      confidence: high
+
+  # ── Key derivation functions ──────────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.<init>
+    arity: 4
+    return:
+      type: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.<init>
+    arity: 4
+    return:
+      type: cryptography.hazmat.primitives.kdf.hkdf.HKDF
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.<init>
+    arity: 4
+    return:
+      type: cryptography.hazmat.primitives.kdf.scrypt.Scrypt
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+hierarchy:
+  cryptography.hazmat.primitives.ciphers.Cipher:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.CipherContext:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.aead.AESGCM:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305:
+    - builtins.object
+  cryptography.hazmat.primitives.hashes.Hash:
+    - builtins.object
+  cryptography.hazmat.primitives.hmac.HMAC:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.hkdf.HKDF:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.scrypt.Scrypt:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object

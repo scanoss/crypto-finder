@@ -16,6 +16,14 @@ import (
 //go:embed java/*.yaml
 var javaFS embed.FS
 
+//go:embed python/*.yaml
+var pythonFS embed.FS
+
+const (
+	// ecosystemPython is the ecosystem identifier for the Python contract KB.
+	ecosystemPython = "python"
+)
+
 // Library holds the metadata for a single library KB source.
 // Populated by Load() from the v2 YAML library: block.
 // Nil on a KnowledgeBase produced by Merge() over multiple distinct libraries.
@@ -70,9 +78,71 @@ type ContractReturn struct {
 }
 
 // ContractsFor returns all contracts for the given method FQN and arity.
+// Performs an exact-arity match. For Python's arity-tolerant variant, see
+// ContractsForTolerant.
 func (kb *KnowledgeBase) ContractsFor(method string, arity int) []Contract {
 	key := fmt.Sprintf("%s#%d", method, arity)
 	return kb.Contracts[key]
+}
+
+// ContractsForTolerant returns contracts for the given method FQN and arity with
+// ecosystem-aware matching:
+//   - For Python KBs (kb.Ecosystem == "python"): first tries an exact-arity
+//     match; if no contracts are found, falls back to any arity (name-only
+//     match). When multiple candidates with different arities exist in the
+//     fallback, the lowest-arity candidate is returned (deterministic tiebreak).
+//   - For all other ecosystems: identical to ContractsFor (exact-arity only).
+//
+// Rationale: Python kwargs and default arguments mean the same crypto function
+// may be called with varying arities at different sites (e.g. AES.new(key, mode)
+// vs AES.new(key, mode, iv=...)). Exact-arity matching silently misses real-world
+// calls in such cases. Java's strict overload discipline does not have this
+// ambiguity, so Java keeps exact-arity semantics unchanged.
+func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contract {
+	// Always try exact match first (preferred regardless of ecosystem).
+	if exact := kb.ContractsFor(method, arity); len(exact) > 0 {
+		return exact
+	}
+
+	// Non-Python: no fallback — return nil immediately.
+	if kb.Ecosystem != ecosystemPython {
+		return nil
+	}
+
+	// Python name-only fallback: scan for any key with "method#<anyArity>" prefix.
+	prefix := method + "#"
+	type candidate struct {
+		arity    int
+		contract []Contract
+	}
+	var candidates []candidate
+	for key, ctrs := range kb.Contracts {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		suffix := key[len(prefix):]
+		n := 0
+		valid := suffix != ""
+		for _, ch := range suffix {
+			if ch < '0' || ch > '9' {
+				valid = false
+				break
+			}
+			n = n*10 + int(ch-'0')
+		}
+		if !valid {
+			continue
+		}
+		candidates = append(candidates, candidate{arity: n, contract: ctrs})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	// Deterministic tiebreak: return the candidate with the lowest arity.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].arity < candidates[j].arity
+	})
+	return candidates[0].contract
 }
 
 // yamlKB is the YAML-level representation used for unmarshalling.
@@ -246,6 +316,8 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 	switch ecosystem {
 	case "java":
 		return &javaFS, "java"
+	case ecosystemPython:
+		return &pythonFS, ecosystemPython
 	default:
 		return nil, ""
 	}

@@ -1237,6 +1237,73 @@ hierarchy: {}
 	}
 }
 
+// ── T-1.1: Python embed + loader tests (RED until T-1.3 adds the embed + YAML) ─
+
+// TestLoadEmbedded_Python_LoadsSmokeContract guards REQ-1.1, REQ-1.2, REQ-1.3.
+// Once internal/callgraph/contracts/python/pyca-cryptography.yaml exists and the
+// //go:embed python/*.yaml directive is added, this test must go GREEN.
+func TestLoadEmbedded_Python_LoadsSmokeContract(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("python")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"python\") error: %v", err)
+	}
+	if kb == nil {
+		t.Fatal("LoadEmbedded(\"python\"): expected non-nil KnowledgeBase, got nil")
+	}
+	if kb.Ecosystem != "python" {
+		t.Errorf("LoadEmbedded(\"python\"): expected Ecosystem==\"python\", got %q", kb.Ecosystem)
+	}
+
+	// The smoke contract declares Cipher.encryptor (arity 0).
+	const smokeMethod = "cryptography.hazmat.primitives.ciphers.Cipher.encryptor"
+	const smokeArity = 0
+	entries := kb.ContractsFor(smokeMethod, smokeArity)
+	if len(entries) < 1 {
+		t.Errorf("LoadEmbedded(\"python\"): expected >= 1 contract for %s#%d, got 0", smokeMethod, smokeArity)
+	}
+}
+
+// TestLoadEmbedded_UnknownEcosystem_ReturnsEmptyKB guards REQ-1.4 / graceful fallback.
+// LoadEmbedded for an unknown ecosystem must return an empty KB with nil error — never panic.
+func TestLoadEmbedded_UnknownEcosystem_ReturnsEmptyKB(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("haskell")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"haskell\"): expected nil error, got %v", err)
+	}
+	if kb == nil {
+		t.Fatal("LoadEmbedded(\"haskell\"): expected non-nil KnowledgeBase, got nil")
+	}
+	if len(kb.Contracts) != 0 {
+		t.Errorf("LoadEmbedded(\"haskell\"): expected 0 contracts for unknown ecosystem, got %d", len(kb.Contracts))
+	}
+}
+
+// TestEmbedFSFor_Python_ReturnsNonNil guards REQ-1.2 — embedFSFor("python") must return
+// a non-nil filesystem and the directory string "python" once the embed directive is added.
+// This test calls LoadEmbedded as a proxy (embedFSFor is unexported); a non-nil, non-empty
+// KB after adding the YAML proves the FS was wired.
+func TestEmbedFSFor_Python_ReturnsNonNilViaSmokeContract(t *testing.T) {
+	t.Parallel()
+
+	// If embedFSFor("python") returns nil the loader silently returns emptyKB().
+	// A positive-KB result (>0 contracts) proves the FS was wired correctly.
+	kb, err := contracts.LoadEmbedded("python")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"python\") error: %v", err)
+	}
+	total := 0
+	for _, cs := range kb.Contracts {
+		total += len(cs)
+	}
+	if total == 0 {
+		t.Error("embedFSFor(\"python\"): LoadEmbedded returned 0 contracts — embed FS is likely not wired (nil returned by embedFSFor)")
+	}
+}
+
 // TestMerge_EcosystemMismatch_Errors verifies that KBs with different ecosystem
 // strings cause Merge() to return a non-nil error.
 func TestMerge_EcosystemMismatch_Errors(t *testing.T) {

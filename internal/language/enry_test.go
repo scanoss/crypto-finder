@@ -158,6 +158,31 @@ func TestEnryDetector_DominantLanguageFirst(t *testing.T) {
 	}
 }
 
+// TestEnryDetector_PurePythonRepo guards REQ-9.2: a directory with Python files
+// and no Java files must detect "python" as the dominant language.
+func TestEnryDetector_PurePythonRepo(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	for _, name := range []string{"app.py", "models.py", "utils.py", "crypto.py", "main.py"} {
+		if err := os.WriteFile(filepath.Join(tempDir, name),
+			[]byte("#!/usr/bin/env python3\nprint('hello')\n"), 0o644); err != nil {
+			t.Fatalf("Failed to create Python file: %v", err)
+		}
+	}
+
+	detector := NewEnryDetector(&noOpSkipMatcher{})
+	languages, err := detector.Detect(tempDir)
+	if err != nil {
+		t.Fatalf("Detect() failed: %v", err)
+	}
+
+	if len(languages) == 0 || languages[0] != "python" {
+		t.Fatalf("expected dominant 'python' first for a pure Python repo, got %v", languages)
+	}
+}
+
 func TestEnryDetector_NonexistentPath(t *testing.T) {
 	t.Parallel()
 

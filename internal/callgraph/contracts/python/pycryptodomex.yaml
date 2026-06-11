@@ -1,0 +1,280 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pycryptodomex
+  coordinates:
+    - pycryptodomex
+  version_range: ">=3.0"
+  description: "PyCryptodomex — Cryptodome.* namespace (identical API to pycryptodome, different prefix)"
+
+# This file mirrors pycryptodome.yaml with Cryptodome.* namespace substituted for Crypto.*.
+# The pycryptodomex PyPI package installs the same code under `Cryptodome.*` instead of `Crypto.*`.
+# See: https://pycryptodome.readthedocs.io/en/latest/src/installation.html#pycryptodomex
+
+contracts:
+  # ── AES symmetric cipher (Cryptodome.Cipher.AES) ─────────────────────────────
+
+  - method: Cryptodome.Cipher.AES.new
+    arity: 2
+    return:
+      type: Cryptodome.Cipher.AES.AESCipher
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Cipher.AES.AESCipher.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Cipher.AES.AESCipher.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Cipher.AES.AESCipher.encrypt_and_digest
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Cipher.AES.AESCipher.decrypt_and_verify
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ChaCha20 / ChaCha20Poly1305 ───────────────────────────────────────────────
+
+  - method: Cryptodome.Cipher.ChaCha20.new
+    arity: 1
+    return:
+      type: Cryptodome.Cipher.ChaCha20.ChaCha20Cipher
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Cipher.ChaCha20.ChaCha20Cipher.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Cipher.ChaCha20.ChaCha20Cipher.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Cipher.ChaCha20_Poly1305.new
+    arity: 1
+    return:
+      type: Cryptodome.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher
+      confidence: high
+    role: factory
+
+  # ── Cryptographic hashes (Cryptodome.Hash.*) ──────────────────────────────────
+
+  - method: Cryptodome.Hash.SHA256.new
+    arity: 0
+    return:
+      type: Cryptodome.Hash.SHA256.SHA256Hash
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Hash.SHA256.SHA256Hash.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Hash.SHA256.SHA256Hash.hexdigest
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Hash.SHA512.new
+    arity: 0
+    return:
+      type: Cryptodome.Hash.SHA512.SHA512Hash
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Hash.SHA512.SHA512Hash.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Hash.SHA3_256.new
+    arity: 0
+    return:
+      type: Cryptodome.Hash.SHA3_256.SHA3_256Hash
+      confidence: high
+    role: factory
+
+  # ── HMAC (Cryptodome.Hash.HMAC) ───────────────────────────────────────────────
+
+  - method: Cryptodome.Hash.HMAC.new
+    arity: 2
+    return:
+      type: Cryptodome.Hash.HMAC.HMAC
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Hash.HMAC.HMAC.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Hash.HMAC.HMAC.hexdigest
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── RSA (Cryptodome.PublicKey.RSA) ────────────────────────────────────────────
+
+  - method: Cryptodome.PublicKey.RSA.generate
+    arity: 1
+    return:
+      type: Cryptodome.PublicKey.RSA.RsaKey
+      confidence: high
+
+  - method: Cryptodome.PublicKey.RSA.import_key
+    arity: 1
+    return:
+      type: Cryptodome.PublicKey.RSA.RsaKey
+      confidence: high
+
+  - method: Cryptodome.PublicKey.RSA.RsaKey.export_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.PublicKey.RSA.RsaKey.public_key
+    arity: 0
+    return:
+      type: Cryptodome.PublicKey.RSA.RsaKey
+      confidence: high
+
+  # ── RSA signature (Cryptodome.Signature.pkcs1_15, pss) ───────────────────────
+
+  - method: Cryptodome.Signature.pkcs1_15.new
+    arity: 1
+    return:
+      type: Cryptodome.Signature.pkcs1_15.PKCS115_SigScheme
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Signature.pkcs1_15.PKCS115_SigScheme.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Signature.pss.new
+    arity: 1
+    return:
+      type: Cryptodome.Signature.pss.PSS_SigScheme
+      confidence: high
+    role: factory
+
+  - method: Cryptodome.Signature.pss.PSS_SigScheme.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ECC (Cryptodome.PublicKey.ECC) ────────────────────────────────────────────
+
+  - method: Cryptodome.PublicKey.ECC.generate
+    arity: 1
+    return:
+      type: Cryptodome.PublicKey.ECC.EccKey
+      confidence: high
+
+  - method: Cryptodome.PublicKey.ECC.import_key
+    arity: 1
+    return:
+      type: Cryptodome.PublicKey.ECC.EccKey
+      confidence: high
+
+  - method: Cryptodome.PublicKey.ECC.EccKey.export_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── KDF (Cryptodome.Protocol.KDF) ─────────────────────────────────────────────
+
+  # PBKDF2 starts uppercase so the Python parser treats it as a type constructor;
+  # the emitted callee FQN uses <init>.
+  - method: Cryptodome.Protocol.KDF.PBKDF2.<init>
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Protocol.KDF.scrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: Cryptodome.Protocol.KDF.HKDF.<init>
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+hierarchy:
+  Cryptodome.Cipher.AES.AESCipher:
+    - builtins.object
+  Cryptodome.Cipher.ChaCha20.ChaCha20Cipher:
+    - builtins.object
+  Cryptodome.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher:
+    - builtins.object
+  Cryptodome.Hash.SHA256.SHA256Hash:
+    - builtins.object
+  Cryptodome.Hash.SHA512.SHA512Hash:
+    - builtins.object
+  Cryptodome.Hash.SHA3_256.SHA3_256Hash:
+    - builtins.object
+  Cryptodome.Hash.HMAC.HMAC:
+    - builtins.object
+  Cryptodome.PublicKey.RSA.RsaKey:
+    - builtins.object
+  Cryptodome.PublicKey.ECC.EccKey:
+    - builtins.object
+  Cryptodome.Signature.pkcs1_15.PKCS115_SigScheme:
+    - builtins.object
+  Cryptodome.Signature.pss.PSS_SigScheme:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object

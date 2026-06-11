@@ -25,6 +25,8 @@ func NewTypeResolverForEcosystem(ecosystem string, javaRuntime javaruntime.Confi
 	switch ecosystem {
 	case "java":
 		return NewJavaBytecodeTypeResolver(javaRuntime)
+	case "python":
+		return NewPythonContractTypeResolverFromEmbedded()
 	default:
 		return nil
 	}
