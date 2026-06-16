@@ -518,7 +518,7 @@ func languageForPath(path string) string {
 		return languageJava
 	case ".go":
 		return "go"
-	case ".py":
+	case ".py", ".pyi":
 		return "python"
 	case ".rs":
 		return "rust"
