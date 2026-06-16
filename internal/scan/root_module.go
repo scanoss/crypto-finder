@@ -44,6 +44,9 @@ func DetectRootModule(targetDir, ecosystem string) string {
 		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]"); name != "" {
 			return name
 		}
+		if hasUniquePythonPackageDir(targetDir) {
+			return ""
+		}
 	}
 
 	return filepath.Base(targetDir)
@@ -153,4 +156,24 @@ func closeRootModuleFile(file *os.File) {
 	if err := file.Close(); err != nil {
 		_ = err
 	}
+}
+
+func hasUniquePythonPackageDir(targetDir string) bool {
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		return false
+	}
+	count := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(targetDir, e.Name(), "__init__.py")); err == nil {
+			count++
+			if count > 1 {
+				return false
+			}
+		}
+	}
+	return count == 1
 }

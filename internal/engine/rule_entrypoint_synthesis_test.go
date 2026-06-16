@@ -289,6 +289,26 @@ func TestSynthesize_Python_OneDotApiPasses(t *testing.T) {
 	}
 }
 
+func TestSynthesize_Python_PyiDeclSetsLanguage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rule := writeRule(t, dir, "bcrypt.hashpw", "bcrypt")
+	decl := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "bcrypt", Name: "hashpw"},
+		FilePath:  "bcrypt/__init__.pyi",
+		StartLine: 5,
+		EndLine:   5,
+	}
+	report := &entities.InterimReport{}
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 1 {
+		t.Fatalf("expected 1 synthesized entry point, got %d", n)
+	}
+	if got := report.Findings[0].Language; got != "python" {
+		t.Fatalf("Language = %q, want python", got)
+	}
+}
+
 // TestSynthesize_Python_ZeroDotBareNameFails asserts that a 0-dot bare name like
 // "hashpw" (no dots) FAILS the gate even under ecosystem="python".
 func TestSynthesize_Python_ZeroDotBareNameFails(t *testing.T) {

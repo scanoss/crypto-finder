@@ -26,6 +26,7 @@ const (
 	pythonNodeCall               = "call"
 	pythonNodeArgumentList       = "argument_list"
 	pythonSelfObjectName         = "self"
+	pythonInitMethodName         = "__init__"
 )
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
@@ -77,10 +78,10 @@ func (p *PythonParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis,
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".py") {
+		if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".pyi") {
 			continue
 		}
-		if !p.includeTests && (strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py")) {
+		if !p.includeTests && (strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") || strings.HasSuffix(name, "_test.pyi")) {
 			continue
 		}
 
@@ -254,13 +255,13 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	}
 
 	// Skip dunder methods except __init__
-	if strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") && name != "__init__" {
+	if strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") && name != pythonInitMethodName {
 		return nil
 	}
 
 	// Map __init__ to <init> for consistency with Java
 	funcName := name
-	if name == "__init__" {
+	if name == pythonInitMethodName {
 		funcName = constructorMethodName
 	}
 

@@ -347,3 +347,32 @@ def encrypt(key, data):
 		}
 	}
 }
+
+func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
+	dir := t.TempDir()
+	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...
+def hashpw(password: bytes, salt: bytes) -> bytes: ...
+def checkpw(password: bytes, hashed_password: bytes) -> bool: ...
+`
+	if err := os.WriteFile(filepath.Join(dir, "__init__.pyi"), []byte(stub), 0o600); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	parser := NewPythonParser()
+	analyses, err := parser.ParseDirectory(dir, "bcrypt")
+	if err != nil {
+		t.Fatalf("ParseDirectory: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, analysis := range analyses {
+		for _, fn := range analysis.Functions {
+			seen[fn.ID.String()] = true
+		}
+	}
+	for _, want := range []string{"bcrypt.hashpw", "bcrypt.checkpw", "bcrypt.gensalt"} {
+		if !seen[want] {
+			t.Fatalf("missing stub function %s; saw %#v", want, seen)
+		}
+	}
+}

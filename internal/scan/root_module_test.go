@@ -138,6 +138,19 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
+	t.Run("python-unique-package-dir", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "nacl"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "nacl", "__init__.py"), []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := DetectRootModule(dir, "python"); got != "" {
+			t.Fatalf("DetectRootModule(python unique package dir) = %q, want empty root", got)
+		}
+	})
+
 	t.Run("fallback", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "repo-name")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
