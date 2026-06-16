@@ -185,6 +185,12 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 		return err
 	}
 
+	b.addAnalyses(graph, analyses)
+	b.analyzeSubdirs(dir, importPath, graph)
+	return nil
+}
+
+func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis) {
 	for _, analysis := range analyses {
 		for i := range analysis.Functions {
 			fn := &analysis.Functions[i]
@@ -200,7 +206,9 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 			graph.Functions[key] = fn
 		}
 	}
+}
 
+func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph) {
 	// Recurse into subdirectories
 	entries, readErr := os.ReadDir(dir)
 	if readErr != nil {
@@ -223,8 +231,6 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 			log.Debug().Err(err).Str("dir", subDir).Msg("Failed to analyze subdirectory")
 		}
 	}
-
-	return nil
 }
 
 func keepExistingDecl(existing, candidate *FunctionDecl) bool {
