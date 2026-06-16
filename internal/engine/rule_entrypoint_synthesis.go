@@ -82,7 +82,7 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 
 	declsByFQN, declsByClass := indexGraphDeclarations(graph)
 	fileIdx := indexReportFiles(report)
-	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass)
+	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem)
 
 	if added > 0 {
 		log.Info().
@@ -127,12 +127,50 @@ func synthesizeRuleCryptoAssets(
 	apiCrypto map[string]map[string]string,
 	declsByFQN map[string][]*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
+	ecosystem string,
 ) int {
 	added := 0
 	for api, meta := range apiCrypto {
-		added += synthesizeAPIAssets(report, fileIdx, api, meta, declsByFQN[api], declsByClass)
+		decls := declsByFQN[api]
+		if len(decls) == 0 && ecosystem == ecosystemPython {
+			decls = pythonModuleCollapsedDecls(api, declsByFQN)
+		}
+		added += synthesizeAPIAssets(report, fileIdx, api, meta, decls, declsByClass)
 	}
 	return added
+}
+
+func pythonModuleCollapsedDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl) []*callgraph.FunctionDecl {
+	parts := strings.Split(api, ".")
+	if len(parts) < 3 {
+		return nil
+	}
+	for i := 1; i < len(parts)-1; i++ {
+		collapsed := make([]string, 0, len(parts)-1)
+		collapsed = append(collapsed, parts[:i]...)
+		collapsed = append(collapsed, parts[i+1:]...)
+		decls := declsByFQN[strings.Join(collapsed, ".")]
+		if len(decls) == 0 {
+			continue
+		}
+		wantFile := parts[i]
+		matched := make([]*callgraph.FunctionDecl, 0, len(decls))
+		for _, d := range decls {
+			if pythonSourceFileStem(d.FilePath) == wantFile {
+				matched = append(matched, d)
+			}
+		}
+		if len(matched) > 0 {
+			return matched
+		}
+	}
+	return nil
+}
+
+func pythonSourceFileStem(path string) string {
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, ".pyi")
+	return strings.TrimSuffix(base, ".py")
 }
 
 func synthesizeAPIAssets(

@@ -189,6 +189,14 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 		for i := range analysis.Functions {
 			fn := &analysis.Functions[i]
 			key := fn.ID.String()
+			if existing, ok := graph.Functions[key]; ok {
+				if keepExistingDecl(existing, fn) {
+					continue
+				}
+				if b.preservePythonModuleCollision(graph, existing, fn) {
+					continue
+				}
+			}
 			graph.Functions[key] = fn
 		}
 	}
@@ -217,6 +225,53 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
 	}
 
 	return nil
+}
+
+func keepExistingDecl(existing, candidate *FunctionDecl) bool {
+	return isPythonStubPath(candidate.FilePath) && !isPythonStubPath(existing.FilePath)
+}
+
+func isPythonStubPath(path string) bool {
+	return strings.HasSuffix(path, ".pyi")
+}
+
+func (b *Builder) preservePythonModuleCollision(graph *CallGraph, existing, candidate *FunctionDecl) bool {
+	if b.ecosystem != ecosystemPython {
+		return false
+	}
+	if isPythonStubPath(existing.FilePath) || isPythonStubPath(candidate.FilePath) {
+		return false
+	}
+
+	existingStem := pythonModuleFileStem(existing.FilePath)
+	candidateStem := pythonModuleFileStem(candidate.FilePath)
+	if existingStem == "" || candidateStem == "" || existingStem == candidateStem {
+		return false
+	}
+
+	addPythonModuleAlias(graph, existing, existingStem)
+	addPythonModuleAlias(graph, candidate, candidateStem)
+	return true
+}
+
+func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
+	alias := *fn
+	if !strings.HasSuffix(alias.ID.Package, "."+stem) {
+		alias.ID.Package = alias.ID.Package + "." + stem
+	}
+	graph.Functions[alias.ID.String()] = &alias
+}
+
+func pythonModuleFileStem(path string) string {
+	ext := filepath.Ext(path)
+	if ext != ".py" {
+		return ""
+	}
+	stem := strings.TrimSuffix(filepath.Base(path), ext)
+	if stem == "" || stem == "__init__" {
+		return ""
+	}
+	return stem
 }
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.

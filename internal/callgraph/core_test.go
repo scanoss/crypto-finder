@@ -396,3 +396,77 @@ func TestBuilder_ExpandsInterfaceDispatchAndFluentFallback(t *testing.T) {
 		t.Fatalf("expected interface/fluent fallback to add caller %q for impl method, got %#v", callerKey, graph.Callers[implKey])
 	}
 }
+
+func TestBuilder_KeepsPythonImplementationOverPyiStub(t *testing.T) {
+	root := t.TempDir()
+	impl := `def hashpw(password, salt):
+    return helper(password, salt)
+
+def helper(password, salt):
+    return password
+`
+	stub := `def hashpw(password: bytes, salt: bytes) -> bytes: ...
+`
+	if err := os.WriteFile(filepath.Join(root, "__init__.py"), []byte(impl), 0o600); err != nil {
+		t.Fatalf("write impl: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "__init__.pyi"), []byte(stub), 0o600); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	builder := NewBuilderForEcosystem("python", NewPythonParser())
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "bcrypt"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	fn := graph.Functions["bcrypt.hashpw"]
+	if fn == nil {
+		t.Fatal("missing bcrypt.hashpw")
+	}
+	if strings.HasSuffix(fn.FilePath, ".pyi") {
+		t.Fatalf("stub overwrote implementation: %s", fn.FilePath)
+	}
+	if len(fn.Calls) == 0 {
+		t.Fatalf("implementation calls were lost: %#v", fn)
+	}
+}
+
+func TestBuilder_PreservesPythonSiblingModuleFunctionsWithSameName(t *testing.T) {
+	root := t.TempDir()
+	pwhashDir := filepath.Join(root, "pwhash")
+	if err := os.MkdirAll(pwhashDir, 0o755); err != nil {
+		t.Fatalf("mkdir pwhash: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pwhashDir, "argon2id.py"), []byte("def kdf(size, password, salt):\n    return password\n"), 0o600); err != nil {
+		t.Fatalf("write argon2id: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pwhashDir, "scrypt.py"), []byte("def kdf(size, password, salt):\n    return password\n"), 0o600); err != nil {
+		t.Fatalf("write scrypt: %v", err)
+	}
+
+	builder := NewBuilderForEcosystem("python", NewPythonParser())
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "nacl"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	for _, key := range []string{
+		"nacl.pwhash.kdf",
+		"nacl.pwhash.argon2id.kdf",
+		"nacl.pwhash.scrypt.kdf",
+	} {
+		if graph.Functions[key] == nil {
+			t.Fatalf("missing function %s; functions=%v", key, sortedFunctionKeys(graph.Functions))
+		}
+	}
+}
+
+func sortedFunctionKeys(functions map[string]*FunctionDecl) []string {
+	keys := make([]string, 0, len(functions))
+	for key := range functions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}

@@ -77,10 +77,10 @@ func (p *PythonParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis,
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".py") {
+		if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".pyi") {
 			continue
 		}
-		if !p.includeTests && (strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py")) {
+		if !p.includeTests && (strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") || strings.HasSuffix(name, "_test.pyi")) {
 			continue
 		}
 
