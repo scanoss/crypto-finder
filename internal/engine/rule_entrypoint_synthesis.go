@@ -519,7 +519,7 @@ func languageForPath(path string) string {
 	case ".go":
 		return "go"
 	case ".py", ".pyi":
-		return "python"
+		return ecosystemPython
 	case ".rs":
 		return "rust"
 	case ".c", ".h":
