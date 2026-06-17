@@ -841,9 +841,6 @@ func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.F
 	if isSyntheticEntryPoint(asset) {
 		return deriveContractSupportingCalls(ctx, asset)
 	}
-	if contractCalls := deriveContractSupportingCalls(ctx, asset); len(contractCalls) > 0 {
-		return contractCalls
-	}
 	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
 	if containingFn == nil {
 		return nil
@@ -857,7 +854,9 @@ func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.F
 		return nil
 	}
 	lifecycle := deriveObjectLifecycleCalls(containingFn, terminal)
-	out := make([]callGraphSupportingCall, 0, len(lifecycle))
+	contractCalls := deriveContractSupportingCalls(ctx, asset)
+	out := make([]callGraphSupportingCall, 0, len(lifecycle)+len(contractCalls))
+	out = append(out, contractCalls...)
 	for _, c := range lifecycle {
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
 	}
