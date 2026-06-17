@@ -57,11 +57,9 @@ type Contract struct {
 	When          *Condition // nil = unconditional contract
 	Return        ContractReturn
 	SourceLibrary string // populated by Load() from the v2 YAML library.name field
-	// Role is a reserved, currently-unconsumed classification of a method's part
-	// in a crypto object's lifecycle (e.g. "config", "lifecycle", "output").
-	// Supporting calls are derived structurally from the call graph today;
-	// populating Role is the planned extension point for semantic categorization
-	// of those calls without re-introducing per-finding rules.
+	// Role classifies a method's part in a crypto object's lifecycle (e.g.
+	// "factory", "config", "output") so exported supporting calls can carry
+	// semantic categories without duplicating crypto rule metadata.
 	Role string
 }
 

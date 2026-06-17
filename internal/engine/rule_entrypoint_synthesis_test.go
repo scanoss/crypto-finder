@@ -391,3 +391,70 @@ func TestSynthesize_NoOpWhenBodyAlreadyDetected(t *testing.T) {
 		t.Fatalf("expected 0 synthesized findings when body already detected, got %d", n)
 	}
 }
+
+func TestSynthesize_DrbgFindingDoesNotSuppressBoundaryAsset(t *testing.T) {
+	dir := t.TempDir()
+	rule := writeRule(t, dir, "argon2.PasswordHasher.hash", "Argon2")
+	decl := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "argon2", Type: "PasswordHasher", Name: "hash"},
+		FilePath:  "argon2/_password_hasher.py",
+		StartLine: 190,
+		EndLine:   205,
+	}
+	report := &entities.InterimReport{
+		Findings: []entities.Finding{{
+			FilePath: decl.FilePath,
+			Language: "python",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 201,
+				Metadata: map[string]string{
+					"algorithmPrimitive": "drbg",
+					"api":                "urandom",
+				},
+			}},
+		}},
+	}
+
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 1 {
+		t.Fatalf("expected boundary asset despite supporting drbg finding, got %d", n)
+	}
+	if got := len(report.Findings[0].CryptographicAssets); got != 2 {
+		t.Fatalf("assets len = %d, want drbg + synthesized KDF", got)
+	}
+}
+
+func TestSynthesize_RemovesUnresolvedRuleMetadataVariables(t *testing.T) {
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte(""+
+		"rules:\n"+
+		"  - id: test.rule\n"+
+		"    metadata:\n"+
+		"      crypto:\n"+
+		"        assetType: algorithm\n"+
+		"        algorithmPrimitive: kdf\n"+
+		"        algorithmFamily: Argon2\n"+
+		"        algorithmName: Argon2$variant\n"+
+		"        operation: keyderive\n"+
+		"        api: argon2.low_level.hash_secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decl := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "argon2.low_level", Name: "hash_secret"},
+		FilePath:  "argon2/low_level.py",
+		StartLine: 52,
+		EndLine:   80,
+	}
+	report := &entities.InterimReport{}
+
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 1 {
+		t.Fatalf("expected generic synthetic finding with unresolved fields removed, got %d", n)
+	}
+	asset := report.Findings[0].CryptographicAssets[0]
+	if asset.Metadata["algorithmName"] != "" {
+		t.Fatalf("expected unresolved algorithmName to be removed, got %q", asset.Metadata["algorithmName"])
+	}
+	if asset.Metadata["algorithmFamily"] != "Argon2" {
+		t.Fatalf("expected stable algorithmFamily to be preserved, got %q", asset.Metadata["algorithmFamily"])
+	}
+}

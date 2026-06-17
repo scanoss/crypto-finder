@@ -1,0 +1,33 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: bcrypt
+  coordinates:
+    - bcrypt
+  version_range: ">=4.0"
+  description: "pyca/bcrypt password hashing APIs"
+
+contracts:
+  - method: bcrypt.gensalt
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+  - method: bcrypt.hashpw
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: bcrypt.checkpw
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: bcrypt.kdf
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+hierarchy:
+  builtins.bytes:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.object: []
