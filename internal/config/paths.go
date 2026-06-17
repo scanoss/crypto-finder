@@ -36,6 +36,14 @@ const (
 
 	// RulesetsDirName is the rulesets cache directory name.
 	RulesetsDirName = "rulesets"
+
+	// FilteredRulesDirName is the directory, created inside a ruleset version
+	// root, where the language-filtered working copy of the rules is
+	// materialized for the scanner. It MUST be excluded from every rule-tree
+	// walk: it lives inside the same tree the loaders read from, so walking
+	// into it re-ingests previous runs' copies and the cache grows
+	// geometrically (a "copying a directory into itself" bug).
+	FilteredRulesDirName = ".crypto-finder-filtered"
 )
 
 // GetRootDir returns the path to the SCANOSS root directory (~/.scanoss)

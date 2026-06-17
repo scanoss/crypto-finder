@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/scanoss/crypto-finder/internal/config"
 )
 
 func writeRuleFile(t *testing.T, dir, name, content string) string {
@@ -152,6 +155,119 @@ func TestPrepareRulePathsForScanner_MaterializesFilteredFiles(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(paths[0], "nested", "go-extra.yaml")); err != nil {
 		t.Fatalf("expected copied nested go rule: %v", err)
+	}
+}
+
+// TestCollectRuleFiles_SkipsFilteredDir is the regression guard for the
+// self-nesting cache bug: collectRuleFiles must never descend into the
+// materialized .crypto-finder-filtered dir, otherwise each scan re-ingests the
+// previous run's copies and the ruleset cache grows geometrically.
+func TestCollectRuleFiles_SkipsFilteredDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	_ = writeRuleFile(t, root, "real.yaml", `rules:
+  - id: real
+    languages: [go]
+`)
+
+	// Simulate a prior run's materialized output living inside the tree.
+	filteredRun := filepath.Join(root, config.FilteredRulesDirName, "run-123", "latest")
+	if err := os.MkdirAll(filteredRun, 0o755); err != nil {
+		t.Fatalf("mkdir filtered run: %v", err)
+	}
+	_ = writeRuleFile(t, filteredRun, "copy.yaml", `rules:
+  - id: copy
+    languages: [go]
+`)
+
+	files := collectRuleFiles(root)
+	if len(files) != 1 {
+		t.Fatalf("collectRuleFiles len = %d, want 1 (must skip %s); got %v",
+			len(files), config.FilteredRulesDirName, files)
+	}
+	if filepath.Base(files[0]) != "real.yaml" {
+		t.Fatalf("collectRuleFiles returned %v, want only real.yaml", files)
+	}
+}
+
+// TestMaterializeRuleFiles_NoGeometricGrowth proves that materializing rules
+// inside the ruleset tree does not cause the next rule-tree walk to re-ingest
+// the materialized copy. Without the SkipDir guard, the second walk would see
+// the originals PLUS run-*'s copies and the count would balloon every scan.
+func TestMaterializeRuleFiles_NoGeometricGrowth(t *testing.T) {
+	// Cannot be parallel: overrides HOME so GetRulesetsDir resolves under temp,
+	// which is required for materializeRuleFiles to write inside the tree.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	rulesetsDir, err := config.GetRulesetsDir()
+	if err != nil {
+		t.Fatalf("GetRulesetsDir: %v", err)
+	}
+	versionRoot := filepath.Join(rulesetsDir, "dca", "latest")
+	if err := os.MkdirAll(versionRoot, 0o755); err != nil {
+		t.Fatalf("mkdir version root: %v", err)
+	}
+	a := writeRuleFile(t, versionRoot, "a.yaml", `rules:
+  - id: a
+    languages: [go]
+`)
+	b := writeRuleFile(t, versionRoot, "b.yaml", `rules:
+  - id: b
+    languages: [go]
+`)
+
+	before := len(collectRuleFiles(versionRoot))
+	if before != 2 {
+		t.Fatalf("setup: collectRuleFiles before = %d, want 2", before)
+	}
+
+	// Materialize once, leaving the run-* dir in place (simulating a SIGKILLed
+	// job that never ran its cleanup).
+	_, _, err = optimizeRulePathsForScanner([]string{a, b})
+	if err != nil {
+		t.Fatalf("optimizeRulePathsForScanner: %v", err)
+	}
+
+	// The filtered dir must now exist inside the tree...
+	if _, err := os.Stat(filepath.Join(versionRoot, config.FilteredRulesDirName)); err != nil {
+		t.Fatalf("expected materialized dir inside version root: %v", err)
+	}
+	// ...but the next walk must still see only the two originals.
+	after := len(collectRuleFiles(versionRoot))
+	if after != before {
+		t.Fatalf("collectRuleFiles after materialize = %d, want %d (cache is re-ingesting itself)", after, before)
+	}
+}
+
+func TestPruneStaleFilteredRuns(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	stale := filepath.Join(parent, "run-stale")
+	fresh := filepath.Join(parent, "run-fresh")
+	keep := filepath.Join(parent, "not-a-run")
+	for _, d := range []string{stale, fresh, keep} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	old := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	pruneStaleFilteredRuns(parent)
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("expected stale run-* pruned, err=%v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("expected fresh run-* kept: %v", err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("expected non-run dir untouched: %v", err)
 	}
 }
 
