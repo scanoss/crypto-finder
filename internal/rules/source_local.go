@@ -29,6 +29,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -181,6 +182,13 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 
 		// Skip directories
 		if info.IsDir() {
+			// Never descend into the materialized filtered-rules dir: it is
+			// written inside the ruleset tree we read from, so ingesting it
+			// re-copies previous runs' output and the cache grows
+			// geometrically (a "copying a directory into itself" bug).
+			if info.Name() == config.FilteredRulesDirName {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

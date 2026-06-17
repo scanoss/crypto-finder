@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
@@ -147,10 +148,17 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 	baseDir := commonRuleBaseDir(ruleFiles)
 	tempParent := ""
 	if rulesetRoot := rulesetVersionRoot(baseDir); rulesetRoot != "" {
-		tempParent = filepath.Join(rulesetRoot, ".crypto-finder-filtered")
+		tempParent = filepath.Join(rulesetRoot, config.FilteredRulesDirName)
 		if err := os.MkdirAll(tempParent, 0o750); err != nil {
 			return nil, nil, fmt.Errorf("create filtered rules temp parent: %w", err)
 		}
+		// Reap orphaned run-* dirs from prior jobs. The deferred cleanup
+		// below removes this run's dir on exit, but the mining worker
+		// SIGKILLs the whole process group on timeout, so killed jobs never
+		// run it and leak their run-* dir into the shared HOME cache. Prune
+		// only dirs older than the longest possible job so an in-flight
+		// concurrent run is never touched.
+		pruneStaleFilteredRuns(tempParent)
 	}
 
 	tempRoot, err := os.MkdirTemp(tempParent, "run-*")
@@ -185,6 +193,41 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 	return []string{targetRoot}, func() {
 		removeMaterializedRules(tempRoot)
 	}, nil
+}
+
+// filteredRunTTL is how old a run-* dir under .crypto-finder-filtered must be
+// before pruneStaleFilteredRuns reclaims it. It must comfortably exceed the
+// longest scan a concurrent process could still be running against its own
+// run-* dir, so we never delete a live one. Scans are bounded by the caller's
+// --timeout (the mining worker uses 30m); 2h leaves a wide safety margin while
+// still reclaiming disk from SIGKILLed jobs within the same day.
+const filteredRunTTL = 2 * time.Hour
+
+// pruneStaleFilteredRuns removes orphaned run-* directories left under
+// tempParent by jobs that never ran their cleanup (e.g. SIGKILLed on timeout
+// by the mining worker's process-group kill). Best-effort: only dirs whose
+// mtime is older than filteredRunTTL are removed, so an in-flight concurrent
+// run is never touched. All errors are swallowed — this is opportunistic
+// housekeeping, not part of the scan's correctness.
+func pruneStaleFilteredRuns(tempParent string) {
+	entries, err := os.ReadDir(tempParent)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-filteredRunTTL)
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "run-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		stale := filepath.Join(tempParent, entry.Name())
+		if rmErr := os.RemoveAll(stale); rmErr != nil {
+			log.Debug().Err(rmErr).Str("path", stale).Msg("Failed to prune stale filtered rules dir")
+		}
+	}
 }
 
 // removeMaterializedRules deletes a materialized rules directory, logging a
@@ -330,6 +373,12 @@ func collectRuleFiles(root string) []string {
 			return err
 		}
 		if d.IsDir() {
+			// Never descend into the materialized-rules dir: it lives inside
+			// the ruleset tree we're walking, so ingesting it would re-copy
+			// prior runs' output and the cache would grow geometrically.
+			if d.Name() == config.FilteredRulesDirName {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
