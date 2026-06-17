@@ -307,6 +307,51 @@ func TestLoadEmbedded_Python_CryptodomeAlias(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedded_Python_BenchmarkLibraries(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantLib    string
+	}{
+		{"bcrypt.hashpw", 2, "builtins.bytes", "bcrypt"},
+		{"bcrypt.checkpw", 2, "builtins.bool", "bcrypt"},
+		{"argon2.PasswordHasher.<init>", 0, "argon2.PasswordHasher", "argon2-cffi"},
+		{"argon2.PasswordHasher.hash", 1, "builtins.str", "argon2-cffi"},
+		{"passlib.context.CryptContext.hash", 1, "builtins.str", "passlib"},
+		{"passlib.hash.bcrypt.using", 0, "passlib.hash.bcrypt", "passlib"},
+		{"passlib.hash.argon2.hash", 1, "builtins.str", "passlib"},
+		{"passlib.hash.scrypt.verify", 2, "builtins.bool", "passlib"},
+		{"nacl.secret.SecretBox.<init>", 1, "nacl.secret.SecretBox", "pynacl"},
+		{"nacl.secret.SecretBox.encrypt", 1, "nacl.utils.EncryptedMessage", "pynacl"},
+		{"nacl.public.PrivateKey.generate", 0, "nacl.public.PrivateKey", "pynacl"},
+		{"nacl.signing.SigningKey.sign", 1, "nacl.signing.SignedMessage", "pynacl"},
+		{"nacl.pwhash.argon2id.kdf", 5, "builtins.bytes", "pynacl"},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("%s#%d: no contracts found", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+		}
+		if c.SourceLibrary != tt.wantLib {
+			t.Errorf("%s#%d source library = %q, want %q", tt.method, tt.arity, c.SourceLibrary, tt.wantLib)
+		}
+		if c.Return.Confidence != "high" {
+			t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+		}
+	}
+}
+
 // TestLoadEmbedded_Python_AllLibrariesHaveValidReturnTypes asserts that every
 // contract in the merged Python KB has a non-empty return type and "high"
 // confidence (the only author-facing confidence level per crypto-kb-author skill).

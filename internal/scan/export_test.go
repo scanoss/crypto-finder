@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -414,4 +415,77 @@ func findCryptoEntryPointByFunctionKey(points []callGraphCryptoEntryPoint, key s
 		}
 	}
 	return nil
+}
+
+func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t *testing.T) {
+	t.Parallel()
+
+	owner := callgraph.FunctionID{Package: "pkg", Type: "Svc", Name: "run"}
+	structuralCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "prepare"},
+		ReceiverVar: "builder",
+		Raw:         "builder.prepare()",
+		FilePath:    "lib.py",
+		Line:        11,
+	}
+	terminalCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "terminal"},
+		ReceiverVar: "builder",
+		Raw:         "builder.terminal(secret)",
+		FilePath:    "lib.py",
+		Line:        12,
+	}
+	ownerDecl := &callgraph.FunctionDecl{
+		ID:        owner,
+		FilePath:  "lib.py",
+		StartLine: 10,
+		EndLine:   20,
+		Calls:     []callgraph.FunctionCall{structuralCall, terminalCall},
+	}
+	contractDecl := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "configure"},
+		FilePath:  "lib.py",
+		StartLine: 8,
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
+	ctx := &exportBuildContext{
+		graph:                   graph,
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"pkg.Builder.terminal#1": {{
+					Method: "pkg.Builder.terminal",
+					Arity:  1,
+					Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+				}},
+				"pkg.Builder.configure#0": {{
+					Method: "pkg.Builder.configure",
+					Arity:  0,
+					Return: contracts.ContractReturn{Type: "pkg.Builder", Confidence: "high"},
+					Role:   "config",
+				}},
+			},
+			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"pkg.Builder.configure": contractDecl},
+	}
+	asset := entities.CryptographicAsset{
+		StartLine: 12,
+		EndLine:   12,
+		Match:     "builder.terminal(secret)",
+		Metadata:  map[string]string{"api": "pkg.Builder.terminal"},
+		Rules:     []entities.RuleInfo{{ID: "direct-rule"}},
+	}
+	finding := entities.Finding{FilePath: "lib.py"}
+
+	got := deriveSupportingCallsForFinding(ctx, finding, asset)
+	if len(got) != 2 {
+		t.Fatalf("supporting calls = %d, want contract + structural", len(got))
+	}
+	if got[0].Category != "config" {
+		t.Fatalf("contract category = %q, want config", got[0].Category)
+	}
+	if got[1].FunctionName != "pkg.Svc.run" {
+		t.Fatalf("structural function = %q, want pkg.Svc.run", got[1].FunctionName)
+	}
 }

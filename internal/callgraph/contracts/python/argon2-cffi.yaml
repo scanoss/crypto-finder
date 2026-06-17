@@ -1,0 +1,49 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: argon2-cffi
+  coordinates:
+    - argon2-cffi
+  version_range: ">=23.0"
+  description: "argon2-cffi high-level PasswordHasher and low-level Argon2 APIs"
+
+contracts:
+  - method: argon2.PasswordHasher.<init>
+    arity: 0
+    return: { type: argon2.PasswordHasher, confidence: high }
+    role: factory
+  - method: argon2.PasswordHasher.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: argon2.PasswordHasher.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: argon2.PasswordHasher.check_needs_rehash
+    arity: 1
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: argon2.low_level.hash_secret
+    arity: 7
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: argon2.low_level.hash_secret_raw
+    arity: 7
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: argon2.low_level.verify_secret
+    arity: 3
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+hierarchy:
+  argon2.PasswordHasher:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.object: []

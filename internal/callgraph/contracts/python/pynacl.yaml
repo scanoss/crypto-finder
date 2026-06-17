@@ -1,0 +1,133 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pynacl
+  coordinates:
+    - PyNaCl
+  version_range: ">=1.5"
+  description: "PyNaCl high-level secret/public/signing/hash/pwhash APIs"
+
+contracts:
+  - method: nacl.secret.SecretBox.<init>
+    arity: 1
+    return: { type: nacl.secret.SecretBox, confidence: high }
+    role: factory
+  - method: nacl.secret.SecretBox.encrypt
+    arity: 1
+    return: { type: nacl.utils.EncryptedMessage, confidence: high }
+    role: output
+  - method: nacl.secret.SecretBox.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.public.PrivateKey.<init>
+    arity: 1
+    return: { type: nacl.public.PrivateKey, confidence: high }
+    role: factory
+  - method: nacl.public.PrivateKey.generate
+    arity: 0
+    return: { type: nacl.public.PrivateKey, confidence: high }
+    role: factory
+  - method: nacl.public.Box.<init>
+    arity: 2
+    return: { type: nacl.public.Box, confidence: high }
+    role: factory
+  - method: nacl.public.Box.encrypt
+    arity: 1
+    return: { type: nacl.utils.EncryptedMessage, confidence: high }
+    role: output
+  - method: nacl.public.Box.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.public.SealedBox.<init>
+    arity: 1
+    return: { type: nacl.public.SealedBox, confidence: high }
+    role: factory
+  - method: nacl.public.SealedBox.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.public.SealedBox.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.signing.SigningKey.<init>
+    arity: 1
+    return: { type: nacl.signing.SigningKey, confidence: high }
+    role: factory
+  - method: nacl.signing.SigningKey.generate
+    arity: 0
+    return: { type: nacl.signing.SigningKey, confidence: high }
+    role: factory
+  - method: nacl.signing.SigningKey.sign
+    arity: 1
+    return: { type: nacl.signing.SignedMessage, confidence: high }
+    role: output
+  - method: nacl.signing.VerifyKey.<init>
+    arity: 1
+    return: { type: nacl.signing.VerifyKey, confidence: high }
+    role: factory
+  - method: nacl.signing.VerifyKey.verify
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2i.kdf
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2i.str
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2i.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2id.kdf
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2id.str
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.argon2id.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: nacl.pwhash.scrypt.kdf
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.scrypt.str
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: nacl.pwhash.scrypt.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+hierarchy:
+  nacl.secret.SecretBox:
+    - builtins.object
+  nacl.public.PrivateKey:
+    - builtins.object
+  nacl.public.Box:
+    - builtins.object
+  nacl.public.SealedBox:
+    - builtins.object
+  nacl.signing.SigningKey:
+    - builtins.object
+  nacl.signing.VerifyKey:
+    - builtins.object
+  nacl.utils.EncryptedMessage:
+    - builtins.bytes
+  nacl.signing.SignedMessage:
+    - builtins.bytes
+  builtins.bytes:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.object: []

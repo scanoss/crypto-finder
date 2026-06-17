@@ -854,7 +854,9 @@ func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.F
 		return nil
 	}
 	lifecycle := deriveObjectLifecycleCalls(containingFn, terminal)
-	out := make([]callGraphSupportingCall, 0, len(lifecycle))
+	contractCalls := deriveContractSupportingCalls(ctx, asset)
+	out := make([]callGraphSupportingCall, 0, len(lifecycle)+len(contractCalls))
+	out = append(out, contractCalls...)
 	for _, c := range lifecycle {
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
 	}

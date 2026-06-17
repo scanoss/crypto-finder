@@ -215,7 +215,7 @@ func synthesizeDeclaredAPIAssets(
 ) int {
 	added := 0
 	for _, fn := range decls {
-		if functionBodyHasFinding(report, fn) {
+		if functionBodyHasTerminalFinding(report, fn) {
 			continue // Type 1: primitive already detected inside the method.
 		}
 		if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn) {
@@ -298,10 +298,10 @@ func baseFQN(fqn string) string {
 	return fqn
 }
 
-// functionBodyHasFinding reports whether report already contains a crypto asset
-// located within fn's line range in fn's file — i.e. the method itself performs
-// a detectable crypto operation (Type 1) and is already a natural entry point.
-func functionBodyHasFinding(report *entities.InterimReport, fn *callgraph.FunctionDecl) bool {
+// functionBodyHasTerminalFinding reports whether report already contains a
+// non-supporting crypto asset inside fn. CSPRNG salt generation is supporting
+// evidence and must not suppress a synthesized KDF/hash API boundary.
+func functionBodyHasTerminalFinding(report *entities.InterimReport, fn *callgraph.FunctionDecl) bool {
 	fnPath := filepath.ToSlash(fn.FilePath)
 	for i := range report.Findings {
 		if !strings.HasSuffix(fnPath, filepath.ToSlash(report.Findings[i].FilePath)) &&
@@ -310,12 +310,16 @@ func functionBodyHasFinding(report *entities.InterimReport, fn *callgraph.Functi
 		}
 		for j := range report.Findings[i].CryptographicAssets {
 			a := &report.Findings[i].CryptographicAssets[j]
-			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine {
+			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine && syntheticSuppressingAsset(a) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func syntheticSuppressingAsset(a *entities.CryptographicAsset) bool {
+	return a.Metadata["algorithmPrimitive"] != "drbg"
 }
 
 // buildSyntheticAssetFromRule constructs a CryptographicAsset at the API method's
@@ -433,7 +437,9 @@ func addRuleCrypto(out map[string]map[string]string, crypto map[string]any, ecos
 	if _, seen := out[api]; seen {
 		return // first declaration wins; deterministic enough for synthesis
 	}
-	out[api] = stringifyCryptoBlock(crypto)
+	meta := stringifyCryptoBlock(crypto)
+	removeUnresolvedMetadataVariables(meta)
+	out[api] = meta
 }
 
 func cryptoAPI(crypto map[string]any, ecosystem string) (string, bool) {
@@ -484,6 +490,14 @@ func stringifyCryptoBlock(crypto map[string]any) map[string]string {
 		md[k] = fmt.Sprintf("%v", v)
 	}
 	return md
+}
+
+func removeUnresolvedMetadataVariables(meta map[string]string) {
+	for k, v := range meta {
+		if strings.Contains(v, "$") {
+			delete(meta, k)
+		}
+	}
 }
 
 // expandRuleFiles returns the YAML rule files for a path that may be a file or a
