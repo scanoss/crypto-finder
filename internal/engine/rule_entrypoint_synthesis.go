@@ -498,6 +498,18 @@ func removeUnresolvedMetadataVariables(meta map[string]string) {
 			delete(meta, k)
 		}
 	}
+	// A boundary rule often templates algorithmName from a caller-supplied
+	// metavariable (e.g. "ECDSA-$curve", "Keccak-$variant", "Argon2$variant").
+	// That value is unbound when the library's own method DEFINITION is mined —
+	// the argument is unknowable at the definition site — so the field above is
+	// deleted. Fall back to the family so the synthesized entry point carries a
+	// truthful name (ECDSA, Keccak, ...) instead of none. The specific variant
+	// is recovered separately at real call sites via taint (resolveMetavars).
+	if meta["algorithmName"] == "" {
+		if fam := meta["algorithmFamily"]; fam != "" {
+			meta["algorithmName"] = fam
+		}
+	}
 }
 
 // expandRuleFiles returns the YAML rule files for a path that may be a file or a
