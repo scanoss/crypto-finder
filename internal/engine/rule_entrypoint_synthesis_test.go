@@ -423,7 +423,7 @@ func TestSynthesize_DrbgFindingDoesNotSuppressBoundaryAsset(t *testing.T) {
 	}
 }
 
-func TestSynthesize_RemovesUnresolvedRuleMetadataVariables(t *testing.T) {
+func TestSynthesize_UnresolvedAlgorithmNameFallsBackToFamily(t *testing.T) {
 	dir := t.TempDir()
 	rule := filepath.Join(dir, "rule.yaml")
 	if err := os.WriteFile(rule, []byte(""+
@@ -435,6 +435,7 @@ func TestSynthesize_RemovesUnresolvedRuleMetadataVariables(t *testing.T) {
 		"        algorithmPrimitive: kdf\n"+
 		"        algorithmFamily: Argon2\n"+
 		"        algorithmName: Argon2$variant\n"+
+		"        algorithmParameterSetIdentifier: $variant\n"+
 		"        operation: keyderive\n"+
 		"        api: argon2.low_level.hash_secret\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -448,13 +449,20 @@ func TestSynthesize_RemovesUnresolvedRuleMetadataVariables(t *testing.T) {
 	report := &entities.InterimReport{}
 
 	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 1 {
-		t.Fatalf("expected generic synthetic finding with unresolved fields removed, got %d", n)
+		t.Fatalf("expected generic synthetic finding, got %d", n)
 	}
 	asset := report.Findings[0].CryptographicAssets[0]
-	if asset.Metadata["algorithmName"] != "" {
-		t.Fatalf("expected unresolved algorithmName to be removed, got %q", asset.Metadata["algorithmName"])
+	// algorithmName templated from an unbound caller arg ($variant) is unknowable
+	// at the definition site, so it falls back to the family instead of vanishing.
+	if asset.Metadata["algorithmName"] != "Argon2" {
+		t.Fatalf("expected algorithmName to fall back to family %q, got %q", "Argon2", asset.Metadata["algorithmName"])
 	}
 	if asset.Metadata["algorithmFamily"] != "Argon2" {
 		t.Fatalf("expected stable algorithmFamily to be preserved, got %q", asset.Metadata["algorithmFamily"])
+	}
+	// A non-name field with no family equivalent has no sensible fallback and is
+	// still removed rather than left as a literal "$variant".
+	if v, ok := asset.Metadata["algorithmParameterSetIdentifier"]; ok {
+		t.Fatalf("expected unresolved algorithmParameterSetIdentifier to be removed, got %q", v)
 	}
 }
