@@ -2693,18 +2693,41 @@ func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath strin
 		return nil
 	}
 
+	// graph.Functions is an unordered map and spans can nest (a synthetic
+	// <clinit> may cover the whole class around the real method), so pick the
+	// tightest enclosing span instead of the first match; tie-break on the
+	// function key for full determinism.
+	var best *callgraph.FunctionDecl
 	for _, fn := range ctx.graph.Functions {
 		fnPath := filepath.ToSlash(fn.FilePath)
 		if !strings.HasSuffix(fnPath, normalizedFindingPath) {
 			continue
 		}
-		if line >= fn.StartLine && line <= fn.EndLine {
-			ctx.containingFunctionCache[cacheKey] = cachedContainingFunction{fn: fn, found: true}
-			return fn
+		if line < fn.StartLine || line > fn.EndLine {
+			continue
 		}
+		if best == nil || tighterSpan(fn, best) {
+			best = fn
+		}
+	}
+	if best != nil {
+		ctx.containingFunctionCache[cacheKey] = cachedContainingFunction{fn: best, found: true}
+		return best
 	}
 	ctx.containingFunctionCache[cacheKey] = cachedContainingFunction{found: false}
 	return nil
+}
+
+// tighterSpan reports whether a encloses fewer lines than b (or, on equal
+// spans, sorts first by function key) so the containing-function choice is
+// stable across map iteration orders.
+func tighterSpan(a, b *callgraph.FunctionDecl) bool {
+	spanA := a.EndLine - a.StartLine
+	spanB := b.EndLine - b.StartLine
+	if spanA != spanB {
+		return spanA < spanB
+	}
+	return a.ID.String() < b.ID.String()
 }
 
 func dependencyRelativePath(path string) string {
