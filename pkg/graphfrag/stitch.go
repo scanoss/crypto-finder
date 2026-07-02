@@ -3,7 +3,10 @@
 
 package graphfrag
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // StitchOptions tunes which root-fragment functions a stitch traces from. The
 // zero value reproduces the historical Stitch behavior (trace from every
@@ -261,14 +264,15 @@ type dispatchGroupKey struct {
 // call site whose implementations straddle the component boundary must be judged
 // as one group, not two.
 type callEdge struct {
-	caller     string
-	target     string
-	resolution ResolutionKind
-	method     string
-	arity      int
-	callSite   int
-	internal   bool
-	entryCall  *CallSite
+	caller               string
+	target               string
+	resolution           ResolutionKind
+	method               string
+	arity                int
+	callSite             int
+	internal             bool
+	entryCall            *CallSite
+	resolvedReceiverType string
 }
 
 // buildAdjacency composes the traversable call graph from the fragment closure
@@ -291,6 +295,7 @@ func buildAdjacency(
 ) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
+	ownerTypes := indexOwnerTypes(closure, fragments)
 
 	for _, key := range closure {
 		fragment := fragments[key]
@@ -299,9 +304,42 @@ func buildAdjacency(
 		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature)
 
 		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed)
-		applyDispatchGroups(key, dispatchGroups, resolve, out, &suppressed)
+		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, out, &suppressed)
 	}
 	return out, suppressed
+}
+
+// indexOwnerTypes maps each node to the declaring type of its function, derived
+// from Function.FunctionName (the fully-qualified, dotted, customer-facing name
+// e.g. "com.password4j.PBKDF2Function.hash" -> "com.password4j.PBKDF2Function").
+// This is ecosystem-agnostic: every producer populates FunctionName in this
+// "<owner>.<method>" shape (see ConstructorDisplayFromSymbol for the same
+// convention used elsewhere in this package). Used only to disambiguate an
+// otherwise-ambiguous interface-dispatch group against a resolved receiver type
+// (see applyDispatchGroups); absent or malformed names simply never match.
+func indexOwnerTypes(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[graphNode]string {
+	out := make(map[graphNode]string)
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.Functions {
+			fn := &fragment.Functions[i]
+			if owner := ownerTypeFromFunctionName(fn.FunctionName); owner != "" {
+				out[graphNode{Component: key, Function: fn.Signature}] = owner
+			}
+		}
+	}
+	return out
+}
+
+// ownerTypeFromFunctionName strips the trailing ".<method>" segment from a
+// fully-qualified function name, returning the declaring type. Returns "" when
+// name has no dot (no owner to derive).
+func ownerTypeFromFunctionName(name string) string {
+	dot := strings.LastIndex(name, ".")
+	if dot <= 0 {
+		return ""
+	}
+	return name[:dot]
 }
 
 func componentSet(closure []ComponentKey) map[ComponentKey]bool {
@@ -331,6 +369,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		edges = append(edges, callEdge{
 			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
 			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true, entryCall: e.EntryCall,
+			resolvedReceiverType: e.ResolvedReceiverType,
 		})
 	}
 	for i := range fragment.ExternalCalls {
@@ -338,6 +377,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		edges = append(edges, callEdge{
 			caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
 			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false, entryCall: c.EntryCall,
+			resolvedReceiverType: c.ResolvedReceiverType,
 		})
 	}
 	return edges
@@ -424,21 +464,90 @@ func applyDispatchGroups(
 	key ComponentKey,
 	groups map[dispatchGroupKey][]callEdge,
 	resolve edgeResolver,
+	ownerTypes map[graphNode]string,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
 ) {
 	for _, gk := range sortedDispatchKeys(groups) {
-		targets := distinctTargetEdges(groups[gk], resolve)
+		group := groups[gk]
+		targets := distinctTargetEdges(group, resolve)
 		caller := graphNode{Component: key, Function: gk.Caller}
 		switch {
 		case len(targets) == 1:
 			adjacency[caller] = append(adjacency[caller], targets[0])
 		case len(targets) > 1:
+			if resolved, ok := disambiguateByReceiverType(group, targets, ownerTypes); ok {
+				adjacency[caller] = append(adjacency[caller], resolved)
+				continue
+			}
 			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, candidateComponentsFromEdges(targets)))
 			// len(targets) == 0: no implementation in closure -> unreachable,
 			// nothing to traverse and nothing to record.
 		}
 	}
+}
+
+// disambiguateByReceiverType narrows an ambiguous dispatch group (>1 candidate
+// target) to a single edge when the call site carries resolved receiver-type
+// provenance (see InternalEdge.ResolvedReceiverType) that matches EXACTLY ONE
+// candidate's declaring type. This is the mine-time KB-contract/return-type
+// inference paying off at stitch time: an interface call site the producer
+// could not resolve structurally (name+arity expansion still finds every
+// sibling implementation) is disambiguated using the concrete type inference
+// already determined for that specific receiver.
+//
+// The match is by SIMPLE (unqualified) type name: ownerTypes indexes the full
+// "<package>.<Type>" (from Function.FunctionName), while ResolvedReceiverType
+// is typically the erased/simple name the producer's inference works with
+// (e.g. FunctionDecl.ReturnType) — mirroring the same simple-name convention
+// resolveParameterPassthroughDispatch already uses on the mine side.
+//
+// Returns ok=false — leaving the group to fail closed exactly as before — when:
+//   - no candidate edge carries receiver-type provenance, or
+//   - the resolved type matches zero candidates (stale/foreign type), or
+//   - the resolved type matches more than one candidate (should not happen for
+//     a well-formed KB, but never assumed).
+//
+// This never changes the fail-closed default for a call site inference did not
+// resolve: it only ever narrows an already-ambiguous group to at most one
+// survivor, never invents a candidate that resolve() did not already produce.
+func disambiguateByReceiverType(group []callEdge, targets []adjacencyEdge, ownerTypes map[graphNode]string) (adjacencyEdge, bool) {
+	resolvedType := simpleTypeName(firstResolvedReceiverType(group))
+	if resolvedType == "" {
+		return adjacencyEdge{}, false
+	}
+
+	var match adjacencyEdge
+	matches := 0
+	for _, t := range targets {
+		if simpleTypeName(ownerTypes[t.target]) == resolvedType {
+			match = t
+			matches++
+		}
+	}
+	if matches != 1 {
+		return adjacencyEdge{}, false
+	}
+	return match, true
+}
+
+// simpleTypeName returns the trailing, unqualified segment of a (possibly
+// fully-qualified) type name, e.g. "com.password4j.PBKDF2Function" ->
+// "PBKDF2Function". A name with no dot is returned unchanged.
+func simpleTypeName(typeName string) string {
+	if idx := strings.LastIndex(typeName, "."); idx >= 0 {
+		return typeName[idx+1:]
+	}
+	return typeName
+}
+
+func firstResolvedReceiverType(group []callEdge) string {
+	for _, e := range group {
+		if e.resolvedReceiverType != "" {
+			return e.resolvedReceiverType
+		}
+	}
+	return ""
 }
 
 func appendAdjacencyEdges(

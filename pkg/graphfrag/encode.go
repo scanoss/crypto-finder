@@ -63,6 +63,8 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			StartCol:     e.StartCol,
 			EndCol:       e.EndCol,
 			EntryCall:    fromCallSite(e.EntryCall),
+
+			ResolvedReceiverType: e.ResolvedReceiverType,
 		})
 	}
 	for i := range frag.ExternalCalls {
@@ -82,6 +84,8 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			StartCol:     e.StartCol,
 			EndCol:       e.EndCol,
 			EntryCall:    fromCallSite(e.EntryCall),
+
+			ResolvedReceiverType: e.ResolvedReceiverType,
 		})
 	}
 

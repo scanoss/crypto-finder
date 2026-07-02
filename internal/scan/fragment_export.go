@@ -219,14 +219,15 @@ func buildFragmentInternalEdge(
 	res fragmentEdgeResolution,
 ) graphfrag.GraphFragmentEdge {
 	edge := graphfrag.GraphFragmentEdge{
-		CallerKey:    callerKey,
-		CalleeKey:    calleeKey,
-		Line:         line,
-		Resolution:   res.Resolution,
-		DeclaredType: res.DeclaredType,
-		MethodName:   res.MethodName,
-		Arity:        res.Arity,
-		EntryCall:    buildFragmentCallSiteEntryCall(ctx, call),
+		CallerKey:            callerKey,
+		CalleeKey:            calleeKey,
+		Line:                 line,
+		Resolution:           res.Resolution,
+		DeclaredType:         res.DeclaredType,
+		MethodName:           res.MethodName,
+		Arity:                res.Arity,
+		EntryCall:            buildFragmentCallSiteEntryCall(ctx, call),
+		ResolvedReceiverType: res.ResolvedReceiverType,
 	}
 	if call != nil {
 		edge.ReceiverVar = call.ReceiverVar
@@ -248,14 +249,15 @@ func buildFragmentExternalCall(
 	res fragmentEdgeResolution,
 ) graphfrag.GraphFragmentExternal {
 	external := graphfrag.GraphFragmentExternal{
-		CallerKey:    callerKey,
-		TargetKey:    calleeKey,
-		Line:         line,
-		Resolution:   res.Resolution,
-		DeclaredType: res.DeclaredType,
-		MethodName:   res.MethodName,
-		Arity:        res.Arity,
-		EntryCall:    buildFragmentCallSiteEntryCall(ctx, call),
+		CallerKey:            callerKey,
+		TargetKey:            calleeKey,
+		Line:                 line,
+		Resolution:           res.Resolution,
+		DeclaredType:         res.DeclaredType,
+		MethodName:           res.MethodName,
+		Arity:                res.Arity,
+		EntryCall:            buildFragmentCallSiteEntryCall(ctx, call),
+		ResolvedReceiverType: res.ResolvedReceiverType,
 	}
 	external.TargetFunctionName = fragmentTargetFunctionName(callerDecl, calleeKey, &external)
 	if call != nil {

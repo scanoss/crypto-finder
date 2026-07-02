@@ -21,7 +21,15 @@ import "encoding/json"
 // 1.3 adds customer-facing reachability projections: crypto_entry_points,
 // supporting_calls, and display aliases for constructor symbols. Canonical
 // function keys still use the internal <init> identity for joins.
-const SchemaVersion = "graph-fragment-1.5"
+//
+// 1.6 adds resolved_receiver_type on internal_edges/external_calls: the
+// concrete receiver type the producer's KB-contract/return-type inference
+// resolved for an interface-dispatch call site, when available. The stitcher
+// uses it to disambiguate a dispatch group that has more than one candidate
+// target in closure, without changing the fail-closed default for call sites
+// inference did not resolve. Additive: a 1.5 fragment decodes with an empty
+// resolved_receiver_type, which the stitcher treats exactly as before.
+const SchemaVersion = "graph-fragment-1.6"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -204,6 +212,10 @@ type GraphFragmentEdge struct {
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
+	// ResolvedReceiverType is the concrete receiver type resolved by KB-contract
+	// or return-type inference for this call site (1.6+). Empty when inference
+	// did not resolve a concrete type, or on fragments exported with schema < 1.6.
+	ResolvedReceiverType string `json:"resolved_receiver_type,omitempty"`
 }
 
 // GraphFragmentExternal is one external (cross-component) call edge plus its
@@ -231,6 +243,10 @@ type GraphFragmentExternal struct {
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *GraphFragmentCallSite `json:"entry_call,omitempty"`
+	// ResolvedReceiverType is the concrete receiver type resolved by KB-contract
+	// or return-type inference for this call site (1.6+). Empty when inference
+	// did not resolve a concrete type, or on fragments exported with schema < 1.6.
+	ResolvedReceiverType string `json:"resolved_receiver_type,omitempty"`
 }
 
 // GraphFragmentCryptoOp is one crypto finding annotation attached to a function
