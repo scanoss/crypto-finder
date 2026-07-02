@@ -75,8 +75,8 @@ func TestBuildGraphFragmentExport13_DerivesSupportingCallsFromObjectLifecycle(t 
 		Ecosystem:  "java",
 	})
 
-	if payload.SchemaVersion != "graph-fragment-1.5" {
-		t.Fatalf("SchemaVersion = %q, want graph-fragment-1.5", payload.SchemaVersion)
+	if payload.SchemaVersion != "graph-fragment-1.6" {
+		t.Fatalf("SchemaVersion = %q, want graph-fragment-1.6", payload.SchemaVersion)
 	}
 
 	// The terminal finding is the only crypto annotation; the lifecycle calls are

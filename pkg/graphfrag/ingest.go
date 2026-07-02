@@ -56,6 +56,8 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			StartCol:     ie.StartCol,
 			EndCol:       ie.EndCol,
 			EntryCall:    toCallSite(ie.EntryCall),
+
+			ResolvedReceiverType: ie.ResolvedReceiverType,
 		}
 		frag.InternalEdges = append(frag.InternalEdges, edge)
 	}
@@ -76,6 +78,8 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			StartCol:        ec.StartCol,
 			EndCol:          ec.EndCol,
 			EntryCall:       toCallSite(ec.EntryCall),
+
+			ResolvedReceiverType: ec.ResolvedReceiverType,
 		})
 	}
 	for i := range e.CryptoAnnotations {

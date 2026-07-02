@@ -239,6 +239,25 @@ type InternalEdge struct {
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *CallSite
+
+	// ResolvedReceiverType is the concrete receiver type the producer's
+	// KB-contract/return-type inference resolved for THIS call site's receiver,
+	// when available (1.6+). It is populated on ResolutionInterfaceDispatch edges
+	// where inference narrowed the otherwise-interface-typed receiver to one
+	// concrete implementation type (e.g. "PBKDF2Function"), and on synthesized
+	// exact bypass edges the producer added specifically because it resolved such
+	// a receiver (see internal/callgraph resolveParameterPassthroughDispatch).
+	// Empty when inference did not resolve a concrete type, or on fragments
+	// exported with schema < 1.6 — the stitcher then falls back to the existing
+	// count-of-candidates ambiguity check.
+	//
+	// The stitcher uses this to disambiguate a dispatch group that has more than
+	// one candidate target in closure: if exactly one candidate's owner type
+	// matches ResolvedReceiverType, that edge survives and the rest are dropped
+	// (SuppressReasonAmbiguousDispatch is NOT recorded). This is a narrow,
+	// evidence-based disambiguation — it never changes the fail-closed default
+	// for call sites inference could not resolve.
+	ResolvedReceiverType string
 }
 
 // ResolutionKind classifies how confidently the producer resolved a call to its
@@ -324,6 +343,11 @@ type ExternalCall struct {
 	// EntryCall carries the call-site argument data-flow for this edge (1.2+).
 	// Nil on fragments exported with schema < 1.2.
 	EntryCall *CallSite
+
+	// ResolvedReceiverType is the concrete receiver type the producer's
+	// KB-contract/return-type inference resolved for THIS call site's receiver
+	// (1.6+). See InternalEdge.ResolvedReceiverType for the full contract.
+	ResolvedReceiverType string
 }
 
 // CryptoOperation is a crypto finding attached to a function.
