@@ -37,6 +37,15 @@ type AggregatedAsset struct {
 	// Identities tracks all unique detection methods (rules) that found this asset
 	Identities []AssetIdentity
 
+	// CryptoFunctions collects the distinct raw cryptoFunction/operation values
+	// (e.g. "encrypt", "decrypt") seen across every asset grouped into this
+	// entry, in first-seen order. Two rules can legitimately share one algorithm
+	// identity while detecting different operations at the same declaration
+	// site (e.g. AESEngine.init synthesized once as encrypt and once as
+	// decrypt) -- this field preserves both instead of only the
+	// ReferenceAsset's single value.
+	CryptoFunctions []string
+
 	// ReferenceAsset holds one representative asset for extracting common metadata
 	ReferenceAsset *entities.CryptographicAsset
 
@@ -157,6 +166,9 @@ func (a *Aggregator) AggregateAssets(report *entities.InterimReport) ([]Aggregat
 
 			// Add identity if it's a new rule
 			a.addIdentityIfNew(aggregated, asset)
+
+			// Merge this asset's crypto function into the group (deduped).
+			a.addCryptoFunctionIfNew(aggregated, asset)
 		}
 	}
 
@@ -216,6 +228,22 @@ func (a *Aggregator) addIdentityIfNew(aggregated *AggregatedAsset, asset *entiti
 			aggregated.Identities = append(aggregated.Identities, identity)
 		}
 	}
+}
+
+// addCryptoFunctionIfNew appends asset's raw cryptoFunction/operation value to
+// aggregated.CryptoFunctions when it resolves to something non-empty and is
+// not already present, preserving first-seen order.
+func (a *Aggregator) addCryptoFunctionIfNew(aggregated *AggregatedAsset, asset *entities.CryptographicAsset) {
+	raw := resolveRawCryptoFunction(asset)
+	if raw == "" {
+		return
+	}
+	for _, existing := range aggregated.CryptoFunctions {
+		if existing == raw {
+			return
+		}
+	}
+	aggregated.CryptoFunctions = append(aggregated.CryptoFunctions, raw)
 }
 
 // SortAssets sorts aggregated assets alphabetically by Name for deterministic output.

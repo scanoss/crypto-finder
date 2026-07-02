@@ -400,6 +400,106 @@ func TestConverter_MultipleRulesOnSameLine(t *testing.T) {
 	}
 }
 
+// TestConverter_MergesCryptoFunctionsForSharedAPIDifferentOperation guards the
+// DCA multi-crypto-function synthesis case: two synthesized assets at the same
+// declaration site (org.bouncycastle.crypto.engines.AESEngine.init) share one
+// algorithm identity but differ in cryptoFunction (encrypt vs decrypt). They
+// must collapse into ONE CDX component (as aggregation-by-name already does),
+// and that component's CryptoFunctions array must carry BOTH values instead of
+// only the first asset's.
+func TestConverter_MergesCryptoFunctionsForSharedAPIDifferentOperation(t *testing.T) {
+	converter := NewConverter()
+
+	report := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "org/bouncycastle/crypto/engines/AESEngine.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 70,
+						EndLine:   70,
+						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", Severity: "INFO"}},
+						Metadata: map[string]string{
+							"assetType":          "algorithm",
+							"algorithmFamily":    "AES",
+							"algorithmPrimitive": "block-cipher",
+							"operation":          "encrypt",
+							"cryptoFunction":     "encrypt",
+							"api":                "org.bouncycastle.crypto.engines.AESEngine.init",
+						},
+					},
+					{
+						StartLine: 70,
+						EndLine:   70,
+						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", Severity: "INFO"}},
+						Metadata: map[string]string{
+							"assetType":          "algorithm",
+							"algorithmFamily":    "AES",
+							"algorithmPrimitive": "block-cipher",
+							"operation":          "decrypt",
+							"cryptoFunction":     "decrypt",
+							"api":                "org.bouncycastle.crypto.engines.AESEngine.init",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	bom, err := converter.Convert(report)
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+	if bom.Components == nil {
+		t.Fatal("expected 1 merged component, got nil Components")
+	}
+	if len(*bom.Components) != 1 {
+		t.Fatalf("expected 1 merged component, got %d", len(*bom.Components))
+	}
+
+	component := (*bom.Components)[0]
+	if component.CryptoProperties == nil || component.CryptoProperties.AlgorithmProperties == nil {
+		t.Fatal("component missing AlgorithmProperties")
+	}
+	algProps := component.CryptoProperties.AlgorithmProperties
+	if algProps.CryptoFunctions == nil {
+		t.Fatal("CryptoFunctions is nil, want [encrypt decrypt]")
+	}
+	functions := *algProps.CryptoFunctions
+	if len(functions) != 2 {
+		t.Fatalf("CryptoFunctions count = %d, want 2 (%v)", len(functions), functions)
+	}
+	var hasEncrypt, hasDecrypt bool
+	for _, fn := range functions {
+		if fn == cdx.CryptoFunctionEncrypt {
+			hasEncrypt = true
+		}
+		if fn == cdx.CryptoFunctionDecrypt {
+			hasDecrypt = true
+		}
+	}
+	if !hasEncrypt || !hasDecrypt {
+		t.Fatalf("expected both encrypt and decrypt in CryptoFunctions, got %v", functions)
+	}
+
+	// The scanoss:cryptoFunction custom property must also carry both values.
+	if component.Properties == nil {
+		t.Fatal("component missing Properties")
+	}
+	var propValue string
+	for _, p := range *component.Properties {
+		if p.Name == scanossCryptoFunctionPropertyName {
+			propValue = p.Value
+		}
+	}
+	if !contains(propValue, "encrypt") || !contains(propValue, "decrypt") {
+		t.Fatalf("scanoss:cryptoFunction property = %q, want it to mention both encrypt and decrypt", propValue)
+	}
+}
+
 // Helper function to load test fixtures.
 func loadFixture(t *testing.T, filename string) *entities.InterimReport {
 	t.Helper()
