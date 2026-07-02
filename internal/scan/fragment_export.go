@@ -126,8 +126,8 @@ func addResolvedFragmentEdges(
 		for i := range resolutions {
 			res := resolutions[i]
 			edgeKey := callgraph.EdgeResolutionKey(callerKey, calleeKey, res.EdgeResolution)
-			line := fragmentEdgeLine(callerDecl, calleeKey, res)
-			call := findCallForCalleeAtLine(callerDecl, calleeKey, line)
+			line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
+			call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
 			if _, ok := graph.Functions[calleeKey]; ok {
 				edge := buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 				if edge.ChainID == "" {
@@ -259,7 +259,7 @@ func buildFragmentExternalCall(
 		EntryCall:            buildFragmentCallSiteEntryCall(ctx, call),
 		ResolvedReceiverType: res.ResolvedReceiverType,
 	}
-	external.TargetFunctionName = fragmentTargetFunctionName(callerDecl, calleeKey, &external)
+	external.TargetFunctionName = fragmentTargetFunctionName(ctx, callerKey, callerDecl, calleeKey, &external)
 	if call != nil {
 		external.Raw = call.Raw
 		external.ReceiverVar = call.ReceiverVar
@@ -272,6 +272,8 @@ func buildFragmentExternalCall(
 }
 
 func fragmentTargetFunctionName(
+	ctx *exportBuildContext,
+	callerKey string,
 	callerDecl *callgraph.FunctionDecl,
 	calleeKey string,
 	external *graphfrag.GraphFragmentExternal,
@@ -280,7 +282,7 @@ func fragmentTargetFunctionName(
 	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
 		targetName = fullFunctionName(calleeID)
 	}
-	if call := findCallForCalleeAtLine(callerDecl, calleeKey, external.Line); call != nil {
+	if call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, external.Line); call != nil {
 		external.Raw = call.Raw
 		if targetName == "" {
 			targetName = fullFunctionName(call.Callee)
@@ -363,18 +365,18 @@ func newFragmentEdgeResolution(res callgraph.EdgeResolution) fragmentEdgeResolut
 	}
 }
 
-func fragmentEdgeLine(callerDecl *callgraph.FunctionDecl, calleeKey string, res fragmentEdgeResolution) int {
+func fragmentEdgeLine(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string, res fragmentEdgeResolution) int {
 	if res.CallSite != 0 {
 		return res.CallSite
 	}
-	return findFragmentCallLine(callerDecl, calleeKey)
+	return findFragmentCallLine(ctx, callerKey, callerDecl, calleeKey)
 }
 
-func findFragmentCallLine(callerDecl *callgraph.FunctionDecl, calleeKey string) int {
+func findFragmentCallLine(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) int {
 	if callerDecl == nil {
 		return 0
 	}
-	if call := findCallForCallee(callerDecl, calleeKey); call != nil {
+	if call := findCallForCallee(ctx, callerKey, callerDecl, calleeKey); call != nil {
 		return call.Line
 	}
 	return callerDecl.StartLine
@@ -400,16 +402,16 @@ func chainIDForLine(fn *callgraph.FunctionDecl, line int) string {
 	return ""
 }
 
-func findCallForCalleeAtLine(callerDecl *callgraph.FunctionDecl, calleeKey string, line int) *callgraph.FunctionCall {
-	if callerDecl == nil {
-		return nil
-	}
+// findCallForCalleeAtLine finds callerKey's FunctionCall matching calleeKey,
+// preferring the specific call at line when more than one call in the body
+// matches (overload/dispatch fan-out can put several resolved edges on the
+// same caller function). ctx may be nil (falls back to an unindexed scan of
+// callerDecl.Calls, used by tests that construct a FunctionDecl directly
+// without a full exportBuildContext).
+func findCallForCalleeAtLine(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string, line int) *callgraph.FunctionCall {
+	candidates := matchingCallsForCallee(ctx, callerKey, callerDecl, calleeKey)
 	var fallback *callgraph.FunctionCall
-	for i := range callerDecl.Calls {
-		call := &callerDecl.Calls[i]
-		if !callMatchesCallee(call, calleeKey) {
-			continue
-		}
+	for _, call := range candidates {
 		if line > 0 && call.Line == line {
 			return call
 		}
@@ -420,31 +422,97 @@ func findCallForCalleeAtLine(callerDecl *callgraph.FunctionDecl, calleeKey strin
 	return fallback
 }
 
-func findCallForCallee(callerDecl *callgraph.FunctionDecl, calleeKey string) *callgraph.FunctionCall {
+func findCallForCallee(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) *callgraph.FunctionCall {
+	candidates := matchingCallsForCallee(ctx, callerKey, callerDecl, calleeKey)
+	if len(candidates) == 0 {
+		return nil
+	}
+	return candidates[0]
+}
+
+// matchingCallsForCallee returns every FunctionCall in callerDecl whose
+// Callee matches calleeKey under callMatchesCallee's original rule — an
+// exact FunctionID.String() match OR the same (Package, Type,
+// BaseFunctionName) tuple (an overload/dispatch-expanded alias of the same
+// source call site). An exact string match always implies the tuple match
+// (String() encodes Package/Type/Name, and BaseFunctionName is a pure
+// function of Name), so grouping by the tuple alone is equivalent to the
+// original two-branch OR — EXCEPT when calleeKey fails to parse, in which
+// case the original code still honored an exact string match; that fallback
+// path is preserved separately below since it can't use the tuple index.
+// Order matches the original callerDecl.Calls order (stable — same as
+// ranging callerDecl.Calls directly and filtering).
+//
+// When ctx is non-nil, this is backed by callSignatureIndexForCaller's cached
+// per-caller index instead of a fresh linear scan: on graphs with heavy
+// dispatch fan-out (bcprov's Digest/BlockCipher hierarchies), the same caller
+// is looked up once per resolved edge, and a full callerDecl.Calls scan (plus
+// a callgraph.ParseFunctionID reparse of calleeKey) on every one of those
+// millions of edges was the dominant cost of BuildGraphFragmentExport.
+func matchingCallsForCallee(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) []*callgraph.FunctionCall {
 	if callerDecl == nil {
 		return nil
 	}
+	calleeID, err := callgraph.ParseFunctionID(calleeKey)
+	if err != nil {
+		// calleeKey isn't parseable (should not happen for real graph keys,
+		// which are always produced by FunctionID.String()); callMatchesCallee
+		// still honored an exact string match in this case, so fall back to a
+		// direct scan rather than silently returning nothing.
+		var matches []*callgraph.FunctionCall
+		for i := range callerDecl.Calls {
+			call := &callerDecl.Calls[i]
+			if call.Callee.String() == calleeKey {
+				matches = append(matches, call)
+			}
+		}
+		return matches
+	}
+	sigKey := callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name))
+
+	if ctx != nil {
+		index := ctx.callSignatureIndexForCaller(callerKey, callerDecl)
+		return index[sigKey]
+	}
+
+	var matches []*callgraph.FunctionCall
 	for i := range callerDecl.Calls {
 		call := &callerDecl.Calls[i]
-		if callMatchesCallee(call, calleeKey) {
-			return call
+		if callSignatureKey(call.Callee.Package, call.Callee.Type, callgraph.BaseFunctionName(call.Callee.Name)) == sigKey {
+			matches = append(matches, call)
 		}
 	}
-	return nil
+	return matches
 }
 
-func callMatchesCallee(call *callgraph.FunctionCall, calleeKey string) bool {
-	if call == nil {
-		return false
+// callSignatureKey builds the (Package, Type, BaseFunctionName) grouping key
+// callSignatureIndexForCaller and matchingCallsForCallee's unindexed fallback
+// both use. This is a coarser key than a full FunctionID: it deliberately
+// ignores arity/overload decoration, matching callMatchesCallee's fuzzy rule
+// (a dispatch-expanded calleeKey targeting a different overload/arity of the
+// same base method still resolves back to the ONE source call site).
+func callSignatureKey(pkg, typ, baseName string) string {
+	return pkg + "\x00" + typ + "\x00" + baseName
+}
+
+// callSignatureIndexForCaller returns callerKey's Calls grouped by
+// callSignatureKey, building and caching the index on first use. See
+// exportBuildContext.callsBySignature's doc comment.
+func (ctx *exportBuildContext) callSignatureIndexForCaller(callerKey string, callerDecl *callgraph.FunctionDecl) map[string][]*callgraph.FunctionCall {
+	if index, ok := ctx.callsBySignature[callerKey]; ok {
+		return index
 	}
-	calleeID, err := callgraph.ParseFunctionID(calleeKey)
-	if call.Callee.String() == calleeKey {
-		return true
+	if ctx.callsBySignature == nil {
+		ctx.callsBySignature = make(map[string]map[string][]*callgraph.FunctionCall)
 	}
-	return err == nil &&
-		call.Callee.Package == calleeID.Package &&
-		call.Callee.Type == calleeID.Type &&
-		callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name)
+	index := make(map[string][]*callgraph.FunctionCall, len(callerDecl.Calls))
+	for i := range callerDecl.Calls {
+		call := &callerDecl.Calls[i]
+		key := callSignatureKey(call.Callee.Package, call.Callee.Type, callgraph.BaseFunctionName(call.Callee.Name))
+		index[key] = append(index[key], call)
+	}
+	ctx.callsBySignature[callerKey] = index
+	return index
 }
 
 // buildGraphFragmentFunction projects one call-graph function onto its
