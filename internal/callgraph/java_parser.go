@@ -42,6 +42,10 @@ const (
 	javaFunctionTypeClassInit    = "class-init"
 	javaNodeStaticInitializer    = "static_initializer"
 	javaThisKeyword              = "this"
+	javaNodeSuperclass           = "superclass"
+	javaNodeSuperInterfaces      = "super_interfaces"
+	javaNodeTypeList             = "type_list"
+	javaNodeTypeIdentifier       = "type_identifier"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -228,6 +232,9 @@ func (p *JavaParser) processClass(
 	fieldTypes := p.collectJavaFieldTypes(body, src)
 	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
+	bases := extractJavaClassBases(node, src)
+	stampOwnerBases(constructorDecls, bases)
+	stampOwnerBases(methodDecls, bases)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 }
@@ -247,6 +254,55 @@ func parseJavaClass(node *sitter.Node, src []byte) (string, *sitter.Node) {
 	}
 
 	return className, body
+}
+
+// extractJavaClassBases reads a class_declaration's superclass (extends) and
+// super_interfaces (implements) clauses into a flat list of simple type names
+// (e.g. ["AbstractHashingFunction", "HashingFunction"]). Populates
+// FunctionDecl.OwnerBases for Java the same way the Python parser already does
+// for base classes — reusing the SAME field lets resolveParameterPassthroughDispatch
+// (and any future consumer) walk one level of inheritance without a
+// Java-specific type. Interfaces/generics are captured by simple name only
+// (erased), matching how OwnerBases is consumed elsewhere (string comparison
+// against FunctionID.Type).
+func extractJavaClassBases(node *sitter.Node, src []byte) []string {
+	var bases []string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case javaNodeSuperclass:
+			bases = append(bases, javaTypeIdentifierNames(child, src)...)
+		case javaNodeSuperInterfaces:
+			bases = append(bases, javaTypeIdentifierNames(child, src)...)
+		}
+	}
+	return bases
+}
+
+// javaTypeIdentifierNames recursively collects every type_identifier leaf
+// under node (covers both a single superclass and a super_interfaces'
+// type_list of one-or-more implemented interfaces).
+func javaTypeIdentifierNames(node *sitter.Node, src []byte) []string {
+	var names []string
+	if node.Type() == javaNodeTypeIdentifier {
+		names = append(names, node.Content(src))
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		names = append(names, javaTypeIdentifierNames(node.Child(i), src)...)
+	}
+	return names
+}
+
+// stampOwnerBases copies bases onto every decl in decls. No-op when bases is
+// empty so a class with no extends/implements clause leaves OwnerBases nil,
+// exactly as before this field was populated for Java.
+func stampOwnerBases(decls []*FunctionDecl, bases []string) {
+	if len(bases) == 0 {
+		return
+	}
+	for _, decl := range decls {
+		decl.OwnerBases = bases
+	}
 }
 
 func javaNestedTypeName(outerType, typeName string) string {
@@ -1727,6 +1783,7 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 		params = append(params, FunctionParameter{
 			Type:    erasedTypeName(spec.RawType, ref),
 			TypeRef: ref,
+			Name:    spec.Name,
 		})
 	}
 	return params

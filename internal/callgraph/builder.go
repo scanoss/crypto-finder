@@ -157,6 +157,17 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
+
+	// Resolve single-argument pass-through dispatch: a call site whose
+	// interface-typed parameter is used, unmodified, as the sole receiver of an
+	// otherwise-ambiguous interface-dispatch call inside the callee's body.
+	// When a caller of that callee passes a statically concrete argument (a
+	// constructor call, or a call whose declared/inferred return type is
+	// concrete), the ambiguity is resolvable FOR THAT CALLER even though the
+	// dispatch call site itself is shared by every caller of the callee. Runs
+	// after inference so both declared and KB-inferred return types are
+	// available. See resolveParameterPassthroughDispatch for the full contract.
+	resolveParameterPassthroughDispatch(graph)
 	inferenceDuration := time.Since(inferenceStart)
 
 	log.Info().
@@ -994,6 +1005,565 @@ func unconditionalContractReturn(ctrs []contracts.Contract) string {
 		}
 	}
 	return ""
+}
+
+// dispatchAmbiguousGroupKey groups EdgeResolutions the same way the stitcher's
+// dispatchGroupKey does: one interface-dispatch call site (caller + call site +
+// method + arity), independent of which of the N candidate targets a given
+// EdgeResolution entry names.
+type dispatchAmbiguousGroupKey struct {
+	Caller     string
+	CallSite   int
+	MethodName string
+	Arity      int
+}
+
+// resolveParameterPassthroughDispatch resolves a narrow, sound special case the
+// generic count-of-candidates ambiguity check cannot: a callee function whose
+// interface-typed parameter is used, directly and exclusively, as the receiver
+// of the ONE ambiguous interface-dispatch call in its body (a "pass-through"
+// receiver, e.g. password4j's `with(HashingFunction h) { return h.hash(...); }`).
+// That call site is genuinely ambiguous when judged in isolation — `with`'s
+// several callers each pass a DIFFERENT concrete HashingFunction implementation
+// (withPBKDF2 passes PBKDF2Function, withBcrypt passes BcryptFunction, ...) — so
+// stamping a single resolved type on the shared edge would be unsound: correct
+// for one caller, wrong for the rest.
+//
+// Instead, for each caller of the pass-through callee whose argument at the
+// parameter's position resolves to ONE concrete type (constructor call, or a
+// call whose declared/inferred return type is concrete) that matches EXACTLY
+// ONE candidate in the dispatch group, a new direct edge is added from that
+// SPECIFIC caller straight to the concrete target — bypassing the shared
+// ambiguous node for that caller's reachability only. The original
+// caller->passthrough->[ambiguous group] edges are left untouched, so any
+// caller this pass cannot resolve keeps failing closed exactly as before.
+// passthroughMaxIterations caps the fixpoint loop in resolveParameterPassthroughDispatch.
+// Each iteration only adds NEW bypass edges (existing ones are never revisited
+// as new sources — addCaller/recordEdgeResolution are idempotent), and a real
+// password4j-shaped chain is at most a few hops deep, so this is a generous
+// safety valve rather than a realistic limit.
+const passthroughMaxIterations = 10
+
+// resolveParameterPassthroughDispatch resolves a narrow, sound special case the
+// generic count-of-candidates ambiguity check cannot: a callee function whose
+// interface-typed parameter (or, for the SAME-context case, its own implicit
+// "this" receiver) is used, directly and exclusively, as the receiver of the
+// ONE ambiguous interface-dispatch call in its body (a "pass-through"
+// receiver, e.g. password4j's `with(HashingFunction h) { return h.hash(...); }`,
+// or an inherited method's `this.hash(...)` self-call). That call site is
+// genuinely ambiguous when judged in isolation — `with`'s several callers each
+// pass a DIFFERENT concrete HashingFunction implementation (withPBKDF2 passes
+// PBKDF2Function, withBcrypt passes BcryptFunction, ...) — so stamping a single
+// resolved type on the shared edge would be unsound: correct for one caller,
+// wrong for the rest.
+//
+// Instead, for each caller of the pass-through callee whose argument (or, for
+// a "this" receiver, whose own already-resolved bypass context) resolves to
+// ONE concrete type that matches EXACTLY ONE candidate in the dispatch group,
+// a new direct edge is added from that SPECIFIC caller straight to the
+// concrete target — bypassing the shared ambiguous node for that caller's
+// reachability only. The original caller->passthrough->[ambiguous group] edges
+// are left untouched, so any caller this pass cannot resolve keeps failing
+// closed exactly as before.
+//
+// Runs to a fixpoint (bounded by passthroughMaxIterations) because resolving
+// one hop (e.g. withPBKDF2 -> AbstractHashingFunction.hash#3, in a
+// PBKDF2Function context) can unlock the NEXT hop inside that same target's
+// body (hash#3's own "this.hash(...)" self-call, which the first pass alone
+// cannot see since it has no explicit receiver argument to resolve).
+func resolveParameterPassthroughDispatch(graph *CallGraph) {
+	totalResolved := 0
+	for iter := 0; iter < passthroughMaxIterations; iter++ {
+		groups := groupAmbiguousDispatchEdges(graph)
+		resolved := 0
+		for _, gk := range sortedAmbiguousGroupKeys(groups) {
+			resolved += resolvePassthroughGroup(graph, gk, groups[gk])
+		}
+		totalResolved += resolved
+		if resolved == 0 {
+			break
+		}
+	}
+	if totalResolved > 0 {
+		log.Info().Int("resolved", totalResolved).Msg("Resolved parameter pass-through interface dispatch")
+	}
+}
+
+// groupAmbiguousDispatchEdges collects every recorded interface_dispatch
+// EdgeResolution keyed by call site, mirroring the stitcher's dispatch-group
+// identity so a group here has >1 entries exactly when the stitcher would judge
+// that call site ambiguous.
+func groupAmbiguousDispatchEdges(graph *CallGraph) map[dispatchAmbiguousGroupKey][]edgeResolutionEntry {
+	groups := make(map[dispatchAmbiguousGroupKey][]edgeResolutionEntry)
+	for key, res := range graph.EdgeResolutions {
+		if res.Kind != EdgeKindInterfaceDispatch {
+			continue
+		}
+		callerKey, calleeKey, ok := splitEdgeResolutionKey(key)
+		if !ok {
+			continue
+		}
+		gk := dispatchAmbiguousGroupKey{Caller: callerKey, CallSite: res.CallSite, MethodName: res.MethodName, Arity: res.Arity}
+		groups[gk] = append(groups[gk], edgeResolutionEntry{calleeKey: calleeKey, resolution: res})
+	}
+	for gk, entries := range groups {
+		if len(entries) < 2 {
+			delete(groups, gk)
+		}
+	}
+	return groups
+}
+
+// edgeResolutionEntry pairs one EdgeResolutions map entry with its parsed
+// callee key so grouping code does not re-split the composite key.
+type edgeResolutionEntry struct {
+	calleeKey  string
+	resolution EdgeResolution
+}
+
+// splitEdgeResolutionKey recovers the callerKey/calleeKey from an
+// EdgeResolutionKey string. EdgeResolutionKeyPrefix builds the key as
+// "<callerKey>\x00<calleeKey>\x00<callSite>\x00<declaredType>\x00<method>\x00<arity>";
+// callerKey and calleeKey are FunctionID.String() values, which never contain
+// \x00, so the first two \x00-delimited fields are exactly callerKey and
+// calleeKey. Returns ok=false if the key has fewer than 2 fields (defensive;
+// should not happen for well-formed keys produced by EdgeResolutionKey).
+func splitEdgeResolutionKey(key string) (callerKey, calleeKey string, ok bool) {
+	parts := strings.SplitN(key, "\x00", 3)
+	if len(parts) < 3 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func sortedAmbiguousGroupKeys(groups map[dispatchAmbiguousGroupKey][]edgeResolutionEntry) []dispatchAmbiguousGroupKey {
+	keys := make([]dispatchAmbiguousGroupKey, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.Caller != b.Caller {
+			return a.Caller < b.Caller
+		}
+		if a.CallSite != b.CallSite {
+			return a.CallSite < b.CallSite
+		}
+		if a.MethodName != b.MethodName {
+			return a.MethodName < b.MethodName
+		}
+		return a.Arity < b.Arity
+	})
+	return keys
+}
+
+// resolvePassthroughGroup evaluates one ambiguous dispatch group (gk.Caller is
+// the function whose body issues the ambiguous call — the "pass-through
+// candidate") and, if it qualifies, resolves the ambiguity per-caller. Returns
+// the number of caller-specific bypass edges added.
+//
+// Qualification (conservative by design — every condition narrows toward
+// "do nothing" on doubt, matching the fail-closed default), delegated to
+// passthroughParameterIndex:
+//  1. The ambiguous call site must be uniquely identifiable in gk.Caller's
+//     body by (line, method, arity) — see findCallAtSite.
+//  2. Its receiver is either (a) one of gk.Caller's OWN parameters
+//     (positionally matched via FunctionParameter.Name) — a pass-through of an
+//     argument — in which case gk.Caller must have EXACTLY ONE call in its
+//     body (a parameter could otherwise be reassigned or escape into a branch
+//     this pass cannot see); or (b) gk.Caller's own implicit "this" — in which
+//     case a multi-call, branching body is tolerated (this's type is fixed for
+//     the whole method regardless of branch).
+//  3. Each entry in the group names a distinct candidate; each candidate's
+//     owner type is derived from its FunctionID.Type (simple name).
+func resolvePassthroughGroup(graph *CallGraph, gk dispatchAmbiguousGroupKey, entries []edgeResolutionEntry) int {
+	calleeFn, ambiguousCall, paramIdx, ok := passthroughParameterIndex(graph, gk)
+	if !ok {
+		return 0
+	}
+
+	candidateOwners := resolveOverloadPerOwner(graph, ambiguousCall, candidateOwnersByType(entries))
+	if len(candidateOwners) == 0 {
+		return 0
+	}
+
+	resolved := 0
+	for _, callerKey := range append([]string(nil), graph.Callers[gk.Caller]...) {
+		outerFn := graph.Functions[callerKey]
+		if outerFn == nil {
+			continue
+		}
+		resolved += resolvePassthroughForCaller(graph, outerFn, callerKey, calleeFn, gk, paramIdx, candidateOwners)
+	}
+	return resolved
+}
+
+// resolveOverloadPerOwner collapses candidateOwnersByType's owner->[]calleeKey
+// map to owner->calleeKey by picking the best-scoring overload for each owner
+// with more than one candidate, using the ambiguous call's OWN argument types
+// (call is the pass-through function's single internal call, e.g.
+// `hashingFunction.hash(plainTextPassword, salt, pepper)` — its argument types
+// are fixed regardless of which outer caller reaches it, since they come from
+// the pass-through function's own fields/locals, not the outer caller). Reuses
+// scoreOverloadCandidate, the same scoring inferJavaArgumentType-based overload
+// resolution uses elsewhere in this file. An owner whose best score is 0 (no
+// argument matched any parameter) is dropped rather than guessed.
+func resolveOverloadPerOwner(graph *CallGraph, call FunctionCall, ownerCandidates map[string][]string) map[string]string {
+	resolved := make(map[string]string, len(ownerCandidates))
+	for owner, keys := range ownerCandidates {
+		if len(keys) == 1 {
+			resolved[owner] = keys[0]
+			continue
+		}
+		best, bestScore := "", -1
+		for _, key := range keys {
+			fn := graph.Functions[key]
+			if fn == nil {
+				continue
+			}
+			if score := scoreOverloadCandidate(fn, &call); score > bestScore {
+				best, bestScore = key, score
+			}
+		}
+		if best != "" && bestScore > 0 {
+			resolved[owner] = best
+		}
+	}
+	return resolved
+}
+
+// thisReceiverParamIndex is the sentinel passthroughParameterIndex returns
+// when the ambiguous call's receiver is the function's own implicit "this"
+// (ReceiverVar == "") rather than a named parameter — e.g.
+// AbstractHashingFunction.hash#3's own `hash(peppered, salt)` self-call. In
+// that case resolvePassthroughForCaller resolves the concrete type from the
+// OUTER caller's own already-resolved bypass context (ResolvedReceiverType on
+// the edge that reached gk.Caller) instead of from an argument.
+const thisReceiverParamIndex = -1
+
+// passthroughParameterIndex locates the ambiguous call site inside
+// gk.Caller's body and classifies its receiver as either a pass-through of one
+// of the function's own parameters (returns that parameter's index) or the
+// function's own implicit "this" (returns thisReceiverParamIndex). Also
+// returns the specific matching FunctionCall (there may be several calls in
+// the body; only the one at gk.CallSite/method/arity is relevant). ok=false
+// disqualifies the whole group (see resolvePassthroughGroup).
+//
+// The "this" case tolerates a multi-call, branching body (e.g.
+// `if (salt == null) { hash(x) } else { hash(x, salt) }`): this's concrete
+// type is fixed for the whole method regardless of which branch runs, so extra
+// calls/branches around it do not introduce the ambiguity the parameter case
+// guards against. The named-parameter case keeps the stricter "exactly one
+// call total" gate: a parameter COULD be reassigned or escape into a branch
+// this pass cannot see, so it stays conservative.
+func passthroughParameterIndex(graph *CallGraph, gk dispatchAmbiguousGroupKey) (*FunctionDecl, FunctionCall, int, bool) {
+	fn := graph.Functions[gk.Caller]
+	if fn == nil {
+		return nil, FunctionCall{}, 0, false
+	}
+	call, ok := findCallAtSite(fn, gk)
+	if !ok {
+		return nil, FunctionCall{}, 0, false
+	}
+	if call.ReceiverVar == "" {
+		return fn, call, thisReceiverParamIndex, true
+	}
+	if len(fn.Calls) != 1 {
+		return nil, FunctionCall{}, 0, false
+	}
+	for i := range fn.Parameters {
+		if fn.Parameters[i].Name != "" && fn.Parameters[i].Name == call.ReceiverVar {
+			return fn, call, i, true
+		}
+	}
+	return nil, FunctionCall{}, 0, false
+}
+
+// findCallAtSite finds the single call in fn matching gk's call site identity
+// (line, method name, arity). Returns ok=false if zero or more than one call
+// matches (an unexpected shape this pass should not guess about).
+func findCallAtSite(fn *FunctionDecl, gk dispatchAmbiguousGroupKey) (FunctionCall, bool) {
+	var found *FunctionCall
+	for i := range fn.Calls {
+		c := &fn.Calls[i]
+		if c.Line != gk.CallSite {
+			continue
+		}
+		method, arity := methodBaseArity(c.Callee.Name)
+		if method != gk.MethodName || arity != gk.Arity {
+			continue
+		}
+		if found != nil {
+			return FunctionCall{}, false
+		}
+		found = c
+	}
+	if found == nil {
+		return FunctionCall{}, false
+	}
+	return *found, true
+}
+
+// candidateOwnersByType maps each candidate's declaring type SIMPLE name
+// (FunctionID.Type, e.g. "AbstractHashingFunction") to its callee key(s), for
+// candidates with a non-empty owner type. The simple name — not the
+// fully-qualified one — is used because resolveArgumentConcreteType's sources
+// (FunctionDecl.ReturnType, InferredReturn.Type, and constructor DeclaredType)
+// are erased/simple names throughout this codebase (see erasedTypeName), so
+// matching on simple name is what actually lines up; a real cross-package name
+// collision would require qualifying by package too, which this pass does not
+// attempt (out of scope: erased-name provenance does not carry package here).
+//
+// An owner can map to more than one candidate when the dispatch group's
+// method+arity covers multiple overloads declared on the SAME type (e.g.
+// AbstractHashingFunction.hash(CharSequence,String,CharSequence) and
+// .hash(byte[],byte[],CharSequence) are both arity-3 "hash" methods) — that
+// ambiguity is resolved by resolveOverloadPerOwner using the ambiguous call's
+// own argument types (the same signal scoreOverloadCandidate uses elsewhere).
+func candidateOwnersByType(entries []edgeResolutionEntry) map[string][]string {
+	owners := make(map[string][]string, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		id, err := ParseFunctionID(e.calleeKey)
+		if err != nil || id.Type == "" || seen[e.calleeKey] {
+			continue
+		}
+		seen[e.calleeKey] = true
+		owners[id.Type] = append(owners[id.Type], e.calleeKey)
+	}
+	return owners
+}
+
+// resolvePassthroughForCaller resolves ONE outer caller's context to a
+// concrete receiver type and, if it matches exactly one candidate owner, adds
+// a direct bypass edge from callerKey straight to that candidate. Returns 1 if
+// an edge was added, else 0.
+//
+// Two receiver shapes (see passthroughParameterIndex):
+//   - paramIdx >= 0: the ambiguous call's receiver is calleeFn's own paramIdx-th
+//     parameter. The concrete type comes from resolving outerFn's OWN call to
+//     calleeFn at that argument position (a constructor call, or a call whose
+//     declared/inferred return type is concrete).
+//   - paramIdx == thisReceiverParamIndex: the ambiguous call's receiver is
+//     calleeFn's own implicit "this" (calleeFn.ID IS gk.Caller). The concrete
+//     type comes from the ResolvedReceiverType this pass already stamped on
+//     the edge callerKey->gk.Caller in an earlier iteration — i.e. this
+//     extends an existing resolved bypass one hop further into the target's
+//     own body, rather than resolving a fresh argument.
+func resolvePassthroughForCaller(
+	graph *CallGraph,
+	outerFn *FunctionDecl,
+	callerKey string,
+	calleeFn *FunctionDecl,
+	gk dispatchAmbiguousGroupKey,
+	paramIdx int,
+	candidateOwners map[string]string,
+) int {
+	if paramIdx == thisReceiverParamIndex {
+		return resolvePassthroughForThisReceiver(graph, callerKey, gk, candidateOwners)
+	}
+
+	call := findCallToCallee(outerFn, calleeFn.ID, len(calleeFn.Parameters))
+	if call == nil || paramIdx >= len(call.Arguments) {
+		return 0
+	}
+	argType := resolveArgumentConcreteType(graph, call, paramIdx)
+	if argType == "" {
+		return 0
+	}
+	targetKey, ok := resolveCandidateOwner(graph, argType, candidateOwners)
+	if !ok {
+		return 0
+	}
+	addCaller(graph.Callers, targetKey, callerKey)
+	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", call.Line)
+	stampResolvedReceiverType(graph, callerKey, targetKey, call.Line, argType)
+	return 1
+}
+
+// resolvePassthroughForThisReceiver extends an already-resolved bypass edge
+// callerKey->gk.Caller (which carries a ResolvedReceiverType stamped by an
+// earlier resolveParameterPassthroughDispatch iteration) one hop further: if
+// gk.Caller's own ambiguous "this" call resolves, via that SAME concrete type,
+// to exactly one candidate, a new bypass edge callerKey->candidate is added.
+// Returns 1 if an edge was added, else 0.
+func resolvePassthroughForThisReceiver(
+	graph *CallGraph,
+	callerKey string,
+	gk dispatchAmbiguousGroupKey,
+	candidateOwners map[string]string,
+) int {
+	resolvedType, line, ok := lookupResolvedReceiverType(graph, callerKey, gk.Caller)
+	if !ok {
+		return 0
+	}
+	targetKey, ok := resolveCandidateOwner(graph, resolvedType, candidateOwners)
+	if !ok {
+		return 0
+	}
+	addCaller(graph.Callers, targetKey, callerKey)
+	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", line)
+	stampResolvedReceiverType(graph, callerKey, targetKey, line, resolvedType)
+	return 1
+}
+
+// lookupResolvedReceiverType scans callerKey's recorded EdgeResolutions for an
+// entry targeting calleeKey that carries a non-empty ResolvedReceiverType
+// (stamped by a previous resolveParameterPassthroughDispatch iteration).
+// Returns the resolved type and the call-site line to attribute the extended
+// bypass edge to.
+func lookupResolvedReceiverType(graph *CallGraph, callerKey, calleeKey string) (resolvedType string, line int, ok bool) {
+	prefix := EdgeResolutionKeyPrefix(callerKey, calleeKey)
+	for key, res := range graph.EdgeResolutions {
+		if res.ResolvedReceiverType == "" || !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		return res.ResolvedReceiverType, res.CallSite, true
+	}
+	return "", 0, false
+}
+
+// resolveCandidateOwner matches a resolved concrete argument type against the
+// dispatch group's candidate owners (keyed by simple type name — see
+// candidateOwnersByType), first by exact match, then by walking the concrete
+// type's OwnerBases (populated for Java classes from their extends/implements
+// clauses) up to inheritanceMaxDepth levels — this is what lets password4j's
+// PBKDF2Function (which inherits hash#3 from AbstractHashingFunction without
+// overriding it) resolve to the AbstractHashingFunction candidate.
+//
+// argType may be a simple name (the common case: FunctionDecl.ReturnType /
+// InferredReturn.Type are erased/simple names) or occasionally
+// fully-qualified (a constructor's DeclaredType); simpleTypeName normalizes
+// either shape to its trailing segment before matching/walking.
+func resolveCandidateOwner(graph *CallGraph, argType string, candidateOwners map[string]string) (string, bool) {
+	simpleName := simpleTypeName(argType)
+	if targetKey, ok := candidateOwners[simpleName]; ok {
+		return targetKey, true
+	}
+
+	seen := map[string]bool{simpleName: true}
+	queue := []string{simpleName}
+	for depth := 0; depth < inheritanceMaxDepth && len(queue) > 0; depth++ {
+		next := queue[0]
+		queue = queue[1:]
+		decl := findClassDeclByType(graph, next)
+		if decl == nil {
+			continue
+		}
+		for _, base := range decl.OwnerBases {
+			base = simpleTypeName(strings.TrimSpace(base))
+			if base == "" || seen[base] {
+				continue
+			}
+			seen[base] = true
+			if targetKey, ok := candidateOwners[base]; ok {
+				return targetKey, true
+			}
+			queue = append(queue, base)
+		}
+	}
+	return "", false
+}
+
+// simpleTypeName returns the trailing, unqualified segment of a (possibly
+// fully-qualified) type name.
+func simpleTypeName(typeName string) string {
+	if idx := strings.LastIndex(typeName, "."); idx >= 0 {
+		return typeName[idx+1:]
+	}
+	return typeName
+}
+
+// inheritanceMaxDepth caps the OwnerBases ancestor walk in resolveCandidateOwner.
+// Java inheritance chains this pass needs to bridge are shallow in practice
+// (one or two hops); the cap is a safety valve against a malformed/cyclic
+// OwnerBases graph, not a realistic limit.
+const inheritanceMaxDepth = 8
+
+// findClassDeclByType finds any FunctionDecl declared on the given
+// simple-type-name class, used only to read its OwnerBases (every
+// method/constructor of a class carries the same OwnerBases, so the first hit
+// is sufficient). Matches by simple name only (see candidateOwnersByType).
+func findClassDeclByType(graph *CallGraph, typeName string) *FunctionDecl {
+	for _, fn := range graph.Functions {
+		if fn.OwnerType == ownerTypeClass && fn.ID.Type == typeName {
+			return fn
+		}
+	}
+	return nil
+}
+
+// findCallToCallee finds the first call in fn whose resolved callee matches id
+// and whose argument count equals wantArity (the pass-through function's own
+// parameter count, since the outer call must supply the same arity to reach it).
+func findCallToCallee(fn *FunctionDecl, id FunctionID, wantArity int) *FunctionCall {
+	for i := range fn.Calls {
+		c := &fn.Calls[i]
+		if c.Callee.String() == id.String() && len(c.Arguments) == wantArity {
+			return c
+		}
+	}
+	return nil
+}
+
+// resolveArgumentConcreteType resolves a call argument to a concrete
+// (non-interface, non-generic) type using its recorded SourceNodes: a
+// constructor call yields its constructed type; a CALL_RESULT yields the
+// target function's InferredReturn.Type when set, else its declared
+// ReturnType. Returns "" when no concrete type can be determined — the caller
+// then leaves the ambiguity exactly as before (fail-closed).
+func resolveArgumentConcreteType(graph *CallGraph, call *FunctionCall, argIdx int) string {
+	if argIdx >= len(call.ArgumentSources) {
+		return ""
+	}
+	for _, src := range call.ArgumentSources[argIdx] {
+		if typ := concreteTypeFromSourceNode(graph, src); typ != "" {
+			return typ
+		}
+	}
+	return ""
+}
+
+func concreteTypeFromSourceNode(graph *CallGraph, src SourceNode) string {
+	if src.Type != sourceNodeCallResult || src.CallTarget == nil {
+		return ""
+	}
+	target := src.CallTarget
+	if strings.Contains(target.Name, constructorMethodName) {
+		if src.DeclaredType != "" {
+			return src.DeclaredType
+		}
+		return qualifiedType(target.Package, target.Type)
+	}
+	callee := graph.Functions[target.String()]
+	if callee == nil {
+		return ""
+	}
+	if callee.InferredReturn != nil && callee.InferredReturn.Origin != OriginJoinFailed && callee.InferredReturn.Type != "" {
+		return callee.InferredReturn.Type
+	}
+	return callee.ReturnType
+}
+
+// stampResolvedReceiverType writes ResolvedReceiverType onto the just-recorded
+// exact EdgeResolution for callerKey->targetKey at line, so the fragment
+// exporter can carry it through as graph-fragment resolved_receiver_type.
+func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, line int, resolvedType string) {
+	// Mirror recordEdgeResolution's method/arity derivation exactly so the key
+	// matches the entry it just wrote (EdgeResolutionKey folds MethodName/Arity
+	// into the map key, so an approximate key would silently miss).
+	method, arity := "", 0
+	if calleeID, err := ParseFunctionID(targetKey); err == nil {
+		method = BaseFunctionName(calleeID.Name)
+		arity = functionArity(calleeID.Name)
+	}
+	key := EdgeResolutionKey(callerKey, targetKey, EdgeResolution{MethodName: method, Arity: arity, CallSite: line})
+	res, ok := graph.EdgeResolutions[key]
+	if !ok {
+		return
+	}
+	res.ResolvedReceiverType = resolvedType
+	graph.EdgeResolutions[key] = res
 }
 
 // buildTypePackageIndex maps simple type names to their packages.

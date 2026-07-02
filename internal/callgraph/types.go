@@ -196,6 +196,12 @@ type FunctionDecl struct {
 type FunctionParameter struct {
 	Type    string
 	TypeRef TypeRef
+	// Name is the declared parameter name (e.g. "hashingFunction"), when the
+	// parser captures it (1.6+ / Java only as of introduction). Empty for
+	// ecosystems whose parser does not populate it — callers that key off Name
+	// (e.g. parameter pass-through dispatch resolution) simply find no match and
+	// degrade to the prior behavior.
+	Name string
 }
 
 // FunctionCall represents a call expression within a function body.
@@ -348,6 +354,16 @@ type EdgeResolution struct {
 	MethodName   string // base method name (no arity decoration)
 	Arity        int
 	CallSite     int // source line of the call expression
+
+	// ResolvedReceiverType is the concrete receiver type resolveParameterPassthroughDispatch
+	// determined for THIS specific dispatch edge, when the call site is a
+	// single-use pass-through parameter and the calling context supplied a
+	// statically concrete argument (e.g. password4j's
+	// `with(AlgorithmFinder.getPBKDF2Instance())` calling into
+	// `with(HashingFunction h) { h.hash(...) }`). Empty when no such resolution
+	// applies. Exported verbatim as graph-fragment resolved_receiver_type so the
+	// stitcher can disambiguate a dispatch group at serve time.
+	ResolvedReceiverType string
 }
 
 // EdgeResolutionKey is the stable map key for one resolved caller->callee
