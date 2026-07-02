@@ -1276,7 +1276,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 - **Gradle source archives are best-effort** — Gradle dependency resolution provides binary artifact paths deterministically, but source archive availability still depends on what upstream repositories publish.
 - **Missing source JARs** — Dependencies without sources are skipped for source scanning, but they can still contribute Java bytecode types if the compiled JAR is present locally. They cannot produce source-level findings until sources are available.
 - **Wildcard import resolution** — When multiple wildcard imports could match a class name, resolution is best-effort.
-- **No inheritance/polymorphism** — Variable types are tracked syntactically; interface implementations and subclass overrides are not resolved.
+- **Limited inheritance/polymorphism** — Variable types are tracked syntactically, but interface method call sites and abstract-class method call sites are fanned out to same-name/arity concrete implementations and subclass overrides within the same namespace root (see `expandInterfaceDispatch`/`expandAbstractClassDispatch` in `internal/callgraph/builder.go`). This is a name+arity heuristic, not full type resolution, so it can over-match unrelated overloads across sibling implementations.
 - **Multi-module Maven partial resolution** — Multi-module Maven projects are supported via a three-tier fallback strategy. Tier 3 (`mvn install -DskipTests`) requires compilation and may fail if the project needs specific JDK versions or build tools not available in the scan environment.
 
 ### Python-specific

@@ -489,3 +489,42 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 		t.Fatalf("structural function = %q, want pkg.Svc.run", got[1].FunctionName)
 	}
 }
+
+// TestFindContainingFunctionByFinding_PicksTightestSpan guards against map-order
+// nondeterminism: graph.Functions is an unordered map, and a wide-span decl
+// (e.g. a synthetic <clinit> covering the whole class) can enclose the same
+// line as the real method. The lookup must deterministically return the
+// tightest enclosing span, not whichever match iterates first. The cache is
+// cleared between iterations so every lookup re-runs the selection.
+func TestFindContainingFunctionByFinding_PicksTightestSpan(t *testing.T) {
+	wide := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "<clinit>#0"},
+		FilePath:  "com/password4j/PBKDF2Function.java",
+		StartLine: 1,
+		EndLine:   300,
+	}
+	tight := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "internalHash#5"},
+		FilePath:  "com/password4j/PBKDF2Function.java",
+		StartLine: 126,
+		EndLine:   139,
+	}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			wide.ID.String():  wide,
+			tight.ID.String(): tight,
+		}},
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+	}
+
+	for i := 0; i < 50; i++ {
+		ctx.containingFunctionCache = make(map[string]cachedContainingFunction)
+		got := ctx.findContainingFunctionByFinding("com/password4j/PBKDF2Function.java", 130)
+		if got == nil {
+			t.Fatalf("iteration %d: got nil, want internalHash", i)
+		}
+		if got.ID.Name != "internalHash#5" {
+			t.Fatalf("iteration %d: got %s, want internalHash#5 (tightest span)", i, got.ID.Name)
+		}
+	}
+}

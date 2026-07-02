@@ -282,42 +282,67 @@ func pythonModuleFileStem(path string) string {
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.
 func (b *Builder) buildCallerIndex(graph *CallGraph) {
-	methodsByName := indexMethodsByName(graph)
-	methodsByQualifiedArity := indexMethodsByQualifiedArity(graph)
-	subclassByTypeName := indexSubclassByTypeName(graph)
+	idx := dispatchIndexes{
+		methodsByName:           indexMethodsByName(graph),
+		methodsByQualifiedArity: indexMethodsByQualifiedArity(graph),
+		subclassByTypeName:      indexSubclassByTypeName(graph),
+		knownClassTypes:         indexKnownClassTypes(graph),
+	}
 
 	for callerKey, fn := range graph.Functions {
 		for i := range fn.Calls {
-			call := fn.Calls[i]
-			calleeKey := call.Callee.String()
-			addCaller(graph.Callers, calleeKey, callerKey)
-			recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
-
-			overloadTargets := b.expandOverloadCandidates(call.Callee, methodsByQualifiedArity)
-			resolvedTargets := make([]string, 1, 1+len(overloadTargets))
-			resolvedTargets[0] = calleeKey
-			for _, target := range overloadTargets {
-				addCaller(graph.Callers, target, callerKey)
-				recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
-				resolvedTargets = append(resolvedTargets, target)
-			}
-
-			for _, target := range resolvedTargets {
-				for _, alias := range b.expandInterfaceDispatch(target, graph, methodsByName) {
-					addCaller(graph.Callers, alias.CalleeKey, callerKey)
-					recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
-				}
-				for _, alias := range b.expandPythonSubclassDispatch(target, graph, subclassByTypeName) {
-					addCaller(graph.Callers, alias.CalleeKey, callerKey)
-					recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
-				}
-			}
-
-			for _, alias := range b.expandFluentFallback(call, graph, methodsByName) {
-				addCaller(graph.Callers, alias, callerKey)
-				recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
-			}
+			b.indexCallDispatch(graph, callerKey, fn.Calls[i], idx)
 		}
+	}
+}
+
+// dispatchIndexes bundles the lookup tables buildCallerIndex needs to expand
+// one call site into all of its dispatch aliases (overloads, interface/abstract
+// virtual dispatch, Python subclass dispatch, fluent fallback).
+type dispatchIndexes struct {
+	methodsByName           map[string][]*FunctionDecl
+	methodsByQualifiedArity map[string][]string
+	subclassByTypeName      map[string][]*FunctionDecl
+	knownClassTypes         map[string]bool
+}
+
+// indexCallDispatch records the direct edge for one call site plus every
+// synthesized dispatch alias (overloads, interface/abstract virtual dispatch,
+// Python subclass dispatch, fluent fallback), each with its own edge
+// classification.
+func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
+	calleeKey := call.Callee.String()
+	addCaller(graph.Callers, calleeKey, callerKey)
+	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
+
+	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
+	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
+	resolvedTargets[0] = calleeKey
+	for _, target := range overloadTargets {
+		addCaller(graph.Callers, target, callerKey)
+		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
+		resolvedTargets = append(resolvedTargets, target)
+	}
+
+	for _, target := range resolvedTargets {
+		for _, alias := range b.expandInterfaceDispatch(target, graph, idx.methodsByName) {
+			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
+		}
+		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
+			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
+		}
+	}
+
+	for _, alias := range b.expandAbstractClassDispatch(call.Callee, graph, idx.methodsByName, idx.knownClassTypes) {
+		addCaller(graph.Callers, alias.CalleeKey, callerKey)
+		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
+	}
+
+	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
+		addCaller(graph.Callers, alias, callerKey)
+		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
 	}
 }
 
@@ -372,6 +397,23 @@ func indexMethodsByQualifiedArity(graph *CallGraph) map[string][]string {
 			index[qualifiedMethodArityKey(fn.ID.Package, fn.ID.Type, fn.ID.Name)],
 			key,
 		)
+	}
+	return index
+}
+
+// indexKnownClassTypes builds the set of "Package|Type" pairs for every
+// class-owned declaration in the graph. Used by expandAbstractClassDispatch to
+// tell apart "this Type is a real parsed class, just missing a body for this
+// particular method+arity" (an abstract method left undefined on an
+// intermediate class) from "this Type is unknown to the graph entirely"
+// (an unresolved/external callee, where no dispatch inference is safe).
+func indexKnownClassTypes(graph *CallGraph) map[string]bool {
+	index := make(map[string]bool)
+	for _, fn := range graph.Functions {
+		if fn.OwnerType != ownerTypeClass || fn.ID.Type == "" {
+			continue
+		}
+		index[fn.ID.Package+"|"+fn.ID.Type] = true
 	}
 	return index
 }
@@ -567,6 +609,71 @@ func interfaceDeclaredType(id FunctionID) string {
 		return id.Type
 	}
 	return id.Package + "." + id.Type
+}
+
+// expandAbstractClassDispatch links a call site to concrete overrides when the
+// resolved callee is an unqualified/this-call to a method that its own class
+// never defines a body for — the Java shape of an abstract intermediate class
+// declaring (but not implementing) a method that only its concrete subclasses
+// override. Mirrors expandInterfaceDispatch's policy (same-name+arity, same
+// namespace root) but keys off "callee class is known yet the exact method
+// has no declaration" rather than "callee owner is an interface", so it also
+// covers the case where the interface's only concrete body sits on an
+// abstract class that itself calls other not-yet-overridden interface methods
+// via `this`.
+//
+// It intentionally does NOT fire when the callee's Type is unknown to the
+// graph at all (e.g. an external/unresolved receiver) — knownClassTypes gates
+// that, so this stays a narrow "missing override" inference instead of a
+// generic name+arity fallback.
+func (b *Builder) expandAbstractClassDispatch(
+	callee FunctionID,
+	graph *CallGraph,
+	methodsByName map[string][]*FunctionDecl,
+	knownClassTypes map[string]bool,
+) []interfaceDispatchAlias {
+	if callee.Type == "" {
+		return nil
+	}
+	calleeKey := callee.String()
+	if _, declared := graph.Functions[calleeKey]; declared {
+		return nil
+	}
+	if !knownClassTypes[callee.Package+"|"+callee.Type] {
+		return nil
+	}
+
+	targets := methodsByName[methodLookupName(callee.Name)]
+	if len(targets) == 0 {
+		return nil
+	}
+
+	declaredType := interfaceDeclaredType(callee)
+	baseRoot := namespaceRoot(callee.Package)
+	calleeArity := functionArity(callee.Name)
+	keys := make([]string, 0, len(targets))
+	for _, candidate := range targets {
+		if candidate.OwnerType != ownerTypeClass {
+			continue
+		}
+		if candidate.ID.Type == callee.Type && candidate.ID.Package == callee.Package {
+			continue
+		}
+		if functionArity(candidate.ID.Name) != calleeArity {
+			continue
+		}
+		if namespaceRoot(candidate.ID.Package) != baseRoot {
+			continue
+		}
+		keys = append(keys, candidate.ID.String())
+	}
+
+	sort.Strings(keys)
+	results := make([]interfaceDispatchAlias, 0, len(keys))
+	for _, k := range keys {
+		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
+	}
+	return results
 }
 
 // expandFluentFallback links unresolved fluent-chain calls (foo().bar().baz()) to
