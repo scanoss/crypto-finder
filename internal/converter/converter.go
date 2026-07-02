@@ -170,7 +170,67 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 	baseComponent.Name = aggregated.Name
 	baseComponent.Evidence = c.buildEvidence(aggregated)
 
+	if aggregated.AssetType == AssetTypeAlgorithm {
+		mergeCryptoFunctions(baseComponent, aggregated.CryptoFunctions)
+	}
+
 	return baseComponent, nil
+}
+
+// mergeCryptoFunctions overwrites the component's CycloneDX CryptoFunctions
+// array and scanoss:cryptoFunction property with the full set of raw function
+// values collected across every asset in the aggregated group, when that set
+// has more than one distinct value. The mapper already set both fields from a
+// single ReferenceAsset; when two rules share one algorithm identity but carry
+// different operations (e.g. AESEngine.init synthesized as both encrypt and
+// decrypt at the same declaration site), that single-value baseline is
+// replaced here so no signal is silently dropped by aggregation.
+func mergeCryptoFunctions(component *cdx.Component, rawFunctions []string) {
+	if len(rawFunctions) < 2 || component.CryptoProperties == nil {
+		return // Nothing to merge; the mapper's single-function baseline stands.
+	}
+	algProps := component.CryptoProperties.AlgorithmProperties
+	if algProps == nil {
+		return
+	}
+
+	// Distinct raw values can normalize to the same enum (e.g. "hash" and
+	// "digest" both map to digest), so dedup by the mapped value.
+	functions := make([]cdx.CryptoFunction, 0, len(rawFunctions))
+	seen := make(map[cdx.CryptoFunction]struct{}, len(rawFunctions))
+	for _, raw := range rawFunctions {
+		fn, ok := mapRawCryptoFunctionToCycloneDX(raw)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[fn]; dup {
+			continue
+		}
+		seen[fn] = struct{}{}
+		functions = append(functions, fn)
+	}
+	if len(functions) > 0 {
+		algProps.CryptoFunctions = &functions
+	}
+
+	setCryptoFunctionProperty(component, strings.Join(rawFunctions, ","))
+}
+
+// setCryptoFunctionProperty replaces the scanoss:cryptoFunction property value
+// in place (or adds it if absent for some reason) instead of appending a
+// duplicate alongside the single-value one the mapper already added.
+func setCryptoFunctionProperty(component *cdx.Component, value string) {
+	if component.Properties == nil {
+		addCustomProperty(component, scanossCryptoFunctionPropertyName, value)
+		return
+	}
+	for i := range *component.Properties {
+		if (*component.Properties)[i].Name == scanossCryptoFunctionPropertyName {
+			(*component.Properties)[i].Value = value
+			return
+		}
+	}
+	addCustomProperty(component, scanossCryptoFunctionPropertyName, value)
 }
 
 // buildEvidence constructs the evidence structure with occurrences and identities.

@@ -18,6 +18,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,18 +125,18 @@ func indexReportFiles(report *entities.InterimReport) map[string]int {
 func synthesizeRuleCryptoAssets(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
-	apiCrypto map[string]map[string]string,
+	apiCrypto map[string][]map[string]string,
 	declsByFQN map[string][]*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
 	ecosystem string,
 ) int {
 	added := 0
-	for api, meta := range apiCrypto {
+	for api, metas := range apiCrypto {
 		decls := declsByFQN[api]
 		if len(decls) == 0 && ecosystem == ecosystemPython {
 			decls = pythonModuleCollapsedDecls(api, declsByFQN)
 		}
-		added += synthesizeAPIAssets(report, fileIdx, api, meta, decls, declsByClass)
+		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass)
 	}
 	return added
 }
@@ -177,21 +178,21 @@ func synthesizeAPIAssets(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
 	api string,
-	meta map[string]string,
+	metas []map[string]string,
 	decls []*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
 ) int {
 	if len(decls) == 0 {
-		return synthesizeImplicitCtorAsset(report, fileIdx, api, meta, declsByClass)
+		return synthesizeImplicitCtorAsset(report, fileIdx, api, metas, declsByClass)
 	}
-	return synthesizeDeclaredAPIAssets(report, fileIdx, api, meta, decls)
+	return synthesizeDeclaredAPIAssets(report, fileIdx, api, metas, decls)
 }
 
 func synthesizeImplicitCtorAsset(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
 	api string,
-	meta map[string]string,
+	metas []map[string]string,
 	declsByClass map[string][]*callgraph.FunctionDecl,
 ) int {
 	// No source-declared method matches the api. A constructor api may still
@@ -200,17 +201,26 @@ func synthesizeImplicitCtorAsset(
 	if rep == nil {
 		return 0
 	}
-	if appendSyntheticRuleAsset(report, fileIdx, api, meta, rep) {
-		return 1
+	added := 0
+	for _, meta := range metas {
+		if appendSyntheticRuleAsset(report, fileIdx, api, meta, rep) {
+			added++
+		}
 	}
-	return 0
+	return added
 }
 
+// synthesizeDeclaredAPIAssets appends one synthetic asset per crypto block in
+// metas at each declaration in decls. The terminal-finding check is evaluated
+// ONCE per declaration, before any of that declaration's blocks are appended:
+// a later block (e.g. the decrypt half of a shared api) must be suppressed only
+// by a REAL pre-existing finding in the method body, never by a synthetic
+// sibling asset (e.g. the encrypt half) added moments earlier in this same loop.
 func synthesizeDeclaredAPIAssets(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
 	api string,
-	meta map[string]string,
+	metas []map[string]string,
 	decls []*callgraph.FunctionDecl,
 ) int {
 	added := 0
@@ -218,8 +228,10 @@ func synthesizeDeclaredAPIAssets(
 		if functionBodyHasTerminalFinding(report, fn) {
 			continue // Type 1: primitive already detected inside the method.
 		}
-		if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn) {
-			added++
+		for _, meta := range metas {
+			if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn) {
+				added++
+			}
 		}
 	}
 	return added
@@ -336,6 +348,12 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 	if md["assetType"] == "" {
 		md["assetType"] = "algorithm"
 	}
+	// Metadata parity with call-site matches: the semgrep transformer backfills
+	// cryptoFunction from operation (extractCryptoMetadata), and DCA rules carry
+	// only `operation`. Mirror that here or mined entry points lack the field.
+	if md["cryptoFunction"] == "" && md["operation"] != "" {
+		md["cryptoFunction"] = md["operation"]
+	}
 
 	line := fn.StartLine
 	if line <= 0 {
@@ -357,7 +375,12 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 }
 
 // appendSyntheticAsset adds asset to the Finding for filePath (creating one if
-// needed), skipping exact duplicates. Returns true when an asset was added.
+// needed), skipping exact duplicates. Two assets are considered duplicates only
+// when they sit at the same line AND carry identical metadata in full (not just
+// the same api) -- this lets two rules sharing one api (e.g. AESEngine.init as
+// both encrypt and decrypt) coexist as distinct assets at the same declaration
+// site, while still deduping a truly identical block synthesized twice. Returns
+// true when an asset was added.
 func appendSyntheticAsset(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
@@ -367,7 +390,7 @@ func appendSyntheticAsset(
 	if idx, ok := fileIdx[filePath]; ok {
 		for i := range report.Findings[idx].CryptographicAssets {
 			existing := &report.Findings[idx].CryptographicAssets[i]
-			if existing.StartLine == asset.StartLine && existing.Metadata["api"] == asset.Metadata["api"] {
+			if existing.StartLine == asset.StartLine && maps.Equal(existing.Metadata, asset.Metadata) {
 				return false
 			}
 		}
@@ -399,11 +422,15 @@ type ruleFileCryptoYAML struct {
 // looks like a fully-qualified method (the boundary-rule convention: a dotted
 // symbol). The ecosystem parameter is forwarded to the qualified-symbol gate so
 // Python's 1-dot module-level functions are accepted. The returned map carries
-// the crypto block stringified verbatim so the synthetic finding metadata is
-// identical to a call-site match. The rule remains the single source of truth
-// for the crypto semantics.
-func buildRuleCryptoByAPI(rulePaths []string, ecosystem string) map[string]map[string]string {
-	out := make(map[string]map[string]string)
+// each distinct crypto block stringified verbatim (in file-walk order) so the
+// synthetic finding metadata is identical to a call-site match. Multiple rules
+// legitimately share one api with different semantics (e.g. AESEngine.init as
+// both encrypt and decrypt) -- both blocks are kept, one per operation. An
+// identical block (full map equality) discovered again for the same api is
+// deduped, since that only means the same rule was found in multiple files. The
+// rule remains the single source of truth for the crypto semantics.
+func buildRuleCryptoByAPI(rulePaths []string, ecosystem string) map[string][]map[string]string {
+	out := make(map[string][]map[string]string)
 	for _, p := range rulePaths {
 		for _, file := range expandRuleFiles(p) {
 			addRuleCryptoFile(out, file, ecosystem)
@@ -412,7 +439,7 @@ func buildRuleCryptoByAPI(rulePaths []string, ecosystem string) map[string]map[s
 	return out
 }
 
-func addRuleCryptoFile(out map[string]map[string]string, file, ecosystem string) {
+func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem string) {
 	// Rule paths come from the trusted ruleset manager.
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -429,17 +456,19 @@ func addRuleCryptoFile(out map[string]map[string]string, file, ecosystem string)
 	}
 }
 
-func addRuleCrypto(out map[string]map[string]string, crypto map[string]any, ecosystem string) {
+func addRuleCrypto(out map[string][]map[string]string, crypto map[string]any, ecosystem string) {
 	api, ok := cryptoAPI(crypto, ecosystem)
 	if !ok {
 		return
 	}
-	if _, seen := out[api]; seen {
-		return // first declaration wins; deterministic enough for synthesis
-	}
 	meta := stringifyCryptoBlock(crypto)
 	removeUnresolvedMetadataVariables(meta)
-	out[api] = meta
+	for _, existing := range out[api] {
+		if maps.Equal(existing, meta) {
+			return // identical block already indexed for this api; skip.
+		}
+	}
+	out[api] = append(out[api], meta)
 }
 
 func cryptoAPI(crypto map[string]any, ecosystem string) (string, bool) {

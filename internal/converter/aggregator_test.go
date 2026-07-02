@@ -555,3 +555,114 @@ func TestAggregator_GetAssetKey(t *testing.T) {
 		})
 	}
 }
+
+// TestAggregator_CryptoFunctions_MergedAcrossSameIdentityAssets guards the DCA
+// case where two rules share one api with different operation/cryptoFunction
+// (e.g. AESEngine.init as both encrypt and decrypt, synthesized by rule-entrypoint
+// synthesis at the same declaration site). Both assets collapse into a single
+// AggregatedAsset by name (as they already do), but the crypto function signal
+// from BOTH assets must be preserved -- not just the first ReferenceAsset's.
+func TestAggregator_CryptoFunctions_MergedAcrossSameIdentityAssets(t *testing.T) {
+	aggregator := NewAggregator()
+
+	report := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{
+				FilePath: "org/bouncycastle/crypto/engines/AESEngine.java",
+				Language: "java",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{
+						StartLine: 70,
+						EndLine:   70,
+						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", Severity: "INFO"}},
+						Metadata: map[string]string{
+							"assetType":          "algorithm",
+							"algorithmFamily":    "AES",
+							"algorithmPrimitive": "block-cipher",
+							"operation":          "encrypt",
+							"cryptoFunction":     "encrypt",
+							"api":                "org.bouncycastle.crypto.engines.AESEngine.init",
+						},
+					},
+					{
+						StartLine: 70,
+						EndLine:   70,
+						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", Severity: "INFO"}},
+						Metadata: map[string]string{
+							"assetType":          "algorithm",
+							"algorithmFamily":    "AES",
+							"algorithmPrimitive": "block-cipher",
+							"operation":          "decrypt",
+							"cryptoFunction":     "decrypt",
+							"api":                "org.bouncycastle.crypto.engines.AESEngine.init",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	aggregated, err := aggregator.AggregateAssets(report)
+	if err != nil {
+		t.Fatalf("AggregateAssets() error = %v", err)
+	}
+	if len(aggregated) != 1 {
+		t.Fatalf("expected 1 aggregated asset (same algorithm name), got %d", len(aggregated))
+	}
+
+	asset := aggregated[0]
+	if len(asset.CryptoFunctions) != 2 {
+		t.Fatalf("expected 2 merged crypto functions, got %d: %v", len(asset.CryptoFunctions), asset.CryptoFunctions)
+	}
+
+	got := map[string]bool{}
+	for _, fn := range asset.CryptoFunctions {
+		got[fn] = true
+	}
+	if !got["encrypt"] || !got["decrypt"] {
+		t.Fatalf("expected both encrypt and decrypt merged, got %v", asset.CryptoFunctions)
+	}
+}
+
+// TestAggregator_CryptoFunctions_DedupedForRepeatedOperation guards that
+// repeated occurrences carrying the SAME cryptoFunction (e.g. the same
+// encrypt-only asset detected in two files) do not produce duplicate entries.
+func TestAggregator_CryptoFunctions_DedupedForRepeatedOperation(t *testing.T) {
+	aggregator := NewAggregator()
+
+	makeAsset := func(line int) entities.CryptographicAsset {
+		return entities.CryptographicAsset{
+			StartLine: line,
+			EndLine:   line,
+			Rules:     []entities.RuleInfo{{ID: "go-aes-encrypt", Severity: "INFO"}},
+			Metadata: map[string]string{
+				"assetType":          "algorithm",
+				"algorithmFamily":    "AES",
+				"algorithmPrimitive": "block-cipher",
+				"operation":          "encrypt",
+			},
+		}
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{FilePath: "a.go", Language: "go", CryptographicAssets: []entities.CryptographicAsset{makeAsset(1)}},
+			{FilePath: "b.go", Language: "go", CryptographicAssets: []entities.CryptographicAsset{makeAsset(2)}},
+		},
+	}
+
+	aggregated, err := aggregator.AggregateAssets(report)
+	if err != nil {
+		t.Fatalf("AggregateAssets() error = %v", err)
+	}
+	if len(aggregated) != 1 {
+		t.Fatalf("expected 1 aggregated asset, got %d", len(aggregated))
+	}
+	if got := aggregated[0].CryptoFunctions; len(got) != 1 || got[0] != "encrypt" {
+		t.Fatalf("expected deduped CryptoFunctions = [encrypt], got %v", got)
+	}
+}
