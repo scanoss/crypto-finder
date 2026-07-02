@@ -38,6 +38,35 @@ func writeRule(t *testing.T, dir, api, family string) string {
 	return p
 }
 
+// aesEngineInitAPI is the shared api FQN used by the multi-crypto-function
+// synthesis tests below, mirroring the real DCA rules
+// java.bouncycastle.algorithm.block-cipher.aes-init-encrypt/aes-init-decrypt,
+// which both carry api: org.bouncycastle.crypto.engines.AESEngine.init.
+const aesEngineInitAPI = "org.bouncycastle.crypto.engines.AESEngine.init"
+
+// writeRuleWithID writes an AES rule file for aesEngineInitAPI carrying one
+// metadata.crypto block with an explicit rule id and operation. Used to
+// construct multi-rule same-api scenarios (e.g. AESEngine.init shared by an
+// encrypt rule and a decrypt rule) where the caller passes the shared dir
+// (not the individual file path) to SynthesizeRuleCryptoEntryPoints.
+func writeRuleWithID(t *testing.T, dir, filename, ruleID, operation string) {
+	t.Helper()
+	body := "" +
+		"rules:\n" +
+		"  - id: " + ruleID + "\n" +
+		"    metadata:\n" +
+		"      crypto:\n" +
+		"        assetType: algorithm\n" +
+		"        algorithmPrimitive: block-cipher\n" +
+		"        algorithmFamily: AES\n" +
+		"        operation: " + operation + "\n" +
+		"        api: " + aesEngineInitAPI + "\n"
+	p := filepath.Join(dir, filename)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func graphWith(decl *callgraph.FunctionDecl) *callgraph.CallGraph {
 	g := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}
 	if decl != nil {
@@ -464,5 +493,148 @@ func TestSynthesize_UnresolvedAlgorithmNameFallsBackToFamily(t *testing.T) {
 	// still removed rather than left as a literal "$variant".
 	if v, ok := asset.Metadata["algorithmParameterSetIdentifier"]; ok {
 		t.Fatalf("expected unresolved algorithmParameterSetIdentifier to be removed, got %q", v)
+	}
+}
+
+// ── Multi-crypto-function synthesis (shared api, different operation) ──────
+
+// aesEngineInitDecl mimics org.bouncycastle.crypto.engines.AESEngine.init(...),
+// the shared declaration site for both the encrypt and decrypt boundary rules.
+func aesEngineInitDecl() *callgraph.FunctionDecl {
+	return &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "org.bouncycastle.crypto.engines", Type: "AESEngine", Name: "init"},
+		FilePath:  "org/bouncycastle/crypto/engines/AESEngine.java",
+		StartLine: 70,
+		EndLine:   90,
+	}
+}
+
+// TestSynthesize_SharedAPIDifferentOperation_ProducesTwoAssets guards the DCA
+// case where two rules (aes-init-encrypt / aes-init-decrypt) legitimately share
+// one api (AESEngine.init) but carry different operation/cryptoFunction. Both
+// must synthesize as separate assets at the same declaration site.
+func TestSynthesize_SharedAPIDifferentOperation_ProducesTwoAssets(t *testing.T) {
+	dir := t.TempDir()
+	const api = aesEngineInitAPI
+	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "decrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", "decrypt")
+
+	report := &entities.InterimReport{}
+	graph := graphWith(aesEngineInitDecl())
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{dir}, "")
+	if n != 2 {
+		t.Fatalf("expected 2 synthesized assets (encrypt + decrypt), got %d", n)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected 1 finding (same file), got %d", len(report.Findings))
+	}
+	assets := report.Findings[0].CryptographicAssets
+	if len(assets) != 2 {
+		t.Fatalf("expected 2 assets at the shared declaration site, got %d", len(assets))
+	}
+
+	ops := map[string]bool{}
+	for _, a := range assets {
+		if a.StartLine != 70 {
+			t.Errorf("asset StartLine = %d, want 70 (method decl line)", a.StartLine)
+		}
+		if a.Metadata["api"] != api {
+			t.Errorf("asset api = %q, want %q", a.Metadata["api"], api)
+		}
+		ops[a.Metadata["operation"]] = true
+	}
+	if !ops["encrypt"] || !ops["decrypt"] {
+		t.Fatalf("expected one encrypt and one decrypt asset, got operations: %v", ops)
+	}
+}
+
+// TestSynthesize_BackfillsCryptoFunctionFromOperation guards metadata parity
+// with call-site matches: the semgrep transformer backfills cryptoFunction
+// from operation (extractCryptoMetadata), and production DCA rules carry only
+// `operation`. A synthetic asset must expose the same cryptoFunction key a
+// real match of the same rule would have, or downstream consumers (dep-tree
+// metadata readers) see the field missing on mined entry points only.
+func TestSynthesize_BackfillsCryptoFunctionFromOperation(t *testing.T) {
+	dir := t.TempDir()
+	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+
+	report := &entities.InterimReport{}
+	graph := graphWith(aesEngineInitDecl())
+
+	if n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{dir}, ""); n != 1 {
+		t.Fatalf("expected 1 synthesized asset, got %d", n)
+	}
+	md := report.Findings[0].CryptographicAssets[0].Metadata
+	if md["cryptoFunction"] != "encrypt" {
+		t.Fatalf("cryptoFunction = %q, want %q (backfilled from operation)", md["cryptoFunction"], "encrypt")
+	}
+}
+
+// TestSynthesize_DuplicateRuleCryptoBlock_DedupesToOneAsset guards the case
+// where the identical rule (same crypto block) is discovered twice (e.g. it
+// appears verbatim in two rule files walked during indexing). Only one asset
+// should synthesize — dedup keys off full metadata equality, not just api.
+func TestSynthesize_DuplicateRuleCryptoBlock_DedupesToOneAsset(t *testing.T) {
+	dir := t.TempDir()
+	// Same rule id, same operation, same everything -- written to two files.
+	writeRuleWithID(t, dir, "a.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "b.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+
+	report := &entities.InterimReport{}
+	graph := graphWith(aesEngineInitDecl())
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{dir}, "")
+	if n != 1 {
+		t.Fatalf("expected 1 synthesized asset (identical block deduped), got %d", n)
+	}
+}
+
+// TestSynthesize_SingleRuleAPI_Unchanged is a regression guard: a single rule
+// per api must keep producing exactly one asset (no accidental fan-out from the
+// map[string][]map[string]string refactor).
+func TestSynthesize_SingleRuleAPI_Unchanged(t *testing.T) {
+	dir := t.TempDir()
+	rule := writeRule(t, dir, "com.example.Builder.withBcrypt", "bcrypt")
+	report := &entities.InterimReport{}
+	graph := graphWith(builderWithBcrypt())
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{rule}, "")
+	if n != 1 {
+		t.Fatalf("expected 1 synthesized finding, got %d", n)
+	}
+}
+
+// TestSynthesize_TerminalFinding_SuppressesBothSharedAPIBlocks guards ordering:
+// when the method body already has a REAL detected primitive finding, BOTH
+// shared-api blocks (encrypt and decrypt) must be suppressed -- and critically,
+// the second block must be suppressed because of the REAL finding, not because
+// the first synthetic sibling (added moments earlier) looks like a terminal
+// finding to functionBodyHasTerminalFinding.
+func TestSynthesize_TerminalFinding_SuppressesBothSharedAPIBlocks(t *testing.T) {
+	dir := t.TempDir()
+	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "decrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", "decrypt")
+
+	decl := aesEngineInitDecl()
+	report := &entities.InterimReport{
+		Findings: []entities.Finding{{
+			FilePath: decl.FilePath,
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 75, // inside [70,90]
+				Metadata:  map[string]string{"algorithmPrimitive": "block-cipher", "algorithmFamily": "AES"},
+			}},
+		}},
+	}
+	graph := graphWith(decl)
+
+	n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{dir}, "")
+	if n != 0 {
+		t.Fatalf("expected 0 synthesized assets (method body already has a real finding), got %d", n)
+	}
+	// Only the original real finding should remain -- no synthetic siblings leaked in.
+	if got := len(report.Findings[0].CryptographicAssets); got != 1 {
+		t.Fatalf("expected exactly 1 asset (the original real finding), got %d", got)
 	}
 }
