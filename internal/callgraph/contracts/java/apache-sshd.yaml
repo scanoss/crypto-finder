@@ -1,0 +1,99 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: apache-sshd
+  coordinates:
+    - "org.apache.sshd:sshd-core"
+    - "org.apache.sshd:sshd-common"
+  version_range: ">=2,<3"
+  description: "Apache MINA SSHD factory contracts for key, cipher, MAC, and fingerprint flows"
+
+contracts:
+  - method: org.apache.sshd.common.config.keys.KeyUtils.generateKeyPair
+    arity: 2
+    return:
+      type: java.security.KeyPair
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.cloneKeyPair
+    arity: 2
+    return:
+      type: java.security.KeyPair
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getDefaultFingerPrintFactory
+    arity: 0
+    return:
+      type: org.apache.sshd.common.digest.DigestFactory
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getRawFingerprint
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+  - method: org.apache.sshd.common.config.keys.KeyUtils.getRawFingerprint
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+  - method: org.apache.sshd.common.cipher.BuiltinCiphers.fromFactoryName
+    arity: 1
+    return:
+      type: org.apache.sshd.common.cipher.BuiltinCiphers
+      confidence: high
+  - method: org.apache.sshd.common.cipher.BuiltinCiphers.resolveFactory
+    arity: 1
+    return:
+      type: org.apache.sshd.common.cipher.CipherFactory
+      confidence: high
+  - method: org.apache.sshd.common.cipher.BuiltinCiphers.create
+    arity: 0
+    return:
+      type: org.apache.sshd.common.cipher.Cipher
+      confidence: high
+  - method: org.apache.sshd.common.mac.BuiltinMacs.fromFactoryName
+    arity: 1
+    return:
+      type: org.apache.sshd.common.mac.BuiltinMacs
+      confidence: high
+  - method: org.apache.sshd.common.mac.BuiltinMacs.resolveFactory
+    arity: 1
+    return:
+      type: org.apache.sshd.common.mac.MacFactory
+      confidence: high
+  - method: org.apache.sshd.common.mac.BuiltinMacs.create
+    arity: 0
+    return:
+      type: org.apache.sshd.common.mac.Mac
+      confidence: high
+
+hierarchy:
+  org.apache.sshd.common.digest.DigestFactory:
+    - java.lang.Object
+  org.apache.sshd.common.cipher.CipherFactory:
+    - java.lang.Object
+  org.apache.sshd.common.cipher.Cipher:
+    - java.lang.Object
+  org.apache.sshd.common.cipher.BuiltinCiphers:
+    - org.apache.sshd.common.cipher.CipherFactory
+  org.apache.sshd.common.mac.MacFactory:
+    - java.lang.Object
+  org.apache.sshd.common.mac.Mac:
+    - java.lang.Object
+  org.apache.sshd.common.mac.BuiltinMacs:
+    - org.apache.sshd.common.mac.MacFactory
+  java.lang.Object: []

@@ -1,0 +1,90 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: nimbus-jose-jwt
+  coordinates:
+    - "com.nimbusds:nimbus-jose-jwt"
+  version_range: ">=9,<11"
+  description: "Nimbus JOSE + JWT contracts for JWS construction, signing, verification, and compact serialization"
+
+contracts:
+  - method: com.nimbusds.jose.JWSObject.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.JWSObject
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.parse
+    arity: 1
+    return:
+      type: com.nimbusds.jose.JWSObject
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.sign
+    arity: 1
+    return:
+      type: void
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.verify
+    arity: 1
+    return:
+      type: boolean
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.serialize
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.getPayload
+    arity: 0
+    return:
+      type: com.nimbusds.jose.Payload
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSASigner.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSASSASigner
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSASigner.sign
+    arity: 2
+    return:
+      type: com.nimbusds.jose.util.Base64URL
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSAVerifier.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSASSAVerifier
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSAVerifier.verify
+    arity: 3
+    return:
+      type: boolean
+      confidence: high
+  - method: com.nimbusds.jose.jwk.RSAKey.toPublicJWK
+    arity: 0
+    return:
+      type: com.nimbusds.jose.jwk.RSAKey
+      confidence: high
+  - method: com.nimbusds.jose.jwk.RSAKey.parse
+    arity: 1
+    return:
+      type: com.nimbusds.jose.jwk.RSAKey
+      confidence: high
+
+hierarchy:
+  com.nimbusds.jose.JWSObject:
+    - java.lang.Object
+  com.nimbusds.jose.Payload:
+    - java.lang.Object
+  com.nimbusds.jose.JWSSigner:
+    - java.lang.Object
+  com.nimbusds.jose.JWSVerifier:
+    - java.lang.Object
+  com.nimbusds.jose.crypto.RSASSASigner:
+    - com.nimbusds.jose.JWSSigner
+  com.nimbusds.jose.crypto.RSASSAVerifier:
+    - com.nimbusds.jose.JWSVerifier
+  com.nimbusds.jose.jwk.RSAKey:
+    - java.lang.Object
+  com.nimbusds.jose.util.Base64URL:
+    - java.lang.Object
+  java.lang.Object: []
