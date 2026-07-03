@@ -53,6 +53,16 @@ type exportBuildContext struct {
 	// points. nil for ecosystems with no contracts.
 	kb        *contracts.KnowledgeBase
 	declIndex map[string]*callgraph.FunctionDecl // base FQN → definition
+	// callsBySignature caches, per caller FunctionID key, an index of that
+	// caller's FunctionCalls grouped by the (Package, Type, BaseFunctionName)
+	// tuple callMatchesCallee compares — the same fuzzy key an
+	// overload/dispatch-expanded calleeKey still matches against its one
+	// underlying source call. Built lazily (one caller's Calls slice is
+	// indexed at most once, on first lookup) via callSignatureIndexForCaller,
+	// so a caller with heavy dispatch fan-out (many resolved edges, one
+	// source call site) pays the O(len(Calls)) index-build cost once instead
+	// of once per edge. nil until first use.
+	callsBySignature map[string]map[string][]*callgraph.FunctionCall
 }
 
 type cachedContainingFunction struct {

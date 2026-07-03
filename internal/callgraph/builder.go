@@ -1071,13 +1071,45 @@ const passthroughMaxIterations = 10
 // PBKDF2Function context) can unlock the NEXT hop inside that same target's
 // body (hash#3's own "this.hash(...)" self-call, which the first pass alone
 // cannot see since it has no explicit receiver argument to resolve).
-func resolveParameterPassthroughDispatch(graph *CallGraph) {
+func resolveParameterPassthroughDispatch(graph *CallGraph) int {
+	// receiverIdx mirrors every ResolvedReceiverType stamped onto
+	// graph.EdgeResolutions, keyed by "callerKey\x00calleeKey" so
+	// resolvePassthroughForThisReceiver can look up an already-resolved bypass
+	// edge in O(1) instead of linearly scanning the (potentially huge, after
+	// dispatch fan-out) EdgeResolutions map on every call — see
+	// lookupResolvedReceiverType's doc comment for the full contract this
+	// index mirrors. Built once and kept in sync by stampResolvedReceiverType
+	// for the lifetime of this pass (including across fixpoint iterations,
+	// since a later group can depend on an edge a same-iteration earlier group
+	// just stamped).
+	receiverIdx := newResolvedReceiverIndex(graph)
+
+	// The ambiguous-group membership (groupAmbiguousDispatchEdges) and each
+	// group's qualification (passthroughParameterIndex, candidateOwners) are
+	// invariant across fixpoint iterations: this pass only ever adds
+	// EdgeKindExact bypass edges targeting a CONCRETE candidate — never an
+	// EdgeKindInterfaceDispatch edge — so groupAmbiguousDispatchEdges's
+	// filtered set never changes. Computing that (and each group's
+	// qualification) once instead of on every iteration turns what used to be
+	// up to passthroughMaxIterations full rescans of graph.EdgeResolutions
+	// (millions of entries on large graphs such as bcprov) into a single
+	// rescan.
+	//
+	// graph.Callers[gk.Caller] is NOT invariant, though: gk.Caller can itself
+	// be a bypass TARGET for a different group (a multi-hop chain — e.g.
+	// password4j's HashBuilder.withBcrypt() -> BcryptFunction.hash, where
+	// BcryptFunction.hash's own inherited AbstractHashingFunction.hash body
+	// is a second, deeper ambiguous group). Resolving that outer group adds
+	// gk.Caller as a NEW caller of the inner group via addCaller, so the
+	// caller list must be re-read from graph.Callers every iteration — see
+	// resolveQualifiedPassthroughGroup.
+	qualified := qualifyPassthroughGroups(graph)
+
 	totalResolved := 0
 	for iter := 0; iter < passthroughMaxIterations; iter++ {
-		groups := groupAmbiguousDispatchEdges(graph)
 		resolved := 0
-		for _, gk := range sortedAmbiguousGroupKeys(groups) {
-			resolved += resolvePassthroughGroup(graph, gk, groups[gk])
+		for i := range qualified {
+			resolved += resolveQualifiedPassthroughGroup(graph, &qualified[i], receiverIdx)
 		}
 		totalResolved += resolved
 		if resolved == 0 {
@@ -1087,6 +1119,88 @@ func resolveParameterPassthroughDispatch(graph *CallGraph) {
 	if totalResolved > 0 {
 		log.Info().Int("resolved", totalResolved).Msg("Resolved parameter pass-through interface dispatch")
 	}
+	return totalResolved
+}
+
+// qualifiedPassthroughGroup caches one ambiguous dispatch group's
+// iteration-invariant qualification (see resolveParameterPassthroughDispatch's
+// doc comment): everything passthroughParameterIndex and
+// resolveOverloadPerOwner/candidateOwnersByType compute from gk and entries
+// alone, plus the group's outer caller list, none of which changes across
+// fixpoint iterations.
+type qualifiedPassthroughGroup struct {
+	gk              dispatchAmbiguousGroupKey
+	calleeFn        *FunctionDecl
+	paramIdx        int
+	candidateOwners map[string]string
+}
+
+// qualifyPassthroughGroups computes groupAmbiguousDispatchEdges once and
+// resolves each group's iteration-invariant qualification up front, so the
+// fixpoint loop in resolveParameterPassthroughDispatch only repeats the part
+// that can actually change between iterations: per-caller resolution.
+//
+// Qualification for one group (gk.Caller is the function whose body issues
+// the ambiguous call — the "pass-through candidate"; conservative by design —
+// every condition narrows toward "do nothing" on doubt, matching the
+// fail-closed default), delegated to passthroughParameterIndex:
+//  1. The ambiguous call site must be uniquely identifiable in gk.Caller's
+//     body by (line, method, arity) — see findCallAtSite.
+//  2. Its receiver is either (a) one of gk.Caller's OWN parameters
+//     (positionally matched via FunctionParameter.Name) — a pass-through of an
+//     argument — in which case gk.Caller must have EXACTLY ONE call in its
+//     body (a parameter could otherwise be reassigned or escape into a branch
+//     this pass cannot see); or (b) gk.Caller's own implicit "this" — in which
+//     case a multi-call, branching body is tolerated (this's type is fixed for
+//     the whole method regardless of branch).
+//  3. Each entry in the group names a distinct candidate; each candidate's
+//     owner type is derived from its FunctionID.Type (simple name).
+func qualifyPassthroughGroups(graph *CallGraph) []qualifiedPassthroughGroup {
+	groups := groupAmbiguousDispatchEdges(graph)
+	keys := sortedAmbiguousGroupKeys(groups)
+	qualified := make([]qualifiedPassthroughGroup, 0, len(keys))
+	for _, gk := range keys {
+		calleeFn, ambiguousCall, paramIdx, ok := passthroughParameterIndex(graph, gk)
+		if !ok {
+			continue
+		}
+		candidateOwners := resolveOverloadPerOwner(graph, ambiguousCall, candidateOwnersByType(groups[gk]))
+		if len(candidateOwners) == 0 {
+			continue
+		}
+		qualified = append(qualified, qualifiedPassthroughGroup{
+			gk:              gk,
+			calleeFn:        calleeFn,
+			paramIdx:        paramIdx,
+			candidateOwners: candidateOwners,
+		})
+	}
+	return qualified
+}
+
+// resolveQualifiedPassthroughGroup runs one fixpoint iteration's worth of
+// per-caller resolution for a pre-qualified group. Returns the number of
+// caller-specific bypass edges added this call.
+func resolveQualifiedPassthroughGroup(graph *CallGraph, qg *qualifiedPassthroughGroup, receiverIdx resolvedReceiverIndex) int {
+	// graph.Callers[gk.Caller] is re-read (and snapshotted before iterating,
+	// since resolvePassthroughForCaller mutates graph.Callers via addCaller)
+	// on every call rather than cached in qg: unlike the rest of a group's
+	// qualification, the caller list is NOT invariant across fixpoint
+	// iterations — gk.Caller can itself be resolved as another group's bypass
+	// TARGET, which appends a new entry to graph.Callers[gk.Caller] via
+	// addCaller (see resolveParameterPassthroughDispatch's doc comment for the
+	// password4j multi-hop example this covers). This lookup is O(callers of
+	// one function), not a rescan of the whole graph, so it stays cheap.
+	callerKeys := append([]string(nil), graph.Callers[qg.gk.Caller]...)
+	resolved := 0
+	for _, callerKey := range callerKeys {
+		outerFn := graph.Functions[callerKey]
+		if outerFn == nil {
+			continue
+		}
+		resolved += resolvePassthroughForCaller(graph, outerFn, callerKey, qg.calleeFn, qg.gk, qg.paramIdx, qg.candidateOwners, receiverIdx)
+	}
+	return resolved
 }
 
 // groupAmbiguousDispatchEdges collects every recorded interface_dispatch
@@ -1155,47 +1269,6 @@ func sortedAmbiguousGroupKeys(groups map[dispatchAmbiguousGroupKey][]edgeResolut
 		return a.Arity < b.Arity
 	})
 	return keys
-}
-
-// resolvePassthroughGroup evaluates one ambiguous dispatch group (gk.Caller is
-// the function whose body issues the ambiguous call — the "pass-through
-// candidate") and, if it qualifies, resolves the ambiguity per-caller. Returns
-// the number of caller-specific bypass edges added.
-//
-// Qualification (conservative by design — every condition narrows toward
-// "do nothing" on doubt, matching the fail-closed default), delegated to
-// passthroughParameterIndex:
-//  1. The ambiguous call site must be uniquely identifiable in gk.Caller's
-//     body by (line, method, arity) — see findCallAtSite.
-//  2. Its receiver is either (a) one of gk.Caller's OWN parameters
-//     (positionally matched via FunctionParameter.Name) — a pass-through of an
-//     argument — in which case gk.Caller must have EXACTLY ONE call in its
-//     body (a parameter could otherwise be reassigned or escape into a branch
-//     this pass cannot see); or (b) gk.Caller's own implicit "this" — in which
-//     case a multi-call, branching body is tolerated (this's type is fixed for
-//     the whole method regardless of branch).
-//  3. Each entry in the group names a distinct candidate; each candidate's
-//     owner type is derived from its FunctionID.Type (simple name).
-func resolvePassthroughGroup(graph *CallGraph, gk dispatchAmbiguousGroupKey, entries []edgeResolutionEntry) int {
-	calleeFn, ambiguousCall, paramIdx, ok := passthroughParameterIndex(graph, gk)
-	if !ok {
-		return 0
-	}
-
-	candidateOwners := resolveOverloadPerOwner(graph, ambiguousCall, candidateOwnersByType(entries))
-	if len(candidateOwners) == 0 {
-		return 0
-	}
-
-	resolved := 0
-	for _, callerKey := range append([]string(nil), graph.Callers[gk.Caller]...) {
-		outerFn := graph.Functions[callerKey]
-		if outerFn == nil {
-			continue
-		}
-		resolved += resolvePassthroughForCaller(graph, outerFn, callerKey, calleeFn, gk, paramIdx, candidateOwners)
-	}
-	return resolved
 }
 
 // resolveOverloadPerOwner collapses candidateOwnersByType's owner->[]calleeKey
@@ -1358,9 +1431,10 @@ func resolvePassthroughForCaller(
 	gk dispatchAmbiguousGroupKey,
 	paramIdx int,
 	candidateOwners map[string]string,
+	receiverIdx resolvedReceiverIndex,
 ) int {
 	if paramIdx == thisReceiverParamIndex {
-		return resolvePassthroughForThisReceiver(graph, callerKey, gk, candidateOwners)
+		return resolvePassthroughForThisReceiver(graph, callerKey, gk, candidateOwners, receiverIdx)
 	}
 
 	call := findCallToCallee(outerFn, calleeFn.ID, len(calleeFn.Parameters))
@@ -1375,9 +1449,16 @@ func resolvePassthroughForCaller(
 	if !ok {
 		return 0
 	}
+	// Already resolved in a prior iteration: adding the same bypass edge again
+	// is a no-op (addCaller dedupes, the resolution map overwrites), but
+	// counting it as progress keeps the fixpoint spinning to
+	// passthroughMaxIterations instead of terminating.
+	if _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
+		return 0
+	}
 	addCaller(graph.Callers, targetKey, callerKey)
 	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", call.Line)
-	stampResolvedReceiverType(graph, callerKey, targetKey, call.Line, argType)
+	stampResolvedReceiverType(graph, callerKey, targetKey, call.Line, argType, receiverIdx)
 	return 1
 }
 
@@ -1392,8 +1473,9 @@ func resolvePassthroughForThisReceiver(
 	callerKey string,
 	gk dispatchAmbiguousGroupKey,
 	candidateOwners map[string]string,
+	receiverIdx resolvedReceiverIndex,
 ) int {
-	resolvedType, line, ok := lookupResolvedReceiverType(graph, callerKey, gk.Caller)
+	resolvedType, line, ok := lookupResolvedReceiverType(receiverIdx, callerKey, gk.Caller)
 	if !ok {
 		return 0
 	}
@@ -1401,26 +1483,75 @@ func resolvePassthroughForThisReceiver(
 	if !ok {
 		return 0
 	}
+	// Same no-progress gate as resolvePassthroughForCaller: a bypass edge
+	// stamped in a prior iteration must not count as fixpoint progress.
+	if _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
+		return 0
+	}
 	addCaller(graph.Callers, targetKey, callerKey)
 	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", line)
-	stampResolvedReceiverType(graph, callerKey, targetKey, line, resolvedType)
+	stampResolvedReceiverType(graph, callerKey, targetKey, line, resolvedType, receiverIdx)
 	return 1
 }
 
-// lookupResolvedReceiverType scans callerKey's recorded EdgeResolutions for an
-// entry targeting calleeKey that carries a non-empty ResolvedReceiverType
-// (stamped by a previous resolveParameterPassthroughDispatch iteration).
-// Returns the resolved type and the call-site line to attribute the extended
-// bypass edge to.
-func lookupResolvedReceiverType(graph *CallGraph, callerKey, calleeKey string) (resolvedType string, line int, ok bool) {
-	prefix := EdgeResolutionKeyPrefix(callerKey, calleeKey)
+// resolvedReceiverIndex mirrors every ResolvedReceiverType stamped onto
+// graph.EdgeResolutions by resolveParameterPassthroughDispatch, keyed by
+// "callerKey\x00calleeKey" (the same pairing lookupResolvedReceiverType used
+// to search for via a full EdgeResolutions scan). Kept in sync incrementally
+// by stampResolvedReceiverType so lookupResolvedReceiverType is O(1) instead
+// of O(len(graph.EdgeResolutions)) — on large graphs (e.g. bcprov, with heavy
+// interface-dispatch fan-out) EdgeResolutions can hold hundreds of thousands
+// of entries, and the old scan ran once per caller per ambiguous group per
+// fixpoint iteration.
+type resolvedReceiverIndex map[string]resolvedReceiverEntry
+
+// resolvedReceiverEntry is one indexed ResolvedReceiverType plus the
+// call-site line it should be attributed to when extended one hop further.
+type resolvedReceiverEntry struct {
+	resolvedType string
+	line         int
+}
+
+// resolvedReceiverIndexKey builds the lookup key shared by
+// lookupResolvedReceiverType and stampResolvedReceiverType's index update.
+func resolvedReceiverIndexKey(callerKey, calleeKey string) string {
+	return callerKey + "\x00" + calleeKey
+}
+
+// newResolvedReceiverIndex seeds a resolvedReceiverIndex from any
+// ResolvedReceiverType entries already present in graph.EdgeResolutions.
+// In practice resolveParameterPassthroughDispatch is the sole writer of
+// ResolvedReceiverType and runs once per build, so this is normally empty at
+// call time — seeding defensively keeps the index correct if that ever
+// changes.
+func newResolvedReceiverIndex(graph *CallGraph) resolvedReceiverIndex {
+	idx := make(resolvedReceiverIndex, len(graph.EdgeResolutions))
 	for key, res := range graph.EdgeResolutions {
-		if res.ResolvedReceiverType == "" || !strings.HasPrefix(key, prefix) {
+		if res.ResolvedReceiverType == "" {
 			continue
 		}
-		return res.ResolvedReceiverType, res.CallSite, true
+		callerKey, calleeKey, ok := splitEdgeResolutionKey(key)
+		if !ok {
+			continue
+		}
+		idx[resolvedReceiverIndexKey(callerKey, calleeKey)] = resolvedReceiverEntry{
+			resolvedType: res.ResolvedReceiverType,
+			line:         res.CallSite,
+		}
 	}
-	return "", 0, false
+	return idx
+}
+
+// lookupResolvedReceiverType looks up callerKey->calleeKey's ResolvedReceiverType
+// (stamped by a previous resolveParameterPassthroughDispatch iteration) in the
+// index instead of scanning graph.EdgeResolutions. Returns the resolved type
+// and the call-site line to attribute the extended bypass edge to.
+func lookupResolvedReceiverType(receiverIdx resolvedReceiverIndex, callerKey, calleeKey string) (resolvedType string, line int, ok bool) {
+	entry, found := receiverIdx[resolvedReceiverIndexKey(callerKey, calleeKey)]
+	if !found {
+		return "", 0, false
+	}
+	return entry.resolvedType, entry.line, true
 }
 
 // resolveCandidateOwner matches a resolved concrete argument type against the
@@ -1548,7 +1679,7 @@ func concreteTypeFromSourceNode(graph *CallGraph, src SourceNode) string {
 // stampResolvedReceiverType writes ResolvedReceiverType onto the just-recorded
 // exact EdgeResolution for callerKey->targetKey at line, so the fragment
 // exporter can carry it through as graph-fragment resolved_receiver_type.
-func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, line int, resolvedType string) {
+func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, line int, resolvedType string, receiverIdx resolvedReceiverIndex) {
 	// Mirror recordEdgeResolution's method/arity derivation exactly so the key
 	// matches the entry it just wrote (EdgeResolutionKey folds MethodName/Arity
 	// into the map key, so an approximate key would silently miss).
@@ -1564,6 +1695,7 @@ func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, li
 	}
 	res.ResolvedReceiverType = resolvedType
 	graph.EdgeResolutions[key] = res
+	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line}
 }
 
 // buildTypePackageIndex maps simple type names to their packages.

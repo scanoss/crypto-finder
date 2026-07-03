@@ -23,7 +23,12 @@ import (
 // internal/scan/fragment_export_resolved_receiver_test.go), which the
 // stitcher then uses to disambiguate (see
 // pkg/graphfrag/stitch_receiver_provenance_test.go).
-func TestResolveParameterPassthroughDispatch_ConstructorArgumentDisambiguates(t *testing.T) {
+// buildConstructorArgFixtureGraph builds the shared constructor-argument
+// disambiguation fixture (interface Sink with two implementors, a
+// pass-through Builder.with(Sink), and a caller passing new SinkImplA()).
+// The passthrough pass runs inside BuildFromDirectories.
+func buildConstructorArgFixtureGraph(t *testing.T) *CallGraph {
+	t.Helper()
 	root := t.TempDir()
 
 	sinkID := FunctionID{Package: "com.acme", Type: "Sink", Name: "run#0"}
@@ -90,6 +95,16 @@ func TestResolveParameterPassthroughDispatch_ConstructorArgumentDisambiguates(t 
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
+	return graph
+}
+
+func TestResolveParameterPassthroughDispatch_ConstructorArgumentDisambiguates(t *testing.T) {
+	graph := buildConstructorArgFixtureGraph(t)
+	sinkImplAID := FunctionID{Package: "com.acme", Type: "SinkImplA", Name: "run#0"}
+	sinkImplBID := FunctionID{Package: "com.acme", Type: "SinkImplB", Name: "run#0"}
+	builderWithID := FunctionID{Package: "com.acme", Type: "Builder", Name: "with#1"}
+	builderViaAID := FunctionID{Package: "com.acme", Type: "Builder", Name: "viaImplA#0"}
+	withID, implAID, implBID, viaAID := builderWithID, sinkImplAID, sinkImplBID, builderViaAID
 
 	// Precondition: the with() call site is genuinely ambiguous in isolation —
 	// both SinkImplA.run and SinkImplB.run are candidates.
@@ -206,5 +221,20 @@ func TestResolveParameterPassthroughDispatch_NoBypassWithoutConcreteArgument(t *
 		if _, ok := graph.EdgeResolutions[key]; ok {
 			t.Fatalf("unexpected bypass edge viaUnknown -> %s; no concrete argument type was available to resolve", implKey)
 		}
+	}
+}
+
+// TestResolveParameterPassthroughDispatch_ConvergesToZero guards the fixpoint
+// progress accounting: a bypass edge stamped in a prior iteration must not be
+// re-counted as progress, or the loop spins to passthroughMaxIterations doing
+// no-op work on every large graph. Re-running the whole pass on an
+// already-resolved graph must therefore report zero resolutions.
+func TestResolveParameterPassthroughDispatch_ConvergesToZero(t *testing.T) {
+	graph := buildConstructorArgFixtureGraph(t)
+
+	// The pass already ran inside BuildFromDirectories; a second run must be
+	// a no-op with zero reported progress.
+	if n := resolveParameterPassthroughDispatch(graph); n != 0 {
+		t.Fatalf("second resolveParameterPassthroughDispatch pass resolved %d, want 0 (fixpoint must not re-count existing bypass edges)", n)
 	}
 }
