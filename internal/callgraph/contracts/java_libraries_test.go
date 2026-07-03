@@ -1,6 +1,7 @@
 package contracts_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
@@ -77,12 +78,14 @@ func TestLoadEmbeddedJavaIncludesTier0GapContracts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := kb.ContractsFor(tt.method, tt.arity)
-		if len(got) != 1 {
-			t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
-		}
-		if got[0].Return.Type != tt.wantReturn || got[0].SourceLibrary != tt.wantLib {
-			t.Fatalf("%s#%d = %#v, want %s from %s", tt.method, tt.arity, got[0], tt.wantReturn, tt.wantLib)
-		}
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.wantReturn || got[0].SourceLibrary != tt.wantLib {
+				t.Fatalf("%s#%d = %#v, want %s from %s", tt.method, tt.arity, got[0], tt.wantReturn, tt.wantLib)
+			}
+		})
 	}
 }
