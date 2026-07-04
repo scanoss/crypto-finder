@@ -485,10 +485,6 @@ contracts:
     arity: 2
     return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
     role: output
-  - method: M2Crypto.SMIME.SMIME.load_key
-    arity: 2
-    return: { type: builtins.NoneType, confidence: high }
-    role: config
   - method: M2Crypto.RC4.RC4
     arity: 1
     return: { type: M2Crypto.RC4.RC4, confidence: high }
@@ -509,6 +505,154 @@ contracts:
     arity: 1
     return: { type: M2Crypto.BIO.CipherStream, confidence: high }
     role: factory
+  - method: M2Crypto.Engine.Engine
+    arity: 0
+    return: { type: M2Crypto.Engine.Engine, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.<init>
+    arity: 0
+    return: { type: M2Crypto.Engine.Engine, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_private_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_public_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_certificate
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider
+    arity: 0
+    return: { type: M2Crypto.Provider.Provider, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.<init>
+    arity: 0
+    return: { type: M2Crypto.Provider.Provider, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.generate_ec_key_pair
+    arity: 0
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.generate_rsa_key_pair
+    arity: 0
+    return: { type: M2Crypto.RSA.RSA, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.load_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.load_certificate
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.AuthCookie.AuthCookie
+    arity: 0
+    return: { type: M2Crypto.AuthCookie.AuthCookie, confidence: high }
+    role: factory
+  - method: M2Crypto.AuthCookie.AuthCookie.<init>
+    arity: 0
+    return: { type: M2Crypto.AuthCookie.AuthCookie, confidence: high }
+    role: factory
+  - method: M2Crypto.httpslib.HTTPSConnection
+    arity: 1
+    return: { type: M2Crypto.httpslib.HTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.httpslib.HTTPSConnection.<init>
+    arity: 1
+    return: { type: M2Crypto.httpslib.HTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.httpslib.ProxyHTTPSConnection
+    arity: 1
+    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.httpslib.ProxyHTTPSConnection.<init>
+    arity: 1
+    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.ftpslib.FTP_TLS
+    arity: 0
+    return: { type: M2Crypto.ftpslib.FTP_TLS, confidence: high }
+    role: factory
+  - method: M2Crypto.ftpslib.FTP_TLS.<init>
+    arity: 0
+    return: { type: M2Crypto.ftpslib.FTP_TLS, confidence: high }
+    role: factory
+  - method: M2Crypto.m2xmlrpclib.SSL_Transport
+    arity: 0
+    return: { type: M2Crypto.m2xmlrpclib.SSL_Transport, confidence: high }
+    role: factory
+  - method: M2Crypto.m2xmlrpclib.SSL_Transport.<init>
+    arity: 0
+    return: { type: M2Crypto.m2xmlrpclib.SSL_Transport, confidence: high }
+    role: factory
+  - method: M2Crypto.m2urllib2.HTTPSHandler
+    arity: 0
+    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
+    role: factory
+  - method: M2Crypto.m2urllib2.HTTPSHandler.<init>
+    arity: 0
+    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper
+    arity: 5
+    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper.<init>
+    arity: 5
+    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectSSL
+    arity: 4
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectTCP
+    arity: 3
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenSSL
+    arity: 3
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenTCP
+    arity: 2
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SMIME.load_certificates
+    arity: 1
+    return: { type: M2Crypto.X509.X509_Stack, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.load_pkcs7_der
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.load_pkcs7_bio_der
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.smime_load_pkcs7
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.smime_load_pkcs7_bio
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.SMIME.public_encrypt
+    arity: 2
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: output
+  - method: M2Crypto.SMIME.SMIME.public_decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.SMIME.SMIME.verify
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
 
 hierarchy:
   M2Crypto.RSA.RSA_pub:
@@ -557,10 +701,26 @@ hierarchy:
     - builtins.object
   M2Crypto.BIO.CipherStream:
     - builtins.object
+  M2Crypto.Engine.Engine:
+    - builtins.object
+  M2Crypto.Provider.Provider:
+    - builtins.object
+  M2Crypto.AuthCookie.AuthCookie:
+    - builtins.object
+  M2Crypto.httpslib.HTTPSConnection:
+    - builtins.object
+  M2Crypto.httpslib.ProxyHTTPSConnection:
+    - M2Crypto.httpslib.HTTPSConnection
+  M2Crypto.ftpslib.FTP_TLS:
+    - builtins.object
+  M2Crypto.m2xmlrpclib.SSL_Transport:
+    - builtins.object
+  M2Crypto.m2urllib2.HTTPSHandler:
+    - builtins.object
+  M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper:
+    - builtins.object
   builtins.bytes:
     - builtins.object
   builtins.tuple:
-    - builtins.object
-  builtins.NoneType:
     - builtins.object
   builtins.object: []
