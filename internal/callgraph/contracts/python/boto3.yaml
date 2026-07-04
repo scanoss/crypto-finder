@@ -1,0 +1,57 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: boto3
+  coordinates:
+    - boto3
+  version_range: ">=1.0"
+  description: "boto3 AWS SDK KMS client contracts"
+
+contracts:
+  - method: boto3.Session
+    arity: 0
+    return: { type: boto3.session.Session, confidence: high }
+    role: factory
+  - method: boto3.session.Session.<init>
+    arity: 0
+    return: { type: boto3.session.Session, confidence: high }
+    role: factory
+  - method: boto3.client
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["'kms'", "\"kms\"", "kms"]
+    return: { type: botocore.client.KMS, confidence: high }
+    role: factory
+  - method: boto3.session.Session.client
+    arity: 1
+    when:
+      arg_index: 0
+      arg_value_in: ["'kms'", "\"kms\"", "kms"]
+    return: { type: botocore.client.KMS, confidence: high }
+    role: factory
+  - method: botocore.client.KMS.encrypt
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.decrypt
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.generate_data_key
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.generate_data_key_without_plaintext
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+
+hierarchy:
+  boto3.session.Session:
+    - builtins.object
+  botocore.client.KMS:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.object: []

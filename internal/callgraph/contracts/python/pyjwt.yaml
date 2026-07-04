@@ -1,0 +1,41 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pyjwt
+  coordinates:
+    - PyJWT
+  version_range: ">=2.0,<3.0"
+  description: "PyJWT encode/decode API contracts"
+
+contracts:
+  - method: jwt.encode
+    arity: 2
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: jwt.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: jwt.decode_complete
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: jwt.api_jwt.PyJWT.encode
+    arity: 2
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: jwt.api_jwt.PyJWT.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: jwt.api_jwt.PyJWT.decode_complete
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    role: output
+
+hierarchy:
+  builtins.str:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.object: []

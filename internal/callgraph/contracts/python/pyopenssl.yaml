@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pyopenssl
+  coordinates:
+    - pyOpenSSL
+  version_range: ">=24.0"
+  description: "pyOpenSSL SSL and crypto wrapper contracts"
+
+contracts:
+  - method: OpenSSL.SSL.Context
+    arity: 1
+    return: { type: OpenSSL.SSL.Context, confidence: high }
+    role: factory
+  - method: OpenSSL.SSL.Connection
+    arity: 2
+    return: { type: OpenSSL.SSL.Connection, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKey
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509Store
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Store, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509StoreContext
+    arity: 2
+    return: { type: OpenSSL.crypto.X509StoreContext, confidence: high }
+    role: factory
+  - method: OpenSSL.SSL.Context.<init>
+    arity: 1
+    return: { type: OpenSSL.SSL.Context, confidence: high }
+    role: factory
+  - method: OpenSSL.SSL.Connection.<init>
+    arity: 2
+    return: { type: OpenSSL.SSL.Connection, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKey.<init>
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509.<init>
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509Store.<init>
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Store, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509StoreContext.<init>
+    arity: 2
+    return: { type: OpenSSL.crypto.X509StoreContext, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.load_certificate
+    arity: 2
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.load_privatekey
+    arity: 2
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.dump_certificate
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: OpenSSL.crypto.dump_privatekey
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+hierarchy:
+  OpenSSL.SSL.Context:
+    - builtins.object
+  OpenSSL.SSL.Connection:
+    - builtins.object
+  OpenSSL.crypto.PKey:
+    - builtins.object
+  OpenSSL.crypto.X509:
+    - builtins.object
+  OpenSSL.crypto.X509Store:
+    - builtins.object
+  OpenSSL.crypto.X509StoreContext:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []
