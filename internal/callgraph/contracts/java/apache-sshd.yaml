@@ -80,6 +80,31 @@ contracts:
     return:
       type: org.apache.sshd.common.mac.Mac
       confidence: high
+  - method: org.apache.sshd.common.signature.BuiltinSignatures.fromFactoryName
+    arity: 1
+    return:
+      type: org.apache.sshd.common.signature.BuiltinSignatures
+      confidence: high
+  - method: org.apache.sshd.common.signature.BuiltinSignatures.resolveFactory
+    arity: 1
+    return:
+      type: org.apache.sshd.common.signature.SignatureFactory
+      confidence: high
+  - method: org.apache.sshd.common.signature.BuiltinSignatures.create
+    arity: 0
+    return:
+      type: org.apache.sshd.common.signature.Signature
+      confidence: high
+  - method: org.apache.sshd.client.SshClient.setUpDefaultClient
+    arity: 0
+    return:
+      type: org.apache.sshd.client.SshClient
+      confidence: high
+  - method: org.apache.sshd.server.SshServer.setUpDefaultServer
+    arity: 0
+    return:
+      type: org.apache.sshd.server.SshServer
+      confidence: high
 
 hierarchy:
   org.apache.sshd.common.digest.DigestFactory:
@@ -96,4 +121,14 @@ hierarchy:
     - java.lang.Object
   org.apache.sshd.common.mac.BuiltinMacs:
     - org.apache.sshd.common.mac.MacFactory
+  org.apache.sshd.common.signature.SignatureFactory:
+    - java.lang.Object
+  org.apache.sshd.common.signature.Signature:
+    - java.lang.Object
+  org.apache.sshd.common.signature.BuiltinSignatures:
+    - org.apache.sshd.common.signature.SignatureFactory
+  org.apache.sshd.client.SshClient:
+    - java.lang.Object
+  org.apache.sshd.server.SshServer:
+    - java.lang.Object
   java.lang.Object: []
