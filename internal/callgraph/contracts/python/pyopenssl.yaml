@@ -72,6 +72,46 @@ contracts:
     arity: 2
     return: { type: builtins.bytes, confidence: high }
     role: output
+  - method: OpenSSL.crypto.PKey.from_cryptography_key
+    arity: 1
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509.from_cryptography
+    arity: 1
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509.get_pubkey
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.load_publickey
+    arity: 2
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.dump_publickey
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: OpenSSL.crypto.sign
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: OpenSSL.crypto.PKCS12
+    arity: 0
+    return: { type: OpenSSL.crypto.PKCS12, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKCS12.<init>
+    arity: 0
+    return: { type: OpenSSL.crypto.PKCS12, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.load_pkcs12
+    arity: 1
+    return: { type: OpenSSL.crypto.PKCS12, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKCS12.export
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
 
 hierarchy:
   OpenSSL.SSL.Context:
@@ -85,6 +125,8 @@ hierarchy:
   OpenSSL.crypto.X509Store:
     - builtins.object
   OpenSSL.crypto.X509StoreContext:
+    - builtins.object
+  OpenSSL.crypto.PKCS12:
     - builtins.object
   builtins.bytes:
     - builtins.object

@@ -46,6 +46,42 @@ contracts:
     arity: 0
     return: { type: builtins.dict, confidence: high }
     role: output
+  - method: botocore.client.KMS.re_encrypt
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.generate_random
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.generate_mac
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.verify_mac
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.derive_shared_secret
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.generate_data_key_pair
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.sign
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.verify
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: botocore.client.KMS.get_public_key
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
 
 hierarchy:
   boto3.session.Session:
