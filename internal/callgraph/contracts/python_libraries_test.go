@@ -352,6 +352,52 @@ func TestLoadEmbedded_Python_BenchmarkLibraries(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedded_Python_AzureKeyVaultKeys(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+	}{
+		{"azure.keyvault.keys.KeyClient.<init>", 2, "azure.keyvault.keys.KeyClient"},
+		{"azure.keyvault.keys.KeyClient.get_cryptography_client", 1, "azure.keyvault.keys.crypto.CryptographyClient"},
+		{"azure.keyvault.keys.KeyClient.create_rsa_key", 1, "azure.keyvault.keys.KeyVaultKey"},
+		{"azure.keyvault.keys.KeyClient.create_ec_key", 1, "azure.keyvault.keys.KeyVaultKey"},
+		{"azure.keyvault.keys.KeyClient.create_oct_key", 1, "azure.keyvault.keys.KeyVaultKey"},
+		{"azure.keyvault.keys.KeyClient.import_key", 2, "azure.keyvault.keys.KeyVaultKey"},
+		{"azure.keyvault.keys.KeyClient.get_key", 1, "azure.keyvault.keys.KeyVaultKey"},
+		{"azure.keyvault.keys.KeyClient.get_random_bytes", 1, "builtins.bytes"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.from_jwk", 1, "azure.keyvault.keys.crypto.CryptographyClient"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.encrypt", 2, "azure.keyvault.keys.crypto.EncryptResult"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.decrypt", 2, "azure.keyvault.keys.crypto.DecryptResult"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.wrap_key", 2, "azure.keyvault.keys.crypto.WrapResult"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.unwrap_key", 2, "azure.keyvault.keys.crypto.UnwrapResult"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.sign", 2, "azure.keyvault.keys.crypto.SignResult"},
+		{"azure.keyvault.keys.crypto.CryptographyClient.verify", 3, "azure.keyvault.keys.crypto.VerifyResult"},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("%s#%d: no contracts found", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+		}
+		if c.SourceLibrary != "azure-keyvault-keys" {
+			t.Errorf("%s#%d source library = %q, want azure-keyvault-keys", tt.method, tt.arity, c.SourceLibrary)
+		}
+		if c.Return.Confidence != "high" {
+			t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+		}
+	}
+}
+
 // TestLoadEmbedded_Python_AllLibrariesHaveValidReturnTypes asserts that every
 // contract in the merged Python KB has a non-empty return type and "high"
 // confidence (the only author-facing confidence level per crypto-kb-author skill).
