@@ -252,6 +252,57 @@ func TestLoadEmbedded_Python_Paramiko(t *testing.T) {
 	}
 }
 
+// TestLoadEmbedded_Python_PyOTP verifies the PyOTP constructor aliases used by
+// scanoss/crypto_rules#99 and the output helpers they return.
+func TestLoadEmbedded_Python_PyOTP(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantLib    string
+	}{
+		{"pyotp.TOTP.<init>", 1, "pyotp.totp.TOTP", "pyotp"},
+		{"pyotp.totp.TOTP.<init>", 1, "pyotp.totp.TOTP", "pyotp"},
+		{"pyotp.totp.TOTP.now", 0, "builtins.str", "pyotp"},
+		{"pyotp.totp.TOTP.at", 1, "builtins.str", "pyotp"},
+		{"pyotp.totp.TOTP.verify", 1, "builtins.bool", "pyotp"},
+		{"pyotp.totp.TOTP.provisioning_uri", 0, "builtins.str", "pyotp"},
+		{"pyotp.HOTP.<init>", 1, "pyotp.hotp.HOTP", "pyotp"},
+		{"pyotp.hotp.HOTP.<init>", 1, "pyotp.hotp.HOTP", "pyotp"},
+		{"pyotp.hotp.HOTP.at", 1, "builtins.str", "pyotp"},
+		{"pyotp.hotp.HOTP.verify", 2, "builtins.bool", "pyotp"},
+		{"pyotp.hotp.HOTP.provisioning_uri", 0, "builtins.str", "pyotp"},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("%s#%d: no contracts found", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+		}
+		if c.SourceLibrary != tt.wantLib {
+			t.Errorf("%s#%d source library = %q, want %q", tt.method, tt.arity, c.SourceLibrary, tt.wantLib)
+		}
+		if c.Return.Confidence != "high" {
+			t.Errorf("%s#%d confidence = %q, want %q", tt.method, tt.arity, c.Return.Confidence, "high")
+		}
+	}
+
+	for _, typ := range []string{"pyotp.totp.TOTP", "pyotp.hotp.HOTP", "pyotp.otp.OTP"} {
+		if len(kb.Hierarchy[typ]) == 0 {
+			t.Errorf("hierarchy[%q] is empty", typ)
+		}
+	}
+}
+
 // TestLoadEmbedded_Python_CryptodomeAlias verifies that the Cryptodome.* namespace
 // (pycryptodomex package) resolves the same contracts as the Crypto.* namespace
 // (pycryptodome). This covers TASK C: `from Cryptodome.Cipher import AES; AES.new(...)`

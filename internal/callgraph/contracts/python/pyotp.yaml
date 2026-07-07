@@ -1,0 +1,102 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pyotp
+  coordinates:
+    - pyotp
+  version_range: ">=2.0"
+  description: "PyOTP — HOTP/TOTP one-time password protocol helpers"
+
+contracts:
+  # ── TOTP constructors ────────────────────────────────────────────────────────
+
+  - method: pyotp.TOTP.<init>
+    arity: 1
+    return:
+      type: pyotp.totp.TOTP
+      confidence: high
+    role: factory
+
+  - method: pyotp.totp.TOTP.<init>
+    arity: 1
+    return:
+      type: pyotp.totp.TOTP
+      confidence: high
+    role: factory
+
+  - method: pyotp.totp.TOTP.at
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: pyotp.totp.TOTP.now
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: pyotp.totp.TOTP.provisioning_uri
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: pyotp.totp.TOTP.verify
+    arity: 1
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  # ── HOTP constructors ────────────────────────────────────────────────────────
+
+  - method: pyotp.HOTP.<init>
+    arity: 1
+    return:
+      type: pyotp.hotp.HOTP
+      confidence: high
+    role: factory
+
+  - method: pyotp.hotp.HOTP.<init>
+    arity: 1
+    return:
+      type: pyotp.hotp.HOTP
+      confidence: high
+    role: factory
+
+  - method: pyotp.hotp.HOTP.at
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: pyotp.hotp.HOTP.provisioning_uri
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: pyotp.hotp.HOTP.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+hierarchy:
+  pyotp.totp.TOTP:
+    - pyotp.otp.OTP
+  pyotp.hotp.HOTP:
+    - pyotp.otp.OTP
+  pyotp.otp.OTP:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
