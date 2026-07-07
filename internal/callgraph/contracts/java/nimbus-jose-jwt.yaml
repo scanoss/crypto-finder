@@ -1,0 +1,178 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: nimbus-jose-jwt
+  coordinates:
+    - "com.nimbusds:nimbus-jose-jwt"
+  version_range: ">=9,<11"
+  description: "Nimbus JOSE + JWT contracts for JWS construction, signing, verification, and compact serialization"
+
+contracts:
+  - method: com.nimbusds.jose.JWSObject.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.JWSObject
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.parse
+    arity: 1
+    return:
+      type: com.nimbusds.jose.JWSObject
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.sign
+    arity: 1
+    return:
+      type: void
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.verify
+    arity: 1
+    return:
+      type: boolean
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.serialize
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: com.nimbusds.jose.JWSObject.getPayload
+    arity: 0
+    return:
+      type: com.nimbusds.jose.Payload
+      confidence: high
+  - method: com.nimbusds.jose.crypto.DirectEncrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.DirectEncrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.DirectDecrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.DirectDecrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.ECDHEncrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.ECDHEncrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.ECDHDecrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.ECDHDecrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSAEncrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSAEncrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSADecrypter.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSADecrypter
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSASigner.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSASSASigner
+      confidence: high
+  - method: com.nimbusds.jose.crypto.ECDSASigner.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.ECDSASigner
+      confidence: high
+  - method: com.nimbusds.jose.crypto.Ed25519Signer.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.Ed25519Signer
+      confidence: high
+  - method: com.nimbusds.jose.crypto.MACSigner.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.MACSigner
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSASigner.sign
+    arity: 2
+    return:
+      type: com.nimbusds.jose.util.Base64URL
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSAVerifier.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.RSASSAVerifier
+      confidence: high
+  - method: com.nimbusds.jose.crypto.ECDSAVerifier.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.ECDSAVerifier
+      confidence: high
+  - method: com.nimbusds.jose.crypto.Ed25519Verifier.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.Ed25519Verifier
+      confidence: high
+  - method: com.nimbusds.jose.crypto.MACVerifier.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.crypto.MACVerifier
+      confidence: high
+  - method: com.nimbusds.jose.crypto.RSASSAVerifier.verify
+    arity: 3
+    return:
+      type: boolean
+      confidence: high
+  - method: com.nimbusds.jose.jwk.RSAKey.toPublicJWK
+    arity: 0
+    return:
+      type: com.nimbusds.jose.jwk.RSAKey
+      confidence: high
+  - method: com.nimbusds.jose.jwk.RSAKey.parse
+    arity: 1
+    return:
+      type: com.nimbusds.jose.jwk.RSAKey
+      confidence: high
+
+hierarchy:
+  com.nimbusds.jose.JWSObject:
+    - java.lang.Object
+  com.nimbusds.jose.Payload:
+    - java.lang.Object
+  com.nimbusds.jose.JWSSigner:
+    - java.lang.Object
+  com.nimbusds.jose.JWSVerifier:
+    - java.lang.Object
+  com.nimbusds.jose.JWEEncrypter:
+    - java.lang.Object
+  com.nimbusds.jose.JWEDecrypter:
+    - java.lang.Object
+  com.nimbusds.jose.crypto.DirectEncrypter:
+    - com.nimbusds.jose.JWEEncrypter
+  com.nimbusds.jose.crypto.DirectDecrypter:
+    - com.nimbusds.jose.JWEDecrypter
+  com.nimbusds.jose.crypto.ECDHEncrypter:
+    - com.nimbusds.jose.JWEEncrypter
+  com.nimbusds.jose.crypto.ECDHDecrypter:
+    - com.nimbusds.jose.JWEDecrypter
+  com.nimbusds.jose.crypto.RSAEncrypter:
+    - com.nimbusds.jose.JWEEncrypter
+  com.nimbusds.jose.crypto.RSADecrypter:
+    - com.nimbusds.jose.JWEDecrypter
+  com.nimbusds.jose.crypto.RSASSASigner:
+    - com.nimbusds.jose.JWSSigner
+  com.nimbusds.jose.crypto.ECDSASigner:
+    - com.nimbusds.jose.JWSSigner
+  com.nimbusds.jose.crypto.Ed25519Signer:
+    - com.nimbusds.jose.JWSSigner
+  com.nimbusds.jose.crypto.MACSigner:
+    - com.nimbusds.jose.JWSSigner
+  com.nimbusds.jose.crypto.RSASSAVerifier:
+    - com.nimbusds.jose.JWSVerifier
+  com.nimbusds.jose.crypto.ECDSAVerifier:
+    - com.nimbusds.jose.JWSVerifier
+  com.nimbusds.jose.crypto.Ed25519Verifier:
+    - com.nimbusds.jose.JWSVerifier
+  com.nimbusds.jose.crypto.MACVerifier:
+    - com.nimbusds.jose.JWSVerifier
+  com.nimbusds.jose.jwk.RSAKey:
+    - java.lang.Object
+  com.nimbusds.jose.util.Base64URL:
+    - java.lang.Object
+  java.lang.Object: []

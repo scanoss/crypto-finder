@@ -1,0 +1,92 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jjwt
+  coordinates:
+    - "io.jsonwebtoken:jjwt-api"
+    - "io.jsonwebtoken:jjwt-impl"
+  version_range: ">=0.12,<1.0"
+  description: "JJWT fluent builder and parser contracts for signed and encrypted JWT flows"
+
+contracts:
+  - method: io.jsonwebtoken.Jwts.builder
+    arity: 0
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.signWith
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.signWith
+    arity: 2
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.compact
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+  - method: io.jsonwebtoken.Jwts.parser
+    arity: 0
+    return:
+      type: io.jsonwebtoken.JwtParserBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtParserBuilder.verifyWith
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtParserBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtParserBuilder.decryptWith
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtParserBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtParserBuilder.build
+    arity: 0
+    return:
+      type: io.jsonwebtoken.JwtParser
+      confidence: high
+  - method: io.jsonwebtoken.JwtParser.parseSignedClaims
+    arity: 1
+    return:
+      type: io.jsonwebtoken.Jws
+      confidence: high
+  - method: io.jsonwebtoken.JwtParser.parseSignedClaims
+    arity: 2
+    return:
+      type: io.jsonwebtoken.Jws
+      confidence: high
+  - method: io.jsonwebtoken.JwtParser.parseSignedContent
+    arity: 1
+    return:
+      type: io.jsonwebtoken.Jws
+      confidence: high
+  - method: io.jsonwebtoken.JwtParser.parseEncryptedClaims
+    arity: 1
+    return:
+      type: io.jsonwebtoken.Jwe
+      confidence: high
+  - method: io.jsonwebtoken.JwtParser.parseEncryptedContent
+    arity: 1
+    return:
+      type: io.jsonwebtoken.Jwe
+      confidence: high
+
+hierarchy:
+  io.jsonwebtoken.JwtBuilder:
+    - java.lang.Object
+  io.jsonwebtoken.JwtParserBuilder:
+    - java.lang.Object
+  io.jsonwebtoken.JwtParser:
+    - java.lang.Object
+  io.jsonwebtoken.Jwt:
+    - java.lang.Object
+  io.jsonwebtoken.Jws:
+    - io.jsonwebtoken.Jwt
+  io.jsonwebtoken.Jwe:
+    - io.jsonwebtoken.Jwt
+  java.lang.Object: []
