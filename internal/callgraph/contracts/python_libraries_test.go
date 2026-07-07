@@ -468,3 +468,89 @@ func TestLoadEmbedded_Python_AllLibrariesHaveValidReturnTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadEmbedded_Python_Tier0GapLibraries(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantLib    string
+	}{
+		{"botocore.client.KMS.encrypt", 0, "builtins.dict", "boto3"},
+		{"botocore.client.KMS.generate_data_key", 0, "builtins.dict", "boto3"},
+		{"botocore.client.KMS.re_encrypt", 0, "builtins.dict", "boto3"},
+		{"botocore.client.KMS.generate_random", 0, "builtins.dict", "boto3"},
+		{"botocore.client.KMS.generate_mac", 0, "builtins.dict", "boto3"},
+		{"botocore.client.KMS.get_public_key", 0, "builtins.dict", "boto3"},
+		{"M2Crypto.RSA.gen_key", 2, "M2Crypto.RSA.RSA", "m2crypto"},
+		{"M2Crypto.EVP.MessageDigest", 1, "M2Crypto.EVP.MessageDigest", "m2crypto"},
+		{"M2Crypto.EVP.PKey", 0, "M2Crypto.EVP.PKey", "m2crypto"},
+		{"M2Crypto.EVP.pbkdf2", 4, "builtins.bytes", "m2crypto"},
+		{"M2Crypto.DSA.load_key", 1, "M2Crypto.DSA.DSA", "m2crypto"},
+		{"M2Crypto.EC.load_pub_key", 1, "M2Crypto.EC.EC_pub", "m2crypto"},
+		{"M2Crypto.SMIME.PKCS7", 0, "M2Crypto.SMIME.PKCS7", "m2crypto"},
+		{"M2Crypto.Engine.Engine.load_private_key", 1, "M2Crypto.EVP.PKey", "m2crypto"},
+		{"M2Crypto.Provider.Provider.generate_rsa_key_pair", 0, "M2Crypto.RSA.RSA", "m2crypto"},
+		{"M2Crypto.AuthCookie.AuthCookie", 0, "M2Crypto.AuthCookie.AuthCookie", "m2crypto"},
+		{"M2Crypto.httpslib.ProxyHTTPSConnection", 1, "M2Crypto.httpslib.ProxyHTTPSConnection", "m2crypto"},
+		{"M2Crypto.SSL.Context", 1, "M2Crypto.SSL.Context.Context", "m2crypto"},
+		{"M2Crypto.SSL.Connection.Connection.get_peer_cert", 0, "M2Crypto.X509.X509", "m2crypto"},
+		{"OpenSSL.SSL.Context", 1, "OpenSSL.SSL.Context", "pyopenssl"},
+		{"OpenSSL.crypto.load_certificate", 2, "OpenSSL.crypto.X509", "pyopenssl"},
+		{"OpenSSL.crypto.load_privatekey", 2, "OpenSSL.crypto.PKey", "pyopenssl"},
+		{"OpenSSL.crypto.load_publickey", 2, "OpenSSL.crypto.PKey", "pyopenssl"},
+		{"OpenSSL.crypto.dump_publickey", 2, "builtins.bytes", "pyopenssl"},
+		{"OpenSSL.crypto.PKCS12", 0, "OpenSSL.crypto.PKCS12", "pyopenssl"},
+		{"jwt.encode", 2, "builtins.str", "pyjwt"},
+		{"jwt.decode", 1, "builtins.dict", "pyjwt"},
+		{"werkzeug.security.generate_password_hash", 1, "builtins.str", "werkzeug"},
+		{"werkzeug.security.check_password_hash", 2, "builtins.bool", "werkzeug"},
+		{"flask_jwt_extended.create_access_token", 1, "builtins.str", "flask-jwt-extended"},
+		{"flask_jwt_extended.decode_token", 1, "builtins.dict", "flask-jwt-extended"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.method, func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) == 0 {
+				t.Fatalf("%s#%d: no contracts found", tt.method, tt.arity)
+			}
+			c := got[0]
+			if c.Return.Type != tt.wantReturn {
+				t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+			}
+			if c.SourceLibrary != tt.wantLib {
+				t.Errorf("%s#%d source library = %q, want %q", tt.method, tt.arity, c.SourceLibrary, tt.wantLib)
+			}
+			if c.Return.Confidence != "high" {
+				t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+			}
+		})
+	}
+}
+
+func TestLoadEmbedded_Python_Boto3KMSClientCondition(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	got := kb.ContractsFor("boto3.client", 1)
+	if len(got) != 1 {
+		t.Fatalf("boto3.client#1 contracts = %d, want 1", len(got))
+	}
+	c := got[0]
+	if c.When == nil {
+		t.Fatal("boto3.client#1 should be conditional on service name")
+	}
+	if c.When.ArgIndex != 0 {
+		t.Errorf("boto3.client#1 condition arg index = %d, want 0", c.When.ArgIndex)
+	}
+	if c.Return.Type != "botocore.client.KMS" {
+		t.Errorf("boto3.client#1 return type = %q, want botocore.client.KMS", c.Return.Type)
+	}
+}

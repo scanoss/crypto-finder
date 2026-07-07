@@ -1,0 +1,51 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: flask-jwt-extended
+  coordinates:
+    - Flask-JWT-Extended
+  version_range: ">=4.0,<5.0"
+  description: "Flask-JWT-Extended token utility contracts"
+
+contracts:
+  - method: flask_jwt_extended.JWTManager.<init>
+    arity: 0
+    return: { type: flask_jwt_extended.JWTManager, confidence: high }
+    role: factory
+  - method: flask_jwt_extended.create_access_token
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: flask_jwt_extended.create_refresh_token
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: flask_jwt_extended.decode_token
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: flask_jwt_extended.get_csrf_token
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: flask_jwt_extended.get_jwt
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: flask_jwt_extended.get_jwt_header
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: output
+  - method: flask_jwt_extended.get_jwt_identity
+    arity: 0
+    return: { type: builtins.object, confidence: high }
+    role: output
+
+hierarchy:
+  flask_jwt_extended.JWTManager:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.object: []
