@@ -379,6 +379,7 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 	entry := callGraphChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
 	terminal := callGraphChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
 	points := buildCryptoEntryPoints(
+		nil,
 		[]callGraphExportFinding{{
 			FindingID: "finding-1",
 			MatchedOperation: &callGraphMatchedOperation{
@@ -407,6 +408,63 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
 	}
 }
+
+// TestBuildCryptoEntryPointsPopulatesParameterRoles is the WU3 (issue-103)
+// concrete target: a crypto_entry_points terminal whose function+arity
+// matches a KB contract declaring parameter roles gets parameter_roles
+// populated, index-aligned with parameter_types. KeyParameter.<init>(byte[])
+// contributes keySize via argument_bit_length on param 0.
+func TestBuildCryptoEntryPointsPopulatesParameterRoles(t *testing.T) {
+	t.Parallel()
+
+	terminal := callGraphChainNode{
+		FunctionKey:    "org.bc.KeyParameter.<init>#1",
+		FunctionName:   "org.bc.KeyParameter.<init>",
+		ParameterTypes: []string{"byte[]"},
+	}
+	kb := &contracts.KnowledgeBase{
+		Contracts: map[string][]contracts.Contract{
+			"org.bc.KeyParameter.<init>#1": {{
+				Method: "org.bc.KeyParameter.<init>",
+				Arity:  1,
+				Return: contracts.ContractReturn{Type: "org.bc.KeyParameter", Confidence: "high"},
+				Parameters: []contracts.ParameterContract{{
+					Index: intPtr(0),
+					Name:  "key",
+					Role:  "metadata-contributing",
+					Contributes: &contracts.Contribution{
+						Property:   "keySize",
+						Derivation: "argument_bit_length",
+					},
+				}},
+			}},
+		},
+	}
+	points := buildCryptoEntryPoints(
+		kb,
+		[]callGraphExportFinding{{
+			FindingID:        "finding-1",
+			MatchedOperation: &callGraphMatchedOperation{Kind: matchedOperationCall, Symbol: "org.bc.KeyParameter.<init>", Line: 1},
+			CallChains:       [][]callGraphChainNode{{terminal}},
+		}},
+		nil,
+	)
+
+	entryPoint := findCryptoEntryPointByFunctionKey(points, terminal.FunctionKey)
+	if entryPoint == nil {
+		t.Fatalf("missing entry point %q: %#v", terminal.FunctionKey, points)
+	}
+	if len(entryPoint.ParameterRoles) != 1 {
+		t.Fatalf("ParameterRoles = %#v, want 1 entry", entryPoint.ParameterRoles)
+	}
+	pr := entryPoint.ParameterRoles[0]
+	if pr.Index != 0 || pr.Role != "metadata-contributing" ||
+		pr.Contributes == nil || pr.Contributes.Property != "keySize" || pr.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("ParameterRoles[0] = %#v, want index=0 metadata-contributing keySize/argument_bit_length", pr)
+	}
+}
+
+func intPtr(i int) *int { return &i }
 
 func findCryptoEntryPointByFunctionKey(points []callGraphCryptoEntryPoint, key string) *callGraphCryptoEntryPoint {
 	for i := range points {

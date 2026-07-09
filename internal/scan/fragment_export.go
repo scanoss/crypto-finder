@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
@@ -640,7 +641,7 @@ func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine
 			}
 		}
 	}
-	return flattenGraphFragmentEntryPoints(entries)
+	return flattenGraphFragmentEntryPoints(ctx.kb, entries)
 }
 
 type graphFragmentEntryPointData struct {
@@ -735,7 +736,7 @@ func ensureGraphFragmentEntryPoint(entries map[string]*graphFragmentEntryPointDa
 	return entry
 }
 
-func flattenGraphFragmentEntryPoints(entries map[string]*graphFragmentEntryPointData) []graphfrag.GraphFragmentCryptoEntryPoint {
+func flattenGraphFragmentEntryPoints(kb *contracts.KnowledgeBase, entries map[string]*graphFragmentEntryPointData) []graphfrag.GraphFragmentCryptoEntryPoint {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -755,6 +756,11 @@ func flattenGraphFragmentEntryPoints(entries map[string]*graphFragmentEntryPoint
 			OwnerVisibility:          entry.ownerVisibility,
 			ReachableFindings:        flattenGraphFragmentReachableFindings(entry.findings),
 			ReachableSupportingCalls: flattenGraphFragmentReachableSupporting(entry.supporting),
+			// issue-103 WU3: parameter_roles carried on the fragment so the
+			// stitch/served path can pick them up via the by-function_key
+			// carry-through (see pkg/graphfrag/ingest.go, stitch.go — the
+			// merge/index side of that carry-through is a follow-up).
+			ParameterRoles: toGraphFragmentParameterRoles(parameterRolesFromKB(kb, entry.functionName, len(entry.parameterTypes))),
 		})
 	}
 	return out
@@ -891,9 +897,32 @@ func buildGraphFragmentCryptoCall(called *callGraphCalledFunction) *graphfrag.Gr
 		DisplaySymbol:      called.DisplaySymbol,
 		Aliases:            cloneStringSlice(called.Aliases),
 		Line:               called.Line,
+		// issue-103 WU3: carries the supporting-call declaration's KB-derived
+		// parameter_roles (populated in buildDerivedSupportingCall) into the
+		// fragment, so it survives to the served path unchanged.
+		ParameterRoles: toGraphFragmentParameterRoles(called.ParameterRoles),
 	}
 	for _, p := range called.Parameters {
 		cc.Parameters = append(cc.Parameters, convertCallGraphParameterToFragment(p))
 	}
 	return cc
+}
+
+// toGraphFragmentParameterRoles converts the internal callGraphParameterRole
+// shape to its graph-fragment mirror (issue-103 WU3).
+func toGraphFragmentParameterRoles(src []callGraphParameterRole) []graphfrag.GraphFragmentParameterRole {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]graphfrag.GraphFragmentParameterRole, len(src))
+	for i, p := range src {
+		out[i] = graphfrag.GraphFragmentParameterRole{Index: p.Index, Name: p.Name, Role: p.Role}
+		if p.Contributes != nil {
+			out[i].Contributes = &graphfrag.GraphFragmentContribution{
+				Property:   p.Contributes.Property,
+				Derivation: p.Contributes.Derivation,
+			}
+		}
+	}
+	return out
 }

@@ -442,15 +442,17 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 	sort.SliceStable(out.SupportingCalls, func(i, j int) bool {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
-	out.CryptoEntryPoints = buildCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
 
 	return out
 }
 
 // buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
 // crypto operations. Every function that appears in any call chain is a
-// potential entry point — external code might call any of them.
-func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
+// potential entry point — external code might call any of them. kb is
+// consulted (issue-103 WU3) to populate parameter_roles on entries whose
+// function+arity matches a contract; nil kb simply skips that enrichment.
+func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
 	index := make(map[string]*entryPointData)
 	supportingByID := make(map[string]callGraphSupportingCall, len(supportingCalls))
 	for i := range supportingCalls {
@@ -469,7 +471,7 @@ func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCa
 		}
 		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
-	return flattenEntryPointIndex(index)
+	return flattenEntryPointIndex(kb, index)
 }
 
 // splitFunctionName extracts class and method from a fully qualified function name.
@@ -690,7 +692,7 @@ func addSupportingCallToEntryPointIndex(index map[string]*entryPointData, suppor
 	recordEntryPointSupporting(ep, support, 1)
 }
 
-func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoEntryPoint {
+func flattenEntryPointIndex(kb *contracts.KnowledgeBase, index map[string]*entryPointData) []callGraphCryptoEntryPoint {
 	result := make([]callGraphCryptoEntryPoint, 0, len(index))
 	for _, ep := range index {
 		result = append(result, callGraphCryptoEntryPoint{
@@ -709,12 +711,46 @@ func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoE
 			Aliases:                  cloneStringSlice(ep.aliases),
 			ReachableFindings:        flattenReachableFindings(ep.findings),
 			ReachableSupportingCalls: flattenReachableSupportingCalls(ep.supporting),
+			ParameterRoles:           parameterRolesFromKB(kb, ep.function, len(ep.parameterTypes)),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].FunctionKey < result[j].FunctionKey
 	})
 	return result
+}
+
+// parameterRolesFromKB returns the exported parameter-role list for a method
+// FQN+arity from the contracts KB (issue-103 WU3): the first contract match
+// (by ContractsForTolerant) that declares a non-empty Parameters list. Never
+// emitted for call-site literals (callGraphParameter carries no such field);
+// only for method-static surfaces (crypto_entry_points, supporting-call decl).
+func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []callGraphParameterRole {
+	if kb == nil || fqn == "" {
+		return nil
+	}
+	for _, contract := range kb.ContractsForTolerant(fqn, arity) {
+		if len(contract.Parameters) == 0 {
+			continue
+		}
+		out := make([]callGraphParameterRole, 0, len(contract.Parameters))
+		for _, p := range contract.Parameters {
+			idx := 0
+			if p.Index != nil {
+				idx = *p.Index
+			}
+			pr := callGraphParameterRole{Index: idx, Name: p.Name, Role: p.Role}
+			if p.Contributes != nil {
+				pr.Contributes = &callGraphContribution{
+					Property:   p.Contributes.Property,
+					Derivation: p.Contributes.Derivation,
+				}
+			}
+			out = append(out, pr)
+		}
+		return out
+	}
+	return nil
 }
 
 func flattenReachableSupportingCalls(values map[string]callGraphReachableSupportingCall) []callGraphReachableSupportingCall {
@@ -1086,10 +1122,11 @@ func supportingCallIDsOf(calls []callGraphSupportingCall) []string {
 }
 
 // buildDerivedSupportingCall renders a single call-graph FunctionCall as a
-// supporting-call entry, carrying the call's resolved (or raw) symbol, line, and
-// argument data-flow. Category is intentionally left empty: semantic role
-// classification (config/lifecycle/output) is deferred to a later contract-KB
-// pass and is not inferred structurally here.
+// supporting-call entry, carrying the call's resolved (or raw) symbol, line,
+// and argument data-flow. Category and parameter_roles are populated from the
+// contracts KB when the callee+arity matches a contract (issue-103 WU1/WU3);
+// they stay empty for callees the KB has no opinion on — no structural
+// guessing.
 func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, call *callgraph.FunctionCall) callGraphSupportingCall {
 	sourcePath := normalizeExportPath(ctx, call.FilePath).FilePath
 	meta := buildExportFunctionMetadata(ctx.graph, containingFn.ID, containingFn)
@@ -1133,6 +1170,12 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 				break
 			}
 		}
+		// WU3 (issue-103): parameter_roles on the supporting-call declaration,
+		// method-static (independent of which contract entry won the category
+		// match above). Flows to the served surface natively, since
+		// fragment_export.go reuses this same builder via
+		// deriveSupportingCallsForFinding.
+		sc.ParameterRoles = parameterRolesFromKB(ctx.kb, calleeFQN, arity)
 	}
 	return support
 }
