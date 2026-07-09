@@ -27,6 +27,12 @@ func NewRustParser(opts ...ParserOption) *RustParser {
 	return &RustParser{parser: p, includeTests: cfg.includeTests}
 }
 
+// CloneParser returns an independent RustParser with the same configuration,
+// for concurrent use (tree-sitter parsers are not reentrant).
+func (p *RustParser) CloneParser() Parser {
+	return NewRustParser(WithIncludeTests(p.includeTests))
+}
+
 // SkipDirs returns directory names to skip during Rust source traversal.
 func (p *RustParser) SkipDirs() map[string]bool {
 	skip := map[string]bool{"target": true, "benches": true, "examples": true}

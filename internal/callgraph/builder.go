@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -34,6 +37,14 @@ type Parser interface {
 	SubPackagePath(parentPath, dirName string) string
 	// PackageSeparator returns the separator used in package paths ("/" for Go, "." for Java).
 	PackageSeparator() string
+}
+
+// ParserCloner is implemented by parsers that can produce an independent
+// instance of themselves for concurrent use. tree-sitter parsers are not
+// reentrant, so parallel source parsing requires one parser per worker; a
+// parser that does not implement this interface is used serially.
+type ParserCloner interface {
+	CloneParser() Parser
 }
 
 // PackageDir associates a filesystem directory with its package/module path.
@@ -186,9 +197,94 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 }
 
 // analyzePackage parses all source files in a package directory,
-// recursing into subdirectories to handle sub-packages.
+// recursing into subdirectories to handle sub-packages. When the parser
+// supports cloning and more than one CPU is available, directories are parsed
+// concurrently; results are merged in the exact serial traversal order so the
+// collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
-	return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph)
+	cloner, ok := b.parser.(ParserCloner)
+	workers := runtime.GOMAXPROCS(0)
+	if !ok || workers <= 1 {
+		return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph)
+	}
+	return b.analyzePackageParallel(pkg, graph, cloner, workers)
+}
+
+// parseDirWork is one directory to parse: the unit of parallelism.
+type parseDirWork struct {
+	dir        string
+	importPath string
+}
+
+// collectParseDirs reproduces analyzeDir's pre-order traversal (directory
+// first, then its subdirectories in os.ReadDir order) without parsing, so
+// analyzePackageParallel can merge parse results in exactly the order the
+// serial path would have produced them.
+func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]bool) []parseDirWork {
+	work := []parseDirWork{{dir: dir, importPath: importPath}}
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		log.Debug().Err(readErr).Str("dir", dir).Msg("Failed to read directory during call graph traversal")
+		return work
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") || skipDirs[name] {
+			continue
+		}
+		subDir := filepath.Join(dir, name)
+		subImportPath := b.parser.SubPackagePath(importPath, name)
+		work = append(work, b.collectParseDirs(subDir, subImportPath, skipDirs)...)
+	}
+	return work
+}
+
+// analyzePackageParallel fans directory parsing out over a pool of workers,
+// each owning its own cloned parser instance, then merges the results in
+// serial traversal order. Mirrors the serial path's error contract: a failure
+// on the package's root directory aborts the package with that error (nothing
+// merged), while subdirectory failures are logged and skipped.
+func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, cloner ParserCloner, workers int) error {
+	work := b.collectParseDirs(pkg.Dir, pkg.ImportPath, b.parser.SkipDirs())
+	if workers > len(work) {
+		workers = len(work)
+	}
+
+	results := make([][]*FileAnalysis, len(work))
+	errs := make([]error, len(work))
+	var next atomic.Int64
+	next.Store(-1)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			parser := cloner.CloneParser()
+			for {
+				i := int(next.Add(1))
+				if i >= len(work) {
+					return
+				}
+				results[i], errs[i] = parser.ParseDirectory(work[i].dir, work[i].importPath)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if errs[0] != nil {
+		return errs[0]
+	}
+	for i := range work {
+		if errs[i] != nil {
+			log.Debug().Err(errs[i]).Str("dir", work[i].dir).Msg("Failed to analyze subdirectory")
+			continue
+		}
+		b.addAnalyses(graph, results[i])
+	}
+	return nil
 }
 
 func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {

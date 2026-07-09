@@ -56,6 +56,12 @@ func NewJavaParser(opts ...ParserOption) *JavaParser {
 	return &JavaParser{parser: p, includeTests: cfg.includeTests}
 }
 
+// CloneParser returns an independent JavaParser with the same configuration,
+// for concurrent use (tree-sitter parsers are not reentrant).
+func (p *JavaParser) CloneParser() Parser {
+	return NewJavaParser(WithIncludeTests(p.includeTests))
+}
+
 // SkipDirs returns directory names to skip during Java source traversal.
 func (p *JavaParser) SkipDirs() map[string]bool {
 	skip := map[string]bool{"META-INF": true, "target": true}
