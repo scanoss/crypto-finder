@@ -141,6 +141,9 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// old all-simple-paths forward DFS hangs.
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, roots, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
+		if opts.ForwardClosure {
+			out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, forwardCapsFrom(opts))
+		}
 		return &out, nil
 	}
 
@@ -153,6 +156,9 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		trace(start, adjacency, opsByNode, supportingByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
 	}
 	attachAnnotationSupportingCalls(closure, fragments, &out)
+	if opts.ForwardClosure {
+		out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, forwardCapsFrom(opts))
+	}
 	return &out, nil
 }
 
@@ -1038,6 +1044,187 @@ func trace(
 		// Carry the EntryCall from this edge to the next frame.
 		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, edge.entryCall, path, visiting, out)
 	}
+}
+
+// forwardEdgeKey dedupes forward-closure edges: the same (from,to) pair at
+// distinct call sites (line) is a distinct edge (multi-edge, e.g. an
+// overloaded call site invoked twice); the same (from,to,line) collapses.
+type forwardEdgeKey struct {
+	from graphNode
+	to   graphNode
+	line int
+}
+
+func entryCallLine(cs *CallSite) int {
+	if cs == nil {
+		return 0
+	}
+	return cs.Line
+}
+
+// sortedAdjacencyEdges returns a stable-sorted copy of edges (by target
+// Function, then target Component, then entryCall line) so forward-BFS
+// frontier expansion — and therefore discovery order/depth assignment — is
+// deterministic regardless of the order buildAdjacency appended them in.
+func sortedAdjacencyEdges(edges []adjacencyEdge) []adjacencyEdge {
+	sorted := append([]adjacencyEdge(nil), edges...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.target.Function != b.target.Function {
+			return a.target.Function < b.target.Function
+		}
+		if a.target.Component.String() != b.target.Component.String() {
+			return a.target.Component.String() < b.target.Component.String()
+		}
+		return entryCallLine(a.entryCall) < entryCallLine(b.entryCall)
+	})
+	return sorted
+}
+
+// buildForwardClosures computes one memoized forward BFS per DISTINCT finding
+// anchor (opsByNode key) — cross-finding dedup falls out of iterating the
+// anchor set rather than the finding set. Iteration order is sortedNodes'
+// deterministic order (irrelevant to output content — the memo is
+// anchor-keyed — but kept for determinism-in-spirit with the rest of the
+// package).
+func buildForwardClosures(
+	adjacency map[graphNode][]adjacencyEdge,
+	opsByNode map[graphNode][]CryptoOperation,
+	supportingByNode map[graphNode][]SupportingCall,
+	fragments map[ComponentKey]Fragment,
+	caps forwardCaps,
+) map[graphNode]*forwardClosure {
+	memo := make(map[graphNode]*forwardClosure, len(opsByNode))
+	for _, anchor := range sortedNodes(opsByNode) {
+		if _, ok := memo[anchor]; ok {
+			continue
+		}
+		memo[anchor] = forwardBFS(anchor, adjacency, opsByNode, supportingByNode, fragments, caps)
+	}
+	return memo
+}
+
+// forwardBFS computes the rooted forward reachability graph from anchor: a
+// breadth-first traversal of the SAME adjacency the backward pass uses (so
+// the fail-closed edge-resolution policy applies for free — suppressed/
+// ambiguous/name_only/unknown edges are already absent from adjacency), node-
+// deduped via a visited set (cycle-safe: each node expands at most once), with
+// explicit depth/node/edge caps. See design doc section 2 for the full
+// contract; cap enforcement order is depth (gates expansion) > node (gates
+// new-node admission) > edge.
+func forwardBFS(
+	anchor graphNode,
+	adjacency map[graphNode][]adjacencyEdge,
+	opsByNode map[graphNode][]CryptoOperation,
+	supportingByNode map[graphNode][]SupportingCall,
+	fragments map[ComponentKey]Fragment,
+	caps forwardCaps,
+) *forwardClosure {
+	fc := &forwardClosure{
+		anchor:   buildFrame(anchor, nil, fragments),
+		maxDepth: caps.maxDepth,
+	}
+
+	visited := map[graphNode]bool{anchor: true}
+	depth := map[graphNode]int{anchor: 0}
+	queue := []graphNode{anchor}
+	edgeSeen := map[forwardEdgeKey]bool{}
+
+	for len(queue) > 0 {
+		// Safety valve mirroring the backward pass (stitch.go stitchMaxFrontier):
+		// each node is enqueued at most once, bounded by caps.maxNodes, so this
+		// should never fire in practice.
+		if len(queue) >= stitchMaxFrontier {
+			fc.truncated = true
+			break
+		}
+
+		cur := queue[0]
+		queue = queue[1:]
+		d := depth[cur]
+
+		if d >= caps.maxDepth {
+			if len(adjacency[cur]) > 0 {
+				// There was more forward story beyond the depth budget; we did not
+				// walk it. Never silent.
+				fc.truncated = true
+			}
+			continue
+		}
+
+		for _, edge := range sortedAdjacencyEdges(adjacency[cur]) {
+			target := edge.target
+			key := forwardEdgeKey{from: cur, to: target, line: entryCallLine(edge.entryCall)}
+
+			if !visited[target] {
+				// NEW-TARGET path (first admission — includes diamond re-convergence
+				// arriving via a shorter path than any later edge to it): node cap
+				// gates admission FIRST so no edge is ever emitted to an absent node.
+				if len(fc.nodes) >= caps.maxNodes {
+					fc.truncated = true
+					continue
+				}
+				if !edgeSeen[key] && len(fc.edges) >= caps.maxEdges {
+					fc.truncated = true
+					continue
+				}
+				visited[target] = true
+				depth[target] = d + 1
+				fc.nodes = append(fc.nodes, buildForwardNode(target, d+1, fragments, opsByNode, supportingByNode))
+				edgeSeen[key] = true
+				fc.edges = append(fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
+				queue = append(queue, target)
+				continue
+			}
+
+			// EXISTING-TARGET path — a cycle back-edge or a diamond re-convergent
+			// edge to an already-admitted node. Only the edge cap applies; the
+			// target node is not re-added or re-expanded.
+			if edgeSeen[key] {
+				continue
+			}
+			if len(fc.edges) >= caps.maxEdges {
+				fc.truncated = true
+				continue
+			}
+			edgeSeen[key] = true
+			fc.edges = append(fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
+		}
+	}
+
+	return fc
+}
+
+// buildForwardNode resolves one forward-reachable node into its annotated
+// forwardNode shape: identity (via buildFrame), shortest-path depth, and the
+// annotate-never-filter crypto relevance signals (Fork 2): cryptoRelevant is
+// true when the node is itself a finding anchor OR has a non-empty
+// supporting-call category; supportingCategory is the first non-empty
+// Category among the node's supporting calls (stable fragment order).
+func buildForwardNode(
+	node graphNode,
+	depth int,
+	fragments map[ComponentKey]Fragment,
+	opsByNode map[graphNode][]CryptoOperation,
+	supportingByNode map[graphNode][]SupportingCall,
+) forwardNode {
+	category := firstSupportingCategory(supportingByNode[node])
+	return forwardNode{
+		node:               node,
+		frame:              buildFrame(node, nil, fragments),
+		depth:              depth,
+		cryptoRelevant:     len(opsByNode[node]) > 0 || category != "",
+		supportingCategory: category,
+	}
+}
+
+func firstSupportingCategory(supports []SupportingCall) string {
+	for _, s := range supports {
+		if s.Category != "" {
+			return s.Category
+		}
+	}
+	return ""
 }
 
 // sortedNodes returns the op-bearing nodes in a deterministic order (by signature,
