@@ -564,11 +564,11 @@ func (ds *DependencyScanner) collectPackageSets(
 }
 
 func callGraphDependencySet(resolved *dependency.ResolveResult, depResults []depScanResult) map[string]bool {
-	if resolved == nil || len(resolved.Graph) == 0 {
-		return nil
-	}
 	targets := cryptoDependencyModules(depResults)
 	if len(targets) == 0 {
+		return map[string]bool{}
+	}
+	if resolved == nil || len(resolved.Graph) == 0 {
 		return nil
 	}
 	roots := dependencyGraphRoots(resolved)
@@ -603,6 +603,19 @@ func cryptoDependencyModules(depResults []depScanResult) map[string]bool {
 }
 
 func dependencyGraphRoots(resolved *dependency.ResolveResult) []string {
+	explicit := explicitDependencyGraphRoots(resolved)
+	for i := range explicit {
+		if _, ok := resolved.Graph[explicit[i]]; ok {
+			return explicit
+		}
+	}
+	if inferred := dependencyGraphSourceRoots(resolved.Graph); len(inferred) > 0 {
+		return inferred
+	}
+	return explicit
+}
+
+func explicitDependencyGraphRoots(resolved *dependency.ResolveResult) []string {
 	if len(resolved.WorkspaceMembers) > 0 {
 		roots := make([]string, 0, len(resolved.WorkspaceMembers))
 		for i := range resolved.WorkspaceMembers {
@@ -616,6 +629,23 @@ func dependencyGraphRoots(resolved *dependency.ResolveResult) []string {
 		return nil
 	}
 	return []string{resolved.RootModule}
+}
+
+func dependencyGraphSourceRoots(graph map[string][]string) []string {
+	children := make(map[string]bool)
+	for _, values := range graph {
+		for _, child := range values {
+			children[child] = true
+		}
+	}
+	roots := make([]string, 0)
+	for parent := range graph {
+		if !children[parent] {
+			roots = append(roots, parent)
+		}
+	}
+	sort.Strings(roots)
+	return roots
 }
 
 func reachableDependencyModules(graph map[string][]string, roots []string) map[string]bool {

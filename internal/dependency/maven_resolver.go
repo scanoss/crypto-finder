@@ -28,6 +28,10 @@ const (
 	// internally; on top of that each invocation forks a JVM, so going beyond
 	// ~8 yields diminishing returns and wastes RAM.
 	sourceFallbackMaxWorkers = 8
+	// mavenDependencyTreeTimeout bounds best-effort graph metadata extraction.
+	// If tree extraction is slow or flaky, dependency scanning falls back to the
+	// old conservative all-dependencies callgraph input set.
+	mavenDependencyTreeTimeout = 2 * time.Minute
 )
 
 // pomProject represents the minimal pom.xml structure needed for resolution.
@@ -134,6 +138,8 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		return result, nil
 	}
 
+	r.populateDependencyGraph(ctx, targetDir, result, len(deps))
+
 	// Step 4: Download source JARs (best-effort)
 	cache, err := NewSourceCache()
 	if err != nil {
@@ -161,13 +167,6 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		withSources++
 	}
 
-	// Step 6 — skipped: `mvn dependency:tree` was used to populate
-	// result.VersionedGraph / result.Graph, but no consumer reads those
-	// fields today (engine/callgraph builds packages from depResults +
-	// resolver.WorkspaceMembers, not from the tree). For large transitive
-	// trees this call alone takes minutes. Re-enable behind a flag if a
-	// downstream consumer ever needs the graph.
-
 	log.Info().
 		Int("total", len(deps)).
 		Int("withSources", withSources).
@@ -188,6 +187,65 @@ func buildWorkspaceMembers(rootModule, targetDir string, modules []string) []Wor
 		})
 	}
 	return members
+}
+
+func (r *MavenResolver) populateDependencyGraph(ctx context.Context, targetDir string, result *ResolveResult, depCount int) {
+	if depCount < 2 {
+		return
+	}
+	graphCtx, cancel := context.WithTimeout(ctx, mavenDependencyTreeTimeout)
+	defer cancel()
+	versioned, err := r.listDependencyTree(graphCtx, targetDir)
+	if err != nil {
+		log.Debug().Err(err).Msg("Maven dependency tree unavailable; dependency callgraph pruning will fall back")
+		return
+	}
+	if len(versioned) == 0 {
+		return
+	}
+	result.VersionedGraph = versioned
+	result.Graph = legacyGraphFromVersioned(versioned)
+}
+
+func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string) (map[string][]Ref, error) {
+	tmpFile, err := os.CreateTemp("", "mvn-tree-*.txt")
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Debug().Err(removeErr).Str("path", tmpPath).Msg("Failed to remove temporary file")
+		}
+	}()
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("close temp file: %w", err)
+	}
+
+	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
+	cmd := exec.CommandContext(ctx, "mvn", "dependency:tree",
+		"-DoutputFile="+tmpPath,
+		"-Dscope=compile",
+		"-DoutputType=text",
+		"--fail-never",
+	)
+	cmd.Dir = targetDir
+	if err := r.configureMavenCommand(cmd); err != nil {
+		return nil, err
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("mvn dependency:tree: %w stderr: %s", err, truncate(stderr.String(), 500))
+	}
+
+	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("read Maven dependency tree output: %w", err)
+	}
+	return r.parseTreeOutput(string(data)), nil
 }
 
 func (r *MavenResolver) resolveWithFallbacks(

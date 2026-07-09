@@ -755,6 +755,28 @@ func TestDetachDeadlineKeepCancel(t *testing.T) {
 	})
 }
 
+func TestDependencyScanner_CollectPackageSets_DropsDepsWhenNoneHaveFindings(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "example.com/root",
+		Graph: map[string][]string{
+			"example.com/root": {"example.com/no-crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "example.com/no-crypto", Version: "v1", Dir: "/deps/no-crypto"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if hasPackage(sets.graphPackages, "example.com/no-crypto") {
+		t.Fatalf("unexpected no-crypto dependency in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
 func TestDependencyScanner_CollectPackageSets_PrunesDepsOutsideCryptoPaths(t *testing.T) {
 	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
 	resolved := &dependency.ResolveResult{
@@ -793,6 +815,42 @@ func TestDependencyScanner_CollectPackageSets_PrunesDepsOutsideCryptoPaths(t *te
 		t.Fatalf("expected crypto package in graphPackages: %#v", sets.graphPackages)
 	}
 	if hasPackage(sets.graphPackages, "example.com/unused") {
+		t.Fatalf("unexpected unused package in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
+func TestDependencyScanner_CollectPackageSets_PrunesWithInferredGraphRoots(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "com.acme",
+		Graph: map[string][]string{
+			"com.acme:app":       {"org.example:bridge", "org.example:unused"},
+			"org.example:bridge": {"org.example:crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "org.example:bridge", Version: "1.0.0", Dir: "/deps/bridge"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+		{
+			dep:    dependency.Dependency{Module: "org.example:crypto", Version: "1.0.0", Dir: "/deps/crypto"},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		},
+		{
+			dep:    dependency.Dependency{Module: "org.example:unused", Version: "1.0.0", Dir: "/deps/unused"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if !hasPackage(sets.graphPackages, "org.example:bridge") || !hasPackage(sets.graphPackages, "org.example:crypto") {
+		t.Fatalf("expected bridge and crypto deps in graphPackages: %#v", sets.graphPackages)
+	}
+	if hasPackage(sets.graphPackages, "org.example:unused") {
 		t.Fatalf("unexpected unused package in graphPackages: %#v", sets.graphPackages)
 	}
 }
