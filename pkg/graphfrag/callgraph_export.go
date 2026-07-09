@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.2"
+const CallgraphSchemaVersion = "6.3"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -72,6 +72,54 @@ type ExportFindingGraph struct {
 	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 	// CallChains is the set of surviving root-to-crypto paths for this finding.
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
+	// ForwardCalls is the finding anchor's forward call closure (6.3+): what the
+	// matched method transitively calls, with per-call-site argument data-flow.
+	// Present only when the stitch ran with StitchOptions.ForwardClosure; findings
+	// sharing an anchor inline the same projected content (per-anchor memo).
+	ForwardCalls *ExportForwardClosure `json:"forward_calls,omitempty"`
+}
+
+// ExportForwardClosure is the projected forward call graph from one finding
+// anchor (6.3+). Nodes are deduped forward-reachable functions (depth >= 1);
+// edges are the traversed call sites (endpoints in {anchor} ∪ nodes). MaxDepth
+// echoes the depth CAP applied (the budget), not the deepest node reached;
+// Truncated is true whenever any cap (depth/node/edge) cut the walk short.
+type ExportForwardClosure struct {
+	Anchor    ExportForwardAnchor `json:"anchor"`
+	MaxDepth  int                 `json:"max_depth"`
+	Truncated bool                `json:"truncated"`
+	Nodes     []ExportForwardNode `json:"nodes,omitempty"`
+	Edges     []ExportForwardEdge `json:"edges,omitempty"`
+}
+
+// ExportForwardAnchor is the lean identity of the forward closure's root: the
+// finding's own function. File path and dependency identity already live on
+// the finding itself and are not repeated here.
+type ExportForwardAnchor struct {
+	FunctionKey   string `json:"function_key"`
+	FunctionName  string `json:"function_name,omitempty"`
+	DisplaySymbol string `json:"display_symbol,omitempty"`
+}
+
+// ExportForwardNode is one forward-reachable function in the closure.
+type ExportForwardNode struct {
+	FunctionKey        string                `json:"function_key"`
+	FunctionName       string                `json:"function_name,omitempty"`
+	DisplaySymbol      string                `json:"display_symbol,omitempty"`
+	FilePath           string                `json:"file_path,omitempty"`
+	DependencyInfo     *ExportDependencyInfo `json:"dependency_info,omitempty"`
+	Depth              int                   `json:"depth"`
+	CryptoRelevant     bool                  `json:"crypto_relevant,omitempty"`
+	SupportingCategory string                `json:"supporting_category,omitempty"`
+}
+
+// ExportForwardEdge is one traversed caller→callee call site. EntryCall
+// carries the call-site argument data-flow (resolved values, source nodes)
+// in the same shape as chain-node entry_call.
+type ExportForwardEdge struct {
+	From      string           `json:"from"`
+	To        string           `json:"to"`
+	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
 }
 
 // ExportMatchedOperation mirrors the schema-6.0 matched_operation shape.
@@ -301,6 +349,10 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		matchedOp         *ExportMatchedOperation
 		supportingCallIDs []string
 		callChains        [][]ExportChainNode
+		// anchorNode is the finding's terminal (crypto op) node — the key into
+		// Result.forwardClosures. Captured from the first chain's terminal frame;
+		// all chains of one finding share the same terminal op node.
+		anchorNode graphNode
 	}
 	groupMap := make(map[findingKey]*chainGroup)
 	var groupOrder []findingKey
@@ -324,6 +376,12 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 				matchedOp:         chainMatchedOp(fc),
 				supportingCallIDs: chainSupportingCallIDs(fc),
 			}
+			if last := len(fc.Frames) - 1; last >= 0 {
+				grp.anchorNode = graphNode{
+					Component: fc.Frames[last].Component,
+					Function:  fc.Frames[last].Signature,
+				}
+			}
 			groupMap[key] = grp
 			groupOrder = append(groupOrder, key)
 		}
@@ -343,16 +401,104 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 
 	for _, key := range groupOrder {
 		grp := groupMap[key]
-		out.FindingGraphs = append(out.FindingGraphs, ExportFindingGraph{
+		fg := ExportFindingGraph{
 			FindingID:         grp.findingID,
 			MatchedOperation:  grp.matchedOp,
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
-		})
+		}
+		if r.forwardClosures != nil {
+			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root)
+		}
+		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	return out
+}
+
+// projectForwardClosure converts one internal forwardClosure into its export
+// shape. Nodes are sorted by (function_key, component purl) and edges by
+// (from, to, line) — a projection-time ordering deliberately decoupled from
+// BFS traversal order so golden output stays stable across refactors.
+// Returns nil for a nil closure (finding whose anchor has no computed closure).
+func projectForwardClosure(fc *forwardClosure, root ComponentKey) *ExportForwardClosure {
+	if fc == nil {
+		return nil
+	}
+	out := &ExportForwardClosure{
+		Anchor: ExportForwardAnchor{
+			FunctionKey:   fc.anchor.Function.Signature,
+			FunctionName:  fc.anchor.Function.FunctionName,
+			DisplaySymbol: fc.anchor.Function.DisplaySymbol,
+		},
+		MaxDepth:  fc.maxDepth,
+		Truncated: fc.truncated,
+	}
+
+	// calleeFns resolves an edge's `to` endpoint to its rich Function identity
+	// for entry_call projection (mirrors how backward frames stamp the callee).
+	calleeFns := map[graphNode]Function{
+		{Component: fc.anchor.Component, Function: fc.anchor.Signature}: fc.anchor.Function,
+	}
+
+	nodes := make([]ExportForwardNode, 0, len(fc.nodes))
+	for i := range fc.nodes {
+		n := &fc.nodes[i]
+		calleeFns[n.node] = n.frame.Function
+		en := ExportForwardNode{
+			FunctionKey:        n.frame.Function.Signature,
+			FunctionName:       n.frame.Function.FunctionName,
+			DisplaySymbol:      n.frame.Function.DisplaySymbol,
+			FilePath:           n.frame.Function.FilePath,
+			Depth:              n.depth,
+			CryptoRelevant:     n.cryptoRelevant,
+			SupportingCategory: n.supportingCategory,
+		}
+		if n.frame.Component != root {
+			en.DependencyInfo = &ExportDependencyInfo{
+				Module:  moduleFromFrame(&n.frame),
+				Version: n.frame.Component.Version,
+			}
+		}
+		nodes = append(nodes, en)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].FunctionKey != nodes[j].FunctionKey {
+			return nodes[i].FunctionKey < nodes[j].FunctionKey
+		}
+		return nodes[i].FilePath < nodes[j].FilePath
+	})
+	out.Nodes = nodes
+
+	edges := make([]ExportForwardEdge, 0, len(fc.edges))
+	for i := range fc.edges {
+		e := &fc.edges[i]
+		edges = append(edges, ExportForwardEdge{
+			From:      e.from.Function,
+			To:        e.to.Function,
+			EntryCall: exportEntryCall(e.entryCall, calleeFns[e.to]),
+		})
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
+		}
+		if edges[i].To != edges[j].To {
+			return edges[i].To < edges[j].To
+		}
+		li, lj := 0, 0
+		if edges[i].EntryCall != nil {
+			li = edges[i].EntryCall.Line
+		}
+		if edges[j].EntryCall != nil {
+			lj = edges[j].EntryCall.Line
+		}
+		return li < lj
+	})
+	out.Edges = edges
+
 	return out
 }
 

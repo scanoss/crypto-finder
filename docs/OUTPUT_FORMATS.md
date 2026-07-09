@@ -91,7 +91,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 When `--export-callgraph` is enabled, Crypto Finder also writes a separate finding-centric call graph JSON file. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version `6.0` is the current customer-facing reachability contract. It removes the legacy `entry_point_index` projection and makes `crypto_entry_points[]` canonical. Version `4.3` added Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
+Schema note: call graph export version `6.3` is the current customer-facing reachability contract. Version `6.3` adds the optional per-finding `forward_calls` block — the finding anchor's forward call closure (deduped nodes with `depth`/`crypto_relevant`/`supporting_category`, plus traversed edges whose `entry_call` carries the call-site argument data-flow), emitted only when the stitch runs with `StitchOptions.ForwardClosure`; caps (depth/nodes/edges) are surfaced via `max_depth` and an explicit `truncated` flag, never silently. Version `6.0` removed the legacy `entry_point_index` projection and made `crypto_entry_points[]` canonical. It removes the legacy `entry_point_index` projection and makes `crypto_entry_points[]` canonical. Version `4.3` added Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
 
 - Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
