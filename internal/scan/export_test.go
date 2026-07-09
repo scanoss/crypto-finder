@@ -541,6 +541,73 @@ func TestSynthesizeContractOperationEntryPoints_SiblingAssetSingleFamily(t *test
 	}
 }
 
+// TestSynthesizeContractOperationEntryPoints_InterfaceContractResolvesImplementors
+// covers issue #105: one interface-authored role:operation contract synthesizes
+// entries for concrete implementors without per-engine contracts.
+func TestSynthesizeContractOperationEntryPoints_InterfaceContractResolvesImplementors(t *testing.T) {
+	t.Parallel()
+
+	aes := &callgraph.FunctionDecl{
+		ID:       callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"},
+		FilePath: "AESEngine.java",
+	}
+	des := &callgraph.FunctionDecl{
+		ID:       callgraph.FunctionID{Package: "org.bc.engines", Type: "DESEngine", Name: "processBlock#4"},
+		FilePath: "DESEngine.java",
+	}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			aes.ID.String(): aes,
+			des.ID.String(): des,
+		}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bouncycastle.crypto.BlockCipher.processBlock#4": {{
+					Method: "org.bouncycastle.crypto.BlockCipher.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+			Hierarchy: map[string][]string{
+				"org.bc.engines.AESEngine": {"org.bouncycastle.crypto.BlockCipher"},
+				"org.bc.engines.DESEngine": {"org.bouncycastle.crypto.BlockCipher"},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{
+			"org.bc.engines.AESEngine.processBlock": aes,
+			"org.bc.engines.DESEngine.processBlock": des,
+		},
+	}
+	result := &engine.DepScanResult{
+		Report: &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{
+			{Metadata: map[string]string{"api": "org.bc.engines.AESEngine.<init>", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
+			{Metadata: map[string]string{"api": "org.bc.engines.DESEngine.<init>", "algorithmFamily": "DES", "algorithmPrimitive": "block-cipher"}},
+		}}}},
+	}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 2 {
+		t.Fatalf("synthesized entries = %#v, want 2 interface implementors", entries)
+	}
+	byClass := map[string]operationEntryPoint{}
+	for _, e := range entries {
+		byClass[e.class] = e
+	}
+	for _, class := range []string{"org.bc.engines.AESEngine", "org.bc.engines.DESEngine"} {
+		e, ok := byClass[class]
+		if !ok {
+			t.Fatalf("missing synthesized entry for %s: %#v", class, entries)
+		}
+		if e.contractMethod != "org.bouncycastle.crypto.BlockCipher.processBlock" {
+			t.Fatalf("%s contractMethod = %q", class, e.contractMethod)
+		}
+		if e.method != "processBlock" {
+			t.Fatalf("%s method = %q", class, e.method)
+		}
+	}
+}
+
 // TestSynthesizeContractOperationEntryPoints_NoSiblingAsset_NoSynthesis
 // covers the negative scenario: a role:operation method whose declaring
 // class has zero crypto assets yields no synthesized entry.
