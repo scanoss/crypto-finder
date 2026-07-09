@@ -379,7 +379,8 @@ func TestForwardClosure_NodeCap(t *testing.T) {
 	t.Parallel()
 
 	const fanout = 10
-	functions := []string{"anchor"}
+	functions := make([]string, 0, 1+fanout)
+	functions = append(functions, "anchor")
 	edges := make([]fwdEdgeSpec, 0, fanout)
 	for i := 0; i < fanout; i++ {
 		name := "leaf" + strconv.Itoa(i)
@@ -432,8 +433,10 @@ func TestForwardClosure_EdgeCap(t *testing.T) {
 	// anchor calls "hub" once; hub then fans out to many leaves at distinct
 	// call sites -- forcing the edge cap (not the node cap) to trip.
 	const fanout = 10
-	functions := []string{"anchor", "hub"}
-	edges := []fwdEdgeSpec{{from: "anchor", to: "hub", line: 0}}
+	functions := make([]string, 0, 2+fanout)
+	functions = append(functions, "anchor", "hub")
+	edges := make([]fwdEdgeSpec, 0, 1+fanout)
+	edges = append(edges, fwdEdgeSpec{from: "anchor", to: "hub", line: 0})
 	for i := 0; i < fanout; i++ {
 		name := "leaf" + strconv.Itoa(i)
 		functions = append(functions, name)

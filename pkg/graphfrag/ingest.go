@@ -119,9 +119,14 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			MatchedOperation:   toMatchedOp(s.MatchedOperation),
 		})
 	}
-	for i := range e.CryptoEntryPoints {
-		ep := &e.CryptoEntryPoints[i]
-		frag.CryptoEntryPoints = append(frag.CryptoEntryPoints, CryptoEntryPoint{
+	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints)
+	return frag
+}
+
+func appendCryptoEntryPoints(dst []CryptoEntryPoint, src []GraphFragmentCryptoEntryPoint) []CryptoEntryPoint {
+	for i := range src {
+		ep := &src[i]
+		dst = append(dst, CryptoEntryPoint{
 			FunctionKey:              ep.FunctionKey,
 			FunctionName:             ep.FunctionName,
 			CanonicalSignature:       ep.CanonicalSignature,
@@ -138,7 +143,7 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			ParameterRoles:           toParameterRoles(ep.ParameterRoles),
 		})
 	}
-	return frag
+	return dst
 }
 
 // toRoleProvenance converts a GraphFragmentRoleProvenance pointer to a

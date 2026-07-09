@@ -899,47 +899,71 @@ func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *eng
 			if c.Role != string(contracts.RoleOperation) {
 				continue
 			}
-			for _, match := range ctx.operationContractDeclarations(c) {
-				if _, has := existingAPI[c.Method]; has {
-					continue
-				}
-				if _, has := existingAPI[match.declFQN]; has {
-					continue
-				}
-				class := receiverType(match.declFQN)
-				assets := classAssets[class]
-				if len(assets) == 0 {
-					continue
-				}
-				key := match.decl.ID.String()
-				if _, dup := seen[key]; dup {
-					continue
-				}
-				seen[key] = struct{}{}
-				family, primitive, ambiguous := inheritFromSiblings(assets)
-				meta := buildExportFunctionMetadata(ctx.graph, match.decl.ID, match.decl)
-				_, method := splitFunctionName(match.declFQN)
-				out = append(out, operationEntryPoint{
-					functionKey:        key,
-					functionName:       meta.FunctionName,
-					canonicalSignature: meta.CanonicalSignature,
-					class:              class,
-					method:             method,
-					returnType:         meta.ReturnType,
-					parameterTypes:     meta.ParameterTypes,
-					visibility:         meta.Visibility,
-					ownerVisibility:    meta.OwnerVisibility,
-					displaySymbol:      meta.DisplaySymbol,
-					aliases:            meta.Aliases,
-					contractMethod:     c.Method,
-					inheritedFamily:    family,
-					inheritedPrimitive: primitive,
-					inheritedAmbiguous: ambiguous,
-				})
-			}
+			out = ctx.appendContractOperationEntryPoints(c, classAssets, existingAPI, seen, out)
 		}
 	}
 	return out
+}
+
+func (ctx *exportBuildContext) appendContractOperationEntryPoints(
+	c contracts.Contract,
+	classAssets map[string][]entities.CryptographicAsset,
+	existingAPI map[string]struct{},
+	seen map[string]struct{},
+	out []operationEntryPoint,
+) []operationEntryPoint {
+	if _, has := existingAPI[c.Method]; has {
+		return out
+	}
+	for _, match := range ctx.operationContractDeclarations(c) {
+		op, ok := ctx.synthesizeContractOperationEntryPoint(c, match, classAssets, existingAPI, seen)
+		if ok {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+func (ctx *exportBuildContext) synthesizeContractOperationEntryPoint(
+	c contracts.Contract,
+	match operationContractDeclaration,
+	classAssets map[string][]entities.CryptographicAsset,
+	existingAPI map[string]struct{},
+	seen map[string]struct{},
+) (operationEntryPoint, bool) {
+	if _, has := existingAPI[match.declFQN]; has {
+		return operationEntryPoint{}, false
+	}
+	class := receiverType(match.declFQN)
+	assets := classAssets[class]
+	if len(assets) == 0 {
+		return operationEntryPoint{}, false
+	}
+	key := match.decl.ID.String()
+	if _, dup := seen[key]; dup {
+		return operationEntryPoint{}, false
+	}
+	seen[key] = struct{}{}
+	family, primitive, ambiguous := inheritFromSiblings(assets)
+	meta := buildExportFunctionMetadata(ctx.graph, match.decl.ID, match.decl)
+	_, method := splitFunctionName(match.declFQN)
+	return operationEntryPoint{
+		functionKey:        key,
+		functionName:       meta.FunctionName,
+		canonicalSignature: meta.CanonicalSignature,
+		class:              class,
+		method:             method,
+		returnType:         meta.ReturnType,
+		parameterTypes:     meta.ParameterTypes,
+		visibility:         meta.Visibility,
+		ownerVisibility:    meta.OwnerVisibility,
+		displaySymbol:      meta.DisplaySymbol,
+		aliases:            meta.Aliases,
+		contractMethod:     c.Method,
+		inheritedFamily:    family,
+		inheritedPrimitive: primitive,
+		inheritedAmbiguous: ambiguous,
+	}, true
 }
 
 func (ctx *exportBuildContext) operationContractDeclarations(c contracts.Contract) []operationContractDeclaration {
