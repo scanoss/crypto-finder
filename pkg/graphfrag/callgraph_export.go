@@ -461,6 +461,122 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
+	return out
+}
+
+// mergeOperationEntryPoints folds the fragments' role-bearing crypto_entry_points
+// (issue-103 WU2/WU3, carried on Result.operationEntryPoints) into the
+// reachability-projected entry points by function_key. An entry already present
+// is ENRICHED (role fields set only if not already populated — reachability data
+// wins on shared fields); a role:operation catalog entry with no reachable
+// finding is APPENDED. The result is re-sorted by function_key to preserve the
+// existing deterministic ordering. Returns the input unchanged when no fragment
+// carried role data.
+func mergeOperationEntryPoints(built []ExportCryptoEntryPoint, carried map[string][]CryptoEntryPoint) []ExportCryptoEntryPoint {
+	if len(carried) == 0 {
+		return built
+	}
+
+	present := make(map[string]int, len(built))
+	for i := range built {
+		present[built[i].FunctionKey] = i
+	}
+
+	for key, eps := range carried {
+		for i := range eps {
+			ep := &eps[i]
+			if idx, ok := present[key]; ok {
+				enrichEntryPointRoles(&built[idx], ep)
+				continue
+			}
+			built = append(built, operationEntryPointToExport(ep))
+			present[key] = len(built) - 1
+		}
+	}
+
+	sort.Slice(built, func(i, j int) bool {
+		return built[i].FunctionKey < built[j].FunctionKey
+	})
+	return built
+}
+
+// enrichEntryPointRoles copies role data onto an existing export entry without
+// clobbering fields the reachability projection already set.
+func enrichEntryPointRoles(dst *ExportCryptoEntryPoint, src *CryptoEntryPoint) {
+	if dst.MethodRole == "" {
+		dst.MethodRole = src.MethodRole
+	}
+	if dst.RoleProvenance == nil {
+		dst.RoleProvenance = exportRoleProvenance(src.RoleProvenance)
+	}
+	if len(dst.ParameterRoles) == 0 {
+		dst.ParameterRoles = exportParameterRoles(src.ParameterRoles)
+	}
+}
+
+// operationEntryPointToExport builds a fresh ExportCryptoEntryPoint from a
+// carried (catalog) CryptoEntryPoint — the append path for role:operation
+// methods with no reachable finding. Class/Method are derived via the shared
+// splitFnName so this matches the live exporter and the reachability-derived
+// builder byte-for-byte (both paths populate Class).
+func operationEntryPointToExport(ep *CryptoEntryPoint) ExportCryptoEntryPoint {
+	class, method := splitFnName(ep.FunctionName)
+	return ExportCryptoEntryPoint{
+		FunctionKey:        ep.FunctionKey,
+		FunctionName:       ep.FunctionName,
+		CanonicalSignature: ep.CanonicalSignature,
+		Class:              class,
+		Method:             method,
+		ReturnType:         ep.ReturnType,
+		ParameterTypes:     ep.ParameterTypes,
+		Visibility:         ep.Visibility,
+		OwnerVisibility:    ep.OwnerVisibility,
+		DisplaySymbol:      ep.DisplaySymbol,
+		Aliases:            ep.Aliases,
+		MethodRole:         ep.MethodRole,
+		RoleProvenance:     exportRoleProvenance(ep.RoleProvenance),
+		ParameterRoles:     exportParameterRoles(ep.ParameterRoles),
+	}
+}
+
+func exportRoleProvenance(src *RoleProvenance) *ExportRoleProvenance {
+	if src == nil {
+		return nil
+	}
+	rp := &ExportRoleProvenance{
+		Kind:               src.Kind,
+		ContractMethod:     src.ContractMethod,
+		InheritedFrom:      src.InheritedFrom,
+		InheritedAmbiguous: src.InheritedAmbiguous,
+	}
+	if src.Inherited != nil {
+		rp.Inherited = &ExportInheritedRole{
+			AlgorithmFamily: src.Inherited.AlgorithmFamily,
+			Primitive:       src.Inherited.Primitive,
+		}
+	}
+	return rp
+}
+
+func exportParameterRoles(src []ParameterRole) []ExportParameterRole {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ExportParameterRole, len(src))
+	for i := range src {
+		out[i] = ExportParameterRole{
+			Index: src[i].Index,
+			Name:  src[i].Name,
+			Role:  src[i].Role,
+		}
+		if src[i].Contributes != nil {
+			out[i].Contributes = &ExportContribution{
+				Property:   src[i].Contributes.Property,
+				Derivation: src[i].Contributes.Derivation,
+			}
+		}
+	}
 	return out
 }
 

@@ -532,6 +532,14 @@ type Result struct {
 	// opsByNode keys ARE the distinct finding anchors: findings sharing an
 	// anchor share the same *forwardClosure pointer (per-anchor memoization).
 	forwardClosures map[graphNode]*forwardClosure
+
+	// operationEntryPoints carries the role-bearing crypto_entry_points from the
+	// stored fragments (issue-103 WU2/WU3), keyed by FunctionKey. nil when no
+	// fragment carries role data. ToCallgraphExport merges these into the served
+	// crypto_entry_points by function_key — enriching an existing reachability
+	// entry, or appending a role:operation catalog entry that has no reachable
+	// finding and would otherwise be dropped.
+	operationEntryPoints map[string][]CryptoEntryPoint
 }
 
 // FindingChain is one root-to-crypto path.

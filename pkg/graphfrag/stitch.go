@@ -130,7 +130,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	rootFragment := fragments[root]
 	roots := rootNodes(root, rootFragment, adjacency, opts.EntryRootedOnly)
 
-	out := Result{Suppressed: suppressed}
+	out := Result{Suppressed: suppressed, operationEntryPoints: indexOperationEntryPoints(closure, fragments)}
 	if opts.EntryRootedOnly {
 		// Serving path. Mirror live `--export-callgraph` (TraceBackLimited): a
 		// backward BFS from each crypto op with a per-op graph-global frontier set.
@@ -740,6 +740,33 @@ func indexSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fra
 		for i := range fragment.SupportingCalls {
 			node := graphNode{Component: key, Function: fragment.SupportingCalls[i].Function}
 			out[node] = append(out[node], fragment.SupportingCalls[i])
+		}
+	}
+	return out
+}
+
+// indexOperationEntryPoints collects the role-bearing crypto_entry_points
+// carried on the stored fragments (issue-103 WU2/WU3), keyed by their
+// FunctionKey — the bare-signature string the served path joins on everywhere
+// else (ExportCryptoEntryPoint.FunctionKey, ExportSupportingCall.FunctionKey).
+// Only entries with role data (MethodRole set OR ParameterRoles present) are
+// carried, since the served crypto_entry_points are otherwise rebuilt from
+// reachability; a role:operation catalog entry has no reachable finding and
+// would be dropped without this carry-through. Returns nil when none carry
+// role data, so the merge pass and its allocations are skipped entirely.
+func indexOperationEntryPoints(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[string][]CryptoEntryPoint {
+	var out map[string][]CryptoEntryPoint
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.CryptoEntryPoints {
+			ep := fragment.CryptoEntryPoints[i]
+			if ep.MethodRole == "" && len(ep.ParameterRoles) == 0 {
+				continue
+			}
+			if out == nil {
+				out = make(map[string][]CryptoEntryPoint)
+			}
+			out[ep.FunctionKey] = append(out[ep.FunctionKey], ep)
 		}
 	}
 	return out
