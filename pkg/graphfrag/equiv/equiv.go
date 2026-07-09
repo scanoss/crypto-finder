@@ -29,6 +29,16 @@
 // TODO(issue-102 live-parity phase): when the live exporter grows a forward
 // closure, decode and compare forward_calls here and remove this exclusion.
 //
+// method_role / role_provenance / parameter_roles (schema 6.4+, issue-103) are
+// likewise OUTSIDE the parity surface, following the same precedent: this
+// package's mirror types do not decode these three fields, so they are
+// structurally invisible to Compare — live-vs-stitched parity holds
+// regardless of whether either side populates them. Unlike forward_calls,
+// both the live and served paths CAN populate these fields (WU2/WU3 emit on
+// both), so this is a deliberate scope exclusion rather than a Phase-A gap;
+// revisit only if a future change needs field-level parity assertions on the
+// role taxonomy itself.
+//
 // Suppression oracle (heuristic):
 //
 // A chain in A is considered "suppressed" (expected to be absent from B) when

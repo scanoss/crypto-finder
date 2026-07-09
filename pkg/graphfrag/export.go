@@ -173,6 +173,43 @@ type GraphFragmentCryptoCall struct {
 	Line int `json:"line,omitempty"`
 	// Parameters carries the resolved argument data-flow for each positional argument.
 	Parameters []GraphFragmentParameter `json:"parameters,omitempty"`
+	// ParameterRoles is the issue-103 (WU3) contracts-KB-derived per-parameter
+	// role/contribution list, index-aligned with ParameterTypes.
+	ParameterRoles []GraphFragmentParameterRole `json:"parameter_roles,omitempty"`
+}
+
+// GraphFragmentRoleProvenance explains where a method_role came from: a
+// direct contract match, or inherited from same-class sibling assets
+// (issue-103 WU2).
+type GraphFragmentRoleProvenance struct {
+	Kind               string                      `json:"kind,omitempty"`
+	ContractMethod     string                      `json:"contract_method,omitempty"`
+	InheritedFrom      string                      `json:"inherited_from,omitempty"`
+	Inherited          *GraphFragmentInheritedRole `json:"inherited,omitempty"`
+	InheritedAmbiguous bool                        `json:"inherited_ambiguous,omitempty"`
+}
+
+// GraphFragmentInheritedRole carries the algorithm_family/primitive a
+// synthesized operation entry point inherited from a same-class sibling asset.
+type GraphFragmentInheritedRole struct {
+	AlgorithmFamily string `json:"algorithm_family,omitempty"`
+	Primitive       string `json:"primitive,omitempty"`
+}
+
+// GraphFragmentParameterRole is one index-aligned parameter role/contribution
+// entry (issue-103 WU3).
+type GraphFragmentParameterRole struct {
+	Index       int                        `json:"index"`
+	Name        string                     `json:"name,omitempty"`
+	Role        string                     `json:"role"`
+	Contributes *GraphFragmentContribution `json:"contributes,omitempty"`
+}
+
+// GraphFragmentContribution names the property a parameter contributes to
+// and the derivation strategy a downstream consumer applies.
+type GraphFragmentContribution struct {
+	Property   string `json:"property,omitempty"`
+	Derivation string `json:"derivation,omitempty"`
 }
 
 // GraphFragmentMatchedOp records the matched operation kind, symbol, and
@@ -317,6 +354,13 @@ type GraphFragmentCryptoEntryPoint struct {
 	OwnerVisibility          string                                 `json:"owner_visibility,omitempty"`
 	ReachableFindings        []GraphFragmentReachableFinding        `json:"reachable_findings,omitempty"`
 	ReachableSupportingCalls []GraphFragmentReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions carried through the fragment so the stitch/served path can
+	// enrich the reachability-projected crypto_entry_points entry by
+	// function_key (see stitch.go indexOperationEntryPoints).
+	MethodRole     string                       `json:"method_role,omitempty"`
+	RoleProvenance *GraphFragmentRoleProvenance `json:"role_provenance,omitempty"`
+	ParameterRoles []GraphFragmentParameterRole `json:"parameter_roles,omitempty"`
 }
 
 // GraphFragmentReachableFinding is a finding reachable from an entrypoint.

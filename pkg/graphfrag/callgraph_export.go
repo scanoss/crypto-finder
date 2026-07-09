@@ -180,6 +180,44 @@ type ExportCryptoCall struct {
 	Line int `json:"line"`
 	// Parameters carries the resolved argument data-flow.
 	Parameters []ExportParameter `json:"parameters,omitempty"`
+	// ParameterRoles is the issue-103 (WU3) contracts-KB-derived per-parameter
+	// role/contribution list, index-aligned with ParameterTypes. Carried
+	// through from the supporting-call declaration on the fragment side (WU1
+	// path populates it natively); never present on call-site ExportParameter.
+	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
+}
+
+// ExportRoleProvenance explains where a method_role came from: a direct
+// contract match, or inherited from same-class sibling assets (issue-103 WU2).
+type ExportRoleProvenance struct {
+	Kind               string               `json:"kind,omitempty"`
+	ContractMethod     string               `json:"contract_method,omitempty"`
+	InheritedFrom      string               `json:"inherited_from,omitempty"`
+	Inherited          *ExportInheritedRole `json:"inherited,omitempty"`
+	InheritedAmbiguous bool                 `json:"inherited_ambiguous,omitempty"`
+}
+
+// ExportInheritedRole carries the algorithm_family/primitive a synthesized
+// operation entry point inherited from a same-class sibling asset.
+type ExportInheritedRole struct {
+	AlgorithmFamily string `json:"algorithm_family,omitempty"`
+	Primitive       string `json:"primitive,omitempty"`
+}
+
+// ExportParameterRole is one index-aligned parameter role/contribution entry
+// (issue-103 WU3).
+type ExportParameterRole struct {
+	Index       int                 `json:"index"`
+	Name        string              `json:"name,omitempty"`
+	Role        string              `json:"role"`
+	Contributes *ExportContribution `json:"contributes,omitempty"`
+}
+
+// ExportContribution names the property a parameter contributes to and the
+// derivation strategy a downstream consumer applies.
+type ExportContribution struct {
+	Property   string `json:"property,omitempty"`
+	Derivation string `json:"derivation,omitempty"`
 }
 
 // ExportParameter is the schema-6.0 callGraphParameter shape.
@@ -277,6 +315,14 @@ type ExportCryptoEntryPoint struct {
 	ReachableFindings []ExportReachableFinding `json:"reachable_findings,omitempty"`
 	// ReachableSupportingCalls lists non-finding context calls reachable from this entry point.
 	ReachableSupportingCalls []ExportReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions. On the served path they are populated either natively (the
+	// entry point already existed via the reachability projection) or by the
+	// stitch-time by-function_key merge that enriches it from the fragment's
+	// carried-through operation-entry data (see stitch.go).
+	MethodRole     string                `json:"method_role,omitempty"`
+	RoleProvenance *ExportRoleProvenance `json:"role_provenance,omitempty"`
+	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
 }
 
 // ExportEntryPoint is kept as a Go-level compatibility alias for callers that

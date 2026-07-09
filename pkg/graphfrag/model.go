@@ -180,6 +180,42 @@ type CryptoCall struct {
 	Line int
 	// Parameters carries the resolved argument data-flow.
 	Parameters []Parameter
+	// ParameterRoles is the issue-103 (WU3) contracts-KB-derived per-parameter
+	// role/contribution list, index-aligned with ParameterTypes.
+	ParameterRoles []ParameterRole
+}
+
+// RoleProvenance explains where a method_role came from: a direct contract
+// match, or inherited from same-class sibling assets (issue-103 WU2).
+type RoleProvenance struct {
+	Kind               string
+	ContractMethod     string
+	InheritedFrom      string
+	Inherited          *InheritedRole
+	InheritedAmbiguous bool
+}
+
+// InheritedRole carries the algorithm_family/primitive a synthesized
+// operation entry point inherited from a same-class sibling asset.
+type InheritedRole struct {
+	AlgorithmFamily string
+	Primitive       string
+}
+
+// ParameterRole is one index-aligned parameter role/contribution entry
+// (issue-103 WU3).
+type ParameterRole struct {
+	Index       int
+	Name        string
+	Role        string
+	Contributes *Contribution
+}
+
+// Contribution names the property a parameter contributes to and the
+// derivation strategy a downstream consumer applies.
+type Contribution struct {
+	Property   string
+	Derivation string
 }
 
 // MatchedOp records the matched operation kind, symbol, and expression for a
@@ -437,6 +473,12 @@ type CryptoEntryPoint struct {
 	OwnerVisibility          string
 	ReachableFindings        []ReachableFinding
 	ReachableSupportingCalls []ReachableSupportingCall
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions carried through the fragment decode so Stitch can index and
+	// merge them into the served crypto_entry_points by function_key.
+	MethodRole     string
+	RoleProvenance *RoleProvenance
+	ParameterRoles []ParameterRole
 }
 
 // ReachableFinding links an entrypoint to a reachable terminal finding.

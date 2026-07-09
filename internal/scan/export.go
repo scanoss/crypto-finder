@@ -107,6 +107,42 @@ type callGraphDependencyContext struct {
 	Version string `json:"version"`
 }
 
+// callGraphRoleProvenance explains where a method_role/parameter contribution
+// came from: a direct contract match, or inherited from same-class sibling
+// assets (see synthesizeContractOperationEntryPoints, issue-103 WU2).
+type callGraphRoleProvenance struct {
+	Kind               string                  `json:"kind,omitempty"`
+	ContractMethod     string                  `json:"contract_method,omitempty"`
+	InheritedFrom      string                  `json:"inherited_from,omitempty"`
+	Inherited          *callGraphInheritedRole `json:"inherited,omitempty"`
+	InheritedAmbiguous bool                    `json:"inherited_ambiguous,omitempty"`
+}
+
+// callGraphInheritedRole carries the algorithm_family/primitive a synthesized
+// operation entry point inherited from a same-class sibling asset.
+type callGraphInheritedRole struct {
+	AlgorithmFamily string `json:"algorithm_family,omitempty"`
+	Primitive       string `json:"primitive,omitempty"`
+}
+
+// callGraphParameterRole is one index-aligned parameter role/contribution
+// entry (issue-103 WU3), mirrored across crypto_entry_points and the
+// supporting-call declaration (callGraphCalledFunction). Never emitted on
+// call-site callGraphParameter (literal values stay there).
+type callGraphParameterRole struct {
+	Index       int                    `json:"index"`
+	Name        string                 `json:"name,omitempty"`
+	Role        string                 `json:"role"`
+	Contributes *callGraphContribution `json:"contributes,omitempty"`
+}
+
+// callGraphContribution names the property a parameter contributes to and
+// the derivation strategy a downstream consumer applies.
+type callGraphContribution struct {
+	Property   string `json:"property,omitempty"`
+	Derivation string `json:"derivation,omitempty"`
+}
+
 type callGraphCalledFunction struct {
 	FunctionName       string                `json:"function_name"`
 	CanonicalSignature string                `json:"canonical_signature,omitempty"`
@@ -119,6 +155,9 @@ type callGraphCalledFunction struct {
 	Line               int                   `json:"line"`
 	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
 	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
+	// ParameterRoles is populated from the contracts KB (issue-103 WU3) on the
+	// supporting-call declaration; index-aligned with ParameterTypes.
+	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
 }
 
 // exportTypeRef is the JSON shape for a structured Java type reference,
@@ -226,6 +265,13 @@ type callGraphCryptoEntryPoint struct {
 	Aliases                  []string                           `json:"aliases,omitempty"`
 	ReachableFindings        []callGraphReachableFinding        `json:"reachable_findings,omitempty"`
 	ReachableSupportingCalls []callGraphReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions: the contract-derived role classification of this entry
+	// point's method, its provenance, and any per-parameter contributions.
+	// All omitempty — absent for entry points with no KB role match.
+	MethodRole     string                   `json:"method_role,omitempty"`
+	RoleProvenance *callGraphRoleProvenance `json:"role_provenance,omitempty"`
+	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
 }
 
 type callGraphReachableFinding struct {
