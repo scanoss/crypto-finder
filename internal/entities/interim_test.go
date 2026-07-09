@@ -17,8 +17,60 @@
 package entities
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
+
+func TestInterimFormatVersion_Is1_4(t *testing.T) {
+	t.Parallel()
+
+	if InterimFormatVersion != "1.4" {
+		t.Errorf("InterimFormatVersion = %q, want %q", InterimFormatVersion, "1.4")
+	}
+}
+
+func TestCryptographicAsset_ParameterConditions_MarshalOmitEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("present when set", func(t *testing.T) {
+		t.Parallel()
+
+		idx := 0
+		asset := CryptographicAsset{
+			Metadata: map[string]string{"parameterCondition": "param[0]==true"},
+			ParameterConditions: []paramcondition.Condition{{
+				Raw:      "param[0]==true",
+				Selector: paramcondition.Selector{Index: &idx},
+				Operator: paramcondition.OpExact,
+				Match:    paramcondition.MatchValue,
+				Value:    "true",
+			}},
+		}
+		b, err := json.Marshal(asset)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if !strings.Contains(string(b), `"parameter_conditions"`) {
+			t.Errorf("marshaled asset missing parameter_conditions key: %s", b)
+		}
+	})
+
+	t.Run("absent when nil", func(t *testing.T) {
+		t.Parallel()
+
+		asset := CryptographicAsset{Metadata: map[string]string{}}
+		b, err := json.Marshal(asset)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if strings.Contains(string(b), `"parameter_conditions"`) {
+			t.Errorf("marshaled asset unexpectedly contains parameter_conditions key: %s", b)
+		}
+	})
+}
 
 func TestCryptographicAsset_GetKey_Algorithm(t *testing.T) {
 	tests := []struct {

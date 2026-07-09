@@ -32,6 +32,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/deduplicator"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 // TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.
@@ -395,6 +396,14 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 
 	if asset.Metadata["cryptoFunction"] == "" && asset.Metadata["operation"] != "" {
 		asset.Metadata["cryptoFunction"] = asset.Metadata["operation"]
+	}
+
+	if raw := asset.Metadata["parameterCondition"]; raw != "" {
+		if conds, err := paramcondition.ParseAll(raw); err == nil {
+			asset.ParameterConditions = conds
+		} else {
+			log.Debug().Err(err).Str("raw", raw).Msg("parameterCondition parse skipped (should have failed at rule-load)")
+		}
 	}
 
 	normalizeRelatedCryptoKeySizes(asset)
