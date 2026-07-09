@@ -299,6 +299,9 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 		methodsByQualifiedArity: indexMethodsByQualifiedArity(graph),
 		subclassByTypeName:      indexSubclassByTypeName(graph),
 		knownClassTypes:         indexKnownClassTypes(graph),
+		interfaceDispatchMemo:   make(map[string][]interfaceDispatchAlias),
+		abstractDispatchMemo:    make(map[string][]interfaceDispatchAlias),
+		callerSeen:              make(map[string]map[string]struct{}),
 	}
 
 	for callerKey, fn := range graph.Functions {
@@ -311,11 +314,59 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 // dispatchIndexes bundles the lookup tables buildCallerIndex needs to expand
 // one call site into all of its dispatch aliases (overloads, interface/abstract
 // virtual dispatch, Python subclass dispatch, fluent fallback).
+//
+// interfaceDispatchMemo/abstractDispatchMemo cache expansion results per callee
+// target: both expansions depend only on the target and the (immutable during
+// buildCallerIndex) graph/index state, while popular targets are re-expanded
+// once per call site — on dispatch-heavy corpora such as bcprov the same
+// interface method is expanded thousands of times. A nil slice is a valid
+// cached value, so presence is tracked with the two-value map lookup.
+//
+// callerSeen mirrors graph.Callers as callee → set-of-callers so the hot path
+// can dedup in O(1) instead of addCaller's linear scan over fan-in slices.
+// Only buildCallerIndex uses it; later passes call addCaller at low volume.
 type dispatchIndexes struct {
 	methodsByName           map[string][]*FunctionDecl
 	methodsByQualifiedArity map[string][]string
 	subclassByTypeName      map[string][]*FunctionDecl
 	knownClassTypes         map[string]bool
+	interfaceDispatchMemo   map[string][]interfaceDispatchAlias
+	abstractDispatchMemo    map[string][]interfaceDispatchAlias
+	callerSeen              map[string]map[string]struct{}
+}
+
+// addCallerIndexed is addCaller's O(1) equivalent for the buildCallerIndex hot
+// path, backed by the dispatchIndexes.callerSeen set. Semantics are identical:
+// append callerKey to callers[calleeKey] unless already present.
+func (idx dispatchIndexes) addCallerIndexed(callers map[string][]string, calleeKey, callerKey string) {
+	set := idx.callerSeen[calleeKey]
+	if set == nil {
+		set = make(map[string]struct{}, 4)
+		idx.callerSeen[calleeKey] = set
+	}
+	if _, dup := set[callerKey]; dup {
+		return
+	}
+	set[callerKey] = struct{}{}
+	callers[calleeKey] = append(callers[calleeKey], callerKey)
+}
+
+func (idx dispatchIndexes) expandInterfaceDispatchMemoized(b *Builder, calleeKey string, graph *CallGraph) []interfaceDispatchAlias {
+	if aliases, ok := idx.interfaceDispatchMemo[calleeKey]; ok {
+		return aliases
+	}
+	aliases := b.expandInterfaceDispatch(calleeKey, graph, idx.methodsByName)
+	idx.interfaceDispatchMemo[calleeKey] = aliases
+	return aliases
+}
+
+func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, callee FunctionID, calleeKey string, graph *CallGraph) []interfaceDispatchAlias {
+	if aliases, ok := idx.abstractDispatchMemo[calleeKey]; ok {
+		return aliases
+	}
+	aliases := b.expandAbstractClassDispatch(callee, graph, idx.methodsByName, idx.knownClassTypes)
+	idx.abstractDispatchMemo[calleeKey] = aliases
+	return aliases
 }
 
 // indexCallDispatch records the direct edge for one call site plus every
@@ -324,36 +375,36 @@ type dispatchIndexes struct {
 // classification.
 func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
-	addCaller(graph.Callers, calleeKey, callerKey)
+	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
 	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
 	for _, target := range overloadTargets {
-		addCaller(graph.Callers, target, callerKey)
+		idx.addCallerIndexed(graph.Callers, target, callerKey)
 		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
 		resolvedTargets = append(resolvedTargets, target)
 	}
 
 	for _, target := range resolvedTargets {
-		for _, alias := range b.expandInterfaceDispatch(target, graph, idx.methodsByName) {
-			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
+			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
 		}
 		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
-			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
 		}
 	}
 
-	for _, alias := range b.expandAbstractClassDispatch(call.Callee, graph, idx.methodsByName, idx.knownClassTypes) {
-		addCaller(graph.Callers, alias.CalleeKey, callerKey)
+	for _, alias := range idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph) {
+		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
-		addCaller(graph.Callers, alias, callerKey)
+		idx.addCallerIndexed(graph.Callers, alias, callerKey)
 		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
 	}
 }

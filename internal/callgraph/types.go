@@ -143,9 +143,9 @@ type FunctionID struct {
 // This includes the arity suffix (e.g., "javax.crypto.(Cipher).getInstance#1").
 func (f FunctionID) String() string {
 	if f.Type != "" {
-		return fmt.Sprintf("%s.(%s).%s", f.Package, f.Type, f.Name)
+		return f.Package + ".(" + f.Type + ")." + f.Name
 	}
-	return fmt.Sprintf("%s.%s", f.Package, f.Name)
+	return f.Package + "." + f.Name
 }
 
 // InferredReturn carries the result of static return-type inference for a function.
