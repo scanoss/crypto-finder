@@ -587,3 +587,16 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 		t.Errorf("terminal node FilePath = %q, want %q (unprefixed)", last.FilePath, rootFilePath)
 	}
 }
+
+// TestCallgraphSchemaVersion_Is63 pins the canonical callgraph schema version
+// at 6.3 — the additive bump introduced by the opt-in forward-closure
+// projection (StitchOptions.ForwardClosure). The bump is unconditional: it
+// advances regardless of whether any given export actually emits
+// forward_calls (see package doc on CallgraphSchemaVersion).
+func TestCallgraphSchemaVersion_Is63(t *testing.T) {
+	t.Parallel()
+
+	if CallgraphSchemaVersion != "6.3" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.3")
+	}
+}
