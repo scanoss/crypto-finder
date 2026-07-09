@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -58,9 +59,65 @@ type Contract struct {
 	Return        ContractReturn
 	SourceLibrary string // populated by Load() from the v2 YAML library.name field
 	// Role classifies a method's part in a crypto object's lifecycle (e.g.
-	// "factory", "config", "output") so exported supporting calls can carry
-	// semantic categories without duplicating crypto rule metadata.
+	// "factory", "config", "output", "operation") so exported supporting
+	// calls can carry semantic categories without duplicating crypto rule
+	// metadata. Validated at load time against the Role whitelist; empty is
+	// the valid "untagged" value.
 	Role string
+	// Parameters declares per-parameter roles for operation-determining or
+	// metadata-contributing arguments, index/name-aligned with the callee's
+	// declared parameter list. Nil when the contract carries no parameter
+	// role annotations (the common case).
+	Parameters []ParameterContract
+}
+
+// Role classifies a contract method's part in a crypto object's lifecycle.
+// Declared as a distinct type for documentation; Contract.Role itself stays
+// a plain string (validated against the Role whitelist at load time) so
+// existing call sites that compare/assign strings need no changes.
+type Role string
+
+// Derivation classifies how a downstream consumer should compute the value a
+// parameter contributes (see ParameterContract.Contributes).
+type Derivation string
+
+// Role whitelist values. See validRole.
+const (
+	RoleFactory   Role = "factory"
+	RoleConfig    Role = "config"
+	RoleOutput    Role = "output"
+	RoleOperation Role = "operation"
+)
+
+// Derivation whitelist values. See validDerivation.
+const (
+	DerivationArgumentValue     Derivation = "argument_value"
+	DerivationArgumentBitLength Derivation = "argument_bit_length"
+	DerivationArgumentType      Derivation = "argument_type"
+)
+
+// ParameterContract describes a single parameter's role in a contract
+// method, used to derive downstream export parameter_roles. Either Index or
+// Name identifies the parameter; Index is preferred (position-based,
+// matching parameter_types export ordering).
+type ParameterContract struct {
+	// Index is the 0-based parameter position; nil when identified by Name.
+	Index *int
+	Name  string
+	// Role is one of "operation-determining", "metadata-contributing", "none".
+	Role string
+	// Contributes describes the property this parameter contributes and the
+	// derivation strategy a downstream consumer should apply. Present only
+	// when Role != "none".
+	Contributes *Contribution
+}
+
+// Contribution names the property a parameter contributes to and the
+// derivation strategy (see Derivation) a downstream consumer applies to
+// compute it from the call-site argument.
+type Contribution struct {
+	Property   string
+	Derivation string
 }
 
 // Condition constrains when this contract applies based on an argument value.
@@ -164,8 +221,22 @@ type yamlContract struct {
 	Arity  int        `yaml:"arity"`
 	When   *yamlWhen  `yaml:"when"`
 	Return yamlReturn `yaml:"return"`
-	// Role is reserved for future supporting-call categorization; see Contract.Role.
+	// Role classifies the method's lifecycle part; see Contract.Role.
 	Role string `yaml:"role,omitempty"`
+	// Parameters declares per-parameter roles; see Contract.Parameters.
+	Parameters []yamlParameterRole `yaml:"parameters,omitempty"`
+}
+
+type yamlParameterRole struct {
+	Index       *int              `yaml:"index,omitempty"`
+	Name        string            `yaml:"name,omitempty"`
+	Role        string            `yaml:"role"`
+	Contributes *yamlContribution `yaml:"contributes,omitempty"`
+}
+
+type yamlContribution struct {
+	Property   string `yaml:"property"`
+	Derivation string `yaml:"derivation"`
 }
 
 type yamlWhen struct {
@@ -182,6 +253,28 @@ var validConfidence = map[string]struct{}{
 	"high":   {},
 	"medium": {},
 	"low":    {},
+}
+
+// validRole is the whitelist for Contract.Role / yamlContract.Role.
+var validRole = map[string]struct{}{
+	string(RoleFactory):   {},
+	string(RoleConfig):    {},
+	string(RoleOutput):    {},
+	string(RoleOperation): {},
+}
+
+// validParameterRole is the whitelist for ParameterContract.Role.
+var validParameterRole = map[string]struct{}{
+	"operation-determining": {},
+	"metadata-contributing": {},
+	"none":                  {},
+}
+
+// validDerivation is the whitelist for Contribution.Derivation.
+var validDerivation = map[string]struct{}{
+	string(DerivationArgumentValue):     {},
+	string(DerivationArgumentBitLength): {},
+	string(DerivationArgumentType):      {},
 }
 
 // Load parses and validates a YAML knowledge base payload.
@@ -249,6 +342,11 @@ func validateContract(i int, c yamlContract) (*Condition, error) {
 	if _, ok := validConfidence[c.Return.Confidence]; !ok {
 		return nil, fmt.Errorf("contracts: contract[%d] (%s): return.confidence %q must be one of {high, medium, low}", i, c.Method, c.Return.Confidence)
 	}
+	if c.Role != "" {
+		if _, ok := validRole[c.Role]; !ok {
+			return nil, fmt.Errorf("contracts: contract[%d] (%s): role %q not in {factory, config, output, operation}", i, c.Method, c.Role)
+		}
+	}
 	if c.When == nil {
 		return nil, nil //nolint:nilnil // nil Condition is the valid "unconditional" signal
 	}
@@ -264,11 +362,52 @@ func validateContract(i int, c yamlContract) (*Condition, error) {
 	}, nil
 }
 
+// validateParameters checks that the Parameters sub-schema entries of a
+// single YAML contract are well-formed, naming the method and field on
+// failure. Returns the parsed ParameterContract slice (nil when the contract
+// declares no parameters block).
+func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
+	if len(c.Parameters) == 0 {
+		return nil, nil
+	}
+	out := make([]ParameterContract, 0, len(c.Parameters))
+	for j, p := range c.Parameters {
+		if _, ok := validParameterRole[p.Role]; !ok {
+			return nil, fmt.Errorf(
+				"contracts: contract[%d] (%s): parameters[%d].role %q not in {operation-determining, metadata-contributing, none}",
+				i, c.Method, j, p.Role,
+			)
+		}
+		pc := ParameterContract{Index: p.Index, Name: p.Name, Role: p.Role}
+		if p.Contributes != nil {
+			if p.Contributes.Property == "" {
+				return nil, fmt.Errorf(
+					"contracts: contract[%d] (%s): parameters[%d].contributes.property is required",
+					i, c.Method, j,
+				)
+			}
+			if _, ok := validDerivation[p.Contributes.Derivation]; !ok {
+				return nil, fmt.Errorf(
+					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type}",
+					i, c.Method, j, p.Contributes.Derivation,
+				)
+			}
+			pc.Contributes = &Contribution{Property: p.Contributes.Property, Derivation: p.Contributes.Derivation}
+		}
+		out = append(out, pc)
+	}
+	return out, nil
+}
+
 // indexContracts validates and indexes all contract entries into the KnowledgeBase.
 func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 	unconditionalSeen := make(map[string]struct{})
 	for i, c := range raw.Contracts {
 		when, err := validateContract(i, c)
+		if err != nil {
+			return err
+		}
+		params, err := validateParameters(i, c)
 		if err != nil {
 			return err
 		}
@@ -287,6 +426,7 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 			Return:        ContractReturn{Type: c.Return.Type, Confidence: c.Return.Confidence},
 			SourceLibrary: raw.Library.Name,
 			Role:          c.Role,
+			Parameters:    params,
 		})
 	}
 	return nil
@@ -537,6 +677,10 @@ func mergeContracts(kbs []*KnowledgeBase) (map[string][]Contract, error) {
 
 // mergeContractGroup inserts a slice of contracts into the per-condition index for
 // one methodArityKey, applying rules 1 (idempotent) and 2 (conflict HARD ERROR).
+// Rule 1/2 equality now also covers Role and Parameters (see
+// contractsEquivalent): identical role/parameter_roles merge idempotently,
+// divergent values HARD-ERROR naming both libraries, mirroring the
+// pre-existing return-type conflict discipline.
 func mergeContractGroup(index map[string]Contract, cs []Contract, key string) error {
 	for _, c := range cs {
 		ck := conditionKey(c.When)
@@ -545,19 +689,52 @@ func mergeContractGroup(index map[string]Contract, cs []Contract, key string) er
 			index[ck] = c
 			continue
 		}
-		// Rule 1: identical return → idempotent
-		if existing.Return.Type == c.Return.Type && existing.Return.Confidence == c.Return.Confidence {
+		// Rule 1: identical return+role+parameters → idempotent
+		if contractsEquivalent(existing, c) {
 			continue
 		}
-		// Rule 2: same condition + different return → HARD ERROR
+		// Rule 2: same condition + divergent return/role/parameters → HARD ERROR
 		return fmt.Errorf(
-			"contracts: contract conflict for %s: library %q has return %q (%s); library %q has return %q (%s)",
+			"contracts: contract conflict for %s: library %q has return %q (%s) role %q; library %q has return %q (%s) role %q",
 			key,
-			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence,
-			c.SourceLibrary, c.Return.Type, c.Return.Confidence,
+			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence, existing.Role,
+			c.SourceLibrary, c.Return.Type, c.Return.Confidence, c.Role,
 		)
 	}
 	return nil
+}
+
+// contractsEquivalent reports whether two contracts sharing the same
+// method+arity+condition key are semantically identical: same return type,
+// confidence, role, and canonical parameter-role key.
+func contractsEquivalent(a, b Contract) bool {
+	return a.Return.Type == b.Return.Type &&
+		a.Return.Confidence == b.Return.Confidence &&
+		a.Role == b.Role &&
+		parametersKey(a.Parameters) == parametersKey(b.Parameters)
+}
+
+// parametersKey produces a canonical, order-insensitive key for a
+// ParameterContract slice, used by contractsEquivalent to detect divergence
+// across libraries during Merge.
+func parametersKey(params []ParameterContract) string {
+	if len(params) == 0 {
+		return ""
+	}
+	parts := make([]string, len(params))
+	for i, p := range params {
+		idx := "-"
+		if p.Index != nil {
+			idx = strconv.Itoa(*p.Index)
+		}
+		contrib := ""
+		if p.Contributes != nil {
+			contrib = p.Contributes.Property + ":" + p.Contributes.Derivation
+		}
+		parts[i] = idx + "|" + p.Name + "|" + p.Role + "|" + contrib
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
 }
 
 // mergeHierarchy applies hierarchy conflict rules 3, 4, and 5 across all KBs.
