@@ -116,6 +116,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
 	var rulePaths []string
+	var rawRulePaths []string
 	var cleanupRulePaths func()
 	defer func() {
 		if cleanupRulePaths != nil {
@@ -123,6 +124,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		}
 	}()
 	if len(opts.RulePaths) > 0 {
+		rawRulePaths = opts.RulePaths
 		rulePaths, cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
 		if err != nil {
 			return nil, failure.WrapUnknown(
@@ -144,6 +146,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 			)
 		}
 		log.Info().Int("count", len(rulePaths)).Msg("Loaded rules")
+		rawRulePaths = rulePaths
 
 		// Filter rules to only include those matching detected languages.
 		// This significantly reduces scanner overhead for large rule sets.
@@ -156,6 +159,21 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 				"failed to prepare filtered rules for scanner",
 			)
 		}
+	}
+
+	// Step 2b: Fail-fast validation. Every rule's parameterCondition MUST
+	// parse before any source scanning starts — a malformed predicate is a
+	// hard abort, not a warn-and-continue (resolved proposal decision).
+	// Validated against the raw loaded paths, not the filtered/materialized
+	// set, so this check is unaffected by language filtering or temp-file
+	// rewriting.
+	if err := rules.ValidateParameterConditions(rawRulePaths); err != nil {
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"invalid parameterCondition in ruleset",
+		)
 	}
 
 	// Step 3: Get scanner from registry

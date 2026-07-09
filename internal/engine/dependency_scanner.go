@@ -16,6 +16,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
@@ -282,6 +283,18 @@ func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, func
 	allRules, err := ds.orchestrator.rulesManager.Load()
 	if err != nil {
 		return nil, func() {}, err
+	}
+
+	// Fail-fast validation against the raw loaded rules, before any
+	// language filtering — a malformed parameterCondition is a hard abort
+	// (resolved proposal decision), matching the same gate in Orchestrator.Scan.
+	if err := rules.ValidateParameterConditions(allRules); err != nil {
+		return nil, func() {}, failure.WrapUnknown(
+			err,
+			failure.CodeRulesLoadFailed,
+			failure.StageRules,
+			"invalid parameterCondition in ruleset",
+		)
 	}
 
 	languages := ecosystemToLanguages(ecosystem)

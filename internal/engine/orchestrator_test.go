@@ -19,6 +19,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -301,6 +304,58 @@ func TestOrchestrator_Scan_RuleLoadingError(t *testing.T) {
 	// Just check that it contains "failed to load rules"
 	if err.Error() == "" {
 		t.Error("expected non-empty error message")
+	}
+}
+
+func TestOrchestrator_Scan_MalformedParameterConditionAborts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	rulePath := filepath.Join(dir, "broken.yaml")
+	const malformedRule = `
+rules:
+  - id: java.bouncycastle.algorithm.block-cipher.aes-init-broken
+    metadata:
+      crypto:
+        operation: encrypt
+        parameterCondition: "param[]==true"
+`
+	if err := os.WriteFile(rulePath, []byte(malformedRule), 0o600); err != nil {
+		t.Fatalf("write malformed rule fixture: %v", err)
+	}
+
+	detector := &mockDetector{}
+	ruleSource := &mockRuleSource{}
+	rulesManager := rules.NewManager(ruleSource)
+	registry := scanner.NewRegistry()
+
+	orchestrator := NewOrchestrator(detector, rulesManager, registry)
+
+	opts := ScanOptions{
+		Target:      "/path/to/code",
+		ScannerName: "test-scanner",
+		RulePaths:   []string{rulePath},
+	}
+
+	_, err := orchestrator.Scan(ctx, opts)
+	if err == nil {
+		t.Fatal("expected error but got none")
+	}
+
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("expected structured error, got: %v", err)
+	}
+	if structured.Code != failure.CodeRulesLoadFailed {
+		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeRulesLoadFailed)
+	}
+	if !strings.Contains(err.Error(), "java.bouncycastle.algorithm.block-cipher.aes-init-broken") {
+		t.Errorf("error %q does not name the offending rule id", err.Error())
+	}
+	if !strings.Contains(err.Error(), "param[]==true") {
+		t.Errorf("error %q does not contain the raw malformed predicate", err.Error())
 	}
 }
 
