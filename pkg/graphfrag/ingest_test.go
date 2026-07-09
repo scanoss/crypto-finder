@@ -100,6 +100,112 @@ func TestDecodeFragment_UnknownResolutionFromLegacyFragment(t *testing.T) {
 	}
 }
 
+// TestDecodeFragment_MapsRoleFields proves the ingestion adapter maps
+// issue-103's method_role/role_provenance/parameter_roles fields from a
+// crypto_entry_points fragment entry onto the decoded CryptoEntryPoint, and
+// parameter_roles from a supporting_calls entry's supporting_call onto the
+// decoded CryptoCall — the plumbing WU2/WU3 need to carry these fields
+// through the fragment round-trip to the stitch/served path.
+func TestDecodeFragment_MapsRoleFields(t *testing.T) {
+	const fragmentJSON = `{
+	  "schema_version": "graph-fragment-1.6",
+	  "functions": [{ "key": "org.bc.(AESEngine).processBlock#4" }],
+	  "crypto_entry_points": [
+	    {
+	      "function_key": "org.bc.(AESEngine).processBlock#4",
+	      "method": "processBlock",
+	      "method_role": "operation",
+	      "role_provenance": {
+	        "kind": "contract-operation-inherited",
+	        "contract_method": "org.bouncycastle.crypto.BlockCipher.processBlock",
+	        "inherited_from": "org.bc.AESEngine.<init>",
+	        "inherited": { "algorithm_family": "AES", "primitive": "block-cipher" }
+	      },
+	      "parameter_roles": [
+	        { "index": 0, "role": "operation-determining" }
+	      ]
+	    }
+	  ],
+	  "supporting_calls": [
+	    {
+	      "supporting_id": "sup1",
+	      "function_key": "org.pkg.(Svc).run#0",
+	      "supporting_call": {
+	        "function_name": "org.bc.KeyParameter.<init>",
+	        "parameter_roles": [
+	          {
+	            "index": 0,
+	            "name": "key",
+	            "role": "metadata-contributing",
+	            "contributes": { "property": "keySize", "derivation": "argument_bit_length" }
+	          }
+	        ]
+	      }
+	    }
+	  ]
+	}`
+
+	frag, err := DecodeFragment(ComponentKey{Purl: "pkg:maven/bc/bc", Version: "1"}, []byte(fragmentJSON))
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+
+	if len(frag.CryptoEntryPoints) != 1 {
+		t.Fatalf("CryptoEntryPoints = %#v, want 1", frag.CryptoEntryPoints)
+	}
+	ep := frag.CryptoEntryPoints[0]
+	if ep.MethodRole != "operation" {
+		t.Fatalf("MethodRole = %q, want operation", ep.MethodRole)
+	}
+	if ep.RoleProvenance == nil || ep.RoleProvenance.Kind != "contract-operation-inherited" ||
+		ep.RoleProvenance.Inherited == nil || ep.RoleProvenance.Inherited.AlgorithmFamily != "AES" ||
+		ep.RoleProvenance.Inherited.Primitive != "block-cipher" {
+		t.Fatalf("RoleProvenance = %#v, want kind=contract-operation-inherited inherited={AES,block-cipher}", ep.RoleProvenance)
+	}
+	if len(ep.ParameterRoles) != 1 || ep.ParameterRoles[0].Role != "operation-determining" {
+		t.Fatalf("ParameterRoles = %#v, want 1 entry role=operation-determining", ep.ParameterRoles)
+	}
+
+	if len(frag.SupportingCalls) != 1 || frag.SupportingCalls[0].SupportingCall == nil {
+		t.Fatalf("SupportingCalls = %#v, want 1 with SupportingCall set", frag.SupportingCalls)
+	}
+	sc := frag.SupportingCalls[0].SupportingCall
+	if len(sc.ParameterRoles) != 1 {
+		t.Fatalf("SupportingCall.ParameterRoles = %#v, want 1 entry", sc.ParameterRoles)
+	}
+	pr := sc.ParameterRoles[0]
+	if pr.Index != 0 || pr.Name != "key" || pr.Role != "metadata-contributing" ||
+		pr.Contributes == nil || pr.Contributes.Property != "keySize" || pr.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("SupportingCall.ParameterRoles[0] = %#v, want index=0 key metadata-contributing keySize/argument_bit_length", pr)
+	}
+}
+
+// TestDecodeFragment_LegacyFragment_NoRoleFields proves a fragment exported
+// before issue-103 (no method_role/role_provenance/parameter_roles) decodes
+// with nil/empty values for the new fields — safe structural-only
+// degradation, matching the existing 1.0/1.1 precedent for CryptoCall/EntryCall.
+func TestDecodeFragment_LegacyFragment_NoRoleFields(t *testing.T) {
+	const legacy = `{
+	  "schema_version": "graph-fragment-1.6",
+	  "functions": [{ "key": "a.(A).f#0" }],
+	  "crypto_entry_points": [
+	    { "function_key": "a.(A).f#0", "method": "f" }
+	  ]
+	}`
+
+	frag, err := DecodeFragment(ComponentKey{Purl: "pkg:maven/a/a", Version: "1"}, []byte(legacy))
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	if len(frag.CryptoEntryPoints) != 1 {
+		t.Fatalf("CryptoEntryPoints = %#v, want 1", frag.CryptoEntryPoints)
+	}
+	ep := frag.CryptoEntryPoints[0]
+	if ep.MethodRole != "" || ep.RoleProvenance != nil || ep.ParameterRoles != nil {
+		t.Fatalf("legacy entry point role fields = %#v, want all empty/nil", ep)
+	}
+}
+
 func TestDecodeFragment_InvalidResolutionNormalized(t *testing.T) {
 	const invalid = `{
 	  "schema_version": "graph-fragment-1.1",

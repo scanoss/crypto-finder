@@ -133,9 +133,57 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			OwnerVisibility:          ep.OwnerVisibility,
 			ReachableFindings:        toReachableFindings(ep.ReachableFindings),
 			ReachableSupportingCalls: toReachableSupportingCalls(ep.ReachableSupportingCalls),
+			MethodRole:               ep.MethodRole,
+			RoleProvenance:           toRoleProvenance(ep.RoleProvenance),
+			ParameterRoles:           toParameterRoles(ep.ParameterRoles),
 		})
 	}
 	return frag
+}
+
+// toRoleProvenance converts a GraphFragmentRoleProvenance pointer to a
+// RoleProvenance pointer. Returns nil if src is nil (issue-103: absent on
+// fragments with no KB role match, and on all fragments exported before
+// schema graph-fragment-1.7 / callgraph 6.4).
+func toRoleProvenance(src *GraphFragmentRoleProvenance) *RoleProvenance {
+	if src == nil {
+		return nil
+	}
+	rp := &RoleProvenance{
+		Kind:               src.Kind,
+		ContractMethod:     src.ContractMethod,
+		InheritedFrom:      src.InheritedFrom,
+		InheritedAmbiguous: src.InheritedAmbiguous,
+	}
+	if src.Inherited != nil {
+		rp.Inherited = &InheritedRole{
+			AlgorithmFamily: src.Inherited.AlgorithmFamily,
+			Primitive:       src.Inherited.Primitive,
+		}
+	}
+	return rp
+}
+
+// toParameterRoles converts a []GraphFragmentParameterRole to a []ParameterRole.
+func toParameterRoles(src []GraphFragmentParameterRole) []ParameterRole {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ParameterRole, len(src))
+	for i := range src {
+		out[i] = ParameterRole{
+			Index: src[i].Index,
+			Name:  src[i].Name,
+			Role:  src[i].Role,
+		}
+		if src[i].Contributes != nil {
+			out[i].Contributes = &Contribution{
+				Property:   src[i].Contributes.Property,
+				Derivation: src[i].Contributes.Derivation,
+			}
+		}
+	}
+	return out
 }
 
 func toReachableFindings(src []GraphFragmentReachableFinding) []ReachableFinding {
@@ -232,6 +280,7 @@ func toCryptoCall(src *GraphFragmentCryptoCall) *CryptoCall {
 		DisplaySymbol:      src.DisplaySymbol,
 		Aliases:            append([]string(nil), src.Aliases...),
 		Line:               src.Line,
+		ParameterRoles:     toParameterRoles(src.ParameterRoles),
 	}
 	for i := range src.Parameters {
 		cc.Parameters = append(cc.Parameters, toParameter(src.Parameters[i]))

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
@@ -720,5 +721,55 @@ func TestChainIDForLine(t *testing.T) {
 	}
 	if got := chainIDForLine(nil, 8); got != "" {
 		t.Errorf("chainIDForLine(nil) = %q, want empty", got)
+	}
+}
+
+// TestFlattenGraphFragmentEntryPoints_PopulatesParameterRoles is the fragment
+// side of the WU3 (issue-103) concrete target: a fragment crypto_entry_points
+// entry whose function+arity matches a KB contract declaring parameter roles
+// gets parameter_roles populated, mirroring the live-path behavior verified
+// by TestBuildCryptoEntryPointsPopulatesParameterRoles.
+func TestFlattenGraphFragmentEntryPoints_PopulatesParameterRoles(t *testing.T) {
+	t.Parallel()
+
+	kb := &contracts.KnowledgeBase{
+		Contracts: map[string][]contracts.Contract{
+			"org.bc.KeyParameter.<init>#1": {{
+				Method: "org.bc.KeyParameter.<init>",
+				Arity:  1,
+				Return: contracts.ContractReturn{Type: "org.bc.KeyParameter", Confidence: "high"},
+				Parameters: []contracts.ParameterContract{{
+					Index: intPtr(0),
+					Name:  "key",
+					Role:  "metadata-contributing",
+					Contributes: &contracts.Contribution{
+						Property:   "keySize",
+						Derivation: "argument_bit_length",
+					},
+				}},
+			}},
+		},
+	}
+	entries := map[string]*graphFragmentEntryPointData{
+		"org.bc.KeyParameter.<init>#1": {
+			functionKey:    "org.bc.KeyParameter.<init>#1",
+			functionName:   "org.bc.KeyParameter.<init>",
+			parameterTypes: []string{"byte[]"},
+			findings:       make(map[string]graphfrag.GraphFragmentReachableFinding),
+			supporting:     make(map[string]graphfrag.GraphFragmentReachableSupportingCall),
+		},
+	}
+
+	out := flattenGraphFragmentEntryPoints(kb, entries)
+	if len(out) != 1 {
+		t.Fatalf("flattenGraphFragmentEntryPoints = %#v, want 1 entry", out)
+	}
+	if len(out[0].ParameterRoles) != 1 {
+		t.Fatalf("ParameterRoles = %#v, want 1 entry", out[0].ParameterRoles)
+	}
+	pr := out[0].ParameterRoles[0]
+	if pr.Index != 0 || pr.Role != "metadata-contributing" ||
+		pr.Contributes == nil || pr.Contributes.Property != "keySize" || pr.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("ParameterRoles[0] = %#v, want index=0 metadata-contributing keySize/argument_bit_length", pr)
 	}
 }

@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.3"
+const CallgraphSchemaVersion = "6.4"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -180,6 +180,44 @@ type ExportCryptoCall struct {
 	Line int `json:"line"`
 	// Parameters carries the resolved argument data-flow.
 	Parameters []ExportParameter `json:"parameters,omitempty"`
+	// ParameterRoles is the issue-103 (WU3) contracts-KB-derived per-parameter
+	// role/contribution list, index-aligned with ParameterTypes. Carried
+	// through from the supporting-call declaration on the fragment side (WU1
+	// path populates it natively); never present on call-site ExportParameter.
+	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
+}
+
+// ExportRoleProvenance explains where a method_role came from: a direct
+// contract match, or inherited from same-class sibling assets (issue-103 WU2).
+type ExportRoleProvenance struct {
+	Kind               string               `json:"kind,omitempty"`
+	ContractMethod     string               `json:"contract_method,omitempty"`
+	InheritedFrom      string               `json:"inherited_from,omitempty"`
+	Inherited          *ExportInheritedRole `json:"inherited,omitempty"`
+	InheritedAmbiguous bool                 `json:"inherited_ambiguous,omitempty"`
+}
+
+// ExportInheritedRole carries the algorithm_family/primitive a synthesized
+// operation entry point inherited from a same-class sibling asset.
+type ExportInheritedRole struct {
+	AlgorithmFamily string `json:"algorithm_family,omitempty"`
+	Primitive       string `json:"primitive,omitempty"`
+}
+
+// ExportParameterRole is one index-aligned parameter role/contribution entry
+// (issue-103 WU3).
+type ExportParameterRole struct {
+	Index       int                 `json:"index"`
+	Name        string              `json:"name,omitempty"`
+	Role        string              `json:"role"`
+	Contributes *ExportContribution `json:"contributes,omitempty"`
+}
+
+// ExportContribution names the property a parameter contributes to and the
+// derivation strategy a downstream consumer applies.
+type ExportContribution struct {
+	Property   string `json:"property,omitempty"`
+	Derivation string `json:"derivation,omitempty"`
 }
 
 // ExportParameter is the schema-6.0 callGraphParameter shape.
@@ -277,6 +315,14 @@ type ExportCryptoEntryPoint struct {
 	ReachableFindings []ExportReachableFinding `json:"reachable_findings,omitempty"`
 	// ReachableSupportingCalls lists non-finding context calls reachable from this entry point.
 	ReachableSupportingCalls []ExportReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions. On the served path they are populated either natively (the
+	// entry point already existed via the reachability projection) or by the
+	// stitch-time by-function_key merge that enriches it from the fragment's
+	// carried-through operation-entry data (see stitch.go).
+	MethodRole     string                `json:"method_role,omitempty"`
+	RoleProvenance *ExportRoleProvenance `json:"role_provenance,omitempty"`
+	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
 }
 
 // ExportEntryPoint is kept as a Go-level compatibility alias for callers that
@@ -415,6 +461,122 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
+	return out
+}
+
+// mergeOperationEntryPoints folds the fragments' role-bearing crypto_entry_points
+// (issue-103 WU2/WU3, carried on Result.operationEntryPoints) into the
+// reachability-projected entry points by function_key. An entry already present
+// is ENRICHED (role fields set only if not already populated — reachability data
+// wins on shared fields); a role:operation catalog entry with no reachable
+// finding is APPENDED. The result is re-sorted by function_key to preserve the
+// existing deterministic ordering. Returns the input unchanged when no fragment
+// carried role data.
+func mergeOperationEntryPoints(built []ExportCryptoEntryPoint, carried map[string][]CryptoEntryPoint) []ExportCryptoEntryPoint {
+	if len(carried) == 0 {
+		return built
+	}
+
+	present := make(map[string]int, len(built))
+	for i := range built {
+		present[built[i].FunctionKey] = i
+	}
+
+	for key, eps := range carried {
+		for i := range eps {
+			ep := &eps[i]
+			if idx, ok := present[key]; ok {
+				enrichEntryPointRoles(&built[idx], ep)
+				continue
+			}
+			built = append(built, operationEntryPointToExport(ep))
+			present[key] = len(built) - 1
+		}
+	}
+
+	sort.Slice(built, func(i, j int) bool {
+		return built[i].FunctionKey < built[j].FunctionKey
+	})
+	return built
+}
+
+// enrichEntryPointRoles copies role data onto an existing export entry without
+// clobbering fields the reachability projection already set.
+func enrichEntryPointRoles(dst *ExportCryptoEntryPoint, src *CryptoEntryPoint) {
+	if dst.MethodRole == "" {
+		dst.MethodRole = src.MethodRole
+	}
+	if dst.RoleProvenance == nil {
+		dst.RoleProvenance = exportRoleProvenance(src.RoleProvenance)
+	}
+	if len(dst.ParameterRoles) == 0 {
+		dst.ParameterRoles = exportParameterRoles(src.ParameterRoles)
+	}
+}
+
+// operationEntryPointToExport builds a fresh ExportCryptoEntryPoint from a
+// carried (catalog) CryptoEntryPoint — the append path for role:operation
+// methods with no reachable finding. Class/Method are derived via the shared
+// splitFnName so this matches the live exporter and the reachability-derived
+// builder byte-for-byte (both paths populate Class).
+func operationEntryPointToExport(ep *CryptoEntryPoint) ExportCryptoEntryPoint {
+	class, method := splitFnName(ep.FunctionName)
+	return ExportCryptoEntryPoint{
+		FunctionKey:        ep.FunctionKey,
+		FunctionName:       ep.FunctionName,
+		CanonicalSignature: ep.CanonicalSignature,
+		Class:              class,
+		Method:             method,
+		ReturnType:         ep.ReturnType,
+		ParameterTypes:     ep.ParameterTypes,
+		Visibility:         ep.Visibility,
+		OwnerVisibility:    ep.OwnerVisibility,
+		DisplaySymbol:      ep.DisplaySymbol,
+		Aliases:            ep.Aliases,
+		MethodRole:         ep.MethodRole,
+		RoleProvenance:     exportRoleProvenance(ep.RoleProvenance),
+		ParameterRoles:     exportParameterRoles(ep.ParameterRoles),
+	}
+}
+
+func exportRoleProvenance(src *RoleProvenance) *ExportRoleProvenance {
+	if src == nil {
+		return nil
+	}
+	rp := &ExportRoleProvenance{
+		Kind:               src.Kind,
+		ContractMethod:     src.ContractMethod,
+		InheritedFrom:      src.InheritedFrom,
+		InheritedAmbiguous: src.InheritedAmbiguous,
+	}
+	if src.Inherited != nil {
+		rp.Inherited = &ExportInheritedRole{
+			AlgorithmFamily: src.Inherited.AlgorithmFamily,
+			Primitive:       src.Inherited.Primitive,
+		}
+	}
+	return rp
+}
+
+func exportParameterRoles(src []ParameterRole) []ExportParameterRole {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]ExportParameterRole, len(src))
+	for i := range src {
+		out[i] = ExportParameterRole{
+			Index: src[i].Index,
+			Name:  src[i].Name,
+			Role:  src[i].Role,
+		}
+		if src[i].Contributes != nil {
+			out[i].Contributes = &ExportContribution{
+				Property:   src[i].Contributes.Property,
+				Derivation: src[i].Contributes.Derivation,
+			}
+		}
+	}
 	return out
 }
 

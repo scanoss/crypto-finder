@@ -21,6 +21,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -379,6 +380,7 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 	entry := callGraphChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
 	terminal := callGraphChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
 	points := buildCryptoEntryPoints(
+		nil,
 		[]callGraphExportFinding{{
 			FindingID: "finding-1",
 			MatchedOperation: &callGraphMatchedOperation{
@@ -405,6 +407,253 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 	}
 	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
 		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
+	}
+}
+
+// TestBuildCryptoEntryPointsPopulatesParameterRoles is the WU3 (issue-103)
+// concrete target: a crypto_entry_points terminal whose function+arity
+// matches a KB contract declaring parameter roles gets parameter_roles
+// populated, index-aligned with parameter_types. KeyParameter.<init>(byte[])
+// contributes keySize via argument_bit_length on param 0.
+func TestBuildCryptoEntryPointsPopulatesParameterRoles(t *testing.T) {
+	t.Parallel()
+
+	terminal := callGraphChainNode{
+		FunctionKey:    "org.bc.KeyParameter.<init>#1",
+		FunctionName:   "org.bc.KeyParameter.<init>",
+		ParameterTypes: []string{"byte[]"},
+	}
+	kb := &contracts.KnowledgeBase{
+		Contracts: map[string][]contracts.Contract{
+			"org.bc.KeyParameter.<init>#1": {{
+				Method: "org.bc.KeyParameter.<init>",
+				Arity:  1,
+				Return: contracts.ContractReturn{Type: "org.bc.KeyParameter", Confidence: "high"},
+				Parameters: []contracts.ParameterContract{{
+					Index: intPtr(0),
+					Name:  "key",
+					Role:  "metadata-contributing",
+					Contributes: &contracts.Contribution{
+						Property:   "keySize",
+						Derivation: "argument_bit_length",
+					},
+				}},
+			}},
+		},
+	}
+	points := buildCryptoEntryPoints(
+		kb,
+		[]callGraphExportFinding{{
+			FindingID:        "finding-1",
+			MatchedOperation: &callGraphMatchedOperation{Kind: matchedOperationCall, Symbol: "org.bc.KeyParameter.<init>", Line: 1},
+			CallChains:       [][]callGraphChainNode{{terminal}},
+		}},
+		nil,
+	)
+
+	entryPoint := findCryptoEntryPointByFunctionKey(points, terminal.FunctionKey)
+	if entryPoint == nil {
+		t.Fatalf("missing entry point %q: %#v", terminal.FunctionKey, points)
+	}
+	if len(entryPoint.ParameterRoles) != 1 {
+		t.Fatalf("ParameterRoles = %#v, want 1 entry", entryPoint.ParameterRoles)
+	}
+	pr := entryPoint.ParameterRoles[0]
+	if pr.Index != 0 || pr.Role != "metadata-contributing" ||
+		pr.Contributes == nil || pr.Contributes.Property != "keySize" || pr.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("ParameterRoles[0] = %#v, want index=0 metadata-contributing keySize/argument_bit_length", pr)
+	}
+}
+
+func intPtr(i int) *int { return &i }
+
+// TestSynthesizeContractOperationEntryPoints_SiblingAssetSingleFamily covers
+// the WU2 (issue-103) primary scenario: a role:operation contract method
+// declared/reachable in scanned source, whose declaring class already has a
+// same-family, same-primitive sibling asset, synthesizes a crypto_entry_points
+// entry with method_role=operation and inherited algorithm_family/primitive.
+func TestSynthesizeContractOperationEntryPoints_SiblingAssetSingleFamily(t *testing.T) {
+	t.Parallel()
+
+	processBlock := &callgraph.FunctionDecl{
+		ID:       callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"},
+		FilePath: "AESEngine.java",
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		processBlock.ID.String(): processBlock,
+	}}
+	ctx := &exportBuildContext{
+		graph: graph,
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{
+			"org.bc.engines.AESEngine.processBlock": processBlock,
+		},
+	}
+	result := &engine.DepScanResult{
+		CallGraph: graph,
+		Report: &entities.InterimReport{
+			Findings: []entities.Finding{{
+				CryptographicAssets: []entities.CryptographicAsset{{
+					FindingID: "f1",
+					Metadata: map[string]string{
+						"api":                "org.bc.engines.AESEngine.<init>",
+						"algorithmFamily":    "AES",
+						"algorithmPrimitive": "block-cipher",
+					},
+				}},
+			}},
+		},
+	}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 1 {
+		t.Fatalf("synthesized entries = %#v, want 1", entries)
+	}
+	e := entries[0]
+	if e.contractMethod != "org.bc.engines.AESEngine.processBlock" {
+		t.Fatalf("contractMethod = %q", e.contractMethod)
+	}
+	if e.inheritedFamily != "AES" || e.inheritedPrimitive != "block-cipher" || e.inheritedAmbiguous {
+		t.Fatalf("inherited = family=%q primitive=%q ambiguous=%v, want AES/block-cipher/false", e.inheritedFamily, e.inheritedPrimitive, e.inheritedAmbiguous)
+	}
+
+	appended := appendSynthesizedOperationEntryPoints(ctx, result, nil)
+	if len(appended) != 1 {
+		t.Fatalf("appended entries = %#v, want 1", appended)
+	}
+	ep := appended[0]
+	if ep.MethodRole != "operation" {
+		t.Fatalf("MethodRole = %q, want operation", ep.MethodRole)
+	}
+	if ep.RoleProvenance == nil || ep.RoleProvenance.Kind != "contract-operation-inherited" ||
+		ep.RoleProvenance.Inherited == nil || ep.RoleProvenance.Inherited.AlgorithmFamily != "AES" ||
+		ep.RoleProvenance.Inherited.Primitive != "block-cipher" || ep.RoleProvenance.InheritedAmbiguous {
+		t.Fatalf("RoleProvenance = %#v", ep.RoleProvenance)
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_NoSiblingAsset_NoSynthesis
+// covers the negative scenario: a role:operation method whose declaring
+// class has zero crypto assets yields no synthesized entry.
+func TestSynthesizeContractOperationEntryPoints_NoSiblingAsset_NoSynthesis(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": decl},
+	}
+	result := &engine.DepScanResult{Report: &entities.InterimReport{}}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 0 {
+		t.Fatalf("synthesized entries = %#v, want none (no sibling asset)", entries)
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_DivergentSiblingFamilies covers
+// the ambiguity scenario: a class whose existing assets disagree on
+// algorithm_family synthesizes with family omitted, primitive kept only if
+// unanimous, and inherited_ambiguous=true — never fabricating a value.
+func TestSynthesizeContractOperationEntryPoints_DivergentSiblingFamilies(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc", Type: "Multi", Name: "op#0"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.Multi.op#0": {{
+					Method: "org.bc.Multi.op",
+					Arity:  0,
+					Return: contracts.ContractReturn{Type: "void", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.Multi.op": decl},
+	}
+	result := &engine.DepScanResult{
+		Report: &entities.InterimReport{
+			Findings: []entities.Finding{{
+				CryptographicAssets: []entities.CryptographicAsset{
+					{Metadata: map[string]string{"api": "org.bc.Multi.<init>", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
+					{Metadata: map[string]string{"api": "org.bc.Multi.other", "algorithmFamily": "RC4", "algorithmPrimitive": "block-cipher"}},
+				},
+			}},
+		},
+	}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 1 {
+		t.Fatalf("synthesized entries = %#v, want 1", entries)
+	}
+	e := entries[0]
+	if e.inheritedFamily != "" {
+		t.Fatalf("inheritedFamily = %q, want empty (divergent siblings must not fabricate)", e.inheritedFamily)
+	}
+	if e.inheritedPrimitive != "block-cipher" {
+		t.Fatalf("inheritedPrimitive = %q, want block-cipher (unanimous)", e.inheritedPrimitive)
+	}
+	if !e.inheritedAmbiguous {
+		t.Fatal("inheritedAmbiguous = false, want true (divergent family)")
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_FindingCountsUnchanged proves
+// synthesis is B-lite: it never mints an interim finding, so InterimReport
+// finding counts are unchanged before/after.
+func TestSynthesizeContractOperationEntryPoints_FindingCountsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": decl},
+	}
+	report := &entities.InterimReport{
+		Findings: []entities.Finding{{
+			CryptographicAssets: []entities.CryptographicAsset{{
+				Metadata: map[string]string{"api": "org.bc.engines.AESEngine.<init>", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"},
+			}},
+		}},
+	}
+	before := len(report.Findings)
+	result := &engine.DepScanResult{Report: report}
+
+	_ = synthesizeContractOperationEntryPoints(ctx, result)
+
+	if after := len(report.Findings); after != before {
+		t.Fatalf("finding count changed: before=%d after=%d, want unchanged", before, after)
 	}
 }
 
@@ -487,6 +736,144 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 	}
 	if got[1].FunctionName != "pkg.Svc.run" {
 		t.Fatalf("structural function = %q, want pkg.Svc.run", got[1].FunctionName)
+	}
+}
+
+// TestBuildDerivedSupportingCall_CategoryFromKB verifies WU1 (issue-103): a
+// structural (call-edge-derived) supporting call whose callee FQN+arity
+// matches a role-tagged contract gets support.Category populated from that
+// contract's role — closing the BC-coverage gap where only definition-based
+// (deriveContractSupportingCalls) supporting calls carried a category.
+func TestBuildDerivedSupportingCall_CategoryFromKB(t *testing.T) {
+	t.Parallel()
+
+	owner := callgraph.FunctionID{Package: "pkg", Type: "Svc", Name: "run"}
+	structuralCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "prepare"},
+		ReceiverVar: "builder",
+		Raw:         "builder.prepare()",
+		FilePath:    "lib.py",
+		Line:        11,
+	}
+	terminalCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "terminal"},
+		ReceiverVar: "builder",
+		Raw:         "builder.terminal(secret)",
+		FilePath:    "lib.py",
+		Line:        12,
+	}
+	ownerDecl := &callgraph.FunctionDecl{
+		ID:        owner,
+		FilePath:  "lib.py",
+		StartLine: 10,
+		EndLine:   20,
+		Calls:     []callgraph.FunctionCall{structuralCall, terminalCall},
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
+	ctx := &exportBuildContext{
+		graph:                   graph,
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"pkg.Builder.terminal#1": {{
+					Method: "pkg.Builder.terminal",
+					Arity:  1,
+					Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+				}},
+				// Role-tagged via the call-edge path (no definition in
+				// scanned source, unlike deriveContractSupportingCalls'
+				// declIndex-gated lookup) — this is the WU1 target: a
+				// contract-known callee reached only through the structural
+				// call edge, not the fluent-lifecycle declIndex walk.
+				"pkg.Builder.prepare#0": {{
+					Method: "pkg.Builder.prepare",
+					Arity:  0,
+					Return: contracts.ContractReturn{Type: "void", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
+		},
+	}
+	asset := entities.CryptographicAsset{
+		StartLine: 12,
+		EndLine:   12,
+		Match:     "builder.terminal(secret)",
+		Metadata:  map[string]string{"api": "pkg.Builder.terminal"},
+		Rules:     []entities.RuleInfo{{ID: "direct-rule"}},
+	}
+	finding := entities.Finding{FilePath: "lib.py"}
+
+	got := deriveSupportingCallsForFinding(ctx, finding, asset)
+	if len(got) != 1 {
+		t.Fatalf("supporting calls = %d, want 1 (structural only, no declIndex fluent match)", len(got))
+	}
+	if got[0].FunctionName != "pkg.Svc.run" {
+		t.Fatalf("structural function = %q, want pkg.Svc.run", got[0].FunctionName)
+	}
+	if got[0].Category != "operation" {
+		t.Fatalf("structural supporting call category = %q, want %q (from KB contract role)", got[0].Category, "operation")
+	}
+}
+
+// TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized verifies the
+// negative scenario from the spec: a callee absent from the KB leaves
+// support.Category empty — no structural guessing.
+func TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized(t *testing.T) {
+	t.Parallel()
+
+	owner := callgraph.FunctionID{Package: "pkg", Type: "Svc", Name: "run"}
+	structuralCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "unknownMethod"},
+		ReceiverVar: "builder",
+		Raw:         "builder.unknownMethod()",
+		FilePath:    "lib.py",
+		Line:        11,
+	}
+	terminalCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "terminal"},
+		ReceiverVar: "builder",
+		Raw:         "builder.terminal(secret)",
+		FilePath:    "lib.py",
+		Line:        12,
+	}
+	ownerDecl := &callgraph.FunctionDecl{
+		ID:        owner,
+		FilePath:  "lib.py",
+		StartLine: 10,
+		EndLine:   20,
+		Calls:     []callgraph.FunctionCall{structuralCall, terminalCall},
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
+	ctx := &exportBuildContext{
+		graph:                   graph,
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"pkg.Builder.terminal#1": {{
+					Method: "pkg.Builder.terminal",
+					Arity:  1,
+					Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+				}},
+			},
+			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
+		},
+	}
+	asset := entities.CryptographicAsset{
+		StartLine: 12,
+		EndLine:   12,
+		Match:     "builder.terminal(secret)",
+		Metadata:  map[string]string{"api": "pkg.Builder.terminal"},
+		Rules:     []entities.RuleInfo{{ID: "direct-rule"}},
+	}
+	finding := entities.Finding{FilePath: "lib.py"}
+
+	got := deriveSupportingCallsForFinding(ctx, finding, asset)
+	if len(got) != 1 {
+		t.Fatalf("supporting calls = %d, want 1", len(got))
+	}
+	if got[0].Category != "" {
+		t.Fatalf("structural supporting call category = %q, want empty (no contract match)", got[0].Category)
 	}
 }
 

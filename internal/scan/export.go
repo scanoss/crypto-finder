@@ -107,6 +107,42 @@ type callGraphDependencyContext struct {
 	Version string `json:"version"`
 }
 
+// callGraphRoleProvenance explains where a method_role/parameter contribution
+// came from: a direct contract match, or inherited from same-class sibling
+// assets (see synthesizeContractOperationEntryPoints, issue-103 WU2).
+type callGraphRoleProvenance struct {
+	Kind               string                  `json:"kind,omitempty"`
+	ContractMethod     string                  `json:"contract_method,omitempty"`
+	InheritedFrom      string                  `json:"inherited_from,omitempty"`
+	Inherited          *callGraphInheritedRole `json:"inherited,omitempty"`
+	InheritedAmbiguous bool                    `json:"inherited_ambiguous,omitempty"`
+}
+
+// callGraphInheritedRole carries the algorithm_family/primitive a synthesized
+// operation entry point inherited from a same-class sibling asset.
+type callGraphInheritedRole struct {
+	AlgorithmFamily string `json:"algorithm_family,omitempty"`
+	Primitive       string `json:"primitive,omitempty"`
+}
+
+// callGraphParameterRole is one index-aligned parameter role/contribution
+// entry (issue-103 WU3), mirrored across crypto_entry_points and the
+// supporting-call declaration (callGraphCalledFunction). Never emitted on
+// call-site callGraphParameter (literal values stay there).
+type callGraphParameterRole struct {
+	Index       int                    `json:"index"`
+	Name        string                 `json:"name,omitempty"`
+	Role        string                 `json:"role"`
+	Contributes *callGraphContribution `json:"contributes,omitempty"`
+}
+
+// callGraphContribution names the property a parameter contributes to and
+// the derivation strategy a downstream consumer applies.
+type callGraphContribution struct {
+	Property   string `json:"property,omitempty"`
+	Derivation string `json:"derivation,omitempty"`
+}
+
 type callGraphCalledFunction struct {
 	FunctionName       string                `json:"function_name"`
 	CanonicalSignature string                `json:"canonical_signature,omitempty"`
@@ -119,6 +155,9 @@ type callGraphCalledFunction struct {
 	Line               int                   `json:"line"`
 	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
 	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
+	// ParameterRoles is populated from the contracts KB (issue-103 WU3) on the
+	// supporting-call declaration; index-aligned with ParameterTypes.
+	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
 }
 
 // exportTypeRef is the JSON shape for a structured Java type reference,
@@ -226,6 +265,13 @@ type callGraphCryptoEntryPoint struct {
 	Aliases                  []string                           `json:"aliases,omitempty"`
 	ReachableFindings        []callGraphReachableFinding        `json:"reachable_findings,omitempty"`
 	ReachableSupportingCalls []callGraphReachableSupportingCall `json:"reachable_supporting_calls,omitempty"`
+	// MethodRole, RoleProvenance, ParameterRoles are issue-103 (WU2/WU3)
+	// additions: the contract-derived role classification of this entry
+	// point's method, its provenance, and any per-parameter contributions.
+	// All omitempty — absent for entry points with no KB role match.
+	MethodRole     string                   `json:"method_role,omitempty"`
+	RoleProvenance *callGraphRoleProvenance `json:"role_provenance,omitempty"`
+	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
 }
 
 type callGraphReachableFinding struct {
@@ -396,15 +442,18 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 	sort.SliceStable(out.SupportingCalls, func(i, j int) bool {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
-	out.CryptoEntryPoints = buildCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = appendSynthesizedOperationEntryPoints(ctx, result, out.CryptoEntryPoints)
 
 	return out
 }
 
 // buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
 // crypto operations. Every function that appears in any call chain is a
-// potential entry point — external code might call any of them.
-func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
+// potential entry point — external code might call any of them. kb is
+// consulted (issue-103 WU3) to populate parameter_roles on entries whose
+// function+arity matches a contract; nil kb simply skips that enrichment.
+func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
 	index := make(map[string]*entryPointData)
 	supportingByID := make(map[string]callGraphSupportingCall, len(supportingCalls))
 	for i := range supportingCalls {
@@ -423,7 +472,7 @@ func buildCryptoEntryPoints(findingGraphs []callGraphExportFinding, supportingCa
 		}
 		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
-	return flattenEntryPointIndex(index)
+	return flattenEntryPointIndex(kb, index)
 }
 
 // splitFunctionName extracts class and method from a fully qualified function name.
@@ -644,7 +693,7 @@ func addSupportingCallToEntryPointIndex(index map[string]*entryPointData, suppor
 	recordEntryPointSupporting(ep, support, 1)
 }
 
-func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoEntryPoint {
+func flattenEntryPointIndex(kb *contracts.KnowledgeBase, index map[string]*entryPointData) []callGraphCryptoEntryPoint {
 	result := make([]callGraphCryptoEntryPoint, 0, len(index))
 	for _, ep := range index {
 		result = append(result, callGraphCryptoEntryPoint{
@@ -663,12 +712,46 @@ func flattenEntryPointIndex(index map[string]*entryPointData) []callGraphCryptoE
 			Aliases:                  cloneStringSlice(ep.aliases),
 			ReachableFindings:        flattenReachableFindings(ep.findings),
 			ReachableSupportingCalls: flattenReachableSupportingCalls(ep.supporting),
+			ParameterRoles:           parameterRolesFromKB(kb, ep.function, len(ep.parameterTypes)),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].FunctionKey < result[j].FunctionKey
 	})
 	return result
+}
+
+// parameterRolesFromKB returns the exported parameter-role list for a method
+// FQN+arity from the contracts KB (issue-103 WU3): the first contract match
+// (by ContractsForTolerant) that declares a non-empty Parameters list. Never
+// emitted for call-site literals (callGraphParameter carries no such field);
+// only for method-static surfaces (crypto_entry_points, supporting-call decl).
+func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []callGraphParameterRole {
+	if kb == nil || fqn == "" {
+		return nil
+	}
+	for _, contract := range kb.ContractsForTolerant(fqn, arity) {
+		if len(contract.Parameters) == 0 {
+			continue
+		}
+		out := make([]callGraphParameterRole, 0, len(contract.Parameters))
+		for _, p := range contract.Parameters {
+			idx := 0
+			if p.Index != nil {
+				idx = *p.Index
+			}
+			pr := callGraphParameterRole{Index: idx, Name: p.Name, Role: p.Role}
+			if p.Contributes != nil {
+				pr.Contributes = &callGraphContribution{
+					Property:   p.Contributes.Property,
+					Derivation: p.Contributes.Derivation,
+				}
+			}
+			out = append(out, pr)
+		}
+		return out
+	}
+	return nil
 }
 
 func flattenReachableSupportingCalls(values map[string]callGraphReachableSupportingCall) []callGraphReachableSupportingCall {
@@ -683,6 +766,233 @@ func flattenReachableSupportingCalls(values map[string]callGraphReachableSupport
 		return out[i].SupportingID < out[j].SupportingID
 	})
 	return out
+}
+
+// operationEntryPoint is the WU2 (issue-103) intermediate representation of a
+// synthesized role:operation crypto_entry_points entry, shared by the live
+// and fragment converters (appendSynthesizedOperationEntryPoints and its
+// fragment-side counterpart in fragment_export.go).
+type operationEntryPoint struct {
+	functionKey        string
+	functionName       string
+	canonicalSignature string
+	class              string
+	method             string
+	returnType         string
+	parameterTypes     []string
+	visibility         string
+	ownerVisibility    string
+	displaySymbol      string
+	aliases            []string
+	contractMethod     string
+	inheritedFamily    string
+	inheritedPrimitive string
+	inheritedAmbiguous bool
+}
+
+// classSiblingAssets groups every crypto asset in the report by the receiver
+// type of its matched API (asset.Metadata["api"]), so WU2 synthesis can gate
+// on "declaring class already has >= 1 crypto asset" and inherit
+// algorithm_family/primitive from those siblings.
+func classSiblingAssets(report *entities.InterimReport) map[string][]entities.CryptographicAsset {
+	out := make(map[string][]entities.CryptographicAsset)
+	if report == nil {
+		return out
+	}
+	for _, finding := range report.Findings {
+		for i := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[i]
+			api := strings.TrimSpace(asset.Metadata["api"])
+			if api == "" {
+				continue
+			}
+			class := receiverType(api)
+			if class == "" {
+				continue
+			}
+			out[class] = append(out[class], asset)
+		}
+	}
+	return out
+}
+
+// existingFindingAPIs is the set of asset.Metadata["api"] values already
+// covered by a finding (real or already rule-synthesized) in the report.
+// WU2 synthesis skips a contract method already covered this way — no
+// duplicate crypto_entry_points entry for a function that already has one
+// via the ordinary finding-derived path.
+func existingFindingAPIs(report *entities.InterimReport) map[string]struct{} {
+	out := make(map[string]struct{})
+	if report == nil {
+		return out
+	}
+	for _, finding := range report.Findings {
+		for i := range finding.CryptographicAssets {
+			if api := strings.TrimSpace(finding.CryptographicAssets[i].Metadata["api"]); api != "" {
+				out[api] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+// inheritFromSiblings computes the algorithm_family/primitive a synthesized
+// operation entry point inherits from its declaring class's existing crypto
+// assets. Unanimous algorithm_family across siblings -> inherit family +
+// primitive. Divergent family -> drop family, keep primitive only if it too
+// is unanimous, and set ambiguous=true. Never fabricates a value no sibling
+// declares.
+func inheritFromSiblings(assets []entities.CryptographicAsset) (family, primitive string, ambiguous bool) {
+	families := make(map[string]struct{})
+	primitives := make(map[string]struct{})
+	for i := range assets {
+		if f := strings.TrimSpace(assets[i].Metadata["algorithmFamily"]); f != "" {
+			families[f] = struct{}{}
+		}
+		if p := strings.TrimSpace(assets[i].Metadata["algorithmPrimitive"]); p != "" {
+			primitives[p] = struct{}{}
+		}
+	}
+	if len(primitives) == 1 {
+		for p := range primitives {
+			primitive = p
+		}
+	} else if len(primitives) > 1 {
+		ambiguous = true
+	}
+	if len(families) == 1 {
+		for f := range families {
+			family = f
+		}
+		return family, primitive, ambiguous
+	}
+	if len(families) > 1 {
+		ambiguous = true
+	}
+	return "", primitive, ambiguous
+}
+
+// synthesizeContractOperationEntryPoints is the WU2 (issue-103) B-lite
+// operation crypto_entry_point synthesis: for each role:operation contract
+// method that is (a) concretely declared/reachable in the scanned source
+// (ctx.declIndex[c.Method] != nil — a pure interface method with no body
+// never qualifies, by construction) and (b) whose declaring class already
+// carries >= 1 crypto asset, and (c) not already covered by an existing
+// finding, synthesize a crypto_entry_points entry. No interim finding is
+// minted (B-lite) — see spec "Finding counts unchanged" scenario.
+func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []operationEntryPoint {
+	if ctx == nil || ctx.kb == nil || ctx.declIndex == nil || result == nil || result.Report == nil {
+		return nil
+	}
+	classAssets := classSiblingAssets(result.Report)
+	existingAPI := existingFindingAPIs(result.Report)
+
+	seen := make(map[string]struct{})
+	var out []operationEntryPoint
+	for _, group := range ctx.kb.Contracts {
+		for i := range group {
+			c := group[i]
+			if c.Role != string(contracts.RoleOperation) {
+				continue
+			}
+			if _, dup := seen[c.Method]; dup {
+				continue
+			}
+			decl := ctx.declIndex[c.Method]
+			if decl == nil {
+				continue
+			}
+			if _, has := existingAPI[c.Method]; has {
+				continue
+			}
+			class := receiverType(c.Method)
+			assets := classAssets[class]
+			if len(assets) == 0 {
+				continue
+			}
+			seen[c.Method] = struct{}{}
+			family, primitive, ambiguous := inheritFromSiblings(assets)
+			meta := buildExportFunctionMetadata(ctx.graph, decl.ID, decl)
+			_, method := splitFunctionName(c.Method)
+			out = append(out, operationEntryPoint{
+				functionKey:        decl.ID.String(),
+				functionName:       meta.FunctionName,
+				canonicalSignature: meta.CanonicalSignature,
+				class:              class,
+				method:             method,
+				returnType:         meta.ReturnType,
+				parameterTypes:     meta.ParameterTypes,
+				visibility:         meta.Visibility,
+				ownerVisibility:    meta.OwnerVisibility,
+				displaySymbol:      meta.DisplaySymbol,
+				aliases:            meta.Aliases,
+				contractMethod:     c.Method,
+				inheritedFamily:    family,
+				inheritedPrimitive: primitive,
+				inheritedAmbiguous: ambiguous,
+			})
+		}
+	}
+	return out
+}
+
+// appendSynthesizedOperationEntryPoints appends WU2-synthesized operation
+// entry points to the live crypto_entry_points list, skipping any function
+// key already present (the structural/finding-derived path already covers
+// it), then re-sorts to preserve buildCryptoEntryPoints' deterministic order.
+func appendSynthesizedOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult, existing []callGraphCryptoEntryPoint) []callGraphCryptoEntryPoint {
+	synthesized := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(synthesized) == 0 {
+		return existing
+	}
+	present := make(map[string]struct{}, len(existing))
+	for i := range existing {
+		present[existing[i].FunctionKey] = struct{}{}
+	}
+	out := existing
+	for i := range synthesized {
+		op := synthesized[i]
+		if _, dup := present[op.functionKey]; dup {
+			continue
+		}
+		out = append(out, callGraphCryptoEntryPoint{
+			FunctionKey:        op.functionKey,
+			FunctionName:       op.functionName,
+			CanonicalSignature: op.canonicalSignature,
+			Class:              op.class,
+			Method:             op.method,
+			ReturnType:         op.returnType,
+			ParameterTypes:     op.parameterTypes,
+			Visibility:         op.visibility,
+			OwnerVisibility:    op.ownerVisibility,
+			DisplaySymbol:      op.displaySymbol,
+			Aliases:            op.aliases,
+			MethodRole:         string(contracts.RoleOperation),
+			RoleProvenance:     operationRoleProvenance(op),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].FunctionKey < out[j].FunctionKey
+	})
+	return out
+}
+
+// operationRoleProvenance builds the role_provenance block for a
+// WU2-synthesized operation entry point.
+func operationRoleProvenance(op operationEntryPoint) *callGraphRoleProvenance {
+	rp := &callGraphRoleProvenance{
+		Kind:               "contract-operation-inherited",
+		ContractMethod:     op.contractMethod,
+		InheritedFrom:      op.class,
+		InheritedAmbiguous: op.inheritedAmbiguous,
+	}
+	if op.inheritedFamily != "" || op.inheritedPrimitive != "" {
+		rp.Inherited = &callGraphInheritedRole{
+			AlgorithmFamily: op.inheritedFamily,
+			Primitive:       op.inheritedPrimitive,
+		}
+	}
+	return rp
 }
 
 func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGraphReachableFinding {
@@ -1040,10 +1350,11 @@ func supportingCallIDsOf(calls []callGraphSupportingCall) []string {
 }
 
 // buildDerivedSupportingCall renders a single call-graph FunctionCall as a
-// supporting-call entry, carrying the call's resolved (or raw) symbol, line, and
-// argument data-flow. Category is intentionally left empty: semantic role
-// classification (config/lifecycle/output) is deferred to a later contract-KB
-// pass and is not inferred structurally here.
+// supporting-call entry, carrying the call's resolved (or raw) symbol, line,
+// and argument data-flow. Category and parameter_roles are populated from the
+// contracts KB when the callee+arity matches a contract (issue-103 WU1/WU3);
+// they stay empty for callees the KB has no opinion on — no structural
+// guessing.
 func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, call *callgraph.FunctionCall) callGraphSupportingCall {
 	sourcePath := normalizeExportPath(ctx, call.FilePath).FilePath
 	meta := buildExportFunctionMetadata(ctx.graph, containingFn.ID, containingFn)
@@ -1071,6 +1382,28 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	if support.MatchedOperation != nil && sc.FunctionName != "" {
 		support.MatchedOperation.Symbol = sc.FunctionName
 		support.MatchedOperation.DisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(sc.FunctionName)
+	}
+	// WU1 (issue-103): consult the contracts KB for a role-tagged contract
+	// matching this call edge's callee+arity, so structural (call-edge-based)
+	// supporting calls carry a category too — not just the definition-based
+	// ones deriveContractSupportingCalls already tags. No double-categorization:
+	// the two derivation paths key on distinct SupportingIDs (call-site line
+	// vs. definition line), already separated by dedupSupportingCalls.
+	if ctx.kb != nil {
+		calleeFQN := fullFunctionName(call.Callee)
+		arity := len(sc.ParameterTypes)
+		for _, contract := range ctx.kb.ContractsForTolerant(calleeFQN, arity) {
+			if contract.Role != "" {
+				support.Category = contract.Role
+				break
+			}
+		}
+		// WU3 (issue-103): parameter_roles on the supporting-call declaration,
+		// method-static (independent of which contract entry won the category
+		// match above). Flows to the served surface natively, since
+		// fragment_export.go reuses this same builder via
+		// deriveSupportingCallsForFinding.
+		sc.ParameterRoles = parameterRolesFromKB(ctx.kb, calleeFQN, arity)
 	}
 	return support
 }

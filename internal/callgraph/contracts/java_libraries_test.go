@@ -95,3 +95,75 @@ func TestLoadEmbeddedJavaIncludesTier0GapContracts(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadEmbeddedJava_BouncyCastleRoleCoverage is the issue-103 (WU1/BC-YAML)
+// acceptance test scoped to what a unit test can verify without a real BC
+// corpus (see internal/scan/bcprov_fragment_profile_test.go for the
+// env-gated full-corpus harness): every newly-authored role-tagged BC
+// contract loads with the expected role, and processBlock/doFinal/update
+// resolve as role: operation via the primitive-family interfaces rather
+// than per-engine duplication.
+func TestLoadEmbeddedJava_BouncyCastleRoleCoverage(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		role   string
+	}{
+		{"org.bouncycastle.crypto.params.KeyParameter.<init>", 1, "factory"},
+		{"org.bouncycastle.crypto.params.ParametersWithIV.<init>", 2, "factory"},
+		{"org.bouncycastle.crypto.params.ParametersWithRandom.<init>", 2, "factory"},
+		{"org.bouncycastle.crypto.params.AEADParameters.getNonce", 0, "output"},
+		{"org.bouncycastle.crypto.params.AEADParameters.getAssociatedText", 0, "output"},
+		{"org.bouncycastle.crypto.params.AEADParameters.getMacSize", 0, "output"},
+		{"org.bouncycastle.crypto.params.KeyParameter.getKey", 0, "output"},
+		{"org.bouncycastle.crypto.BlockCipher.processBlock", 4, "operation"},
+		{"org.bouncycastle.crypto.Digest.update", 1, "operation"},
+		{"org.bouncycastle.crypto.Digest.update", 3, "operation"},
+		{"org.bouncycastle.crypto.Digest.doFinal", 2, "operation"},
+		{"org.bouncycastle.crypto.Signer.generateSignature", 0, "operation"},
+		{"org.bouncycastle.crypto.Signer.verifySignature", 1, "operation"},
+		{"org.bouncycastle.crypto.Mac.doFinal", 2, "operation"},
+		{"org.bouncycastle.crypto.DerivationFunction.generateBytes", 3, "operation"},
+		// Corrected from role: config (feeding data into a running digest is
+		// the operation itself, not object configuration).
+		{"org.bouncycastle.crypto.digests.GeneralDigest.update", 3, "operation"},
+		{"org.bouncycastle.crypto.digests.KeccakDigest.update", 3, "operation"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Role != tt.role {
+				t.Fatalf("%s#%d role = %q, want %q", tt.method, tt.arity, got[0].Role, tt.role)
+			}
+		})
+	}
+
+	// KeyParameter.<init>'s byte[] key argument contributes keySize via
+	// argument_bit_length (the WU3 concrete target from the design).
+	kp := kb.ContractsFor("org.bouncycastle.crypto.params.KeyParameter.<init>", 1)
+	if len(kp) != 1 || len(kp[0].Parameters) != 1 {
+		t.Fatalf("KeyParameter.<init>#1 parameters = %#v, want 1 entry", kp)
+	}
+	p := kp[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" ||
+		p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("KeyParameter.<init>#1 parameters[0] = %#v, want index=0 metadata-contributing keySize/argument_bit_length", p)
+	}
+
+	// AESEngine implements BlockCipher, so the interface-level processBlock
+	// contract is reachable via hierarchy without a per-engine duplicate.
+	if parents := kb.Hierarchy["org.bouncycastle.crypto.engines.AESEngine"]; len(parents) != 1 || parents[0] != "org.bouncycastle.crypto.BlockCipher" {
+		t.Fatalf("AESEngine hierarchy = %v, want [BlockCipher]", parents)
+	}
+}

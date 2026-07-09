@@ -1381,3 +1381,313 @@ hierarchy: {}
 		t.Errorf("Merge D2: error missing %q: %v", "lib-diag-b", err)
 	}
 }
+
+// ── issue-103: role enum validation + Parameters sub-schema ──────────────────
+
+// TestContract_RoleOperation_Accepted verifies that role: operation loads
+// successfully now that the role taxonomy is enum-validated.
+func TestContract_RoleOperation_Accepted(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: test-role-operation
+contracts:
+  - method: org.bouncycastle.crypto.BlockCipher.processBlock
+    arity: 4
+    return:
+      type: int
+      confidence: high
+    role: operation
+hierarchy: {}
+`)
+	entries := kb.ContractsFor("org.bouncycastle.crypto.BlockCipher.processBlock", 4)
+	if len(entries) != 1 || entries[0].Role != "operation" {
+		t.Fatalf("expected 1 contract with role=operation, got %#v", entries)
+	}
+}
+
+// TestContract_RejectsInvalidRole_NamesMethod verifies that an unknown role
+// value fails Load, naming the offending method.
+func TestContract_RejectsInvalidRole_NamesMethod(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: java
+library:
+  name: test-bad-role
+contracts:
+  - method: com.example.Foo.bar
+    arity: 0
+    return:
+      type: com.example.Foo
+      confidence: high
+    role: bogus
+hierarchy: {}
+`))
+	if err == nil {
+		t.Fatal("expected error for invalid role, got nil")
+	}
+	if !strings.Contains(err.Error(), "com.example.Foo.bar") {
+		t.Errorf("error should name the offending method, got: %v", err)
+	}
+}
+
+// TestContract_ParsesParameters_IndexAligned verifies the Parameters
+// sub-schema parses index-aligned parameter role/contribution entries.
+func TestContract_ParsesParameters_IndexAligned(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: test-parameters
+contracts:
+  - method: org.bouncycastle.crypto.params.KeyParameter.<init>
+    arity: 1
+    return:
+      type: org.bouncycastle.crypto.params.KeyParameter
+      confidence: high
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes:
+          property: key_length_bits
+          derivation: argument_bit_length
+hierarchy: {}
+`)
+	entries := kb.ContractsFor("org.bouncycastle.crypto.params.KeyParameter.<init>", 1)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 contract, got %d", len(entries))
+	}
+	params := entries[0].Parameters
+	if len(params) != 1 {
+		t.Fatalf("expected 1 parameter contract, got %d: %#v", len(params), params)
+	}
+	p := params[0]
+	if p.Index == nil || *p.Index != 0 {
+		t.Fatalf("expected parameter index 0, got %#v", p.Index)
+	}
+	if p.Role != "metadata-contributing" {
+		t.Fatalf("expected role metadata-contributing, got %q", p.Role)
+	}
+	if p.Contributes == nil || p.Contributes.Property != "key_length_bits" || p.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("expected contributes {key_length_bits, argument_bit_length}, got %#v", p.Contributes)
+	}
+}
+
+// TestContract_RejectsInvalidDerivation_NamesMethodAndField verifies that an
+// unknown derivation value fails Load, naming the method and field.
+func TestContract_RejectsInvalidDerivation_NamesMethodAndField(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: java
+library:
+  name: test-bad-derivation
+contracts:
+  - method: com.example.Foo.bar
+    arity: 1
+    return:
+      type: com.example.Foo
+      confidence: high
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes:
+          property: key_length_bits
+          derivation: bogus_value
+hierarchy: {}
+`))
+	if err == nil {
+		t.Fatal("expected error for invalid derivation, got nil")
+	}
+	if !strings.Contains(err.Error(), "com.example.Foo.bar") {
+		t.Errorf("error should name the offending method, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "derivation") {
+		t.Errorf("error should name the offending field, got: %v", err)
+	}
+}
+
+// TestContract_RejectsInvalidParameterRole_NamesMethodAndField verifies that
+// an unknown parameter role value fails Load.
+func TestContract_RejectsInvalidParameterRole_NamesMethodAndField(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: java
+library:
+  name: test-bad-param-role
+contracts:
+  - method: com.example.Foo.bar
+    arity: 1
+    return:
+      type: com.example.Foo
+      confidence: high
+    parameters:
+      - index: 0
+        role: bogus-role
+hierarchy: {}
+`))
+	if err == nil {
+		t.Fatal("expected error for invalid parameter role, got nil")
+	}
+	if !strings.Contains(err.Error(), "com.example.Foo.bar") {
+		t.Errorf("error should name the offending method, got: %v", err)
+	}
+}
+
+// TestMerge_IdenticalRole_MergesWithoutError verifies that two libraries
+// declaring the same method with identical role merge idempotently.
+func TestMerge_IdenticalRole_MergesWithoutError(t *testing.T) {
+	t.Parallel()
+
+	lib1 := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: role-lib-1
+contracts:
+  - method: com.example.Foo.configure
+    arity: 0
+    return:
+      type: void
+      confidence: high
+    role: config
+hierarchy: {}
+`)
+	lib2 := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: role-lib-2
+contracts:
+  - method: com.example.Foo.configure
+    arity: 0
+    return:
+      type: void
+      confidence: high
+    role: config
+hierarchy: {}
+`)
+	merged, err := contracts.Merge(lib1, lib2)
+	if err != nil {
+		t.Fatalf("expected identical-role merge to succeed, got: %v", err)
+	}
+	entries := merged.Contracts["com.example.Foo.configure#0"]
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 deduplicated entry, got %d", len(entries))
+	}
+}
+
+// TestMerge_DivergentRole_HardErrors verifies that two libraries declaring
+// the same method+arity+condition with different role values hard-fail
+// Merge, naming both libraries.
+func TestMerge_DivergentRole_HardErrors(t *testing.T) {
+	t.Parallel()
+
+	lib1 := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: role-conflict-a
+contracts:
+  - method: com.example.Foo.configure
+    arity: 0
+    return:
+      type: void
+      confidence: high
+    role: config
+hierarchy: {}
+`)
+	lib2 := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: role-conflict-b
+contracts:
+  - method: com.example.Foo.configure
+    arity: 0
+    return:
+      type: void
+      confidence: high
+    role: output
+hierarchy: {}
+`)
+	_, err := contracts.Merge(lib1, lib2)
+	if err == nil {
+		t.Fatal("expected HARD ERROR for divergent role, got nil")
+	}
+	if !strings.Contains(err.Error(), "role-conflict-a") || !strings.Contains(err.Error(), "role-conflict-b") {
+		t.Errorf("error should name both libraries, got: %v", err)
+	}
+}
+
+// TestExistingContracts_RoleValuesWhitelisted is the pre-merge audit: every
+// role value already authored across the embedded Java and Python KBs must
+// be one of the whitelisted values, so strict validation ships without
+// breaking existing data.
+func TestExistingContracts_RoleValuesWhitelisted(t *testing.T) {
+	t.Parallel()
+
+	whitelist := map[string]struct{}{
+		"factory":   {},
+		"config":    {},
+		"output":    {},
+		"operation": {},
+	}
+	for _, eco := range []string{"java", "python"} {
+		kb, err := contracts.LoadEmbedded(eco)
+		if err != nil {
+			t.Fatalf("LoadEmbedded(%s): unexpected error: %v", eco, err)
+		}
+		for key, group := range kb.Contracts {
+			for _, c := range group {
+				if c.Role == "" {
+					continue
+				}
+				if _, ok := whitelist[c.Role]; !ok {
+					t.Errorf("%s: contract %q has non-whitelisted role %q", eco, key, c.Role)
+				}
+			}
+		}
+	}
+}
+
+// TestBackwardCompat_LegacyContract_NoRoleOrParameters verifies that a
+// contract with no role/parameters fields loads exactly as before: Role is
+// empty and Parameters is nil.
+func TestBackwardCompat_LegacyContract_NoRoleOrParameters(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: legacy
+contracts:
+  - method: com.example.Legacy.call
+    arity: 0
+    return:
+      type: com.example.Legacy
+      confidence: high
+hierarchy: {}
+`)
+	entries := kb.ContractsFor("com.example.Legacy.call", 0)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 contract, got %d", len(entries))
+	}
+	if entries[0].Role != "" {
+		t.Fatalf("expected empty Role for legacy contract, got %q", entries[0].Role)
+	}
+	if entries[0].Parameters != nil {
+		t.Fatalf("expected nil Parameters for legacy contract, got %#v", entries[0].Parameters)
+	}
+}
