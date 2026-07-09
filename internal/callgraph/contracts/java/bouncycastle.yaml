@@ -85,17 +85,21 @@ contracts:
     arity: 0
     return: { type: int, confidence: high }
     role: config
+  # issue-103: role: operation — see GeneralDigest.update note below.
   - method: org.bouncycastle.crypto.digests.KeccakDigest.update
     arity: 3
     return: { type: void, confidence: high }
-    role: config
+    role: operation
   # GeneralDigest is the abstract base of the SHA-1/SHA-2 family; update() is
   # inherited (not overridden) by SHA256Digest et al. The inheritance-aware
   # role attachment surfaces it on those subtype constructor terminals.
+  # issue-103: update() performs the digest operation (feeds input into the
+  # running hash) rather than merely configuring the object, so its role is
+  # operation, not config — corrected from the earlier taxonomy pass.
   - method: org.bouncycastle.crypto.digests.GeneralDigest.update
     arity: 3
     return: { type: void, confidence: high }
-    role: config
+    role: operation
 
   # The EC named-curve lookup terminal: declaring its return type lets the
   # X9ECParameters getters below attach as role: output (receiver == return type).
@@ -121,6 +125,89 @@ contracts:
     arity: 0
     return: { type: java.math.BigInteger, confidence: high }
     role: output
+
+  # issue-103 (WU1/WU3): parameter-object builders. role: factory — they
+  # produce the CipherParameters wrapper consumed by init()/processBlock(),
+  # analogous to a getInstance-style factory even though they're plain
+  # constructors. KeyParameter's byte[] key material argument also carries a
+  # parameter_roles annotation: it metadata-contributes the effective key
+  # size, derived from the argument's bit length.
+  - method: org.bouncycastle.crypto.params.KeyParameter.<init>
+    arity: 1
+    return: { type: org.bouncycastle.crypto.params.KeyParameter, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: org.bouncycastle.crypto.params.ParametersWithIV.<init>
+    arity: 2
+    return: { type: org.bouncycastle.crypto.params.ParametersWithIV, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.params.ParametersWithRandom.<init>
+    arity: 2
+    return: { type: org.bouncycastle.crypto.params.ParametersWithRandom, confidence: high }
+    role: factory
+
+  # issue-103: role: output — parameter-object getters that read back what
+  # was configured (AEAD/GCM nonce, associated text, MAC, key material).
+  - method: org.bouncycastle.crypto.params.AEADParameters.getNonce
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.AEADParameters.getAssociatedText
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.AEADParameters.getMacSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.KeyParameter.getKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # issue-103 (WU1): role: operation on the primitive-family interfaces
+  # rather than per-engine, so one entry covers every concrete engine that
+  # implements it (avoids the per-engine explosion the design rejected).
+  # These are the methods that perform the actual crypto operation, as
+  # opposed to the config (init/setters) and output (getters) roles above.
+  - method: org.bouncycastle.crypto.BlockCipher.processBlock
+    arity: 4
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.update
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.doFinal
+    arity: 2
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Signer.generateSignature
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Signer.verifySignature
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Mac.doFinal
+    arity: 2
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.DerivationFunction.generateBytes
+    arity: 3
+    return: { type: int, confidence: high }
+    role: operation
 
 hierarchy:
   org.bouncycastle.crypto.generators.ECKeyPairGenerator:
@@ -154,5 +241,33 @@ hierarchy:
   org.bouncycastle.crypto.digests.SHA3Digest:
     - org.bouncycastle.crypto.digests.KeccakDigest
   org.bouncycastle.crypto.digests.KeccakDigest:
+    - java.lang.Object
+  # issue-103 (WU1/WU2): primitive-family interfaces carrying role: operation
+  # contracts, plus their known concrete engine implementations, so the
+  # hierarchy-aware attachment path (typeOrAncestor) resolves an engine's
+  # operation method through its interface without a per-engine contract.
+  org.bouncycastle.crypto.BlockCipher:
+    - java.lang.Object
+  org.bouncycastle.crypto.engines.AESEngine:
+    - org.bouncycastle.crypto.BlockCipher
+  org.bouncycastle.crypto.Digest:
+    - java.lang.Object
+  org.bouncycastle.crypto.Signer:
+    - java.lang.Object
+  org.bouncycastle.crypto.signers.ECDSASigner:
+    - org.bouncycastle.crypto.Signer
+  org.bouncycastle.crypto.Mac:
+    - java.lang.Object
+  org.bouncycastle.crypto.macs.HMac:
+    - org.bouncycastle.crypto.Mac
+  org.bouncycastle.crypto.DerivationFunction:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.KeyParameter:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ParametersWithIV:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ParametersWithRandom:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.AEADParameters:
     - java.lang.Object
   java.lang.Object: []

@@ -490,6 +490,144 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 	}
 }
 
+// TestBuildDerivedSupportingCall_CategoryFromKB verifies WU1 (issue-103): a
+// structural (call-edge-derived) supporting call whose callee FQN+arity
+// matches a role-tagged contract gets support.Category populated from that
+// contract's role — closing the BC-coverage gap where only definition-based
+// (deriveContractSupportingCalls) supporting calls carried a category.
+func TestBuildDerivedSupportingCall_CategoryFromKB(t *testing.T) {
+	t.Parallel()
+
+	owner := callgraph.FunctionID{Package: "pkg", Type: "Svc", Name: "run"}
+	structuralCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "prepare"},
+		ReceiverVar: "builder",
+		Raw:         "builder.prepare()",
+		FilePath:    "lib.py",
+		Line:        11,
+	}
+	terminalCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "terminal"},
+		ReceiverVar: "builder",
+		Raw:         "builder.terminal(secret)",
+		FilePath:    "lib.py",
+		Line:        12,
+	}
+	ownerDecl := &callgraph.FunctionDecl{
+		ID:        owner,
+		FilePath:  "lib.py",
+		StartLine: 10,
+		EndLine:   20,
+		Calls:     []callgraph.FunctionCall{structuralCall, terminalCall},
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
+	ctx := &exportBuildContext{
+		graph:                   graph,
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"pkg.Builder.terminal#1": {{
+					Method: "pkg.Builder.terminal",
+					Arity:  1,
+					Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+				}},
+				// Role-tagged via the call-edge path (no definition in
+				// scanned source, unlike deriveContractSupportingCalls'
+				// declIndex-gated lookup) — this is the WU1 target: a
+				// contract-known callee reached only through the structural
+				// call edge, not the fluent-lifecycle declIndex walk.
+				"pkg.Builder.prepare#0": {{
+					Method: "pkg.Builder.prepare",
+					Arity:  0,
+					Return: contracts.ContractReturn{Type: "void", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
+		},
+	}
+	asset := entities.CryptographicAsset{
+		StartLine: 12,
+		EndLine:   12,
+		Match:     "builder.terminal(secret)",
+		Metadata:  map[string]string{"api": "pkg.Builder.terminal"},
+		Rules:     []entities.RuleInfo{{ID: "direct-rule"}},
+	}
+	finding := entities.Finding{FilePath: "lib.py"}
+
+	got := deriveSupportingCallsForFinding(ctx, finding, asset)
+	if len(got) != 1 {
+		t.Fatalf("supporting calls = %d, want 1 (structural only, no declIndex fluent match)", len(got))
+	}
+	if got[0].FunctionName != "pkg.Svc.run" {
+		t.Fatalf("structural function = %q, want pkg.Svc.run", got[0].FunctionName)
+	}
+	if got[0].Category != "operation" {
+		t.Fatalf("structural supporting call category = %q, want %q (from KB contract role)", got[0].Category, "operation")
+	}
+}
+
+// TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized verifies the
+// negative scenario from the spec: a callee absent from the KB leaves
+// support.Category empty — no structural guessing.
+func TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized(t *testing.T) {
+	t.Parallel()
+
+	owner := callgraph.FunctionID{Package: "pkg", Type: "Svc", Name: "run"}
+	structuralCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "unknownMethod"},
+		ReceiverVar: "builder",
+		Raw:         "builder.unknownMethod()",
+		FilePath:    "lib.py",
+		Line:        11,
+	}
+	terminalCall := callgraph.FunctionCall{
+		Callee:      callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "terminal"},
+		ReceiverVar: "builder",
+		Raw:         "builder.terminal(secret)",
+		FilePath:    "lib.py",
+		Line:        12,
+	}
+	ownerDecl := &callgraph.FunctionDecl{
+		ID:        owner,
+		FilePath:  "lib.py",
+		StartLine: 10,
+		EndLine:   20,
+		Calls:     []callgraph.FunctionCall{structuralCall, terminalCall},
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
+	ctx := &exportBuildContext{
+		graph:                   graph,
+		containingFunctionCache: make(map[string]cachedContainingFunction),
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"pkg.Builder.terminal#1": {{
+					Method: "pkg.Builder.terminal",
+					Arity:  1,
+					Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+				}},
+			},
+			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
+		},
+	}
+	asset := entities.CryptographicAsset{
+		StartLine: 12,
+		EndLine:   12,
+		Match:     "builder.terminal(secret)",
+		Metadata:  map[string]string{"api": "pkg.Builder.terminal"},
+		Rules:     []entities.RuleInfo{{ID: "direct-rule"}},
+	}
+	finding := entities.Finding{FilePath: "lib.py"}
+
+	got := deriveSupportingCallsForFinding(ctx, finding, asset)
+	if len(got) != 1 {
+		t.Fatalf("supporting calls = %d, want 1", len(got))
+	}
+	if got[0].Category != "" {
+		t.Fatalf("structural supporting call category = %q, want empty (no contract match)", got[0].Category)
+	}
+}
+
 // TestFindContainingFunctionByFinding_PicksTightestSpan guards against map-order
 // nondeterminism: graph.Functions is an unordered map, and a wide-span decl
 // (e.g. a synthetic <clinit> covering the whole class) can enclose the same

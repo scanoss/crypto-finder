@@ -1072,6 +1072,22 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		support.MatchedOperation.Symbol = sc.FunctionName
 		support.MatchedOperation.DisplaySymbol = graphfrag.ConstructorDisplayFromSymbol(sc.FunctionName)
 	}
+	// WU1 (issue-103): consult the contracts KB for a role-tagged contract
+	// matching this call edge's callee+arity, so structural (call-edge-based)
+	// supporting calls carry a category too — not just the definition-based
+	// ones deriveContractSupportingCalls already tags. No double-categorization:
+	// the two derivation paths key on distinct SupportingIDs (call-site line
+	// vs. definition line), already separated by dedupSupportingCalls.
+	if ctx.kb != nil {
+		calleeFQN := fullFunctionName(call.Callee)
+		arity := len(sc.ParameterTypes)
+		for _, contract := range ctx.kb.ContractsForTolerant(calleeFQN, arity) {
+			if contract.Role != "" {
+				support.Category = contract.Role
+				break
+			}
+		}
+	}
 	return support
 }
 
