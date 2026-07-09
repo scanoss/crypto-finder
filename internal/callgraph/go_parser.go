@@ -26,6 +26,9 @@ const (
 	goNodeTypeIdentifier  = "type_identifier"
 	goNodeParameterDecl   = "parameter_declaration"
 	goNodeResult          = "result"
+	goNodeReturnStatement = "return_statement"
+	goNodeExpressionList  = "expression_list"
+	goNodeCallExpression  = "call_expression"
 )
 
 // NewGoParser creates a new Go source parser backed by tree-sitter.
@@ -243,7 +246,9 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	decl.ReturnType = p.extractReturnType(result, src)
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", p.collectGoVarTypes(params, body, src))
+		varTypes := p.collectGoVarTypes(params, body, src)
+		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
+		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, "", "", varTypes)
 	}
 
 	return decl
@@ -295,10 +300,98 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 	decl.ReturnType = p.extractReturnType(result, src)
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, p.collectGoVarTypes(params, body, src))
+		varTypes := p.collectGoVarTypes(params, body, src)
+		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, varTypes)
+		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 	}
 
 	return decl
+}
+
+func (p *GoParser) extractReturnSources(
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	currentReceiverType string,
+	currentReceiverVar string,
+	varTypes map[string]string,
+) []SourceNode {
+	var sources []SourceNode
+	p.walkGoReturnSources(body, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, &sources)
+	return sources
+}
+
+func (p *GoParser) walkGoReturnSources(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	currentReceiverType string,
+	currentReceiverVar string,
+	varTypes map[string]string,
+	sources *[]SourceNode,
+) {
+	if node.Type() == goNodeReturnStatement {
+		p.appendGoReturnSources(node, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, sources)
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkGoReturnSources(node.Child(i), src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, sources)
+	}
+}
+
+func (p *GoParser) appendGoReturnSources(
+	returnNode *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	currentReceiverType string,
+	currentReceiverVar string,
+	varTypes map[string]string,
+	sources *[]SourceNode,
+) {
+	for i := 0; i < int(returnNode.ChildCount()); i++ {
+		child := returnNode.Child(i)
+		if child.Type() != goNodeExpressionList {
+			continue
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			if source, ok := p.goReturnSource(child.Child(j), src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes); ok {
+				*sources = append(*sources, source)
+			}
+		}
+	}
+}
+
+func (p *GoParser) goReturnSource(
+	expr *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	currentReceiverType string,
+	currentReceiverVar string,
+	varTypes map[string]string,
+) (SourceNode, bool) {
+	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
+	switch expr.Type() {
+	case goNodeCallExpression:
+		call := p.parseCallExpr(expr, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes)
+		if call == nil {
+			return SourceNode{}, false
+		}
+		callee := call.Callee
+		return SourceNode{Type: "CALL_RESULT", CallTarget: &callee, Location: location}, true
+	case goNodeIdentifier:
+		return SourceNode{Type: "VARIABLE", Name: expr.Content(src), Location: location}, true
+	case "selector_expression":
+		return SourceNode{Type: "FIELD", Name: expr.Content(src), Location: location}, true
+	case "int_literal", "float_literal", "imaginary_literal", "rune_literal", "raw_string_literal", "interpreted_string_literal", javaNodeBoolLiteralTrue, javaNodeBoolLiteralFalse, "nil":
+		return SourceNode{Type: "VALUE", Value: expr.Content(src), Location: location}, true
+	}
+
+	return SourceNode{}, false
 }
 
 func (p *GoParser) extractReceiverInfo(paramList *sitter.Node, src []byte) (string, string) {
