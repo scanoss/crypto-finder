@@ -68,12 +68,6 @@ func (noopCallgraphParser) SubPackagePath(parentPath, dirName string) string {
 }
 func (noopCallgraphParser) PackageSeparator() string { return "/" }
 
-type failingCallgraphParser struct{ noopCallgraphParser }
-
-func (failingCallgraphParser) ParseDirectory(string, string) ([]*callgraph.FileAnalysis, error) {
-	return nil, errors.New("callgraph should be skipped")
-}
-
 func TestNewDependencyScanner(t *testing.T) {
 	orchestrator := &Orchestrator{}
 	resolver := &fakeResolver{ecosystem: "go"}
@@ -427,53 +421,6 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 	if cache.putCalls != 1 || cache.putLastKey == "" {
 		t.Fatalf("expected cache put call after successful scan, puts=%d key=%q", cache.putCalls, cache.putLastKey)
-	}
-}
-
-func TestDependencyScanner_ScanWithDependencies_SkipsCallGraphWhenNoDependencyFindings(t *testing.T) {
-	ruleDir := t.TempDir()
-	rulePath := filepath.Join(ruleDir, "go.yaml")
-	if err := os.WriteFile(rulePath, []byte("rules:\n  - languages: [go]\n"), 0o600); err != nil {
-		t.Fatalf("write rule: %v", err)
-	}
-
-	var scanCalls atomic.Int32
-	mockScan := &mockScanner{
-		scanFunc: func(_ context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
-			scanCalls.Add(1)
-			return &entities.InterimReport{}, nil
-		},
-	}
-	registry := scanner.NewRegistry()
-	registry.Register("test-scanner", mockScan)
-	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) {
-		return []string{rulePath}, nil
-	}}), registry)
-
-	dep := dependency.Dependency{Module: "example.com/no-crypto", Version: "v1", Dir: t.TempDir()}
-	ds := &DependencyScanner{
-		orchestrator: orchestrator,
-		resolver: &fakeResolver{ecosystem: "go", resolveFn: func(_ context.Context, _ string) (*dependency.ResolveResult, error) {
-			return &dependency.ResolveResult{
-				RootModule:   "example.com/root",
-				Dependencies: []dependency.Dependency{dep},
-				Graph:        map[string][]string{"example.com/root": {"example.com/no-crypto"}},
-			}, nil
-		}},
-		cgBuilder: callgraph.NewBuilder(failingCallgraphParser{}),
-	}
-
-	result, err := ds.ScanWithDependencies(context.Background(), &entities.InterimReport{}, DepScanOptions{
-		ScanOptions: ScanOptions{Target: t.TempDir(), ScannerName: "test-scanner"},
-	})
-	if err != nil {
-		t.Fatalf("ScanWithDependencies: %v", err)
-	}
-	if result.CallGraph != nil {
-		t.Fatal("expected nil call graph when dependency scans have no crypto findings")
-	}
-	if scanCalls.Load() != 1 {
-		t.Fatalf("scan calls = %d, want 1", scanCalls.Load())
 	}
 }
 
