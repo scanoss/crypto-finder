@@ -17,17 +17,36 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
+
+func TestNewFindingsCache_NoneBackend(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := &config.Config{}
+	if err := cfg.Initialize(config.InitOptions{FindingsCacheBackend: findingsCacheBackendNone}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	cache, closeCache, err := newFindingsCache(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("newFindingsCache: %v", err)
+	}
+	defer closeCache()
+	if cache != nil {
+		t.Fatal("expected nil cache for none backend")
+	}
+}
 
 func validateScanFlags(target string) error {
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{

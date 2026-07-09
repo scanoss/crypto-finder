@@ -59,11 +59,12 @@ const (
 	ecosystemJava         = "java"
 
 	findingsCacheBackendDisk     = "disk"
+	findingsCacheBackendNone     = "none"
 	findingsCacheBackendPostgres = "postgres"
 )
 
 // AllowedFindingsCacheBackends lists the FindingsCache backends supported by the tool.
-var AllowedFindingsCacheBackends = []string{findingsCacheBackendDisk, findingsCacheBackendPostgres}
+var AllowedFindingsCacheBackends = []string{findingsCacheBackendDisk, findingsCacheBackendNone, findingsCacheBackendPostgres}
 
 // AllowedScanners lists the scanners supported by the tool.
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
@@ -855,6 +856,9 @@ func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsC
 			return nil, noop, nil
 		}
 		return fc, noop, nil
+
+	case findingsCacheBackendNone:
+		return nil, noop, nil
 
 	case findingsCacheBackendPostgres:
 		dsn := cfg.GetFindingsCacheDSN()

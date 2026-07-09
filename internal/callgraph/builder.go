@@ -92,9 +92,10 @@ func (b *Builder) PackageSeparator() string {
 func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	buildStart := time.Now()
 	graph := &CallGraph{
-		Functions:       make(map[string]*FunctionDecl),
-		Callers:         make(map[string][]string),
-		EdgeResolutions: make(map[string]EdgeResolution),
+		Functions:             make(map[string]*FunctionDecl),
+		Callers:               make(map[string][]string),
+		EdgeResolutions:       make(map[string]EdgeResolution),
+		EdgeResolutionsByPair: make(map[string][]EdgeResolution),
 	}
 
 	// Phase 1: Parse source files only for packages that need full analysis
@@ -377,12 +378,43 @@ func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind Ed
 		MethodName:   method,
 		Arity:        arity,
 		CallSite:     callSite,
+		callerKey:    callerKey,
+		calleeKey:    calleeKey,
 	}
 	key := EdgeResolutionKey(callerKey, calleeKey, resolution)
-	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
+	if existing, ok := graph.EdgeResolutions[key]; ok {
+		if edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
+			return
+		}
+		graph.EdgeResolutions[key] = resolution
+		upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
 		return
 	}
 	graph.EdgeResolutions[key] = resolution
+	upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
+}
+
+func upsertEdgeResolutionByPair(graph *CallGraph, callerKey, calleeKey string, resolution EdgeResolution) {
+	if graph.EdgeResolutionsByPair == nil {
+		graph.EdgeResolutionsByPair = make(map[string][]EdgeResolution)
+	}
+	pairKey := EdgeResolutionPairKey(callerKey, calleeKey)
+	values := graph.EdgeResolutionsByPair[pairKey]
+	for i := range values {
+		if sameEdgeResolutionVariant(values[i], resolution) {
+			values[i] = resolution
+			graph.EdgeResolutionsByPair[pairKey] = values
+			return
+		}
+	}
+	graph.EdgeResolutionsByPair[pairKey] = append(values, resolution)
+}
+
+func sameEdgeResolutionVariant(a, b EdgeResolution) bool {
+	return a.CallSite == b.CallSite &&
+		a.DeclaredType == b.DeclaredType &&
+		a.MethodName == b.MethodName &&
+		a.Arity == b.Arity
 }
 
 func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
@@ -1208,24 +1240,136 @@ func resolveQualifiedPassthroughGroup(graph *CallGraph, qg *qualifiedPassthrough
 // identity so a group here has >1 entries exactly when the stitcher would judge
 // that call site ambiguous.
 func groupAmbiguousDispatchEdges(graph *CallGraph) map[dispatchAmbiguousGroupKey][]edgeResolutionEntry {
-	groups := make(map[dispatchAmbiguousGroupKey][]edgeResolutionEntry)
+	candidateSites, callersByID := passthroughCandidateCallSites(graph)
+	if len(candidateSites) == 0 {
+		return nil
+	}
+
+	edgesByCaller := interfaceDispatchEdgesByCaller(graph)
+	compactGroups := make(map[compactDispatchGroupKey][]edgeResolutionEntry)
+	for callerKey, candidate := range candidateSites {
+		entries := edgesByCaller[callerKey]
+		if len(entries) < 2 {
+			continue
+		}
+		for i := range entries {
+			entry := entries[i]
+			res := entry.resolution
+			if !containsDispatchCallSite(candidate.sites, res.CallSite, res.MethodName, res.Arity) {
+				continue
+			}
+			gk := compactDispatchGroupKey{CallerID: candidate.id, CallSite: res.CallSite, MethodName: res.MethodName, Arity: res.Arity}
+			compactGroups[gk] = append(compactGroups[gk], entry)
+		}
+	}
+
+	groups := make(map[dispatchAmbiguousGroupKey][]edgeResolutionEntry, len(compactGroups))
+	for gk, entries := range compactGroups {
+		if len(entries) < 2 {
+			continue
+		}
+		groups[dispatchAmbiguousGroupKey{
+			Caller:     callersByID[gk.CallerID],
+			CallSite:   gk.CallSite,
+			MethodName: gk.MethodName,
+			Arity:      gk.Arity,
+		}] = entries
+	}
+	return groups
+}
+
+func interfaceDispatchEdgesByCaller(graph *CallGraph) map[string][]edgeResolutionEntry {
+	edgesByCaller := make(map[string][]edgeResolutionEntry)
 	for key, res := range graph.EdgeResolutions {
 		if res.Kind != EdgeKindInterfaceDispatch {
 			continue
 		}
-		callerKey, calleeKey, ok := splitEdgeResolutionKey(key)
-		if !ok {
+		callerKey, calleeKey := res.callerKey, res.calleeKey
+		if callerKey == "" || calleeKey == "" {
+			var ok bool
+			callerKey, calleeKey, ok = splitEdgeResolutionKey(key)
+			if !ok {
+				continue
+			}
+		}
+		edgesByCaller[callerKey] = append(edgesByCaller[callerKey], edgeResolutionEntry{calleeKey: calleeKey, resolution: res})
+	}
+	return edgesByCaller
+}
+
+type dispatchCallSiteKey struct {
+	CallSite   int
+	MethodName string
+	Arity      int
+}
+
+type compactDispatchGroupKey struct {
+	CallerID   int
+	CallSite   int
+	MethodName string
+	Arity      int
+}
+
+type passthroughCandidateCaller struct {
+	id    int
+	sites []dispatchCallSiteKey
+}
+
+func passthroughCandidateCallSites(graph *CallGraph) (map[string]passthroughCandidateCaller, []string) {
+	candidates := make(map[string]passthroughCandidateCaller)
+	callersByID := make([]string, 0)
+	for callerKey, fn := range graph.Functions {
+		sites := passthroughCandidateSites(fn)
+		if len(sites) == 0 {
 			continue
 		}
-		gk := dispatchAmbiguousGroupKey{Caller: callerKey, CallSite: res.CallSite, MethodName: res.MethodName, Arity: res.Arity}
-		groups[gk] = append(groups[gk], edgeResolutionEntry{calleeKey: calleeKey, resolution: res})
+		candidates[callerKey] = passthroughCandidateCaller{id: len(callersByID), sites: sites}
+		callersByID = append(callersByID, callerKey)
 	}
-	for gk, entries := range groups {
-		if len(entries) < 2 {
-			delete(groups, gk)
+	return candidates, callersByID
+}
+
+func passthroughCandidateSites(fn *FunctionDecl) []dispatchCallSiteKey {
+	if fn == nil {
+		return nil
+	}
+	sites := make([]dispatchCallSiteKey, 0, len(fn.Calls))
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if !canPassthroughReceiver(fn, call) {
+			continue
+		}
+		method, arity := methodBaseArity(call.Callee.Name)
+		site := dispatchCallSiteKey{CallSite: call.Line, MethodName: method, Arity: arity}
+		if !containsDispatchCallSite(sites, site.CallSite, site.MethodName, site.Arity) {
+			sites = append(sites, site)
 		}
 	}
-	return groups
+	return sites
+}
+
+func containsDispatchCallSite(sites []dispatchCallSiteKey, callSite int, methodName string, arity int) bool {
+	for i := range sites {
+		if sites[i].CallSite == callSite && sites[i].MethodName == methodName && sites[i].Arity == arity {
+			return true
+		}
+	}
+	return false
+}
+
+func canPassthroughReceiver(fn *FunctionDecl, call *FunctionCall) bool {
+	if call.ReceiverVar == "" {
+		return true
+	}
+	if len(fn.Calls) != 1 {
+		return false
+	}
+	for i := range fn.Parameters {
+		if fn.Parameters[i].Name != "" && fn.Parameters[i].Name == call.ReceiverVar {
+			return true
+		}
+	}
+	return false
 }
 
 // edgeResolutionEntry pairs one EdgeResolutions map entry with its parsed
@@ -1396,13 +1540,14 @@ func findCallAtSite(fn *FunctionDecl, gk dispatchAmbiguousGroupKey) (FunctionCal
 func candidateOwnersByType(entries []edgeResolutionEntry) map[string][]string {
 	owners := make(map[string][]string, len(entries))
 	seen := make(map[string]bool, len(entries))
-	for _, e := range entries {
-		id, err := ParseFunctionID(e.calleeKey)
-		if err != nil || id.Type == "" || seen[e.calleeKey] {
+	for i := range entries {
+		calleeKey := entries[i].calleeKey
+		id, err := ParseFunctionID(calleeKey)
+		if err != nil || id.Type == "" || seen[calleeKey] {
 			continue
 		}
-		seen[e.calleeKey] = true
-		owners[id.Type] = append(owners[id.Type], e.calleeKey)
+		seen[calleeKey] = true
+		owners[id.Type] = append(owners[id.Type], calleeKey)
 	}
 	return owners
 }
@@ -1695,6 +1840,7 @@ func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, li
 	}
 	res.ResolvedReceiverType = resolvedType
 	graph.EdgeResolutions[key] = res
+	upsertEdgeResolutionByPair(graph, callerKey, targetKey, res)
 	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line}
 }
 

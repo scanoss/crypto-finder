@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -437,7 +436,7 @@ func buildResolvedFragmentEdges(
 			if _, ok := graph.Functions[calleeKey]; ok {
 				edge := buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 				if edge.ChainID == "" {
-					edge.ChainID = chainIDForLine(callerDecl, line)
+					edge.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
 				}
 				if err := emitInternal(edge); err != nil {
 					return nil, err
@@ -446,7 +445,7 @@ func buildResolvedFragmentEdges(
 			}
 			external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 			if external.ChainID == "" {
-				external.ChainID = chainIDForLine(callerDecl, line)
+				external.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
 			}
 			externalCalls = append(externalCalls, external)
 		}
@@ -730,15 +729,25 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 	if graph == nil || len(graph.EdgeResolutions) == 0 {
 		return nil
 	}
+	if len(graph.EdgeResolutionsByPair) > 0 {
+		index := make(map[string][]fragmentEdgeResolution, len(graph.EdgeResolutionsByPair))
+		for pairKey, resolutions := range graph.EdgeResolutionsByPair {
+			values := make([]fragmentEdgeResolution, 0, len(resolutions))
+			for i := range resolutions {
+				values = append(values, newFragmentEdgeResolution(resolutions[i]))
+			}
+			index[pairKey] = values
+		}
+		return index
+	}
 	index := make(map[string][]fragmentEdgeResolution)
-	keys := sortedKeys(graph.EdgeResolutions)
-	for _, key := range keys {
-		parts := strings.SplitN(key, "\x00", 3)
-		if len(parts) < 3 {
+	for key, res := range graph.EdgeResolutions {
+		callerKey, calleeKey, ok := callgraph.EdgeResolutionEndpoints(key, res)
+		if !ok {
 			continue
 		}
-		pairKey := fragmentEdgePairKey(parts[0], parts[1])
-		index[pairKey] = append(index[pairKey], newFragmentEdgeResolution(graph.EdgeResolutions[key]))
+		pairKey := fragmentEdgePairKey(callerKey, calleeKey)
+		index[pairKey] = append(index[pairKey], newFragmentEdgeResolution(res))
 	}
 	return index
 }
@@ -789,6 +798,29 @@ func chainIDForLine(fn *callgraph.FunctionDecl, line int) string {
 		}
 	}
 	return ""
+}
+
+func (ctx *exportBuildContext) chainIDForLine(callerKey string, fn *callgraph.FunctionDecl, line int) string {
+	if ctx == nil {
+		return chainIDForLine(fn, line)
+	}
+	if ctx.chainIDsByCallerLine == nil {
+		ctx.chainIDsByCallerLine = make(map[string]map[int]string)
+	}
+	lineIndex, ok := ctx.chainIDsByCallerLine[callerKey]
+	if !ok {
+		lineIndex = make(map[int]string)
+		if fn != nil {
+			for i := range fn.Calls {
+				call := &fn.Calls[i]
+				if call.Line > 0 && call.ChainID != "" {
+					lineIndex[call.Line] = call.ChainID
+				}
+			}
+		}
+		ctx.chainIDsByCallerLine[callerKey] = lineIndex
+	}
+	return lineIndex[line]
 }
 
 // findCallForCalleeAtLine finds callerKey's FunctionCall matching calleeKey,
@@ -842,8 +874,8 @@ func matchingCallsForCallee(ctx *exportBuildContext, callerKey string, callerDec
 	if callerDecl == nil {
 		return nil
 	}
-	calleeID, err := callgraph.ParseFunctionID(calleeKey)
-	if err != nil {
+	sigKey, ok := calleeSignatureKey(ctx, calleeKey)
+	if !ok {
 		// calleeKey isn't parseable (should not happen for real graph keys,
 		// which are always produced by FunctionID.String()); callMatchesCallee
 		// still honored an exact string match in this case, so fall back to a
@@ -857,8 +889,6 @@ func matchingCallsForCallee(ctx *exportBuildContext, callerKey string, callerDec
 		}
 		return matches
 	}
-	sigKey := callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name))
-
 	if ctx != nil {
 		index := ctx.callSignatureIndexForCaller(callerKey, callerDecl)
 		return index[sigKey]
@@ -872,6 +902,30 @@ func matchingCallsForCallee(ctx *exportBuildContext, callerKey string, callerDec
 		}
 	}
 	return matches
+}
+
+func calleeSignatureKey(ctx *exportBuildContext, calleeKey string) (string, bool) {
+	if ctx != nil {
+		if ctx.calleeSignatureKeys == nil {
+			ctx.calleeSignatureKeys = make(map[string]string)
+		}
+		if sigKey, ok := ctx.calleeSignatureKeys[calleeKey]; ok {
+			return sigKey, sigKey != ""
+		}
+		calleeID, err := callgraph.ParseFunctionID(calleeKey)
+		if err != nil {
+			ctx.calleeSignatureKeys[calleeKey] = ""
+			return "", false
+		}
+		sigKey := callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name))
+		ctx.calleeSignatureKeys[calleeKey] = sigKey
+		return sigKey, true
+	}
+	calleeID, err := callgraph.ParseFunctionID(calleeKey)
+	if err != nil {
+		return "", false
+	}
+	return callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name)), true
 }
 
 // callSignatureKey builds the (Package, Type, BaseFunctionName) grouping key

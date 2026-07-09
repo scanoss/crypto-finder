@@ -63,7 +63,9 @@ type exportBuildContext struct {
 	// so a caller with heavy dispatch fan-out (many resolved edges, one
 	// source call site) pays the O(len(Calls)) index-build cost once instead
 	// of once per edge. nil until first use.
-	callsBySignature map[string]map[string][]*callgraph.FunctionCall
+	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
+	calleeSignatureKeys  map[string]string
+	chainIDsByCallerLine map[string]map[int]string
 }
 
 type cachedContainingFunction struct {
