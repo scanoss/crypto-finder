@@ -653,6 +653,9 @@ func fragmentEdgeLess(a, b graphfrag.GraphFragmentEdge) bool {
 	if a.Line != b.Line {
 		return a.Line < b.Line
 	}
+	if a.Resolution != b.Resolution {
+		return a.Resolution < b.Resolution
+	}
 	if a.DeclaredType != b.DeclaredType {
 		return a.DeclaredType < b.DeclaredType
 	}
@@ -666,6 +669,7 @@ func fragmentEdgeSameKey(a, b graphfrag.GraphFragmentEdge) bool {
 	return a.CallerKey == b.CallerKey &&
 		a.CalleeKey == b.CalleeKey &&
 		a.Line == b.Line &&
+		a.Resolution == b.Resolution &&
 		a.DeclaredType == b.DeclaredType &&
 		a.MethodName == b.MethodName &&
 		a.Arity == b.Arity
@@ -681,6 +685,9 @@ func fragmentExternalLess(a, b graphfrag.GraphFragmentExternal) bool {
 	if a.Line != b.Line {
 		return a.Line < b.Line
 	}
+	if a.Resolution != b.Resolution {
+		return a.Resolution < b.Resolution
+	}
 	if a.DeclaredType != b.DeclaredType {
 		return a.DeclaredType < b.DeclaredType
 	}
@@ -694,6 +701,7 @@ func fragmentExternalSameKey(a, b graphfrag.GraphFragmentExternal) bool {
 	return a.CallerKey == b.CallerKey &&
 		a.TargetKey == b.TargetKey &&
 		a.Line == b.Line &&
+		a.Resolution == b.Resolution &&
 		a.DeclaredType == b.DeclaredType &&
 		a.MethodName == b.MethodName &&
 		a.Arity == b.Arity

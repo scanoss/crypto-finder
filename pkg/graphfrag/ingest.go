@@ -25,8 +25,11 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 
 	appendFragmentFunctions(&frag, e.Functions)
 	functionKeys := graphFragmentFunctionKeys(e.Functions)
-	appendCompactInternalEdges(&frag, functionKeys, e.InternalEdgeStrings, e.CompactInternalEdges)
-	appendInternalEdges(&frag, e.InternalEdges)
+	if len(e.CompactInternalEdges) > 0 {
+		appendCompactInternalEdges(&frag, functionKeys, e.InternalEdgeStrings, e.CompactInternalEdges)
+	} else {
+		appendInternalEdges(&frag, e.InternalEdges)
+	}
 	appendExternalCalls(&frag, e.ExternalCalls)
 	appendCryptoOperations(&frag, e.CryptoAnnotations)
 	appendSupportingCalls(&frag, e.SupportingCalls)
