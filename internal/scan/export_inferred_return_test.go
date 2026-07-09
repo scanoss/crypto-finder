@@ -69,8 +69,8 @@ func TestExportSchema_Is52(t *testing.T) {
 		t.Fatalf("invalid json: %v", err)
 	}
 
-	if payload.SchemaVersion != "6.3" {
-		t.Fatalf("schema_version = %q, want 6.3", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.4" {
+		t.Fatalf("schema_version = %q, want 6.4", payload.SchemaVersion)
 	}
 }
 
@@ -361,8 +361,8 @@ func TestExportSchemaVersionIs53(t *testing.T) {
 		t.Fatalf("invalid json: %v", err)
 	}
 
-	if payload.SchemaVersion != "6.3" {
-		t.Fatalf("schema_version = %q, want 6.3", payload.SchemaVersion)
+	if payload.SchemaVersion != "6.4" {
+		t.Fatalf("schema_version = %q, want 6.4", payload.SchemaVersion)
 	}
 }
 
