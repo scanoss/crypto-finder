@@ -790,6 +790,11 @@ type operationEntryPoint struct {
 	inheritedAmbiguous bool
 }
 
+type operationContractDeclaration struct {
+	declFQN string
+	decl    *callgraph.FunctionDecl
+}
+
 // classSiblingAssets groups every crypto asset in the report by the receiver
 // type of its matched API (asset.Metadata["api"]), so WU2 synthesis can gate
 // on "declaring class already has >= 1 crypto asset" and inherit
@@ -874,12 +879,11 @@ func inheritFromSiblings(assets []entities.CryptographicAsset) (family, primitiv
 
 // synthesizeContractOperationEntryPoints is the WU2 (issue-103) B-lite
 // operation crypto_entry_point synthesis: for each role:operation contract
-// method that is (a) concretely declared/reachable in the scanned source
-// (ctx.declIndex[c.Method] != nil — a pure interface method with no body
-// never qualifies, by construction) and (b) whose declaring class already
-// carries >= 1 crypto asset, and (c) not already covered by an existing
-// finding, synthesize a crypto_entry_points entry. No interim finding is
-// minted (B-lite) — see spec "Finding counts unchanged" scenario.
+// method that is (a) concretely declared/reachable in the scanned source,
+// directly or via a contract-hierarchy implementor, (b) whose declaring class
+// already carries >= 1 crypto asset, and (c) not already covered by an existing
+// finding, synthesize a crypto_entry_points entry. No interim finding is minted
+// (B-lite) — see spec "Finding counts unchanged" scenario.
 func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []operationEntryPoint {
 	if ctx == nil || ctx.kb == nil || ctx.declIndex == nil || result == nil || result.Report == nil {
 		return nil
@@ -895,45 +899,106 @@ func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *eng
 			if c.Role != string(contracts.RoleOperation) {
 				continue
 			}
-			if _, dup := seen[c.Method]; dup {
-				continue
-			}
-			decl := ctx.declIndex[c.Method]
-			if decl == nil {
-				continue
-			}
-			if _, has := existingAPI[c.Method]; has {
-				continue
-			}
-			class := receiverType(c.Method)
-			assets := classAssets[class]
-			if len(assets) == 0 {
-				continue
-			}
-			seen[c.Method] = struct{}{}
-			family, primitive, ambiguous := inheritFromSiblings(assets)
-			meta := buildExportFunctionMetadata(ctx.graph, decl.ID, decl)
-			_, method := splitFunctionName(c.Method)
-			out = append(out, operationEntryPoint{
-				functionKey:        decl.ID.String(),
-				functionName:       meta.FunctionName,
-				canonicalSignature: meta.CanonicalSignature,
-				class:              class,
-				method:             method,
-				returnType:         meta.ReturnType,
-				parameterTypes:     meta.ParameterTypes,
-				visibility:         meta.Visibility,
-				ownerVisibility:    meta.OwnerVisibility,
-				displaySymbol:      meta.DisplaySymbol,
-				aliases:            meta.Aliases,
-				contractMethod:     c.Method,
-				inheritedFamily:    family,
-				inheritedPrimitive: primitive,
-				inheritedAmbiguous: ambiguous,
-			})
+			out = ctx.appendContractOperationEntryPoints(c, classAssets, existingAPI, seen, out)
 		}
 	}
 	return out
+}
+
+func (ctx *exportBuildContext) appendContractOperationEntryPoints(
+	c contracts.Contract,
+	classAssets map[string][]entities.CryptographicAsset,
+	existingAPI map[string]struct{},
+	seen map[string]struct{},
+	out []operationEntryPoint,
+) []operationEntryPoint {
+	if _, has := existingAPI[c.Method]; has {
+		return out
+	}
+	for _, match := range ctx.operationContractDeclarations(c) {
+		op, ok := ctx.synthesizeContractOperationEntryPoint(c, match, classAssets, existingAPI, seen)
+		if ok {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+func (ctx *exportBuildContext) synthesizeContractOperationEntryPoint(
+	c contracts.Contract,
+	match operationContractDeclaration,
+	classAssets map[string][]entities.CryptographicAsset,
+	existingAPI map[string]struct{},
+	seen map[string]struct{},
+) (operationEntryPoint, bool) {
+	if _, has := existingAPI[match.declFQN]; has {
+		return operationEntryPoint{}, false
+	}
+	class := receiverType(match.declFQN)
+	assets := classAssets[class]
+	if len(assets) == 0 {
+		return operationEntryPoint{}, false
+	}
+	key := match.decl.ID.String()
+	if _, dup := seen[key]; dup {
+		return operationEntryPoint{}, false
+	}
+	seen[key] = struct{}{}
+	family, primitive, ambiguous := inheritFromSiblings(assets)
+	meta := buildExportFunctionMetadata(ctx.graph, match.decl.ID, match.decl)
+	_, method := splitFunctionName(match.declFQN)
+	return operationEntryPoint{
+		functionKey:        key,
+		functionName:       meta.FunctionName,
+		canonicalSignature: meta.CanonicalSignature,
+		class:              class,
+		method:             method,
+		returnType:         meta.ReturnType,
+		parameterTypes:     meta.ParameterTypes,
+		visibility:         meta.Visibility,
+		ownerVisibility:    meta.OwnerVisibility,
+		displaySymbol:      meta.DisplaySymbol,
+		aliases:            meta.Aliases,
+		contractMethod:     c.Method,
+		inheritedFamily:    family,
+		inheritedPrimitive: primitive,
+		inheritedAmbiguous: ambiguous,
+	}, true
+}
+
+func (ctx *exportBuildContext) operationContractDeclarations(c contracts.Contract) []operationContractDeclaration {
+	direct := ctx.declIndex[c.Method]
+	contractClass, contractMethod := splitFunctionName(c.Method)
+	out := make([]operationContractDeclaration, 0, 1)
+	if direct != nil && functionDeclArityMatches(direct, c.Arity) {
+		out = append(out, operationContractDeclaration{declFQN: c.Method, decl: direct})
+	}
+	for declFQN, decl := range ctx.declIndex {
+		if decl == direct {
+			continue
+		}
+		declClass, declMethod := splitFunctionName(declFQN)
+		if declMethod != contractMethod || !functionDeclArityMatches(decl, c.Arity) || !ctx.typeOrAncestor(contractClass, declClass) {
+			continue
+		}
+		out = append(out, operationContractDeclaration{declFQN: declFQN, decl: decl})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].declFQN < out[j].declFQN
+	})
+	return out
+}
+
+func functionDeclArityMatches(decl *callgraph.FunctionDecl, want int) bool {
+	if decl == nil || want < 0 {
+		return true
+	}
+	i := strings.LastIndexByte(decl.ID.Name, '#')
+	if i < 0 {
+		return true
+	}
+	got, err := strconv.Atoi(decl.ID.Name[i+1:])
+	return err != nil || got == want
 }
 
 // appendSynthesizedOperationEntryPoints appends WU2-synthesized operation
