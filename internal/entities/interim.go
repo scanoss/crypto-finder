@@ -22,10 +22,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.3"
+const InterimFormatVersion = "1.4"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -125,6 +127,12 @@ type CryptographicAsset struct {
 	// Metadata contains metadata extracted from the cryptographic asset
 	// such as key length, algorithm, etc.
 	Metadata map[string]string `json:"metadata"`
+
+	// ParameterConditions holds the structured, validated predicates parsed
+	// from metadata.crypto.parameterCondition. Nil when the asset carries no
+	// predicate; the raw flat string is still retained verbatim in
+	// Metadata["parameterCondition"].
+	ParameterConditions []paramcondition.Condition `json:"parameter_conditions,omitempty"`
 
 	// OID is the Object Identifier for the cryptographic algorithm.
 	// Sources: NIST CSOR, PKCS#1, ANSI X9.62, etc.

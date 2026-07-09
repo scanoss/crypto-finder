@@ -12,15 +12,19 @@
 
 package graphfrag
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+)
 
 // FindingsSchemaVersion is the findings.json envelope version emitted by
 // ToFindingsEnvelope. It matches the schema crypto-finder's scanner writes so
 // downstream consumers see a uniform `version` regardless of whether the
 // findings came from a live scan or were reconstructed from graph fragments.
-const FindingsSchemaVersion = "1.3"
+const FindingsSchemaVersion = "1.4"
 
-// FindingsEnvelope is the findings.json v1.3 envelope reconstructed from a
+// FindingsEnvelope is the findings.json v1.4 envelope reconstructed from a
 // dependency closure of graph fragments. It is the asset-metadata companion to
 // ToCallgraphExport: consumers join assets (here) to call chains (callgraph
 // export) by finding_id, so the two MUST agree on finding_id — which they do by
@@ -49,9 +53,14 @@ type FindingAsset struct {
 	StartLine int             `json:"start_line"`
 	EndLine   int             `json:"end_line"`
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
+
+	// ParameterConditions holds the structured predicates re-parsed from
+	// Metadata's verbatim "parameterCondition" string, if present. Nil when
+	// the fragment carries no predicate.
+	ParameterConditions []paramcondition.Condition `json:"parameter_conditions,omitempty"`
 }
 
-// ToFindingsEnvelope reconstructs the findings.json v1.3 envelope for the root
+// ToFindingsEnvelope reconstructs the findings.json v1.4 envelope for the root
 // component and its transitive dependency closure, from the stored crypto
 // annotations in each fragment. Unlike ToCallgraphExport (which emits only
 // reachable findings), this emits EVERY crypto operation in the closure —
@@ -87,13 +96,14 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 			}
 
 			asset := FindingAsset{
-				FindingID: computeFindingID(path, op.StartLine, op.RuleID),
-				OID:       op.OID,
-				Match:     op.Match,
-				Source:    source,
-				StartLine: op.StartLine,
-				EndLine:   op.EndLine,
-				Metadata:  op.Metadata,
+				FindingID:           computeFindingID(path, op.StartLine, op.RuleID),
+				OID:                 op.OID,
+				Match:               op.Match,
+				Source:              source,
+				StartLine:           op.StartLine,
+				EndLine:             op.EndLine,
+				Metadata:            op.Metadata,
+				ParameterConditions: parseParameterConditions(op.Metadata),
 			}
 			if _, ok := byPath[path]; !ok {
 				order = append(order, path)
@@ -102,6 +112,32 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 		}
 	}
 
+	return assembleEnvelope(meta, order, byPath)
+}
+
+// parseParameterConditions extracts and parses the flat parameterCondition
+// metadata string into structured conditions. Returns nil when metadata is
+// absent, unparseable, or carries no predicate — the field is omitempty.
+func parseParameterConditions(metadata json.RawMessage) []paramcondition.Condition {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var m map[string]string
+	if json.Unmarshal(metadata, &m) != nil {
+		return nil
+	}
+	raw := m["parameterCondition"]
+	if raw == "" {
+		return nil
+	}
+	conds, err := paramcondition.ParseAll(raw)
+	if err != nil {
+		return nil
+	}
+	return conds
+}
+
+func assembleEnvelope(meta ScanMeta, order []string, byPath map[string][]FindingAsset) FindingsEnvelope {
 	env := FindingsEnvelope{Version: FindingsSchemaVersion}
 	for _, p := range order {
 		env.Findings = append(env.Findings, FindingFile{

@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func TestResolveMetavars(t *testing.T) {
@@ -623,6 +624,69 @@ func TestExtractCryptoMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCryptoMetadata_ParameterConditions(t *testing.T) {
+	t.Run("populates ParameterConditions from metadata.parameterCondition", func(t *testing.T) {
+		asset := &entities.CryptographicAsset{
+			Metadata: make(map[string]string),
+		}
+		cryptoMetadata := map[string]any{
+			"operation":          "encrypt",
+			"parameterCondition": "param[0]==true",
+			"api":                "org.bouncycastle.crypto.engines.AESEngine.init",
+		}
+
+		extractCryptoMetadata(asset, cryptoMetadata, map[string]entities.MetavarInfo{})
+
+		if len(asset.ParameterConditions) != 1 {
+			t.Fatalf("ParameterConditions = %#v, want 1 entry", asset.ParameterConditions)
+		}
+		want := paramcondition.Condition{
+			Raw:      "param[0]==true",
+			Selector: paramcondition.Selector{Index: intPtr(0)},
+			Operator: paramcondition.OpExact,
+			Match:    paramcondition.MatchValue,
+			Value:    "true",
+		}
+		got := asset.ParameterConditions[0]
+		if got.Raw != want.Raw || got.Operator != want.Operator || got.Match != want.Match || got.Value != want.Value {
+			t.Errorf("ParameterConditions[0] = %+v, want %+v", got, want)
+		}
+		if got.Selector.Index == nil || *got.Selector.Index != 0 {
+			t.Errorf("ParameterConditions[0].Selector.Index = %v, want 0", got.Selector.Index)
+		}
+
+		// Verbatim flat string must still be present, unbroken.
+		if asset.Metadata["parameterCondition"] != "param[0]==true" {
+			t.Errorf("Metadata[parameterCondition] = %q, want %q", asset.Metadata["parameterCondition"], "param[0]==true")
+		}
+	})
+
+	t.Run("no parameterCondition key means nil slice", func(t *testing.T) {
+		asset := &entities.CryptographicAsset{
+			Metadata: make(map[string]string),
+		}
+		cryptoMetadata := map[string]any{
+			"algorithmName": "AES",
+		}
+
+		extractCryptoMetadata(asset, cryptoMetadata, map[string]entities.MetavarInfo{})
+
+		if asset.ParameterConditions != nil {
+			t.Errorf("ParameterConditions = %#v, want nil", asset.ParameterConditions)
+		}
+
+		b, err := json.Marshal(asset)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if strings.Contains(string(b), "parameter_conditions") {
+			t.Errorf("marshaled asset contains parameter_conditions key when no predicate was set: %s", b)
+		}
+	})
+}
+
+func intPtr(i int) *int { return &i }
 
 func TestDetectLanguage(t *testing.T) {
 	tests := []struct {

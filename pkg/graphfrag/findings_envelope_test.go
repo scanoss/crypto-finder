@@ -5,6 +5,7 @@ package graphfrag
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -139,5 +140,81 @@ func TestToFindingsEnvelope_FindingIDMatchesCallgraphExport(t *testing.T) {
 		if !envIDs[id] {
 			t.Errorf("finding_id %q present in callgraph export but missing from findings envelope (join would break); envelope ids=%v", id, envIDs)
 		}
+	}
+}
+
+// TestToFindingsEnvelope_ParameterConditions asserts ToFindingsEnvelope
+// re-parses a fragment's verbatim metadata.parameterCondition string into
+// the structured FindingAsset.ParameterConditions field, and that the
+// findings schema version reports 1.4.
+func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
+	app := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0"}
+	fragments := map[ComponentKey]Fragment{
+		app: {
+			Component: app,
+			Module:    "com.acme:app",
+			CryptoOperations: []CryptoOperation{
+				{
+					Function: "com.acme.App.init#0", RuleID: "rule.with-condition",
+					FilePath: "App.java", StartLine: 5, EndLine: 5,
+					Match: "AESEngine.init(true, kp)", Source: "direct",
+					Metadata: json.RawMessage(`{"operation":"encrypt","parameterCondition":"param[0]==true"}`),
+				},
+				{
+					Function: "com.acme.App.hash#0", RuleID: "rule.without-condition",
+					FilePath: "App.java", StartLine: 10, EndLine: 10,
+					Match: "MessageDigest.getInstance(\"MD5\")", Source: "direct",
+					Metadata: json.RawMessage(`{"algorithmName":"MD5"}`),
+				},
+			},
+		},
+	}
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
+
+	env := ToFindingsEnvelope(app, DependencyGraph{}, fragments, meta)
+
+	if env.Version != "1.4" {
+		t.Errorf("envelope Version = %q, want %q", env.Version, "1.4")
+	}
+	if FindingsSchemaVersion != "1.4" {
+		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.4")
+	}
+
+	if len(env.Findings) != 1 || len(env.Findings[0].CryptographicAssets) != 2 {
+		t.Fatalf("unexpected envelope shape: %+v", env)
+	}
+
+	var withCond, withoutCond *FindingAsset
+	for i := range env.Findings[0].CryptographicAssets {
+		asset := &env.Findings[0].CryptographicAssets[i]
+		switch asset.StartLine {
+		case 5:
+			withCond = asset
+		case 10:
+			withoutCond = asset
+		}
+	}
+	if withCond == nil || withoutCond == nil {
+		t.Fatalf("expected both assets present: %+v", env.Findings[0].CryptographicAssets)
+	}
+
+	if len(withCond.ParameterConditions) != 1 {
+		t.Fatalf("ParameterConditions = %#v, want 1 entry", withCond.ParameterConditions)
+	}
+	cond := withCond.ParameterConditions[0]
+	if cond.Raw != "param[0]==true" || cond.Value != "true" {
+		t.Errorf("ParameterConditions[0] = %+v, want raw=param[0]==true value=true", cond)
+	}
+
+	if withoutCond.ParameterConditions != nil {
+		t.Errorf("ParameterConditions = %#v, want nil for asset without a predicate", withoutCond.ParameterConditions)
+	}
+
+	b, err := json.Marshal(withoutCond)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"parameter_conditions"`) {
+		t.Errorf("marshaled asset without a predicate unexpectedly contains parameter_conditions: %s", b)
 	}
 }

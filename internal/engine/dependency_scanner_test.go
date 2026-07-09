@@ -424,6 +424,48 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 }
 
+func TestDependencyScanner_LoadFilteredRules_MalformedParameterConditionAborts(t *testing.T) {
+	ruleDir := t.TempDir()
+	brokenRule := filepath.Join(ruleDir, "broken.yaml")
+	const malformedRule = `
+rules:
+  - id: java.bouncycastle.algorithm.block-cipher.aes-init-broken
+    languages: [java]
+    metadata:
+      crypto:
+        operation: encrypt
+        parameterCondition: "param[]==true"
+`
+	if err := os.WriteFile(brokenRule, []byte(malformedRule), 0o600); err != nil {
+		t.Fatalf("write broken rule: %v", err)
+	}
+
+	scannerReg := scanner.NewRegistry()
+	ruleSource := &mockRuleSource{loadFunc: func() ([]string, error) {
+		return []string{brokenRule}, nil
+	}}
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(ruleSource), scannerReg)
+
+	ds := &DependencyScanner{
+		orchestrator: orchestrator,
+		resolver:     &fakeResolver{ecosystem: "java"},
+	}
+
+	_, cleanup, err := ds.loadFilteredRules("java")
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil {
+		t.Fatal("loadFilteredRules() = nil error, want error")
+	}
+	if !strings.Contains(err.Error(), "java.bouncycastle.algorithm.block-cipher.aes-init-broken") {
+		t.Errorf("error %q does not name the offending rule id", err.Error())
+	}
+	if !strings.Contains(err.Error(), "param[]==true") {
+		t.Errorf("error %q does not contain the raw malformed predicate", err.Error())
+	}
+}
+
 func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 	var scanCalls atomic.Int32
 	var sawEmptyTarget atomic.Bool

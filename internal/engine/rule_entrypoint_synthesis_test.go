@@ -10,11 +10,13 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
 // writeRule writes a minimal rule file carrying one metadata.crypto block and
@@ -636,5 +638,77 @@ func TestSynthesize_TerminalFinding_SuppressesBothSharedAPIBlocks(t *testing.T) 
 	// Only the original real finding should remain -- no synthetic siblings leaked in.
 	if got := len(report.Findings[0].CryptographicAssets); got != 1 {
 		t.Fatalf("expected exactly 1 asset (the original real finding), got %d", got)
+	}
+}
+
+// TestBuildSyntheticAssetFromRule_ParameterConditions verifies the synthesis
+// path parses metadata["parameterCondition"] into the structured
+// ParameterConditions field, the same way the live-match transformer path
+// does (see TestExtractCryptoMetadata_ParameterConditions).
+func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
+	meta := map[string]string{
+		"operation":          "encrypt",
+		"parameterCondition": "param[0]==true",
+		"assetType":          "algorithm",
+	}
+	fn := &callgraph.FunctionDecl{StartLine: 42, EndLine: 55}
+
+	asset := buildSyntheticAssetFromRule("org.bouncycastle.crypto.engines.AESEngine.init", meta, fn)
+
+	if len(asset.ParameterConditions) != 1 {
+		t.Fatalf("ParameterConditions = %#v, want 1 entry", asset.ParameterConditions)
+	}
+	cond := asset.ParameterConditions[0]
+	if cond.Raw != "param[0]==true" || cond.Value != "true" {
+		t.Errorf("ParameterConditions[0] = %+v, want raw=param[0]==true value=true", cond)
+	}
+	if asset.Metadata["parameterCondition"] != "param[0]==true" {
+		t.Errorf("Metadata[parameterCondition] = %q, want verbatim passthrough", asset.Metadata["parameterCondition"])
+	}
+}
+
+// TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift feeds the
+// SAME raw parameterCondition through the synthesis path
+// (buildSyntheticAssetFromRule) and the live-match transformer path
+// (semgrep.TransformSemgrepCompatibleOutputToInterimFormat, which drives
+// extractCryptoMetadata), asserting the two resulting []Condition slices are
+// structurally identical. Both paths MUST call the same
+// paramcondition.ParseAll entry point, or the two ingestion structures could
+// drift apart for the same rule predicate (spec Req 5).
+func TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift(t *testing.T) {
+	const raw = "param[0|forEncryption]~=^enc"
+
+	meta := map[string]string{
+		"operation":          "encrypt",
+		"parameterCondition": raw,
+	}
+	fn := &callgraph.FunctionDecl{StartLine: 1, EndLine: 1}
+	synthAsset := buildSyntheticAssetFromRule("org.bouncycastle.crypto.engines.AESEngine.init", meta, fn)
+
+	semgrepOutput := &entities.SemgrepOutput{
+		Results: []entities.SemgrepResult{{
+			CheckID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt",
+			Path:    "AESEngine.java",
+			Extra: entities.SemgrepExtra{
+				Metadata: entities.SemgrepMetadata{
+					Crypto: map[string]any{
+						"operation":          "encrypt",
+						"parameterCondition": raw,
+					},
+				},
+			},
+		}},
+	}
+	transformerReport := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(
+		semgrepOutput, entities.ToolInfo{}, ".", nil, true,
+	)
+	if len(transformerReport.Findings) != 1 || len(transformerReport.Findings[0].CryptographicAssets) != 1 {
+		t.Fatalf("transformer report shape = %+v, want exactly 1 finding with 1 asset", transformerReport)
+	}
+	transformerAsset := transformerReport.Findings[0].CryptographicAssets[0]
+
+	if !reflect.DeepEqual(synthAsset.ParameterConditions, transformerAsset.ParameterConditions) {
+		t.Fatalf("synthesis and transformer paths diverged:\nsynthesis:   %+v\ntransformer: %+v",
+			synthAsset.ParameterConditions, transformerAsset.ParameterConditions)
 	}
 }

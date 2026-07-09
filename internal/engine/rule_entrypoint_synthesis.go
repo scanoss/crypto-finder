@@ -28,6 +28,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 // SyntheticEntryPointRuleID labels findings produced by surfacing a library's
@@ -355,6 +356,15 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 		md["cryptoFunction"] = md["operation"]
 	}
 
+	var conditions []paramcondition.Condition
+	if raw := md["parameterCondition"]; raw != "" {
+		if conds, err := paramcondition.ParseAll(raw); err == nil {
+			conditions = conds
+		} else {
+			log.Debug().Err(err).Str("raw", raw).Str("api", api).Msg("parameterCondition parse skipped (should have failed at rule-load)")
+		}
+	}
+
 	line := fn.StartLine
 	if line <= 0 {
 		line = 1
@@ -368,9 +378,10 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 			Message:  "Crypto entry point (library public API boundary): " + api,
 			Severity: "INFO",
 		}},
-		Status:   "pending",
-		Metadata: md,
-		Source:   "direct",
+		Status:              "pending",
+		Metadata:            md,
+		ParameterConditions: conditions,
+		Source:              "direct",
 	}
 }
 

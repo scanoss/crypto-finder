@@ -12,7 +12,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 ```json
 {
-  "version": "1.3",
+  "version": "1.4",
   "tool": {
     "name": "crypto-finder",
     "version": "0.1.0"
@@ -60,7 +60,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 | Field | Description |
 |-------|-------------|
-| `version` | Format version (currently "1.3") |
+| `version` | Format version (currently "1.4") |
 | `tool.name` | Scanner used (crypto-finder) |
 | `tool.version` | Scanner version |
 | `findings` | Array of file-level findings |
@@ -84,6 +84,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
 | `dependency_info` | Attribution for dependency findings: `module`, `version` (v1.2+) |
 | `finding_id` | Stable short hash used to join the interim report to the call graph export (v1.3+) |
+| `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
 ### Call Graph Export
