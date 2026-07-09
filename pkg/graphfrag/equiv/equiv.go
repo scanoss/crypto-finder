@@ -21,6 +21,14 @@
 //   - B's crypto_entry_points are validated against B's surviving chain set
 //     and top-level supporting_calls.
 //
+// forward_calls (schema 6.3+) is intentionally OUTSIDE the parity surface: it
+// is a stitch/serving-only projection (StitchOptions.ForwardClosure) that the
+// live --export-callgraph path does not emit in Phase A. This package's mirror
+// types do not decode the field, so it is structurally invisible to Compare —
+// live-vs-stitched parity is unaffected whether or not the option is set.
+// TODO(issue-102 live-parity phase): when the live exporter grows a forward
+// closure, decode and compare forward_calls here and remove this exclusion.
+//
 // Suppression oracle (heuristic):
 //
 // A chain in A is considered "suppressed" (expected to be absent from B) when
