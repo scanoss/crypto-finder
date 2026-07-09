@@ -653,10 +653,10 @@ func AssignFindingIDs(report *entities.InterimReport) {
 
 // generateFindingID produces a stable short hash for a finding.
 // It hashes file_path + start_line + first_rule_id and returns the first 8 hex chars.
-func generateFindingID(filePath string, startLine int, rules []entities.RuleInfo) string {
+func generateFindingID(filePath string, startLine int, ruleInfos []entities.RuleInfo) string {
 	ruleID := ""
-	if len(rules) > 0 {
-		ruleID = rules[0].ID
+	if len(ruleInfos) > 0 {
+		ruleID = ruleInfos[0].ID
 	}
 	input := filePath + ":" + strconv.Itoa(startLine) + ":" + ruleID
 	hash := sha256.Sum256([]byte(input))

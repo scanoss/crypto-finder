@@ -175,12 +175,7 @@ func TestParseErrors(t *testing.T) {
 				t.Fatalf("Parse(%q) = nil error, want error", tt.raw)
 			}
 			var parseErr *ParseError
-			ok := false
-			if pe, isPE := err.(*ParseError); isPE {
-				parseErr = pe
-				ok = true
-			}
-			if !ok {
+			if !errors.As(err, &parseErr) {
 				t.Fatalf("Parse(%q) error = %T, want *ParseError", tt.raw, err)
 			}
 			if !strings.Contains(parseErr.Error(), tt.raw) {

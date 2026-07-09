@@ -28,6 +28,11 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
+const (
+	yamlFileExt = ".yaml"
+	ymlFileExt  = ".yml"
+)
+
 // paramConditionRuleFile is a narrow representation of a semgrep rule file,
 // used only to extract each rule's id and parameterCondition predicate.
 type paramConditionRuleFile struct {
@@ -102,7 +107,7 @@ func expandParamConditionRulePaths(rulePaths []string) []string {
 			continue
 		}
 
-		_ = filepath.WalkDir(path, func(p string, d os.DirEntry, walkErr error) error {
+		if err := filepath.WalkDir(path, func(p string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -110,11 +115,13 @@ func expandParamConditionRulePaths(rulePaths []string) []string {
 				return nil
 			}
 			ext := strings.ToLower(filepath.Ext(p))
-			if ext == ".yaml" || ext == ".yml" {
+			if ext == yamlFileExt || ext == ymlFileExt {
 				files = append(files, p)
 			}
 			return nil
-		})
+		}); err != nil {
+			continue
+		}
 	}
 	return files
 }
