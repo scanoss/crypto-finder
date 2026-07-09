@@ -89,12 +89,12 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		if err != nil {
 			return fmt.Errorf("failed to write JSON file: %w", err)
 		}
-		if err := w.writeJSON(report, file); err != nil {
-			_ = file.Close()
-			return fmt.Errorf("failed to write JSON file: %w", err)
+		writeErr := w.writeJSON(report, file)
+		if closeErr := file.Close(); writeErr == nil {
+			writeErr = closeErr
 		}
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("failed to write JSON file: %w", err)
+		if writeErr != nil {
+			return fmt.Errorf("failed to write JSON file: %w", writeErr)
 		}
 	}
 

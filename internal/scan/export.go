@@ -366,58 +366,38 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (ca
 	bw := bufio.NewWriterSize(file, 1<<20)
 	writer := graphFragmentJSONWriter{w: bw}
 
-	if _, err = writer.w.WriteString("{\n"); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
-	}
-	if err = writer.writeField("schema_version", callGraphSchemaVersion); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
-	}
-	if err = writer.writeField("scan_metadata", meta); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
-	}
-	if err = writer.startArrayField("finding_graphs"); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
+	streamed, writeErr := streamCallGraphExport(&writer, ctx, result, assets, meta)
+	if err := finishBufferedOutput(file, bw, writeErr); err != nil {
+		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
 	}
 
-	index := make(map[string]*entryPointData)
-	supportingByID := make(map[string]callGraphSupportingCall)
-	referencedSupporting := make(map[string]struct{})
-	buildStart := time.Now()
-	for i := range assets {
-		item := assets[i]
-		supporting := deriveSupportingCallsForFinding(ctx, item.finding, item.asset)
-		for _, support := range supporting {
-			if support.SupportingID == "" {
-				continue
-			}
-			if _, exists := supportingByID[support.SupportingID]; !exists {
-				supportingByID[support.SupportingID] = support
-			}
-		}
-		fg := buildFindingGraph(ctx, item.finding, item.asset)
-		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
-		addFindingGraphToEntryPointIndex(index, &fg)
-		addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
-		if err = writer.writeArrayElement(i, fg); err != nil {
-			_ = file.Close()
-			return callGraphExportV2{}, err
-		}
-		processed := i + 1
-		if processed%callGraphExportProgress == 0 || processed == len(assets) {
-			log.Info().
-				Int("processed", processed).
-				Int("total", len(assets)).
-				Dur("elapsed", time.Since(buildStart)).
-				Msg("Building integration call graph export")
-		}
+	return callGraphExportV2{
+		SchemaVersion:     callGraphSchemaVersion,
+		ScanMetadata:      meta,
+		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
+		SupportingCalls:   streamed.supportingCalls,
+		CryptoEntryPoints: streamed.entryPoints,
+	}, nil
+}
+
+type streamedCallGraphExport struct {
+	supportingCalls []callGraphSupportingCall
+	entryPoints     []callGraphCryptoEntryPoint
+}
+
+func streamCallGraphExport(
+	writer *graphFragmentJSONWriter,
+	ctx *exportBuildContext,
+	result *engine.DepScanResult,
+	assets []callGraphExportAsset,
+	meta callGraphExportScanMeta,
+) (streamedCallGraphExport, error) {
+	if err := writeCallGraphPrefix(writer, meta); err != nil {
+		return streamedCallGraphExport{}, err
 	}
-	if err = writer.endArrayField(len(assets)); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
+	index, supportingByID, referencedSupporting, err := streamFindingGraphs(writer, ctx, assets)
+	if err != nil {
+		return streamedCallGraphExport{}, err
 	}
 
 	supportingCalls := sortedSupportingCalls(supportingByID)
@@ -427,37 +407,96 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (ca
 		}
 		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
-	if err = writeGraphFragmentArrayField(&writer, "supporting_calls", supportingCalls, true); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
+	if err := writeGraphFragmentArrayField(writer, "supporting_calls", supportingCalls, true); err != nil {
+		return streamedCallGraphExport{}, err
 	}
+
 	entryPoints := flattenEntryPointIndex(ctx.kb, index)
 	entryPoints = appendSynthesizedOperationEntryPoints(ctx, result, entryPoints)
-	if err = writeGraphFragmentArrayField(&writer, "crypto_entry_points", entryPoints, true); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
+	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
+		return streamedCallGraphExport{}, err
 	}
-	if _, err = writer.w.WriteString("\n}\n"); err != nil {
-		_ = file.Close()
-		return callGraphExportV2{}, err
+	if _, err := writer.w.WriteString("\n}\n"); err != nil {
+		return streamedCallGraphExport{}, err
 	}
-	if flushErr := bw.Flush(); err == nil {
-		err = flushErr
+	return streamedCallGraphExport{supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
+}
+
+func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta) error {
+	if _, err := writer.w.WriteString("{\n"); err != nil {
+		return err
+	}
+	if err := writer.writeField("schema_version", callGraphSchemaVersion); err != nil {
+		return err
+	}
+	if err := writer.writeField("scan_metadata", meta); err != nil {
+		return err
+	}
+	return writer.startArrayField("finding_graphs")
+}
+
+func streamFindingGraphs(
+	writer *graphFragmentJSONWriter,
+	ctx *exportBuildContext,
+	assets []callGraphExportAsset,
+) (map[string]*entryPointData, map[string]callGraphSupportingCall, map[string]struct{}, error) {
+	index := make(map[string]*entryPointData)
+	supportingByID := make(map[string]callGraphSupportingCall)
+	referencedSupporting := make(map[string]struct{})
+	buildStart := time.Now()
+
+	for i := range assets {
+		item := assets[i]
+		supporting := deriveSupportingCallsForFinding(ctx, item.finding, item.asset)
+		indexSupportingCalls(supportingByID, supporting)
+
+		fg := buildFindingGraph(ctx, item.finding, item.asset)
+		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
+		addFindingGraphToEntryPointIndex(index, &fg)
+		addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+		if err := writer.writeArrayElement(i, fg); err != nil {
+			return nil, nil, nil, err
+		}
+		logCallGraphExportProgress(i+1, len(assets), buildStart)
+	}
+	if err := writer.endArrayField(len(assets)); err != nil {
+		return nil, nil, nil, err
+	}
+	return index, supportingByID, referencedSupporting, nil
+}
+
+func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []callGraphSupportingCall) {
+	for i := range supporting {
+		support := supporting[i]
+		if support.SupportingID == "" {
+			continue
+		}
+		if _, exists := dst[support.SupportingID]; !exists {
+			dst[support.SupportingID] = support
+		}
+	}
+}
+
+func logCallGraphExportProgress(processed, total int, start time.Time) {
+	if processed%callGraphExportProgress != 0 && processed != total {
+		return
+	}
+	log.Info().
+		Int("processed", processed).
+		Int("total", total).
+		Dur("elapsed", time.Since(start)).
+		Msg("Building integration call graph export")
+}
+
+func finishBufferedOutput(file *os.File, bw *bufio.Writer, writeErr error) error {
+	err := writeErr
+	if err == nil {
+		err = bw.Flush()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
-	if err != nil {
-		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
-	}
-
-	return callGraphExportV2{
-		SchemaVersion:     callGraphSchemaVersion,
-		ScanMetadata:      meta,
-		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
-		SupportingCalls:   supportingCalls,
-		CryptoEntryPoints: entryPoints,
-	}, nil
+	return err
 }
 
 type callGraphExportAsset struct {
@@ -480,8 +519,8 @@ func callGraphExportAssets(report *entities.InterimReport) []callGraphExportAsse
 
 func sortedSupportingCalls(values map[string]callGraphSupportingCall) []callGraphSupportingCall {
 	out := make([]callGraphSupportingCall, 0, len(values))
-	for _, value := range values {
-		out = append(out, value)
+	for key := range values {
+		out = append(out, values[key])
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].SupportingID < out[j].SupportingID
@@ -513,47 +552,6 @@ func buildCallGraphExportScanMeta(result *engine.DepScanResult) callGraphExportS
 	return meta
 }
 
-func writeCallGraphJSONFile(path string, payload callGraphExportV2) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-
-	bw := bufio.NewWriterSize(file, 1<<20)
-	writer := graphFragmentJSONWriter{w: bw}
-	err = writer.writeCallGraph(payload)
-	if flushErr := bw.Flush(); err == nil {
-		err = flushErr
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	return err
-}
-
-func (w *graphFragmentJSONWriter) writeCallGraph(payload callGraphExportV2) error {
-	if _, err := w.w.WriteString("{\n"); err != nil {
-		return err
-	}
-	if err := w.writeField("schema_version", payload.SchemaVersion); err != nil {
-		return err
-	}
-	if err := w.writeField("scan_metadata", payload.ScanMetadata); err != nil {
-		return err
-	}
-	if err := writeGraphFragmentArrayField(w, "finding_graphs", payload.FindingGraphs, false); err != nil {
-		return err
-	}
-	if err := writeGraphFragmentArrayField(w, "supporting_calls", payload.SupportingCalls, true); err != nil {
-		return err
-	}
-	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", payload.CryptoEntryPoints, true); err != nil {
-		return err
-	}
-	_, err := w.w.WriteString("\n}\n")
-	return err
-}
-
 func writeIndentedJSONFile(path string, payload any) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -563,11 +561,11 @@ func writeIndentedJSONFile(path string, payload any) error {
 	enc := json.NewEncoder(file)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(payload); err != nil {
-		_ = file.Close()
-		return err
+	err = enc.Encode(payload)
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
 	}
-	return file.Close()
+	return err
 }
 
 // --- Build pipeline ---
@@ -961,8 +959,8 @@ func flattenReachableSupportingCalls(values map[string]callGraphReachableSupport
 		return nil
 	}
 	out := make([]callGraphReachableSupportingCall, 0, len(values))
-	for _, value := range values {
-		out = append(out, value)
+	for key := range values {
+		out = append(out, values[key])
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].SupportingID < out[j].SupportingID

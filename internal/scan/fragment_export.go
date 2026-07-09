@@ -126,7 +126,7 @@ func (w *graphFragmentJSONWriter) writeFunctions(ctx *exportBuildContext) (map[s
 }
 
 func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIndex map[string]int) (int, int, error) {
-	strings := newFragmentStringInterner()
+	stringInterner := newFragmentStringInterner()
 	if err := w.startArrayField("internal_edges_compact"); err != nil {
 		return 0, 0, err
 	}
@@ -138,7 +138,7 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 		if pending == nil {
 			return nil
 		}
-		compact := compactGraphFragmentEdge(*pending, functionIndex, strings)
+		compact := compactGraphFragmentEdge(*pending, functionIndex, stringInterner)
 		if err := w.writeArrayElement(internalCount, compact); err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 	if err := w.endArrayField(internalCount); err != nil {
 		return 0, 0, err
 	}
-	if err := writeGraphFragmentArrayField(w, "internal_edge_strings", strings.values, true); err != nil {
+	if err := writeGraphFragmentArrayField(w, "internal_edge_strings", stringInterner.values, true); err != nil {
 		return 0, 0, err
 	}
 
@@ -230,21 +230,21 @@ func (i *fragmentStringInterner) index(value string) int {
 	return idx
 }
 
-func compactGraphFragmentEdge(edge graphfrag.GraphFragmentEdge, functionIndex map[string]int, strings *fragmentStringInterner) graphfrag.GraphFragmentCompactEdge {
+func compactGraphFragmentEdge(edge graphfrag.GraphFragmentEdge, functionIndex map[string]int, stringInterner *fragmentStringInterner) graphfrag.GraphFragmentCompactEdge {
 	return graphfrag.GraphFragmentCompactEdge{
 		Caller:               functionIndex[edge.CallerKey],
 		Callee:               functionIndex[edge.CalleeKey],
 		Line:                 edge.Line,
-		Resolution:           strings.index(edge.Resolution),
-		DeclaredType:         strings.index(edge.DeclaredType),
-		MethodName:           strings.index(edge.MethodName),
+		Resolution:           stringInterner.index(edge.Resolution),
+		DeclaredType:         stringInterner.index(edge.DeclaredType),
+		MethodName:           stringInterner.index(edge.MethodName),
 		Arity:                edge.Arity,
-		ReceiverVar:          strings.index(edge.ReceiverVar),
-		AssignedVar:          strings.index(edge.AssignedVar),
-		ChainID:              strings.index(edge.ChainID),
+		ReceiverVar:          stringInterner.index(edge.ReceiverVar),
+		AssignedVar:          stringInterner.index(edge.AssignedVar),
+		ChainID:              stringInterner.index(edge.ChainID),
 		StartCol:             edge.StartCol,
 		EndCol:               edge.EndCol,
-		ResolvedReceiverType: strings.index(edge.ResolvedReceiverType),
+		ResolvedReceiverType: stringInterner.index(edge.ResolvedReceiverType),
 		EntryCall:            edge.EntryCall,
 	}
 }
@@ -404,10 +404,13 @@ func addResolvedFragmentEdges(
 	internalEdges []graphfrag.GraphFragmentEdge,
 	externalCalls []graphfrag.GraphFragmentExternal,
 ) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
-	calls, _ := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
+	calls, err := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
 		internalEdges = append(internalEdges, edge)
 		return nil
 	})
+	if err != nil {
+		return internalEdges, externalCalls
+	}
 	externalCalls = append(externalCalls, calls...)
 	return internalEdges, externalCalls
 }

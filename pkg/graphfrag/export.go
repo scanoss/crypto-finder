@@ -85,6 +85,7 @@ type GraphFragmentCompactEdge struct {
 	EntryCall                            *GraphFragmentCallSite
 }
 
+// MarshalJSON encodes the compact edge as a positional JSON array.
 func (e GraphFragmentCompactEdge) MarshalJSON() ([]byte, error) {
 	values := []int{
 		e.Caller, e.Callee, e.Line, e.Resolution, e.DeclaredType, e.MethodName,
@@ -118,6 +119,7 @@ func (e GraphFragmentCompactEdge) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// UnmarshalJSON decodes the compact positional edge array.
 func (e *GraphFragmentCompactEdge) UnmarshalJSON(data []byte) error {
 	var values []json.RawMessage
 	if err := json.Unmarshal(data, &values); err != nil {
