@@ -117,7 +117,18 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	}
 
 	depResults := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
-	logDependencyScanSummary(summarizeDependencyResults(depResults))
+	summary := summarizeDependencyResults(depResults)
+	logDependencyScanSummary(summary)
+	if summary.totalDepFindings == 0 {
+		log.Info().Msg("No dependency crypto findings, skipping dependency call graph")
+		return &DepScanResult{
+			Report:       ds.mergeReports(userReport, depResults),
+			RootModule:   resolved.RootModule,
+			Ecosystem:    ds.resolver.Ecosystem(),
+			ProjectRoot:  opts.ScanOptions.Target,
+			Dependencies: canonicalDependencies(resolved.Dependencies),
+		}, nil
+	}
 
 	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
 	if err != nil {
