@@ -301,6 +301,17 @@ func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, func
 	return prepareRulePathsForScanner(allRules, languages)
 }
 
+func dependencyScanWorkers(configured int, ecosystem string) int {
+	if configured > 0 {
+		return configured
+	}
+	limit := maxWorkers
+	if ecosystem == languageJava {
+		limit = 2
+	}
+	return min(max(runtime.NumCPU()/2, 1), limit)
+}
+
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.
 func (ds *DependencyScanner) scanDependenciesParallel(
 	ctx context.Context,
@@ -309,10 +320,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	rulesHash string,
 	opts DepScanOptions,
 ) []depScanResult {
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = min(max(runtime.NumCPU()/2, 1), maxWorkers)
-	}
+	workers := dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem())
 
 	orderedDeps := canonicalDependencies(deps)
 
@@ -429,7 +437,7 @@ func (ds *DependencyScanner) scanSingleDep(
 				Str("module", dep.Module).
 				Str("version", dep.Version).
 				Msg("Cache hit for dependency scan")
-			return depScanResult{key: key, dep: dep, report: report, status: depScanStatusScanned}
+			return depScanResult{key: key, dep: dep, report: dependencyReportWithFindings(report), status: depScanStatusScanned}
 		} else if err != nil {
 			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
 		}
@@ -454,10 +462,17 @@ func (ds *DependencyScanner) scanSingleDep(
 	return depScanResult{
 		key:    key,
 		dep:    dep,
-		report: report,
+		report: dependencyReportWithFindings(report),
 		status: scanStatusForError(err),
 		err:    err,
 	}
+}
+
+func dependencyReportWithFindings(report *entities.InterimReport) *entities.InterimReport {
+	if !hasFindings(report) {
+		return nil
+	}
+	return report
 }
 
 func scanStatusForError(err error) depScanStatus {
@@ -521,10 +536,10 @@ func (ds *DependencyScanner) collectPackageSets(
 		})
 	}
 
-	// Source-available deps participate in reachability even when they have no
-	// direct crypto findings. A non-crypto dep can be the only bridge between
-	// user code and a crypto-bearing transitive dependency. Keep bytecode-only
-	// indexing as a fallback for Java deps that cannot be source-parsed.
+	// Source-available deps participate in reachability when they can sit on a
+	// user-code -> crypto-dependency path. Without resolver graph proof, keep the
+	// old conservative behavior and parse every scanned dependency.
+	graphDeps := callGraphDependencySet(resolved, depResults)
 	for i := range depResults {
 		result := &depResults[i]
 		pkg := callgraph.PackageDir{
@@ -534,7 +549,9 @@ func (ds *DependencyScanner) collectPackageSets(
 			CompiledArtifactPath: result.dep.CompiledArtifactPath,
 		}
 		if result.status == depScanStatusScanned && result.dep.Dir != "" {
-			sets.graphPackages = append(sets.graphPackages, pkg)
+			if graphDeps == nil || graphDeps[result.dep.Module] {
+				sets.graphPackages = append(sets.graphPackages, pkg)
+			}
 			continue
 		}
 
@@ -544,6 +561,102 @@ func (ds *DependencyScanner) collectPackageSets(
 	}
 
 	return sets
+}
+
+func callGraphDependencySet(resolved *dependency.ResolveResult, depResults []depScanResult) map[string]bool {
+	if resolved == nil || len(resolved.Graph) == 0 {
+		return nil
+	}
+	targets := cryptoDependencyModules(depResults)
+	if len(targets) == 0 {
+		return nil
+	}
+	roots := dependencyGraphRoots(resolved)
+	if len(roots) == 0 {
+		return nil
+	}
+	reachable := reachableDependencyModules(resolved.Graph, roots)
+	for target := range targets {
+		if !reachable[target] {
+			return nil
+		}
+	}
+	ancestors := dependencyTargetAncestors(resolved.Graph, targets)
+	keep := make(map[string]bool, len(ancestors))
+	for module := range ancestors {
+		if reachable[module] {
+			keep[module] = true
+		}
+	}
+	return keep
+}
+
+func cryptoDependencyModules(depResults []depScanResult) map[string]bool {
+	targets := make(map[string]bool)
+	for i := range depResults {
+		result := &depResults[i]
+		if result.status == depScanStatusScanned && hasFindings(result.report) && result.dep.Module != "" {
+			targets[result.dep.Module] = true
+		}
+	}
+	return targets
+}
+
+func dependencyGraphRoots(resolved *dependency.ResolveResult) []string {
+	if len(resolved.WorkspaceMembers) > 0 {
+		roots := make([]string, 0, len(resolved.WorkspaceMembers))
+		for i := range resolved.WorkspaceMembers {
+			if resolved.WorkspaceMembers[i].Name != "" {
+				roots = append(roots, resolved.WorkspaceMembers[i].Name)
+			}
+		}
+		return roots
+	}
+	if resolved.RootModule == "" {
+		return nil
+	}
+	return []string{resolved.RootModule}
+}
+
+func reachableDependencyModules(graph map[string][]string, roots []string) map[string]bool {
+	seen := make(map[string]bool)
+	stack := append([]string(nil), roots...)
+	for len(stack) > 0 {
+		last := len(stack) - 1
+		module := stack[last]
+		stack = stack[:last]
+		if seen[module] {
+			continue
+		}
+		seen[module] = true
+		stack = append(stack, graph[module]...)
+	}
+	return seen
+}
+
+func dependencyTargetAncestors(graph map[string][]string, targets map[string]bool) map[string]bool {
+	reverse := make(map[string][]string, len(graph))
+	for parent, children := range graph {
+		for _, child := range children {
+			reverse[child] = append(reverse[child], parent)
+		}
+	}
+	seen := make(map[string]bool)
+	stack := make([]string, 0, len(targets))
+	for target := range targets {
+		stack = append(stack, target)
+	}
+	for len(stack) > 0 {
+		last := len(stack) - 1
+		module := stack[last]
+		stack = stack[:last]
+		if seen[module] {
+			continue
+		}
+		seen[module] = true
+		stack = append(stack, reverse[module]...)
+	}
+	return seen
 }
 
 // buildUserPackages returns the set of package names that constitute user code.
@@ -740,6 +853,9 @@ func dependencyLess(a, b dependency.Dependency) bool {
 }
 
 func hasFindings(report *entities.InterimReport) bool {
+	if report == nil {
+		return false
+	}
 	for _, f := range report.Findings {
 		if len(f.CryptographicAssets) > 0 {
 			return true
