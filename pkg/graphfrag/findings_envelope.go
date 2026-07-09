@@ -12,13 +12,17 @@
 
 package graphfrag
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+)
 
 // FindingsSchemaVersion is the findings.json envelope version emitted by
 // ToFindingsEnvelope. It matches the schema crypto-finder's scanner writes so
 // downstream consumers see a uniform `version` regardless of whether the
 // findings came from a live scan or were reconstructed from graph fragments.
-const FindingsSchemaVersion = "1.3"
+const FindingsSchemaVersion = "1.4"
 
 // FindingsEnvelope is the findings.json v1.3 envelope reconstructed from a
 // dependency closure of graph fragments. It is the asset-metadata companion to
@@ -49,6 +53,11 @@ type FindingAsset struct {
 	StartLine int             `json:"start_line"`
 	EndLine   int             `json:"end_line"`
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
+
+	// ParameterConditions holds the structured predicates re-parsed from
+	// Metadata's verbatim "parameterCondition" string, if present. Nil when
+	// the fragment carries no predicate.
+	ParameterConditions []paramcondition.Condition `json:"parameter_conditions,omitempty"`
 }
 
 // ToFindingsEnvelope reconstructs the findings.json v1.3 envelope for the root
@@ -94,6 +103,16 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 				StartLine: op.StartLine,
 				EndLine:   op.EndLine,
 				Metadata:  op.Metadata,
+			}
+			if len(op.Metadata) > 0 {
+				var m map[string]string
+				if json.Unmarshal(op.Metadata, &m) == nil {
+					if raw := m["parameterCondition"]; raw != "" {
+						if conds, err := paramcondition.ParseAll(raw); err == nil {
+							asset.ParameterConditions = conds
+						}
+					}
+				}
 			}
 			if _, ok := byPath[path]; !ok {
 				order = append(order, path)
