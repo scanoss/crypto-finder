@@ -187,9 +187,10 @@ func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
 	var withCond, withoutCond *FindingAsset
 	for i := range env.Findings[0].CryptographicAssets {
 		asset := &env.Findings[0].CryptographicAssets[i]
-		if asset.StartLine == 5 {
+		switch asset.StartLine {
+		case 5:
 			withCond = asset
-		} else if asset.StartLine == 10 {
+		case 10:
 			withoutCond = asset
 		}
 	}

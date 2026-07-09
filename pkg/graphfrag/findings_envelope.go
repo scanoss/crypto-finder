@@ -96,23 +96,14 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 			}
 
 			asset := FindingAsset{
-				FindingID: computeFindingID(path, op.StartLine, op.RuleID),
-				OID:       op.OID,
-				Match:     op.Match,
-				Source:    source,
-				StartLine: op.StartLine,
-				EndLine:   op.EndLine,
-				Metadata:  op.Metadata,
-			}
-			if len(op.Metadata) > 0 {
-				var m map[string]string
-				if json.Unmarshal(op.Metadata, &m) == nil {
-					if raw := m["parameterCondition"]; raw != "" {
-						if conds, err := paramcondition.ParseAll(raw); err == nil {
-							asset.ParameterConditions = conds
-						}
-					}
-				}
+				FindingID:           computeFindingID(path, op.StartLine, op.RuleID),
+				OID:                 op.OID,
+				Match:               op.Match,
+				Source:              source,
+				StartLine:           op.StartLine,
+				EndLine:             op.EndLine,
+				Metadata:            op.Metadata,
+				ParameterConditions: parseParameterConditions(op.Metadata),
 			}
 			if _, ok := byPath[path]; !ok {
 				order = append(order, path)
@@ -121,6 +112,32 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 		}
 	}
 
+	return assembleEnvelope(meta, order, byPath)
+}
+
+// parseParameterConditions extracts and parses the flat parameterCondition
+// metadata string into structured conditions. Returns nil when metadata is
+// absent, unparseable, or carries no predicate — the field is omitempty.
+func parseParameterConditions(metadata json.RawMessage) []paramcondition.Condition {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var m map[string]string
+	if json.Unmarshal(metadata, &m) != nil {
+		return nil
+	}
+	raw := m["parameterCondition"]
+	if raw == "" {
+		return nil
+	}
+	conds, err := paramcondition.ParseAll(raw)
+	if err != nil {
+		return nil
+	}
+	return conds
+}
+
+func assembleEnvelope(meta ScanMeta, order []string, byPath map[string][]FindingAsset) FindingsEnvelope {
 	env := FindingsEnvelope{Version: FindingsSchemaVersion}
 	for _, p := range order {
 		env.Findings = append(env.Findings, FindingFile{
