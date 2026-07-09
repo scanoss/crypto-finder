@@ -729,17 +729,6 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 	if graph == nil || len(graph.EdgeResolutions) == 0 {
 		return nil
 	}
-	if len(graph.EdgeResolutionsByPair) > 0 {
-		index := make(map[string][]fragmentEdgeResolution, len(graph.EdgeResolutionsByPair))
-		for pairKey, resolutions := range graph.EdgeResolutionsByPair {
-			values := make([]fragmentEdgeResolution, 0, len(resolutions))
-			for i := range resolutions {
-				values = append(values, newFragmentEdgeResolution(resolutions[i]))
-			}
-			index[pairKey] = values
-		}
-		return index
-	}
 	index := make(map[string][]fragmentEdgeResolution)
 	for key, res := range graph.EdgeResolutions {
 		callerKey, calleeKey, ok := callgraph.EdgeResolutionEndpoints(key, res)
@@ -748,6 +737,25 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 		}
 		pairKey := fragmentEdgePairKey(callerKey, calleeKey)
 		index[pairKey] = append(index[pairKey], newFragmentEdgeResolution(res))
+	}
+	// Deterministic per-pair variant order: EdgeResolutions is a map, so
+	// insertion order above is random. Downstream emission sorts its final
+	// edge lists, but a stable index keeps intermediate behavior (e.g. which
+	// variant a line-match picks first) reproducible run to run.
+	for pairKey := range index {
+		values := index[pairKey]
+		sort.Slice(values, func(i, j int) bool {
+			if values[i].CallSite != values[j].CallSite {
+				return values[i].CallSite < values[j].CallSite
+			}
+			if values[i].DeclaredType != values[j].DeclaredType {
+				return values[i].DeclaredType < values[j].DeclaredType
+			}
+			if values[i].MethodName != values[j].MethodName {
+				return values[i].MethodName < values[j].MethodName
+			}
+			return values[i].Arity < values[j].Arity
+		})
 	}
 	return index
 }

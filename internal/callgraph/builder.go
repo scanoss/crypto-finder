@@ -103,10 +103,9 @@ func (b *Builder) PackageSeparator() string {
 func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	buildStart := time.Now()
 	graph := &CallGraph{
-		Functions:             make(map[string]*FunctionDecl),
-		Callers:               make(map[string][]string),
-		EdgeResolutions:       make(map[string]EdgeResolution),
-		EdgeResolutionsByPair: make(map[string][]EdgeResolution),
+		Functions:       make(map[string]*FunctionDecl),
+		Callers:         make(map[string][]string),
+		EdgeResolutions: make(map[string]EdgeResolution),
 	}
 
 	// Phase 1: Parse source files only for packages that need full analysis
@@ -529,39 +528,10 @@ func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind Ed
 		calleeKey:    calleeKey,
 	}
 	key := EdgeResolutionKey(callerKey, calleeKey, resolution)
-	if existing, ok := graph.EdgeResolutions[key]; ok {
-		if edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
-			return
-		}
-		graph.EdgeResolutions[key] = resolution
-		upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
+	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
 		return
 	}
 	graph.EdgeResolutions[key] = resolution
-	upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
-}
-
-func upsertEdgeResolutionByPair(graph *CallGraph, callerKey, calleeKey string, resolution EdgeResolution) {
-	if graph.EdgeResolutionsByPair == nil {
-		graph.EdgeResolutionsByPair = make(map[string][]EdgeResolution)
-	}
-	pairKey := EdgeResolutionPairKey(callerKey, calleeKey)
-	values := graph.EdgeResolutionsByPair[pairKey]
-	for i := range values {
-		if sameEdgeResolutionVariant(values[i], resolution) {
-			values[i] = resolution
-			graph.EdgeResolutionsByPair[pairKey] = values
-			return
-		}
-	}
-	graph.EdgeResolutionsByPair[pairKey] = append(values, resolution)
-}
-
-func sameEdgeResolutionVariant(a, b EdgeResolution) bool {
-	return a.CallSite == b.CallSite &&
-		a.DeclaredType == b.DeclaredType &&
-		a.MethodName == b.MethodName &&
-		a.Arity == b.Arity
 }
 
 func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
@@ -1996,7 +1966,6 @@ func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, li
 	}
 	res.ResolvedReceiverType = resolvedType
 	graph.EdgeResolutions[key] = res
-	upsertEdgeResolutionByPair(graph, callerKey, targetKey, res)
 	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line}
 }
 
