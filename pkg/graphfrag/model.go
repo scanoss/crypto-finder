@@ -482,6 +482,14 @@ type Result struct {
 	// audit trail for fail-closed decisions and the data source for a future
 	// opt-in "show me the uncertain paths too" mode. It never affects Chains.
 	Suppressed []SuppressedEdge
+
+	// forwardClosures is the anchor-keyed memo of computed forward reachability
+	// graphs (see StitchOptions.ForwardClosure). nil unless the option is set;
+	// ToCallgraphExport projects each finding's closure (looked up by its
+	// anchor node) into the exported forward_calls block. Anchor-keyed because
+	// opsByNode keys ARE the distinct finding anchors: findings sharing an
+	// anchor share the same *forwardClosure pointer (per-anchor memoization).
+	forwardClosures map[graphNode]*forwardClosure
 }
 
 // FindingChain is one root-to-crypto path.

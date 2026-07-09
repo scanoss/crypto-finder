@@ -20,6 +20,88 @@ type StitchOptions struct {
 	// calls it, so the set of reachable terminal findings is preserved while the
 	// number of traced roots collapses to the true entry points.
 	EntryRootedOnly bool
+
+	// ForwardClosure, when true, additionally computes a per-finding-anchor
+	// forward reachability graph (see forwardClosure) and carries it on
+	// Result.forwardClosures for ToCallgraphExport to project as the
+	// `forward_calls` block. Zero value (false) is OFF: no forward traversal
+	// runs, no allocation happens, and served output is byte-identical to the
+	// pre-forward-closure shape (modulo the reviewed schema_version bump).
+	ForwardClosure bool
+
+	// MaxForwardDepth caps the forward BFS depth (hops from the anchor). Zero
+	// resolves to defaultMaxForwardDepth.
+	MaxForwardDepth int
+	// MaxForwardNodesPerAnchor caps the number of distinct forward-reachable
+	// nodes retained per anchor. Zero resolves to defaultMaxForwardNodesPerAnchor.
+	MaxForwardNodesPerAnchor int
+	// MaxForwardEdgesPerAnchor caps the number of forward edges retained per
+	// anchor. Zero resolves to defaultMaxForwardEdgesPerAnchor.
+	MaxForwardEdgesPerAnchor int
+}
+
+// Defaults applied by forwardCapsFrom when the corresponding StitchOptions
+// field is left at its zero value.
+const (
+	defaultMaxForwardDepth          = 4
+	defaultMaxForwardNodesPerAnchor = 256
+	defaultMaxForwardEdgesPerAnchor = 512
+)
+
+// forwardCaps is the resolved (zero-values-defaulted) cap set for one
+// buildForwardClosures run.
+type forwardCaps struct {
+	maxDepth int
+	maxNodes int
+	maxEdges int
+}
+
+// forwardCapsFrom resolves opts' forward-closure caps, defaulting any
+// zero-value field.
+func forwardCapsFrom(opts StitchOptions) forwardCaps {
+	caps := forwardCaps{
+		maxDepth: opts.MaxForwardDepth,
+		maxNodes: opts.MaxForwardNodesPerAnchor,
+		maxEdges: opts.MaxForwardEdgesPerAnchor,
+	}
+	if caps.maxDepth == 0 {
+		caps.maxDepth = defaultMaxForwardDepth
+	}
+	if caps.maxNodes == 0 {
+		caps.maxNodes = defaultMaxForwardNodesPerAnchor
+	}
+	if caps.maxEdges == 0 {
+		caps.maxEdges = defaultMaxForwardEdgesPerAnchor
+	}
+	return caps
+}
+
+// forwardClosure is the rooted forward call graph from ONE finding anchor
+// node, computed once per distinct anchor (memoized in
+// Result.forwardClosures). Pre-projection model — ToCallgraphExport projects
+// it into the exported forward_calls shape.
+type forwardClosure struct {
+	anchor    CallFrame     // resolved anchor identity (depth 0); reuses buildFrame output
+	nodes     []forwardNode // forward-reachable nodes, depth >= 1, deduped by graphNode
+	edges     []forwardEdge // directed traversed edges (endpoints always in {anchor} ∪ nodes)
+	maxDepth  int           // the depth CAP applied (== resolved MaxForwardDepth)
+	truncated bool          // any cap hit (depth/node/edge) -> true; never silent
+}
+
+// forwardNode is one forward-reachable node (depth >= 1) in a forwardClosure.
+type forwardNode struct {
+	node               graphNode // internal identity (Component+Function)
+	frame              CallFrame // resolved via buildFrame (Function identity + Module)
+	depth              int       // shortest-path hops from anchor (BFS layer)
+	cryptoRelevant     bool      // node ∈ opsByNode OR has non-empty supporting Category
+	supportingCategory string    // first non-empty supportingByNode[node].Category
+}
+
+// forwardEdge is one directed traversed edge (from -> to) in a forwardClosure.
+type forwardEdge struct {
+	from      graphNode
+	to        graphNode
+	entryCall *CallSite // the (from->to) call site: line + resolved-value Parameters
 }
 
 // Stitch composes reusable component graph fragments into root-to-crypto
