@@ -729,6 +729,15 @@ func (b *Builder) expandAbstractClassDispatch(
 	if callee.Type == "" {
 		return nil
 	}
+	// Constructors and static initializers never dispatch virtually: `new Foo()`
+	// invokes exactly Foo.<init>, regardless of hierarchy. Without this guard, a
+	// constructor call whose exact declaration is missing from the graph (implicit
+	// default constructor, unparsed overload) fans out to EVERY same-arity
+	// constructor in the namespace root — on the bcprov corpus that synthesized
+	// 6.58M of the graph's 7.16M edges, all semantically impossible.
+	if base := BaseFunctionName(callee.Name); base == "<init>" || base == "<clinit>" {
+		return nil
+	}
 	calleeKey := callee.String()
 	if _, declared := graph.Functions[calleeKey]; declared {
 		return nil
