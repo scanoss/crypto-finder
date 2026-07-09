@@ -40,6 +40,30 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			Aliases:            append([]string(nil), fn.Aliases...),
 		})
 	}
+	functionKeys := make([]string, len(e.Functions))
+	for i := range e.Functions {
+		functionKeys[i] = e.Functions[i].Key
+	}
+	for i := range e.CompactInternalEdges {
+		ie := &e.CompactInternalEdges[i]
+		edge := InternalEdge{
+			Caller:               functionKeyAt(functionKeys, ie.Caller),
+			Callee:               functionKeyAt(functionKeys, ie.Callee),
+			Resolution:           normalizeResolutionKind(stringAt(e.InternalEdgeStrings, ie.Resolution)),
+			DeclaredType:         stringAt(e.InternalEdgeStrings, ie.DeclaredType),
+			MethodName:           stringAt(e.InternalEdgeStrings, ie.MethodName),
+			Arity:                ie.Arity,
+			CallSite:             ie.Line,
+			ReceiverVar:          stringAt(e.InternalEdgeStrings, ie.ReceiverVar),
+			AssignedVar:          stringAt(e.InternalEdgeStrings, ie.AssignedVar),
+			ChainID:              stringAt(e.InternalEdgeStrings, ie.ChainID),
+			StartCol:             ie.StartCol,
+			EndCol:               ie.EndCol,
+			EntryCall:            toCallSite(ie.EntryCall),
+			ResolvedReceiverType: stringAt(e.InternalEdgeStrings, ie.ResolvedReceiverType),
+		}
+		frag.InternalEdges = append(frag.InternalEdges, edge)
+	}
 	for i := range e.InternalEdges {
 		ie := &e.InternalEdges[i]
 		edge := InternalEdge{
@@ -121,6 +145,20 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 	}
 	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints)
 	return frag
+}
+
+func functionKeyAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
+}
+
+func stringAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
 }
 
 func appendCryptoEntryPoints(dst []CryptoEntryPoint, src []GraphFragmentCryptoEntryPoint) []CryptoEntryPoint {

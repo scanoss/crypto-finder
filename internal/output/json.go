@@ -19,9 +19,9 @@
 package output
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -61,24 +61,11 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		return fmt.Errorf("report cannot be nil")
 	}
 
-	// Marshal to JSON with HTML escaping disabled to preserve <init> etc.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if w.PrettyPrint {
-		enc.SetIndent("", w.Indent)
-	}
-	if err := enc.Encode(report); err != nil {
-		return fmt.Errorf("failed to marshal report to JSON: %w", err)
-	}
-	data := buf.Bytes()
-
 	// Determine output destination
 	//nolint:nestif // Separate stdout and file paths are inherently nested
 	if destination == "" || destination == "-" {
-		// Write to stdout
-		if _, err := os.Stdout.Write(data); err != nil {
-			return fmt.Errorf("failed to write to stdout: %w", err)
+		if err := w.writeJSON(report, os.Stdout); err != nil {
+			return fmt.Errorf("failed to write JSON to stdout: %w", err)
 		}
 		// Add newline for better terminal output
 		if _, err := os.Stdout.WriteString("\n"); err != nil {
@@ -98,12 +85,27 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 			return fmt.Errorf("parent directory does not exist: %s", parentDir)
 		}
 
-		// Write to file
-		// 0o600 = rw------- (owner can read/write only)
-		if err := os.WriteFile(absPath, data, 0o600); err != nil {
+		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return fmt.Errorf("failed to write JSON file: %w", err)
+		}
+		if err := w.writeJSON(report, file); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("failed to write JSON file: %w", err)
+		}
+		if err := file.Close(); err != nil {
 			return fmt.Errorf("failed to write JSON file: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func (w *JSONWriter) writeJSON(report *entities.InterimReport, dst io.Writer) error {
+	enc := json.NewEncoder(dst)
+	enc.SetEscapeHTML(false)
+	if w.PrettyPrint {
+		enc.SetIndent("", w.Indent)
+	}
+	return enc.Encode(report)
 }

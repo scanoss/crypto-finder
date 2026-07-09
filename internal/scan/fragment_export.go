@@ -1,9 +1,10 @@
 package scan
 
 import (
-	"bytes"
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -34,18 +35,300 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
 	}
 
-	payload := BuildGraphFragmentExport(result)
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("scan: failed to serialize graph fragment export: %w", err)
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+	if err := writeGraphFragmentJSONFile(path, result); err != nil {
 		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
 	}
 	return nil
+}
+
+func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+
+	bw := bufio.NewWriterSize(file, 1<<20)
+	writer := graphFragmentJSONWriter{w: bw}
+	err = writer.writeResult(result)
+	if flushErr := bw.Flush(); err == nil {
+		err = flushErr
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+type graphFragmentJSONWriter struct {
+	w         *bufio.Writer
+	needComma bool
+}
+
+func (w *graphFragmentJSONWriter) writeResult(result *engine.DepScanResult) error {
+	if _, err := w.w.WriteString("{\n"); err != nil {
+		return err
+	}
+	if err := w.writeField("schema_version", graphfrag.SchemaVersion); err != nil {
+		return err
+	}
+
+	ctx := newExportBuildContext(result)
+	meta := buildGraphFragmentScanMetadata(result)
+	var err error
+	var functionIndex map[string]int
+	functionIndex, meta.FunctionCount, err = w.writeFunctions(ctx)
+	if err != nil {
+		return err
+	}
+	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex)
+	if err != nil {
+		return err
+	}
+
+	cryptoAnnotations := buildGraphFragmentCryptoAnnotations(ctx, result)
+	meta.CryptoOps = len(cryptoAnnotations)
+	if err := writeGraphFragmentArrayField(w, "crypto_annotations", cryptoAnnotations, true); err != nil {
+		return err
+	}
+	supportingCalls := buildGraphFragmentSupportingCalls(ctx, result)
+	meta.SupportingCalls = len(supportingCalls)
+	if err := writeGraphFragmentArrayField(w, "supporting_calls", supportingCalls, true); err != nil {
+		return err
+	}
+	entryPoints := buildGraphFragmentCryptoEntryPoints(ctx, result)
+	entryPoints = appendSynthesizedOperationEntryPointsFragment(ctx, result, entryPoints)
+	meta.CryptoEntryPoints = len(entryPoints)
+	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", entryPoints, true); err != nil {
+		return err
+	}
+	if err := w.writeField("scan_metadata", meta); err != nil {
+		return err
+	}
+	_, err = w.w.WriteString("\n}\n")
+	return err
+}
+
+func (w *graphFragmentJSONWriter) writeFunctions(ctx *exportBuildContext) (map[string]int, int, error) {
+	if err := w.startArrayField("functions"); err != nil {
+		return nil, 0, err
+	}
+	functionIndex := make(map[string]int, len(ctx.graph.Functions))
+	count := 0
+	for _, key := range sortedKeys(ctx.graph.Functions) {
+		decl := ctx.graph.Functions[key]
+		if err := w.writeArrayElement(count, buildGraphFragmentFunction(ctx, decl.ID, decl)); err != nil {
+			return nil, 0, err
+		}
+		functionIndex[key] = count
+		count++
+	}
+	return functionIndex, count, w.endArrayField(count)
+}
+
+func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIndex map[string]int) (int, int, error) {
+	strings := newFragmentStringInterner()
+	if err := w.startArrayField("internal_edges_compact"); err != nil {
+		return 0, 0, err
+	}
+
+	internalCount := 0
+	var pending *graphfrag.GraphFragmentEdge
+	var externalCalls []graphfrag.GraphFragmentExternal
+	flush := func() error {
+		if pending == nil {
+			return nil
+		}
+		compact := compactGraphFragmentEdge(*pending, functionIndex, strings)
+		if err := w.writeArrayElement(internalCount, compact); err != nil {
+			return err
+		}
+		internalCount++
+		return nil
+	}
+
+	for _, calleeKey := range sortedKeys(ctx.graph.Callers) {
+		calls, err := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
+			if pending != nil && fragmentEdgeSameKey(*pending, edge) {
+				*pending = edge
+				return nil
+			}
+			if err := flush(); err != nil {
+				return err
+			}
+			pending = &edge
+			return nil
+		})
+		if err != nil {
+			return 0, 0, err
+		}
+		externalCalls = append(externalCalls, calls...)
+	}
+	if err := flush(); err != nil {
+		return 0, 0, err
+	}
+	if err := w.endArrayField(internalCount); err != nil {
+		return 0, 0, err
+	}
+	if err := writeGraphFragmentArrayField(w, "internal_edge_strings", strings.values, true); err != nil {
+		return 0, 0, err
+	}
+
+	externalCalls = sortedFragmentExternalCalls(externalCalls)
+	if err := writeGraphFragmentArrayField(w, "external_calls", externalCalls, true); err != nil {
+		return 0, 0, err
+	}
+	return internalCount, len(externalCalls), nil
+}
+
+func (w *graphFragmentJSONWriter) startArrayField(name string) error {
+	if err := w.startField(name); err != nil {
+		return err
+	}
+	_, err := w.w.WriteString("[")
+	return err
+}
+
+func (w *graphFragmentJSONWriter) writeArrayElement(index int, value any) error {
+	if index == 0 {
+		if _, err := w.w.WriteString("\n    "); err != nil {
+			return err
+		}
+	} else if _, err := w.w.WriteString(",\n    "); err != nil {
+		return err
+	}
+	return writeJSONValue(w.w, value)
+}
+
+func (w *graphFragmentJSONWriter) endArrayField(count int) error {
+	if count == 0 {
+		_, err := w.w.WriteString("]")
+		return err
+	}
+	_, err := w.w.WriteString("\n  ]")
+	return err
+}
+
+type fragmentStringInterner struct {
+	values  []string
+	indexes map[string]int
+}
+
+func newFragmentStringInterner() *fragmentStringInterner {
+	return &fragmentStringInterner{
+		values:  []string{""},
+		indexes: map[string]int{"": 0},
+	}
+}
+
+func (i *fragmentStringInterner) index(value string) int {
+	if idx, ok := i.indexes[value]; ok {
+		return idx
+	}
+	idx := len(i.values)
+	i.values = append(i.values, value)
+	i.indexes[value] = idx
+	return idx
+}
+
+func compactGraphFragmentEdge(edge graphfrag.GraphFragmentEdge, functionIndex map[string]int, strings *fragmentStringInterner) graphfrag.GraphFragmentCompactEdge {
+	return graphfrag.GraphFragmentCompactEdge{
+		Caller:               functionIndex[edge.CallerKey],
+		Callee:               functionIndex[edge.CalleeKey],
+		Line:                 edge.Line,
+		Resolution:           strings.index(edge.Resolution),
+		DeclaredType:         strings.index(edge.DeclaredType),
+		MethodName:           strings.index(edge.MethodName),
+		Arity:                edge.Arity,
+		ReceiverVar:          strings.index(edge.ReceiverVar),
+		AssignedVar:          strings.index(edge.AssignedVar),
+		ChainID:              strings.index(edge.ChainID),
+		StartCol:             edge.StartCol,
+		EndCol:               edge.EndCol,
+		ResolvedReceiverType: strings.index(edge.ResolvedReceiverType),
+		EntryCall:            edge.EntryCall,
+	}
+}
+
+func (w *graphFragmentJSONWriter) writeField(name string, value any) error {
+	if err := w.startField(name); err != nil {
+		return err
+	}
+	return writeJSONValue(w.w, value)
+}
+
+func writeGraphFragmentArrayField[T any](w *graphFragmentJSONWriter, name string, values []T, omitEmpty bool) error {
+	if omitEmpty && len(values) == 0 {
+		return nil
+	}
+	if err := w.startArrayField(name); err != nil {
+		return err
+	}
+	for i := range values {
+		if err := w.writeArrayElement(i, values[i]); err != nil {
+			return err
+		}
+	}
+	return w.endArrayField(len(values))
+}
+
+func (w *graphFragmentJSONWriter) startField(name string) error {
+	if w.needComma {
+		if _, err := w.w.WriteString(",\n"); err != nil {
+			return err
+		}
+	}
+	w.needComma = true
+	_, err := fmt.Fprintf(w.w, "  %q: ", name)
+	return err
+}
+
+func writeJSONValue(dst io.Writer, value any) error {
+	trimmer := trailingNewlineTrimmer{dst: dst}
+	enc := json.NewEncoder(&trimmer)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(value); err != nil {
+		return err
+	}
+	return trimmer.Flush()
+}
+
+type trailingNewlineTrimmer struct {
+	dst     io.Writer
+	held    byte
+	hasHeld bool
+}
+
+func (w *trailingNewlineTrimmer) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if w.hasHeld {
+		if _, err := w.dst.Write([]byte{w.held}); err != nil {
+			return 0, err
+		}
+		w.hasHeld = false
+	}
+	if len(p) > 1 {
+		if _, err := w.dst.Write(p[:len(p)-1]); err != nil {
+			return 0, err
+		}
+	}
+	w.held = p[len(p)-1]
+	w.hasHeld = true
+	return len(p), nil
+}
+
+func (w *trailingNewlineTrimmer) Flush() error {
+	if !w.hasHeld {
+		return nil
+	}
+	if w.held == '\n' {
+		w.hasHeld = false
+		return nil
+	}
+	_, err := w.dst.Write([]byte{w.held})
+	w.hasHeld = false
+	return err
 }
 
 // BuildGraphFragmentExport projects a dependency scan result onto the public
@@ -53,17 +336,7 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
-		ScanMetadata: graphfrag.GraphFragmentScanMetadata{
-			Ecosystem:        result.Ecosystem,
-			RootModule:       result.RootModule,
-			GraphAlgoVersion: graphfrag.GraphAlgoVersion,
-			ExportedAt:       time.Now().UTC().Format(time.RFC3339),
-		},
-	}
-	if result.Report != nil {
-		out.ScanMetadata.ToolName = result.Report.Tool.Name
-		out.ScanMetadata.ToolVersion = result.Report.Tool.Version
-		out.ScanMetadata.RulesVersion = result.Report.Rules.Version
+		ScanMetadata:  buildGraphFragmentScanMetadata(result),
 	}
 	if result.CallGraph == nil {
 		return out
@@ -96,29 +369,58 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	return out
 }
 
+func buildGraphFragmentScanMetadata(result *engine.DepScanResult) graphfrag.GraphFragmentScanMetadata {
+	meta := graphfrag.GraphFragmentScanMetadata{
+		Ecosystem:        result.Ecosystem,
+		RootModule:       result.RootModule,
+		GraphAlgoVersion: graphfrag.GraphAlgoVersion,
+		ExportedAt:       time.Now().UTC().Format(time.RFC3339),
+	}
+	if result.Report != nil {
+		meta.ToolName = result.Report.Tool.Name
+		meta.ToolVersion = result.Report.Tool.Version
+		meta.RulesVersion = result.Report.Rules.Version
+	}
+	return meta
+}
+
 func buildGraphFragmentResolvedEdges(ctx *exportBuildContext) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
 	if ctx == nil || ctx.graph == nil {
 		return nil, nil
 	}
 
-	internalByKey := map[string]graphfrag.GraphFragmentEdge{}
-	externalByKey := map[string]graphfrag.GraphFragmentExternal{}
+	internalEdges := make([]graphfrag.GraphFragmentEdge, 0, len(ctx.graph.EdgeResolutions))
+	var externalCalls []graphfrag.GraphFragmentExternal
 	for _, calleeKey := range sortedKeys(ctx.graph.Callers) {
-		addResolvedFragmentEdges(ctx, calleeKey, internalByKey, externalByKey)
+		internalEdges, externalCalls = addResolvedFragmentEdges(ctx, calleeKey, internalEdges, externalCalls)
 	}
 
-	return sortedFragmentEdges(internalByKey), sortedFragmentExternalCalls(externalByKey)
+	return sortedFragmentEdges(internalEdges), sortedFragmentExternalCalls(externalCalls)
 }
 
 func addResolvedFragmentEdges(
 	ctx *exportBuildContext,
 	calleeKey string,
-	internalByKey map[string]graphfrag.GraphFragmentEdge,
-	externalByKey map[string]graphfrag.GraphFragmentExternal,
-) {
+	internalEdges []graphfrag.GraphFragmentEdge,
+	externalCalls []graphfrag.GraphFragmentExternal,
+) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
+	calls, _ := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
+		internalEdges = append(internalEdges, edge)
+		return nil
+	})
+	externalCalls = append(externalCalls, calls...)
+	return internalEdges, externalCalls
+}
+
+func buildResolvedFragmentEdges(
+	ctx *exportBuildContext,
+	calleeKey string,
+	emitInternal func(graphfrag.GraphFragmentEdge) error,
+) ([]graphfrag.GraphFragmentExternal, error) {
 	graph := ctx.graph
 	callers := append([]string(nil), graph.Callers[calleeKey]...)
 	sort.Strings(callers)
+	var externalCalls []graphfrag.GraphFragmentExternal
 	for _, callerKey := range callers {
 		callerDecl := graph.Functions[callerKey]
 		if callerDecl == nil {
@@ -127,7 +429,6 @@ func addResolvedFragmentEdges(
 		resolutions := resolveFragmentEdges(ctx, callerKey, calleeKey)
 		for i := range resolutions {
 			res := resolutions[i]
-			edgeKey := callgraph.EdgeResolutionKey(callerKey, calleeKey, res.EdgeResolution)
 			line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
 			call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
 			if _, ok := graph.Functions[calleeKey]; ok {
@@ -135,16 +436,19 @@ func addResolvedFragmentEdges(
 				if edge.ChainID == "" {
 					edge.ChainID = chainIDForLine(callerDecl, line)
 				}
-				internalByKey[edgeKey] = edge
+				if err := emitInternal(edge); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 			if external.ChainID == "" {
 				external.ChainID = chainIDForLine(callerDecl, line)
 			}
-			externalByKey[edgeKey] = external
+			externalCalls = append(externalCalls, external)
 		}
 	}
+	return externalCalls, nil
 }
 
 // buildFragmentCallSiteEntryCall constructs the GraphFragmentCallSite for a
@@ -302,22 +606,94 @@ func sortedKeys[V any](values map[string]V) []string {
 	return keys
 }
 
-func sortedFragmentEdges(values map[string]graphfrag.GraphFragmentEdge) []graphfrag.GraphFragmentEdge {
-	keys := sortedKeys(values)
-	out := make([]graphfrag.GraphFragmentEdge, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, values[key])
+func sortedFragmentEdges(values []graphfrag.GraphFragmentEdge) []graphfrag.GraphFragmentEdge {
+	if len(values) == 0 {
+		return nil
+	}
+	sort.SliceStable(values, func(i, j int) bool {
+		return fragmentEdgeLess(values[i], values[j])
+	})
+	out := values[:0]
+	for i := range values {
+		if i+1 < len(values) && fragmentEdgeSameKey(values[i], values[i+1]) {
+			continue
+		}
+		out = append(out, values[i])
 	}
 	return out
 }
 
-func sortedFragmentExternalCalls(values map[string]graphfrag.GraphFragmentExternal) []graphfrag.GraphFragmentExternal {
-	keys := sortedKeys(values)
-	out := make([]graphfrag.GraphFragmentExternal, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, values[key])
+func sortedFragmentExternalCalls(values []graphfrag.GraphFragmentExternal) []graphfrag.GraphFragmentExternal {
+	if len(values) == 0 {
+		return nil
+	}
+	sort.SliceStable(values, func(i, j int) bool {
+		return fragmentExternalLess(values[i], values[j])
+	})
+	out := values[:0]
+	for i := range values {
+		if i+1 < len(values) && fragmentExternalSameKey(values[i], values[i+1]) {
+			continue
+		}
+		out = append(out, values[i])
 	}
 	return out
+}
+
+func fragmentEdgeLess(a, b graphfrag.GraphFragmentEdge) bool {
+	if a.CallerKey != b.CallerKey {
+		return a.CallerKey < b.CallerKey
+	}
+	if a.CalleeKey != b.CalleeKey {
+		return a.CalleeKey < b.CalleeKey
+	}
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	if a.DeclaredType != b.DeclaredType {
+		return a.DeclaredType < b.DeclaredType
+	}
+	if a.MethodName != b.MethodName {
+		return a.MethodName < b.MethodName
+	}
+	return a.Arity < b.Arity
+}
+
+func fragmentEdgeSameKey(a, b graphfrag.GraphFragmentEdge) bool {
+	return a.CallerKey == b.CallerKey &&
+		a.CalleeKey == b.CalleeKey &&
+		a.Line == b.Line &&
+		a.DeclaredType == b.DeclaredType &&
+		a.MethodName == b.MethodName &&
+		a.Arity == b.Arity
+}
+
+func fragmentExternalLess(a, b graphfrag.GraphFragmentExternal) bool {
+	if a.CallerKey != b.CallerKey {
+		return a.CallerKey < b.CallerKey
+	}
+	if a.TargetKey != b.TargetKey {
+		return a.TargetKey < b.TargetKey
+	}
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	if a.DeclaredType != b.DeclaredType {
+		return a.DeclaredType < b.DeclaredType
+	}
+	if a.MethodName != b.MethodName {
+		return a.MethodName < b.MethodName
+	}
+	return a.Arity < b.Arity
+}
+
+func fragmentExternalSameKey(a, b graphfrag.GraphFragmentExternal) bool {
+	return a.CallerKey == b.CallerKey &&
+		a.TargetKey == b.TargetKey &&
+		a.Line == b.Line &&
+		a.DeclaredType == b.DeclaredType &&
+		a.MethodName == b.MethodName &&
+		a.Arity == b.Arity
 }
 
 type fragmentEdgeResolution struct {

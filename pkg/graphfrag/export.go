@@ -3,7 +3,12 @@
 
 package graphfrag
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strconv"
+)
 
 // SchemaVersion is the current graph-fragment export schema version.
 //
@@ -29,7 +34,11 @@ import "encoding/json"
 // target in closure, without changing the fail-closed default for call sites
 // inference did not resolve. Additive: a 1.5 fragment decodes with an empty
 // resolved_receiver_type, which the stitcher treats exactly as before.
-const SchemaVersion = "graph-fragment-1.6"
+//
+// 1.7 adds internal_edges_compact plus internal_edge_strings. It carries the
+// same internal edge fields as internal_edges, but indexes repeated strings and
+// function keys to keep large dependency fragments small.
+const SchemaVersion = "graph-fragment-1.7"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -44,14 +53,97 @@ const GraphAlgoVersion = "graph-algo-1"
 // crypto-finder's public contract; the scanner (internal/scan) builds it from a
 // callgraph, and any consumer decodes it into a Fragment via DecodeFragment.
 type GraphFragmentExport struct {
-	SchemaVersion     string                          `json:"schema_version"`
-	ScanMetadata      GraphFragmentScanMetadata       `json:"scan_metadata"`
-	Functions         []GraphFragmentFunction         `json:"functions"`
-	InternalEdges     []GraphFragmentEdge             `json:"internal_edges,omitempty"`
-	ExternalCalls     []GraphFragmentExternal         `json:"external_calls,omitempty"`
-	CryptoAnnotations []GraphFragmentCryptoOp         `json:"crypto_annotations,omitempty"`
-	SupportingCalls   []GraphFragmentSupporting       `json:"supporting_calls,omitempty"`
-	CryptoEntryPoints []GraphFragmentCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
+	SchemaVersion        string                          `json:"schema_version"`
+	ScanMetadata         GraphFragmentScanMetadata       `json:"scan_metadata"`
+	Functions            []GraphFragmentFunction         `json:"functions"`
+	InternalEdges        []GraphFragmentEdge             `json:"internal_edges,omitempty"`
+	InternalEdgeStrings  []string                        `json:"internal_edge_strings,omitempty"`
+	CompactInternalEdges []GraphFragmentCompactEdge      `json:"internal_edges_compact,omitempty"`
+	ExternalCalls        []GraphFragmentExternal         `json:"external_calls,omitempty"`
+	CryptoAnnotations    []GraphFragmentCryptoOp         `json:"crypto_annotations,omitempty"`
+	SupportingCalls      []GraphFragmentSupporting       `json:"supporting_calls,omitempty"`
+	CryptoEntryPoints    []GraphFragmentCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
+}
+
+// GraphFragmentCompactEdge is the graph-fragment-1.7 compact form of
+// GraphFragmentEdge. JSON is a positional array:
+// [caller_fn, callee_fn, line, resolution_s, declared_type_s, method_s, arity,
+//
+//	receiver_var_s, assigned_var_s, chain_id_s, start_col, end_col,
+//	resolved_receiver_type_s, entry_call].
+//
+// Function indexes address GraphFragmentExport.Functions; string indexes
+// address GraphFragmentExport.InternalEdgeStrings.
+type GraphFragmentCompactEdge struct {
+	Caller, Callee                       int
+	Line                                 int
+	Resolution, DeclaredType, MethodName int
+	Arity                                int
+	ReceiverVar, AssignedVar, ChainID    int
+	StartCol, EndCol                     int
+	ResolvedReceiverType                 int
+	EntryCall                            *GraphFragmentCallSite
+}
+
+func (e GraphFragmentCompactEdge) MarshalJSON() ([]byte, error) {
+	values := []int{
+		e.Caller, e.Callee, e.Line, e.Resolution, e.DeclaredType, e.MethodName,
+		e.Arity, e.ReceiverVar, e.AssignedVar, e.ChainID, e.StartCol, e.EndCol,
+		e.ResolvedReceiverType,
+	}
+	last := len(values) - 1
+	for last >= 0 && values[last] == 0 {
+		last--
+	}
+	if e.EntryCall != nil {
+		last = len(values)
+	}
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i := 0; i <= last; i++ {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		if i == len(values) {
+			data, err := json.Marshal(e.EntryCall)
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(data)
+			continue
+		}
+		buf.WriteString(strconv.Itoa(values[i]))
+	}
+	buf.WriteByte(']')
+	return buf.Bytes(), nil
+}
+
+func (e *GraphFragmentCompactEdge) UnmarshalJSON(data []byte) error {
+	var values []json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	ints := []*int{
+		&e.Caller, &e.Callee, &e.Line, &e.Resolution, &e.DeclaredType, &e.MethodName,
+		&e.Arity, &e.ReceiverVar, &e.AssignedVar, &e.ChainID, &e.StartCol, &e.EndCol,
+		&e.ResolvedReceiverType,
+	}
+	if len(values) > len(ints)+1 {
+		return fmt.Errorf("graphfrag: compact edge has %d fields, want at most %d", len(values), len(ints)+1)
+	}
+	for i := 0; i < len(values) && i < len(ints); i++ {
+		if err := json.Unmarshal(values[i], ints[i]); err != nil {
+			return fmt.Errorf("graphfrag: compact edge field %d: %w", i, err)
+		}
+	}
+	if len(values) == len(ints)+1 && len(values[len(ints)]) > 0 && string(values[len(ints)]) != "null" {
+		var call GraphFragmentCallSite
+		if err := json.Unmarshal(values[len(ints)], &call); err != nil {
+			return fmt.Errorf("graphfrag: compact edge entry_call: %w", err)
+		}
+		e.EntryCall = &call
+	}
+	return nil
 }
 
 // GraphFragmentScanMetadata summarizes the scan that produced a graph-fragment
