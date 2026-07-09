@@ -4,6 +4,7 @@
 package graphfrag
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -136,7 +137,7 @@ func TestToCallgraphExportForwardCallsSharedAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if string(a) == "null" || string(a) != string(b) {
+	if bytes.Equal(a, []byte("null")) || !bytes.Equal(a, b) {
 		t.Errorf("shared-anchor findings differ or are empty:\n%s\n%s", a, b)
 	}
 }

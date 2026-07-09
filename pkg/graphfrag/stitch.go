@@ -1125,10 +1125,17 @@ func forwardBFS(
 		maxDepth: caps.maxDepth,
 	}
 
-	visited := map[graphNode]bool{anchor: true}
-	depth := map[graphNode]int{anchor: 0}
+	st := &forwardBFSState{
+		fc:               fc,
+		caps:             caps,
+		fragments:        fragments,
+		opsByNode:        opsByNode,
+		supportingByNode: supportingByNode,
+		visited:          map[graphNode]bool{anchor: true},
+		depth:            map[graphNode]int{anchor: 0},
+		edgeSeen:         map[forwardEdgeKey]bool{},
+	}
 	queue := []graphNode{anchor}
-	edgeSeen := map[forwardEdgeKey]bool{}
 
 	for len(queue) > 0 {
 		// Safety valve mirroring the backward pass (stitch.go stitchMaxFrontier):
@@ -1141,7 +1148,7 @@ func forwardBFS(
 
 		cur := queue[0]
 		queue = queue[1:]
-		d := depth[cur]
+		d := st.depth[cur]
 
 		if d >= caps.maxDepth {
 			if len(adjacency[cur]) > 0 {
@@ -1153,46 +1160,66 @@ func forwardBFS(
 		}
 
 		for _, edge := range sortedAdjacencyEdges(adjacency[cur]) {
-			target := edge.target
-			key := forwardEdgeKey{from: cur, to: target, line: entryCallLine(edge.entryCall)}
-
-			if !visited[target] {
-				// NEW-TARGET path (first admission — includes diamond re-convergence
-				// arriving via a shorter path than any later edge to it): node cap
-				// gates admission FIRST so no edge is ever emitted to an absent node.
-				if len(fc.nodes) >= caps.maxNodes {
-					fc.truncated = true
-					continue
-				}
-				if !edgeSeen[key] && len(fc.edges) >= caps.maxEdges {
-					fc.truncated = true
-					continue
-				}
-				visited[target] = true
-				depth[target] = d + 1
-				fc.nodes = append(fc.nodes, buildForwardNode(target, d+1, fragments, opsByNode, supportingByNode))
-				edgeSeen[key] = true
-				fc.edges = append(fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
+			if target, enqueue := st.visitEdge(cur, d, edge); enqueue {
 				queue = append(queue, target)
-				continue
 			}
-
-			// EXISTING-TARGET path — a cycle back-edge or a diamond re-convergent
-			// edge to an already-admitted node. Only the edge cap applies; the
-			// target node is not re-added or re-expanded.
-			if edgeSeen[key] {
-				continue
-			}
-			if len(fc.edges) >= caps.maxEdges {
-				fc.truncated = true
-				continue
-			}
-			edgeSeen[key] = true
-			fc.edges = append(fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
 		}
 	}
 
 	return fc
+}
+
+// forwardBFSState carries the mutable working set of one forwardBFS run so the
+// per-edge admission logic can live in visitEdge, keeping the BFS driver loop
+// flat.
+type forwardBFSState struct {
+	fc               *forwardClosure
+	caps             forwardCaps
+	fragments        map[ComponentKey]Fragment
+	opsByNode        map[graphNode][]CryptoOperation
+	supportingByNode map[graphNode][]SupportingCall
+	visited          map[graphNode]bool
+	depth            map[graphNode]int
+	edgeSeen         map[forwardEdgeKey]bool
+}
+
+// visitEdge processes one cur->target edge at BFS depth d, enforcing the caps
+// (node cap gates admission before any edge is emitted, so no edge ever points
+// at an absent node). It returns (target, true) when target is newly admitted
+// and must be enqueued; (_, false) otherwise (cap hit, or an
+// already-visited target — cycle back-edge / diamond re-convergence — whose
+// edge is recorded once but whose node is neither re-added nor re-expanded).
+func (s *forwardBFSState) visitEdge(cur graphNode, d int, edge adjacencyEdge) (graphNode, bool) {
+	target := edge.target
+	key := forwardEdgeKey{from: cur, to: target, line: entryCallLine(edge.entryCall)}
+
+	if !s.visited[target] {
+		if len(s.fc.nodes) >= s.caps.maxNodes {
+			s.fc.truncated = true
+			return graphNode{}, false
+		}
+		if !s.edgeSeen[key] && len(s.fc.edges) >= s.caps.maxEdges {
+			s.fc.truncated = true
+			return graphNode{}, false
+		}
+		s.visited[target] = true
+		s.depth[target] = d + 1
+		s.fc.nodes = append(s.fc.nodes, buildForwardNode(target, d+1, s.fragments, s.opsByNode, s.supportingByNode))
+		s.edgeSeen[key] = true
+		s.fc.edges = append(s.fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
+		return target, true
+	}
+
+	if s.edgeSeen[key] {
+		return graphNode{}, false
+	}
+	if len(s.fc.edges) >= s.caps.maxEdges {
+		s.fc.truncated = true
+		return graphNode{}, false
+	}
+	s.edgeSeen[key] = true
+	s.fc.edges = append(s.fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
+	return graphNode{}, false
 }
 
 // buildForwardNode resolves one forward-reachable node into its annotated
@@ -1219,9 +1246,9 @@ func buildForwardNode(
 }
 
 func firstSupportingCategory(supports []SupportingCall) string {
-	for _, s := range supports {
-		if s.Category != "" {
-			return s.Category
+	for i := range supports {
+		if supports[i].Category != "" {
+			return supports[i].Category
 		}
 	}
 	return ""

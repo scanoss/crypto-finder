@@ -119,8 +119,8 @@ func TestForwardClosure_OffIsByteIdentical(t *testing.T) {
 // but tests assert on content, not incidental slice order).
 func forwardNodeDepths(fc *forwardClosure) map[string]int {
 	out := make(map[string]int, len(fc.nodes))
-	for _, n := range fc.nodes {
-		out[n.node.Function] = n.depth
+	for i := range fc.nodes {
+		out[fc.nodes[i].node.Function] = fc.nodes[i].depth
 	}
 	return out
 }
