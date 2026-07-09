@@ -24,7 +24,7 @@ import (
 // findings came from a live scan or were reconstructed from graph fragments.
 const FindingsSchemaVersion = "1.4"
 
-// FindingsEnvelope is the findings.json v1.3 envelope reconstructed from a
+// FindingsEnvelope is the findings.json v1.4 envelope reconstructed from a
 // dependency closure of graph fragments. It is the asset-metadata companion to
 // ToCallgraphExport: consumers join assets (here) to call chains (callgraph
 // export) by finding_id, so the two MUST agree on finding_id — which they do by
@@ -60,7 +60,7 @@ type FindingAsset struct {
 	ParameterConditions []paramcondition.Condition `json:"parameter_conditions,omitempty"`
 }
 
-// ToFindingsEnvelope reconstructs the findings.json v1.3 envelope for the root
+// ToFindingsEnvelope reconstructs the findings.json v1.4 envelope for the root
 // component and its transitive dependency closure, from the stored crypto
 // annotations in each fragment. Unlike ToCallgraphExport (which emits only
 // reachable findings), this emits EVERY crypto operation in the closure —

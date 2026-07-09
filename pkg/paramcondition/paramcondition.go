@@ -171,6 +171,9 @@ func ParseAll(raw string) ([]Condition, error) {
 	if len(starts) == 0 {
 		return nil, &ParseError{Raw: trimmed, Reason: "no param[ predicate found"}
 	}
+	if starts[0] != 0 {
+		return nil, &ParseError{Raw: trimmed, Reason: fmt.Sprintf("unexpected leading text %q before first param[ predicate", trimmed[:starts[0]])}
+	}
 
 	conditions := make([]Condition, 0, len(starts))
 	for i, start := range starts {
@@ -182,9 +185,15 @@ func ParseAll(raw string) ([]Condition, error) {
 
 		segment := trimmed[start:end]
 		if hasNext {
+			// The comma separator is mandatory between predicates. TrimSuffix
+			// alone would silently accept concatenated predicates and truncate
+			// the first value — defeating the rule-load fail-fast gate.
 			segment = strings.TrimRight(segment, " \t\n")
-			segment = strings.TrimSuffix(segment, ",")
-			segment = strings.TrimRight(segment, " \t\n")
+			withoutComma := strings.TrimSuffix(segment, ",")
+			if withoutComma == segment {
+				return nil, &ParseError{Raw: trimmed, Reason: "missing ',' separator before next param[ predicate"}
+			}
+			segment = strings.TrimRight(withoutComma, " \t\n")
 		}
 
 		cond, err := Parse(segment)

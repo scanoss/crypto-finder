@@ -18,6 +18,7 @@ package paramcondition
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -244,6 +245,43 @@ func TestParseAll(t *testing.T) {
 				if diff := diffCondition(got[i], tt.want[i]); diff != "" {
 					t.Errorf("ParseAll(%q)[%d] mismatch: %s", tt.raw, i, diff)
 				}
+			}
+		})
+	}
+}
+
+func TestParseAllMalformedSeparators(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "concatenated predicates without comma separator",
+			raw:  "param[0]==trueparam[1]==256",
+		},
+		{
+			name: "space-separated predicates without comma",
+			raw:  "param[0]==true param[1]==256",
+		},
+		{
+			name: "leading text before first predicate",
+			raw:  "xx param[0]==true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ParseAll(tt.raw)
+			if err == nil {
+				t.Fatalf("ParseAll(%q) = %+v, want *ParseError (silent acceptance would defeat the rule-load fail-fast gate)", tt.raw, got)
+			}
+			var perr *ParseError
+			if !errors.As(err, &perr) {
+				t.Fatalf("ParseAll(%q) error type = %T, want *ParseError", tt.raw, err)
 			}
 		})
 	}
