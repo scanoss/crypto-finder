@@ -86,6 +86,7 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	out.CryptoAnnotations = buildGraphFragmentCryptoAnnotations(ctx, result)
 	out.SupportingCalls = buildGraphFragmentSupportingCalls(ctx, result)
 	out.CryptoEntryPoints = buildGraphFragmentCryptoEntryPoints(ctx, result)
+	out.CryptoEntryPoints = appendSynthesizedOperationEntryPointsFragment(ctx, result, out.CryptoEntryPoints)
 	out.ScanMetadata.FunctionCount = len(out.Functions)
 	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
 	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
@@ -621,6 +622,67 @@ func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.
 		MatchedOperation:   fragmentMatchedOperation(internal.MatchedOperation),
 		SupportingCall:     buildGraphFragmentCryptoCall(internal.SupportingCall),
 	}
+}
+
+// appendSynthesizedOperationEntryPointsFragment is the fragment-side twin of
+// appendSynthesizedOperationEntryPoints (WU2, issue-103): appends
+// WU2-synthesized operation entry points to the fragment's
+// crypto_entry_points, skipping any function key already present.
+func appendSynthesizedOperationEntryPointsFragment(
+	ctx *exportBuildContext,
+	result *engine.DepScanResult,
+	existing []graphfrag.GraphFragmentCryptoEntryPoint,
+) []graphfrag.GraphFragmentCryptoEntryPoint {
+	synthesized := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(synthesized) == 0 {
+		return existing
+	}
+	present := make(map[string]struct{}, len(existing))
+	for i := range existing {
+		present[existing[i].FunctionKey] = struct{}{}
+	}
+	out := existing
+	for i := range synthesized {
+		op := synthesized[i]
+		if _, dup := present[op.functionKey]; dup {
+			continue
+		}
+		out = append(out, graphfrag.GraphFragmentCryptoEntryPoint{
+			FunctionKey:        op.functionKey,
+			FunctionName:       op.functionName,
+			CanonicalSignature: op.canonicalSignature,
+			DisplaySymbol:      op.displaySymbol,
+			Aliases:            cloneStringSlice(op.aliases),
+			ReturnType:         op.returnType,
+			ParameterTypes:     cloneStringSlice(op.parameterTypes),
+			Visibility:         op.visibility,
+			OwnerVisibility:    op.ownerVisibility,
+			MethodRole:         string(contracts.RoleOperation),
+			RoleProvenance:     fragmentOperationRoleProvenance(op),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].FunctionKey < out[j].FunctionKey
+	})
+	return out
+}
+
+// fragmentOperationRoleProvenance is the graph-fragment mirror of
+// operationRoleProvenance (WU2, issue-103).
+func fragmentOperationRoleProvenance(op operationEntryPoint) *graphfrag.GraphFragmentRoleProvenance {
+	rp := &graphfrag.GraphFragmentRoleProvenance{
+		Kind:               "contract-operation-inherited",
+		ContractMethod:     op.contractMethod,
+		InheritedFrom:      op.class,
+		InheritedAmbiguous: op.inheritedAmbiguous,
+	}
+	if op.inheritedFamily != "" || op.inheritedPrimitive != "" {
+		rp.Inherited = &graphfrag.GraphFragmentInheritedRole{
+			AlgorithmFamily: op.inheritedFamily,
+			Primitive:       op.inheritedPrimitive,
+		}
+	}
+	return rp
 }
 
 func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoEntryPoint {

@@ -443,6 +443,7 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
+	out.CryptoEntryPoints = appendSynthesizedOperationEntryPoints(ctx, result, out.CryptoEntryPoints)
 
 	return out
 }
@@ -765,6 +766,233 @@ func flattenReachableSupportingCalls(values map[string]callGraphReachableSupport
 		return out[i].SupportingID < out[j].SupportingID
 	})
 	return out
+}
+
+// operationEntryPoint is the WU2 (issue-103) intermediate representation of a
+// synthesized role:operation crypto_entry_points entry, shared by the live
+// and fragment converters (appendSynthesizedOperationEntryPoints and its
+// fragment-side counterpart in fragment_export.go).
+type operationEntryPoint struct {
+	functionKey        string
+	functionName       string
+	canonicalSignature string
+	class              string
+	method             string
+	returnType         string
+	parameterTypes     []string
+	visibility         string
+	ownerVisibility    string
+	displaySymbol      string
+	aliases            []string
+	contractMethod     string
+	inheritedFamily    string
+	inheritedPrimitive string
+	inheritedAmbiguous bool
+}
+
+// classSiblingAssets groups every crypto asset in the report by the receiver
+// type of its matched API (asset.Metadata["api"]), so WU2 synthesis can gate
+// on "declaring class already has >= 1 crypto asset" and inherit
+// algorithm_family/primitive from those siblings.
+func classSiblingAssets(report *entities.InterimReport) map[string][]entities.CryptographicAsset {
+	out := make(map[string][]entities.CryptographicAsset)
+	if report == nil {
+		return out
+	}
+	for _, finding := range report.Findings {
+		for i := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[i]
+			api := strings.TrimSpace(asset.Metadata["api"])
+			if api == "" {
+				continue
+			}
+			class := receiverType(api)
+			if class == "" {
+				continue
+			}
+			out[class] = append(out[class], asset)
+		}
+	}
+	return out
+}
+
+// existingFindingAPIs is the set of asset.Metadata["api"] values already
+// covered by a finding (real or already rule-synthesized) in the report.
+// WU2 synthesis skips a contract method already covered this way — no
+// duplicate crypto_entry_points entry for a function that already has one
+// via the ordinary finding-derived path.
+func existingFindingAPIs(report *entities.InterimReport) map[string]struct{} {
+	out := make(map[string]struct{})
+	if report == nil {
+		return out
+	}
+	for _, finding := range report.Findings {
+		for i := range finding.CryptographicAssets {
+			if api := strings.TrimSpace(finding.CryptographicAssets[i].Metadata["api"]); api != "" {
+				out[api] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+// inheritFromSiblings computes the algorithm_family/primitive a synthesized
+// operation entry point inherits from its declaring class's existing crypto
+// assets. Unanimous algorithm_family across siblings -> inherit family +
+// primitive. Divergent family -> drop family, keep primitive only if it too
+// is unanimous, and set ambiguous=true. Never fabricates a value no sibling
+// declares.
+func inheritFromSiblings(assets []entities.CryptographicAsset) (family, primitive string, ambiguous bool) {
+	families := make(map[string]struct{})
+	primitives := make(map[string]struct{})
+	for i := range assets {
+		if f := strings.TrimSpace(assets[i].Metadata["algorithmFamily"]); f != "" {
+			families[f] = struct{}{}
+		}
+		if p := strings.TrimSpace(assets[i].Metadata["algorithmPrimitive"]); p != "" {
+			primitives[p] = struct{}{}
+		}
+	}
+	if len(primitives) == 1 {
+		for p := range primitives {
+			primitive = p
+		}
+	} else if len(primitives) > 1 {
+		ambiguous = true
+	}
+	if len(families) == 1 {
+		for f := range families {
+			family = f
+		}
+		return family, primitive, ambiguous
+	}
+	if len(families) > 1 {
+		ambiguous = true
+	}
+	return "", primitive, ambiguous
+}
+
+// synthesizeContractOperationEntryPoints is the WU2 (issue-103) B-lite
+// operation crypto_entry_point synthesis: for each role:operation contract
+// method that is (a) concretely declared/reachable in the scanned source
+// (ctx.declIndex[c.Method] != nil — a pure interface method with no body
+// never qualifies, by construction) and (b) whose declaring class already
+// carries >= 1 crypto asset, and (c) not already covered by an existing
+// finding, synthesize a crypto_entry_points entry. No interim finding is
+// minted (B-lite) — see spec "Finding counts unchanged" scenario.
+func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []operationEntryPoint {
+	if ctx == nil || ctx.kb == nil || ctx.declIndex == nil || result == nil || result.Report == nil {
+		return nil
+	}
+	classAssets := classSiblingAssets(result.Report)
+	existingAPI := existingFindingAPIs(result.Report)
+
+	seen := make(map[string]struct{})
+	var out []operationEntryPoint
+	for _, group := range ctx.kb.Contracts {
+		for i := range group {
+			c := group[i]
+			if c.Role != string(contracts.RoleOperation) {
+				continue
+			}
+			if _, dup := seen[c.Method]; dup {
+				continue
+			}
+			decl := ctx.declIndex[c.Method]
+			if decl == nil {
+				continue
+			}
+			if _, has := existingAPI[c.Method]; has {
+				continue
+			}
+			class := receiverType(c.Method)
+			assets := classAssets[class]
+			if len(assets) == 0 {
+				continue
+			}
+			seen[c.Method] = struct{}{}
+			family, primitive, ambiguous := inheritFromSiblings(assets)
+			meta := buildExportFunctionMetadata(ctx.graph, decl.ID, decl)
+			_, method := splitFunctionName(c.Method)
+			out = append(out, operationEntryPoint{
+				functionKey:        decl.ID.String(),
+				functionName:       meta.FunctionName,
+				canonicalSignature: meta.CanonicalSignature,
+				class:              class,
+				method:             method,
+				returnType:         meta.ReturnType,
+				parameterTypes:     meta.ParameterTypes,
+				visibility:         meta.Visibility,
+				ownerVisibility:    meta.OwnerVisibility,
+				displaySymbol:      meta.DisplaySymbol,
+				aliases:            meta.Aliases,
+				contractMethod:     c.Method,
+				inheritedFamily:    family,
+				inheritedPrimitive: primitive,
+				inheritedAmbiguous: ambiguous,
+			})
+		}
+	}
+	return out
+}
+
+// appendSynthesizedOperationEntryPoints appends WU2-synthesized operation
+// entry points to the live crypto_entry_points list, skipping any function
+// key already present (the structural/finding-derived path already covers
+// it), then re-sorts to preserve buildCryptoEntryPoints' deterministic order.
+func appendSynthesizedOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult, existing []callGraphCryptoEntryPoint) []callGraphCryptoEntryPoint {
+	synthesized := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(synthesized) == 0 {
+		return existing
+	}
+	present := make(map[string]struct{}, len(existing))
+	for i := range existing {
+		present[existing[i].FunctionKey] = struct{}{}
+	}
+	out := existing
+	for i := range synthesized {
+		op := synthesized[i]
+		if _, dup := present[op.functionKey]; dup {
+			continue
+		}
+		out = append(out, callGraphCryptoEntryPoint{
+			FunctionKey:        op.functionKey,
+			FunctionName:       op.functionName,
+			CanonicalSignature: op.canonicalSignature,
+			Class:              op.class,
+			Method:             op.method,
+			ReturnType:         op.returnType,
+			ParameterTypes:     op.parameterTypes,
+			Visibility:         op.visibility,
+			OwnerVisibility:    op.ownerVisibility,
+			DisplaySymbol:      op.displaySymbol,
+			Aliases:            op.aliases,
+			MethodRole:         string(contracts.RoleOperation),
+			RoleProvenance:     operationRoleProvenance(op),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].FunctionKey < out[j].FunctionKey
+	})
+	return out
+}
+
+// operationRoleProvenance builds the role_provenance block for a
+// WU2-synthesized operation entry point.
+func operationRoleProvenance(op operationEntryPoint) *callGraphRoleProvenance {
+	rp := &callGraphRoleProvenance{
+		Kind:               "contract-operation-inherited",
+		ContractMethod:     op.contractMethod,
+		InheritedFrom:      op.class,
+		InheritedAmbiguous: op.inheritedAmbiguous,
+	}
+	if op.inheritedFamily != "" || op.inheritedPrimitive != "" {
+		rp.Inherited = &callGraphInheritedRole{
+			AlgorithmFamily: op.inheritedFamily,
+			Primitive:       op.inheritedPrimitive,
+		}
+	}
+	return rp
 }
 
 func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGraphReachableFinding {

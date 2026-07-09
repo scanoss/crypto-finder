@@ -21,6 +21,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -465,6 +466,196 @@ func TestBuildCryptoEntryPointsPopulatesParameterRoles(t *testing.T) {
 }
 
 func intPtr(i int) *int { return &i }
+
+// TestSynthesizeContractOperationEntryPoints_SiblingAssetSingleFamily covers
+// the WU2 (issue-103) primary scenario: a role:operation contract method
+// declared/reachable in scanned source, whose declaring class already has a
+// same-family, same-primitive sibling asset, synthesizes a crypto_entry_points
+// entry with method_role=operation and inherited algorithm_family/primitive.
+func TestSynthesizeContractOperationEntryPoints_SiblingAssetSingleFamily(t *testing.T) {
+	t.Parallel()
+
+	processBlock := &callgraph.FunctionDecl{
+		ID:       callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"},
+		FilePath: "AESEngine.java",
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		processBlock.ID.String(): processBlock,
+	}}
+	ctx := &exportBuildContext{
+		graph: graph,
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{
+			"org.bc.engines.AESEngine.processBlock": processBlock,
+		},
+	}
+	result := &engine.DepScanResult{
+		CallGraph: graph,
+		Report: &entities.InterimReport{
+			Findings: []entities.Finding{{
+				CryptographicAssets: []entities.CryptographicAsset{{
+					FindingID: "f1",
+					Metadata: map[string]string{
+						"api":                "org.bc.engines.AESEngine.<init>",
+						"algorithmFamily":    "AES",
+						"algorithmPrimitive": "block-cipher",
+					},
+				}},
+			}},
+		},
+	}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 1 {
+		t.Fatalf("synthesized entries = %#v, want 1", entries)
+	}
+	e := entries[0]
+	if e.contractMethod != "org.bc.engines.AESEngine.processBlock" {
+		t.Fatalf("contractMethod = %q", e.contractMethod)
+	}
+	if e.inheritedFamily != "AES" || e.inheritedPrimitive != "block-cipher" || e.inheritedAmbiguous {
+		t.Fatalf("inherited = family=%q primitive=%q ambiguous=%v, want AES/block-cipher/false", e.inheritedFamily, e.inheritedPrimitive, e.inheritedAmbiguous)
+	}
+
+	appended := appendSynthesizedOperationEntryPoints(ctx, result, nil)
+	if len(appended) != 1 {
+		t.Fatalf("appended entries = %#v, want 1", appended)
+	}
+	ep := appended[0]
+	if ep.MethodRole != "operation" {
+		t.Fatalf("MethodRole = %q, want operation", ep.MethodRole)
+	}
+	if ep.RoleProvenance == nil || ep.RoleProvenance.Kind != "contract-operation-inherited" ||
+		ep.RoleProvenance.Inherited == nil || ep.RoleProvenance.Inherited.AlgorithmFamily != "AES" ||
+		ep.RoleProvenance.Inherited.Primitive != "block-cipher" || ep.RoleProvenance.InheritedAmbiguous {
+		t.Fatalf("RoleProvenance = %#v", ep.RoleProvenance)
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_NoSiblingAsset_NoSynthesis
+// covers the negative scenario: a role:operation method whose declaring
+// class has zero crypto assets yields no synthesized entry.
+func TestSynthesizeContractOperationEntryPoints_NoSiblingAsset_NoSynthesis(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": decl},
+	}
+	result := &engine.DepScanResult{Report: &entities.InterimReport{}}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 0 {
+		t.Fatalf("synthesized entries = %#v, want none (no sibling asset)", entries)
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_DivergentSiblingFamilies covers
+// the ambiguity scenario: a class whose existing assets disagree on
+// algorithm_family synthesizes with family omitted, primitive kept only if
+// unanimous, and inherited_ambiguous=true — never fabricating a value.
+func TestSynthesizeContractOperationEntryPoints_DivergentSiblingFamilies(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc", Type: "Multi", Name: "op#0"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.Multi.op#0": {{
+					Method: "org.bc.Multi.op",
+					Arity:  0,
+					Return: contracts.ContractReturn{Type: "void", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.Multi.op": decl},
+	}
+	result := &engine.DepScanResult{
+		Report: &entities.InterimReport{
+			Findings: []entities.Finding{{
+				CryptographicAssets: []entities.CryptographicAsset{
+					{Metadata: map[string]string{"api": "org.bc.Multi.<init>", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
+					{Metadata: map[string]string{"api": "org.bc.Multi.other", "algorithmFamily": "RC4", "algorithmPrimitive": "block-cipher"}},
+				},
+			}},
+		},
+	}
+
+	entries := synthesizeContractOperationEntryPoints(ctx, result)
+	if len(entries) != 1 {
+		t.Fatalf("synthesized entries = %#v, want 1", entries)
+	}
+	e := entries[0]
+	if e.inheritedFamily != "" {
+		t.Fatalf("inheritedFamily = %q, want empty (divergent siblings must not fabricate)", e.inheritedFamily)
+	}
+	if e.inheritedPrimitive != "block-cipher" {
+		t.Fatalf("inheritedPrimitive = %q, want block-cipher (unanimous)", e.inheritedPrimitive)
+	}
+	if !e.inheritedAmbiguous {
+		t.Fatal("inheritedAmbiguous = false, want true (divergent family)")
+	}
+}
+
+// TestSynthesizeContractOperationEntryPoints_FindingCountsUnchanged proves
+// synthesis is B-lite: it never mints an interim finding, so InterimReport
+// finding counts are unchanged before/after.
+func TestSynthesizeContractOperationEntryPoints_FindingCountsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	decl := &callgraph.FunctionDecl{ID: callgraph.FunctionID{Package: "org.bc.engines", Type: "AESEngine", Name: "processBlock#4"}}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{decl.ID.String(): decl}},
+		kb: &contracts.KnowledgeBase{
+			Contracts: map[string][]contracts.Contract{
+				"org.bc.engines.AESEngine.processBlock#4": {{
+					Method: "org.bc.engines.AESEngine.processBlock",
+					Arity:  4,
+					Return: contracts.ContractReturn{Type: "int", Confidence: "high"},
+					Role:   "operation",
+				}},
+			},
+		},
+		declIndex: map[string]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": decl},
+	}
+	report := &entities.InterimReport{
+		Findings: []entities.Finding{{
+			CryptographicAssets: []entities.CryptographicAsset{{
+				Metadata: map[string]string{"api": "org.bc.engines.AESEngine.<init>", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"},
+			}},
+		}},
+	}
+	before := len(report.Findings)
+	result := &engine.DepScanResult{Report: report}
+
+	_ = synthesizeContractOperationEntryPoints(ctx, result)
+
+	if after := len(report.Findings); after != before {
+		t.Fatalf("finding count changed: before=%d after=%d, want unchanged", before, after)
+	}
+}
 
 func findCryptoEntryPointByFunctionKey(points []callGraphCryptoEntryPoint, key string) *callGraphCryptoEntryPoint {
 	for i := range points {
