@@ -123,6 +123,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	}
 
 	functionsBySignature := indexFunctions(closure, fragments)
+	functionsByNode := indexFunctionsByNode(closure, fragments)
 	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
@@ -139,10 +140,10 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// callgraph matches live byte-for-byte (the parity contract) and stays
 		// bounded on high-fan-in libraries (BouncyCastle, 18k functions) where the
 		// old all-simple-paths forward DFS hangs.
-		traceBackward(adjacency, opsByNode, supportingByNode, fragments, roots, &out)
+		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
-			out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, forwardCapsFrom(opts))
+			out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 		}
 		return &out, nil
 	}
@@ -153,11 +154,11 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	// fail-closed and parallel-edge tests; it is NOT under the live parity contract
 	// (that contract is the serving path above) and keeps its exact prior output.
 	for _, start := range roots {
-		trace(start, adjacency, opsByNode, supportingByNode, fragments, nil, nil, map[graphNode]bool{}, &out)
+		trace(start, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, nil, nil, map[graphNode]bool{}, &out)
 	}
 	attachAnnotationSupportingCalls(closure, fragments, &out)
 	if opts.ForwardClosure {
-		out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, forwardCapsFrom(opts))
+		out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 	}
 	return &out, nil
 }
@@ -329,6 +330,18 @@ func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment)
 		for i := range fragment.Functions {
 			node := graphNode{Component: key, Function: fragment.Functions[i].Signature}
 			out[fragment.Functions[i].Signature] = append(out[fragment.Functions[i].Signature], node)
+		}
+	}
+	return out
+}
+
+func indexFunctionsByNode(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[graphNode]Function {
+	out := make(map[graphNode]Function)
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.Functions {
+			fn := fragment.Functions[i]
+			out[graphNode{Component: key, Function: fn.Signature}] = fn
 		}
 	}
 	return out
@@ -819,6 +832,7 @@ func traceBackward(
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	roots []graphNode,
 	out *Result,
 ) {
@@ -843,7 +857,7 @@ func traceBackward(
 			chains = []backwardChain{{nodes: []graphNode{opNode}, entryCalls: []*CallSite{nil}}}
 		}
 		for _, chain := range chains {
-			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, supportingSeen, out)
+			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, out)
 		}
 	}
 }
@@ -949,12 +963,13 @@ func emitChain(
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	supportingSeen map[graphNode]bool,
 	out *Result,
 ) {
 	frames := make([]CallFrame, len(chain.nodes))
 	for i, node := range chain.nodes {
-		frames[i] = buildFrame(node, chain.entryCalls[i], fragments)
+		frames[i] = buildFrame(node, chain.entryCalls[i], fragments, functionsByNode)
 	}
 
 	// Flush supporting calls in entry->op order so output ordering matches the old
@@ -986,7 +1001,12 @@ func emitChain(
 
 // buildFrame resolves one node into a CallFrame, stamping the resolved Function
 // identity from the fragment and the EntryCall of the edge that led to this frame.
-func buildFrame(node graphNode, entryCall *CallSite, fragments map[ComponentKey]Fragment) CallFrame {
+func buildFrame(
+	node graphNode,
+	entryCall *CallSite,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
+) CallFrame {
 	frame := CallFrame{
 		Component: node.Component,
 		Signature: node.Function,
@@ -994,12 +1014,9 @@ func buildFrame(node graphNode, entryCall *CallSite, fragments map[ComponentKey]
 	}
 	if frag, ok := fragments[node.Component]; ok {
 		frame.Module = frag.Module
-		for i := range frag.Functions {
-			if frag.Functions[i].Signature == node.Function {
-				frame.Function = frag.Functions[i]
-				break
-			}
-		}
+	}
+	if fn, ok := functionsByNode[node]; ok {
+		frame.Function = fn
 	}
 	return frame
 }
@@ -1037,6 +1054,7 @@ func trace(
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	traversedEdgeEntryCall *CallSite,
 	path []CallFrame,
 	visiting map[graphNode]bool,
@@ -1048,7 +1066,7 @@ func trace(
 	visiting[current] = true
 	defer delete(visiting, current)
 
-	frame := buildFrame(current, traversedEdgeEntryCall, fragments)
+	frame := buildFrame(current, traversedEdgeEntryCall, fragments, functionsByNode)
 
 	path = append(path, frame)
 	flushSupportingCalls(current, &frame, supportingByNode, out)
@@ -1069,7 +1087,7 @@ func trace(
 	}
 	for _, edge := range adjacency[current] {
 		// Carry the EntryCall from this edge to the next frame.
-		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, edge.entryCall, path, visiting, out)
+		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, edge.entryCall, path, visiting, out)
 	}
 }
 
@@ -1119,6 +1137,7 @@ func buildForwardClosures(
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	caps forwardCaps,
 ) map[graphNode]*forwardClosure {
 	memo := make(map[graphNode]*forwardClosure, len(opsByNode))
@@ -1126,7 +1145,7 @@ func buildForwardClosures(
 		if _, ok := memo[anchor]; ok {
 			continue
 		}
-		memo[anchor] = forwardBFS(anchor, adjacency, opsByNode, supportingByNode, fragments, caps)
+		memo[anchor] = forwardBFS(anchor, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, caps)
 	}
 	return memo
 }
@@ -1145,10 +1164,11 @@ func forwardBFS(
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	caps forwardCaps,
 ) *forwardClosure {
 	fc := &forwardClosure{
-		anchor:   buildFrame(anchor, nil, fragments),
+		anchor:   buildFrame(anchor, nil, fragments, functionsByNode),
 		maxDepth: caps.maxDepth,
 	}
 
@@ -1156,6 +1176,7 @@ func forwardBFS(
 		fc:               fc,
 		caps:             caps,
 		fragments:        fragments,
+		functionsByNode:  functionsByNode,
 		opsByNode:        opsByNode,
 		supportingByNode: supportingByNode,
 		visited:          map[graphNode]bool{anchor: true},
@@ -1203,6 +1224,7 @@ type forwardBFSState struct {
 	fc               *forwardClosure
 	caps             forwardCaps
 	fragments        map[ComponentKey]Fragment
+	functionsByNode  map[graphNode]Function
 	opsByNode        map[graphNode][]CryptoOperation
 	supportingByNode map[graphNode][]SupportingCall
 	visited          map[graphNode]bool
@@ -1231,7 +1253,7 @@ func (s *forwardBFSState) visitEdge(cur graphNode, d int, edge adjacencyEdge) (g
 		}
 		s.visited[target] = true
 		s.depth[target] = d + 1
-		s.fc.nodes = append(s.fc.nodes, buildForwardNode(target, d+1, s.fragments, s.opsByNode, s.supportingByNode))
+		s.fc.nodes = append(s.fc.nodes, buildForwardNode(target, d+1, s.fragments, s.functionsByNode, s.opsByNode, s.supportingByNode))
 		s.edgeSeen[key] = true
 		s.fc.edges = append(s.fc.edges, forwardEdge{from: cur, to: target, entryCall: edge.entryCall})
 		return target, true
@@ -1259,13 +1281,14 @@ func buildForwardNode(
 	node graphNode,
 	depth int,
 	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 ) forwardNode {
 	category := firstSupportingCategory(supportingByNode[node])
 	return forwardNode{
 		node:               node,
-		frame:              buildFrame(node, nil, fragments),
+		frame:              buildFrame(node, nil, fragments, functionsByNode),
 		depth:              depth,
 		cryptoRelevant:     len(opsByNode[node]) > 0 || category != "",
 		supportingCategory: category,

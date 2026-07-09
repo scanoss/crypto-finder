@@ -23,8 +23,23 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		GraphAlgoVersion: e.ScanMetadata.GraphAlgoVersion,
 	}
 
-	for i := range e.Functions {
-		fn := &e.Functions[i]
+	appendFragmentFunctions(&frag, e.Functions)
+	functionKeys := graphFragmentFunctionKeys(e.Functions)
+	if len(e.CompactInternalEdges) > 0 {
+		appendCompactInternalEdges(&frag, functionKeys, e.InternalEdgeStrings, e.CompactInternalEdges)
+	} else {
+		appendInternalEdges(&frag, e.InternalEdges)
+	}
+	appendExternalCalls(&frag, e.ExternalCalls)
+	appendCryptoOperations(&frag, e.CryptoAnnotations)
+	appendSupportingCalls(&frag, e.SupportingCalls)
+	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints)
+	return frag
+}
+
+func appendFragmentFunctions(frag *Fragment, functions []GraphFragmentFunction) {
+	for i := range functions {
+		fn := &functions[i]
 		frag.Functions = append(frag.Functions, Function{
 			Signature:          fn.Key,
 			FunctionName:       fn.FunctionName,
@@ -40,50 +55,91 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			Aliases:            append([]string(nil), fn.Aliases...),
 		})
 	}
-	for i := range e.InternalEdges {
-		ie := &e.InternalEdges[i]
-		edge := InternalEdge{
-			Caller:       ie.CallerKey,
-			Callee:       ie.CalleeKey,
-			Resolution:   normalizeResolutionKind(ie.Resolution),
-			DeclaredType: ie.DeclaredType,
-			MethodName:   ie.MethodName,
-			Arity:        ie.Arity,
-			CallSite:     ie.Line,
-			ReceiverVar:  ie.ReceiverVar,
-			AssignedVar:  ie.AssignedVar,
-			ChainID:      ie.ChainID,
-			StartCol:     ie.StartCol,
-			EndCol:       ie.EndCol,
-			EntryCall:    toCallSite(ie.EntryCall),
+}
 
-			ResolvedReceiverType: ie.ResolvedReceiverType,
-		}
-		frag.InternalEdges = append(frag.InternalEdges, edge)
+func graphFragmentFunctionKeys(functions []GraphFragmentFunction) []string {
+	keys := make([]string, len(functions))
+	for i := range functions {
+		keys[i] = functions[i].Key
 	}
-	for i := range e.ExternalCalls {
-		ec := &e.ExternalCalls[i]
-		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
-			Caller:          ec.CallerKey,
-			TargetSignature: ec.TargetKey,
-			Raw:             ec.Raw,
-			Resolution:      normalizeResolutionKind(ec.Resolution),
-			DeclaredType:    ec.DeclaredType,
-			MethodName:      ec.MethodName,
-			Arity:           ec.Arity,
-			CallSite:        ec.Line,
-			ReceiverVar:     ec.ReceiverVar,
-			AssignedVar:     ec.AssignedVar,
-			ChainID:         ec.ChainID,
-			StartCol:        ec.StartCol,
-			EndCol:          ec.EndCol,
-			EntryCall:       toCallSite(ec.EntryCall),
+	return keys
+}
 
+func appendCompactInternalEdges(
+	frag *Fragment,
+	functionKeys []string,
+	strings []string,
+	edges []GraphFragmentCompactEdge,
+) {
+	for i := range edges {
+		ie := &edges[i]
+		frag.InternalEdges = append(frag.InternalEdges, InternalEdge{
+			Caller:               functionKeyAt(functionKeys, ie.Caller),
+			Callee:               functionKeyAt(functionKeys, ie.Callee),
+			Resolution:           normalizeResolutionKind(stringAt(strings, ie.Resolution)),
+			DeclaredType:         stringAt(strings, ie.DeclaredType),
+			MethodName:           stringAt(strings, ie.MethodName),
+			Arity:                ie.Arity,
+			CallSite:             ie.Line,
+			ReceiverVar:          stringAt(strings, ie.ReceiverVar),
+			AssignedVar:          stringAt(strings, ie.AssignedVar),
+			ChainID:              stringAt(strings, ie.ChainID),
+			StartCol:             ie.StartCol,
+			EndCol:               ie.EndCol,
+			EntryCall:            toCallSite(ie.EntryCall),
+			ResolvedReceiverType: stringAt(strings, ie.ResolvedReceiverType),
+		})
+	}
+}
+
+func appendInternalEdges(frag *Fragment, edges []GraphFragmentEdge) {
+	for i := range edges {
+		ie := &edges[i]
+		frag.InternalEdges = append(frag.InternalEdges, InternalEdge{
+			Caller:               ie.CallerKey,
+			Callee:               ie.CalleeKey,
+			Resolution:           normalizeResolutionKind(ie.Resolution),
+			DeclaredType:         ie.DeclaredType,
+			MethodName:           ie.MethodName,
+			Arity:                ie.Arity,
+			CallSite:             ie.Line,
+			ReceiverVar:          ie.ReceiverVar,
+			AssignedVar:          ie.AssignedVar,
+			ChainID:              ie.ChainID,
+			StartCol:             ie.StartCol,
+			EndCol:               ie.EndCol,
+			EntryCall:            toCallSite(ie.EntryCall),
+			ResolvedReceiverType: ie.ResolvedReceiverType,
+		})
+	}
+}
+
+func appendExternalCalls(frag *Fragment, calls []GraphFragmentExternal) {
+	for i := range calls {
+		ec := &calls[i]
+		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
+			Caller:               ec.CallerKey,
+			TargetSignature:      ec.TargetKey,
+			Raw:                  ec.Raw,
+			Resolution:           normalizeResolutionKind(ec.Resolution),
+			DeclaredType:         ec.DeclaredType,
+			MethodName:           ec.MethodName,
+			Arity:                ec.Arity,
+			CallSite:             ec.Line,
+			ReceiverVar:          ec.ReceiverVar,
+			AssignedVar:          ec.AssignedVar,
+			ChainID:              ec.ChainID,
+			StartCol:             ec.StartCol,
+			EndCol:               ec.EndCol,
+			EntryCall:            toCallSite(ec.EntryCall),
 			ResolvedReceiverType: ec.ResolvedReceiverType,
 		})
 	}
-	for i := range e.CryptoAnnotations {
-		op := &e.CryptoAnnotations[i]
+}
+
+func appendCryptoOperations(frag *Fragment, ops []GraphFragmentCryptoOp) {
+	for i := range ops {
+		op := &ops[i]
 		frag.CryptoOperations = append(frag.CryptoOperations, CryptoOperation{
 			Function:          op.FunctionKey,
 			FindingID:         op.FindingID,
@@ -101,8 +157,11 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			SupportingCallIDs: append([]string(nil), op.SupportingCallIDs...),
 		})
 	}
-	for i := range e.SupportingCalls {
-		s := &e.SupportingCalls[i]
+}
+
+func appendSupportingCalls(frag *Fragment, calls []GraphFragmentSupporting) {
+	for i := range calls {
+		s := &calls[i]
 		frag.SupportingCalls = append(frag.SupportingCalls, SupportingCall{
 			Function:           s.FunctionKey,
 			SupportingID:       s.SupportingID,
@@ -119,8 +178,20 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 			MatchedOperation:   toMatchedOp(s.MatchedOperation),
 		})
 	}
-	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints)
-	return frag
+}
+
+func functionKeyAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
+}
+
+func stringAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
 }
 
 func appendCryptoEntryPoints(dst []CryptoEntryPoint, src []GraphFragmentCryptoEntryPoint) []CryptoEntryPoint {

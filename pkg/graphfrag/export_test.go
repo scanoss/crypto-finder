@@ -187,13 +187,11 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_6 verifies the schema version constant has been bumped.
-// 1.6 adds resolved_receiver_type on internal_edges/external_calls (the
-// concrete receiver type the producer's KB-contract/return-type inference
-// resolved for an interface-dispatch call site) — additive over 1.5.
-func TestSchemaVersion_Is_1_6(t *testing.T) {
+// TestSchemaVersion_Is_1_7 verifies the schema version constant has been bumped.
+// 1.7 adds compact internal edge encoding with the same data as internal_edges.
+func TestSchemaVersion_Is_1_7(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.6" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.6", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.7" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.7", SchemaVersion)
 	}
 }

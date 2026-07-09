@@ -238,3 +238,48 @@ func TestResolveParameterPassthroughDispatch_ConvergesToZero(t *testing.T) {
 		t.Fatalf("second resolveParameterPassthroughDispatch pass resolved %d, want 0 (fixpoint must not re-count existing bypass edges)", n)
 	}
 }
+
+func TestGroupAmbiguousDispatchEdges_IgnoresNonPassthroughCallers(t *testing.T) {
+	passthroughID := FunctionID{Package: "com.acme", Type: "Builder", Name: "with#1"}
+	nonPassthroughID := FunctionID{Package: "com.acme", Type: "Builder", Name: "helper#0"}
+	ifaceID := FunctionID{Package: "com.acme", Type: "Sink", Name: "run#0"}
+	implAID := FunctionID{Package: "com.acme", Type: "SinkImplA", Name: "run#0"}
+	implBID := FunctionID{Package: "com.acme", Type: "SinkImplB", Name: "run#0"}
+
+	graph := &CallGraph{
+		Functions: map[string]*FunctionDecl{
+			passthroughID.String(): {
+				ID:         passthroughID,
+				Parameters: []FunctionParameter{{Type: "Sink", Name: "s"}},
+				Calls:      []FunctionCall{{Callee: ifaceID, ReceiverVar: "s", Line: 10}},
+			},
+			nonPassthroughID.String(): {
+				ID:    nonPassthroughID,
+				Calls: []FunctionCall{{Callee: ifaceID, ReceiverVar: "local", Line: 20}},
+			},
+		},
+		EdgeResolutions: map[string]EdgeResolution{},
+	}
+
+	for _, caller := range []FunctionID{passthroughID, nonPassthroughID} {
+		callSite := 20
+		if caller == passthroughID {
+			callSite = 10
+		}
+		for _, callee := range []FunctionID{implAID, implBID} {
+			res := EdgeResolution{Kind: EdgeKindInterfaceDispatch, MethodName: "run", Arity: 0, CallSite: callSite}
+			graph.EdgeResolutions[EdgeResolutionKey(caller.String(), callee.String(), res)] = res
+		}
+	}
+
+	groups := groupAmbiguousDispatchEdges(graph)
+	if len(groups) != 1 {
+		t.Fatalf("groups len = %d, want 1: %#v", len(groups), groups)
+	}
+	if _, ok := groups[dispatchAmbiguousGroupKey{Caller: passthroughID.String(), CallSite: 10, MethodName: "run", Arity: 0}]; !ok {
+		t.Fatalf("expected passthrough group, got %#v", groups)
+	}
+	if _, ok := groups[dispatchAmbiguousGroupKey{Caller: nonPassthroughID.String(), CallSite: 20, MethodName: "run", Arity: 0}]; ok {
+		t.Fatalf("non-passthrough caller should not be grouped: %#v", groups)
+	}
+}

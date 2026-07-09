@@ -1,7 +1,7 @@
 package scan
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -51,8 +51,9 @@ type exportBuildContext struct {
 	// kb holds the ecosystem's callgraph contracts, used to attach contract-role
 	// supporting calls (fluent lifecycle methods) to synthesized terminal entry
 	// points. nil for ecosystems with no contracts.
-	kb        *contracts.KnowledgeBase
-	declIndex map[string]*callgraph.FunctionDecl // base FQN → definition
+	kb            *contracts.KnowledgeBase
+	declIndex     map[string]*callgraph.FunctionDecl        // base FQN → definition
+	declsByMethod map[string][]operationContractDeclaration // method name → definitions
 	// callsBySignature caches, per caller FunctionID key, an index of that
 	// caller's FunctionCalls grouped by the (Package, Type, BaseFunctionName)
 	// tuple callMatchesCallee compares — the same fuzzy key an
@@ -62,7 +63,9 @@ type exportBuildContext struct {
 	// so a caller with heavy dispatch fan-out (many resolved edges, one
 	// source call site) pays the O(len(Calls)) index-build cost once instead
 	// of once per edge. nil until first use.
-	callsBySignature map[string]map[string][]*callgraph.FunctionCall
+	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
+	calleeSignatureKeys  map[string]string
+	chainIDsByCallerLine map[string]map[int]string
 }
 
 type cachedContainingFunction struct {
@@ -334,24 +337,11 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
-	payload := buildCallGraphExportV2(result)
+	payload, err := buildCallGraphExportV2ToFile(path, result)
 	buildDuration := time.Since(buildStart)
-
-	serializeStart := time.Now()
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(payload); err != nil {
-		return fmt.Errorf("failed to serialize call graph export: %w", err)
+	if err != nil {
+		return err
 	}
-	serializeDuration := time.Since(serializeStart)
-
-	writeStart := time.Now()
-	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
-		return fmt.Errorf("failed to write call graph to %s: %w", path, err)
-	}
-	writeDuration := time.Since(writeStart)
 
 	log.Info().
 		Str("file", path).
@@ -360,12 +350,224 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 		Int("edges", payload.ScanMetadata.EdgeCount).
 		Int("findings", len(payload.FindingGraphs)).
 		Dur("build_duration", buildDuration).
-		Dur("serialize_duration", serializeDuration).
-		Dur("write_duration", writeDuration).
 		Dur("total_duration", time.Since(exportStart)).
 		Msg("Exported integration call graph")
 
 	return nil
+}
+
+func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (callGraphExportV2, error) {
+	ctx := newExportBuildContext(result)
+	assets := callGraphExportAssets(result.Report)
+	meta := buildCallGraphExportScanMeta(result)
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
+	}
+	bw := bufio.NewWriterSize(file, 1<<20)
+	writer := graphFragmentJSONWriter{w: bw}
+
+	streamed, writeErr := streamCallGraphExport(&writer, ctx, result, assets, meta)
+	if err := finishBufferedOutput(file, bw, writeErr); err != nil {
+		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
+	}
+
+	return callGraphExportV2{
+		SchemaVersion:     callGraphSchemaVersion,
+		ScanMetadata:      meta,
+		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
+		SupportingCalls:   streamed.supportingCalls,
+		CryptoEntryPoints: streamed.entryPoints,
+	}, nil
+}
+
+type streamedCallGraphExport struct {
+	supportingCalls []callGraphSupportingCall
+	entryPoints     []callGraphCryptoEntryPoint
+}
+
+func streamCallGraphExport(
+	writer *graphFragmentJSONWriter,
+	ctx *exportBuildContext,
+	result *engine.DepScanResult,
+	assets []callGraphExportAsset,
+	meta callGraphExportScanMeta,
+) (streamedCallGraphExport, error) {
+	if err := writeCallGraphPrefix(writer, meta); err != nil {
+		return streamedCallGraphExport{}, err
+	}
+	index, supportingByID, referencedSupporting, err := streamFindingGraphs(writer, ctx, assets)
+	if err != nil {
+		return streamedCallGraphExport{}, err
+	}
+
+	supportingCalls := sortedSupportingCalls(supportingByID)
+	for i := range supportingCalls {
+		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
+			continue
+		}
+		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
+	}
+	if err := writeGraphFragmentArrayField(writer, "supporting_calls", supportingCalls, true); err != nil {
+		return streamedCallGraphExport{}, err
+	}
+
+	entryPoints := flattenEntryPointIndex(ctx.kb, index)
+	entryPoints = appendSynthesizedOperationEntryPoints(ctx, result, entryPoints)
+	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
+		return streamedCallGraphExport{}, err
+	}
+	if _, err := writer.w.WriteString("\n}\n"); err != nil {
+		return streamedCallGraphExport{}, err
+	}
+	return streamedCallGraphExport{supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
+}
+
+func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta) error {
+	if _, err := writer.w.WriteString("{\n"); err != nil {
+		return err
+	}
+	if err := writer.writeField("schema_version", callGraphSchemaVersion); err != nil {
+		return err
+	}
+	if err := writer.writeField("scan_metadata", meta); err != nil {
+		return err
+	}
+	return writer.startArrayField("finding_graphs")
+}
+
+func streamFindingGraphs(
+	writer *graphFragmentJSONWriter,
+	ctx *exportBuildContext,
+	assets []callGraphExportAsset,
+) (map[string]*entryPointData, map[string]callGraphSupportingCall, map[string]struct{}, error) {
+	index := make(map[string]*entryPointData)
+	supportingByID := make(map[string]callGraphSupportingCall)
+	referencedSupporting := make(map[string]struct{})
+	buildStart := time.Now()
+
+	for i := range assets {
+		item := assets[i]
+		supporting := deriveSupportingCallsForFinding(ctx, item.finding, item.asset)
+		indexSupportingCalls(supportingByID, supporting)
+
+		fg := buildFindingGraph(ctx, item.finding, item.asset)
+		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
+		addFindingGraphToEntryPointIndex(index, &fg)
+		addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+		if err := writer.writeArrayElement(i, fg); err != nil {
+			return nil, nil, nil, err
+		}
+		logCallGraphExportProgress(i+1, len(assets), buildStart)
+	}
+	if err := writer.endArrayField(len(assets)); err != nil {
+		return nil, nil, nil, err
+	}
+	return index, supportingByID, referencedSupporting, nil
+}
+
+func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []callGraphSupportingCall) {
+	for i := range supporting {
+		support := supporting[i]
+		if support.SupportingID == "" {
+			continue
+		}
+		if _, exists := dst[support.SupportingID]; !exists {
+			dst[support.SupportingID] = support
+		}
+	}
+}
+
+func logCallGraphExportProgress(processed, total int, start time.Time) {
+	if processed%callGraphExportProgress != 0 && processed != total {
+		return
+	}
+	log.Info().
+		Int("processed", processed).
+		Int("total", total).
+		Dur("elapsed", time.Since(start)).
+		Msg("Building integration call graph export")
+}
+
+func finishBufferedOutput(file *os.File, bw *bufio.Writer, writeErr error) error {
+	err := writeErr
+	if err == nil {
+		err = bw.Flush()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+type callGraphExportAsset struct {
+	finding entities.Finding
+	asset   entities.CryptographicAsset
+}
+
+func callGraphExportAssets(report *entities.InterimReport) []callGraphExportAsset {
+	if report == nil {
+		return nil
+	}
+	var assets []callGraphExportAsset
+	for _, finding := range report.Findings {
+		for i := range finding.CryptographicAssets {
+			assets = append(assets, callGraphExportAsset{finding: finding, asset: finding.CryptographicAssets[i]})
+		}
+	}
+	return assets
+}
+
+func sortedSupportingCalls(values map[string]callGraphSupportingCall) []callGraphSupportingCall {
+	out := make([]callGraphSupportingCall, 0, len(values))
+	for key := range values {
+		out = append(out, values[key])
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SupportingID < out[j].SupportingID
+	})
+	return out
+}
+
+func buildCallGraphExportScanMeta(result *engine.DepScanResult) callGraphExportScanMeta {
+	meta := callGraphExportScanMeta{
+		Ecosystem:     result.Ecosystem,
+		RootModule:    result.RootModule,
+		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
+		FunctionCount: len(result.CallGraph.Functions),
+		EdgeCount:     countCallGraphEdges(result.CallGraph),
+	}
+	if result.Report != nil {
+		meta.ToolName = result.Report.Tool.Name
+		meta.ToolVersion = result.Report.Tool.Version
+	}
+	if result.Ecosystem == ecosystemJava && result.CallGraph != nil && result.CallGraph.JavaPlatformSignatures != nil {
+		javaMeta := result.CallGraph.JavaPlatformSignatures
+		meta.JavaRequestedJDKMajor = javaMeta.RequestedMajor
+		meta.JavaRuntimeVersion = javaMeta.RuntimeVersion
+		used := javaMeta.SignaturesUsed
+		meta.JavaPlatformSignaturesUsed = &used
+		meta.JavaPlatformSignatureSource = javaMeta.SignatureSource
+		meta.JavaPlatformSignatureUnavailableReason = javaMeta.UnavailableReason
+	}
+	return meta
+}
+
+func writeIndentedJSONFile(path string, payload any) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(file)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	err = enc.Encode(payload)
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // --- Build pipeline ---
@@ -759,8 +961,8 @@ func flattenReachableSupportingCalls(values map[string]callGraphReachableSupport
 		return nil
 	}
 	out := make([]callGraphReachableSupportingCall, 0, len(values))
-	for _, value := range values {
-		out = append(out, value)
+	for key := range values {
+		out = append(out, values[key])
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].SupportingID < out[j].SupportingID
@@ -967,25 +1169,37 @@ func (ctx *exportBuildContext) synthesizeContractOperationEntryPoint(
 }
 
 func (ctx *exportBuildContext) operationContractDeclarations(c contracts.Contract) []operationContractDeclaration {
-	direct := ctx.declIndex[c.Method]
 	contractClass, contractMethod := splitFunctionName(c.Method)
-	out := make([]operationContractDeclaration, 0, 1)
-	if direct != nil && functionDeclArityMatches(direct, c.Arity) {
-		out = append(out, operationContractDeclaration{declFQN: c.Method, decl: direct})
+	candidates := ctx.declsByMethod[contractMethod]
+	if candidates == nil {
+		candidates = ctx.operationContractDeclarationCandidates(contractMethod)
 	}
-	for declFQN, decl := range ctx.declIndex {
-		if decl == direct {
-			continue
-		}
+	out := make([]operationContractDeclaration, 0, len(candidates))
+	for _, candidate := range candidates {
+		declFQN, decl := candidate.declFQN, candidate.decl
 		declClass, declMethod := splitFunctionName(declFQN)
-		if declMethod != contractMethod || !functionDeclArityMatches(decl, c.Arity) || !ctx.typeOrAncestor(contractClass, declClass) {
+		if declMethod != contractMethod || !functionDeclArityMatches(decl, c.Arity) {
 			continue
 		}
-		out = append(out, operationContractDeclaration{declFQN: declFQN, decl: decl})
+		if declFQN != c.Method && !ctx.typeOrAncestor(contractClass, declClass) {
+			continue
+		}
+		out = append(out, candidate)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].declFQN < out[j].declFQN
 	})
+	return out
+}
+
+func (ctx *exportBuildContext) operationContractDeclarationCandidates(method string) []operationContractDeclaration {
+	out := make([]operationContractDeclaration, 0, 1)
+	for declFQN, decl := range ctx.declIndex {
+		_, declMethod := splitFunctionName(declFQN)
+		if declMethod == method {
+			out = append(out, operationContractDeclaration{declFQN: declFQN, decl: decl})
+		}
+	}
 	return out
 }
 
@@ -1135,8 +1349,14 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 		// Future overload-aware lookup should store []*callgraph.FunctionDecl per
 		// base FQN instead.
 		ctx.declIndex = make(map[string]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
+		ctx.declsByMethod = make(map[string][]operationContractDeclaration)
 		for _, fn := range result.CallGraph.Functions {
 			if fqn := exportFunctionFQN(fn.ID); fqn != "" {
+				_, method := splitFunctionName(fqn)
+				ctx.declsByMethod[method] = append(ctx.declsByMethod[method], operationContractDeclaration{
+					declFQN: fqn,
+					decl:    fn,
+				})
 				if _, exists := ctx.declIndex[fqn]; !exists {
 					ctx.declIndex[fqn] = fn
 				}

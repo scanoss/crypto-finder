@@ -19,9 +19,9 @@
 package output
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -58,52 +58,61 @@ func NewJSONWriter() *JSONWriter {
 func (w *JSONWriter) Write(report *entities.InterimReport, destination string) error {
 	// Validate report
 	if report == nil {
-		return fmt.Errorf("report cannot be nil")
+		return fmt.Errorf("output: report cannot be nil")
 	}
-
-	// Marshal to JSON with HTML escaping disabled to preserve <init> etc.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if w.PrettyPrint {
-		enc.SetIndent("", w.Indent)
-	}
-	if err := enc.Encode(report); err != nil {
-		return fmt.Errorf("failed to marshal report to JSON: %w", err)
-	}
-	data := buf.Bytes()
 
 	// Determine output destination
 	//nolint:nestif // Separate stdout and file paths are inherently nested
 	if destination == "" || destination == "-" {
-		// Write to stdout
-		if _, err := os.Stdout.Write(data); err != nil {
-			return fmt.Errorf("failed to write to stdout: %w", err)
+		if err := w.writeJSON(report, os.Stdout); err != nil {
+			return fmt.Errorf("output: failed to write JSON to stdout: %w", err)
 		}
 		// Add newline for better terminal output
 		if _, err := os.Stdout.WriteString("\n"); err != nil {
-			return fmt.Errorf("failed to write newline to stdout: %w", err)
+			return fmt.Errorf("output: failed to write newline to stdout: %w", err)
 		}
 	} else {
 		// Write to file
 		// Convert to absolute path
 		absPath, err := filepath.Abs(destination)
 		if err != nil {
-			return fmt.Errorf("failed to resolve destination path: %w", err)
+			return fmt.Errorf("output: failed to resolve destination path: %w", err)
 		}
 
 		// Check parent directory exists
 		parentDir := filepath.Dir(absPath)
 		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			return fmt.Errorf("parent directory does not exist: %s", parentDir)
+			return fmt.Errorf("output: parent directory does not exist: %s", parentDir)
 		}
 
-		// Write to file
-		// 0o600 = rw------- (owner can read/write only)
-		if err := os.WriteFile(absPath, data, 0o600); err != nil {
-			return fmt.Errorf("failed to write JSON file: %w", err)
+		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return fmt.Errorf("output: failed to open JSON file: %w", err)
+		}
+		writeErr := w.writeJSON(report, file)
+		closeErr := file.Close()
+		if writeErr != nil {
+			if closeErr != nil {
+				return fmt.Errorf("output: failed to write JSON file: %w (close failed: %w)", writeErr, closeErr)
+			}
+			return fmt.Errorf("output: failed to write JSON file: %w", writeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("output: failed to close JSON file: %w", closeErr)
 		}
 	}
 
+	return nil
+}
+
+func (w *JSONWriter) writeJSON(report *entities.InterimReport, dst io.Writer) error {
+	enc := json.NewEncoder(dst)
+	enc.SetEscapeHTML(false)
+	if w.PrettyPrint {
+		enc.SetIndent("", w.Indent)
+	}
+	if err := enc.Encode(report); err != nil {
+		return fmt.Errorf("output: failed to encode JSON: %w", err)
+	}
 	return nil
 }

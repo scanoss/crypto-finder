@@ -329,3 +329,30 @@ func TestStitch_EndToEnd_BouncyCastleFalsePositiveKilled(t *testing.T) {
 		t.Fatalf("expected the over-broad get() edge to be recorded as suppressed name_only: %#v", res.Suppressed)
 	}
 }
+
+func TestDecodeFragment_PrefersCompactInternalEdgesWhenBothFormatsPresent(t *testing.T) {
+	t.Parallel()
+
+	export := GraphFragmentExport{
+		ScanMetadata: GraphFragmentScanMetadata{RootModule: "app"},
+		Functions: []GraphFragmentFunction{
+			{Key: "caller"},
+			{Key: "callee"},
+		},
+		InternalEdgeStrings: []string{"", "exact"},
+		CompactInternalEdges: []GraphFragmentCompactEdge{
+			{Caller: 0, Callee: 1, Line: 10, Resolution: 1},
+		},
+		InternalEdges: []GraphFragmentEdge{
+			{CallerKey: "caller", CalleeKey: "callee", Line: 10, Resolution: "exact"},
+		},
+	}
+
+	frag := export.ToFragment(ComponentKey{Purl: "pkg:maven/app", Version: "1.0.0"})
+	if len(frag.InternalEdges) != 1 {
+		t.Fatalf("InternalEdges len = %d, want 1", len(frag.InternalEdges))
+	}
+	if frag.InternalEdges[0].Caller != "caller" || frag.InternalEdges[0].Callee != "callee" {
+		t.Fatalf("InternalEdges[0] = %+v, want caller -> callee", frag.InternalEdges[0])
+	}
+}

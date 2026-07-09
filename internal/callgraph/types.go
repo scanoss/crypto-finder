@@ -306,6 +306,10 @@ type CallGraph struct {
 	// use this to refuse to present over-broad name/arity dispatch guesses as
 	// typed reachability proof.
 	EdgeResolutions map[string]EdgeResolution
+	// EdgeResolutionsByPair mirrors EdgeResolutions by caller/callee pair so
+	// export paths can avoid rebuilding that index for very large dispatch
+	// graphs.
+	EdgeResolutionsByPair map[string][]EdgeResolution
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
@@ -354,6 +358,8 @@ type EdgeResolution struct {
 	MethodName   string // base method name (no arity decoration)
 	Arity        int
 	CallSite     int // source line of the call expression
+	callerKey    string
+	calleeKey    string
 
 	// ResolvedReceiverType is the concrete receiver type resolveParameterPassthroughDispatch
 	// determined for THIS specific dispatch edge, when the call site is a
@@ -380,6 +386,27 @@ func EdgeResolutionKey(callerKey, calleeKey string, resolution EdgeResolution) s
 // variants for one caller->callee pair.
 func EdgeResolutionKeyPrefix(callerKey, calleeKey string) string {
 	return callerKey + "\x00" + calleeKey + "\x00"
+}
+
+// EdgeResolutionPairKey is the stable key shared by all resolution variants
+// for one caller->callee pair.
+func EdgeResolutionPairKey(callerKey, calleeKey string) string {
+	return callerKey + "\x00" + calleeKey
+}
+
+// EdgeResolutionEndpoints returns the caller/callee pair for a stored edge
+// resolution. Values recorded by this package carry endpoints directly so
+// large export paths do not need to repeatedly split the map key; hand-built
+// tests or older in-memory fixtures still fall back to parsing the key.
+func EdgeResolutionEndpoints(key string, resolution EdgeResolution) (callerKey, calleeKey string, ok bool) {
+	if resolution.callerKey != "" && resolution.calleeKey != "" {
+		return resolution.callerKey, resolution.calleeKey, true
+	}
+	parts := strings.SplitN(key, "\x00", 3)
+	if len(parts) < 3 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 // functionArity parses the "#<n>" arity suffix from a decorated function name.

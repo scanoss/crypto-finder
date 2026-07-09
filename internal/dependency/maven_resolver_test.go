@@ -358,17 +358,11 @@ exit 1
 		t.Fatalf("expected empty source directory for dependency without sources, got %q", withoutSources.Dir)
 	}
 
-	// Graph / VersionedGraph are intentionally not populated by Maven anymore:
-	// `mvn dependency:tree` was minutes of work whose output had no consumer.
-	// They exist on ResolveResult only because other resolvers (Gradle, Cargo)
-	// still produce them. If a Maven downstream consumer ever needs the graph,
-	// re-enable Step 6 in maven_resolver.go behind a flag and restore these
-	// assertions.
-	if len(result.Graph) != 0 {
-		t.Fatalf("expected Graph to be empty (Maven no longer runs dependency:tree), got %d entries", len(result.Graph))
+	if got := result.Graph["com.acme:app"]; len(got) != 2 {
+		t.Fatalf("Graph root children = %#v, want two dependencies", got)
 	}
-	if len(result.VersionedGraph) != 0 {
-		t.Fatalf("expected VersionedGraph to be empty, got %d entries", len(result.VersionedGraph))
+	if got := result.VersionedGraph["com.acme:app@1.0.0"]; len(got) != 2 {
+		t.Fatalf("VersionedGraph root children = %#v, want two dependencies", got)
 	}
 }
 

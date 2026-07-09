@@ -424,6 +424,43 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 }
 
+func TestDependencyScanner_ScanSingleDep_DropsNoFindingReportsFromMemory(t *testing.T) {
+	mockScan := &mockScanner{
+		scanFunc: func(_ context.Context, _ string, _ []string, _ entities.ToolInfo) (*entities.InterimReport, error) {
+			return &entities.InterimReport{}, nil
+		},
+	}
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", mockScan)
+
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) {
+		return []string{"/rules/go.yaml"}, nil
+	}}), registry)
+	cache := &fakeFindingsCache{getMap: map[string]*entities.InterimReport{}}
+	ds := &DependencyScanner{
+		orchestrator:  orchestrator,
+		resolver:      &fakeResolver{ecosystem: "go"},
+		findingsCache: cache,
+	}
+
+	dep := dependency.Dependency{Module: "github.com/acme/no-crypto", Version: "v1", Dir: t.TempDir()}
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, "hash", DepScanOptions{
+		ScanOptions: ScanOptions{ScannerName: "test-scanner"},
+	})
+	if res.err != nil {
+		t.Fatalf("scanSingleDep: %v", res.err)
+	}
+	if res.status != depScanStatusScanned {
+		t.Fatalf("status = %v, want scanned", res.status)
+	}
+	if res.report != nil {
+		t.Fatal("expected no-finding dependency report to be dropped from memory")
+	}
+	if cache.putCalls != 1 {
+		t.Fatalf("expected no-finding report to still be cached, puts=%d", cache.putCalls)
+	}
+}
+
 func TestDependencyScanner_LoadFilteredRules_MalformedParameterConditionAborts(t *testing.T) {
 	ruleDir := t.TempDir()
 	brokenRule := filepath.Join(ruleDir, "broken.yaml")
@@ -463,6 +500,18 @@ rules:
 	}
 	if !strings.Contains(err.Error(), "param[]==true") {
 		t.Errorf("error %q does not contain the raw malformed predicate", err.Error())
+	}
+}
+
+func TestDependencyScanWorkers_DefaultsAreMemorySafeForJava(t *testing.T) {
+	if got := dependencyScanWorkers(0, "java"); got < 1 || got > 2 {
+		t.Fatalf("java default workers = %d, want 1..2", got)
+	}
+	if got := dependencyScanWorkers(6, "java"); got != 6 {
+		t.Fatalf("explicit java workers = %d, want 6", got)
+	}
+	if got := dependencyScanWorkers(0, "go"); got < 1 || got > maxWorkers {
+		t.Fatalf("go default workers = %d, want 1..%d", got, maxWorkers)
 	}
 }
 
@@ -704,4 +753,151 @@ func TestDetachDeadlineKeepCancel(t *testing.T) {
 			t.Fatalf("child was not canceled by its own cancel func")
 		}
 	})
+}
+
+func TestDependencyScanner_CollectPackageSets_DropsDepsWhenNoneHaveFindings(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "example.com/root",
+		Graph: map[string][]string{
+			"example.com/root": {"example.com/no-crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "example.com/no-crypto", Version: "v1", Dir: "/deps/no-crypto"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if hasPackage(sets.graphPackages, "example.com/no-crypto") {
+		t.Fatalf("unexpected no-crypto dependency in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
+func TestDependencyScanner_CollectPackageSets_PrunesDepsOutsideCryptoPaths(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "example.com/root",
+		Graph: map[string][]string{
+			"example.com/root":   {"example.com/bridge", "example.com/unused"},
+			"example.com/bridge": {"example.com/crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "example.com/bridge", Version: "v1", Dir: "/deps/bridge"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/crypto", Version: "v1", Dir: "/deps/crypto"},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/unused", Version: "v1", Dir: "/deps/unused"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if !hasPackage(sets.graphPackages, "example.com/root") {
+		t.Fatalf("expected root package in graphPackages: %#v", sets.graphPackages)
+	}
+	if !hasPackage(sets.graphPackages, "example.com/bridge") {
+		t.Fatalf("expected bridge package in graphPackages: %#v", sets.graphPackages)
+	}
+	if !hasPackage(sets.graphPackages, "example.com/crypto") {
+		t.Fatalf("expected crypto package in graphPackages: %#v", sets.graphPackages)
+	}
+	if hasPackage(sets.graphPackages, "example.com/unused") {
+		t.Fatalf("unexpected unused package in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
+func TestDependencyScanner_CollectPackageSets_PrunesWithInferredGraphRoots(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "com.acme",
+		Graph: map[string][]string{
+			"com.acme:app":       {"org.example:bridge", "org.example:unused"},
+			"org.example:bridge": {"org.example:crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "org.example:bridge", Version: "1.0.0", Dir: "/deps/bridge"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+		{
+			dep:    dependency.Dependency{Module: "org.example:crypto", Version: "1.0.0", Dir: "/deps/crypto"},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		},
+		{
+			dep:    dependency.Dependency{Module: "org.example:unused", Version: "1.0.0", Dir: "/deps/unused"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if !hasPackage(sets.graphPackages, "org.example:bridge") || !hasPackage(sets.graphPackages, "org.example:crypto") {
+		t.Fatalf("expected bridge and crypto deps in graphPackages: %#v", sets.graphPackages)
+	}
+	if hasPackage(sets.graphPackages, "org.example:unused") {
+		t.Fatalf("unexpected unused package in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
+func TestDependencyScanner_CollectPackageSets_FallsBackWhenGraphIncomplete(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "example.com/root",
+		Graph: map[string][]string{
+			"example.com/root": {"example.com/bridge"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "example.com/bridge", Version: "v1", Dir: "/deps/bridge"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/crypto", Version: "v1", Dir: "/deps/crypto"},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		},
+		{
+			dep:    dependency.Dependency{Module: "example.com/unused", Version: "v1", Dir: "/deps/unused"},
+			status: depScanStatusScanned,
+			report: &entities.InterimReport{},
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if !hasPackage(sets.graphPackages, "example.com/bridge") ||
+		!hasPackage(sets.graphPackages, "example.com/crypto") ||
+		!hasPackage(sets.graphPackages, "example.com/unused") {
+		t.Fatalf("expected conservative fallback to keep all scanned deps: %#v", sets.graphPackages)
+	}
+}
+
+func reportWithCryptoAsset() *entities.InterimReport {
+	return &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}
+}
+
+func hasPackage(pkgs []callgraph.PackageDir, importPath string) bool {
+	for i := range pkgs {
+		if pkgs[i].ImportPath == importPath {
+			return true
+		}
+	}
+	return false
 }

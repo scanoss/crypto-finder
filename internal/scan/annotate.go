@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -270,11 +269,7 @@ func MarshalAnnotateExport(payload *graphfrag.GraphFragmentExport) ([]byte, erro
 // WriteAnnotateExport writes an annotate-only graph-fragment export to path as
 // indented JSON, matching the formatting of ExportGraphFragment.
 func WriteAnnotateExport(path string, payload *graphfrag.GraphFragmentExport) error {
-	data, err := MarshalAnnotateExport(payload)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := writeIndentedJSONFile(path, payload); err != nil {
 		return fmt.Errorf("scan: failed to write annotation to %s: %w", path, err)
 	}
 	return nil

@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +13,96 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
+
+func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
+	t.Parallel()
+
+	initID := callgraph.FunctionID{Package: "org.example", Type: "CipherFactory", Name: "<init>#0"}
+	helperID := callgraph.FunctionID{Package: "org.example", Type: "CipherFactory", Name: "helper#0"}
+	externalID := callgraph.FunctionID{Package: "net.crypto", Type: "Cipher", Name: "getInstance#1"}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			initID.String(): {
+				ID:        initID,
+				FilePath:  "CipherFactory.java",
+				StartLine: 1,
+				EndLine:   3,
+				Calls: []callgraph.FunctionCall{
+					{Callee: helperID, FilePath: "CipherFactory.java", Line: 2},
+					{Callee: externalID, FilePath: "CipherFactory.java", Line: 3},
+				},
+			},
+			helperID.String(): {
+				ID:        helperID,
+				FilePath:  "CipherFactory.java",
+				StartLine: 5,
+				EndLine:   6,
+			},
+		},
+		Callers: map[string][]string{
+			helperID.String():   {initID.String()},
+			externalID.String(): {initID.String()},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "fragment.json")
+
+	if err := ExportGraphFragment(path, "json", &engine.DepScanResult{
+		CallGraph:  graph,
+		RootModule: "org.example:cipher-factory",
+		Ecosystem:  "java",
+	}); err != nil {
+		t.Fatalf("ExportGraphFragment: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Contains(data, []byte("<init>")) {
+		t.Fatalf("export should preserve <init> without HTML escaping: %s", data)
+	}
+	if bytes.Contains(data, []byte(`\u003cinit\u003e`)) {
+		t.Fatalf("export HTML-escaped <init>: %s", data)
+	}
+	var decoded graphfrag.GraphFragmentExport
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v\n%s", err, data)
+	}
+	if got, want := decoded.ScanMetadata.FunctionCount, 2; got != want {
+		t.Fatalf("function_count = %d, want %d", got, want)
+	}
+	if got, want := decoded.ScanMetadata.InternalEdges, 1; got != want {
+		t.Fatalf("internal_edge_count = %d, want %d", got, want)
+	}
+	if got, want := decoded.ScanMetadata.ExternalCalls, 1; got != want {
+		t.Fatalf("external_call_count = %d, want %d", got, want)
+	}
+	if got, want := len(decoded.CompactInternalEdges), 1; got != want {
+		t.Fatalf("compact internal edges len = %d, want %d", got, want)
+	}
+	if got := len(decoded.InternalEdges); got != 0 {
+		t.Fatalf("full internal edges len = %d, want 0 in compact export", got)
+	}
+	if got, want := decoded.Functions[0].Key, initID.String(); got != want {
+		t.Fatalf("function key = %q, want %q", got, want)
+	}
+	fragment := decoded.ToFragment(graphfrag.ComponentKey{Purl: "pkg:maven/org.example/cipher-factory", Version: "1.0.0"})
+	if got, want := len(fragment.InternalEdges), 1; got != want {
+		t.Fatalf("decoded fragment internal edges len = %d, want %d", got, want)
+	}
+	if got, want := fragment.InternalEdges[0].Caller, initID.String(); got != want {
+		t.Fatalf("decoded fragment caller = %q, want %q", got, want)
+	}
+	if got, want := fragment.InternalEdges[0].Callee, helperID.String(); got != want {
+		t.Fatalf("decoded fragment callee = %q, want %q", got, want)
+	}
+	if fragment.InternalEdges[0].EntryCall == nil {
+		t.Fatal("decoded fragment internal edge EntryCall is nil")
+	}
+	if got, want := fragment.InternalEdges[0].EntryCall.Line, 2; got != want {
+		t.Fatalf("decoded fragment entry_call line = %d, want %d", got, want)
+	}
+}
 
 func TestBuildGraphFragmentExport_SeparatesInternalAndExternalCalls(t *testing.T) {
 	t.Parallel()
