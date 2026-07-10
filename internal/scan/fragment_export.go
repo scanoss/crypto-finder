@@ -754,7 +754,10 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 			if values[i].MethodName != values[j].MethodName {
 				return values[i].MethodName < values[j].MethodName
 			}
-			return values[i].Arity < values[j].Arity
+			if values[i].Arity != values[j].Arity {
+				return values[i].Arity < values[j].Arity
+			}
+			return values[i].Kind < values[j].Kind
 		})
 	}
 	return index
