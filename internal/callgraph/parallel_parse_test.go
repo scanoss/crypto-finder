@@ -24,9 +24,11 @@ type serialOnlyParser struct {
 func (s *serialOnlyParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	return s.inner.ParseDirectory(dir, packagePath)
 }
-func (s *serialOnlyParser) SkipDirs() map[string]bool               { return s.inner.SkipDirs() }
-func (s *serialOnlyParser) SubPackagePath(parent, dir string) string { return s.inner.SubPackagePath(parent, dir) }
-func (s *serialOnlyParser) PackageSeparator() string                 { return s.inner.PackageSeparator() }
+func (s *serialOnlyParser) SkipDirs() map[string]bool { return s.inner.SkipDirs() }
+func (s *serialOnlyParser) SubPackagePath(parent, dir string) string {
+	return s.inner.SubPackagePath(parent, dir)
+}
+func (s *serialOnlyParser) PackageSeparator() string { return s.inner.PackageSeparator() }
 
 // TestBuilder_ParallelParseMatchesSerial builds the same multi-directory Java
 // tree through the serial path and the parallel path and requires the two
