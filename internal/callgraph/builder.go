@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -34,6 +37,14 @@ type Parser interface {
 	SubPackagePath(parentPath, dirName string) string
 	// PackageSeparator returns the separator used in package paths ("/" for Go, "." for Java).
 	PackageSeparator() string
+}
+
+// ParserCloner is implemented by parsers that can produce an independent
+// instance of themselves for concurrent use. tree-sitter parsers are not
+// reentrant, so parallel source parsing requires one parser per worker; a
+// parser that does not implement this interface is used serially.
+type ParserCloner interface {
+	CloneParser() Parser
 }
 
 // PackageDir associates a filesystem directory with its package/module path.
@@ -92,10 +103,9 @@ func (b *Builder) PackageSeparator() string {
 func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	buildStart := time.Now()
 	graph := &CallGraph{
-		Functions:             make(map[string]*FunctionDecl),
-		Callers:               make(map[string][]string),
-		EdgeResolutions:       make(map[string]EdgeResolution),
-		EdgeResolutionsByPair: make(map[string][]EdgeResolution),
+		Functions:       make(map[string]*FunctionDecl),
+		Callers:         make(map[string][]string),
+		EdgeResolutions: make(map[string]EdgeResolution),
 	}
 
 	// Phase 1: Parse source files only for packages that need full analysis
@@ -186,9 +196,94 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 }
 
 // analyzePackage parses all source files in a package directory,
-// recursing into subdirectories to handle sub-packages.
+// recursing into subdirectories to handle sub-packages. When the parser
+// supports cloning and more than one CPU is available, directories are parsed
+// concurrently; results are merged in the exact serial traversal order so the
+// collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
-	return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph)
+	cloner, ok := b.parser.(ParserCloner)
+	workers := runtime.GOMAXPROCS(0)
+	if !ok || workers <= 1 {
+		return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph)
+	}
+	return b.analyzePackageParallel(pkg, graph, cloner, workers)
+}
+
+// parseDirWork is one directory to parse: the unit of parallelism.
+type parseDirWork struct {
+	dir        string
+	importPath string
+}
+
+// collectParseDirs reproduces analyzeDir's pre-order traversal (directory
+// first, then its subdirectories in os.ReadDir order) without parsing, so
+// analyzePackageParallel can merge parse results in exactly the order the
+// serial path would have produced them.
+func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]bool) []parseDirWork {
+	work := []parseDirWork{{dir: dir, importPath: importPath}}
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		log.Debug().Err(readErr).Str("dir", dir).Msg("Failed to read directory during call graph traversal")
+		return work
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") || skipDirs[name] {
+			continue
+		}
+		subDir := filepath.Join(dir, name)
+		subImportPath := b.parser.SubPackagePath(importPath, name)
+		work = append(work, b.collectParseDirs(subDir, subImportPath, skipDirs)...)
+	}
+	return work
+}
+
+// analyzePackageParallel fans directory parsing out over a pool of workers,
+// each owning its own cloned parser instance, then merges the results in
+// serial traversal order. Mirrors the serial path's error contract: a failure
+// on the package's root directory aborts the package with that error (nothing
+// merged), while subdirectory failures are logged and skipped.
+func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, cloner ParserCloner, workers int) error {
+	work := b.collectParseDirs(pkg.Dir, pkg.ImportPath, b.parser.SkipDirs())
+	if workers > len(work) {
+		workers = len(work)
+	}
+
+	results := make([][]*FileAnalysis, len(work))
+	errs := make([]error, len(work))
+	var next atomic.Int64
+	next.Store(-1)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			parser := cloner.CloneParser()
+			for {
+				i := int(next.Add(1))
+				if i >= len(work) {
+					return
+				}
+				results[i], errs[i] = parser.ParseDirectory(work[i].dir, work[i].importPath)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if errs[0] != nil {
+		return errs[0]
+	}
+	for i := range work {
+		if errs[i] != nil {
+			log.Debug().Err(errs[i]).Str("dir", work[i].dir).Msg("Failed to analyze subdirectory")
+			continue
+		}
+		b.addAnalyses(graph, results[i])
+	}
+	return nil
 }
 
 func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
@@ -299,6 +394,9 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 		methodsByQualifiedArity: indexMethodsByQualifiedArity(graph),
 		subclassByTypeName:      indexSubclassByTypeName(graph),
 		knownClassTypes:         indexKnownClassTypes(graph),
+		interfaceDispatchMemo:   make(map[string][]interfaceDispatchAlias),
+		abstractDispatchMemo:    make(map[string][]interfaceDispatchAlias),
+		callerSeen:              make(map[string]map[string]struct{}),
 	}
 
 	for callerKey, fn := range graph.Functions {
@@ -311,11 +409,59 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 // dispatchIndexes bundles the lookup tables buildCallerIndex needs to expand
 // one call site into all of its dispatch aliases (overloads, interface/abstract
 // virtual dispatch, Python subclass dispatch, fluent fallback).
+//
+// interfaceDispatchMemo/abstractDispatchMemo cache expansion results per callee
+// target: both expansions depend only on the target and the (immutable during
+// buildCallerIndex) graph/index state, while popular targets are re-expanded
+// once per call site — on dispatch-heavy corpora such as bcprov the same
+// interface method is expanded thousands of times. A nil slice is a valid
+// cached value, so presence is tracked with the two-value map lookup.
+//
+// callerSeen mirrors graph.Callers as callee → set-of-callers so the hot path
+// can dedup in O(1) instead of addCaller's linear scan over fan-in slices.
+// Only buildCallerIndex uses it; later passes call addCaller at low volume.
 type dispatchIndexes struct {
 	methodsByName           map[string][]*FunctionDecl
 	methodsByQualifiedArity map[string][]string
 	subclassByTypeName      map[string][]*FunctionDecl
 	knownClassTypes         map[string]bool
+	interfaceDispatchMemo   map[string][]interfaceDispatchAlias
+	abstractDispatchMemo    map[string][]interfaceDispatchAlias
+	callerSeen              map[string]map[string]struct{}
+}
+
+// addCallerIndexed is addCaller's O(1) equivalent for the buildCallerIndex hot
+// path, backed by the dispatchIndexes.callerSeen set. Semantics are identical:
+// append callerKey to callers[calleeKey] unless already present.
+func (idx dispatchIndexes) addCallerIndexed(callers map[string][]string, calleeKey, callerKey string) {
+	set := idx.callerSeen[calleeKey]
+	if set == nil {
+		set = make(map[string]struct{}, 4)
+		idx.callerSeen[calleeKey] = set
+	}
+	if _, dup := set[callerKey]; dup {
+		return
+	}
+	set[callerKey] = struct{}{}
+	callers[calleeKey] = append(callers[calleeKey], callerKey)
+}
+
+func (idx dispatchIndexes) expandInterfaceDispatchMemoized(b *Builder, calleeKey string, graph *CallGraph) []interfaceDispatchAlias {
+	if aliases, ok := idx.interfaceDispatchMemo[calleeKey]; ok {
+		return aliases
+	}
+	aliases := b.expandInterfaceDispatch(calleeKey, graph, idx.methodsByName)
+	idx.interfaceDispatchMemo[calleeKey] = aliases
+	return aliases
+}
+
+func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, callee FunctionID, calleeKey string, graph *CallGraph) []interfaceDispatchAlias {
+	if aliases, ok := idx.abstractDispatchMemo[calleeKey]; ok {
+		return aliases
+	}
+	aliases := b.expandAbstractClassDispatch(callee, graph, idx.methodsByName, idx.knownClassTypes)
+	idx.abstractDispatchMemo[calleeKey] = aliases
+	return aliases
 }
 
 // indexCallDispatch records the direct edge for one call site plus every
@@ -324,36 +470,36 @@ type dispatchIndexes struct {
 // classification.
 func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
-	addCaller(graph.Callers, calleeKey, callerKey)
+	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
 	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
 	for _, target := range overloadTargets {
-		addCaller(graph.Callers, target, callerKey)
+		idx.addCallerIndexed(graph.Callers, target, callerKey)
 		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
 		resolvedTargets = append(resolvedTargets, target)
 	}
 
 	for _, target := range resolvedTargets {
-		for _, alias := range b.expandInterfaceDispatch(target, graph, idx.methodsByName) {
-			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
+			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
 		}
 		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
-			addCaller(graph.Callers, alias.CalleeKey, callerKey)
+			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
 		}
 	}
 
-	for _, alias := range b.expandAbstractClassDispatch(call.Callee, graph, idx.methodsByName, idx.knownClassTypes) {
-		addCaller(graph.Callers, alias.CalleeKey, callerKey)
+	for _, alias := range idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph) {
+		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
-		addCaller(graph.Callers, alias, callerKey)
+		idx.addCallerIndexed(graph.Callers, alias, callerKey)
 		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
 	}
 }
@@ -382,39 +528,10 @@ func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind Ed
 		calleeKey:    calleeKey,
 	}
 	key := EdgeResolutionKey(callerKey, calleeKey, resolution)
-	if existing, ok := graph.EdgeResolutions[key]; ok {
-		if edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
-			return
-		}
-		graph.EdgeResolutions[key] = resolution
-		upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
+	if existing, ok := graph.EdgeResolutions[key]; ok && edgeKindRank(existing.Kind) >= edgeKindRank(kind) {
 		return
 	}
 	graph.EdgeResolutions[key] = resolution
-	upsertEdgeResolutionByPair(graph, callerKey, calleeKey, resolution)
-}
-
-func upsertEdgeResolutionByPair(graph *CallGraph, callerKey, calleeKey string, resolution EdgeResolution) {
-	if graph.EdgeResolutionsByPair == nil {
-		graph.EdgeResolutionsByPair = make(map[string][]EdgeResolution)
-	}
-	pairKey := EdgeResolutionPairKey(callerKey, calleeKey)
-	values := graph.EdgeResolutionsByPair[pairKey]
-	for i := range values {
-		if sameEdgeResolutionVariant(values[i], resolution) {
-			values[i] = resolution
-			graph.EdgeResolutionsByPair[pairKey] = values
-			return
-		}
-	}
-	graph.EdgeResolutionsByPair[pairKey] = append(values, resolution)
-}
-
-func sameEdgeResolutionVariant(a, b EdgeResolution) bool {
-	return a.CallSite == b.CallSite &&
-		a.DeclaredType == b.DeclaredType &&
-		a.MethodName == b.MethodName &&
-		a.Arity == b.Arity
 }
 
 func indexMethodsByName(graph *CallGraph) map[string][]*FunctionDecl {
@@ -676,6 +793,15 @@ func (b *Builder) expandAbstractClassDispatch(
 	knownClassTypes map[string]bool,
 ) []interfaceDispatchAlias {
 	if callee.Type == "" {
+		return nil
+	}
+	// Constructors and static initializers never dispatch virtually: `new Foo()`
+	// invokes exactly Foo.<init>, regardless of hierarchy. Without this guard, a
+	// constructor call whose exact declaration is missing from the graph (implicit
+	// default constructor, unparsed overload) fans out to EVERY same-arity
+	// constructor in the namespace root — on the bcprov corpus that synthesized
+	// 6.58M of the graph's 7.16M edges, all semantically impossible.
+	if base := BaseFunctionName(callee.Name); base == "<init>" || base == "<clinit>" {
 		return nil
 	}
 	calleeKey := callee.String()
@@ -1840,7 +1966,6 @@ func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, li
 	}
 	res.ResolvedReceiverType = resolvedType
 	graph.EdgeResolutions[key] = res
-	upsertEdgeResolutionByPair(graph, callerKey, targetKey, res)
 	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line}
 }
 

@@ -36,6 +36,12 @@ func NewGoParser(opts ...ParserOption) *GoParser {
 	return &GoParser{parser: parser, includeTests: cfg.includeTests}
 }
 
+// CloneParser returns an independent GoParser with the same configuration,
+// for concurrent use (tree-sitter parsers are not reentrant).
+func (p *GoParser) CloneParser() Parser {
+	return NewGoParser(WithIncludeTests(p.includeTests))
+}
+
 // ParseFile extracts function declarations, imports, and calls from a single Go file.
 // packagePath is the Go import path for the package containing this file.
 func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error) {

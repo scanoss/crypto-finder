@@ -143,9 +143,9 @@ type FunctionID struct {
 // This includes the arity suffix (e.g., "javax.crypto.(Cipher).getInstance#1").
 func (f FunctionID) String() string {
 	if f.Type != "" {
-		return fmt.Sprintf("%s.(%s).%s", f.Package, f.Type, f.Name)
+		return f.Package + ".(" + f.Type + ")." + f.Name
 	}
-	return fmt.Sprintf("%s.%s", f.Package, f.Name)
+	return f.Package + "." + f.Name
 }
 
 // InferredReturn carries the result of static return-type inference for a function.
@@ -304,12 +304,10 @@ type CallGraph struct {
 	// was resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey, resolution).
 	// An edge with no entry is an exact, directly-resolved source call. Consumers
 	// use this to refuse to present over-broad name/arity dispatch guesses as
-	// typed reachability proof.
+	// typed reachability proof. Values carry their caller/callee endpoints
+	// (EdgeResolutionEndpoints), so per-pair views are one O(E) pass away —
+	// see internal/scan's indexFragmentEdgeResolutions.
 	EdgeResolutions map[string]EdgeResolution
-	// EdgeResolutionsByPair mirrors EdgeResolutions by caller/callee pair so
-	// export paths can avoid rebuilding that index for very large dispatch
-	// graphs.
-	EdgeResolutionsByPair map[string][]EdgeResolution
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
@@ -386,12 +384,6 @@ func EdgeResolutionKey(callerKey, calleeKey string, resolution EdgeResolution) s
 // variants for one caller->callee pair.
 func EdgeResolutionKeyPrefix(callerKey, calleeKey string) string {
 	return callerKey + "\x00" + calleeKey + "\x00"
-}
-
-// EdgeResolutionPairKey is the stable key shared by all resolution variants
-// for one caller->callee pair.
-func EdgeResolutionPairKey(callerKey, calleeKey string) string {
-	return callerKey + "\x00" + calleeKey
 }
 
 // EdgeResolutionEndpoints returns the caller/callee pair for a stored edge

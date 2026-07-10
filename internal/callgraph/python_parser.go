@@ -37,6 +37,12 @@ func NewPythonParser(opts ...ParserOption) *PythonParser {
 	return &PythonParser{parser: p, includeTests: cfg.includeTests}
 }
 
+// CloneParser returns an independent PythonParser with the same configuration,
+// for concurrent use (tree-sitter parsers are not reentrant).
+func (p *PythonParser) CloneParser() Parser {
+	return NewPythonParser(WithIncludeTests(p.includeTests))
+}
+
 // SkipDirs returns directory names to skip during Python source traversal.
 func (p *PythonParser) SkipDirs() map[string]bool {
 	skip := map[string]bool{
