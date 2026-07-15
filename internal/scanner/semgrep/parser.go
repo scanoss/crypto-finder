@@ -20,9 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -133,9 +135,58 @@ func LogSemgrepCompatibleErrors(errors []entities.SemgrepError) bool {
 	return true
 }
 
+// exitCodeMeanings maps documented semgrep/opengrep exit codes to a
+// human-readable cause (https://semgrep.dev/docs/cli-reference#exit-codes).
+// Exit code 7 also fires when the effective rule configuration contains zero
+// rules, which opengrep treats as an invalid configuration.
+var exitCodeMeanings = map[int]string{
+	2:  "scanner failed unexpectedly",
+	3:  "invalid syntax in scanned code",
+	4:  "invalid pattern in rule schema",
+	5:  "rule configuration is not valid YAML",
+	7:  "rule configuration contains no valid rules",
+	8:  "unsupported language specified",
+	13: "invalid API key",
+}
+
+func exitCodeMeaning(exitCode int) string {
+	if meaning, ok := exitCodeMeanings[exitCode]; ok {
+		return meaning
+	}
+	return "unknown error"
+}
+
+// ansiEscapeRE matches ANSI terminal escape sequences (colors, cursor moves).
+var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+// maxStderrTail bounds how much scanner stderr is attached to logs and errors.
+const maxStderrTail = 500
+
+// SanitizeScannerStderr strips ANSI escape sequences and blank lines from
+// scanner stderr and keeps only the tail, so it can be attached to logs and
+// error details without flooding the console with banner art.
+func SanitizeScannerStderr(stderr string) string {
+	clean := ansiEscapeRE.ReplaceAllString(stderr, "")
+	var lines []string
+	for line := range strings.SplitSeq(clean, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+	out := strings.Join(lines, " | ")
+	if len(out) > maxStderrTail {
+		cut := len(out) - maxStderrTail
+		for cut < len(out) && !utf8.RuneStart(out[cut]) {
+			cut++
+		}
+		out = "…" + out[cut:]
+	}
+	return out
+}
+
 // HandleSemgrepCompatibleErrors displays semgrep compatible errors in a user-friendly format.
 // Returns true if there were any errors logged.
-func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCode int, scannerName string) error {
+func HandleSemgrepCompatibleErrors(stdout []byte, stderr string, duration time.Duration, exitCode int, scannerName string) error {
 	parsedOutput, err := ParseSemgrepCompatibleOutput(stdout)
 	if err != nil {
 		log.Error().Err(err).Msgf("failed to parse %s output", scannerName)
@@ -172,16 +223,28 @@ func HandleSemgrepCompatibleErrors(stdout []byte, duration time.Duration, exitCo
 		)
 	}
 
-	log.Error().
+	meaning := exitCodeMeaning(exitCode)
+	stderrTail := SanitizeScannerStderr(stderr)
+	logEvent := log.Error().
 		Int("exit_code", exitCode).
-		Dur("duration", duration).
-		Msgf("%s failed with no error details", scannerName)
+		Dur("duration", duration)
+	if stderrTail != "" {
+		logEvent = logEvent.Str("stderr", stderrTail)
+	}
+	logEvent.Msgf("%s failed: %s", scannerName, meaning)
+
+	opts := []failure.Option{
+		failure.WithDetail("scanner", scannerName),
+		failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+	}
+	if stderrTail != "" {
+		opts = append(opts, failure.WithDetail("stderr", stderrTail))
+	}
 	return failure.New(
 		failure.CodeScannerExecutionFailed,
 		failure.StageScan,
-		fmt.Sprintf("%s execution failed with exit code %d", scannerName, exitCode),
-		failure.WithDetail("scanner", scannerName),
-		failure.WithDetail("exit_code", fmt.Sprintf("%d", exitCode)),
+		fmt.Sprintf("%s execution failed with exit code %d (%s)", scannerName, exitCode, meaning),
+		opts...,
 	)
 }
 
