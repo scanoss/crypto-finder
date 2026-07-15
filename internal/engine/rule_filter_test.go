@@ -27,7 +27,10 @@ func TestRuleLanguages(t *testing.T) {
     languages: [Go, go, PYTHON]
 `)
 
-	langs := ruleLanguages(good)
+	langs, empty := ruleLanguages(good)
+	if empty {
+		t.Fatalf("expected non-empty rule file")
+	}
 	if len(langs) != 2 {
 		t.Fatalf("ruleLanguages len = %d, want 2", len(langs))
 	}
@@ -35,13 +38,18 @@ func TestRuleLanguages(t *testing.T) {
 		t.Fatalf("expected normalized go language in %v", langs)
 	}
 
-	if got := ruleLanguages(filepath.Join(dir, "missing.yaml")); got != nil {
-		t.Fatalf("expected nil for missing file, got %v", got)
+	if got, empty := ruleLanguages(filepath.Join(dir, "missing.yaml")); got != nil || empty {
+		t.Fatalf("expected nil/non-empty for missing file, got %v empty=%v", got, empty)
 	}
 
 	invalid := writeRuleFile(t, dir, "invalid.yaml", `: not-yaml`)
-	if got := ruleLanguages(invalid); got != nil {
-		t.Fatalf("expected nil for invalid yaml, got %v", got)
+	if got, empty := ruleLanguages(invalid); got != nil || empty {
+		t.Fatalf("expected nil/non-empty for invalid yaml, got %v empty=%v", got, empty)
+	}
+
+	emptyFile := writeRuleFile(t, dir, "empty.yaml", `rules: []`)
+	if _, empty := ruleLanguages(emptyFile); !empty {
+		t.Fatalf("expected empty=true for zero-rule file")
 	}
 }
 
@@ -82,6 +90,34 @@ func TestFilterRulesByLanguages(t *testing.T) {
 	fallback := filterRulesByLanguages([]string{pyRule}, []string{"go"})
 	if len(fallback) != 1 || fallback[0] != pyRule {
 		t.Fatalf("expected fallback to all rules, got %#v", fallback)
+	}
+}
+
+// A rule file with zero rules (`rules: []`) must never survive language
+// filtering. When it was the sole survivor, opengrep received a config with
+// no rules and failed the whole scan with exit code 7.
+func TestFilterRulesByLanguages_ExcludesEmptyRuleFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pyRule := writeRuleFile(t, dir, "python.yaml", `rules:
+  - id: py-rule
+    languages: [python]
+`)
+	emptyRule := writeRuleFile(t, dir, "empty.yaml", `rules: []
+`)
+
+	// No detected language matches any real rule: the empty file must not be
+	// the lone survivor — the zero-match fallback to all rules must trigger.
+	fallback := filterRulesByLanguages([]string{pyRule, emptyRule}, []string{"c++"})
+	if len(fallback) != 2 {
+		t.Fatalf("expected fallback to all rules, got %#v", fallback)
+	}
+
+	// With a matching language, the empty file is still excluded.
+	filtered := filterRulesByLanguages([]string{pyRule, emptyRule}, []string{"python"})
+	if len(filtered) != 1 || filtered[0] != pyRule {
+		t.Fatalf("expected only python rule, got %#v", filtered)
 	}
 }
 

@@ -24,18 +24,25 @@ type ruleFile struct {
 	} `yaml:"rules"`
 }
 
-// ruleLanguages parses a rule YAML file and returns the set of languages it targets.
-func ruleLanguages(path string) []string {
+// ruleLanguages parses a rule YAML file and returns the set of languages it
+// targets. The second return is true when the file parsed successfully but
+// contains zero rules: such a file can never match anything, so callers must
+// exclude it rather than treat it as "unknown language".
+func ruleLanguages(path string) ([]string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to read rule file for language extraction")
-		return nil
+		return nil, false
 	}
 
 	var rf ruleFile
 	if err := yaml.Unmarshal(data, &rf); err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to parse rule file for language extraction")
-		return nil
+		return nil, false
+	}
+
+	if len(rf.Rules) == 0 {
+		return nil, true
 	}
 
 	seen := make(map[string]bool)
@@ -49,7 +56,7 @@ func ruleLanguages(path string) []string {
 			}
 		}
 	}
-	return langs
+	return langs, false
 }
 
 // filterRulesByLanguages filters rule paths to only include rules whose YAML
@@ -70,7 +77,12 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 
 	filtered := make([]string, 0, len(candidateRules))
 	for _, rulePath := range candidateRules {
-		ruleLangs := ruleLanguages(rulePath)
+		ruleLangs, empty := ruleLanguages(rulePath)
+		if empty {
+			// Zero rules in the file — it can never match anything, and if it
+			// survives as the sole config, opengrep fails with exit code 7.
+			continue
+		}
 		if len(ruleLangs) == 0 {
 			// Can't determine language — include to be safe
 			filtered = append(filtered, rulePath)
