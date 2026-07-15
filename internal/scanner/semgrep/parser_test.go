@@ -18,9 +18,13 @@ package semgrep
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 )
 
 func TestParseSemgrepCompatibleOutput_WithArrayTypeError(t *testing.T) {
@@ -209,5 +213,50 @@ func TestUnmarshalSemgrepError(t *testing.T) {
 
 	if err.Spans[0].File != "/test/file.c" {
 		t.Errorf("Expected file '/test/file.c', got '%s'", err.Spans[0].File)
+	}
+}
+
+func TestSanitizeScannerStderr(t *testing.T) {
+	t.Parallel()
+
+	raw := "\n┌──────────────┐\n│ Opengrep CLI │\n└──────────────┘\n\n\x1b[32m✔\x1b[39m \x1b[1mOpengrep OSS\x1b[0m\n\n\x1b[1m  Loading rules from local config...\x1b[0m\n"
+	got := SanitizeScannerStderr(raw)
+
+	if strings.Contains(got, "\x1b") {
+		t.Errorf("expected ANSI escapes stripped, got %q", got)
+	}
+	if strings.Contains(got, "\n") {
+		t.Errorf("expected single line, got %q", got)
+	}
+	if !strings.Contains(got, "Loading rules from local config...") {
+		t.Errorf("expected stderr content preserved, got %q", got)
+	}
+
+	long := strings.Repeat("x", maxStderrTail+100)
+	if got := SanitizeScannerStderr(long); len(got) > maxStderrTail+len("…") {
+		t.Errorf("expected stderr capped at %d chars, got %d", maxStderrTail, len(got))
+	}
+}
+
+func TestHandleSemgrepCompatibleErrors_ExitCodeMeaning(t *testing.T) {
+	t.Parallel()
+
+	// Valid JSON with no errors and exit code 7: the failure message must
+	// explain the exit code instead of only echoing the number.
+	stdout := []byte(`{"results":[],"errors":[],"paths":{"scanned":[]}}`)
+	err := HandleSemgrepCompatibleErrors(stdout, "banner noise", time.Second, 7, "opengrep")
+	if err == nil {
+		t.Fatal("expected error for exit code 7")
+	}
+	if !strings.Contains(err.Error(), "rule configuration contains no valid rules") {
+		t.Errorf("expected exit code meaning in error, got %q", err.Error())
+	}
+
+	var f *failure.Error
+	if !errors.As(err, &f) {
+		t.Fatalf("expected *failure.Error, got %T", err)
+	}
+	if f.Details["stderr"] != "banner noise" {
+		t.Errorf("expected stderr detail, got %q", f.Details["stderr"])
 	}
 }

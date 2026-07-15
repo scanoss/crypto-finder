@@ -158,10 +158,10 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Execute opengrep
 	output, stderr, err := s.execute(ctx, args)
 	if err != nil {
-		cmdStr := fmt.Sprintf("%s %s", s.executablePath, strings.Join(args, " "))
 		log.Debug().
-			Str("command", cmdStr).
-			Str("stderr", stderr).
+			Strs("configs", rulePaths).
+			Str("target", target).
+			Str("stderr", semgrep.SanitizeScannerStderr(stderr)).
 			Msg("opengrep command failed")
 
 		return nil, err
@@ -335,7 +335,7 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 			}
 		}
 
-		err = semgrep.HandleSemgrepCompatibleErrors(stdout, duration, exitCode, ScannerName)
+		err = semgrep.HandleSemgrepCompatibleErrors(stdout, stderr, duration, exitCode, ScannerName)
 		if err != nil {
 			return nil, stderr, err
 		}

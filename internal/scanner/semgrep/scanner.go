@@ -265,7 +265,7 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 			}
 		}
 
-		err = HandleSemgrepCompatibleErrors(stdout, duration, exitCode, ScannerName)
+		err = HandleSemgrepCompatibleErrors(stdout, stderr, duration, exitCode, ScannerName)
 		if err != nil {
 			return nil, stderr, err
 		}
