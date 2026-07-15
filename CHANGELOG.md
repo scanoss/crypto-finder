@@ -8,14 +8,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Method-role and parameter-role classification** (`method_role`, `role_provenance`, `parameter_roles` — callgraph schema `6.3` → `6.4`): contracts now support `role: operation` (alongside the existing `factory`/`config`/`output`, now enum-validated at load time) and a per-parameter `parameters:` sub-schema (`operation-determining`/`metadata-contributing`/`none`, with `contributes: {property, derivation}` for `argument_value`/`argument_bit_length`/`argument_type`). Structural (call-edge-derived) supporting calls now carry a KB-derived `category` too, not just definition-based ones. A B-lite `crypto_entry_points` synthesis (no interim finding minted) covers `role: operation` contract methods whose declaring class already has a scanned crypto asset, inheriting `algorithm_family`/`primitive` from same-class siblings (ambiguous when they diverge). Populated on the live (`--export-callgraph`) and graph-fragment export paths, and carried through the stitched/served path: role-bearing `crypto_entry_points` are indexed by `function_key` and merged into the served output — enriching an existing reachability entry or appending a `role: operation` catalog entry that has no reachable finding. See `internal/callgraph/contracts/`, `internal/scan/export.go`, `internal/scan/fragment_export.go`, `pkg/graphfrag/stitch.go`, `pkg/graphfrag/callgraph_export.go`.
-- `pkg/graphfrag`: **forward call-chain closure** (`StitchOptions{ForwardClosure, MaxForwardDepth, MaxForwardNodesPerAnchor, MaxForwardEdgesPerAnchor}`): per-finding-anchor forward reachability graph (memoized per distinct anchor) projected as the `forward_calls` block on each `finding_graph` — what the matched method transitively calls, with per-call-site `entry_call` argument data-flow (resolved values). Callgraph schema `6.2` → `6.3`; the field is additive/optional and absent (byte-identical reachability payload) when the option is off.
-- **`crypto-finder annotate --import-fragment <fragment.json> --source <dir>`**: re-annotate a component against its **cached structural graph fragment without rebuilding the callgraph**. Runs only crypto detection over the source and maps each finding onto the imported graph (`Fragment.ContainingFunction`), emitting fresh `crypto_annotations`. For a large library this turns a rules-driven re-annotation from a full scan (~20 min on bcprov) into detection-only (~60 s); the annotations are byte-identical to a full `--export-graph-fragment` for unchanged rules. This is the producer half of "build the structural graph once, re-annotate cheaply when rules change".
-- **`graph_algo_version`** (`GraphAlgoVersion`, stamped into `scan_metadata`): the callgraph-construction algorithm version, independent of the binary version (`tool_version`) and wire schema (`schema_version`). Consumers cache the structural graph keyed on it, so a routine binary release no longer invalidates the cache — only a graph-affecting change does. `Function` now carries `EndLine` (with `StartLine`, the line range used to map a finding to its containing function during annotate).
-- `pkg/graphfrag`: entry-point-rooted stitch option (`StitchWithOptions` / `StitchOptions{EntryRootedOnly}`) — roots traces only at in-degree-0 functions in the dependency closure, preserving the reachable-finding set while drastically reducing roots for large libraries (serving latency). Default `Stitch` behaviour is unchanged.
+- **Method-role and parameter-role classification** (`method_role`, `role_provenance`, `parameter_roles` — callgraph schema `6.3` → `6.4`): contracts now support `role: operation` (alongside the existing `factory`/`config`/`output`, now enum-validated at load time) and a per-parameter `parameters:` sub-schema (`operation-determining`/`metadata-contributing`/`none`, with `contributes: {property, derivation}` for `argument_value`/`argument_bit_length`/`argument_type`). Structural (call-edge-derived) supporting calls now carry a KB-derived `category` too, not just definition-based ones. A B-lite `crypto_entry_points` synthesis (no interim finding minted) covers `role: operation` contract methods whose declaring class already has a scanned crypto asset, inheriting `algorithm_family`/`primitive` from same-class siblings (ambiguous when they diverge). Populated on the live (`--export-callgraph`) and graph-fragment export paths, and carried through the stitched/served path: role-bearing `crypto_entry_points` are indexed by `function_key` and merged into the served output — enriching an existing reachability entry or appending a `role: operation` catalog entry that has no reachable finding. See `internal/callgraph/contracts/`, `internal/scan/export.go`, `internal/scan/fragment_export.go`, `pkg/graphfrag/stitch.go`, `pkg/graphfrag/callgraph_export.go`. (#108)
+- `pkg/graphfrag`: **forward call-chain closure** (`StitchOptions{ForwardClosure, MaxForwardDepth, MaxForwardNodesPerAnchor, MaxForwardEdgesPerAnchor}`): per-finding-anchor forward reachability graph (memoized per distinct anchor) projected as the `forward_calls` block on each `finding_graph` — what the matched method transitively calls, with per-call-site `entry_call` argument data-flow (resolved values). Callgraph schema `6.2` → `6.3`; the field is additive/optional and absent (byte-identical reachability payload) when the option is off. (#107)
+- **`pkg/paramcondition`**: parses rule `parameterCondition` predicates (`param[<index|name>] <op> <value>`, ops `==`/`~=`/`:type==`/`:type~=`) into a structured, validated `parameter_conditions` field on finding assets — consumers can mechanically select the right value-variant asset (e.g. `AESEngine.init(true)` → `operation: encrypt`) instead of re-deriving rule logic. Findings/interim schema `1.3` → `1.4`; the flat `parameterCondition` string is retained verbatim in `metadata` for existing consumers. Malformed predicates fail fast at rule load, naming the rule id and raw string. (#106)
+
+### Changed
+- perf: large JSON report/export paths stream to disk instead of buffering the full encoded payload; callgraph finding-graph building streams too, with a compact graph-fragment internal-edge encoding. Benchmark (bcprov 1.70, both exports): 129 s elapsed, ~3.7 GB peak RSS. (#110)
+- perf: callgraph source parsing parallelized across directories (`ParserCloner`, implemented by all four language parsers with a serial fallback); dispatch expansion memoized per callee target; `EdgeResolutionsByPair` mirror map dropped. Combined benchmark (bc-java core+prov, 3,104 files): build+dump 144 s → 13.3 s, peak RSS ~13 GB → ~1.07 GB. (#111)
+- `--scan-dependencies` now prunes dependency callgraph inputs to packages provably on a user-to-crypto dependency path (resolver-graph proof), falling back conservatively when the graph is missing or incomplete; Maven dependency graph metadata populated best-effort via a bounded `dependency:tree` call. (#110)
+- Scanner failure messages now explain documented semgrep/opengrep exit codes (`opengrep execution failed with exit code 7 (rule configuration contains no valid rules)`) and attach a sanitized stderr tail (ANSI-stripped, single line, capped on UTF-8 rune boundaries) to logs and error details; the failure debug log records rule configs + target instead of dumping the full command line. (#112)
+
+### Fixed
+- Rule files with zero rules (`rules: []`) are excluded from language filtering — previously treated as "unknown language", they always survived the filter and could become the sole config passed to opengrep, which exits with code 7 on an empty ruleset and hard-failed the whole scan. (#112)
+- `role: operation` contract methods declared on an interface/abstract type now resolve through concrete implementors via the contract hierarchy (e.g. `AESEngine.processBlock` synthesizes an operation entry via the `BlockCipher.processBlock` contract) — closes the concrete-body-only gap flagged in #108. (#109)
+- Constructors are excluded from abstract-class dispatch expansion — `new Foo()` with a missing exact declaration was fanned out to every same-arity constructor in the namespace, fabricating edges that polluted `Callers`, exported call chains, and `crypto_entry_points` (92% of all edge resolutions on the bcprov corpus). Also the main perf win behind the #111 numbers. (#111)
+- Exported JSON no longer HTML-escapes special characters. (#110)
+
+## [0.13.4] - 2026-07-03
+
+### Changed
+- perf: fixed mining-path hotspots exposed by dispatch fan-out on large libraries — indexed the O(N²)-shaped lookups in `resolveParameterPassthroughDispatch` (bcprov-jdk15on 1.70 callgraph build: 900 s+ timeout → 25 s) and `findCallForCalleeAtLine` now uses a per-caller `(name, arity, line)` index instead of re-scanning per exported edge (full `--export-graph-fragment` mining run: 30 min+ timeout → 153 s, 4.1 GB peak RSS). (#59)
+
+## [0.13.3] - 2026-07-02
+
+### Added
+- `pkg/graphfrag`: receiver-provenance disambiguation for multi-implementor dispatch — per-caller "bypass" edges synthesized for shared ambiguous call sites (e.g. `HashBuilder.with(HashingFunction)` with 7 concrete implementors), resolving the concrete receiver via constructor/declared-return/KB-contract inference so those chains survive serving-path stitching instead of being fail-closed suppressed. (#58)
+
+### Changed
+- Graph-fragment schema `1.5` → `1.6`: optional `resolved_receiver_type` on internal edges and external calls (additive, backward compatible). (#58)
+
+## [0.13.2] - 2026-07-02
+
+### Fixed
+- Unqualified `this`-calls inside an abstract class whose target overload only exists in a subclass now fan out to concrete implementations (`expandAbstractClassDispatch`) — fixes previously-broken chains such as password4j's `HashBuilder.withPBKDF2 → ... → PBKDF2Function.internalHash`. (#57)
+- Finding-to-function attribution now deterministically picks the tightest enclosing span (tie-broken by function key) instead of an unordered map's first match — eliminates flaky misattribution to a wide synthetic `<clinit>` span (~40% of runs). (#57)
+
+## [0.13.1] - 2026-07-02
+
+### Added
+- When ≥2 distinct `cryptoFunction` values are aggregated for one component, CBOM output emits the full `cryptoFunctions` enum array (deduped) plus the joined raw set in `scanoss:cryptoFunction`. (#54)
+
+### Fixed
+- Mining now synthesizes every rule-declared operation sharing one entry-point `api` (e.g. `AESEngine.init` encrypt/decrypt selected by a boolean argument) instead of first-declaration-wins, which silently dropped the other variants. (#54)
+
+## [0.13.0] - 2026-06-19
+
+### Fixed
+- When a rule-templated `algorithmName` metavariable (e.g. `ECDSA-$curve`, `Argon2$variant`) is unbound at a library-definition mining site, the synthesized entry point falls back to `algorithmFamily` instead of dropping the name entirely; other unresolved non-name metadata fields are still stripped. (#48)
+
+## [0.12.1] - 2026-06-17
+
+### Fixed
+- Ruleset filter cache no longer re-ingests previously materialized rules, which caused unbounded cache/directory growth across scans. (#47)
+
+### Added
+- Automatic cleanup of stale materialized-rule temp dirs with a 2-hour retention policy (reclaims disk from SIGKILLed mining jobs). (#47)
+
+## [0.12.0] - 2026-06-17
+
+### Added
+- Python callgraph contracts for argon2-cffi, bcrypt, passlib, and PyNaCl; contract-based supporting-call derivation classifies methods by lifecycle role. (#46)
+
+### Fixed
+- DRBG handling no longer over-suppresses synthesized findings; unresolved metadata variables removed from synthesized crypto findings. (#46)
+
+## [0.11.0] - 2026-06-16
+
+### Added
+- Python `.pyi` stub file parsing in call graphs (stub takes precedence where both stub and implementation exist). (#45)
+- Same-named functions across different Python modules preserved via module aliasing (fixes sibling-module name collisions). (#45)
+
+### Changed
+- Improved Python package/root-module detection. (#45)
+
+## [0.10.0] - 2026-06-11
+
+### Added
+- **Python callgraph parity with Java**: per-ecosystem KB loading (was hardcoded to Java), `ReceiverVar`/`AssignedVar`/`ChainID` populated for object-lifecycle supporting calls, contract-driven return-type propagation, arity-tolerant KB lookup (Java stays exact-arity), from-import FQN resolution, Python-specific entry-point synthesis gate, subclass/MRO dispatch, `Cryptodome.*` namespace alias. (#44)
+- Tier-0 Python contracts and rules: pyca/cryptography, pycryptodome, pycryptodomex, paramiko, PyNaCl, bcrypt, PyJWT, argon2-cffi. (#44)
+
+### Changed
+- pip dependency resolver prefers `VIRTUAL_ENV`/project-local venv over the ambient interpreter. (#44)
+
+## [0.9.4] - 2026-06-09
+
+### Changed
+- Contract-based method-role matching walks the contract hierarchy: a role-tagged method attaches when its receiver is the terminal type **or** any transitive supertype (previously exact receiver only), so inherited methods (e.g. `GeneralDigest.update` inherited by `SHA256Digest`) surface as supporting calls. (#43)
+
+### Added
+- `GeneralDigest.update` role contract plus digest inheritance edges (`SHA256Digest→GeneralDigest`, `SHA3Digest→KeccakDigest`) so SHA-1/SHA-2/SHA-3 families surface inherited lifecycle calls. (#43)
+
+## [0.9.3] - 2026-06-09
+
+### Added
+- Google Tink Java callgraph contract: `KeyTemplates.get(...)` → `KeysetHandle.generateNew` → `getPrimitive` (argument-conditional on `Aead`/`Mac`/`PublicKeySign`/`PublicKeyVerify`, arity-1 and arity-2 forms) → terminal crypto op. BouncyCastle and password4j Java contracts added alongside. (#42)
+- Library-level crypto entry points synthesized from rules and surfaced in scan reports; contract-derived supporting crypto calls included in findings. (#42)
+
+### Changed
+- Scanner disables external semgrepignore handling so crypto-finder's own skip rules remain the single source of truth. (#42)
+
+## [0.9.2] - 2026-06-08
+
+### Fixed
+- Graph-fragment served/stitched output relativizes function `file_path` the same way the live callgraph export does — previously leaked absolute scan-workspace paths into served responses; `equiv.Compare` now enforces the parity.
+- Instance-field initializer crypto (not just `static` fields) attributed to the synthetic `<clinit>` entry point — previously such findings had no containing function and surfaced as a blank, reachable-but-empty call-chain frame.
+
+## [0.9.1] - 2026-06-08
+
+### Added
+- Synthetic `<clinit>` (class-init) function emitted per class with a `static {}` block or initialized field declarations — crypto findings in static initializers/OID tables get a real, in-degree-0 (class-load entry point) containing function instead of a blank frame. Real methods/constructors still win via tightest-span attribution. (#41)
+
+## [0.9.0] - 2026-06-08
+
+### Changed
+- **Reachability revamp**: supporting calls (setup/lifecycle calls around a crypto object, e.g. `digest.update`/`doFinal`) are now derived structurally from the call graph via object identity (`ReceiverVar`/`AssignedVar`/`ChainID`) instead of per-call semgrep rules; the non-CycloneDX `supporting-call` assetType and `supportingCall: "true"` sentinel are gone. (#40)
+- Reachability no longer depends on `metadata.api` (now informational CBOM metadata only): `matched_operation.kind` is classified from the matched source text, and the crypto call is located by position (match columns ∩ call-node columns, fluent-chain-root tie-break, line-only fallback). (#40)
+
+### Added
+- Callgraph schema `6.2` / graph-fragment schema `1.5`: `supporting_calls`, `crypto_entry_points`, `graph_algo_version` exposed end-to-end. (#40)
+
+## [0.8.0] - 2026-06-04
+
+### Added
+- **`crypto-finder annotate --import-fragment <fragment.json> --source <dir>`**: re-annotate a component against its **cached structural graph fragment without rebuilding the callgraph**. Runs only crypto detection over the source and maps each finding onto the imported graph (`Fragment.ContainingFunction`), emitting fresh `crypto_annotations`. For a large library this turns a rules-driven re-annotation from a full scan (~20 min on bcprov) into detection-only (~60 s); the annotations are byte-identical to a full `--export-graph-fragment` for unchanged rules. (#39)
+- **`graph_algo_version`** (`GraphAlgoVersion`, stamped into `scan_metadata`): the callgraph-construction algorithm version, independent of the binary version (`tool_version`) and wire schema (`schema_version`). Consumers cache the structural graph keyed on it, so a routine binary release no longer invalidates the cache — only a graph-affecting change does. `Function` now carries `EndLine`. (#39)
+- `pkg/graphfrag`: entry-point-rooted stitch option (`StitchWithOptions` / `StitchOptions{EntryRootedOnly}`) — roots traces only at in-degree-0 functions in the dependency closure, preserving the reachable-finding set while drastically reducing roots for large libraries (serving latency). Default `Stitch` behaviour is unchanged. (#39)
 
 ### Removed
-- `pkg/stitch` (the concat-merge stitcher) — superseded by `pkg/graphfrag`'s true cross-component synthesis. It assumed call chains never span component boundaries, which is false for real dependency trees; it had no remaining in-repo or downstream consumers.
+- `pkg/stitch` (the concat-merge stitcher) — superseded by `pkg/graphfrag`'s true cross-component synthesis. It assumed call chains never span component boundaries, which is false for real dependency trees; it had no remaining in-repo or downstream consumers. (#39)
 
 ## [0.7.0] - 2026-06-02
 
@@ -33,9 +153,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `pkg/graphfrag`: new public package owning the reusable graph-fragment model, the wire schema (`GraphFragmentExport`), `DecodeFragment`, and a tiered fail-closed stitcher that composes per-component fragments into transitive crypto-reachability chains. Downstream services consume this one contract instead of reimplementing schema/merge logic (mirrors `pkg/stitch`).
 - Call-graph edge **resolution classification**: each caller→callee edge is now tagged `exact`, `interface_dispatch`, or `name_only` at build time (`CallGraph.EdgeResolutions`), distinguishing exact typed calls from over-broad name+arity dispatch guesses (interface-dispatch expansion, fluent fallback).
+- `--exclude` flag for user-supplied skip patterns on top of the built-in defaults. (#36)
 
 ### Changed
 - Graph-fragment export schema bumped to `graph-fragment-1.1`: `internal_edges[]` and `external_calls[]` now carry `resolution`, `declared_type`, `method_name`, and `arity`. The fields are additive (1.0 fragments decode as unresolved/untrusted). See [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md#graph-fragment-export).
+
+## [0.5.0] - 2026-05-27
+
+### Added
+- `cryptoFunction` and `materialSize` CBOM metadata mappers. (#35)
+
+### Changed
+- Rulesets are loaded from a single directory containing multiple rule files instead of one file per invocation. (#35)
+
+## [0.4.3] - 2026-05-22
+
+### Fixed
+- CLI pre-detects languages before configuring the scan and surfaces the underlying error cause on scan failures instead of a generic message. (#32)
+
+## [0.4.2] - 2026-05-12
+
+### Fixed
+- `Dockerfile.deps` image user permissions in release builds.
 
 ## [0.4.1] - 2026-05-11
 
@@ -179,3 +318,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.3.0]: https://github.com/scanoss/crypto-finder/compare/v0.2.4...v0.3.0
 [0.4.0]: https://github.com/scanoss/crypto-finder/compare/v0.3.0...v0.4.0
 [0.4.1]: https://github.com/scanoss/crypto-finder/compare/v0.4.0...v0.4.1
+[0.4.2]: https://github.com/scanoss/crypto-finder/compare/v0.4.1...v0.4.2
+[0.4.3]: https://github.com/scanoss/crypto-finder/compare/v0.4.2...v0.4.3
+[0.5.0]: https://github.com/scanoss/crypto-finder/compare/v0.4.3...v0.5.0
+[0.6.0]: https://github.com/scanoss/crypto-finder/compare/v0.5.0...v0.6.0
+[0.7.0]: https://github.com/scanoss/crypto-finder/compare/v0.6.0...v0.7.0
+[0.8.0]: https://github.com/scanoss/crypto-finder/compare/v0.7.0...v0.8.0
+[0.9.0]: https://github.com/scanoss/crypto-finder/compare/v0.8.0...v0.9.0
+[0.9.1]: https://github.com/scanoss/crypto-finder/compare/v0.9.0...v0.9.1
+[0.9.2]: https://github.com/scanoss/crypto-finder/compare/v0.9.1...v0.9.2
+[0.9.3]: https://github.com/scanoss/crypto-finder/compare/v0.9.2...v0.9.3
+[0.9.4]: https://github.com/scanoss/crypto-finder/compare/v0.9.3...v0.9.4
+[0.10.0]: https://github.com/scanoss/crypto-finder/compare/v0.9.4...v0.10.0
+[0.11.0]: https://github.com/scanoss/crypto-finder/compare/v0.10.0...v0.11.0
+[0.12.0]: https://github.com/scanoss/crypto-finder/compare/v0.11.0...v0.12.0
+[0.12.1]: https://github.com/scanoss/crypto-finder/compare/v0.12.0...v0.12.1
+[0.13.0]: https://github.com/scanoss/crypto-finder/compare/v0.12.1...v0.13.0
+[0.13.1]: https://github.com/scanoss/crypto-finder/compare/v0.13.0...v0.13.1
+[0.13.2]: https://github.com/scanoss/crypto-finder/compare/v0.13.1...v0.13.2
+[0.13.3]: https://github.com/scanoss/crypto-finder/compare/v0.13.2...v0.13.3
+[0.13.4]: https://github.com/scanoss/crypto-finder/compare/v0.13.3...v0.13.4
+[Unreleased]: https://github.com/scanoss/crypto-finder/compare/v0.13.4...HEAD
