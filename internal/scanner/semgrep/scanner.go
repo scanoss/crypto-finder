@@ -126,10 +126,10 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Execute semgrep
 	output, stderr, err := s.execute(ctx, args)
 	if err != nil {
-		cmdStr := fmt.Sprintf("%s %s", s.executablePath, strings.Join(args, " "))
 		log.Debug().
-			Str("command", cmdStr).
-			Str("stderr", stderr).
+			Strs("configs", rulePaths).
+			Str("target", target).
+			Str("stderr", SanitizeScannerStderr(stderr)).
 			Msg("semgrep command failed")
 
 		return nil, err

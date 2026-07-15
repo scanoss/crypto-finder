@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -235,6 +236,13 @@ func TestSanitizeScannerStderr(t *testing.T) {
 	long := strings.Repeat("x", maxStderrTail+100)
 	if got := SanitizeScannerStderr(long); len(got) > maxStderrTail+len("…") {
 		t.Errorf("expected stderr capped at %d chars, got %d", maxStderrTail, len(got))
+	}
+
+	// Truncation must not split a multi-byte rune: force the cut point to
+	// land mid-rune and check the result is still valid UTF-8.
+	multibyte := strings.Repeat("─", maxStderrTail)
+	if got := SanitizeScannerStderr(multibyte); !utf8.ValidString(got) {
+		t.Errorf("expected valid UTF-8 after truncation, got %q", got)
 	}
 }
 

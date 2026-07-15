@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -174,7 +175,11 @@ func SanitizeScannerStderr(stderr string) string {
 	}
 	out := strings.Join(lines, " | ")
 	if len(out) > maxStderrTail {
-		out = "…" + out[len(out)-maxStderrTail:]
+		cut := len(out) - maxStderrTail
+		for cut < len(out) && !utf8.RuneStart(out[cut]) {
+			cut++
+		}
+		out = "…" + out[cut:]
 	}
 	return out
 }
