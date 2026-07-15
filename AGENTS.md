@@ -4,6 +4,20 @@ Project-specific conventions for AI agents and human contributors working in thi
 Read this file before making non-trivial changes. It documents conventions that are
 load-bearing but not enforceable by lint or compiler alone.
 
+## Changelog (HARD REQUIREMENT)
+
+Every user-facing change — new flag, behavior change, schema bump, bug fix, performance
+work, removal — MUST land with a matching entry under `[Unreleased]` in `CHANGELOG.md`,
+in the same PR as the change. The format is [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+(`Added` / `Changed` / `Fixed` / `Removed`).
+
+- Write entries for consumers of the tool, not for reviewers: name the flag, the schema
+  version, the exported package, the observable behavior — not the internal refactor.
+- Internal-only changes (test refactors, CI tweaks, comment fixes) do not need an entry.
+- When cutting a release, rename `[Unreleased]` to the version + date and start a fresh
+  empty `[Unreleased]` section. Do not let releases ship with the changelog behind —
+  reconstructing history from merged PRs afterwards is expensive and error-prone.
+
 ## Error handling
 
 This project uses a **two-layer error model**. Mixing the layers is a defect.
