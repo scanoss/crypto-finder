@@ -550,8 +550,7 @@ func writeRules(t *testing.T, path string, tc acceptanceCase) {
 
 func writeFakeScanner(t *testing.T, dir string) {
 	t.Helper()
-	path := filepath.Join(dir, "opengrep")
-	script := `#!/bin/sh
+	shellScript := `#!/bin/sh
 case "$1" in
   --version) echo 1.12.1 ;;
   scan) echo --x-ignore-semgrepignore-files ;;
@@ -559,7 +558,14 @@ case "$1" in
   *) cat "$FAKE_OPENGREP_OUTPUT" ;;
 esac
 `
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opengrep"), []byte(shellScript), 0o700))
+	batchScript := `@echo off
+if "%1"=="--version" (echo 1.12.1& exit /b 0)
+if "%1"=="scan" (echo --x-ignore-semgrepignore-files& exit /b 0)
+if "%1"=="--help" (echo --x-ignore-semgrepignore-files& exit /b 0)
+type "%FAKE_OPENGREP_OUTPUT%"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "opengrep.bat"), []byte(batchScript), 0o700))
 }
 
 func buildCryptoFinder(t *testing.T, root string) string {
