@@ -41,14 +41,17 @@ import (
 const acceptanceCondition = `param[0]==true,param[algorithm]~=^AES,param[1|key]:type==key,param[2]:type~=^bytes?$`
 
 type acceptanceCase struct {
-	name, ecosystem, fixture, source, provider      string
-	staticProviderEvidence, runtimeProviderEvidence string
-	matches                                         []acceptanceMatch
+	name, ecosystem, fixture, source, provider string
+	pinFile, pinText                           string
+	matches                                    []acceptanceMatch
 }
 
 type acceptanceMatch struct {
-	needle, ruleID, api string
-	staticProvider      bool
+	needle, ruleID, api  string
+	staticProvider       bool
+	runtimeProvider      bool
+	requiresSupport      bool
+	supportingCategories []string
 }
 
 type acceptanceResult struct {
@@ -71,21 +74,25 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 		{
 			name: "java", ecosystem: "java", fixture: "dependency_intelligence_java",
 			source: "src/main/java/example/Acceptance.java", provider: "BC",
-			staticProviderEvidence: `STATIC_PROVIDER = "BC"`, runtimeProviderEvidence: "String runtimeProvider",
+			pinFile: "pom.xml", pinText: "<version>1.78.1</version>",
 			matches: []acceptanceMatch{
-				{needle: "new KeyParameter(key)", ruleID: "java.acceptance.key-parameter", api: "org.bouncycastle.crypto.params.KeyParameter.<init>", staticProvider: true},
-				{needle: "params.getKey()", ruleID: "java.acceptance.key-output", api: "org.bouncycastle.crypto.params.KeyParameter.getKey"},
-				{needle: "gcm.getOutputSize(16)", ruleID: "java.acceptance.gcm", api: "org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize"},
-				{needle: "new AESEngine()", ruleID: "java.acceptance.engine", api: "org.bouncycastle.crypto.engines.AESEngine.<init>"},
+				{needle: "new KeyParameter(key)", ruleID: "java.acceptance.key-parameter", api: "org.bouncycastle.crypto.params.KeyParameter.<init>", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
+				{needle: "params.getKey()", ruleID: "java.acceptance.key-output", api: "org.bouncycastle.crypto.params.KeyParameter.getKey", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
+				{needle: "gcm.getOutputSize(16)", ruleID: "java.acceptance.gcm", api: "org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize", requiresSupport: true, supportingCategories: []string{"config"}},
+				{needle: "new AESEngine()", ruleID: "java.acceptance.engine", api: "org.bouncycastle.crypto.engines.AESEngine.<init>", requiresSupport: true, supportingCategories: []string{"operation"}},
+				{needle: `Cipher.getInstance("AES/GCM/NoPadding", "BC")`, ruleID: "java.acceptance.static-provider", api: "javax.crypto.Cipher.getInstance", staticProvider: true},
+				{needle: `Cipher.getInstance("AES/GCM/NoPadding", runtimeProvider)`, ruleID: "java.acceptance.runtime-provider", api: "javax.crypto.Cipher.getInstance", runtimeProvider: true},
 			},
 		},
 		{
 			name: "python", ecosystem: "python", fixture: "dependency_intelligence_python",
 			source: "acceptance.py", provider: "pycryptodomex",
-			staticProviderEvidence: `STATIC_PROVIDER = "pycryptodomex"`, runtimeProviderEvidence: "runtime_provider: str",
+			pinFile: "requirements.txt", pinText: "pycryptodomex==3.20.0",
 			matches: []acceptanceMatch{
-				{needle: "AES.new(key, AES.MODE_GCM)", ruleID: "python.acceptance.aes-new", api: "Cryptodome.Cipher.AES.new", staticProvider: true},
-				{needle: "cipher.encrypt(data)", ruleID: "python.acceptance.aes-encrypt", api: "Cryptodome.Cipher.AES.AESCipher.encrypt"},
+				{needle: "AES.new(key, AES.MODE_GCM)", ruleID: "python.acceptance.aes-new", api: "Cryptodome.Cipher.AES.new", requiresSupport: true},
+				{needle: "cipher.encrypt(data)", ruleID: "python.acceptance.aes-encrypt", api: "Cryptodome.Cipher.AES.AESCipher.encrypt", requiresSupport: true, supportingCategories: []string{"factory"}},
+				{needle: `provider_probe("pycryptodomex")`, ruleID: "python.acceptance.static-provider", api: "dependency_intelligence_python.provider_probe", staticProvider: true},
+				{needle: "provider_probe(runtime_provider)", ruleID: "python.acceptance.runtime-provider", api: "dependency_intelligence_python.provider_probe", runtimeProvider: true},
 			},
 		},
 	}
@@ -97,11 +104,9 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 		defer resultsMu.Unlock()
 		require.Contains(t, results, "java")
 		require.Contains(t, results, "python")
-		javaConditions, err := json.Marshal(firstAsset(t, results["java"].report).ParameterConditions)
-		require.NoError(t, err)
-		pythonConditions, err := json.Marshal(firstAsset(t, results["python"].report).ParameterConditions)
-		require.NoError(t, err)
-		assert.Equal(t, javaConditions, pythonConditions, "condition semantics differ across languages")
+		javaResult, pythonResult := results["java"], results["python"]
+		assert.Equal(t, paritySemantics(t, &javaResult), paritySemantics(t, &pythonResult),
+			"equivalent fixtures must preserve the same external field semantics")
 	})
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,9 +122,75 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 	}
 }
 
+type externalParitySemantics struct {
+	Conditions            string
+	StaticProvider        bool
+	UnresolvedProvider    bool
+	ForwardMaxDepth       int
+	ForwardTruncated      bool
+	ParameterIndexes      []int
+	ArgumentExpressions   []string
+	ResolvedValues        []string
+	ParameterTypesAligned bool
+	HasFactorySupport     bool
+	SupportingRefsResolve bool
+}
+
+func paritySemantics(t *testing.T, result *acceptanceResult) externalParitySemantics {
+	t.Helper()
+	conditions, err := json.Marshal(firstAsset(t, result.report).ParameterConditions)
+	require.NoError(t, err)
+	semantics := externalParitySemantics{Conditions: string(conditions), SupportingRefsResolve: true}
+	assets := allAssets(result.report)
+	for i := range assets {
+		asset := &assets[i]
+		if asset.Metadata["provider"] != "" {
+			semantics.StaticProvider = true
+		}
+		if _, ok := asset.Metadata["provider"]; !ok {
+			semantics.UnresolvedProvider = true
+		}
+	}
+	supporting := make(map[string]bool, len(result.fragment.SupportingCalls))
+	for i := range result.fragment.SupportingCalls {
+		call := &result.fragment.SupportingCalls[i]
+		supporting[call.SupportingID] = true
+		semantics.HasFactorySupport = semantics.HasFactorySupport || call.Category == "factory"
+	}
+	for i := range result.fragment.CryptoAnnotations {
+		for _, id := range result.fragment.CryptoAnnotations[i].SupportingCallIDs {
+			semantics.SupportingRefsResolve = semantics.SupportingRefsResolve && supporting[id]
+		}
+	}
+	for i := range result.stitched.FindingGraphs {
+		forward := result.stitched.FindingGraphs[i].ForwardCalls
+		if forward == nil || !strings.HasSuffix(forward.Anchor.FunctionName, ".run") {
+			continue
+		}
+		semantics.ForwardMaxDepth = forward.MaxDepth
+		semantics.ForwardTruncated = forward.Truncated
+		for j := range forward.Edges {
+			entry := forward.Edges[j].EntryCall
+			if entry == nil || !strings.HasSuffix(entry.FunctionName, ".helper") {
+				continue
+			}
+			semantics.ParameterTypesAligned = len(entry.ParameterTypes) == len(entry.Parameters)
+			for k := range entry.Parameters {
+				parameter := &entry.Parameters[k]
+				semantics.ParameterIndexes = append(semantics.ParameterIndexes, parameter.ParameterIndex)
+				semantics.ArgumentExpressions = append(semantics.ArgumentExpressions, parameter.ArgumentExpression)
+				semantics.ResolvedValues = append(semantics.ResolvedValues, parameter.ResolvedValue)
+			}
+		}
+		break
+	}
+	return semantics
+}
+
 func runAcceptanceCase(t *testing.T, root, binary string, tc acceptanceCase) acceptanceResult {
 	t.Helper()
 	target := filepath.Join(root, "testdata", "projects", tc.fixture)
+	assertDependencyPin(t, target, tc)
 	tmp := t.TempDir()
 	fakeOutput := filepath.Join(tmp, "opengrep.json")
 	rules := filepath.Join(tmp, "rules.yaml")
@@ -164,26 +235,31 @@ func assertFindingContract(t *testing.T, tc acceptanceCase, report entities.Inte
 	t.Helper()
 	require.NotEmpty(t, report.Findings, "findings report")
 	assets := allAssets(report)
-	wanted := make(map[string]bool, len(tc.matches))
-	for _, match := range tc.matches {
-		wanted[match.ruleID] = true
+	wanted := make(map[string]acceptanceMatch, len(tc.matches))
+	for i := range tc.matches {
+		wanted[tc.matches[i].ruleID] = tc.matches[i]
 	}
 	static, unresolved := false, false
 	seen := 0
 	for i := range assets {
 		asset := &assets[i]
-		if len(asset.Rules) == 0 || !wanted[asset.Rules[0].ID] {
+		if len(asset.Rules) == 0 {
+			continue
+		}
+		match, ok := wanted[asset.Rules[0].ID]
+		if !ok {
 			continue
 		}
 		seen++
 		assertNormalizedConditions(t, asset.ParameterConditions)
 		wantID := findingID(report.Findings[0].FilePath, asset.StartLine, asset.Rules[0].ID)
 		assert.Equal(t, wantID, asset.FindingID, "unchanged finding_id")
-		if asset.Metadata["provider"] == tc.provider {
+		if match.staticProvider && asset.Metadata["provider"] == tc.provider {
 			static = true
 		}
-		if _, ok := asset.Metadata["provider"]; !ok {
-			unresolved = true
+		if match.runtimeProvider {
+			_, resolved := asset.Metadata["provider"]
+			unresolved = !resolved
 		}
 	}
 	assert.Equal(t, len(tc.matches), seen, "scanner assets: %#v", assets)
@@ -239,11 +315,39 @@ func assertFragmentContract(t *testing.T, tc acceptanceCase, payload *graphfrag.
 		}
 	}
 	categories := make(map[string]bool)
+	supportByID := make(map[string]*graphfrag.GraphFragmentSupporting, len(payload.SupportingCalls))
 	for i := range payload.SupportingCalls {
 		call := &payload.SupportingCalls[i]
+		supportByID[call.SupportingID] = call
 		categories[call.Category] = true
 		assert.Truef(t, linked[call.SupportingID], "supporting call %q (%s) is not linked to a finding", call.SupportingID, call.Category)
 	}
+	expected := make(map[string]acceptanceMatch, len(tc.matches))
+	for i := range tc.matches {
+		expected[tc.matches[i].ruleID] = tc.matches[i]
+	}
+	seen := 0
+	for i := range payload.CryptoAnnotations {
+		op := &payload.CryptoAnnotations[i]
+		match, ok := expected[op.RuleID]
+		if !ok {
+			continue
+		}
+		seen++
+		if match.requiresSupport {
+			require.NotEmptyf(t, op.SupportingCallIDs, "finding %s must link its applicable supporting calls", op.RuleID)
+		}
+		findingCategories := make(map[string]bool)
+		for _, id := range op.SupportingCallIDs {
+			call, exists := supportByID[id]
+			require.Truef(t, exists, "finding %s references missing supporting call %s", op.RuleID, id)
+			findingCategories[call.Category] = true
+		}
+		for _, category := range match.supportingCategories {
+			assert.Truef(t, findingCategories[category], "finding %s missing applicable %s support: %#v", op.RuleID, category, op.SupportingCallIDs)
+		}
+	}
+	assert.Equal(t, len(tc.matches), seen, "expected crypto annotations by rule")
 	switch tc.ecosystem {
 	case "java":
 		for _, category := range []string{"factory", "config", "operation", "output"} {
@@ -406,16 +510,21 @@ func writeScannerOutput(t *testing.T, path, target string, tc acceptanceCase) {
 	sourcePath := filepath.Join(target, filepath.FromSlash(tc.source))
 	source, err := os.ReadFile(sourcePath)
 	require.NoError(t, err)
-	require.Contains(t, string(source), tc.staticProviderEvidence, "explicit static provider evidence must exist in analyzed source")
-	require.Contains(t, string(source), tc.runtimeProviderEvidence, "runtime provider selection must exist in analyzed source")
 	results := make([]map[string]any, 0, len(tc.matches))
 	for _, match := range tc.matches {
 		line, col := location(string(source), match.needle)
 		require.NotZerof(t, line, "fixture %s does not contain %q", sourcePath, match.needle)
-		crypto := map[string]any{"assetType": "algorithm", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher", "api": match.api, "parameterCondition": acceptanceCondition, "provider": "$PROVIDER"}
+		crypto := map[string]any{"assetType": "algorithm", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher", "api": match.api, "parameterCondition": acceptanceCondition}
 		metavars := map[string]any{}
+		if match.staticProvider || match.runtimeProvider {
+			crypto["provider"] = "$PROVIDER"
+		}
 		if match.staticProvider {
+			require.Contains(t, match.needle, `"`+tc.provider+`"`, "static provider must be literal evidence in the matched expression")
 			metavars["$PROVIDER"] = map[string]any{"abstract_content": tc.provider}
+		}
+		if match.runtimeProvider {
+			require.Contains(t, strings.ToLower(match.needle), "runtime", "runtime provider must be selected in the matched expression")
 		}
 		results = append(results, map[string]any{
 			"check_id": match.ruleID, "path": sourcePath,
@@ -456,11 +565,18 @@ esac
 func buildCryptoFinder(t *testing.T, root string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "crypto-finder")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", path, "./cmd/crypto-finder")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", path, "./cmd/crypto-finder")
 	cmd.Dir = root
 	output, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "go build output:\n%s", output)
 	return path
+}
+
+func assertDependencyPin(t *testing.T, target string, tc acceptanceCase) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(target, tc.pinFile))
+	require.NoError(t, err)
+	require.Contains(t, string(data), tc.pinText, "fixture dependency pin")
 }
 
 func repositoryRoot(t *testing.T) string {

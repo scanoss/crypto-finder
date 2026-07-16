@@ -16,6 +16,7 @@
 
 package example;
 
+import javax.crypto.Cipher;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
@@ -33,9 +34,9 @@ class SecondProcessor implements Processor {
 }
 
 class Acceptance {
-    private static final String STATIC_PROVIDER = "BC";
-
-    byte[] run(byte[] data, byte[] key, String runtimeProvider) {
+    byte[] run(byte[] data, byte[] key, String runtimeProvider) throws Exception {
+        Cipher.getInstance("AES/GCM/NoPadding", "BC");
+        Cipher.getInstance("AES/GCM/NoPadding", runtimeProvider);
         KeyParameter params = new KeyParameter(key);
         params.getKey();
         GCMBlockCipher gcm = new GCMBlockCipher();

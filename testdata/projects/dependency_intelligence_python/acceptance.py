@@ -16,8 +16,6 @@
 
 from Cryptodome.Cipher import AES
 
-STATIC_PROVIDER = "pycryptodomex"
-
 
 class BaseRunner:
     def run(self, data: bytes, key: bytes, runtime_provider: str) -> bytes:
@@ -32,8 +30,14 @@ def helper(data: bytes, key: bytes, size: int) -> bytes:
     return leaf(data, key, size)
 
 
+def provider_probe(provider: str) -> None:
+    pass
+
+
 class Runner(BaseRunner):
     def run(self, data: bytes, key: bytes, runtime_provider: str) -> bytes:
+        provider_probe("pycryptodomex")
+        provider_probe(runtime_provider)
         cipher = AES.new(key, AES.MODE_GCM)
         cipher.encrypt(data)
         helper(data, key, 16)
