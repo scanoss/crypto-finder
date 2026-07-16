@@ -537,8 +537,7 @@ type Result struct {
 	// stored fragments (issue-103 WU2/WU3), keyed by FunctionKey. nil when no
 	// fragment carries role data. ToCallgraphExport merges these into the served
 	// crypto_entry_points by function_key — enriching an existing reachability
-	// entry, or appending a role:operation catalog entry that has no reachable
-	// finding and would otherwise be dropped.
+	// entry, without appending operation-only catalog entries.
 	operationEntryPoints map[string][]CryptoEntryPoint
 }
 

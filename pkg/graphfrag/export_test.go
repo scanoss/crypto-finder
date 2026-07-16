@@ -187,11 +187,11 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_7 verifies the schema version constant has been bumped.
-// 1.7 adds compact internal edge encoding with the same data as internal_edges.
-func TestSchemaVersion_Is_1_7(t *testing.T) {
+// TestSchemaVersion_Is_1_8 verifies the schema version constant has been bumped.
+// 1.8 removes operation-only crypto entry point synthesis from fragment exports.
+func TestSchemaVersion_Is_1_8(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.7" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.7", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.8" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.8", SchemaVersion)
 	}
 }

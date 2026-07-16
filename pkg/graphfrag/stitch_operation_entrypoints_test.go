@@ -5,12 +5,10 @@ package graphfrag
 
 import "testing"
 
-// TestStitchCarriesOperationEntryPointsToServed asserts that a role:operation
-// crypto_entry_point carried on a stored fragment (WU2) survives the stitch →
-// ToCallgraphExport round trip and appears in the SERVED crypto_entry_points,
-// even though it has no reachable finding (the served path otherwise rebuilds
-// crypto_entry_points purely from finding chains and would drop it).
-func TestStitchCarriesOperationEntryPointsToServed(t *testing.T) {
+// TestStitchDropsOperationOnlyEntryPoints asserts that a role:operation
+// crypto_entry_point carried on a stored fragment is not appended to the served
+// crypto_entry_points when no reachable finding exists for that function.
+func TestStitchDropsOperationOnlyEntryPoints(t *testing.T) {
 	t.Parallel()
 
 	root := ComponentKey{Purl: "pkg:maven/com.acme/lib", Version: "1.0.0"}
@@ -20,21 +18,16 @@ func TestStitchCarriesOperationEntryPointsToServed(t *testing.T) {
 		Functions: []Function{
 			{Signature: "com.acme.(Engine).processBlock#4", FunctionName: "com.acme.Engine.processBlock"},
 		},
-		CryptoEntryPoints: []CryptoEntryPoint{
-			{
-				FunctionKey:  "com.acme.(Engine).processBlock#4",
-				FunctionName: "com.acme.Engine.processBlock",
-				MethodRole:   "operation",
-				RoleProvenance: &RoleProvenance{
-					Kind:           "contract-operation",
-					ContractMethod: "com.acme.Engine.processBlock",
-					Inherited:      &InheritedRole{AlgorithmFamily: "AES", Primitive: "block-cipher"},
-				},
-				ParameterRoles: []ParameterRole{
-					{Index: 0, Role: "metadata-contributing", Contributes: &Contribution{Property: "keySize", Derivation: "argument_bit_length"}},
-				},
+		CryptoEntryPoints: []CryptoEntryPoint{{
+			FunctionKey:  "com.acme.(Engine).processBlock#4",
+			FunctionName: "com.acme.Engine.processBlock",
+			MethodRole:   "operation",
+			RoleProvenance: &RoleProvenance{
+				Kind:           "contract-operation",
+				ContractMethod: "com.acme.Engine.processBlock",
+				Inherited:      &InheritedRole{AlgorithmFamily: "AES", Primitive: "block-cipher"},
 			},
-		},
+		}},
 	}
 	fragments := map[ComponentKey]Fragment{root: frag}
 
@@ -44,24 +37,8 @@ func TestStitchCarriesOperationEntryPointsToServed(t *testing.T) {
 	}
 	export := result.ToCallgraphExport(root, ScanMeta{})
 
-	ep := findExportEntryPointByFunctionKey(export.CryptoEntryPoints, "com.acme.(Engine).processBlock#4")
-	if ep == nil {
-		t.Fatalf("role:operation entry point missing from served crypto_entry_points: %+v", export.CryptoEntryPoints)
-	}
-	if ep.MethodRole != "operation" {
-		t.Errorf("method_role = %q, want operation", ep.MethodRole)
-	}
-	// Class/Method must be derived (matching the live exporter), not left blank
-	// on an appended catalog entry.
-	if ep.Class != "com.acme.Engine" || ep.Method != "processBlock" {
-		t.Errorf("class/method = %q/%q, want com.acme.Engine/processBlock", ep.Class, ep.Method)
-	}
-	if ep.RoleProvenance == nil || ep.RoleProvenance.Inherited == nil || ep.RoleProvenance.Inherited.AlgorithmFamily != "AES" {
-		t.Errorf("role_provenance not carried through: %+v", ep.RoleProvenance)
-	}
-	if len(ep.ParameterRoles) != 1 || ep.ParameterRoles[0].Contributes == nil ||
-		ep.ParameterRoles[0].Contributes.Derivation != "argument_bit_length" {
-		t.Errorf("parameter_roles not carried through: %+v", ep.ParameterRoles)
+	if ep := findExportEntryPointByFunctionKey(export.CryptoEntryPoints, "com.acme.(Engine).processBlock#4"); ep != nil {
+		t.Fatalf("operation-only entry point was appended: %+v", ep)
 	}
 }
 

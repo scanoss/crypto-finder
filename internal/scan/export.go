@@ -112,7 +112,7 @@ type callGraphDependencyContext struct {
 
 // callGraphRoleProvenance explains where a method_role/parameter contribution
 // came from: a direct contract match, or inherited from same-class sibling
-// assets (see synthesizeContractOperationEntryPoints, issue-103 WU2).
+// contract metadata.
 type callGraphRoleProvenance struct {
 	Kind               string                  `json:"kind,omitempty"`
 	ContractMethod     string                  `json:"contract_method,omitempty"`
@@ -368,7 +368,7 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (ca
 	bw := bufio.NewWriterSize(file, 1<<20)
 	writer := graphFragmentJSONWriter{w: bw}
 
-	streamed, writeErr := streamCallGraphExport(&writer, ctx, result, assets, meta)
+	streamed, writeErr := streamCallGraphExport(&writer, ctx, assets, meta)
 	if err := finishBufferedOutput(file, bw, writeErr); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
 	}
@@ -390,7 +390,6 @@ type streamedCallGraphExport struct {
 func streamCallGraphExport(
 	writer *graphFragmentJSONWriter,
 	ctx *exportBuildContext,
-	result *engine.DepScanResult,
 	assets []callGraphExportAsset,
 	meta callGraphExportScanMeta,
 ) (streamedCallGraphExport, error) {
@@ -414,7 +413,6 @@ func streamCallGraphExport(
 	}
 
 	entryPoints := flattenEntryPointIndex(ctx.kb, index)
-	entryPoints = appendSynthesizedOperationEntryPoints(ctx, result, entryPoints)
 	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -645,7 +643,6 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
-	out.CryptoEntryPoints = appendSynthesizedOperationEntryPoints(ctx, result, out.CryptoEntryPoints)
 
 	return out
 }
@@ -970,202 +967,11 @@ func flattenReachableSupportingCalls(values map[string]callGraphReachableSupport
 	return out
 }
 
-// operationEntryPoint is the WU2 (issue-103) intermediate representation of a
-// synthesized role:operation crypto_entry_points entry, shared by the live
-// and fragment converters (appendSynthesizedOperationEntryPoints and its
-// fragment-side counterpart in fragment_export.go).
-type operationEntryPoint struct {
-	functionKey        string
-	functionName       string
-	canonicalSignature string
-	class              string
-	method             string
-	returnType         string
-	parameterTypes     []string
-	visibility         string
-	ownerVisibility    string
-	displaySymbol      string
-	aliases            []string
-	contractMethod     string
-	inheritedFamily    string
-	inheritedPrimitive string
-	inheritedAmbiguous bool
-}
-
+// operationContractDeclaration links a contract method to a concrete function
+// declaration in the scanned dependency graph.
 type operationContractDeclaration struct {
 	declFQN string
 	decl    *callgraph.FunctionDecl
-}
-
-// classSiblingAssets groups every crypto asset in the report by the receiver
-// type of its matched API (asset.Metadata["api"]), so WU2 synthesis can gate
-// on "declaring class already has >= 1 crypto asset" and inherit
-// algorithm_family/primitive from those siblings.
-func classSiblingAssets(report *entities.InterimReport) map[string][]entities.CryptographicAsset {
-	out := make(map[string][]entities.CryptographicAsset)
-	if report == nil {
-		return out
-	}
-	for _, finding := range report.Findings {
-		for i := range finding.CryptographicAssets {
-			asset := finding.CryptographicAssets[i]
-			api := strings.TrimSpace(asset.Metadata["api"])
-			if api == "" {
-				continue
-			}
-			class := receiverType(api)
-			if class == "" {
-				continue
-			}
-			out[class] = append(out[class], asset)
-		}
-	}
-	return out
-}
-
-// existingFindingAPIs is the set of asset.Metadata["api"] values already
-// covered by a finding (real or already rule-synthesized) in the report.
-// WU2 synthesis skips a contract method already covered this way — no
-// duplicate crypto_entry_points entry for a function that already has one
-// via the ordinary finding-derived path.
-func existingFindingAPIs(report *entities.InterimReport) map[string]struct{} {
-	out := make(map[string]struct{})
-	if report == nil {
-		return out
-	}
-	for _, finding := range report.Findings {
-		for i := range finding.CryptographicAssets {
-			if api := strings.TrimSpace(finding.CryptographicAssets[i].Metadata["api"]); api != "" {
-				out[api] = struct{}{}
-			}
-		}
-	}
-	return out
-}
-
-// inheritFromSiblings computes the algorithm_family/primitive a synthesized
-// operation entry point inherits from its declaring class's existing crypto
-// assets. Unanimous algorithm_family across siblings -> inherit family +
-// primitive. Divergent family -> drop family, keep primitive only if it too
-// is unanimous, and set ambiguous=true. Never fabricates a value no sibling
-// declares.
-func inheritFromSiblings(assets []entities.CryptographicAsset) (family, primitive string, ambiguous bool) {
-	families := make(map[string]struct{})
-	primitives := make(map[string]struct{})
-	for i := range assets {
-		if f := strings.TrimSpace(assets[i].Metadata["algorithmFamily"]); f != "" {
-			families[f] = struct{}{}
-		}
-		if p := strings.TrimSpace(assets[i].Metadata["algorithmPrimitive"]); p != "" {
-			primitives[p] = struct{}{}
-		}
-	}
-	if len(primitives) == 1 {
-		for p := range primitives {
-			primitive = p
-		}
-	} else if len(primitives) > 1 {
-		ambiguous = true
-	}
-	if len(families) == 1 {
-		for f := range families {
-			family = f
-		}
-		return family, primitive, ambiguous
-	}
-	if len(families) > 1 {
-		ambiguous = true
-	}
-	return "", primitive, ambiguous
-}
-
-// synthesizeContractOperationEntryPoints is the WU2 (issue-103) B-lite
-// operation crypto_entry_point synthesis: for each role:operation contract
-// method that is (a) concretely declared/reachable in the scanned source,
-// directly or via a contract-hierarchy implementor, (b) whose declaring class
-// already carries >= 1 crypto asset, and (c) not already covered by an existing
-// finding, synthesize a crypto_entry_points entry. No interim finding is minted
-// (B-lite) — see spec "Finding counts unchanged" scenario.
-func synthesizeContractOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []operationEntryPoint {
-	if ctx == nil || ctx.kb == nil || ctx.declIndex == nil || result == nil || result.Report == nil {
-		return nil
-	}
-	classAssets := classSiblingAssets(result.Report)
-	existingAPI := existingFindingAPIs(result.Report)
-
-	seen := make(map[string]struct{})
-	var out []operationEntryPoint
-	for _, group := range ctx.kb.Contracts {
-		for i := range group {
-			c := group[i]
-			if c.Role != string(contracts.RoleOperation) {
-				continue
-			}
-			out = ctx.appendContractOperationEntryPoints(c, classAssets, existingAPI, seen, out)
-		}
-	}
-	return out
-}
-
-func (ctx *exportBuildContext) appendContractOperationEntryPoints(
-	c contracts.Contract,
-	classAssets map[string][]entities.CryptographicAsset,
-	existingAPI map[string]struct{},
-	seen map[string]struct{},
-	out []operationEntryPoint,
-) []operationEntryPoint {
-	if _, has := existingAPI[c.Method]; has {
-		return out
-	}
-	for _, match := range ctx.operationContractDeclarations(c) {
-		op, ok := ctx.synthesizeContractOperationEntryPoint(c, match, classAssets, existingAPI, seen)
-		if ok {
-			out = append(out, op)
-		}
-	}
-	return out
-}
-
-func (ctx *exportBuildContext) synthesizeContractOperationEntryPoint(
-	c contracts.Contract,
-	match operationContractDeclaration,
-	classAssets map[string][]entities.CryptographicAsset,
-	existingAPI map[string]struct{},
-	seen map[string]struct{},
-) (operationEntryPoint, bool) {
-	if _, has := existingAPI[match.declFQN]; has {
-		return operationEntryPoint{}, false
-	}
-	class := receiverType(match.declFQN)
-	assets := classAssets[class]
-	if len(assets) == 0 {
-		return operationEntryPoint{}, false
-	}
-	key := match.decl.ID.String()
-	if _, dup := seen[key]; dup {
-		return operationEntryPoint{}, false
-	}
-	seen[key] = struct{}{}
-	family, primitive, ambiguous := inheritFromSiblings(assets)
-	meta := buildExportFunctionMetadata(ctx.graph, match.decl.ID, match.decl)
-	_, method := splitFunctionName(match.declFQN)
-	return operationEntryPoint{
-		functionKey:        key,
-		functionName:       meta.FunctionName,
-		canonicalSignature: meta.CanonicalSignature,
-		class:              class,
-		method:             method,
-		returnType:         meta.ReturnType,
-		parameterTypes:     meta.ParameterTypes,
-		visibility:         meta.Visibility,
-		ownerVisibility:    meta.OwnerVisibility,
-		displaySymbol:      meta.DisplaySymbol,
-		aliases:            meta.Aliases,
-		contractMethod:     c.Method,
-		inheritedFamily:    family,
-		inheritedPrimitive: primitive,
-		inheritedAmbiguous: ambiguous,
-	}, true
 }
 
 func (ctx *exportBuildContext) operationContractDeclarations(c contracts.Contract) []operationContractDeclaration {
@@ -1213,65 +1019,6 @@ func functionDeclArityMatches(decl *callgraph.FunctionDecl, want int) bool {
 	}
 	got, err := strconv.Atoi(decl.ID.Name[i+1:])
 	return err != nil || got == want
-}
-
-// appendSynthesizedOperationEntryPoints appends WU2-synthesized operation
-// entry points to the live crypto_entry_points list, skipping any function
-// key already present (the structural/finding-derived path already covers
-// it), then re-sorts to preserve buildCryptoEntryPoints' deterministic order.
-func appendSynthesizedOperationEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult, existing []callGraphCryptoEntryPoint) []callGraphCryptoEntryPoint {
-	synthesized := synthesizeContractOperationEntryPoints(ctx, result)
-	if len(synthesized) == 0 {
-		return existing
-	}
-	present := make(map[string]struct{}, len(existing))
-	for i := range existing {
-		present[existing[i].FunctionKey] = struct{}{}
-	}
-	out := existing
-	for i := range synthesized {
-		op := synthesized[i]
-		if _, dup := present[op.functionKey]; dup {
-			continue
-		}
-		out = append(out, callGraphCryptoEntryPoint{
-			FunctionKey:        op.functionKey,
-			FunctionName:       op.functionName,
-			CanonicalSignature: op.canonicalSignature,
-			Class:              op.class,
-			Method:             op.method,
-			ReturnType:         op.returnType,
-			ParameterTypes:     op.parameterTypes,
-			Visibility:         op.visibility,
-			OwnerVisibility:    op.ownerVisibility,
-			DisplaySymbol:      op.displaySymbol,
-			Aliases:            op.aliases,
-			MethodRole:         string(contracts.RoleOperation),
-			RoleProvenance:     operationRoleProvenance(op),
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].FunctionKey < out[j].FunctionKey
-	})
-	return out
-}
-
-// operationRoleProvenance builds the role_provenance block for a
-// WU2-synthesized operation entry point.
-func operationRoleProvenance(op operationEntryPoint) *callGraphRoleProvenance {
-	rp := &callGraphRoleProvenance{
-		Kind:               "contract-operation-inherited",
-		ContractMethod:     op.contractMethod,
-		InheritedFrom:      op.class,
-		InheritedAmbiguous: op.inheritedAmbiguous,
-	}
-	if op.inheritedFamily != "" || op.inheritedPrimitive != "" {
-		rp.Inherited = &callGraphInheritedRole{
-			AlgorithmFamily: op.inheritedFamily,
-			Primitive:       op.inheritedPrimitive,
-		}
-	}
-	return rp
 }
 
 func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGraphReachableFinding {
@@ -1535,13 +1282,12 @@ func (ctx *exportBuildContext) typeOrAncestor(candidate, typ string) bool {
 	return false
 }
 
-// deriveContractSupportingCalls returns the fluent lifecycle methods of a
-// synthesized terminal as supporting calls, by contract type lineage. For
-// HashBuilder.withBcrypt (builder=HashBuilder, return=Hash): factory methods that
-// return the builder (Password.hash), config methods on the builder
-// (addRandomSalt/addSalt/addPepper), and output methods on the return type
-// (Hash.getResult). Gated on the method definition being present in the scanned
-// source; Category carries the contract role.
+// deriveContractSupportingCalls returns contract-role lifecycle methods as
+// supporting calls by terminal API type lineage. For HashBuilder.withBcrypt
+// (builder=HashBuilder, return=Hash): factory methods that return the builder
+// (Password.hash), config/operation methods on the builder or a supertype, and
+// output methods on the return type (Hash.getResult). Gated on the method
+// definition being present in the scanned source; Category carries the role.
 func deriveContractSupportingCalls(ctx *exportBuildContext, asset entities.CryptographicAsset) []callGraphSupportingCall {
 	if ctx.kb == nil || len(ctx.kb.Contracts) == 0 || ctx.declIndex == nil {
 		return nil
@@ -1557,39 +1303,82 @@ func deriveContractSupportingCalls(ctx *exportBuildContext, asset entities.Crypt
 	seen := make(map[string]struct{})
 	for _, group := range ctx.kb.Contracts {
 		for i := range group {
-			c := group[i]
-			if c.Role == "" {
-				continue
-			}
-			recv := receiverType(c.Method)
-			isFactory := c.Return.Type == builderType // produces the builder/checker
-			// config/output are inheritance-aware: a role method declared on a base
-			// class (e.g. GeneralDigest.update) attaches to a terminal of a subtype
-			// that inherits it (e.g. SHA256Digest), via the contract hierarchy.
-			isConfig := ctx.typeOrAncestor(recv, builderType)                    // invoked on the builder or a supertype
-			isOutput := returnType != "" && ctx.typeOrAncestor(recv, returnType) // reads the terminal's product or a supertype
-			if !isFactory && !isConfig && !isOutput {
-				continue
-			}
-			if _, dup := seen[c.Method]; dup {
-				continue
-			}
-			decl := ctx.declIndex[c.Method]
-			if decl == nil {
-				continue // not defined in scanned source
-			}
-			seen[c.Method] = struct{}{}
-			out = append(out, buildContractSupportingCall(ctx, c, decl))
+			out = ctx.appendContractSupportingCall(out, seen, group[i], builderType, returnType)
+		}
+	}
+	return out
+}
+
+func (ctx *exportBuildContext) appendContractSupportingCall(
+	out []callGraphSupportingCall,
+	seen map[string]struct{},
+	c contracts.Contract,
+	builderType string,
+	returnType string,
+) []callGraphSupportingCall {
+	if c.Role == "" {
+		return out
+	}
+	recv := receiverType(c.Method)
+	isFactory := c.Return.Type == builderType
+	isConfig := ctx.typeOrAncestor(recv, builderType)
+	isOutput := returnType != "" && ctx.typeOrAncestor(recv, returnType)
+	if !isFactory && !isConfig && !isOutput {
+		return out
+	}
+	if c.Role == string(contracts.RoleOperation) {
+		return ctx.appendOperationSupportingCalls(out, seen, c, builderType, returnType)
+	}
+	if _, dup := seen[c.Method]; dup {
+		return out
+	}
+	decl := ctx.declIndex[c.Method]
+	if decl == nil {
+		return out
+	}
+	seen[c.Method] = struct{}{}
+	return append(out, buildContractSupportingCall(ctx, c, decl))
+}
+
+func (ctx *exportBuildContext) appendOperationSupportingCalls(
+	out []callGraphSupportingCall,
+	seen map[string]struct{},
+	c contracts.Contract,
+	builderType string,
+	returnType string,
+) []callGraphSupportingCall {
+	for _, match := range ctx.operationSupportingDeclarations(c, builderType, returnType) {
+		key := match.decl.ID.String()
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, buildContractSupportingCall(ctx, c, match.decl))
+	}
+	return out
+}
+
+func (ctx *exportBuildContext) operationSupportingDeclarations(c contracts.Contract, builderType, returnType string) []operationContractDeclaration {
+	matches := ctx.operationContractDeclarations(c)
+	out := make([]operationContractDeclaration, 0, len(matches))
+	for _, match := range matches {
+		declClass, _ := splitFunctionName(match.declFQN)
+		if ctx.typeOrAncestor(declClass, builderType) || ctx.typeOrAncestor(declClass, returnType) {
+			out = append(out, match)
 		}
 	}
 	return out
 }
 
 // buildContractSupportingCall renders a contract-role method definition as a
-// supporting-call entry for a synthesized terminal.
+// supporting-call entry.
 func buildContractSupportingCall(ctx *exportBuildContext, c contracts.Contract, decl *callgraph.FunctionDecl) callGraphSupportingCall {
 	sourcePath := normalizeExportPath(ctx, decl.FilePath).FilePath
 	meta := buildExportFunctionMetadata(ctx.graph, decl.ID, decl)
+	functionName := fullFunctionName(decl.ID)
+	if functionName == "" {
+		functionName = c.Method
+	}
 	return callGraphSupportingCall{
 		SupportingID:       supportingIDFromParts(sourcePath, decl.StartLine, decl.ID.String()),
 		FunctionKey:        decl.ID.String(),
@@ -1603,10 +1392,10 @@ func buildContractSupportingCall(ctx *exportBuildContext, c contracts.Contract, 
 		EndLine:            decl.StartLine,
 		MatchedOperation: &callGraphMatchedOperation{
 			Kind:   "type_usage",
-			Symbol: c.Method,
+			Symbol: functionName,
 			Line:   decl.StartLine,
 		},
-		SupportingCall: &callGraphCalledFunction{FunctionName: c.Method},
+		SupportingCall: &callGraphCalledFunction{FunctionName: functionName},
 	}
 }
 

@@ -588,15 +588,15 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is64 pins the canonical callgraph schema version
-// at 6.4 — the additive bump introduced by method-role/parameter-role
-// classification (method_role, role_provenance, parameter_roles). The bump
+// TestCallgraphSchemaVersion_Is65 pins the canonical callgraph schema version
+// at 6.5 — the contract change that represents operation methods as
+// supporting calls instead of operation-only crypto_entry_points. The bump
 // is unconditional: it advances regardless of whether any given export
 // actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is64(t *testing.T) {
+func TestCallgraphSchemaVersion_Is65(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.4" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.4")
+	if CallgraphSchemaVersion != "6.5" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.5")
 	}
 }
