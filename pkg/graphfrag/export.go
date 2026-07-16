@@ -38,7 +38,7 @@ import (
 // 1.7 adds internal_edges_compact plus internal_edge_strings. It carries the
 // same internal edge fields as internal_edges, but indexes repeated strings and
 // function keys to keep large dependency fragments small.
-const SchemaVersion = "graph-fragment-1.7"
+const SchemaVersion = "graph-fragment-1.8"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema

@@ -764,9 +764,8 @@ func indexSupportingCalls(closure []ComponentKey, fragments map[ComponentKey]Fra
 // else (ExportCryptoEntryPoint.FunctionKey, ExportSupportingCall.FunctionKey).
 // Only entries with role data (MethodRole set OR ParameterRoles present) are
 // carried, since the served crypto_entry_points are otherwise rebuilt from
-// reachability; a role:operation catalog entry has no reachable finding and
-// would be dropped without this carry-through. Returns nil when none carry
-// role data, so the merge pass and its allocations are skipped entirely.
+// reachability; operation-only catalog entries remain dropped. Returns nil when
+// none carry role data, so the merge pass and its allocations are skipped.
 func indexOperationEntryPoints(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[string][]CryptoEntryPoint {
 	var out map[string][]CryptoEntryPoint
 	for _, key := range closure {

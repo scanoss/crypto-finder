@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.4"
+const CallgraphSchemaVersion = "6.5"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -465,14 +465,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	return out
 }
 
-// mergeOperationEntryPoints folds the fragments' role-bearing crypto_entry_points
-// (issue-103 WU2/WU3, carried on Result.operationEntryPoints) into the
-// reachability-projected entry points by function_key. An entry already present
-// is ENRICHED (role fields set only if not already populated — reachability data
-// wins on shared fields); a role:operation catalog entry with no reachable
-// finding is APPENDED. The result is re-sorted by function_key to preserve the
-// existing deterministic ordering. Returns the input unchanged when no fragment
-// carried role data.
+// mergeOperationEntryPoints folds role-bearing fragment crypto_entry_points into
+// reachability-projected entry points by function_key. Only entries already
+// present are enriched; operation-only catalog entries with no reachable finding
+// are ignored. The result is re-sorted by function_key to preserve deterministic
+// ordering. Returns the input unchanged when no fragment carried role data.
 func mergeOperationEntryPoints(built []ExportCryptoEntryPoint, carried map[string][]CryptoEntryPoint) []ExportCryptoEntryPoint {
 	if len(carried) == 0 {
 		return built
@@ -484,14 +481,12 @@ func mergeOperationEntryPoints(built []ExportCryptoEntryPoint, carried map[strin
 	}
 
 	for key, eps := range carried {
+		idx, ok := present[key]
+		if !ok {
+			continue
+		}
 		for i := range eps {
-			ep := &eps[i]
-			if idx, ok := present[key]; ok {
-				enrichEntryPointRoles(&built[idx], ep)
-				continue
-			}
-			built = append(built, operationEntryPointToExport(ep))
-			present[key] = len(built) - 1
+			enrichEntryPointRoles(&built[idx], &eps[i])
 		}
 	}
 
@@ -512,31 +507,6 @@ func enrichEntryPointRoles(dst *ExportCryptoEntryPoint, src *CryptoEntryPoint) {
 	}
 	if len(dst.ParameterRoles) == 0 {
 		dst.ParameterRoles = exportParameterRoles(src.ParameterRoles)
-	}
-}
-
-// operationEntryPointToExport builds a fresh ExportCryptoEntryPoint from a
-// carried (catalog) CryptoEntryPoint — the append path for role:operation
-// methods with no reachable finding. Class/Method are derived via the shared
-// splitFnName so this matches the live exporter and the reachability-derived
-// builder byte-for-byte (both paths populate Class).
-func operationEntryPointToExport(ep *CryptoEntryPoint) ExportCryptoEntryPoint {
-	class, method := splitFnName(ep.FunctionName)
-	return ExportCryptoEntryPoint{
-		FunctionKey:        ep.FunctionKey,
-		FunctionName:       ep.FunctionName,
-		CanonicalSignature: ep.CanonicalSignature,
-		Class:              class,
-		Method:             method,
-		ReturnType:         ep.ReturnType,
-		ParameterTypes:     ep.ParameterTypes,
-		Visibility:         ep.Visibility,
-		OwnerVisibility:    ep.OwnerVisibility,
-		DisplaySymbol:      ep.DisplaySymbol,
-		Aliases:            ep.Aliases,
-		MethodRole:         ep.MethodRole,
-		RoleProvenance:     exportRoleProvenance(ep.RoleProvenance),
-		ParameterRoles:     exportParameterRoles(ep.ParameterRoles),
 	}
 }
 
