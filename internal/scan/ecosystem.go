@@ -16,6 +16,7 @@ const (
 	ecosystemJava   = "java"
 	ecosystemRust   = "rust"
 	ecosystemPython = "python"
+	ecosystemNode   = "node"
 )
 
 // pythonBuildBackendPrefixes lists PEP 517 build backends that indicate the
@@ -41,7 +42,7 @@ var pythonBuildBackendPrefixes = []string{
 }
 
 // DetectEcosystem checks the target directory for known manifest files
-// and returns the corresponding ecosystem name ("go", "python", "java", "rust").
+// and returns the corresponding ecosystem name ("go", "python", "java", "rust", "node").
 // Returns empty string if no ecosystem is detected.
 //
 // Polyglot resolution: when a pyproject.toml declares a Python package (via
@@ -49,7 +50,7 @@ var pythonBuildBackendPrefixes = []string{
 // this captures Python packages that embed Rust via PyO3, maturin or
 // setuptools-rust (pyca/cryptography, pydantic-core, orjson, polars, ...).
 // Polyglot conflicts outside the Python↔Rust pair are not disambiguated here;
-// they keep the original precedence (Go → Java → Rust → Python fallback).
+// they keep the existing precedence, with Node used only as the final fallback.
 func DetectEcosystem(target string) string {
 	// go.mod at root is authoritative for Go.
 	if _, err := os.Stat(filepath.Join(target, "go.mod")); err == nil {
@@ -72,6 +73,9 @@ func DetectEcosystem(target string) string {
 		if _, err := os.Stat(filepath.Join(target, manifest)); err == nil {
 			return ecosystemPython
 		}
+	}
+	if _, err := os.Stat(filepath.Join(target, "package.json")); err == nil {
+		return ecosystemNode
 	}
 	return ""
 }

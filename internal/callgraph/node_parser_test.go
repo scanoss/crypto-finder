@@ -125,6 +125,18 @@ export function encrypt(data: Buffer): Buffer {
 	}
 }
 
+func TestNodeParser_ErrorPrefix(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewNodeParser().ParseFile(filepath.Join(t.TempDir(), "missing.js"), "example-app")
+	if err == nil {
+		t.Fatal("expected missing file error")
+	}
+	if !strings.HasPrefix(err.Error(), "callgraph: node parser:") {
+		t.Fatalf("error = %q, want callgraph package prefix", err)
+	}
+}
+
 func nodeFunction(t *testing.T, analysis *FileAnalysis, name string) *FunctionDecl {
 	t.Helper()
 	for i := range analysis.Functions {

@@ -89,7 +89,7 @@ func (p *NodeParser) PackageSeparator() string { return "/" }
 func (p *NodeParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("node parser: read directory %s: %w", dir, err)
+		return nil, fmt.Errorf("callgraph: node parser: read directory %s: %w", dir, err)
 	}
 
 	analyses := make([]*FileAnalysis, 0, len(entries))
@@ -126,15 +126,15 @@ func isNodeTestFile(name string) bool {
 func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error) {
 	src, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("node parser: read %s: %w", filePath, err)
+		return nil, fmt.Errorf("callgraph: node parser: read %s: %w", filePath, err)
 	}
 	parser := p.parserForFile(filePath)
 	if parser == nil {
-		return nil, fmt.Errorf("node parser: unsupported source file %s", filePath)
+		return nil, fmt.Errorf("callgraph: node parser: unsupported source file %s", filePath)
 	}
 	tree, err := parser.ParseCtx(context.TODO(), nil, src)
 	if err != nil {
-		return nil, fmt.Errorf("node parser: parse %s: %w", filePath, err)
+		return nil, fmt.Errorf("callgraph: node parser: parse %s: %w", filePath, err)
 	}
 	defer tree.Close()
 
