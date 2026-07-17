@@ -12,6 +12,12 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 )
 
+const (
+	rustNodeCallExpression      = "call_expression"
+	rustNodeExpressionStatement = "expression_statement"
+	rustNodeFunctionItem        = "function_item"
+)
+
 // RustParser extracts function declarations, calls, and imports from Rust source files
 // using tree-sitter for fast, accurate parsing.
 type RustParser struct {
@@ -227,7 +233,7 @@ func (p *RustParser) extractDeclarations(root *sitter.Node, src []byte, filePath
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		switch child.Type() {
-		case "function_item":
+		case rustNodeFunctionItem:
 			decl := p.parseFunctionItem(child, src, filePath, packagePath, "", analysis)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
@@ -293,9 +299,91 @@ func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, 
 	if body != nil {
 		varTypes := collectRustVarTypes(paramsNode, body, src)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, typeName, varTypes)
+		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, typeName, varTypes)
 	}
 
 	return decl
+}
+
+func (p *RustParser) extractReturnSources(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) []SourceNode {
+	var sources []SourceNode
+	p.walkForReturnSources(body, src, filePath, analysis, currentReceiverType, varTypes, &sources)
+	return append(sources, p.traceRustTailExpression(body, src, filePath, analysis, currentReceiverType, varTypes)...)
+}
+
+func (p *RustParser) walkForReturnSources(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, sources *[]SourceNode) {
+	if node == nil {
+		return
+	}
+	if node.Type() == "return_expression" {
+		if expr := rustReturnExpressionNode(node); expr != nil {
+			*sources = append(*sources, p.traceRustReturnExpression(expr, src, filePath, analysis, currentReceiverType, varTypes)...)
+		}
+		return
+	}
+	if node.Type() == rustNodeFunctionItem || node.Type() == "closure_expression" {
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkForReturnSources(node.Child(i), src, filePath, analysis, currentReceiverType, varTypes, sources)
+	}
+}
+
+func rustReturnExpressionNode(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.IsNamed() && child.Type() != "return" {
+			return child
+		}
+	}
+	return nil
+}
+
+func (p *RustParser) traceRustTailExpression(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) []SourceNode {
+	if body == nil || body.Type() != goNodeBlock {
+		return nil
+	}
+	for i := int(body.NamedChildCount()) - 1; i >= 0; i-- {
+		child := body.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		if child.Type() == rustNodeExpressionStatement && child.NamedChildCount() == 1 && !strings.HasSuffix(strings.TrimSpace(child.Content(src)), ";") {
+			return p.traceRustReturnExpression(child.NamedChild(0), src, filePath, analysis, currentReceiverType, varTypes)
+		}
+		if child.Type() != rustNodeExpressionStatement {
+			return p.traceRustReturnExpression(child, src, filePath, analysis, currentReceiverType, varTypes)
+		}
+		return nil
+	}
+	return nil
+}
+
+func (p *RustParser) traceRustReturnExpression(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) []SourceNode {
+	if node == nil {
+		return nil
+	}
+	switch node.Type() {
+	case rustNodeCallExpression:
+		call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, varTypes)
+		if call == nil {
+			return nil
+		}
+		return []SourceNode{{
+			Type:       "CALL_RESULT",
+			Value:      strings.TrimSpace(node.Content(src)),
+			CallTarget: &call.Callee,
+		}}
+	case goNodeIdentifier:
+		name := node.Content(src)
+		return []SourceNode{{
+			Type:         "VARIABLE",
+			Name:         name,
+			DeclaredType: varTypes[name],
+			Location:     &SourceLocation{FilePath: filePath, Line: int(node.StartPoint().Row) + 1},
+		}}
+	}
+	return nil
 }
 
 // processImplBlock processes an impl block, extracting the type name
@@ -322,7 +410,7 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
-		if child.Type() == "function_item" {
+		if child.Type() == rustNodeFunctionItem {
 			decl := p.parseFunctionItem(child, src, filePath, packagePath, typeName, analysis)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
@@ -363,7 +451,7 @@ func (p *RustParser) extractCalls(body *sitter.Node, src []byte, filePath string
 }
 
 func (p *RustParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, calls *[]FunctionCall) {
-	if node.Type() == "call_expression" {
+	if node.Type() == rustNodeCallExpression {
 		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, varTypes); call != nil {
 			*calls = append(*calls, *call)
 		}
