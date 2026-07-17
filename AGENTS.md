@@ -73,7 +73,7 @@ internal/callgraph/contracts/
 │   └── jdk-crypto.yaml    # JDK JCA/JCE contracts (shipped in v1)
 ├── go/                    # future: stdlib + x/crypto + ...
 ├── python/                # pyca-cryptography, pycryptodome, pycryptodomex, paramiko
-└── rust/                  # future: ring + rustcrypto + ...
+└── rust/                  # schema-v2 Rust callgraph contracts
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code

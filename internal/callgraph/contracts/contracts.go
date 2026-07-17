@@ -20,9 +20,14 @@ var javaFS embed.FS
 //go:embed python/*.yaml
 var pythonFS embed.FS
 
+//go:embed rust/*.yaml
+var rustFS embed.FS
+
 const (
 	// ecosystemPython is the ecosystem identifier for the Python contract KB.
 	ecosystemPython = "python"
+	// ecosystemRust is the ecosystem identifier for the Rust contract KB.
+	ecosystemRust = "rust"
 )
 
 // Library holds the metadata for a single library KB source.
@@ -456,6 +461,8 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 		return &javaFS, "java"
 	case ecosystemPython:
 		return &pythonFS, ecosystemPython
+	case ecosystemRust:
+		return &rustFS, ecosystemRust
 	default:
 		return nil, ""
 	}
