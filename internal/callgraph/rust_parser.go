@@ -15,6 +15,7 @@ import (
 const (
 	rustNodeCallExpression      = "call_expression"
 	rustNodeExpressionStatement = "expression_statement"
+	rustNodeFunctionItem        = "function_item"
 )
 
 // RustParser extracts function declarations, calls, and imports from Rust source files
@@ -226,7 +227,7 @@ func (p *RustParser) extractDeclarations(root *sitter.Node, src []byte, filePath
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		switch child.Type() {
-		case "function_item":
+		case rustNodeFunctionItem:
 			decl := p.parseFunctionItem(child, src, filePath, packagePath, "", analysis)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
@@ -314,7 +315,7 @@ func (p *RustParser) walkForReturnSources(node *sitter.Node, src []byte, filePat
 		}
 		return
 	}
-	if node.Type() == "function_item" || node.Type() == "closure_expression" {
+	if node.Type() == rustNodeFunctionItem || node.Type() == "closure_expression" {
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -403,7 +404,7 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
-		if child.Type() == "function_item" {
+		if child.Type() == rustNodeFunctionItem {
 			decl := p.parseFunctionItem(child, src, filePath, packagePath, typeName, analysis)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
