@@ -6,6 +6,8 @@ import "github.com/scanoss/crypto-finder/internal/javaruntime"
 // Returns nil if no parser is available for the ecosystem.
 func NewParserForEcosystem(ecosystem string, opts ...ParserOption) Parser {
 	switch ecosystem {
+	case "c":
+		return NewCParser(opts...)
 	case "go":
 		return NewGoParser(opts...)
 	case "java":

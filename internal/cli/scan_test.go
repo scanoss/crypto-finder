@@ -31,6 +31,22 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
+func TestEcosystemFromHints_C(t *testing.T) {
+	if got := ecosystemFromHints(t.TempDir(), []string{"c"}); got != "c" {
+		t.Fatalf("ecosystemFromHints(c hint) = %q, want c", got)
+	}
+
+	for _, name := range []string{"crypto.c", "crypto.h"} {
+		filePath := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(filePath, []byte("int main(void) { return 0; }"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ecosystemFromHints(filePath, nil); got != "c" {
+			t.Fatalf("ecosystemFromHints(%s file) = %q, want c", filepath.Ext(name), got)
+		}
+	}
+}
+
 func TestNewFindingsCache_NoneBackend(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := &config.Config{}
