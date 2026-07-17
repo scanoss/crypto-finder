@@ -253,7 +253,7 @@ func TestTracerAndHelpers(t *testing.T) {
 }
 
 func TestTypesAndParserRegistry(t *testing.T) {
-	cases := []string{"go", "java", "python", "rust"}
+	cases := []string{"go", "java", "node", "python", "rust"}
 	for _, ecosystem := range cases {
 		if p := NewParserForEcosystem(ecosystem); p == nil {
 			t.Fatalf("expected parser for ecosystem %s", ecosystem)

@@ -35,7 +35,7 @@ type Parser interface {
 	SkipDirs() map[string]bool
 	// SubPackagePath constructs a child package path from parent + directory name.
 	SubPackagePath(parentPath, dirName string) string
-	// PackageSeparator returns the separator used in package paths ("/" for Go, "." for Java).
+	// PackageSeparator returns the separator used in package paths ("/" for Go/Node, "." for Java).
 	PackageSeparator() string
 }
 
