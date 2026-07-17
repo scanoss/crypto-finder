@@ -449,6 +449,53 @@ func TestLoadEmbedded_Python_AzureKeyVaultKeys(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedded_Python_AzureKeyVaultSecrets(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantRole   string
+	}{
+		{"azure.keyvault.secrets.SecretClient.<init>", 2, "azure.keyvault.secrets.SecretClient", "factory"},
+		{"azure.keyvault.secrets.SecretClient.set_secret", 2, "azure.keyvault.secrets.KeyVaultSecret", "output"},
+		{"azure.keyvault.secrets.SecretClient.get_secret", 1, "azure.keyvault.secrets.KeyVaultSecret", "output"},
+		{"azure.keyvault.secrets.SecretClient.get_deleted_secret", 1, "azure.keyvault.secrets.DeletedSecret", "output"},
+		{"azure.keyvault.secrets.SecretClient.backup_secret", 1, "builtins.bytes", "output"},
+		{"azure.keyvault.secrets.SecretClient.restore_secret_backup", 1, "azure.keyvault.secrets.SecretProperties", "output"},
+		{"azure.keyvault.secrets.aio.SecretClient.<init>", 2, "azure.keyvault.secrets.aio.SecretClient", "factory"},
+		{"azure.keyvault.secrets.aio.SecretClient.set_secret", 2, "azure.keyvault.secrets.KeyVaultSecret", "output"},
+		{"azure.keyvault.secrets.aio.SecretClient.get_secret", 1, "azure.keyvault.secrets.KeyVaultSecret", "output"},
+		{"azure.keyvault.secrets.aio.SecretClient.get_deleted_secret", 1, "azure.keyvault.secrets.DeletedSecret", "output"},
+		{"azure.keyvault.secrets.aio.SecretClient.backup_secret", 1, "builtins.bytes", "output"},
+		{"azure.keyvault.secrets.aio.SecretClient.restore_secret_backup", 1, "azure.keyvault.secrets.SecretProperties", "output"},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("%s#%d: no contracts found", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+		}
+		if c.Role != tt.wantRole {
+			t.Errorf("%s#%d role = %q, want %q", tt.method, tt.arity, c.Role, tt.wantRole)
+		}
+		if c.SourceLibrary != "azure-keyvault-secrets" {
+			t.Errorf("%s#%d source library = %q, want azure-keyvault-secrets", tt.method, tt.arity, c.SourceLibrary)
+		}
+		if c.Return.Confidence != "high" {
+			t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+		}
+	}
+}
+
 // TestLoadEmbedded_Python_AllLibrariesHaveValidReturnTypes asserts that every
 // contract in the merged Python KB has a non-empty return type and "high"
 // confidence (the only author-facing confidence level per crypto-kb-author skill).

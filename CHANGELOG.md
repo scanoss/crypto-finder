@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Python callgraph inference now covers synchronous and asynchronous Azure Key Vault Secrets client construction and secret set, get, deleted-secret, backup, and restore results. (scanoss/crypto_rules#115)
 - Callgraph schema `6.6` adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch, including completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance without promoting candidates to resolved edges. (#122)
 - C callgraph parsing now extracts include paths, function declarations, call sites, assignment targets, and 1-based half-open call columns for reachability analysis. (#67)
 - JavaScript and TypeScript callgraph parsing and CLI ecosystem routing now cover ES module and CommonJS imports, imported/direct calls, lifecycle receiver and assignment fields, fluent-chain IDs, and source columns. (#66)
