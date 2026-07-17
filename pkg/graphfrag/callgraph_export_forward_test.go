@@ -109,6 +109,117 @@ func TestToCallgraphExportForwardCallsEmitted(t *testing.T) {
 	}
 }
 
+func TestToCallgraphExportForwardCallsExposeAmbiguousDispatch(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0.0"}
+	entryCall := &CallSite{Line: 23, Parameters: []Parameter{{
+		ParameterIndex:     0,
+		ArgumentExpression: "payload",
+		SourceNodes:        []SourceNode{{Type: "PARAMETER", Name: "payload"}},
+	}}}
+	fragment := Fragment{
+		Component: root,
+		Module:    "com.acme:app",
+		Functions: []Function{
+			{Signature: "anchor", FunctionName: "com.acme.App.anchor", DeclaringType: "App", CanonicalSignature: "com.acme.App.anchor(byte[]): void", ReturnType: "void", ParameterTypes: []string{"byte[]"}, FilePath: "App.java"},
+			{Signature: "dispatch", FunctionName: "com.acme.App.dispatch", DeclaringType: "App", CanonicalSignature: "com.acme.App.dispatch(Processor, byte[]): byte[]", ReturnType: "byte[]", ParameterTypes: []string{"Processor", "byte[]"}, FilePath: "App.java"},
+			{Signature: "impl-a", FunctionName: "com.acme.FirstProcessor.apply", DeclaringType: "FirstProcessor", CanonicalSignature: "com.acme.FirstProcessor.apply(byte[]): byte[]", ReturnType: "byte[]", ParameterTypes: []string{"byte[]"}, FilePath: "App.java"},
+			{Signature: "impl-b", FunctionName: "com.acme.SecondProcessor.apply", DeclaringType: "SecondProcessor", CanonicalSignature: "com.acme.SecondProcessor.apply(byte[]): byte[]", ReturnType: "byte[]", ParameterTypes: []string{"byte[]"}, FilePath: "App.java"},
+		},
+		InternalEdges: []InternalEdge{
+			{Caller: "anchor", Callee: "dispatch", Resolution: ResolutionExact, EntryCall: &CallSite{Line: 11}},
+			{Caller: "dispatch", Callee: "impl-b", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 1, CallSite: 23, StartCol: 9, EndCol: 33, EntryCall: entryCall},
+			{Caller: "dispatch", Callee: "impl-a", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 1, CallSite: 23, StartCol: 9, EndCol: 33, EntryCall: entryCall},
+			{Caller: "dispatch", Callee: "impl-b", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 1, CallSite: 23, StartCol: 38, EndCol: 62, EntryCall: entryCall},
+			{Caller: "dispatch", Callee: "impl-a", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 1, CallSite: 23, StartCol: 38, EndCol: 62, EntryCall: entryCall},
+		},
+		CryptoOperations: []CryptoOperation{{Function: "anchor", FindingID: "f1", RuleID: "r1", Symbol: "Cipher.run"}},
+	}
+
+	export := stitchForExport(t, root, DependencyGraph{}, map[ComponentKey]Fragment{root: fragment}, StitchOptions{
+		ForwardClosure:  true,
+		MaxForwardDepth: 2,
+	})
+	forward := export.FindingGraphs[0].ForwardCalls
+	if forward == nil {
+		t.Fatal("forward_calls missing")
+	}
+	if forward.Truncated {
+		t.Fatal("truncated = true, ambiguity must remain distinct from budget truncation")
+	}
+	for _, node := range forward.Nodes {
+		if node.FunctionKey == "impl-a" || node.FunctionKey == "impl-b" {
+			t.Fatalf("ambiguous candidate leaked into forward nodes: %#v", forward.Nodes)
+		}
+	}
+	if len(forward.AmbiguousCalls) != 2 {
+		t.Fatalf("ambiguous_calls = %#v, want two same-line groups", forward.AmbiguousCalls)
+	}
+	group := forward.AmbiguousCalls[0]
+	if group.GroupID == forward.AmbiguousCalls[1].GroupID {
+		t.Fatalf("same-line call sites share group_id %q", group.GroupID)
+	}
+	if group.GroupID == "" || group.Reason != SuppressReasonAmbiguousDispatch || group.Completeness != AmbiguityComplete {
+		t.Fatalf("ambiguous group = %#v", group)
+	}
+	if group.CallSite.CallerFunctionKey != "dispatch" || group.CallSite.Line != 23 || group.CallSite.StartCol != 9 || group.CallSite.EndCol != 33 || group.CallSite.MethodName != "apply" || group.CallSite.Arity != 1 {
+		t.Errorf("call_site = %#v", group.CallSite)
+	}
+	if len(group.Candidates) != 2 {
+		t.Fatalf("candidates = %#v, want two", group.Candidates)
+	}
+	if group.Candidates[0].CanonicalSignature != "com.acme.FirstProcessor.apply(byte[]): byte[]" ||
+		group.Candidates[1].CanonicalSignature != "com.acme.SecondProcessor.apply(byte[]): byte[]" {
+		t.Errorf("candidate order/identity = %#v", group.Candidates)
+	}
+	for _, candidate := range group.Candidates {
+		if candidate.CandidateID == "" || candidate.DeclaringType == "" || candidate.ReturnType != "byte[]" || len(candidate.ParameterTypes) != 1 {
+			t.Errorf("incomplete candidate = %#v", candidate)
+		}
+		if candidate.EntryCall == nil || len(candidate.EntryCall.Parameters) != 1 || len(candidate.EntryCall.Parameters[0].SourceNodes) != 1 {
+			t.Errorf("candidate evidence missing = %#v", candidate)
+		}
+	}
+	raw, err := json.Marshal(export)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"ambiguous_calls"`)) {
+		t.Fatalf("serialized export lacks ambiguous_calls: %s", raw)
+	}
+}
+
+func TestToCallgraphExportForwardCallsMarksLegacyAmbiguityPartial(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:generic/app", Version: "1"}
+	fragment := Fragment{
+		Component: root,
+		Functions: []Function{
+			{Signature: "anchor", FunctionName: "app.anchor"},
+			{Signature: "impl-a", FunctionName: "app.First.apply"},
+			{Signature: "impl-b", FunctionName: "app.Second.apply"},
+		},
+		InternalEdges: []InternalEdge{
+			{Caller: "anchor", Callee: "impl-a", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 0, CallSite: 7},
+			{Caller: "anchor", Callee: "impl-b", Resolution: ResolutionInterfaceDispatch, MethodName: "apply", Arity: 0, CallSite: 7},
+		},
+		CryptoOperations: []CryptoOperation{{Function: "anchor", FindingID: "f1", RuleID: "r1"}},
+	}
+
+	export := stitchForExport(t, root, DependencyGraph{}, map[ComponentKey]Fragment{root: fragment}, StitchOptions{ForwardClosure: true})
+	group := export.FindingGraphs[0].ForwardCalls.AmbiguousCalls[0]
+	if group.Completeness != AmbiguityPartial {
+		t.Fatalf("completeness = %q, want %q", group.Completeness, AmbiguityPartial)
+	}
+	for _, candidate := range group.Candidates {
+		if candidate.CandidateID == "" || candidate.ParameterTypes == nil {
+			t.Errorf("legacy candidate does not degrade explicitly: %#v", candidate)
+		}
+	}
+}
+
 // TestToCallgraphExportForwardCallsSharedAnchor asserts findings sharing one
 // anchor inline the same projected forward_calls content.
 func TestToCallgraphExportForwardCallsSharedAnchor(t *testing.T) {

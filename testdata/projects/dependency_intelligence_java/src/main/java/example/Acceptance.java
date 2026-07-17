@@ -45,6 +45,7 @@ class Acceptance {
         AESEngine engine = new AESEngine();
         helper(data, key, 16);
         engine.processBlock(data, 0, data, 0);
+        dispatch(null, data);
         return data;
     }
 

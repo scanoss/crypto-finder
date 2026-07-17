@@ -99,3 +99,41 @@ func TestBuildCallerIndex_ClassifiesEdgeResolution(t *testing.T) {
 		t.Fatalf("impl edge call site = %d, want 3 (the call expression line)", implRes.CallSite)
 	}
 }
+
+func TestBuildCallerIndex_PreservesSameLineCallColumns(t *testing.T) {
+	root := t.TempDir()
+	caller := FunctionDecl{
+		ID:       FunctionID{Package: "app", Type: "Controller", Name: "handle#0"},
+		FilePath: filepath.Join(root, "Controller.java"),
+		Calls: []FunctionCall{
+			{Callee: FunctionID{Package: "com.dep", Type: "Sink", Name: "run#0"}, Line: 3, StartCol: 4, EndCol: 14},
+			{Callee: FunctionID{Package: "com.dep", Type: "Sink", Name: "run#0"}, Line: 3, StartCol: 20, EndCol: 30},
+		},
+	}
+	iface := FunctionDecl{
+		ID: FunctionID{Package: "com.dep", Type: "Sink", Name: "run#0"}, OwnerType: "interface", OwnerName: "Sink",
+	}
+	impl := FunctionDecl{
+		ID: FunctionID{Package: "com.dep.impl", Type: "SinkImpl", Name: "run#0"}, OwnerType: "class", OwnerName: "SinkImpl",
+	}
+	parser := &stubParser{sep: ".", analyses: map[string][]*FileAnalysis{root: {{Functions: []FunctionDecl{caller, iface, impl}}}}}
+
+	graph, err := NewBuilder(parser).BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	for _, cols := range [][2]int{{4, 14}, {20, 30}} {
+		key := EdgeResolutionKey(caller.ID.String(), impl.ID.String(), EdgeResolution{
+			DeclaredType: "com.dep.Sink", MethodName: "run", Arity: 0, CallSite: 3,
+			StartCol: cols[0], EndCol: cols[1],
+		})
+		resolution, ok := graph.EdgeResolutions[key]
+		if !ok {
+			t.Fatalf("missing same-line dispatch resolution at columns %d:%d", cols[0], cols[1])
+		}
+		if resolution.StartCol != cols[0] || resolution.EndCol != cols[1] {
+			t.Fatalf("resolution columns = %d:%d, want %d:%d", resolution.StartCol, resolution.EndCol, cols[0], cols[1])
+		}
+	}
+}

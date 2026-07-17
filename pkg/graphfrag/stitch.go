@@ -84,8 +84,9 @@ type forwardClosure struct {
 	anchor    CallFrame     // resolved anchor identity (depth 0); reuses buildFrame output
 	nodes     []forwardNode // forward-reachable nodes, depth >= 1, deduped by graphNode
 	edges     []forwardEdge // directed traversed edges (endpoints always in {anchor} ∪ nodes)
-	maxDepth  int           // the depth CAP applied (== resolved MaxForwardDepth)
-	truncated bool          // any cap hit (depth/node/edge) -> true; never silent
+	ambiguous []SuppressedEdge
+	maxDepth  int  // the depth CAP applied (== resolved MaxForwardDepth)
+	truncated bool // any cap hit (depth/node/edge) -> true; never silent
 }
 
 // forwardNode is one forward-reachable node (depth >= 1) in a forwardClosure.
@@ -124,7 +125,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 
 	functionsBySignature := indexFunctions(closure, fragments)
 	functionsByNode := indexFunctionsByNode(closure, fragments)
-	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature)
+	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByNode)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
 
@@ -143,7 +144,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
-			out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
+			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 		}
 		return &out, nil
 	}
@@ -158,7 +159,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	}
 	attachAnnotationSupportingCalls(closure, fragments, &out)
 	if opts.ForwardClosure {
-		out.forwardClosures = buildForwardClosures(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
+		out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 	}
 	return &out, nil
 }
@@ -355,6 +356,8 @@ type dispatchGroupKey struct {
 	Component  ComponentKey
 	Caller     string
 	CallSite   int
+	StartCol   int
+	EndCol     int
 	MethodName string
 	Arity      int
 }
@@ -371,6 +374,8 @@ type callEdge struct {
 	method               string
 	arity                int
 	callSite             int
+	startCol             int
+	endCol               int
 	internal             bool
 	entryCall            *CallSite
 	resolvedReceiverType string
@@ -393,6 +398,7 @@ func buildAdjacency(
 	deps DependencyGraph,
 	fragments map[ComponentKey]Fragment,
 	functionsBySignature map[string][]graphNode,
+	functionsByNode map[graphNode]Function,
 ) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
@@ -405,7 +411,7 @@ func buildAdjacency(
 		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature)
 
 		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed)
-		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, out, &suppressed)
+		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed)
 	}
 	return out, suppressed
 }
@@ -469,7 +475,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		e := &fragment.InternalEdges[i]
 		edges = append(edges, callEdge{
 			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
-			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, internal: true, entryCall: e.EntryCall,
+			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, startCol: e.StartCol, endCol: e.EndCol, internal: true, entryCall: e.EntryCall,
 			resolvedReceiverType: e.ResolvedReceiverType,
 		})
 	}
@@ -477,7 +483,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		c := &fragment.ExternalCalls[i]
 		edges = append(edges, callEdge{
 			caller: c.Caller, target: c.TargetSignature, resolution: c.Resolution,
-			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, internal: false, entryCall: c.EntryCall,
+			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, startCol: c.StartCol, endCol: c.EndCol, internal: false, entryCall: c.EntryCall,
 			resolvedReceiverType: c.ResolvedReceiverType,
 		})
 	}
@@ -532,20 +538,21 @@ func applyImmediateEdgePolicy(
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
 	// including siblings that cross the internal/external boundary.
 	dispatchGroups := make(map[dispatchGroupKey][]callEdge)
-	for _, e := range edges {
+	for i := range edges {
+		e := &edges[i]
 		caller := graphNode{Component: key, Function: e.caller}
 		switch e.resolution {
 		case ResolutionExact:
-			appendAdjacencyEdges(adjacency, caller, resolve(e), e.entryCall)
+			appendAdjacencyEdges(adjacency, caller, resolve(*e), e.entryCall)
 		case ResolutionInterfaceDispatch:
-			gk := dispatchKey(key, e)
-			dispatchGroups[gk] = append(dispatchGroups[gk], e)
+			gk := dispatchKey(key, *e)
+			dispatchGroups[gk] = append(dispatchGroups[gk], *e)
 		case ResolutionNameOnly:
-			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonNameOnly, candidateComponents(resolve(e))))
+			*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonNameOnly, candidateComponents(resolve(*e))))
 		case ResolutionUnknown:
-			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonUnknown, candidateComponents(resolve(e))))
+			*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonUnknown, candidateComponents(resolve(*e))))
 		default: // Future unhandled kind: fail closed.
-			*suppressed = append(*suppressed, suppressedEdge(key, e, SuppressReasonUnknown, candidateComponents(resolve(e))))
+			*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonUnknown, candidateComponents(resolve(*e))))
 		}
 	}
 	return dispatchGroups
@@ -556,6 +563,8 @@ func dispatchKey(key ComponentKey, e callEdge) dispatchGroupKey {
 		Component:  key,
 		Caller:     e.caller,
 		CallSite:   e.callSite,
+		StartCol:   e.startCol,
+		EndCol:     e.endCol,
 		MethodName: e.method,
 		Arity:      e.arity,
 	}
@@ -566,6 +575,8 @@ func applyDispatchGroups(
 	groups map[dispatchGroupKey][]callEdge,
 	resolve edgeResolver,
 	ownerTypes map[graphNode]string,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
 ) {
@@ -581,7 +592,7 @@ func applyDispatchGroups(
 				adjacency[caller] = append(adjacency[caller], resolved)
 				continue
 			}
-			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, candidateComponentsFromEdges(targets)))
+			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, targets, fragments, functionsByNode))
 			// len(targets) == 0: no implementation in closure -> unreachable,
 			// nothing to traverse and nothing to record.
 		}
@@ -643,7 +654,8 @@ func simpleTypeName(typeName string) string {
 }
 
 func firstResolvedReceiverType(group []callEdge) string {
-	for _, e := range group {
+	for i := range group {
+		e := &group[i]
 		if e.resolvedReceiverType != "" {
 			return e.resolvedReceiverType
 		}
@@ -665,8 +677,9 @@ func appendAdjacencyEdges(
 func distinctTargetEdges(edges []callEdge, resolve edgeResolver) []adjacencyEdge {
 	distinct := map[graphNode]bool{}
 	var targets []adjacencyEdge
-	for _, e := range edges {
-		for _, t := range resolve(e) {
+	for i := range edges {
+		e := &edges[i]
+		for _, t := range resolve(*e) {
 			if distinct[t] {
 				continue
 			}
@@ -677,13 +690,28 @@ func distinctTargetEdges(edges []callEdge, resolve edgeResolver) []adjacencyEdge
 	return targets
 }
 
-func ambiguousDispatchEdge(key ComponentKey, gk dispatchGroupKey, candidates []ComponentKey) SuppressedEdge {
+func ambiguousDispatchEdge(
+	key ComponentKey,
+	gk dispatchGroupKey,
+	targets []adjacencyEdge,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
+) SuppressedEdge {
+	targets = sortedAdjacencyEdges(targets)
+	frames := make([]CallFrame, 0, len(targets))
+	for _, target := range targets {
+		frames = append(frames, buildFrame(target.target, target.entryCall, fragments, functionsByNode))
+	}
 	return SuppressedEdge{
-		Caller:     CallFrame{Component: key, Signature: gk.Caller},
-		MethodName: gk.MethodName,
-		Arity:      gk.Arity,
-		Reason:     SuppressReasonAmbiguousDispatch,
-		Candidates: candidates,
+		Caller:          buildFrame(graphNode{Component: key, Function: gk.Caller}, nil, fragments, functionsByNode),
+		MethodName:      gk.MethodName,
+		Arity:           gk.Arity,
+		CallSite:        gk.CallSite,
+		StartCol:        gk.StartCol,
+		EndCol:          gk.EndCol,
+		Reason:          SuppressReasonAmbiguousDispatch,
+		Candidates:      candidateComponentsFromEdges(targets),
+		CandidateFrames: frames,
 	}
 }
 
@@ -725,6 +753,12 @@ func sortedDispatchKeys(groups map[dispatchGroupKey][]callEdge) []dispatchGroupK
 		}
 		if a.CallSite != b.CallSite {
 			return a.CallSite < b.CallSite
+		}
+		if a.StartCol != b.StartCol {
+			return a.StartCol < b.StartCol
+		}
+		if a.EndCol != b.EndCol {
+			return a.EndCol < b.EndCol
 		}
 		if a.MethodName != b.MethodName {
 			return a.MethodName < b.MethodName
@@ -1133,6 +1167,7 @@ func sortedAdjacencyEdges(edges []adjacencyEdge) []adjacencyEdge {
 // package).
 func buildForwardClosures(
 	adjacency map[graphNode][]adjacencyEdge,
+	suppressed []SuppressedEdge,
 	opsByNode map[graphNode][]CryptoOperation,
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
@@ -1144,9 +1179,46 @@ func buildForwardClosures(
 		if _, ok := memo[anchor]; ok {
 			continue
 		}
-		memo[anchor] = forwardBFS(anchor, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, caps)
+		fc := forwardBFS(anchor, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, caps)
+		fc.ambiguous = reachableAmbiguities(anchor, fc.nodes, suppressed)
+		memo[anchor] = fc
 	}
 	return memo
+}
+
+func reachableAmbiguities(anchor graphNode, nodes []forwardNode, suppressed []SuppressedEdge) []SuppressedEdge {
+	reachable := map[graphNode]bool{anchor: true}
+	for i := range nodes {
+		reachable[nodes[i].node] = true
+	}
+	var out []SuppressedEdge
+	for i := range suppressed {
+		edge := suppressed[i]
+		caller := graphNode{Component: edge.Caller.Component, Function: edge.Caller.Signature}
+		if edge.Reason == SuppressReasonAmbiguousDispatch && reachable[caller] {
+			out = append(out, edge)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Caller.Signature != b.Caller.Signature {
+			return a.Caller.Signature < b.Caller.Signature
+		}
+		if a.CallSite != b.CallSite {
+			return a.CallSite < b.CallSite
+		}
+		if a.StartCol != b.StartCol {
+			return a.StartCol < b.StartCol
+		}
+		if a.EndCol != b.EndCol {
+			return a.EndCol < b.EndCol
+		}
+		if a.MethodName != b.MethodName {
+			return a.MethodName < b.MethodName
+		}
+		return a.Arity < b.Arity
+	})
+	return out
 }
 
 // forwardBFS computes the rooted forward reachability graph from anchor: a

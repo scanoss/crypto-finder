@@ -588,15 +588,14 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is65 pins the canonical callgraph schema version
-// at 6.5 — the contract change that represents operation methods as
-// supporting calls instead of operation-only crypto_entry_points. The bump
+// TestCallgraphSchemaVersion_Is66 pins the canonical callgraph schema version
+// at 6.6 — the contract change that serializes ambiguous forward dispatch. The bump
 // is unconditional: it advances regardless of whether any given export
 // actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is65(t *testing.T) {
+func TestCallgraphSchemaVersion_Is66(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.5" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.5")
+	if CallgraphSchemaVersion != "6.6" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.6")
 	}
 }

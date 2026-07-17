@@ -43,6 +43,7 @@ func appendFragmentFunctions(frag *Fragment, functions []GraphFragmentFunction) 
 		frag.Functions = append(frag.Functions, Function{
 			Signature:          fn.Key,
 			FunctionName:       fn.FunctionName,
+			DeclaringType:      fn.Type,
 			CanonicalSignature: fn.CanonicalSignature,
 			ReturnType:         fn.ReturnType,
 			ParameterTypes:     fn.ParameterTypes,

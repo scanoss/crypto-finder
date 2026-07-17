@@ -441,11 +441,71 @@ func assertForwardContract(t *testing.T, tc acceptanceCase, result *acceptanceRe
 			"ambiguity remains candidate identities with parameter-type evidence",
 		)
 		assertSuppressedAmbiguity(t, result.stitch)
+		assertSerializedAmbiguity(t, result.stitched)
 	case "python":
 		assert.Equal(t, "dependency_intelligence_python.helper(bytes, bytes, int): bytes", helper.EntryCall.CanonicalSignature)
 		assert.Equal(t, "bytes", helper.EntryCall.ReturnType)
 		assert.Equal(t, []string{"bytes", "bytes", "int"}, helper.EntryCall.ParameterTypes)
 	}
+}
+
+func assertSerializedAmbiguity(t *testing.T, export graphfrag.CallgraphExport) {
+	t.Helper()
+	raw, err := json.Marshal(export)
+	require.NoError(t, err)
+	var payload struct {
+		FindingGraphs []struct {
+			ForwardCalls *struct {
+				Anchor struct {
+					FunctionName string `json:"function_name"`
+				} `json:"anchor"`
+				Truncated      bool `json:"truncated"`
+				AmbiguousCalls []struct {
+					GroupID      string `json:"group_id"`
+					Reason       string `json:"reason"`
+					Completeness string `json:"completeness"`
+					CallSite     struct {
+						MethodName string `json:"method_name"`
+						Line       int    `json:"line"`
+						StartCol   int    `json:"start_col"`
+						EndCol     int    `json:"end_col"`
+					} `json:"call_site"`
+					Candidates []struct {
+						CandidateID        string   `json:"candidate_id"`
+						CanonicalSignature string   `json:"canonical_signature"`
+						ParameterTypes     []string `json:"parameter_types"`
+						EntryCall          any      `json:"entry_call"`
+					} `json:"candidates"`
+				} `json:"ambiguous_calls"`
+			} `json:"forward_calls"`
+		} `json:"finding_graphs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &payload), "serialized callgraph JSON")
+	for _, finding := range payload.FindingGraphs {
+		if finding.ForwardCalls == nil || !strings.HasSuffix(finding.ForwardCalls.Anchor.FunctionName, ".run") {
+			continue
+		}
+		for _, group := range finding.ForwardCalls.AmbiguousCalls {
+			if group.CallSite.MethodName != "apply" {
+				continue
+			}
+			assert.NotEmpty(t, group.GroupID)
+			assert.Equal(t, graphfrag.SuppressReasonAmbiguousDispatch, group.Reason)
+			assert.Equal(t, graphfrag.AmbiguityComplete, group.Completeness)
+			assert.NotZero(t, group.CallSite.Line)
+			assert.NotZero(t, group.CallSite.StartCol)
+			assert.Greater(t, group.CallSite.EndCol, group.CallSite.StartCol)
+			require.Len(t, group.Candidates, 2)
+			for _, candidate := range group.Candidates {
+				assert.NotEmpty(t, candidate.CandidateID)
+				assert.NotEmpty(t, candidate.CanonicalSignature)
+				assert.Equal(t, []string{"byte[]"}, candidate.ParameterTypes)
+				assert.NotNil(t, candidate.EntryCall)
+			}
+			return
+		}
+	}
+	assert.Fail(t, "serialized JSON lacks ambiguous apply dispatch", "payload: %s", raw)
 }
 
 func assertSuppressedAmbiguity(t *testing.T, result *graphfrag.Result) {

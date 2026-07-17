@@ -428,27 +428,68 @@ func buildResolvedFragmentEdges(
 		}
 		resolutions := resolveFragmentEdges(ctx, callerKey, calleeKey)
 		for i := range resolutions {
-			res := resolutions[i]
-			line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
-			call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
-			if _, ok := graph.Functions[calleeKey]; ok {
-				edge := buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
-				if edge.ChainID == "" {
-					edge.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
-				}
-				if err := emitInternal(edge); err != nil {
-					return nil, err
-				}
-				continue
+			external, err := buildResolvedFragmentEdge(ctx, callerKey, callerDecl, calleeKey, resolutions[i], emitInternal)
+			if err != nil {
+				return nil, err
 			}
-			external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
-			if external.ChainID == "" {
-				external.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
+			if external != nil {
+				externalCalls = append(externalCalls, *external)
 			}
-			externalCalls = append(externalCalls, external)
 		}
 	}
 	return externalCalls, nil
+}
+
+func buildResolvedFragmentEdge(
+	ctx *exportBuildContext,
+	callerKey string,
+	callerDecl *callgraph.FunctionDecl,
+	calleeKey string,
+	res fragmentEdgeResolution,
+	emitInternal func(graphfrag.GraphFragmentEdge) error,
+) (*graphfrag.GraphFragmentExternal, error) {
+	line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
+	call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
+	if call == nil {
+		call = findDispatchCallAtLine(callerDecl, line, res.StartCol, res.EndCol, res.MethodName, res.Arity)
+	}
+	if _, ok := ctx.graph.Functions[calleeKey]; ok {
+		edge := buildFragmentInternalEdge(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+		if edge.ChainID == "" {
+			edge.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
+		}
+		if err := emitInternal(edge); err != nil {
+			return nil, fmt.Errorf("scan: emit fragment edge: %w", err)
+		}
+		return nil, nil
+	}
+	external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
+	if external.ChainID == "" {
+		external.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
+	}
+	return &external, nil
+}
+
+// findDispatchCallAtLine recovers the source invocation for a dispatch-expanded
+// target whose concrete declaring type differs from the interface call recorded
+// by the parser. It fails closed when the line contains more than one matching
+// method+arity call.
+func findDispatchCallAtLine(fn *callgraph.FunctionDecl, line, startCol, endCol int, method string, arity int) *callgraph.FunctionCall {
+	if fn == nil || line <= 0 || method == "" {
+		return nil
+	}
+	var match *callgraph.FunctionCall
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.Line != line || (startCol > 0 && (call.StartCol != startCol || call.EndCol != endCol)) || callgraph.BaseFunctionName(call.Callee.Name) != method || len(call.Arguments) != arity {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = call
+	}
+	return match
 }
 
 // buildFragmentCallSiteEntryCall constructs the GraphFragmentCallSite for a
@@ -534,13 +575,17 @@ func buildFragmentInternalEdge(
 		Arity:                res.Arity,
 		EntryCall:            buildFragmentCallSiteEntryCall(ctx, call),
 		ResolvedReceiverType: res.ResolvedReceiverType,
+		StartCol:             res.StartCol,
+		EndCol:               res.EndCol,
 	}
 	if call != nil {
 		edge.ReceiverVar = call.ReceiverVar
 		edge.AssignedVar = call.AssignedVar
 		edge.ChainID = call.ChainID
-		edge.StartCol = call.StartCol
-		edge.EndCol = call.EndCol
+		if call.StartCol > 0 && call.EndCol > call.StartCol {
+			edge.StartCol = call.StartCol
+			edge.EndCol = call.EndCol
+		}
 	}
 	return edge
 }
@@ -564,6 +609,8 @@ func buildFragmentExternalCall(
 		Arity:                res.Arity,
 		EntryCall:            buildFragmentCallSiteEntryCall(ctx, call),
 		ResolvedReceiverType: res.ResolvedReceiverType,
+		StartCol:             res.StartCol,
+		EndCol:               res.EndCol,
 	}
 	external.TargetFunctionName = fragmentTargetFunctionName(ctx, callerKey, callerDecl, calleeKey, &external)
 	if call != nil {
@@ -571,8 +618,10 @@ func buildFragmentExternalCall(
 		external.ReceiverVar = call.ReceiverVar
 		external.AssignedVar = call.AssignedVar
 		external.ChainID = call.ChainID
-		external.StartCol = call.StartCol
-		external.EndCol = call.EndCol
+		if call.StartCol > 0 && call.EndCol > call.StartCol {
+			external.StartCol = call.StartCol
+			external.EndCol = call.EndCol
+		}
 	}
 	return external
 }
@@ -650,6 +699,12 @@ func fragmentEdgeLess(a, b graphfrag.GraphFragmentEdge) bool {
 	if a.Line != b.Line {
 		return a.Line < b.Line
 	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol < b.StartCol
+	}
+	if a.EndCol != b.EndCol {
+		return a.EndCol < b.EndCol
+	}
 	if a.Resolution != b.Resolution {
 		return a.Resolution < b.Resolution
 	}
@@ -666,6 +721,8 @@ func fragmentEdgeSameKey(a, b graphfrag.GraphFragmentEdge) bool {
 	return a.CallerKey == b.CallerKey &&
 		a.CalleeKey == b.CalleeKey &&
 		a.Line == b.Line &&
+		a.StartCol == b.StartCol &&
+		a.EndCol == b.EndCol &&
 		a.Resolution == b.Resolution &&
 		a.DeclaredType == b.DeclaredType &&
 		a.MethodName == b.MethodName &&
@@ -681,6 +738,12 @@ func fragmentExternalLess(a, b graphfrag.GraphFragmentExternal) bool {
 	}
 	if a.Line != b.Line {
 		return a.Line < b.Line
+	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol < b.StartCol
+	}
+	if a.EndCol != b.EndCol {
+		return a.EndCol < b.EndCol
 	}
 	if a.Resolution != b.Resolution {
 		return a.Resolution < b.Resolution
@@ -698,6 +761,8 @@ func fragmentExternalSameKey(a, b graphfrag.GraphFragmentExternal) bool {
 	return a.CallerKey == b.CallerKey &&
 		a.TargetKey == b.TargetKey &&
 		a.Line == b.Line &&
+		a.StartCol == b.StartCol &&
+		a.EndCol == b.EndCol &&
 		a.Resolution == b.Resolution &&
 		a.DeclaredType == b.DeclaredType &&
 		a.MethodName == b.MethodName &&
@@ -728,7 +793,8 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 		return nil
 	}
 	index := make(map[string][]fragmentEdgeResolution)
-	for key, res := range graph.EdgeResolutions {
+	for key := range graph.EdgeResolutions {
+		res := graph.EdgeResolutions[key]
 		callerKey, calleeKey, ok := callgraph.EdgeResolutionEndpoints(key, res)
 		if !ok {
 			continue
@@ -742,23 +808,31 @@ func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragm
 	// variant a line-match picks first) reproducible run to run.
 	for pairKey := range index {
 		values := index[pairKey]
-		sort.Slice(values, func(i, j int) bool {
-			if values[i].CallSite != values[j].CallSite {
-				return values[i].CallSite < values[j].CallSite
-			}
-			if values[i].DeclaredType != values[j].DeclaredType {
-				return values[i].DeclaredType < values[j].DeclaredType
-			}
-			if values[i].MethodName != values[j].MethodName {
-				return values[i].MethodName < values[j].MethodName
-			}
-			if values[i].Arity != values[j].Arity {
-				return values[i].Arity < values[j].Arity
-			}
-			return values[i].Kind < values[j].Kind
-		})
+		sort.Slice(values, func(i, j int) bool { return fragmentEdgeResolutionLess(values[i], values[j]) })
 	}
 	return index
+}
+
+func fragmentEdgeResolutionLess(a, b fragmentEdgeResolution) bool {
+	if a.CallSite != b.CallSite {
+		return a.CallSite < b.CallSite
+	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol < b.StartCol
+	}
+	if a.EndCol != b.EndCol {
+		return a.EndCol < b.EndCol
+	}
+	if a.DeclaredType != b.DeclaredType {
+		return a.DeclaredType < b.DeclaredType
+	}
+	if a.MethodName != b.MethodName {
+		return a.MethodName < b.MethodName
+	}
+	if a.Arity != b.Arity {
+		return a.Arity < b.Arity
+	}
+	return a.Kind < b.Kind
 }
 
 func fragmentEdgePairKey(callerKey, calleeKey string) string {

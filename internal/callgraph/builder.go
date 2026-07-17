@@ -471,36 +471,36 @@ func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, calle
 func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
 	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
-	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line)
+	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
 	for _, target := range overloadTargets {
 		idx.addCallerIndexed(graph.Callers, target, callerKey)
-		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line)
+		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
 		resolvedTargets = append(resolvedTargets, target)
 	}
 
 	for _, target := range resolvedTargets {
 		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
+			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
 		}
 		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line)
+			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
 		}
 	}
 
 	for _, alias := range idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph) {
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line)
+		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
 		idx.addCallerIndexed(graph.Callers, alias, callerKey)
-		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line)
+		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line, call.StartCol, call.EndCol)
 	}
 }
 
@@ -509,7 +509,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call Fun
 // paths (a direct exact call must never be downgraded to a dispatch guess).
 // MethodName and Arity are derived from the callee key so dispatch siblings of
 // one call site share a stable grouping identity downstream.
-func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, callSite int) {
+func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, callSite, startCol, endCol int) {
 	if graph.EdgeResolutions == nil {
 		graph.EdgeResolutions = make(map[string]EdgeResolution)
 	}
@@ -524,6 +524,8 @@ func recordEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind Ed
 		MethodName:   method,
 		Arity:        arity,
 		CallSite:     callSite,
+		StartCol:     startCol,
+		EndCol:       endCol,
 		callerKey:    callerKey,
 		calleeKey:    calleeKey,
 	}
@@ -1119,7 +1121,7 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			// FunctionCall.Callee diverge and the exported edge carries a synthesized
 			// key with no object identity.
 			addCaller(graph.Callers, newKey, callerKey, oldKey)
-			recordEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", call.Line)
+			recordEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
 			resolved++
 		}
 		currentType = unconditionalContractReturn(ctrs)
@@ -1172,6 +1174,8 @@ func unconditionalContractReturn(ctrs []contracts.Contract) string {
 type dispatchAmbiguousGroupKey struct {
 	Caller     string
 	CallSite   int
+	StartCol   int
+	EndCol     int
 	MethodName string
 	Arity      int
 }
@@ -1381,10 +1385,10 @@ func groupAmbiguousDispatchEdges(graph *CallGraph) map[dispatchAmbiguousGroupKey
 		for i := range entries {
 			entry := entries[i]
 			res := entry.resolution
-			if !containsDispatchCallSite(candidate.sites, res.CallSite, res.MethodName, res.Arity) {
+			if !containsDispatchCallSite(candidate.sites, res.CallSite, res.StartCol, res.EndCol, res.MethodName, res.Arity) {
 				continue
 			}
-			gk := compactDispatchGroupKey{CallerID: candidate.id, CallSite: res.CallSite, MethodName: res.MethodName, Arity: res.Arity}
+			gk := compactDispatchGroupKey{CallerID: candidate.id, CallSite: res.CallSite, StartCol: res.StartCol, EndCol: res.EndCol, MethodName: res.MethodName, Arity: res.Arity}
 			compactGroups[gk] = append(compactGroups[gk], entry)
 		}
 	}
@@ -1397,6 +1401,8 @@ func groupAmbiguousDispatchEdges(graph *CallGraph) map[dispatchAmbiguousGroupKey
 		groups[dispatchAmbiguousGroupKey{
 			Caller:     callersByID[gk.CallerID],
 			CallSite:   gk.CallSite,
+			StartCol:   gk.StartCol,
+			EndCol:     gk.EndCol,
 			MethodName: gk.MethodName,
 			Arity:      gk.Arity,
 		}] = entries
@@ -1406,7 +1412,8 @@ func groupAmbiguousDispatchEdges(graph *CallGraph) map[dispatchAmbiguousGroupKey
 
 func interfaceDispatchEdgesByCaller(graph *CallGraph) map[string][]edgeResolutionEntry {
 	edgesByCaller := make(map[string][]edgeResolutionEntry)
-	for key, res := range graph.EdgeResolutions {
+	for key := range graph.EdgeResolutions {
+		res := graph.EdgeResolutions[key]
 		if res.Kind != EdgeKindInterfaceDispatch {
 			continue
 		}
@@ -1425,6 +1432,8 @@ func interfaceDispatchEdgesByCaller(graph *CallGraph) map[string][]edgeResolutio
 
 type dispatchCallSiteKey struct {
 	CallSite   int
+	StartCol   int
+	EndCol     int
 	MethodName string
 	Arity      int
 }
@@ -1432,6 +1441,8 @@ type dispatchCallSiteKey struct {
 type compactDispatchGroupKey struct {
 	CallerID   int
 	CallSite   int
+	StartCol   int
+	EndCol     int
 	MethodName string
 	Arity      int
 }
@@ -1466,17 +1477,17 @@ func passthroughCandidateSites(fn *FunctionDecl) []dispatchCallSiteKey {
 			continue
 		}
 		method, arity := methodBaseArity(call.Callee.Name)
-		site := dispatchCallSiteKey{CallSite: call.Line, MethodName: method, Arity: arity}
-		if !containsDispatchCallSite(sites, site.CallSite, site.MethodName, site.Arity) {
+		site := dispatchCallSiteKey{CallSite: call.Line, StartCol: call.StartCol, EndCol: call.EndCol, MethodName: method, Arity: arity}
+		if !containsDispatchCallSite(sites, site.CallSite, site.StartCol, site.EndCol, site.MethodName, site.Arity) {
 			sites = append(sites, site)
 		}
 	}
 	return sites
 }
 
-func containsDispatchCallSite(sites []dispatchCallSiteKey, callSite int, methodName string, arity int) bool {
+func containsDispatchCallSite(sites []dispatchCallSiteKey, callSite, startCol, endCol int, methodName string, arity int) bool {
 	for i := range sites {
-		if sites[i].CallSite == callSite && sites[i].MethodName == methodName && sites[i].Arity == arity {
+		if sites[i].CallSite == callSite && sites[i].StartCol == startCol && sites[i].EndCol == endCol && sites[i].MethodName == methodName && sites[i].Arity == arity {
 			return true
 		}
 	}
@@ -1532,6 +1543,12 @@ func sortedAmbiguousGroupKeys(groups map[dispatchAmbiguousGroupKey][]edgeResolut
 		}
 		if a.CallSite != b.CallSite {
 			return a.CallSite < b.CallSite
+		}
+		if a.StartCol != b.StartCol {
+			return a.StartCol < b.StartCol
+		}
+		if a.EndCol != b.EndCol {
+			return a.EndCol < b.EndCol
 		}
 		if a.MethodName != b.MethodName {
 			return a.MethodName < b.MethodName
@@ -1629,7 +1646,7 @@ func findCallAtSite(fn *FunctionDecl, gk dispatchAmbiguousGroupKey) (FunctionCal
 	var found *FunctionCall
 	for i := range fn.Calls {
 		c := &fn.Calls[i]
-		if c.Line != gk.CallSite {
+		if c.Line != gk.CallSite || (gk.StartCol > 0 && (c.StartCol != gk.StartCol || c.EndCol != gk.EndCol)) {
 			continue
 		}
 		method, arity := methodBaseArity(c.Callee.Name)
@@ -1724,12 +1741,12 @@ func resolvePassthroughForCaller(
 	// is a no-op (addCaller dedupes, the resolution map overwrites), but
 	// counting it as progress keeps the fixpoint spinning to
 	// passthroughMaxIterations instead of terminating.
-	if _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
+	if _, _, _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
 		return 0
 	}
 	addCaller(graph.Callers, targetKey, callerKey)
-	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", call.Line)
-	stampResolvedReceiverType(graph, callerKey, targetKey, call.Line, argType, receiverIdx)
+	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
+	stampResolvedReceiverType(graph, callerKey, targetKey, call.Line, call.StartCol, call.EndCol, argType, receiverIdx)
 	return 1
 }
 
@@ -1746,7 +1763,7 @@ func resolvePassthroughForThisReceiver(
 	candidateOwners map[string]string,
 	receiverIdx resolvedReceiverIndex,
 ) int {
-	resolvedType, line, ok := lookupResolvedReceiverType(receiverIdx, callerKey, gk.Caller)
+	resolvedType, line, startCol, endCol, ok := lookupResolvedReceiverType(receiverIdx, callerKey, gk.Caller)
 	if !ok {
 		return 0
 	}
@@ -1756,12 +1773,12 @@ func resolvePassthroughForThisReceiver(
 	}
 	// Same no-progress gate as resolvePassthroughForCaller: a bypass edge
 	// stamped in a prior iteration must not count as fixpoint progress.
-	if _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
+	if _, _, _, _, exists := lookupResolvedReceiverType(receiverIdx, callerKey, targetKey); exists {
 		return 0
 	}
 	addCaller(graph.Callers, targetKey, callerKey)
-	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", line)
-	stampResolvedReceiverType(graph, callerKey, targetKey, line, resolvedType, receiverIdx)
+	recordEdgeResolution(graph, callerKey, targetKey, EdgeKindExact, "", line, startCol, endCol)
+	stampResolvedReceiverType(graph, callerKey, targetKey, line, startCol, endCol, resolvedType, receiverIdx)
 	return 1
 }
 
@@ -1781,6 +1798,8 @@ type resolvedReceiverIndex map[string]resolvedReceiverEntry
 type resolvedReceiverEntry struct {
 	resolvedType string
 	line         int
+	startCol     int
+	endCol       int
 }
 
 // resolvedReceiverIndexKey builds the lookup key shared by
@@ -1797,7 +1816,8 @@ func resolvedReceiverIndexKey(callerKey, calleeKey string) string {
 // changes.
 func newResolvedReceiverIndex(graph *CallGraph) resolvedReceiverIndex {
 	idx := make(resolvedReceiverIndex, len(graph.EdgeResolutions))
-	for key, res := range graph.EdgeResolutions {
+	for key := range graph.EdgeResolutions {
+		res := graph.EdgeResolutions[key]
 		if res.ResolvedReceiverType == "" {
 			continue
 		}
@@ -1808,6 +1828,8 @@ func newResolvedReceiverIndex(graph *CallGraph) resolvedReceiverIndex {
 		idx[resolvedReceiverIndexKey(callerKey, calleeKey)] = resolvedReceiverEntry{
 			resolvedType: res.ResolvedReceiverType,
 			line:         res.CallSite,
+			startCol:     res.StartCol,
+			endCol:       res.EndCol,
 		}
 	}
 	return idx
@@ -1817,12 +1839,12 @@ func newResolvedReceiverIndex(graph *CallGraph) resolvedReceiverIndex {
 // (stamped by a previous resolveParameterPassthroughDispatch iteration) in the
 // index instead of scanning graph.EdgeResolutions. Returns the resolved type
 // and the call-site line to attribute the extended bypass edge to.
-func lookupResolvedReceiverType(receiverIdx resolvedReceiverIndex, callerKey, calleeKey string) (resolvedType string, line int, ok bool) {
+func lookupResolvedReceiverType(receiverIdx resolvedReceiverIndex, callerKey, calleeKey string) (resolvedType string, line, startCol, endCol int, ok bool) {
 	entry, found := receiverIdx[resolvedReceiverIndexKey(callerKey, calleeKey)]
 	if !found {
-		return "", 0, false
+		return "", 0, 0, 0, false
 	}
-	return entry.resolvedType, entry.line, true
+	return entry.resolvedType, entry.line, entry.startCol, entry.endCol, true
 }
 
 // resolveCandidateOwner matches a resolved concrete argument type against the
@@ -1950,7 +1972,7 @@ func concreteTypeFromSourceNode(graph *CallGraph, src SourceNode) string {
 // stampResolvedReceiverType writes ResolvedReceiverType onto the just-recorded
 // exact EdgeResolution for callerKey->targetKey at line, so the fragment
 // exporter can carry it through as graph-fragment resolved_receiver_type.
-func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, line int, resolvedType string, receiverIdx resolvedReceiverIndex) {
+func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, line, startCol, endCol int, resolvedType string, receiverIdx resolvedReceiverIndex) {
 	// Mirror recordEdgeResolution's method/arity derivation exactly so the key
 	// matches the entry it just wrote (EdgeResolutionKey folds MethodName/Arity
 	// into the map key, so an approximate key would silently miss).
@@ -1959,14 +1981,14 @@ func stampResolvedReceiverType(graph *CallGraph, callerKey, targetKey string, li
 		method = BaseFunctionName(calleeID.Name)
 		arity = functionArity(calleeID.Name)
 	}
-	key := EdgeResolutionKey(callerKey, targetKey, EdgeResolution{MethodName: method, Arity: arity, CallSite: line})
+	key := EdgeResolutionKey(callerKey, targetKey, EdgeResolution{MethodName: method, Arity: arity, CallSite: line, StartCol: startCol, EndCol: endCol})
 	res, ok := graph.EdgeResolutions[key]
 	if !ok {
 		return
 	}
 	res.ResolvedReceiverType = resolvedType
 	graph.EdgeResolutions[key] = res
-	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line}
+	receiverIdx[resolvedReceiverIndexKey(callerKey, targetKey)] = resolvedReceiverEntry{resolvedType: resolvedType, line: line, startCol: startCol, endCol: endCol}
 }
 
 // buildTypePackageIndex maps simple type names to their packages.
