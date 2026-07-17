@@ -147,3 +147,17 @@ Omitting any of these is safe — the system **degrades gracefully** to line-onl
 matching and a chain-root/best-resolved heuristic — but precision on multi-call lines
 drops. Library-specific fluent/return-type resolution belongs in the contract KB above,
 not in the parser.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain documentation layout. See `docs/agents/domain.md`.
