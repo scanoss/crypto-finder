@@ -165,6 +165,12 @@ func unknown() any {
 func bare() {
 	return
 }
+
+func withClosure(value cipher.Block, wrong cipher.Block) cipher.Block {
+	closure := func() cipher.Block { return wrong }
+	_ = closure
+	return value
+}
 `
 	path := filepath.Join(dir, "returns.go")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
@@ -207,6 +213,11 @@ func bare() {
 	bare := findGoFunction(t, analysis, "bare")
 	if len(bare.ReturnSources) != 0 {
 		t.Fatalf("bare ReturnSources len = %d, want 0", len(bare.ReturnSources))
+	}
+
+	withClosure := findGoFunction(t, analysis, "withClosure")
+	if len(withClosure.ReturnSources) != 1 || withClosure.ReturnSources[0].Name != "value" {
+		t.Fatalf("withClosure ReturnSources = %#v, want only value", withClosure.ReturnSources)
 	}
 }
 

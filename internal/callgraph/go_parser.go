@@ -332,6 +332,9 @@ func (p *GoParser) walkGoReturnSources(
 	varTypes map[string]string,
 	sources *[]SourceNode,
 ) {
+	if node.Type() == "func_literal" {
+		return
+	}
 	if node.Type() == goNodeReturnStatement {
 		p.appendGoReturnSources(node, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, sources)
 		return
