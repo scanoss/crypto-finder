@@ -12,6 +12,8 @@ func NewParserForEcosystem(ecosystem string, opts ...ParserOption) Parser {
 		return NewGoParser(opts...)
 	case "java":
 		return NewJavaParser(opts...)
+	case "node", "javascript", "typescript":
+		return NewNodeParser(opts...)
 	case "python":
 		return NewPythonParser(opts...)
 	case "rust":

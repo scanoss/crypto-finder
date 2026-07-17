@@ -64,6 +64,34 @@ func TestNewFindingsCache_NoneBackend(t *testing.T) {
 	}
 }
 
+func TestEcosystemFromHints_Node(t *testing.T) {
+	t.Parallel()
+
+	t.Run("language hint", func(t *testing.T) {
+		for _, hint := range []string{"node", "javascript", "typescript"} {
+			if got := ecosystemFromHints(t.TempDir(), []string{hint}); got != "node" {
+				t.Errorf("ecosystemFromHints(%q) = %q, want node", hint, got)
+			}
+		}
+	})
+
+	t.Run("package manifest", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatalf("write package.json: %v", err)
+		}
+		if got := ecosystemFromHints(dir, nil); got != "node" {
+			t.Fatalf("ecosystemFromHints() = %q, want node", got)
+		}
+	})
+
+	t.Run("source extension", func(t *testing.T) {
+		if got := ecosystemFromHints(filepath.Join(t.TempDir(), "index.ts"), nil); got != "node" {
+			t.Fatalf("ecosystemFromHints() = %q, want node", got)
+		}
+	})
+}
+
 func validateScanFlags(target string) error {
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
 		RuleFiles:        scanRules,

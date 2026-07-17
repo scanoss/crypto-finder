@@ -57,6 +57,7 @@ const (
 	defaultRulesetName    = "dca"
 	defaultRulesetVersion = "latest"
 	ecosystemJava         = "java"
+	ecosystemNode         = "node"
 
 	findingsCacheBackendDisk     = "disk"
 	findingsCacheBackendNone     = "none"
@@ -208,6 +209,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 		switch hint {
 		case "c", "go", ecosystemJava, "python", "rust":
 			return hint
+		case ecosystemNode, "javascript", "typescript":
+			return ecosystemNode
 		}
 	}
 
@@ -229,6 +232,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 		return "python"
 	case ".rs":
 		return "rust"
+	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts":
+		return ecosystemNode
 	default:
 		return ""
 	}
