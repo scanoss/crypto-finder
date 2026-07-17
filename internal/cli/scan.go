@@ -207,7 +207,7 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	// explicit --languages flag, the user's ordering is honored as-is.
 	for _, hint := range languageHints {
 		switch hint {
-		case "go", ecosystemJava, "python", "rust":
+		case "c", "go", ecosystemJava, "python", "rust":
 			return hint
 		case ecosystemNode, "javascript", "typescript":
 			return ecosystemNode
@@ -222,6 +222,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	}
 
 	switch filepath.Ext(target) {
+	case ".c", ".h":
+		return "c"
 	case ".go":
 		return "go"
 	case ".java":
