@@ -865,3 +865,23 @@ func TestFlattenGraphFragmentEntryPoints_PopulatesParameterRoles(t *testing.T) {
 		t.Fatalf("ParameterRoles[0] = %#v, want index=0 metadata-contributing keySize/argument_bit_length", pr)
 	}
 }
+
+func TestSortedFragmentEdges_PreserveSameLineColumnIdentity(t *testing.T) {
+	t.Parallel()
+
+	internal := sortedFragmentEdges([]graphfrag.GraphFragmentEdge{
+		{CallerKey: "caller", CalleeKey: "callee", Line: 7, StartCol: 20, EndCol: 30, Resolution: string(graphfrag.ResolutionInterfaceDispatch)},
+		{CallerKey: "caller", CalleeKey: "callee", Line: 7, StartCol: 4, EndCol: 14, Resolution: string(graphfrag.ResolutionInterfaceDispatch)},
+	})
+	if len(internal) != 2 || internal[0].StartCol != 4 || internal[1].StartCol != 20 {
+		t.Fatalf("internal same-line identities lost or unstable: %+v", internal)
+	}
+
+	external := sortedFragmentExternalCalls([]graphfrag.GraphFragmentExternal{
+		{CallerKey: "caller", TargetKey: "callee", Line: 7, StartCol: 20, EndCol: 30, Resolution: string(graphfrag.ResolutionInterfaceDispatch)},
+		{CallerKey: "caller", TargetKey: "callee", Line: 7, StartCol: 4, EndCol: 14, Resolution: string(graphfrag.ResolutionInterfaceDispatch)},
+	})
+	if len(external) != 2 || external[0].StartCol != 4 || external[1].StartCol != 20 {
+		t.Fatalf("external same-line identities lost or unstable: %+v", external)
+	}
+}

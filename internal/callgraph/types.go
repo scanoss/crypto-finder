@@ -356,6 +356,8 @@ type EdgeResolution struct {
 	MethodName   string // base method name (no arity decoration)
 	Arity        int
 	CallSite     int // source line of the call expression
+	StartCol     int // 1-based, inclusive; 0 when the parser is not column-aware
+	EndCol       int // 1-based, exclusive; 0 when unknown
 	callerKey    string
 	calleeKey    string
 
@@ -375,6 +377,8 @@ type EdgeResolution struct {
 func EdgeResolutionKey(callerKey, calleeKey string, resolution EdgeResolution) string {
 	return EdgeResolutionKeyPrefix(callerKey, calleeKey) +
 		strconv.Itoa(resolution.CallSite) + "\x00" +
+		strconv.Itoa(resolution.StartCol) + "\x00" +
+		strconv.Itoa(resolution.EndCol) + "\x00" +
 		resolution.DeclaredType + "\x00" +
 		resolution.MethodName + "\x00" +
 		strconv.Itoa(resolution.Arity)

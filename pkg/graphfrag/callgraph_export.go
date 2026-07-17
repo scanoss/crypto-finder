@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.5"
+const CallgraphSchemaVersion = "6.6"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -85,11 +85,56 @@ type ExportFindingGraph struct {
 // echoes the depth CAP applied (the budget), not the deepest node reached;
 // Truncated is true whenever any cap (depth/node/edge) cut the walk short.
 type ExportForwardClosure struct {
-	Anchor    ExportForwardAnchor `json:"anchor"`
-	MaxDepth  int                 `json:"max_depth"`
-	Truncated bool                `json:"truncated"`
-	Nodes     []ExportForwardNode `json:"nodes,omitempty"`
-	Edges     []ExportForwardEdge `json:"edges,omitempty"`
+	Anchor         ExportForwardAnchor          `json:"anchor"`
+	MaxDepth       int                          `json:"max_depth"`
+	Truncated      bool                         `json:"truncated"`
+	Nodes          []ExportForwardNode          `json:"nodes,omitempty"`
+	Edges          []ExportForwardEdge          `json:"edges,omitempty"`
+	AmbiguousCalls []ExportAmbiguousForwardCall `json:"ambiguous_calls,omitempty"`
+}
+
+const (
+	// AmbiguityComplete marks ambiguity evidence with complete call-site and candidate identities.
+	AmbiguityComplete = "complete"
+	// AmbiguityPartial marks ambiguity evidence that degraded because identity data was unavailable.
+	AmbiguityPartial = "partial"
+)
+
+// ExportAmbiguousForwardCall is one fail-closed interface-dispatch call site.
+// Its candidates are evidence, never traversed forward edges.
+type ExportAmbiguousForwardCall struct {
+	GroupID      string                            `json:"group_id"`
+	Reason       string                            `json:"reason"`
+	Completeness string                            `json:"completeness"`
+	CallSite     ExportAmbiguousCallSite           `json:"call_site"`
+	Candidates   []ExportAmbiguousForwardCandidate `json:"candidates"`
+}
+
+// ExportAmbiguousCallSite identifies the source invocation shared by every
+// candidate in an ambiguous dispatch group.
+type ExportAmbiguousCallSite struct {
+	CallerFunctionKey        string `json:"caller_function_key"`
+	CallerFunctionName       string `json:"caller_function_name,omitempty"`
+	CallerCanonicalSignature string `json:"caller_canonical_signature,omitempty"`
+	Line                     int    `json:"line,omitempty"`
+	StartCol                 int    `json:"start_col,omitempty"`
+	EndCol                   int    `json:"end_col,omitempty"`
+	MethodName               string `json:"method_name"`
+	Arity                    int    `json:"arity"`
+}
+
+// ExportAmbiguousForwardCandidate is one possible target for an ambiguous
+// dispatch. EntryCall carries the candidate-aligned argument/provenance data.
+type ExportAmbiguousForwardCandidate struct {
+	CandidateID        string                `json:"candidate_id"`
+	FunctionKey        string                `json:"function_key"`
+	FunctionName       string                `json:"function_name,omitempty"`
+	CanonicalSignature string                `json:"canonical_signature,omitempty"`
+	DeclaringType      string                `json:"declaring_type,omitempty"`
+	ReturnType         string                `json:"return_type,omitempty"`
+	ParameterTypes     []string              `json:"parameter_types"`
+	DependencyInfo     *ExportDependencyInfo `json:"dependency_info,omitempty"`
+	EntryCall          *ExportEntryCall      `json:"entry_call,omitempty"`
 }
 
 // ExportForwardAnchor is the lean identity of the forward closure's root: the
@@ -630,8 +675,98 @@ func projectForwardClosure(fc *forwardClosure, root ComponentKey) *ExportForward
 		return li < lj
 	})
 	out.Edges = edges
+	out.AmbiguousCalls = projectAmbiguousCalls(fc.ambiguous, root)
 
 	return out
+}
+
+func projectAmbiguousCalls(groups []SuppressedEdge, root ComponentKey) []ExportAmbiguousForwardCall {
+	out := make([]ExportAmbiguousForwardCall, 0, len(groups))
+	for i := range groups {
+		group := &groups[i]
+		groupID := ambiguityID("group", group.Caller.Component.String(), group.Caller.Signature,
+			strconv.Itoa(group.CallSite), strconv.Itoa(group.StartCol), strconv.Itoa(group.EndCol), group.MethodName, strconv.Itoa(group.Arity))
+		exported := ExportAmbiguousForwardCall{
+			GroupID: groupID,
+			Reason:  group.Reason,
+			CallSite: ExportAmbiguousCallSite{
+				CallerFunctionKey:        group.Caller.Signature,
+				CallerFunctionName:       group.Caller.Function.FunctionName,
+				CallerCanonicalSignature: group.Caller.Function.CanonicalSignature,
+				Line:                     group.CallSite,
+				StartCol:                 group.StartCol,
+				EndCol:                   group.EndCol,
+				MethodName:               group.MethodName,
+				Arity:                    group.Arity,
+			},
+		}
+		frames := append([]CallFrame(nil), group.CandidateFrames...)
+		sort.Slice(frames, func(i, j int) bool {
+			a, b := frames[i], frames[j]
+			if a.Function.CanonicalSignature != b.Function.CanonicalSignature {
+				return a.Function.CanonicalSignature < b.Function.CanonicalSignature
+			}
+			if a.Signature != b.Signature {
+				return a.Signature < b.Signature
+			}
+			return a.Component.String() < b.Component.String()
+		})
+		for j := range frames {
+			frame := &frames[j]
+			parameterTypes := append([]string(nil), frame.Function.ParameterTypes...)
+			if parameterTypes == nil {
+				parameterTypes = []string{}
+			}
+			candidate := ExportAmbiguousForwardCandidate{
+				CandidateID:        ambiguityID("candidate", groupID, frame.Component.String(), frame.Signature, frame.Function.CanonicalSignature),
+				FunctionKey:        frame.Signature,
+				FunctionName:       frame.Function.FunctionName,
+				CanonicalSignature: frame.Function.CanonicalSignature,
+				DeclaringType:      frame.Function.DeclaringType,
+				ReturnType:         frame.Function.ReturnType,
+				ParameterTypes:     parameterTypes,
+				EntryCall:          exportEntryCall(frame.EntryCall, frame.Function),
+			}
+			if frame.Component != root {
+				candidate.DependencyInfo = &ExportDependencyInfo{Module: moduleFromFrame(frame), Version: frame.Component.Version}
+			}
+			exported.Candidates = append(exported.Candidates, candidate)
+		}
+		exported.Completeness = ambiguityCompleteness(exported)
+		out = append(out, exported)
+	}
+	return out
+}
+
+func ambiguityCompleteness(group ExportAmbiguousForwardCall) string {
+	if !completeAmbiguousCallSite(group.CallSite) || len(group.Candidates) < 2 {
+		return AmbiguityPartial
+	}
+	for i := range group.Candidates {
+		if !completeAmbiguousCandidate(&group.Candidates[i], group.CallSite.Arity) {
+			return AmbiguityPartial
+		}
+	}
+	return AmbiguityComplete
+}
+
+func completeAmbiguousCallSite(callSite ExportAmbiguousCallSite) bool {
+	return callSite.CallerFunctionKey != "" && callSite.CallerCanonicalSignature != "" &&
+		callSite.Line > 0 && callSite.StartCol > 0 && callSite.EndCol > callSite.StartCol &&
+		callSite.MethodName != ""
+}
+
+func completeAmbiguousCandidate(candidate *ExportAmbiguousForwardCandidate, arity int) bool {
+	if candidate.FunctionKey == "" || candidate.CanonicalSignature == "" || candidate.DeclaringType == "" ||
+		candidate.ReturnType == "" || candidate.EntryCall == nil || len(candidate.EntryCall.Parameters) != arity {
+		return false
+	}
+	return len(candidate.ParameterTypes) == arity
+}
+
+func ambiguityID(kind string, parts ...string) string {
+	h := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return kind + "-" + hex.EncodeToString(h[:8])
 }
 
 // chainSupportingCallIDs returns the terminal crypto operation's supporting-call

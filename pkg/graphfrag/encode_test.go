@@ -16,7 +16,8 @@ func TestEncodeFragment_RoundTripsStructuralIdentity(t *testing.T) {
 		Module: "com.app",
 		Functions: []Function{{
 			Signature: "com.app.(Svc).run#0", FunctionName: "com.app.Svc.run",
-			FilePath: "Svc.java", StartLine: 4, EndLine: 11,
+			DeclaringType: "Svc",
+			FilePath:      "Svc.java", StartLine: 4, EndLine: 11,
 		}},
 		ExternalCalls: []ExternalCall{{
 			Caller: "com.app.(Svc).run#0", TargetSignature: "org.bc.(Gen).init#1",
@@ -46,6 +47,9 @@ func TestEncodeFragment_RoundTripsStructuralIdentity(t *testing.T) {
 
 	if len(got.Functions) != 1 || got.Functions[0].StartLine != 4 || got.Functions[0].EndLine != 11 {
 		t.Fatalf("function line range lost: %+v", got.Functions)
+	}
+	if got.Functions[0].DeclaringType != "Svc" {
+		t.Fatalf("function declaring type lost: %q, want Svc", got.Functions[0].DeclaringType)
 	}
 	if len(got.ExternalCalls) != 1 {
 		t.Fatalf("external calls len = %d, want 1", len(got.ExternalCalls))

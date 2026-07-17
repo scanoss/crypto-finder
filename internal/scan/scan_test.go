@@ -339,8 +339,8 @@ func TestExportCallGraph(t *testing.T) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Fatalf("invalid json output: %v", err)
 		}
-		if payload.SchemaVersion != "6.5" {
-			t.Fatalf("schema_version = %q, want 6.5", payload.SchemaVersion)
+		if payload.SchemaVersion != callGraphSchemaVersion {
+			t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, callGraphSchemaVersion)
 		}
 		if len(payload.FindingGraphs) != 1 {
 			t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
@@ -1959,8 +1959,8 @@ func TestExportCallGraph_CryptoEntryPointsBuiltFromChains(t *testing.T) {
 		t.Fatalf("json: %v", err)
 	}
 
-	if payload.SchemaVersion != "6.5" {
-		t.Fatalf("schema_version = %q, want 6.5", payload.SchemaVersion)
+	if payload.SchemaVersion != callGraphSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, callGraphSchemaVersion)
 	}
 
 	if len(payload.CryptoEntryPoints) == 0 {

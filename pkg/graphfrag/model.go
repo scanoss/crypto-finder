@@ -80,6 +80,9 @@ type Function struct {
 	Signature string
 	// FunctionName is the fully-qualified human-readable function name (e.g. "org.bridge.Bridge.bridge").
 	FunctionName string
+	// DeclaringType is the parser-provided enclosing type. Empty for module-level
+	// functions and legacy fragments; it is never inferred from FunctionName.
+	DeclaringType string
 	// CanonicalSignature is the canonical function signature (1.2+).
 	CanonicalSignature string
 	// ReturnType is the declared return type (1.2+).
@@ -565,8 +568,16 @@ type SuppressedEdge struct {
 	Caller     CallFrame
 	MethodName string
 	Arity      int
+	CallSite   int
+	StartCol   int
+	EndCol     int
 	Reason     string
 	Candidates []ComponentKey
+
+	// CandidateFrames carries the full target identity and per-candidate call
+	// evidence for grouped ambiguous dispatches. Candidates remains the compact
+	// component summary used by existing callers.
+	CandidateFrames []CallFrame
 }
 
 // CallFrame is one frame in a stitched path.

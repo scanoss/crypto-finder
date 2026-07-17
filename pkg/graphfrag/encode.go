@@ -34,6 +34,7 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 		fn := &frag.Functions[i]
 		out.Functions = append(out.Functions, GraphFragmentFunction{
 			Key:                fn.Signature,
+			Type:               fn.DeclaringType,
 			FunctionName:       fn.FunctionName,
 			CanonicalSignature: fn.CanonicalSignature,
 			FilePath:           fn.FilePath,
