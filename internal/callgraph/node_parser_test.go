@@ -72,6 +72,9 @@ export const forgeDigest = (data) => {
 		t.Errorf("hash.update ReceiverVar = %q, want hash", update.ReceiverVar)
 	}
 	_ = nodeCall(t, digest, "node:crypto", "createHash", "createHash")
+	if create.ChainID != "" || update.ChainID != "" {
+		t.Errorf("standalone ChainIDs = create:%q update:%q, want empty", create.ChainID, update.ChainID)
+	}
 
 	forgeDigest := nodeFunction(t, analysis, "forgeDigest")
 	createLink := nodeCall(t, forgeDigest, "node-forge.md.sha256", "create", "forge.md.sha256.create")
@@ -135,6 +138,61 @@ func TestNodeParser_ErrorPrefix(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), "callgraph: node parser:") {
 		t.Fatalf("error = %q, want callgraph package prefix", err)
 	}
+}
+
+func TestNodeParser_NestedFunctionCallsStayWithNestedFunction(t *testing.T) {
+	t.Parallel()
+
+	src := `import crypto from "node:crypto";
+export function outer() {
+  function inner() {
+    return crypto.createHash("sha256");
+  }
+  return "unused";
+}
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "nested.js")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := NewNodeParser().ParseFile(filePath, "example-app")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	outer := nodeFunction(t, analysis, "outer")
+	if len(outer.Calls) != 0 {
+		t.Fatalf("outer calls = %#v, want none", outer.Calls)
+	}
+	inner := nodeFunction(t, analysis, "inner")
+	_ = nodeCall(t, inner, "node:crypto", "createHash", "crypto.createHash")
+}
+
+func TestNodeParser_LocalBindingsShadowImports(t *testing.T) {
+	t.Parallel()
+
+	src := `import crypto from "node:crypto";
+import { createHash } from "node:crypto";
+export function digest(crypto, createHash) {
+  crypto.createHash("sha256");
+  return createHash("sha256");
+}
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "shadowed.js")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := NewNodeParser().ParseFile(filePath, "example-app")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	digest := nodeFunction(t, analysis, "digest")
+	member := nodeCall(t, digest, "example-app", "createHash", "crypto.createHash")
+	if member.ReceiverVar != "crypto" {
+		t.Errorf("shadowed member ReceiverVar = %q, want crypto", member.ReceiverVar)
+	}
+	_ = nodeCall(t, digest, "example-app", "createHash", "createHash")
 }
 
 func nodeFunction(t *testing.T, analysis *FileAnalysis, name string) *FunctionDecl {

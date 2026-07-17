@@ -275,6 +275,7 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 		if decl := p.parseNodeFunction(node, src, filePath, packagePath, "", "", analysis.Imports); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
+		p.extractDeclarations(node.ChildByFieldName("body"), src, filePath, packagePath, analysis)
 		return
 	case "lexical_declaration", "variable_declaration":
 		p.extractAssignedFunctions(node, src, filePath, packagePath, analysis)
@@ -302,6 +303,7 @@ func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, fil
 		if decl := p.parseNodeFunction(value, src, filePath, packagePath, name.Content(src), "", analysis.Imports); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
+		p.extractDeclarations(value.ChildByFieldName("body"), src, filePath, packagePath, analysis)
 	}
 }
 
@@ -422,6 +424,10 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 	if node == nil {
 		return
 	}
+	switch node.Type() {
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, "class_declaration":
+		return
+	}
 	if node.Type() == nodeCallExpression {
 		if call := p.parseNodeCall(node, src, filePath, packagePath, owner, imports, locals); call != nil {
 			*calls = append(*calls, *call)
@@ -455,7 +461,7 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 			return nil
 		}
 		call.Callee = FunctionID{Package: packagePath, Name: name}
-		if importedPackage, ok := imports[name]; ok {
+		if importedPackage, ok := nodeImportedPackage(imports, locals, name); ok {
 			call.Callee.Package = importedPackage
 		}
 		return call
@@ -469,7 +475,7 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 		objectText := object.Content(src)
 		call.Callee = FunctionID{Package: packagePath, Name: name}
 		first, suffix := splitNodeMemberObject(objectText)
-		importedPackage, importedObject := imports[first]
+		importedPackage, importedObject := nodeImportedPackage(imports, locals, first)
 		switch {
 		case object.Type() != nodeCallExpression && importedObject:
 			call.Callee.Package = importedPackage
@@ -485,6 +491,14 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 	default:
 		return nil
 	}
+}
+
+func nodeImportedPackage(imports map[string]string, locals map[string]bool, name string) (string, bool) {
+	if locals[name] {
+		return "", false
+	}
+	importedPackage, ok := imports[name]
+	return importedPackage, ok
 }
 
 func nodeCallArguments(node *sitter.Node, src []byte) []string {
