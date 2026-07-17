@@ -100,3 +100,27 @@ fn bare() { return; }`)
 		}
 	}
 }
+
+func TestRustParser_ReturnSources_RespectFunctionScope(t *testing.T) {
+	fns := parseRustInline(t, `fn mixed(flag: bool, early: Key, tail: Key) -> Key {
+    if flag { return early; }
+    tail
+}
+fn outer(real: Key, wrong: Key) -> Key {
+    let closure = || { return wrong; };
+    fn nested(wrong: Key) -> Key { return wrong; }
+    let _ = closure;
+    let _ = nested;
+    return real;
+}`)
+
+	mixed := rustFunctionByName(t, fns, "mixed")
+	if len(mixed.ReturnSources) != 2 || mixed.ReturnSources[0].Name != "early" || mixed.ReturnSources[1].Name != "tail" {
+		t.Fatalf("mixed ReturnSources = %#v, want early and tail", mixed.ReturnSources)
+	}
+
+	outer := rustFunctionByName(t, fns, "outer")
+	if len(outer.ReturnSources) != 1 || outer.ReturnSources[0].Name != "real" {
+		t.Fatalf("outer ReturnSources = %#v, want only real", outer.ReturnSources)
+	}
+}

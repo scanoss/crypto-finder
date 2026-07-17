@@ -301,10 +301,7 @@ func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, 
 func (p *RustParser) extractReturnSources(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string) []SourceNode {
 	var sources []SourceNode
 	p.walkForReturnSources(body, src, filePath, analysis, currentReceiverType, varTypes, &sources)
-	if len(sources) > 0 {
-		return sources
-	}
-	return p.traceRustTailExpression(body, src, filePath, analysis, currentReceiverType, varTypes)
+	return append(sources, p.traceRustTailExpression(body, src, filePath, analysis, currentReceiverType, varTypes)...)
 }
 
 func (p *RustParser) walkForReturnSources(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, sources *[]SourceNode) {
@@ -315,6 +312,9 @@ func (p *RustParser) walkForReturnSources(node *sitter.Node, src []byte, filePat
 		if expr := rustReturnExpressionNode(node); expr != nil {
 			*sources = append(*sources, p.traceRustReturnExpression(expr, src, filePath, analysis, currentReceiverType, varTypes)...)
 		}
+		return
+	}
+	if node.Type() == "function_item" || node.Type() == "closure_expression" {
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
