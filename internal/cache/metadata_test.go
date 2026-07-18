@@ -19,6 +19,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -132,6 +133,54 @@ func TestMetadata_SaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestMetadata_SaveNeverExposesPartialJSON(t *testing.T) {
+	metadataPath := filepath.Join(t.TempDir(), ".cache-meta.json")
+	current := NewMetadata("dca", "latest", "before-replacement", 86400)
+	if err := current.Save(metadataPath); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+
+	replacement := NewMetadata("dca", "latest", "after-replacement", 86400)
+	replaceReached := make(chan struct{})
+	allowReplace := make(chan struct{})
+	saveErr := make(chan error, 1)
+	go func() {
+		saveErr <- replacement.save(metadataPath, func(tempPath, targetPath string) error {
+			close(replaceReached)
+			<-allowReplace
+			return os.Rename(tempPath, targetPath)
+		})
+	}()
+
+	select {
+	case <-replaceReached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("metadata save did not reach the atomic replacement phase")
+	}
+
+	for i := 0; i < 100; i++ {
+		loaded, err := LoadMetadata(metadataPath)
+		if err != nil {
+			t.Fatalf("load metadata during concurrent save: %v", err)
+		}
+		if loaded.ChecksumSHA256 != current.ChecksumSHA256 {
+			t.Fatalf("checksum during replacement = %q, want complete prior value %q", loaded.ChecksumSHA256, current.ChecksumSHA256)
+		}
+	}
+
+	close(allowReplace)
+	if err := <-saveErr; err != nil {
+		t.Fatalf("save replacement metadata: %v", err)
+	}
+	loaded, err := LoadMetadata(metadataPath)
+	if err != nil {
+		t.Fatalf("load replacement metadata: %v", err)
+	}
+	if loaded.ChecksumSHA256 != replacement.ChecksumSHA256 {
+		t.Fatalf("checksum after replacement = %q, want %q", loaded.ChecksumSHA256, replacement.ChecksumSHA256)
+	}
+}
+
 func TestLoadMetadata_Errors(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		if _, err := LoadMetadata(filepath.Join(t.TempDir(), "missing.json")); err == nil {
@@ -158,8 +207,12 @@ func TestMetadata_SaveError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := meta.Save(dir); err == nil {
+	err := meta.Save(dir)
+	if err == nil {
 		t.Fatal("expected Save to fail when target path is a directory")
+	}
+	if !strings.HasPrefix(err.Error(), "cache:") {
+		t.Fatalf("Save error = %q, want cache prefix", err)
 	}
 }
 
