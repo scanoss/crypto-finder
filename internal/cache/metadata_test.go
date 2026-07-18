@@ -19,6 +19,8 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -129,6 +131,54 @@ func TestMetadata_SaveAndLoad(t *testing.T) {
 	}
 	if loaded.TTLSeconds != original.TTLSeconds {
 		t.Errorf("TTLSeconds mismatch: got %v, want %v", loaded.TTLSeconds, original.TTLSeconds)
+	}
+}
+
+func TestMetadata_SaveNeverExposesPartialJSON(t *testing.T) {
+	t.Parallel()
+
+	metadataPath := filepath.Join(t.TempDir(), ".cache-meta.json")
+	metadata := NewMetadata("dca", "latest", strings.Repeat("a", 256*1024), 86400)
+	if err := metadata.Save(metadataPath); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 12)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < 300; j++ {
+				if _, err := LoadMetadata(metadataPath); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(fill byte) {
+			defer wg.Done()
+			<-start
+			candidate := NewMetadata("dca", "latest", strings.Repeat(string(fill), 256*1024), 86400)
+			for j := 0; j < 100; j++ {
+				if err := candidate.Save(metadataPath); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}(byte('b' + i))
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent metadata access exposed an invalid file: %v", err)
 	}
 }
 

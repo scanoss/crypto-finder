@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,13 +228,11 @@ func TestCollectRuleFiles_SkipsFilteredDir(t *testing.T) {
 	}
 }
 
-// TestMaterializeRuleFiles_NoGeometricGrowth proves that materializing rules
-// inside the ruleset tree does not cause the next rule-tree walk to re-ingest
-// the materialized copy. Without the SkipDir guard, the second walk would see
-// the originals PLUS run-*'s copies and the count would balloon every scan.
-func TestMaterializeRuleFiles_NoGeometricGrowth(t *testing.T) {
+// TestMaterializeRuleFiles_OutsideRulesetTree proves filtered working copies
+// cannot be re-ingested by a walk of the cached ruleset.
+func TestMaterializeRuleFiles_OutsideRulesetTree(t *testing.T) {
 	// Cannot be parallel: overrides HOME so GetRulesetsDir resolves under temp,
-	// which is required for materializeRuleFiles to write inside the tree.
+	// which is required for materializeRuleFiles to recognize the cache tree.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -259,21 +258,48 @@ func TestMaterializeRuleFiles_NoGeometricGrowth(t *testing.T) {
 		t.Fatalf("setup: collectRuleFiles before = %d, want 2", before)
 	}
 
-	// Materialize once, leaving the run-* dir in place (simulating a SIGKILLed
-	// job that never ran its cleanup).
-	_, _, err = optimizeRulePathsForScanner([]string{a, b})
+	paths, _, err := optimizeRulePathsForScanner([]string{a, b})
 	if err != nil {
 		t.Fatalf("optimizeRulePathsForScanner: %v", err)
 	}
 
-	// The filtered dir must now exist inside the tree...
-	if _, err := os.Stat(filepath.Join(versionRoot, config.FilteredRulesDirName)); err != nil {
-		t.Fatalf("expected materialized dir inside version root: %v", err)
+	filteredParent := filepath.Join(filepath.Dir(versionRoot), config.FilteredRulesDirName, filepath.Base(versionRoot))
+	if !strings.HasPrefix(paths[0], filteredParent+string(os.PathSeparator)) {
+		t.Fatalf("materialized path %s must be outside version root under %s", paths[0], filteredParent)
 	}
-	// ...but the next walk must still see only the two originals.
 	after := len(collectRuleFiles(versionRoot))
 	if after != before {
 		t.Fatalf("collectRuleFiles after materialize = %d, want %d (cache is re-ingesting itself)", after, before)
+	}
+}
+
+func TestMaterializeRuleFiles_SurvivesRulesetReplacement(t *testing.T) {
+	// Cannot be parallel: HOME controls the shared ruleset cache location.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	rulesetsDir, err := config.GetRulesetsDir()
+	if err != nil {
+		t.Fatalf("GetRulesetsDir: %v", err)
+	}
+	versionRoot := filepath.Join(rulesetsDir, "dca", "latest")
+	if err := os.MkdirAll(versionRoot, 0o755); err != nil {
+		t.Fatalf("mkdir version root: %v", err)
+	}
+	a := writeRuleFile(t, versionRoot, "a.yaml", "rules: []\n")
+	b := writeRuleFile(t, versionRoot, "b.yaml", "rules: []\n")
+
+	paths, cleanup, err := materializeRuleFiles([]string{a, b})
+	if err != nil {
+		t.Fatalf("materializeRuleFiles: %v", err)
+	}
+	defer cleanup()
+
+	if err := os.RemoveAll(versionRoot); err != nil {
+		t.Fatalf("replace ruleset: %v", err)
+	}
+	if _, err := os.ReadFile(filepath.Join(paths[0], "a.yaml")); err != nil {
+		t.Fatalf("in-flight filtered rules must survive cache replacement: %v", err)
 	}
 }
 

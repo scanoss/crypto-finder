@@ -18,8 +18,10 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -70,15 +72,51 @@ func LoadMetadata(path string) (*Metadata, error) {
 }
 
 // Save saves the metadata to a .cache-meta.json file.
-func (m *Metadata) Save(path string) error {
+func (m *Metadata) Save(path string) (err error) {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	tempFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary metadata file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	tempOpen := true
+	defer func() {
+		var cleanupErr error
+		if tempOpen {
+			cleanupErr = tempFile.Close()
+		}
+		// #nosec G703 -- tempPath is created by os.CreateTemp in this function.
+		if tempPath != "" {
+			if removeErr := os.Remove(tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, removeErr)
+			}
+		}
+		if cleanupErr != nil {
+			cleanupErr = fmt.Errorf("failed to clean up temporary metadata file: %w", cleanupErr)
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
+
+	if _, err := tempFile.Write(data); err != nil {
 		return fmt.Errorf("failed to write metadata file: %w", err)
 	}
+	if err := tempFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync metadata file: %w", err)
+	}
+	closeErr := tempFile.Close()
+	tempOpen = false
+	if closeErr != nil {
+		return fmt.Errorf("failed to close metadata file: %w", closeErr)
+	}
+	// #nosec G703 -- tempPath is created by os.CreateTemp in this function.
+	if renameErr := os.Rename(tempPath, path); renameErr != nil {
+		return fmt.Errorf("failed to replace metadata file: %w", renameErr)
+	}
+	tempPath = ""
 
 	return nil
 }

@@ -160,7 +160,7 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 	baseDir := commonRuleBaseDir(ruleFiles)
 	tempParent := ""
 	if rulesetRoot := rulesetVersionRoot(baseDir); rulesetRoot != "" {
-		tempParent = filepath.Join(rulesetRoot, config.FilteredRulesDirName)
+		tempParent = filepath.Join(filepath.Dir(rulesetRoot), config.FilteredRulesDirName, filepath.Base(rulesetRoot))
 		if err := os.MkdirAll(tempParent, 0o750); err != nil {
 			return nil, nil, fmt.Errorf("create filtered rules temp parent: %w", err)
 		}
