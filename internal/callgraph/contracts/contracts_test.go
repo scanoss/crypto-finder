@@ -677,6 +677,16 @@ func TestLoadEmbedded_NonexistentEcosystem_ReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedded_Rust(t *testing.T) {
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"rust\"): %v", err)
+	}
+	if kb.Ecosystem != "rust" {
+		t.Fatalf("Ecosystem = %q, want rust", kb.Ecosystem)
+	}
+}
+
 // TestContractsFor_ReturnsCorrectSlice
 // kb.ContractsFor("javax.crypto.Cipher.unwrap", 3) returns 3 conditional entries.
 func TestContractsFor_ReturnsCorrectSlice(t *testing.T) {

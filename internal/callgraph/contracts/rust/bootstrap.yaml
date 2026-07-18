@@ -1,0 +1,9 @@
+schema_version: "2"
+ecosystem: rust
+# ponytail: go:embed needs one YAML match; remove this file when the first Rust library KB lands.
+library:
+  name: rust-bootstrap
+  description: "Bootstrap for embedded Rust callgraph contracts"
+
+contracts: []
+hierarchy: {}
