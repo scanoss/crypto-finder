@@ -72,15 +72,20 @@ func LoadMetadata(path string) (*Metadata, error) {
 }
 
 // Save saves the metadata to a .cache-meta.json file.
-func (m *Metadata) Save(path string) (err error) {
+func (m *Metadata) Save(path string) error {
+	return m.save(path, os.Rename)
+}
+
+// save persists metadata with an injectable final replacement step for deterministic concurrency testing.
+func (m *Metadata) save(path string, replace func(string, string) error) (err error) {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return fmt.Errorf("cache: failed to marshal metadata: %w", err)
 	}
 
 	tempFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to create temporary metadata file: %w", err)
+		return fmt.Errorf("cache: failed to create temporary metadata file: %w", err)
 	}
 	tempPath := tempFile.Name()
 	tempOpen := true
@@ -96,25 +101,24 @@ func (m *Metadata) Save(path string) (err error) {
 			}
 		}
 		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("failed to clean up temporary metadata file: %w", cleanupErr)
+			cleanupErr = fmt.Errorf("cache: failed to clean up temporary metadata file: %w", cleanupErr)
 			err = errors.Join(err, cleanupErr)
 		}
 	}()
 
 	if _, err := tempFile.Write(data); err != nil {
-		return fmt.Errorf("failed to write metadata file: %w", err)
+		return fmt.Errorf("cache: failed to write metadata file: %w", err)
 	}
 	if err := tempFile.Sync(); err != nil {
-		return fmt.Errorf("failed to sync metadata file: %w", err)
+		return fmt.Errorf("cache: failed to sync metadata file: %w", err)
 	}
 	closeErr := tempFile.Close()
 	tempOpen = false
 	if closeErr != nil {
-		return fmt.Errorf("failed to close metadata file: %w", closeErr)
+		return fmt.Errorf("cache: failed to close metadata file: %w", closeErr)
 	}
-	// #nosec G703 -- tempPath is created by os.CreateTemp in this function.
-	if renameErr := os.Rename(tempPath, path); renameErr != nil {
-		return fmt.Errorf("failed to replace metadata file: %w", renameErr)
+	if replaceErr := replace(tempPath, path); replaceErr != nil {
+		return fmt.Errorf("cache: failed to replace metadata file: %w", replaceErr)
 	}
 	tempPath = ""
 
