@@ -17,8 +17,107 @@
 package graphfrag
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 )
+
+func TestSupportingParameterRolesSurviveDecodeStitchAndExport(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:maven/com.acme/crypto", Version: "1.0.0"}
+	const fragmentJSON = `{
+	  "schema_version": "graph-fragment-1.8",
+	  "functions": [{
+	    "key": "com.acme.(Crypto).run#1",
+	    "function_name": "com.acme.Crypto.run",
+	    "parameter_types": ["byte[]"]
+	  }],
+	  "crypto_annotations": [{
+	    "function_key": "com.acme.(Crypto).run#1",
+	    "finding_id": "finding-1",
+	    "rule_id": "java.crypto.run",
+	    "symbol": "com.acme.Crypto.run",
+	    "supporting_call_ids": ["support-role", "support-plain"]
+	  }],
+	  "supporting_calls": [
+	    {
+	      "supporting_id": "support-role",
+	      "function_key": "com.acme.(Crypto).run#1",
+	      "supporting_call": {
+	        "function_name": "org.bc.KeyParameter.<init>",
+	        "parameter_roles": [{
+	          "index": 0,
+	          "name": "key",
+	          "role": "metadata-contributing",
+	          "contributes": {
+	            "property": "keySize",
+	            "derivation": "argument_bit_length"
+	          }
+	        }]
+	      }
+	    },
+	    {
+	      "supporting_id": "support-plain",
+	      "function_key": "com.acme.(Crypto).run#1",
+	      "supporting_call": {"function_name": "org.bc.Engine.processBlock"}
+	    }
+	  ],
+	  "crypto_entry_points": [{
+	    "function_key": "com.acme.(Crypto).run#1",
+	    "parameter_roles": [{"index": 0, "role": "operation-determining"}]
+	  }]
+	}`
+
+	fragment, err := DecodeFragment(root, []byte(fragmentJSON))
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	if len(fragment.SupportingCalls) != 2 || fragment.SupportingCalls[0].SupportingCall == nil ||
+		len(fragment.SupportingCalls[0].SupportingCall.ParameterRoles) != 1 {
+		t.Fatalf("decoded supporting calls lost parameter roles: %#v", fragment.SupportingCalls)
+	}
+	result, err := StitchWithOptions(root, DependencyGraph{root: nil}, map[ComponentKey]Fragment{root: fragment}, StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("StitchWithOptions: %v", err)
+	}
+	if len(result.SupportingCalls) != 2 || result.SupportingCalls[0].SupportingCall == nil ||
+		len(result.SupportingCalls[0].SupportingCall.ParameterRoles) != 1 {
+		t.Fatalf("stitched supporting calls lost parameter roles: %#v", result.SupportingCalls)
+	}
+	exported := result.ToCallgraphExport(root, ScanMeta{})
+
+	byID := make(map[string]ExportSupportingCall, len(exported.SupportingCalls))
+	for i := range exported.SupportingCalls {
+		byID[exported.SupportingCalls[i].SupportingID] = exported.SupportingCalls[i]
+	}
+	roleCall := byID["support-role"].SupportingCall
+	if roleCall == nil || len(roleCall.ParameterRoles) != 1 {
+		t.Fatalf("role-bearing supporting call = %#v, want one parameter role", roleCall)
+	}
+	role := roleCall.ParameterRoles[0]
+	if role.Index != 0 || role.Name != "key" || role.Role != "metadata-contributing" ||
+		role.Contributes == nil || role.Contributes.Property != "keySize" || role.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("parameter role = %#v, want index=0 key metadata-contributing keySize/argument_bit_length", role)
+	}
+
+	plainCall := byID["support-plain"].SupportingCall
+	if plainCall == nil {
+		t.Fatal("plain supporting call missing")
+	}
+	plainJSON, err := json.Marshal(plainCall)
+	if err != nil {
+		t.Fatalf("marshal plain supporting call: %v", err)
+	}
+	if bytes.Contains(plainJSON, []byte(`"parameter_roles"`)) {
+		t.Fatalf("plain supporting call unexpectedly emits parameter_roles: %s", plainJSON)
+	}
+
+	entry := findExportEntryPointByFunctionKey(exported.CryptoEntryPoints, "com.acme.(Crypto).run#1")
+	if entry == nil || len(entry.ParameterRoles) != 1 || entry.ParameterRoles[0].Role != "operation-determining" {
+		t.Fatalf("crypto entry point parameter roles changed: %#v", entry)
+	}
+}
 
 // TestStitch_ContractFKSupportingCallsSurviveNonRootStitch guards REQ-8.1:
 // a supporting call that is referenced by a finding's SupportingCallIDs FK but
