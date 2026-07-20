@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -13,6 +15,129 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
+
+func TestBuildGraphFragmentExport_PreservesSupportingOverloadsAcrossRepeatedExports(t *testing.T) {
+	t.Parallel()
+
+	declarations := []*callgraph.FunctionDecl{
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "Password", Name: "hash#1$byte[]"},
+			FilePath:   "Password.java",
+			StartLine:  10,
+			ReturnType: "com.password4j.HashBuilder",
+			Parameters: []callgraph.FunctionParameter{{Type: "byte[]"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "Password", Name: "hash#1$CharSequence"},
+			FilePath:   "Password.java",
+			StartLine:  14,
+			ReturnType: "com.password4j.HashBuilder",
+			Parameters: []callgraph.FunctionParameter{{Type: "java.lang.CharSequence"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "HashBuilder", Name: "addRandomSalt#0"},
+			FilePath:   "HashBuilder.java",
+			StartLine:  20,
+			ReturnType: "com.password4j.HashBuilder",
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "HashBuilder", Name: "addRandomSalt#1$int"},
+			FilePath:   "HashBuilder.java",
+			StartLine:  24,
+			ReturnType: "com.password4j.HashBuilder",
+			Parameters: []callgraph.FunctionParameter{{Type: "int"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "HashBuilder", Name: "addSalt#1$byte[]"},
+			FilePath:   "HashBuilder.java",
+			StartLine:  28,
+			ReturnType: "com.password4j.HashBuilder",
+			Parameters: []callgraph.FunctionParameter{{Type: "byte[]"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "HashBuilder", Name: "addSalt#1$String"},
+			FilePath:   "HashBuilder.java",
+			StartLine:  32,
+			ReturnType: "com.password4j.HashBuilder",
+			Parameters: []callgraph.FunctionParameter{{Type: "java.lang.String"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "com.password4j", Type: "Hash", Name: "getResult#0"},
+			FilePath:   "Hash.java",
+			StartLine:  8,
+			ReturnType: "java.lang.String",
+		},
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "HashBuilder.java",
+		Language: "java",
+		CryptographicAssets: []entities.CryptographicAsset{{
+			FindingID: "password4j-bcrypt",
+			StartLine: 40,
+			EndLine:   40,
+			Match:     "withBcrypt()",
+			Rules:     []entities.RuleInfo{{ID: engine.SyntheticEntryPointRuleID}},
+			Metadata:  map[string]string{"api": "com.password4j.HashBuilder.withBcrypt"},
+		}},
+	}}}
+
+	semanticCatalog := func(t *testing.T, order []int) []string {
+		t.Helper()
+		graph := &callgraph.CallGraph{Functions: make(map[string]*callgraph.FunctionDecl, len(order))}
+		for _, index := range order {
+			decl := declarations[index]
+			graph.Functions[decl.ID.String()] = decl
+		}
+		payload := BuildGraphFragmentExport(&engine.DepScanResult{
+			Report: report, CallGraph: graph, Ecosystem: "java",
+		})
+		catalogIDs := make(map[string]struct{}, len(payload.SupportingCalls))
+		got := make([]string, 0, len(payload.SupportingCalls))
+		for _, supporting := range payload.SupportingCalls {
+			catalogIDs[supporting.SupportingID] = struct{}{}
+			got = append(got, supporting.CanonicalSignature)
+		}
+		if len(payload.CryptoAnnotations) != 1 {
+			t.Fatalf("crypto annotations = %d, want 1", len(payload.CryptoAnnotations))
+		}
+		for _, supportingID := range payload.CryptoAnnotations[0].SupportingCallIDs {
+			if _, ok := catalogIDs[supportingID]; !ok {
+				t.Fatalf("supporting call reference %q does not resolve in exported catalog", supportingID)
+			}
+		}
+		if len(payload.CryptoAnnotations[0].SupportingCallIDs) != len(payload.SupportingCalls) {
+			t.Fatalf("supporting call references = %d, catalog = %d", len(payload.CryptoAnnotations[0].SupportingCallIDs), len(payload.SupportingCalls))
+		}
+		sort.Strings(got)
+		return got
+	}
+
+	want := []string{
+		"com.password4j.Hash.getResult(): java.lang.String",
+		"com.password4j.HashBuilder.addRandomSalt(): com.password4j.HashBuilder",
+		"com.password4j.HashBuilder.addRandomSalt(int): com.password4j.HashBuilder",
+		"com.password4j.HashBuilder.addSalt(byte[]): com.password4j.HashBuilder",
+		"com.password4j.HashBuilder.addSalt(java.lang.String): com.password4j.HashBuilder",
+		"com.password4j.Password.hash(byte[]): com.password4j.HashBuilder",
+		"com.password4j.Password.hash(java.lang.CharSequence): com.password4j.HashBuilder",
+	}
+	sort.Strings(want)
+	tests := []struct {
+		name  string
+		order []int
+	}{
+		{name: "forward", order: []int{0, 1, 2, 3, 4, 5, 6}},
+		{name: "reverse", order: []int{6, 5, 4, 3, 2, 1, 0}},
+		{name: "repeated", order: []int{0, 1, 2, 3, 4, 5, 6}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := semanticCatalog(t, tt.order); !reflect.DeepEqual(got, want) {
+				t.Fatalf("semantic catalog = %v, want %v", got, want)
+			}
+		})
+	}
+}
 
 func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
 	t.Parallel()

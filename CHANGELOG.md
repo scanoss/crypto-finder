@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner failure messages now explain documented semgrep/opengrep exit codes (`opengrep execution failed with exit code 7 (rule configuration contains no valid rules)`) and attach a sanitized stderr tail (ANSI-stripped, single line, capped on UTF-8 rune boundaries) to logs and error details; the failure debug log records rule configs + target instead of dumping the full command line. (#112)
 
 ### Fixed
+- Supporting-call catalogs now preserve every callable overload deterministically instead of selecting one by traversal order. (#131)
 - Stitched graph-fragment callgraph exports now retain parameter roles on supporting calls. (#130)
 - Concurrent scans sharing the default rules cache no longer expose partial metadata or lose in-flight filtered rule files when another process refreshes the cache. (#128)
 - Rule files with zero rules (`rules: []`) are excluded from language filtering — previously treated as "unknown language", they always survived the filter and could become the sole config passed to opengrep, which exits with code 7 on an empty ruleset and hard-failed the whole scan. (#112)
