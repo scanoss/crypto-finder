@@ -952,6 +952,7 @@ func exportCryptoCall(cc *CryptoCall) *ExportCryptoCall {
 		DisplaySymbol:      cc.DisplaySymbol,
 		Aliases:            append([]string(nil), cc.Aliases...),
 		Line:               cc.Line,
+		ParameterRoles:     exportParameterRoles(cc.ParameterRoles),
 	}
 	for i := range cc.Parameters {
 		ec.Parameters = append(ec.Parameters, exportParameter(cc.Parameters[i]))
