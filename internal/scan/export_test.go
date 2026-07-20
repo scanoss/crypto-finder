@@ -20,6 +20,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -535,7 +537,7 @@ func TestBuildCallGraphExport_OperationContractExportsSupportingCallOnly(t *test
 	ctx := &exportBuildContext{
 		graph:                   graph,
 		kb:                      kb,
-		declIndex:               map[string]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": processBlock},
+		declIndex:               map[string][]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": {processBlock}},
 		containingFunctionCache: make(map[string]cachedContainingFunction),
 		callChainCache:          make(map[string][][]callGraphChainNode),
 		callChainRemainingUses:  make(map[string]int),
@@ -643,7 +645,7 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 			},
 			Hierarchy: map[string][]string{"pkg.Builder": {"builtins.object"}},
 		},
-		declIndex: map[string]*callgraph.FunctionDecl{"pkg.Builder.configure": contractDecl},
+		declIndex: map[string][]*callgraph.FunctionDecl{"pkg.Builder.configure": {contractDecl}},
 	}
 	asset := entities.CryptographicAsset{
 		StartLine: 12,
@@ -663,6 +665,113 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 	}
 	if got[1].FunctionName != "pkg.Svc.run" {
 		t.Fatalf("structural function = %q, want pkg.Svc.run", got[1].FunctionName)
+	}
+}
+
+func TestDeriveContractSupportingCalls_PreservesOverloadsRegardlessOfInsertionOrder(t *testing.T) {
+	t.Parallel()
+
+	declarations := []*callgraph.FunctionDecl{
+		{
+			ID:         callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "configure#0"},
+			FilePath:   "Builder.java",
+			StartLine:  10,
+			ReturnType: "pkg.Builder",
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "configure#1$int"},
+			FilePath:   "Builder.java",
+			StartLine:  14,
+			ReturnType: "pkg.Builder",
+			Parameters: []callgraph.FunctionParameter{{Type: "int"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "salt#1$byte[]"},
+			FilePath:   "Builder.java",
+			StartLine:  18,
+			ReturnType: "pkg.Builder",
+			Parameters: []callgraph.FunctionParameter{{Type: "byte[]"}},
+		},
+		{
+			ID:         callgraph.FunctionID{Package: "pkg", Type: "Builder", Name: "salt#1$String"},
+			FilePath:   "Builder.java",
+			StartLine:  22,
+			ReturnType: "pkg.Builder",
+			Parameters: []callgraph.FunctionParameter{{Type: "java.lang.String"}},
+		},
+	}
+	kb := &contracts.KnowledgeBase{
+		Contracts: map[string][]contracts.Contract{
+			"pkg.Builder.configure#0": {{
+				Method: "pkg.Builder.configure", Arity: 0,
+				Return: contracts.ContractReturn{Type: "pkg.Builder", Confidence: "high"}, Role: "config",
+			}},
+			"pkg.Builder.configure#1": {{
+				Method: "pkg.Builder.configure", Arity: 1,
+				Return: contracts.ContractReturn{Type: "pkg.Builder", Confidence: "high"}, Role: "config",
+			}},
+			"pkg.Builder.salt#1": {{
+				Method: "pkg.Builder.salt", Arity: 1,
+				Return: contracts.ContractReturn{Type: "pkg.Builder", Confidence: "high"}, Role: "config",
+			}},
+			"pkg.Builder.finish#0": {{
+				Method: "pkg.Builder.finish", Arity: 0,
+				Return: contracts.ContractReturn{Type: "pkg.Result", Confidence: "high"},
+			}},
+		},
+		Hierarchy: map[string][]string{
+			"pkg.Builder": {"java.lang.Object"},
+			"pkg.Result":  {"java.lang.Object"},
+		},
+	}
+	asset := entities.CryptographicAsset{Metadata: map[string]string{"api": "pkg.Builder.finish"}}
+
+	canonicalSet := func(t *testing.T, order []int) []string {
+		t.Helper()
+		graph := &callgraph.CallGraph{Functions: make(map[string]*callgraph.FunctionDecl, len(order))}
+		for _, index := range order {
+			decl := declarations[index]
+			graph.Functions[decl.ID.String()] = decl
+		}
+		ctx := newExportBuildContext(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+		ctx.kb = kb
+		calls := deriveContractSupportingCalls(ctx, asset)
+		catalog := make(map[string]struct{}, len(calls))
+		for _, call := range dedupSupportingCalls(calls) {
+			catalog[call.SupportingID] = struct{}{}
+		}
+		for _, supportingID := range supportingCallIDsOf(calls) {
+			if _, ok := catalog[supportingID]; !ok {
+				t.Fatalf("supporting call reference %q does not resolve in catalog", supportingID)
+			}
+		}
+		got := make([]string, 0, len(calls))
+		for i := range calls {
+			got = append(got, calls[i].CanonicalSignature)
+		}
+		sort.Strings(got)
+		return got
+	}
+
+	want := []string{
+		"pkg.Builder.configure(): pkg.Builder",
+		"pkg.Builder.configure(int): pkg.Builder",
+		"pkg.Builder.salt(byte[]): pkg.Builder",
+		"pkg.Builder.salt(java.lang.String): pkg.Builder",
+	}
+	tests := []struct {
+		name  string
+		order []int
+	}{
+		{name: "forward insertion", order: []int{0, 1, 2, 3}},
+		{name: "reverse insertion", order: []int{3, 2, 1, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canonicalSet(t, tt.order); !reflect.DeepEqual(got, want) {
+				t.Fatalf("canonical signatures = %v, want %v", got, want)
+			}
+		})
 	}
 }
 

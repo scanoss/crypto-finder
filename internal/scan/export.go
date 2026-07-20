@@ -52,7 +52,7 @@ type exportBuildContext struct {
 	// supporting calls (fluent lifecycle methods) to synthesized terminal entry
 	// points. nil for ecosystems with no contracts.
 	kb            *contracts.KnowledgeBase
-	declIndex     map[string]*callgraph.FunctionDecl        // base FQN → definition
+	declIndex     map[string][]*callgraph.FunctionDecl      // base FQN → overloads
 	declsByMethod map[string][]operationContractDeclaration // method name → definitions
 	// callsBySignature caches, per caller FunctionID key, an index of that
 	// caller's FunctionCalls grouped by the (Package, Type, BaseFunctionName)
@@ -993,16 +993,22 @@ func (ctx *exportBuildContext) operationContractDeclarations(c contracts.Contrac
 		out = append(out, candidate)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].declFQN < out[j].declFQN
+		if out[i].declFQN != out[j].declFQN {
+			return out[i].declFQN < out[j].declFQN
+		}
+		return out[i].decl.ID.String() < out[j].decl.ID.String()
 	})
 	return out
 }
 
 func (ctx *exportBuildContext) operationContractDeclarationCandidates(method string) []operationContractDeclaration {
 	out := make([]operationContractDeclaration, 0, 1)
-	for declFQN, decl := range ctx.declIndex {
+	for declFQN, declarations := range ctx.declIndex {
 		_, declMethod := splitFunctionName(declFQN)
-		if declMethod == method {
+		if declMethod != method {
+			continue
+		}
+		for _, decl := range declarations {
 			out = append(out, operationContractDeclaration{declFQN: declFQN, decl: decl})
 		}
 	}
@@ -1017,7 +1023,15 @@ func functionDeclArityMatches(decl *callgraph.FunctionDecl, want int) bool {
 	if i < 0 {
 		return true
 	}
-	got, err := strconv.Atoi(decl.ID.Name[i+1:])
+	suffix := decl.ID.Name[i+1:]
+	digits := 0
+	for digits < len(suffix) && suffix[digits] >= '0' && suffix[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return true
+	}
+	got, err := strconv.Atoi(suffix[:digits])
 	return err != nil || got == want
 }
 
@@ -1089,13 +1103,7 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 			Msg("failed to load embedded callgraph contracts")
 	}
 	if result.CallGraph != nil {
-		// declIndex is keyed by base FQN only (no arity/overload suffix), so the
-		// first encountered overload for a base FQN wins. deriveContractSupportingCalls
-		// therefore resolves contract methods by base FQN to whichever overload was
-		// indexed first; exact overload matching is not supported by this index.
-		// Future overload-aware lookup should store []*callgraph.FunctionDecl per
-		// base FQN instead.
-		ctx.declIndex = make(map[string]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
+		ctx.declIndex = make(map[string][]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
 		ctx.declsByMethod = make(map[string][]operationContractDeclaration)
 		for _, fn := range result.CallGraph.Functions {
 			if fqn := exportFunctionFQN(fn.ID); fqn != "" {
@@ -1104,10 +1112,22 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 					declFQN: fqn,
 					decl:    fn,
 				})
-				if _, exists := ctx.declIndex[fqn]; !exists {
-					ctx.declIndex[fqn] = fn
-				}
+				ctx.declIndex[fqn] = append(ctx.declIndex[fqn], fn)
 			}
+		}
+		for fqn := range ctx.declIndex {
+			sort.Slice(ctx.declIndex[fqn], func(i, j int) bool {
+				return ctx.declIndex[fqn][i].ID.String() < ctx.declIndex[fqn][j].ID.String()
+			})
+		}
+		for method := range ctx.declsByMethod {
+			sort.Slice(ctx.declsByMethod[method], func(i, j int) bool {
+				left, right := ctx.declsByMethod[method][i], ctx.declsByMethod[method][j]
+				if left.declFQN != right.declFQN {
+					return left.declFQN < right.declFQN
+				}
+				return left.decl.ID.String() < right.decl.ID.String()
+			})
 		}
 	}
 	return ctx
@@ -1329,15 +1349,22 @@ func (ctx *exportBuildContext) appendContractSupportingCall(
 	if c.Role == string(contracts.RoleOperation) {
 		return ctx.appendOperationSupportingCalls(out, seen, c, builderType, returnType)
 	}
-	if _, dup := seen[c.Method]; dup {
-		return out
+	for _, decl := range ctx.declIndex[c.Method] {
+		if !functionDeclArityMatches(decl, c.Arity) {
+			continue
+		}
+		call := buildContractSupportingCall(ctx, c, decl)
+		key := "signature:" + call.CanonicalSignature
+		if call.CanonicalSignature == "" {
+			key = "function:" + call.FunctionKey
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, call)
 	}
-	decl := ctx.declIndex[c.Method]
-	if decl == nil {
-		return out
-	}
-	seen[c.Method] = struct{}{}
-	return append(out, buildContractSupportingCall(ctx, c, decl))
+	return out
 }
 
 func (ctx *exportBuildContext) appendOperationSupportingCalls(
@@ -1348,7 +1375,7 @@ func (ctx *exportBuildContext) appendOperationSupportingCalls(
 	returnType string,
 ) []callGraphSupportingCall {
 	for _, match := range ctx.operationSupportingDeclarations(c, builderType, returnType) {
-		key := match.decl.ID.String()
+		key := "function:" + match.decl.ID.String()
 		if _, dup := seen[key]; dup {
 			continue
 		}
