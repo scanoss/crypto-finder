@@ -183,7 +183,7 @@ type FunctionDecl struct {
 	OwnerVisibility string
 	Parameters      []FunctionParameter
 	Calls           []FunctionCall
-	// ReturnSources traces where return values originate; populated by parsers (v1: Java only).
+	// ReturnSources traces where return values originate when the parser supports it.
 	ReturnSources []SourceNode
 	// InferredReturn is the result of the post-build inference pass; nil when no inference fires.
 	InferredReturn *InferredReturn

@@ -15,6 +15,7 @@ import (
 const (
 	rustNodeCallExpression      = "call_expression"
 	rustNodeExpressionStatement = "expression_statement"
+	rustNodeFieldExpression     = "field_expression"
 	rustNodeFunctionItem        = "function_item"
 )
 

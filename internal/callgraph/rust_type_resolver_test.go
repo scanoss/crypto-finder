@@ -23,7 +23,7 @@ ecosystem: rust
 library:
   name: test-rust
 contracts:
-  - method: ring::aead::LessSafeKey::new
+  - method: ring::aead::LessSafeKey.new
     arity: 1
     return:
       type: ring::aead::LessSafeKey

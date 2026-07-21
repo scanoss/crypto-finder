@@ -17,6 +17,7 @@ const (
 	cNodeFunctionDefinition = "function_definition"
 	cNodeIdentifier         = "identifier"
 	cNodeParameterList      = "parameter_list"
+	cNodeReturnStatement    = "return_statement"
 )
 
 // CParser extracts C function declarations, calls, and include paths.
@@ -150,6 +151,7 @@ func (p *CParser) parseFunction(node *sitter.Node, src []byte, filePath, package
 		Parameters:   cParameters(declarator, src),
 	}
 	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
+	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
 	return decl
 }
 
@@ -292,6 +294,54 @@ func cCallArguments(node *sitter.Node, src []byte) []string {
 		return nil
 	}
 	return parseArgumentsFromDelimitedContent(arguments.Content(src))
+}
+
+func (p *CParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) []SourceNode {
+	var sources []SourceNode
+	p.walkReturnSources(body, src, filePath, packagePath, staticFunctions, &sources)
+	return sources
+}
+
+func (p *CParser) walkReturnSources(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, sources *[]SourceNode) {
+	if node.Type() == cNodeReturnStatement {
+		if expr := cReturnExpression(node); expr != nil {
+			if source, ok := p.cReturnSource(expr, src, filePath, packagePath, staticFunctions); ok {
+				*sources = append(*sources, source)
+			}
+		}
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkReturnSources(node.Child(i), src, filePath, packagePath, staticFunctions, sources)
+	}
+}
+
+func cReturnExpression(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.IsNamed() {
+			return child
+		}
+	}
+	return nil
+}
+
+func (p *CParser) cReturnSource(expr *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) (SourceNode, bool) {
+	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
+	switch expr.Type() {
+	case cNodeCallExpression:
+		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions)
+		if call == nil {
+			return SourceNode{}, false
+		}
+		callee := call.Callee
+		return SourceNode{Type: "CALL_RESULT", CallTarget: &callee, Location: location}, true
+	case cNodeIdentifier:
+		return SourceNode{Type: "VARIABLE", Name: expr.Content(src), Location: location}, true
+	case "field_expression":
+		return SourceNode{Type: "FIELD", Name: expr.Content(src), Location: location}, true
+	}
+	return SourceNode{}, false
 }
 
 // SkipDirs returns build and dependency directories excluded from C traversal.
