@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- C++ callgraph builds now load embedded schema-v2 contract knowledge bases. (#95)
 - C++ callgraph builds now populate namespace-qualified return sources and select the C++ contract type resolver. (#94)
 - C callgraph builds now load embedded schema-v2 contract knowledge bases. (#89)
 - C callgraph builds now select the C contract type resolver; pointer-returning functions can use contract inference when C knowledge bases are embedded. (#88)
