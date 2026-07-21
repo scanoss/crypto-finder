@@ -889,6 +889,52 @@ func TestBuildDerivedSupportingCall_CategoryFromKB(t *testing.T) {
 	}
 }
 
+func TestContractMatchesForCall_CGlobalLinkage(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: c
+library:
+  name: test-c
+contracts:
+  - method: EVP_EncryptInit_ex
+    arity: 5
+    return:
+      type: int
+      confidence: high
+    role: config
+`))
+	if err != nil {
+		t.Fatalf("load test KB: %v", err)
+	}
+	localID := callgraph.FunctionID{Package: "app", Name: "EVP_EncryptInit_ex", Linkage: callgraph.LinkageExternal}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			localID.String(): {ID: localID},
+		}},
+		kb: kb,
+	}
+
+	tests := []struct {
+		name string
+		id   callgraph.FunctionID
+		want int
+	}{
+		{name: "external unresolved", id: callgraph.FunctionID{Package: "app", Name: "EVP_EncryptInit_ex", Linkage: callgraph.LinkageExternal}, want: 0},
+		{name: "static", id: callgraph.FunctionID{Package: "app/file.c", Name: "EVP_EncryptInit_ex", Linkage: callgraph.LinkageInternal}, want: 0},
+		{name: "external from another package", id: callgraph.FunctionID{Package: "other", Name: "EVP_EncryptInit_ex", Linkage: callgraph.LinkageExternal}, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := &callgraph.FunctionCall{Callee: tt.id}
+			if got := contractMatchesForCall(ctx, call, 5); len(got) != tt.want {
+				t.Fatalf("matches = %#v, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized verifies the
 // negative scenario from the spec: a callee absent from the KB leaves
 // support.Category empty — no structural guessing.

@@ -141,7 +141,7 @@ func (p *CParser) parseFunction(node *sitter.Node, src []byte, filePath, package
 	}
 
 	decl := &FunctionDecl{
-		ID:           FunctionID{Package: cFunctionPackage(packagePath, filePath, name, staticFunctions), Name: name},
+		ID:           cFunctionID(packagePath, filePath, name, staticFunctions),
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
@@ -154,6 +154,18 @@ func (p *CParser) parseFunction(node *sitter.Node, src []byte, filePath, package
 	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
 	return decl
+}
+
+func cFunctionID(packagePath, filePath, name string, staticFunctions map[string]bool) FunctionID {
+	linkage := LinkageExternal
+	if staticFunctions[name] {
+		linkage = LinkageInternal
+	}
+	return FunctionID{
+		Package: cFunctionPackage(packagePath, filePath, name, staticFunctions),
+		Name:    name,
+		Linkage: linkage,
+	}
 }
 
 func cFunctionReturnType(node, declarator *sitter.Node, src []byte) string {
@@ -264,8 +276,7 @@ func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath
 
 	switch function.Type() {
 	case cNodeIdentifier:
-		call.Callee.Name = function.Content(src)
-		call.Callee.Package = cFunctionPackage(packagePath, filePath, call.Callee.Name, staticFunctions)
+		call.Callee = cFunctionID(packagePath, filePath, function.Content(src), staticFunctions)
 	case fieldExpressionNode:
 		field := function.ChildByFieldName("field")
 		argument := function.ChildByFieldName("argument")

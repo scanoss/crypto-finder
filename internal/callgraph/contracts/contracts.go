@@ -157,8 +157,6 @@ func (kb *KnowledgeBase) ContractsFor(method string, arity int) []Contract {
 
 // ContractsForTolerant returns contracts for the given method FQN and arity with
 // ecosystem-aware matching:
-//   - For C KBs (kb.Ecosystem == "c"): first tries an exact method+arity match;
-//     if absent, retries the global function name without the project package.
 //   - For Python KBs (kb.Ecosystem == "python"): first tries an exact-arity
 //     match; if no contracts are found, falls back to any arity (name-only
 //     match). When multiple candidates with different arities exist in the
@@ -175,13 +173,6 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 	if exact := kb.ContractsFor(method, arity); len(exact) > 0 {
 		return exact
 	}
-	if kb.Ecosystem == ecosystemC {
-		if idx := strings.LastIndex(method, "."); idx >= 0 {
-			return kb.ContractsFor(method[idx+1:], arity)
-		}
-		return nil
-	}
-
 	// Non-Python: no fallback — return nil immediately.
 	if kb.Ecosystem != ecosystemPython {
 		return nil
@@ -221,6 +212,22 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 		return candidates[i].arity < candidates[j].arity
 	})
 	return candidates[0].contract
+}
+
+// ContractsForCFunction matches a C callable with linkage-aware fallback.
+// Exact qualification always wins. Bare-symbol lookup is allowed only when the
+// caller has established external linkage and absence of a local declaration.
+func (kb *KnowledgeBase) ContractsForCFunction(method string, arity int, externalGlobal bool) []Contract {
+	if exact := kb.ContractsFor(method, arity); len(exact) > 0 {
+		return exact
+	}
+	if kb.Ecosystem != ecosystemC || !externalGlobal {
+		return nil
+	}
+	if idx := strings.LastIndex(method, "."); idx >= 0 {
+		return kb.ContractsFor(method[idx+1:], arity)
+	}
+	return nil
 }
 
 // yamlKB is the YAML-level representation used for unmarshalling.

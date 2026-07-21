@@ -878,7 +878,7 @@ contracts:
 	if err != nil {
 		t.Fatalf("load test KB: %v", err)
 	}
-	callee := FunctionID{Package: "example/crypto", Name: "EVP_CIPHER_CTX_new#0"}
+	callee := FunctionID{Package: "example/crypto", Name: "EVP_CIPHER_CTX_new#0", Linkage: LinkageExternal}
 	fn := &FunctionDecl{
 		ID:            FunctionID{Package: "example/crypto", Name: "factory"},
 		ReturnType:    "EVP_CIPHER_CTX *",
@@ -890,6 +890,54 @@ contracts:
 	}
 	if fn.InferredReturn == nil || fn.InferredReturn.Type != "EVP_CIPHER_CTX*" || fn.InferredReturn.Origin != OriginKBDirect {
 		t.Fatalf("InferredReturn = %#v, want KB-direct EVP_CIPHER_CTX*", fn.InferredReturn)
+	}
+}
+
+func TestInferReturnTypes_CGlobalContractDoesNotMatchLocalSymbol(t *testing.T) {
+	kb, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: c
+library:
+  name: test-c
+contracts:
+  - method: EVP_CIPHER_CTX_new
+    arity: 0
+    return:
+      type: EVP_CIPHER_CTX*
+      confidence: high
+`))
+	if err != nil {
+		t.Fatalf("load test KB: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		linkage Linkage
+		local   bool
+	}{
+		{name: "static", linkage: LinkageInternal},
+		{name: "project global", linkage: LinkageExternal, local: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			callee := FunctionID{Package: "example/crypto", Name: "EVP_CIPHER_CTX_new#0", Linkage: tt.linkage}
+			wrapper := &FunctionDecl{
+				ID:            FunctionID{Package: "example/crypto", Name: "wrapper"},
+				ReturnType:    "EVP_CIPHER_CTX*",
+				ReturnSources: []SourceNode{{Type: sourceNodeCallResult, CallTarget: &callee}},
+			}
+			graph := buildTestCallGraph(wrapper)
+			if tt.local {
+				localID := FunctionID{Package: "example/crypto", Name: "EVP_CIPHER_CTX_new", Linkage: tt.linkage}
+				graph.Functions[localID.String()] = &FunctionDecl{ID: localID, ReturnType: "EVP_CIPHER_CTX*"}
+			}
+
+			if err := InferReturnTypes(graph, kb); err != nil {
+				t.Fatalf("InferReturnTypes: %v", err)
+			}
+			if wrapper.InferredReturn != nil {
+				t.Fatalf("InferredReturn = %#v, want nil for local symbol", wrapper.InferredReturn)
+			}
+		})
 	}
 }
 

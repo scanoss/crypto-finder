@@ -7,7 +7,7 @@
 
 // Package contracts_test covers ecosystem-aware contract lookup fallbacks.
 //
-// Python lookup is arity-tolerant; C lookup falls back to a bare global symbol.
+// Python lookup is arity-tolerant; external C lookup falls back to a bare global symbol.
 // Exact matches win, and other ecosystems keep exact method+arity semantics.
 // See engram decision #1706 for rationale.
 package contracts_test
@@ -66,17 +66,20 @@ contracts:
       confidence: high
 `
 
-func TestContractsForTolerant_CGlobalSymbolIgnoresProjectPackage(t *testing.T) {
+func TestContractsForCFunction_GlobalSymbolIgnoresProjectPackage(t *testing.T) {
 	t.Parallel()
 
 	kb := mustLoad(t, cYAML)
 	for _, method := range []string{"example/crypto.EVP_CIPHER_CTX_new", "other.EVP_CIPHER_CTX_new"} {
-		if got := kb.ContractsForTolerant(method, 0); len(got) != 1 || got[0].Method != "EVP_CIPHER_CTX_new" {
-			t.Fatalf("ContractsForTolerant(%q, 0) = %#v, want bare C symbol contract", method, got)
+		if got := kb.ContractsForCFunction(method, 0, true); len(got) != 1 || got[0].Method != "EVP_CIPHER_CTX_new" {
+			t.Fatalf("ContractsForCFunction(%q, 0, true) = %#v, want bare C symbol contract", method, got)
 		}
 	}
-	if got := kb.ContractsForTolerant("app.EVP_CIPHER_CTX_new", 0); len(got) != 1 || got[0].Return.Type != "APP_CIPHER_CTX*" {
+	if got := kb.ContractsForCFunction("app.EVP_CIPHER_CTX_new", 0, true); len(got) != 1 || got[0].Return.Type != "APP_CIPHER_CTX*" {
 		t.Fatalf("exact C contract = %#v, want APP_CIPHER_CTX*", got)
+	}
+	if got := kb.ContractsForCFunction("other.EVP_CIPHER_CTX_new", 0, false); len(got) != 0 {
+		t.Fatalf("local C contract fallback = %#v, want none", got)
 	}
 }
 

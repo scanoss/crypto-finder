@@ -39,7 +39,7 @@ EVP_CIPHER_CTX *build_ctx(void) {
 		t.Fatalf("functions = %d, want 1", len(analysis.Functions))
 	}
 	fn := analysis.Functions[0]
-	if fn.ID != (FunctionID{Package: "example/crypto", Name: "build_ctx"}) {
+	if fn.ID != (FunctionID{Package: "example/crypto", Name: "build_ctx", Linkage: LinkageExternal}) {
 		t.Fatalf("function ID = %#v", fn.ID)
 	}
 
@@ -54,6 +54,9 @@ EVP_CIPHER_CTX *build_ctx(void) {
 	}
 	if got := calls["EVP_CIPHER_CTX_new"].AssignedVar; got != "ctx" {
 		t.Errorf("factory AssignedVar = %q, want ctx", got)
+	}
+	if got := calls["EVP_CIPHER_CTX_new"].Callee.Linkage; got != LinkageExternal {
+		t.Errorf("factory linkage = %q, want external", got)
 	}
 	outer := calls["EVP_EncryptInit_ex"]
 	if outer.Line != 6 || outer.StartCol != 5 || outer.EndCol != 65 {
@@ -98,8 +101,14 @@ func TestCParser_StaticFunctionsAreTranslationUnitScoped(t *testing.T) {
 	callPackages := make(map[string]string)
 	for _, analysis := range analyses {
 		for _, fn := range analysis.Functions {
+			if fn.ID.Name == "helper" && fn.ID.Linkage != LinkageInternal {
+				t.Errorf("static helper linkage = %q, want internal", fn.ID.Linkage)
+			}
 			if fn.ID.Name != "helper" && len(fn.Calls) == 1 {
 				callPackages[fn.ID.Name] = fn.Calls[0].Callee.Package
+				if fn.Calls[0].Callee.Linkage != LinkageInternal {
+					t.Errorf("static helper call linkage = %q, want internal", fn.Calls[0].Callee.Linkage)
+				}
 			}
 		}
 	}
@@ -151,7 +160,7 @@ void no_return(void) {
 	if factory.ReturnType != "EVP_CIPHER_CTX*" {
 		t.Fatalf("factory ReturnType = %q, want EVP_CIPHER_CTX*", factory.ReturnType)
 	}
-	if got := factory.ReturnSources; len(got) != 1 || got[0].Type != "CALL_RESULT" || got[0].CallTarget == nil || got[0].CallTarget.Name != "EVP_CIPHER_CTX_new#0" || got[0].CallTarget.Package != "example/crypto" {
+	if got := factory.ReturnSources; len(got) != 1 || got[0].Type != "CALL_RESULT" || got[0].CallTarget == nil || got[0].CallTarget.Name != "EVP_CIPHER_CTX_new#0" || got[0].CallTarget.Package != "example/crypto" || got[0].CallTarget.Linkage != LinkageExternal {
 		t.Fatalf("factory ReturnSources = %#v, want CALL_RESULT example/crypto.EVP_CIPHER_CTX_new#0", got)
 	}
 

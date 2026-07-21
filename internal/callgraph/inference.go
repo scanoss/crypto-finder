@@ -658,8 +658,9 @@ func candidateFromCallResult(
 	// C alone retries a bare global symbol; other ecosystems preserve exact lookup.
 	methodFQN, arity := splitMethodArity(ct)
 	ctrs := kb.ContractsFor(methodFQN, arity)
+	callee := callResultCallee(graph, ct, arity)
 	if len(ctrs) == 0 && kb.Ecosystem == "c" {
-		ctrs = kb.ContractsForTolerant(methodFQN, arity)
+		ctrs = kb.ContractsForCFunction(methodFQN, arity, ct.Linkage == LinkageExternal && callee == nil)
 	}
 
 	if len(ctrs) > 0 {
@@ -667,14 +668,6 @@ func candidateFromCallResult(
 	}
 
 	// Propagation: callee has an inferred type already.
-	callee := graph.Functions[ct.String()]
-	if callee == nil && arity >= 0 {
-		// C return sources carry arity for contract lookup, while C declarations
-		// keep their source identity because C has no function overloading.
-		undecorated := *ct
-		undecorated.Name = BaseFunctionName(undecorated.Name)
-		callee = graph.Functions[undecorated.String()]
-	}
 	if callee != nil && callee.InferredReturn != nil {
 		ir := callee.InferredReturn
 		if ir.Origin != OriginJoinFailed {
@@ -687,6 +680,18 @@ func candidateFromCallResult(
 	}
 
 	return candidate{}, false
+}
+
+func callResultCallee(graph *CallGraph, target *FunctionID, arity int) *FunctionDecl {
+	if callee := graph.Functions[target.String()]; callee != nil {
+		return callee
+	}
+	if arity < 0 {
+		return nil
+	}
+	undecorated := *target
+	undecorated.Name = BaseFunctionName(undecorated.Name)
+	return graph.Functions[undecorated.String()]
 }
 
 // candidateFromKBContracts resolves KB contracts for a CALL_RESULT source.
