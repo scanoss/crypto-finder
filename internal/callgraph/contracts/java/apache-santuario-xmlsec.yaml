@@ -1,0 +1,79 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: apache-santuario-xmlsec
+  coordinates:
+    - "org.apache.santuario:xmlsec"
+  version_range: "4.0.3"
+  description: "Apache Santuario XMLCipher factory and encryption lifecycle contracts"
+
+contracts:
+  - method: org.apache.xml.security.encryption.XMLCipher.getInstance
+    arity: 0
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+  - method: org.apache.xml.security.encryption.XMLCipher.getInstance
+    arity: 1
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: transformation
+        role: operation-determining
+        contributes: { property: transformation, derivation: argument_value }
+  # XMLCipher has two arity-2 getInstance overloads. Their common return and
+  # factory role are stable, while the selector position is not.
+  - method: org.apache.xml.security.encryption.XMLCipher.getInstance
+    arity: 2
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+  - method: org.apache.xml.security.encryption.XMLCipher.getInstance
+    arity: 3
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: transformation
+        role: operation-determining
+        contributes: { property: transformation, derivation: argument_value }
+  - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
+    arity: 1
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+  - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
+    arity: 2
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: transformation
+        role: operation-determining
+        contributes: { property: transformation, derivation: argument_value }
+  - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
+    arity: 3
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+  - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
+    arity: 4
+    return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
+    role: factory
+  - method: org.apache.xml.security.encryption.XMLCipher.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.xml.security.encryption.XMLCipher.doFinal
+    arity: 2
+    return: { type: org.w3c.dom.Document, confidence: high }
+    role: operation
+  - method: org.apache.xml.security.encryption.XMLCipher.doFinal
+    arity: 3
+    return: { type: org.w3c.dom.Document, confidence: high }
+    role: operation
+
+hierarchy:
+  org.apache.xml.security.encryption.XMLCipher:
+    - java.lang.Object
+  org.w3c.dom.Document:
+    - java.lang.Object
+  java.lang.Object: []
