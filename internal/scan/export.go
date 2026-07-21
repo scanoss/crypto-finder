@@ -932,7 +932,11 @@ func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []
 	if kb == nil || fqn == "" {
 		return nil
 	}
-	for _, contract := range kb.ContractsForTolerant(fqn, arity) {
+	return parameterRolesFromContracts(kb.ContractsForTolerant(fqn, arity))
+}
+
+func parameterRolesFromContracts(matches []contracts.Contract) []callGraphParameterRole {
+	for _, contract := range matches {
 		if len(contract.Parameters) == 0 {
 			continue
 		}
@@ -954,6 +958,24 @@ func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []
 		return out
 	}
 	return nil
+}
+
+func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCall, arity int) []contracts.Contract {
+	if ctx.kb == nil || call == nil {
+		return nil
+	}
+	fqn := fullFunctionName(call.Callee)
+	if ctx.kb.Ecosystem != "c" {
+		return ctx.kb.ContractsForTolerant(fqn, arity)
+	}
+	if exact := ctx.kb.ContractsFor(fqn, arity); len(exact) > 0 {
+		return exact
+	}
+	if ctx.graph == nil {
+		return nil
+	}
+	externalGlobal := call.Callee.Linkage == callgraph.LinkageExternal && ctx.graph.Functions[call.Callee.String()] == nil
+	return ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal)
 }
 
 func flattenReachableSupportingCalls(values map[string]callGraphReachableSupportingCall) []callGraphReachableSupportingCall {
@@ -1494,9 +1516,9 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	// the two derivation paths key on distinct SupportingIDs (call-site line
 	// vs. definition line), already separated by dedupSupportingCalls.
 	if ctx.kb != nil {
-		calleeFQN := fullFunctionName(call.Callee)
 		arity := len(sc.ParameterTypes)
-		for _, contract := range ctx.kb.ContractsForTolerant(calleeFQN, arity) {
+		matches := contractMatchesForCall(ctx, call, arity)
+		for _, contract := range matches {
 			if contract.Role != "" {
 				support.Category = contract.Role
 				break
@@ -1507,7 +1529,7 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		// match above). Flows to the served surface natively, since
 		// fragment_export.go reuses this same builder via
 		// deriveSupportingCallsForFinding.
-		sc.ParameterRoles = parameterRolesFromKB(ctx.kb, calleeFQN, arity)
+		sc.ParameterRoles = parameterRolesFromContracts(matches)
 	}
 	return support
 }

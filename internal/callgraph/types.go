@@ -139,7 +139,19 @@ type FunctionID struct {
 	Type string
 	// Name is the function/method name (e.g., "NewCipher")
 	Name string
+	// Linkage records C symbol linkage; empty for other ecosystems and unknown calls.
+	Linkage Linkage
 }
+
+// Linkage distinguishes externally linked C globals from translation-unit-local symbols.
+type Linkage string
+
+const (
+	// LinkageExternal marks a C symbol visible beyond its translation unit.
+	LinkageExternal Linkage = "external"
+	// LinkageInternal marks a C symbol scoped to one translation unit.
+	LinkageInternal Linkage = "internal"
+)
 
 // String returns a human-readable representation of the function ID.
 // This includes the arity suffix (e.g., "javax.crypto.(Cipher).getInstance#1").
