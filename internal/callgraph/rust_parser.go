@@ -15,6 +15,7 @@ import (
 const (
 	rustNodeCallExpression      = "call_expression"
 	rustNodeExpressionStatement = "expression_statement"
+	rustNodeFieldExpression     = "field_expression"
 	rustNodeFunctionItem        = "function_item"
 )
 
@@ -497,7 +498,7 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 			Line:      line,
 			Arguments: args,
 		}
-	case "field_expression":
+	case rustNodeFieldExpression:
 		// Method call like `self.encrypt(...)` or `obj.method(...)`
 		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, varTypes)
 	}

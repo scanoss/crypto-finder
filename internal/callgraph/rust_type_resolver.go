@@ -3,11 +3,7 @@
 
 package callgraph
 
-import (
-	"strings"
-
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
-)
+import "github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 
 // RustContractTypeResolver applies return types from the Rust contracts KB.
 type RustContractTypeResolver struct {
@@ -49,9 +45,8 @@ func (r *RustContractTypeResolver) ResolveTypes(graph *CallGraph, _ []PackageDir
 }
 
 func rustFunctionFQN(fn *FunctionDecl) string {
-	parts := []string{fn.ID.Package}
 	if fn.ID.Type != "" {
-		parts = append(parts, fn.ID.Type)
+		return fn.ID.Package + "::" + fn.ID.Type + "." + fn.ID.Name
 	}
-	return strings.Join(append(parts, fn.ID.Name), "::")
+	return fn.ID.Package + "::" + fn.ID.Name
 }
