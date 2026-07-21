@@ -107,3 +107,62 @@ func TestCParser_StaticFunctionsAreTranslationUnitScoped(t *testing.T) {
 		t.Fatalf("static helper calls share package %q; want translation-unit-specific identities", callPackages["one"])
 	}
 }
+
+func TestCParser_ReturnSources(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "returns.c")
+	src := `void *direct(void *value) {
+    return value;
+}
+
+EVP_CIPHER_CTX *factory(void) {
+    return EVP_CIPHER_CTX_new();
+}
+
+int unknown(int value) {
+    return value + 1;
+}
+
+void no_return(void) {
+    return;
+}
+`
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := NewCParser().ParseDirectory(dir, "example/crypto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("analyses = %d, want 1", len(analyses))
+	}
+
+	direct := findCFunction(t, analyses[0], "direct")
+	if got := direct.ReturnSources; len(got) != 1 || got[0].Type != "VARIABLE" || got[0].Name != "value" {
+		t.Fatalf("direct ReturnSources = %#v, want VARIABLE value", got)
+	}
+
+	factory := findCFunction(t, analyses[0], "factory")
+	if got := factory.ReturnSources; len(got) != 1 || got[0].Type != "CALL_RESULT" || got[0].CallTarget == nil || got[0].CallTarget.Name != "EVP_CIPHER_CTX_new" || got[0].CallTarget.Package != "example/crypto" {
+		t.Fatalf("factory ReturnSources = %#v, want CALL_RESULT example/crypto.EVP_CIPHER_CTX_new", got)
+	}
+
+	for _, name := range []string{"unknown", "no_return"} {
+		if got := findCFunction(t, analyses[0], name).ReturnSources; len(got) != 0 {
+			t.Errorf("%s ReturnSources = %#v, want none", name, got)
+		}
+	}
+}
+
+func findCFunction(t *testing.T, analysis *FileAnalysis, name string) *FunctionDecl {
+	t.Helper()
+	for i := range analysis.Functions {
+		if analysis.Functions[i].ID.Name == name {
+			return &analysis.Functions[i]
+		}
+	}
+	t.Fatalf("function %q not found", name)
+	return nil
+}
