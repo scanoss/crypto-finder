@@ -1649,8 +1649,7 @@ func looksLikeInvocationExpression(expression string) bool {
 //
 //  2. Column filter (when both asset and call have non-zero columns):
 //     keep candidates whose [StartCol, EndCol) intersects [asset.StartCol,
-//     asset.EndCol) using the half-open test:
-//     c.StartCol < asset.EndCol && asset.StartCol < c.EndCol.
+//     asset.EndCol), then prefer the tightest call span containing the match.
 //     If the filter yields 0 matches, use the full line-only set (never worse).
 //
 //  3. Tie-break to chain ROOT among survivors.

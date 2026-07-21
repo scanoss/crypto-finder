@@ -41,6 +41,7 @@ class Acceptance {
         params.getKey();
         GCMBlockCipher gcm = new GCMBlockCipher();
         gcm.init(true, params);
+        gcm.init(true, new KeyParameter(data));
         gcm.getOutputSize(16);
         AESEngine engine = new AESEngine();
         helper(data, key, 16);

@@ -48,6 +48,8 @@ type acceptanceCase struct {
 
 type acceptanceMatch struct {
 	needle, ruleID, api  string
+	wantSymbol           string
+	wantSignature        string
 	staticProvider       bool
 	runtimeProvider      bool
 	requiresSupport      bool
@@ -77,6 +79,12 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 			pinFile: "pom.xml", pinText: "<version>1.78.1</version>",
 			matches: []acceptanceMatch{
 				{needle: "new KeyParameter(key)", ruleID: "java.acceptance.key-parameter", api: "org.bouncycastle.crypto.params.KeyParameter.<init>", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
+				{
+					needle: "new KeyParameter(data)", ruleID: "java.acceptance.nested-key-parameter",
+					api:           "org.bouncycastle.crypto.modes.GCMBlockCipher.init",
+					wantSymbol:    "org.bouncycastle.crypto.params.KeyParameter.<init>",
+					wantSignature: "org.bouncycastle.crypto.params.KeyParameter.<init>(byte[]): KeyParameter",
+				},
 				{needle: "params.getKey()", ruleID: "java.acceptance.key-output", api: "org.bouncycastle.crypto.params.KeyParameter.getKey", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
 				{needle: "gcm.getOutputSize(16)", ruleID: "java.acceptance.gcm", api: "org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize", requiresSupport: true, supportingCategories: []string{"config"}},
 				{needle: "new AESEngine()", ruleID: "java.acceptance.engine", api: "org.bouncycastle.crypto.engines.AESEngine.<init>", requiresSupport: true, supportingCategories: []string{"operation"}},
@@ -336,6 +344,13 @@ func assertFragmentContract(t *testing.T, tc acceptanceCase, payload *graphfrag.
 		seen++
 		if match.requiresSupport {
 			require.NotEmptyf(t, op.SupportingCallIDs, "finding %s must link its applicable supporting calls", op.RuleID)
+		}
+		if match.wantSymbol != "" {
+			require.NotNil(t, op.MatchedOperation, "finding %s matched operation", op.RuleID)
+			assert.Equal(t, match.wantSymbol, op.MatchedOperation.Symbol, "finding %s matched invocation", op.RuleID)
+			require.NotNil(t, op.CryptoCall, "finding %s crypto call", op.RuleID)
+			assert.Equal(t, match.wantSymbol, op.CryptoCall.FunctionName, "finding %s crypto call identity", op.RuleID)
+			assert.Equal(t, match.wantSignature, op.CryptoCall.CanonicalSignature, "finding %s canonical signature", op.RuleID)
 		}
 		findingCategories := make(map[string]bool)
 		for _, id := range op.SupportingCallIDs {

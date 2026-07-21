@@ -152,7 +152,48 @@ func TestFindCryptoCallNode(t *testing.T) {
 		}
 	})
 
-	t.Run("whole-chain span selects chain ROOT (AssignedVar set)", func(t *testing.T) {
+	t.Run("nested invocation spans select the matched call", func(t *testing.T) {
+		constructor := callgraph.FunctionCall{
+			Callee:   callgraph.FunctionID{Type: "KeyParameter", Name: "<init>#1$byte[]"},
+			Line:     5,
+			StartCol: 20,
+			EndCol:   38,
+			Raw:      "new KeyParameter(key)",
+		}
+		encrypt := callgraph.FunctionCall{
+			Callee:    callgraph.FunctionID{Type: "Cipher", Name: "encrypt#1$KeyParameter"},
+			Line:      5,
+			StartCol:  10,
+			EndCol:    39,
+			Raw:       "cipher.encrypt(new KeyParameter(key))",
+			Arguments: []string{"new KeyParameter(key)"},
+		}
+		fn := &callgraph.FunctionDecl{Calls: []callgraph.FunctionCall{encrypt, constructor}}
+		for _, tt := range []struct {
+			name       string
+			start, end int
+			want       string
+		}{
+			{"nested constructor", 20, 38, "<init>#1$byte[]"},
+			{"enclosing invocation", 10, 39, "encrypt#1$KeyParameter"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				asset := entities.CryptographicAsset{
+					StartLine: 5, EndLine: 5, StartCol: tt.start, EndCol: tt.end,
+					Metadata: map[string]string{"api": "wrong.metadata.Api"},
+				}
+				got := findCryptoCallNode(emptyGraph, fn, asset, 5, 5)
+				if got == nil {
+					t.Fatal("findCryptoCallNode returned nil")
+				}
+				if got.Callee.Name != tt.want {
+					t.Fatalf("selected call = %q, want %q", got.Callee.Name, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("fluent-chain spans preserve the chain ROOT (AssignedVar set)", func(t *testing.T) {
 		// Line 6: a 3-link fluent chain. The root is the one with AssignedVar set.
 		// All three share ChainID "chain-1". Asset spans the entire line [1,50).
 		chainRoot := callgraph.FunctionCall{
@@ -183,20 +224,16 @@ func TestFindCryptoCallNode(t *testing.T) {
 		fn := &callgraph.FunctionDecl{
 			Calls: []callgraph.FunctionCall{chainLink1, chainLink2, chainRoot},
 		}
-		asset := entities.CryptographicAsset{
-			StartLine: 6,
-			EndLine:   6,
-			StartCol:  1,
-			EndCol:    50,
-		}
-
-		got := findCryptoCallNode(emptyGraph, fn, asset, 6, 6)
-		if got == nil {
-			t.Fatal("findCryptoCallNode returned nil, want chainRoot")
-		}
-		if got.AssignedVar != "hash" {
-			t.Errorf("selected call AssignedVar = %q, want %q; Callee = %q",
-				got.AssignedVar, "hash", got.Callee.Name)
+		for _, endCol := range []int{20, 50} {
+			asset := entities.CryptographicAsset{StartLine: 6, EndLine: 6, StartCol: 1, EndCol: endCol}
+			got := findCryptoCallNode(emptyGraph, fn, asset, 6, 6)
+			if got == nil {
+				t.Fatal("findCryptoCallNode returned nil, want chainRoot")
+			}
+			if got.AssignedVar != "hash" {
+				t.Errorf("span [1,%d) selected AssignedVar = %q, want %q; Callee = %q",
+					endCol, got.AssignedVar, "hash", got.Callee.Name)
+			}
 		}
 	})
 
