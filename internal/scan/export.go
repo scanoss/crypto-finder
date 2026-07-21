@@ -31,6 +31,7 @@ const (
 	sourceNodeTypeParameter        = "PARAMETER"
 	sourceNodeTypeValue            = "VALUE"
 	sourceNodeTypeCallResult       = "CALL_RESULT"
+	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
 	callGraphExportMaxDepth        = 32
 	callGraphExportMaxChains       = 128
@@ -1903,7 +1904,7 @@ func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.Functi
 					node.SourceNodes = append(node.SourceNodes, resolveExportSourceNodes(ctx, node.CallTarget, callee.ReturnSources, depth+1)...)
 				}
 			}
-		case "FIELD":
+		case sourceNodeTypeField:
 			// A field's nested PARAMETER provenance may describe constructor
 			// initialization, not the current method's argument list.
 			node.SourceNodes = resolveExportSourceNodes(ctx, nil, node.SourceNodes, depth+1)
@@ -2130,7 +2131,7 @@ func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
 			return "", false
 		}
 		return value, true
-	case "VARIABLE", "FIELD", sourceNodeTypeParameter:
+	case "VARIABLE", sourceNodeTypeField, sourceNodeTypeParameter:
 		return resolveSimpleExportSourceValue(node.SourceNodes)
 	case sourceNodeTypeCallResult:
 		return resolveDirectExportReturnValue(node.SourceNodes)
