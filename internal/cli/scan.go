@@ -58,6 +58,7 @@ const (
 	defaultRulesetVersion = "latest"
 	ecosystemJava         = "java"
 	ecosystemNode         = "node"
+	ecosystemCPP          = "cpp"
 
 	findingsCacheBackendDisk     = "disk"
 	findingsCacheBackendNone     = "none"
@@ -209,6 +210,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 		switch hint {
 		case "c", "go", ecosystemJava, "python", "rust":
 			return hint
+		case ecosystemCPP, "c++":
+			return ecosystemCPP
 		case ecosystemNode, "javascript", "typescript":
 			return ecosystemNode
 		}
@@ -224,6 +227,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	switch filepath.Ext(target) {
 	case ".c", ".h":
 		return "c"
+	case ".cc", ".cp", ".cpp", ".cxx", ".c++", ".hh", ".hpp", ".hxx", ".h++":
+		return ecosystemCPP
 	case ".go":
 		return "go"
 	case ".java":

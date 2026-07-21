@@ -47,6 +47,24 @@ func TestEcosystemFromHints_C(t *testing.T) {
 	}
 }
 
+func TestEcosystemFromHints_CPP(t *testing.T) {
+	for _, hint := range []string{ecosystemCPP, "c++"} {
+		if got := ecosystemFromHints(t.TempDir(), []string{hint}); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%q hint) = %q, want cpp", hint, got)
+		}
+	}
+
+	for _, name := range []string{"crypto.cc", "crypto.cpp", "crypto.cxx", "crypto.hpp"} {
+		filePath := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(filePath, []byte("int main() { return 0; }"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ecosystemFromHints(filePath, nil); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%s file) = %q, want cpp", filepath.Ext(name), got)
+		}
+	}
+}
+
 func TestNewFindingsCache_NoneBackend(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := &config.Config{}

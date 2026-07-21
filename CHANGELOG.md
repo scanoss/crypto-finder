@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- C++ callgraph parsing now recognizes C++ source and header files, include paths, namespace-qualified and receiver calls, assignment targets, and 1-based half-open call columns. (#68)
 - Graph-fragment exports now carry complete canonical target signatures and hierarchy-proven compatible callable signatures, allowing interface-typed dependency calls to join concrete crypto entry points without fabricating call edges. (#136)
 - Java callgraph contracts now model the version-pinned Nimbus JOSE JWE and Spring Security Crypto lifecycles, including factory, operation, output, hierarchy, and key-size parameter-role semantics. (#137)
 - Java callgraph lifecycle contracts now cover Bouncy Castle OpenPGP builders, Tink AEAD operations, and Apache Santuario XMLCipher factories and finalization. (#138)

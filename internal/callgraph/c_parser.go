@@ -249,7 +249,7 @@ func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath
 	case cNodeIdentifier:
 		call.Callee.Name = function.Content(src)
 		call.Callee.Package = cFunctionPackage(packagePath, filePath, call.Callee.Name, staticFunctions)
-	case "field_expression":
+	case fieldExpressionNode:
 		field := function.ChildByFieldName("field")
 		argument := function.ChildByFieldName("argument")
 		if field == nil {

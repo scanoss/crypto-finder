@@ -11,6 +11,8 @@ import (
 
 const constructorMethodName = "<init>"
 
+const fieldExpressionNode = "field_expression"
+
 // clinitMethodName names the synthetic function that represents a Java class's
 // static initialization context — its `static { ... }` blocks and its
 // initialized static `field_declaration` values. Mirrors the JVM `<clinit>`
