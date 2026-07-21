@@ -171,22 +171,23 @@ type GraphFragmentScanMetadata struct {
 // GraphFragmentFunction is one function declaration included in a component's
 // graph-fragment export.
 type GraphFragmentFunction struct {
-	Key                string          `json:"key"`
-	FunctionName       string          `json:"function_name"`
-	CanonicalSignature string          `json:"canonical_signature,omitempty"`
-	Package            string          `json:"package,omitempty"`
-	Type               string          `json:"type,omitempty"`
-	Name               string          `json:"name,omitempty"`
-	FilePath           string          `json:"file_path,omitempty"`
-	StartLine          int             `json:"start_line,omitempty"`
-	EndLine            int             `json:"end_line,omitempty"`
-	ReturnType         string          `json:"return_type,omitempty"`
-	ParameterTypes     []string        `json:"parameter_types,omitempty"`
-	Visibility         string          `json:"visibility,omitempty"`
-	OwnerVisibility    string          `json:"owner_visibility,omitempty"`
-	DisplaySymbol      string          `json:"display_symbol,omitempty"`
-	Aliases            []string        `json:"aliases,omitempty"`
-	InferredReturn     json.RawMessage `json:"-"`
+	Key                           string          `json:"key"`
+	FunctionName                  string          `json:"function_name"`
+	CanonicalSignature            string          `json:"canonical_signature,omitempty"`
+	CompatibleCanonicalSignatures []string        `json:"compatible_canonical_signatures,omitempty"`
+	Package                       string          `json:"package,omitempty"`
+	Type                          string          `json:"type,omitempty"`
+	Name                          string          `json:"name,omitempty"`
+	FilePath                      string          `json:"file_path,omitempty"`
+	StartLine                     int             `json:"start_line,omitempty"`
+	EndLine                       int             `json:"end_line,omitempty"`
+	ReturnType                    string          `json:"return_type,omitempty"`
+	ParameterTypes                []string        `json:"parameter_types,omitempty"`
+	Visibility                    string          `json:"visibility,omitempty"`
+	OwnerVisibility               string          `json:"owner_visibility,omitempty"`
+	DisplaySymbol                 string          `json:"display_symbol,omitempty"`
+	Aliases                       []string        `json:"aliases,omitempty"`
+	InferredReturn                json.RawMessage `json:"-"`
 }
 
 // GraphFragmentCallSite carries the per-edge call-site invocation detail: the
@@ -352,15 +353,16 @@ type GraphFragmentEdge struct {
 // GraphFragmentExternal is one external (cross-component) call edge plus its
 // resolution metadata.
 type GraphFragmentExternal struct {
-	CallerKey          string `json:"caller_key"`
-	TargetKey          string `json:"target_key"`
-	TargetFunctionName string `json:"target_function_name,omitempty"`
-	Raw                string `json:"raw,omitempty"`
-	Line               int    `json:"line,omitempty"`
-	Resolution         string `json:"resolution"`
-	DeclaredType       string `json:"declared_type,omitempty"`
-	MethodName         string `json:"method_name,omitempty"`
-	Arity              int    `json:"arity,omitempty"`
+	CallerKey                string `json:"caller_key"`
+	TargetKey                string `json:"target_key"`
+	TargetFunctionName       string `json:"target_function_name,omitempty"`
+	TargetCanonicalSignature string `json:"target_canonical_signature,omitempty"`
+	Raw                      string `json:"raw,omitempty"`
+	Line                     int    `json:"line,omitempty"`
+	Resolution               string `json:"resolution"`
+	DeclaredType             string `json:"declared_type,omitempty"`
+	MethodName               string `json:"method_name,omitempty"`
+	Arity                    int    `json:"arity,omitempty"`
 	// ReceiverVar/AssignedVar/ChainID carry the call-site object identity (1.4+)
 	// for cache-side object-lifecycle re-derivation. Empty on schema < 1.4.
 	ReceiverVar string `json:"receiver_var,omitempty"`

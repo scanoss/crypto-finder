@@ -151,6 +151,62 @@ func TestStitch_InterfaceDispatchUniqueImplReaches(t *testing.T) {
 	}
 }
 
+func TestStitch_InterfaceDispatchJoinsConcreteEntryByCanonicalCompatibility(t *testing.T) {
+	fragments := map[ComponentKey]Fragment{
+		componentA: {
+			Component: componentA,
+			Functions: []Function{{Signature: "app.Client.call#0"}},
+			ExternalCalls: []ExternalCall{{
+				Caller:                   "app.Client.call#0",
+				TargetSignature:          "security.PasswordEncoder.encode#1",
+				TargetCanonicalSignature: "security.PasswordEncoder.encode(CharSequence): String",
+				Resolution:               ResolutionExact,
+				DeclaredType:             "security.PasswordEncoder",
+				MethodName:               "encode",
+				Arity:                    1,
+				CallSite:                 7,
+			}},
+		},
+		componentC: {
+			Component: componentC,
+			Functions: []Function{{
+				Signature:                     "security.BCryptPasswordEncoder.encode#1",
+				CanonicalSignature:            "security.BCryptPasswordEncoder.encode(CharSequence): String",
+				CompatibleCanonicalSignatures: []string{"security.PasswordEncoder.encode(CharSequence): String"},
+			}},
+			CryptoOperations: []CryptoOperation{{Function: "security.BCryptPasswordEncoder.encode#1", FindingID: "compatible-interface"}},
+		},
+	}
+
+	res, err := Stitch(componentA, DependencyGraph{componentA: {componentC}}, fragments)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 1 || res.Chains[0].FindingID != "compatible-interface" {
+		t.Fatalf("chains = %#v, want compatible concrete interface target", res.Chains)
+	}
+}
+
+func TestStitch_CanonicalCompatibilityCandidatesFailClosed(t *testing.T) {
+	const compatible = "security.PasswordEncoder.encode(CharSequence): String"
+	fragments := map[ComponentKey]Fragment{
+		componentA: {Component: componentA, Functions: []Function{{Signature: "app.Client.call#0"}}, ExternalCalls: []ExternalCall{{
+			Caller: "app.Client.call#0", TargetSignature: "security.PasswordEncoder.encode#1", TargetCanonicalSignature: compatible,
+			Resolution: ResolutionExact, MethodName: "encode", Arity: 1, CallSite: 7,
+		}}},
+		componentC: {Component: componentC, Functions: []Function{{Signature: "security.BCryptPasswordEncoder.encode#1", CompatibleCanonicalSignatures: []string{compatible}}}, CryptoOperations: []CryptoOperation{{Function: "security.BCryptPasswordEncoder.encode#1", FindingID: "bcrypt"}}},
+		componentE: {Component: componentE, Functions: []Function{{Signature: "security.Argon2PasswordEncoder.encode#1", CompatibleCanonicalSignatures: []string{compatible}}}, CryptoOperations: []CryptoOperation{{Function: "security.Argon2PasswordEncoder.encode#1", FindingID: "argon2"}}},
+	}
+
+	res, err := Stitch(componentA, DependencyGraph{componentA: {componentC, componentE}}, fragments)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	if len(res.Chains) != 0 || len(res.Suppressed) != 1 || res.Suppressed[0].Reason != SuppressReasonAmbiguousDispatch {
+		t.Fatalf("chains=%#v suppressed=%#v, want one fail-closed compatibility ambiguity", res.Chains, res.Suppressed)
+	}
+}
+
 // TestStitch_InterfaceDispatchAmbiguousDropsClosed proves that when more than
 // one concrete implementation of the dispatched interface method is present in
 // the closure, the stitcher refuses to guess: it drops the whole call site and
