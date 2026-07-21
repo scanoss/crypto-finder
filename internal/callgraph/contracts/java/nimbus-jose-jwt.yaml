@@ -5,7 +5,7 @@ library:
   name: nimbus-jose-jwt
   coordinates:
     - "com.nimbusds:nimbus-jose-jwt"
-  version_range: ">=9,<11"
+  version_range: "9.37.3"
   description: "Nimbus JOSE + JWT contracts for JWS construction, signing, verification, and compact serialization"
 
 contracts:
@@ -14,6 +14,7 @@ contracts:
     return:
       type: com.nimbusds.jose.JWSObject
       confidence: high
+    role: factory
   - method: com.nimbusds.jose.JWSObject.parse
     arity: 1
     return:
@@ -44,31 +45,85 @@ contracts:
     return:
       type: com.nimbusds.jose.crypto.DirectEncrypter
       confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.DirectDecrypter.<init>
     arity: 1
     return:
       type: com.nimbusds.jose.crypto.DirectDecrypter
       confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.DirectDecrypter.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.crypto.DirectDecrypter
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.DirectDecrypter.<init>
+    arity: 3
+    return:
+      type: com.nimbusds.jose.crypto.DirectDecrypter
+      confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.ECDHEncrypter.<init>
     arity: 1
     return:
       type: com.nimbusds.jose.crypto.ECDHEncrypter
       confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.ECDHEncrypter.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.crypto.ECDHEncrypter
+      confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.ECDHDecrypter.<init>
     arity: 1
     return:
       type: com.nimbusds.jose.crypto.ECDHDecrypter
       confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.ECDHDecrypter.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.crypto.ECDHDecrypter
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.ECDHDecrypter.<init>
+    arity: 3
+    return:
+      type: com.nimbusds.jose.crypto.ECDHDecrypter
+      confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.RSAEncrypter.<init>
     arity: 1
     return:
       type: com.nimbusds.jose.crypto.RSAEncrypter
       confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.RSAEncrypter.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.crypto.RSAEncrypter
+      confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.RSADecrypter.<init>
     arity: 1
     return:
       type: com.nimbusds.jose.crypto.RSADecrypter
       confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.RSADecrypter.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.crypto.RSADecrypter
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.crypto.RSADecrypter.<init>
+    arity: 3
+    return:
+      type: com.nimbusds.jose.crypto.RSADecrypter
+      confidence: high
+    role: factory
   - method: com.nimbusds.jose.crypto.RSASSASigner.<init>
     arity: 1
     return:
@@ -130,9 +185,91 @@ contracts:
       type: com.nimbusds.jose.jwk.RSAKey
       confidence: high
 
+  # JWE lifecycle contracts are authored on the public JWE interfaces. Concrete
+  # encrypters and decrypters resolve through hierarchy below, avoiding copies
+  # of the same operation for every key-management implementation.
+  - method: com.nimbusds.jose.JWEObject.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.JWEObject
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.JWEObject.<init>
+    arity: 5
+    return:
+      type: com.nimbusds.jose.JWEObject
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.JWEObject.parse
+    arity: 1
+    return:
+      type: com.nimbusds.jose.JWEObject
+      confidence: high
+    role: factory
+  - method: com.nimbusds.jose.JWEObject.encrypt
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: com.nimbusds.jose.JWEObject.decrypt
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: com.nimbusds.jose.JWEObject.serialize
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.nimbusds.jose.JWEEncrypter.encrypt
+    arity: 3
+    return:
+      type: com.nimbusds.jose.JWECryptoParts
+      confidence: high
+    role: operation
+  - method: com.nimbusds.jose.JWEDecrypter.decrypt
+    arity: 6
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>
+    arity: 1
+    return:
+      type: com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keySize
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>
+    arity: 2
+    return:
+      type: com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keySize
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
 hierarchy:
   com.nimbusds.jose.JWSObject:
     - java.lang.Object
+  com.nimbusds.jose.JOSEObject:
+    - java.lang.Object
+  com.nimbusds.jose.JWEObject:
+    - com.nimbusds.jose.JOSEObject
   com.nimbusds.jose.Payload:
     - java.lang.Object
   com.nimbusds.jose.JWSSigner:
@@ -140,8 +277,12 @@ hierarchy:
   com.nimbusds.jose.JWSVerifier:
     - java.lang.Object
   com.nimbusds.jose.JWEEncrypter:
-    - java.lang.Object
+    - com.nimbusds.jose.JWEProvider
   com.nimbusds.jose.JWEDecrypter:
+    - com.nimbusds.jose.JWEProvider
+  com.nimbusds.jose.JWEProvider:
+    - java.lang.Object
+  com.nimbusds.jose.JWECryptoParts:
     - java.lang.Object
   com.nimbusds.jose.crypto.DirectEncrypter:
     - com.nimbusds.jose.JWEEncrypter
@@ -172,6 +313,8 @@ hierarchy:
   com.nimbusds.jose.crypto.MACVerifier:
     - com.nimbusds.jose.JWSVerifier
   com.nimbusds.jose.jwk.RSAKey:
+    - java.lang.Object
+  com.nimbusds.jose.jwk.gen.RSAKeyGenerator:
     - java.lang.Object
   com.nimbusds.jose.util.Base64URL:
     - java.lang.Object

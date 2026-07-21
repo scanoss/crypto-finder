@@ -1,0 +1,164 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: spring-security-crypto
+  coordinates:
+    - "org.springframework.security:spring-security-crypto"
+  version_range: "6.3.4"
+  description: "Spring Security password encoders and encryption lifecycle contracts"
+
+contracts:
+  # PasswordEncoder is the shared operation surface. Concrete encoders resolve
+  # through hierarchy instead of repeating encode and matches per implementation.
+  - method: org.springframework.security.crypto.password.PasswordEncoder.encode
+    arity: 1
+    return: { type: java.lang.String, confidence: high }
+    role: operation
+  - method: org.springframework.security.crypto.password.PasswordEncoder.matches
+    arity: 2
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.springframework.security.crypto.password.PasswordEncoder.upgradeEncoding
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: output
+
+  - method: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.argon2.Argon2PasswordEncoder.<init>
+    arity: 5
+    return: { type: org.springframework.security.crypto.argon2.Argon2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.argon2.Argon2PasswordEncoder.defaultsForSpringSecurity_v5_2
+    arity: 0
+    return: { type: org.springframework.security.crypto.argon2.Argon2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.argon2.Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8
+    arity: 0
+    return: { type: org.springframework.security.crypto.argon2.Argon2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder.<init>
+    arity: 5
+    return: { type: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder.defaultsForSpringSecurity_v4_1
+    arity: 0
+    return: { type: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder.defaultsForSpringSecurity_v5_8
+    arity: 0
+    return: { type: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.<init>
+    arity: 4
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_5
+    arity: 0
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8
+    arity: 0
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.encrypt.Encryptors.standard
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.BytesEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.Encryptors.stronger
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.BytesEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.BytesEncryptor.encrypt
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.springframework.security.crypto.encrypt.BytesEncryptor.decrypt
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.springframework.security.crypto.encrypt.TextEncryptor.encrypt
+    arity: 1
+    return: { type: java.lang.String, confidence: high }
+    role: operation
+  - method: org.springframework.security.crypto.encrypt.TextEncryptor.decrypt
+    arity: 1
+    return: { type: java.lang.String, confidence: high }
+    role: operation
+
+  # RsaSecretEncryptor has overloaded constructors with different selector
+  # positions. Keep their common factory role, but do not guess a parameter role.
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 4
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 5
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 6
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.getPublicKey
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.canDecrypt
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+
+hierarchy:
+  org.springframework.security.crypto.password.PasswordEncoder:
+    - java.lang.Object
+  org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.argon2.Argon2PasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.scrypt.SCryptPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password.Pbkdf2PasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.encrypt.BytesEncryptor:
+    - java.lang.Object
+  org.springframework.security.crypto.encrypt.TextEncryptor:
+    - java.lang.Object
+  org.springframework.security.crypto.encrypt.RsaSecretEncryptor:
+    - org.springframework.security.crypto.encrypt.BytesEncryptor
+    - org.springframework.security.crypto.encrypt.TextEncryptor
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []
