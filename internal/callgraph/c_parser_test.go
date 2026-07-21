@@ -140,13 +140,19 @@ void no_return(void) {
 	}
 
 	direct := findCFunction(t, analyses[0], "direct")
+	if direct.ReturnType != "void*" {
+		t.Fatalf("direct ReturnType = %q, want void*", direct.ReturnType)
+	}
 	if got := direct.ReturnSources; len(got) != 1 || got[0].Type != "VARIABLE" || got[0].Name != "value" {
 		t.Fatalf("direct ReturnSources = %#v, want VARIABLE value", got)
 	}
 
 	factory := findCFunction(t, analyses[0], "factory")
-	if got := factory.ReturnSources; len(got) != 1 || got[0].Type != "CALL_RESULT" || got[0].CallTarget == nil || got[0].CallTarget.Name != "EVP_CIPHER_CTX_new" || got[0].CallTarget.Package != "example/crypto" {
-		t.Fatalf("factory ReturnSources = %#v, want CALL_RESULT example/crypto.EVP_CIPHER_CTX_new", got)
+	if factory.ReturnType != "EVP_CIPHER_CTX*" {
+		t.Fatalf("factory ReturnType = %q, want EVP_CIPHER_CTX*", factory.ReturnType)
+	}
+	if got := factory.ReturnSources; len(got) != 1 || got[0].Type != "CALL_RESULT" || got[0].CallTarget == nil || got[0].CallTarget.Name != "EVP_CIPHER_CTX_new#0" || got[0].CallTarget.Package != "example/crypto" {
+		t.Fatalf("factory ReturnSources = %#v, want CALL_RESULT example/crypto.EVP_CIPHER_CTX_new#0", got)
 	}
 
 	for _, name := range []string{"unknown", "no_return"} {

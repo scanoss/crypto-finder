@@ -797,7 +797,7 @@ func TestShouldInfer_TriggerTypes(t *testing.T) {
 	triggers := []string{
 		"", "Object", "java.lang.Object", "byte[]", "Object[]",
 		"Key", "java.security.Key", "T", "E", "V", "?",
-		"int", "long", "boolean", "void",
+		"int", "long", "boolean", "void", "EVP_CIPHER_CTX*", "EVP_CIPHER_CTX *",
 	}
 	for _, typ := range triggers {
 		if !shouldInfer(typ) {
@@ -813,11 +813,43 @@ func TestShouldInfer_NonTriggerTypes(t *testing.T) {
 		"java.lang.String",
 		"javax.crypto.Cipher",
 		"java.security.PrivateKey",
+		"EVP_CIPHER_CTX",
 	}
 	for _, typ := range nonTriggers {
 		if shouldInfer(typ) {
 			t.Errorf("shouldInfer(%q) = true, want false", typ)
 		}
+	}
+}
+
+func TestInferReturnTypes_CPointerReturn(t *testing.T) {
+	kb, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: c
+library:
+  name: test-c
+contracts:
+  - method: example/crypto.EVP_CIPHER_CTX_new
+    arity: 0
+    return:
+      type: EVP_CIPHER_CTX*
+      confidence: high
+`))
+	if err != nil {
+		t.Fatalf("load test KB: %v", err)
+	}
+	callee := FunctionID{Package: "example/crypto", Name: "EVP_CIPHER_CTX_new#0"}
+	fn := &FunctionDecl{
+		ID:            FunctionID{Package: "example/crypto", Name: "factory"},
+		ReturnType:    "EVP_CIPHER_CTX *",
+		ReturnSources: []SourceNode{{Type: sourceNodeCallResult, CallTarget: &callee}},
+	}
+
+	if err := InferReturnTypes(buildTestCallGraph(fn), kb); err != nil {
+		t.Fatalf("InferReturnTypes: %v", err)
+	}
+	if fn.InferredReturn == nil || fn.InferredReturn.Type != "EVP_CIPHER_CTX*" || fn.InferredReturn.Origin != OriginKBDirect {
+		t.Fatalf("InferredReturn = %#v, want KB-direct EVP_CIPHER_CTX*", fn.InferredReturn)
 	}
 }
 

@@ -90,6 +90,9 @@ func TestNewParserForEcosystem_IncludeTestsOption(t *testing.T) {
 }
 
 func TestNewTypeResolverForEcosystem(t *testing.T) {
+	if _, ok := NewTypeResolverForEcosystem("c", javaruntime.Config{}).(*CContractTypeResolver); !ok {
+		t.Fatal("expected CContractTypeResolver")
+	}
 	if resolver := NewTypeResolverForEcosystem("java", javaruntime.Config{}); resolver == nil {
 		t.Fatal("expected Java type resolver")
 	}
