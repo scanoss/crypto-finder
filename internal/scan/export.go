@@ -26,14 +26,16 @@ const (
 	// callGraphSchemaVersion is sourced from pkg/graphfrag so the live
 	// --export-callgraph CLI path and the stitch path (ToCallgraphExport) always
 	// stamp the same schema_version — single source of truth, no drift.
-	callGraphSchemaVersion   = graphfrag.CallgraphSchemaVersion
-	matchedOperationCall     = "call"
-	sourceNodeTypeParameter  = "PARAMETER"
-	sourceNodeTypeValue      = "VALUE"
-	sourceNodeTypeCallResult = "CALL_RESULT"
-	callGraphExportProgress  = 100
-	callGraphExportMaxDepth  = 32
-	callGraphExportMaxChains = 128
+	callGraphSchemaVersion         = graphfrag.CallgraphSchemaVersion
+	matchedOperationCall           = "call"
+	sourceNodeTypeParameter        = "PARAMETER"
+	sourceNodeTypeValue            = "VALUE"
+	sourceNodeTypeCallResult       = "CALL_RESULT"
+	sourceNodeTypeField            = "FIELD"
+	callGraphExportProgress        = 100
+	callGraphExportMaxDepth        = 32
+	callGraphExportMaxChains       = 128
+	maxExportSourceResolutionDepth = 8
 )
 
 // --- v4 JSON schema types (simplified) ---
@@ -1476,7 +1478,7 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	sc := &callGraphCalledFunction{
 		FunctionName: fullFunctionName(call.Callee),
 		Line:         call.Line,
-		Parameters:   mergeCallParameters(ctx, &call.Callee, callee, call.Arguments, call.ArgumentSources, sourcePath, call.Line),
+		Parameters:   mergeCallParameters(ctx, &containingFn.ID, &call.Callee, callee, call.Arguments, call.ArgumentSources, sourcePath, call.Line),
 	}
 	applyExportFunctionMetadataToCalledFunction(sc, buildExportFunctionMetadata(ctx.graph, call.Callee, callee))
 	support.SupportingCall = sc
@@ -1828,7 +1830,7 @@ func findCryptoCall(
 	result := &callGraphCalledFunction{
 		FunctionName: fullFunctionName(bestCall.Callee),
 		Line:         bestCall.Line,
-		Parameters:   mergeCallParameters(ctx, &bestCall.Callee, callee, bestCall.Arguments, bestCall.ArgumentSources, sourcePath, bestCall.Line),
+		Parameters:   mergeCallParameters(ctx, &containingFn.ID, &bestCall.Callee, callee, bestCall.Arguments, bestCall.ArgumentSources, sourcePath, bestCall.Line),
 	}
 	applyExportFunctionMetadataToCalledFunction(result, buildExportFunctionMetadata(graph, bestCall.Callee, callee))
 
@@ -1839,6 +1841,7 @@ func findCryptoCall(
 // and argument source traces into a unified parameters array.
 func mergeCallParameters(
 	ctx *exportBuildContext,
+	callerID *callgraph.FunctionID,
 	calleeID *callgraph.FunctionID,
 	callee *callgraph.FunctionDecl,
 	args []string,
@@ -1870,7 +1873,7 @@ func mergeCallParameters(
 			}
 		}
 		if i < len(argSources) && len(argSources[i]) > 0 {
-			p.SourceNodes = convertSourceNodes(ctx, argSources[i], filepath.ToSlash(sourceFilePath), sourceLine)
+			p.SourceNodes = convertSourceNodes(ctx, resolveExportSourceNodes(ctx, callerID, argSources[i], 0), filepath.ToSlash(sourceFilePath), sourceLine)
 		}
 		p.ResolvedValue = resolveSimpleExportParameterValue(p.ArgumentExpression, p.SourceNodes)
 		if p.Type != "" || p.VariableName != "" || p.ArgumentExpression != "" {
@@ -1878,6 +1881,86 @@ func mergeCallParameters(
 		}
 	}
 	return params
+}
+
+// resolveExportSourceNodes follows simple Java parameter pass-through and return
+// paths before serializing provenance. It keeps every candidate so a dynamic
+// selector remains unresolved instead of choosing an arbitrary caller value.
+func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.FunctionID, nodes []callgraph.SourceNode, depth int) []callgraph.SourceNode {
+	if ctx == nil || ctx.graph == nil || depth >= maxExportSourceResolutionDepth || len(nodes) == 0 {
+		return cloneCallgraphSourceNodes(nodes)
+	}
+
+	resolved := cloneCallgraphSourceNodes(nodes)
+	for i := range resolved {
+		node := &resolved[i]
+		switch node.Type {
+		case sourceNodeTypeParameter:
+			node.SourceNodes = append(node.SourceNodes, resolveIncomingParameterSources(ctx, ownerID, node.Name, node.ParameterIndex, depth+1)...)
+		case sourceNodeTypeCallResult:
+			node.SourceNodes = resolveExportSourceNodes(ctx, ownerID, node.SourceNodes, depth+1)
+			if node.CallTarget != nil {
+				if callee := ctx.graph.Functions[node.CallTarget.String()]; callee != nil {
+					node.SourceNodes = append(node.SourceNodes, resolveExportSourceNodes(ctx, node.CallTarget, callee.ReturnSources, depth+1)...)
+				}
+			}
+		case sourceNodeTypeField:
+			// A field's nested PARAMETER provenance may describe constructor
+			// initialization, not the current method's argument list.
+			node.SourceNodes = resolveExportSourceNodes(ctx, nil, node.SourceNodes, depth+1)
+		default:
+			node.SourceNodes = resolveExportSourceNodes(ctx, ownerID, node.SourceNodes, depth+1)
+		}
+	}
+	return resolved
+}
+
+func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgraph.FunctionID, parameterName string, parameterIndex, depth int) []callgraph.SourceNode {
+	if calleeID == nil || parameterIndex < 0 || depth >= maxExportSourceResolutionDepth {
+		return nil
+	}
+	if callee := ctx.graph.Functions[calleeID.String()]; callee != nil && parameterIndex < len(callee.Parameters) &&
+		callee.Parameters[parameterIndex].Name != "" && callee.Parameters[parameterIndex].Name != parameterName {
+		return nil
+	}
+
+	callers := make([]*callgraph.FunctionDecl, 0, len(ctx.graph.Functions))
+	for _, caller := range ctx.graph.Functions {
+		callers = append(callers, caller)
+	}
+	sort.Slice(callers, func(i, j int) bool { return callers[i].ID.String() < callers[j].ID.String() })
+
+	var sources []callgraph.SourceNode
+	for _, caller := range callers {
+		for i := range caller.Calls {
+			call := &caller.Calls[i]
+			if call.Callee.String() != calleeID.String() || parameterIndex >= len(call.ArgumentSources) {
+				continue
+			}
+			sources = append(sources, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1)...)
+		}
+	}
+	return sources
+}
+
+func cloneCallgraphSourceNodes(nodes []callgraph.SourceNode) []callgraph.SourceNode {
+	if len(nodes) == 0 {
+		return nil
+	}
+	cloned := make([]callgraph.SourceNode, len(nodes))
+	for i := range nodes {
+		cloned[i] = nodes[i]
+		cloned[i].SourceNodes = cloneCallgraphSourceNodes(nodes[i].SourceNodes)
+		if nodes[i].CallTarget != nil {
+			target := *nodes[i].CallTarget
+			cloned[i].CallTarget = &target
+		}
+		if nodes[i].Location != nil {
+			location := *nodes[i].Location
+			cloned[i].Location = &location
+		}
+	}
+	return cloned
 }
 
 // convertSourceNodes converts internal SourceNode to export format.
@@ -2048,11 +2131,28 @@ func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
 			return "", false
 		}
 		return value, true
-	case "VARIABLE", "FIELD", sourceNodeTypeParameter:
+	case "VARIABLE", sourceNodeTypeField, sourceNodeTypeParameter:
 		return resolveSimpleExportSourceValue(node.SourceNodes)
+	case sourceNodeTypeCallResult:
+		return resolveDirectExportReturnValue(node.SourceNodes)
 	default:
 		return "", false
 	}
+}
+
+func resolveDirectExportReturnValue(nodes []exportSourceNode) (string, bool) {
+	var value string
+	for i := range nodes {
+		if nodes[i].Type != sourceNodeTypeValue {
+			continue
+		}
+		candidate := strings.TrimSpace(nodes[i].Value)
+		if candidate == "" || (value != "" && value != candidate) {
+			return "", false
+		}
+		value = candidate
+	}
+	return value, value != ""
 }
 
 func looksLikeIntegerLiteralExpr(expr string) bool {
@@ -2384,7 +2484,7 @@ func buildEntryCall(
 	entryCall := &callGraphEntryCall{
 		FilePath:   location.FilePath,
 		Line:       call.Line,
-		Parameters: mergeCallParameters(ctx, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
+		Parameters: mergeCallParameters(ctx, &callerID, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
 	}
 	applyExportFunctionMetadataToEntryCall(entryCall, buildExportFunctionMetadata(graph, call.Callee, calleeFn))
 	callName := fullFunctionName(call.Callee)
