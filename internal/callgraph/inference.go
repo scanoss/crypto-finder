@@ -103,7 +103,7 @@ var inferenceTriggerTypes = map[string]struct{}{
 // return type. Returns false when the type is already specific and useful.
 func shouldInfer(declaredType string) bool {
 	_, ok := inferenceTriggerTypes[declaredType]
-	return ok
+	return ok || strings.HasSuffix(strings.TrimSpace(declaredType), "*")
 }
 
 // ---------------------------------------------------------------------------

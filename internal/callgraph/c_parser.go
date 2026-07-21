@@ -149,10 +149,25 @@ func (p *CParser) parseFunction(node *sitter.Node, src []byte, filePath, package
 		OwnerName:    packagePath,
 		FunctionType: "function",
 		Parameters:   cParameters(declarator, src),
+		ReturnType:   cFunctionReturnType(node, declarator, src),
 	}
 	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
 	return decl
+}
+
+func cFunctionReturnType(node, declarator *sitter.Node, src []byte) string {
+	typeNode := node.ChildByFieldName("type")
+	if typeNode == nil {
+		return ""
+	}
+	returnType := strings.TrimSpace(typeNode.Content(src))
+	for current := declarator; current != nil; current = current.ChildByFieldName("declarator") {
+		if current.Type() == "pointer_declarator" {
+			returnType += "*"
+		}
+	}
+	return returnType
 }
 
 func cFunctionPackage(packagePath, filePath, name string, staticFunctions map[string]bool) string {
@@ -335,6 +350,7 @@ func (p *CParser) cReturnSource(expr *sitter.Node, src []byte, filePath, package
 			return SourceNode{}, false
 		}
 		callee := call.Callee
+		callee.Name = fmt.Sprintf("%s#%d", callee.Name, len(call.Arguments))
 		return SourceNode{Type: "CALL_RESULT", CallTarget: &callee, Location: location}, true
 	case cNodeIdentifier:
 		return SourceNode{Type: "VARIABLE", Name: expr.Content(src), Location: location}, true

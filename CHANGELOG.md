@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- C callgraph builds now select the contract type resolver and apply contract inference to pointer-returning functions. (#88)
 - C++ callgraph parsing now recognizes C++ source and header files, include paths, namespace-qualified and receiver calls, assignment targets, and 1-based half-open call columns. (#68)
 - Go callgraph contracts now model the legacy `github.com/golang-fips/openssl/v2` API's symmetric, KDF, public-key, and post-quantum cryptographic lifecycles. (#127)
 - Graph-fragment exports now carry complete canonical target signatures and hierarchy-proven compatible callable signatures, allowing interface-typed dependency calls to join concrete crypto entry points without fabricating call edges. (#136)
