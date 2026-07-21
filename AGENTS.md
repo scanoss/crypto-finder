@@ -69,6 +69,7 @@ The callgraph inference engine consumes language-agnostic YAML knowledge bases u
 ```
 internal/callgraph/contracts/
 ├── contracts.go           # loader, types, validation
+├── c/                     # schema-v2 C callgraph contracts
 ├── java/
 │   └── jdk-crypto.yaml    # JDK JCA/JCE contracts (shipped in v1)
 ├── go/                    # schema-v2 Go callgraph contracts
@@ -77,7 +78,8 @@ internal/callgraph/contracts/
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
-change. The loader (`contracts.LoadEmbedded(ecosystem)`) discovers all `*.yaml` files in
+change. A new ecosystem may temporarily use one empty `<ecosystem>-bootstrap` YAML because
+`go:embed` requires a matching file; remove it when the first library KB lands. The loader (`contracts.LoadEmbedded(ecosystem)`) discovers all `*.yaml` files in
 the ecosystem directory, validates each, and merges them via `contracts.Merge()` with
 conflict-detection rules:
 
