@@ -157,6 +157,8 @@ func (kb *KnowledgeBase) ContractsFor(method string, arity int) []Contract {
 
 // ContractsForTolerant returns contracts for the given method FQN and arity with
 // ecosystem-aware matching:
+//   - For C KBs (kb.Ecosystem == "c"): first tries an exact method+arity match;
+//     if absent, retries the global function name without the project package.
 //   - For Python KBs (kb.Ecosystem == "python"): first tries an exact-arity
 //     match; if no contracts are found, falls back to any arity (name-only
 //     match). When multiple candidates with different arities exist in the
@@ -172,6 +174,12 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 	// Always try exact match first (preferred regardless of ecosystem).
 	if exact := kb.ContractsFor(method, arity); len(exact) > 0 {
 		return exact
+	}
+	if kb.Ecosystem == ecosystemC {
+		if idx := strings.LastIndex(method, "."); idx >= 0 {
+			return kb.ContractsFor(method[idx+1:], arity)
+		}
+		return nil
 	}
 
 	// Non-Python: no fallback — return nil immediately.

@@ -869,7 +869,7 @@ ecosystem: c
 library:
   name: test-c
 contracts:
-  - method: example/crypto.EVP_CIPHER_CTX_new
+  - method: EVP_CIPHER_CTX_new
     arity: 0
     return:
       type: EVP_CIPHER_CTX*
@@ -890,6 +890,37 @@ contracts:
 	}
 	if fn.InferredReturn == nil || fn.InferredReturn.Type != "EVP_CIPHER_CTX*" || fn.InferredReturn.Origin != OriginKBDirect {
 		t.Fatalf("InferredReturn = %#v, want KB-direct EVP_CIPHER_CTX*", fn.InferredReturn)
+	}
+}
+
+func TestInferReturnTypes_CGlobalFallbackDoesNotChangePythonArity(t *testing.T) {
+	kb, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: python
+library:
+  name: test-python
+contracts:
+  - method: cryptography.Fernet.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+`))
+	if err != nil {
+		t.Fatalf("load test KB: %v", err)
+	}
+	callee := FunctionID{Package: "cryptography", Type: "Fernet", Name: "encrypt#2"}
+	fn := &FunctionDecl{
+		ID:            FunctionID{Package: "example", Name: "encrypt"},
+		ReturnType:    "byte[]",
+		ReturnSources: []SourceNode{{Type: sourceNodeCallResult, CallTarget: &callee}},
+	}
+
+	if err := InferReturnTypes(buildTestCallGraph(fn), kb); err != nil {
+		t.Fatalf("InferReturnTypes: %v", err)
+	}
+	if fn.InferredReturn != nil {
+		t.Fatalf("InferredReturn = %#v, want nil for Python arity mismatch", fn.InferredReturn)
 	}
 }
 

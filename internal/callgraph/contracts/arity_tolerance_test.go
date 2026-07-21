@@ -5,10 +5,10 @@
 // modify it under the terms of the GNU General Public License
 // as published by the Free Software Foundation; version 2.
 
-// Package contracts_test — arity-tolerance tests for Python KB lookup.
+// Package contracts_test covers ecosystem-aware contract lookup fallbacks.
 //
-// Decision: Python KB lookups must be arity-tolerant (prefer exact match,
-// fall back to name-only). Java keeps exact-arity semantics unchanged.
+// Python lookup is arity-tolerant; C lookup falls back to a bare global symbol.
+// Exact matches win, and other ecosystems keep exact method+arity semantics.
 // See engram decision #1706 for rationale.
 package contracts_test
 
@@ -47,6 +47,38 @@ hierarchy:
   javax.crypto.SecretKey:
     - java.lang.Object
 `
+
+const cYAML = `
+schema_version: "2"
+ecosystem: c
+library:
+  name: openssl-symbol-lookup-test
+contracts:
+  - method: EVP_CIPHER_CTX_new
+    arity: 0
+    return:
+      type: EVP_CIPHER_CTX*
+      confidence: high
+  - method: app.EVP_CIPHER_CTX_new
+    arity: 0
+    return:
+      type: APP_CIPHER_CTX*
+      confidence: high
+`
+
+func TestContractsForTolerant_CGlobalSymbolIgnoresProjectPackage(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, cYAML)
+	for _, method := range []string{"example/crypto.EVP_CIPHER_CTX_new", "other.EVP_CIPHER_CTX_new"} {
+		if got := kb.ContractsForTolerant(method, 0); len(got) != 1 || got[0].Method != "EVP_CIPHER_CTX_new" {
+			t.Fatalf("ContractsForTolerant(%q, 0) = %#v, want bare C symbol contract", method, got)
+		}
+	}
+	if got := kb.ContractsForTolerant("app.EVP_CIPHER_CTX_new", 0); len(got) != 1 || got[0].Return.Type != "APP_CIPHER_CTX*" {
+		t.Fatalf("exact C contract = %#v, want APP_CIPHER_CTX*", got)
+	}
+}
 
 // TestContractsForTolerant_Python_ArityMismatchFallsBack asserts that a Python
 // KB lookup for arity=3 matches an arity=2 KB entry when no exact match exists.

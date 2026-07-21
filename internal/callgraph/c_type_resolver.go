@@ -34,7 +34,7 @@ func (r *CContractTypeResolver) ResolveTypes(graph *CallGraph, _ []PackageDir) e
 		if fn.ReturnType != "" {
 			continue
 		}
-		for _, contract := range r.kb.ContractsFor(fn.ID.String(), len(fn.Parameters)) {
+		for _, contract := range r.kb.ContractsForTolerant(fn.ID.String(), len(fn.Parameters)) {
 			if contract.When == nil && contract.Return.Type != "" {
 				fn.ReturnType = contract.Return.Type
 				break

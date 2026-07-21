@@ -654,10 +654,13 @@ func candidateFromCallResult(
 		return candidate{}, false
 	}
 
-	// KB lookup: ContractsFor uses "<package>.<Type>.<method>" + arity.
 	// splitMethodArity extracts the FQN (without arity) and the arity integer.
+	// C alone retries a bare global symbol; other ecosystems preserve exact lookup.
 	methodFQN, arity := splitMethodArity(ct)
 	ctrs := kb.ContractsFor(methodFQN, arity)
+	if len(ctrs) == 0 && kb.Ecosystem == "c" {
+		ctrs = kb.ContractsForTolerant(methodFQN, arity)
+	}
 
 	if len(ctrs) > 0 {
 		return candidateFromKBContracts(ctrs, src, kb)

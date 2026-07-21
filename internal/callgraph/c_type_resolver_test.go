@@ -9,14 +9,14 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
-func TestCContractTypeResolver_UsesCanonicalFunctionIDs(t *testing.T) {
+func TestCContractTypeResolver_MatchesGlobalSymbolAcrossProjectPackage(t *testing.T) {
 	kb, err := contracts.Load([]byte(`
 schema_version: "2"
 ecosystem: c
 library:
   name: test-c
 contracts:
-  - method: example/crypto.EVP_CIPHER_CTX_new
+  - method: EVP_CIPHER_CTX_new
     arity: 0
     return:
       type: EVP_CIPHER_CTX*
