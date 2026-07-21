@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Java callgraph contracts now model the version-pinned Nimbus JOSE JWE and Spring Security Crypto lifecycles, including factory, operation, output, hierarchy, and key-size parameter-role semantics. (#137)
 - Rust callgraph builds now load schema-v2 contract knowledge bases and select the Rust contract type resolver. (#69)
 - Python callgraph inference now covers synchronous and asynchronous Azure Key Vault Secrets client construction and secret set, get, deleted-secret, backup, and restore results. (scanoss/crypto_rules#115)
 - Callgraph schema `6.6` adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch, including completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance without promoting candidates to resolved edges. (#122)

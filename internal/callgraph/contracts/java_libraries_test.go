@@ -167,3 +167,59 @@ func TestLoadEmbeddedJava_BouncyCastleRoleCoverage(t *testing.T) {
 		t.Fatalf("AESEngine hierarchy = %v, want [BlockCipher]", parents)
 	}
 }
+
+func TestLoadEmbeddedJava_NimbusAndSpringLifecycleCoverage(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		{"com.nimbusds.jose.JWEObject.<init>", 2, "com.nimbusds.jose.JWEObject", "factory"},
+		{"com.nimbusds.jose.JWEObject.encrypt", 1, "void", "operation"},
+		{"com.nimbusds.jose.JWEObject.decrypt", 1, "void", "operation"},
+		{"com.nimbusds.jose.JWEEncrypter.encrypt", 3, "com.nimbusds.jose.JWECryptoParts", "operation"},
+		{"com.nimbusds.jose.JWEDecrypter.decrypt", 6, "byte[]", "operation"},
+		{"com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>", 1, "com.nimbusds.jose.jwk.gen.RSAKeyGenerator", "factory"},
+		{"org.springframework.security.crypto.password.PasswordEncoder.encode", 1, "java.lang.String", "operation"},
+		{"org.springframework.security.crypto.password.PasswordEncoder.matches", 2, "boolean", "operation"},
+		{"org.springframework.security.crypto.encrypt.Encryptors.stronger", 2, "org.springframework.security.crypto.encrypt.BytesEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>", 0, "org.springframework.security.crypto.encrypt.RsaSecretEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.BytesEncryptor.encrypt", 1, "byte[]", "operation"},
+		{"org.springframework.security.crypto.encrypt.BytesEncryptor.decrypt", 1, "byte[]", "operation"},
+		{"org.springframework.security.crypto.encrypt.TextEncryptor.encrypt", 1, "java.lang.String", "operation"},
+		{"org.springframework.security.crypto.encrypt.TextEncryptor.decrypt", 1, "java.lang.String", "operation"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, got[0], tt.want, tt.role)
+			}
+		})
+	}
+
+	rsaGenerator := kb.ContractsFor("com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>", 1)
+	if len(rsaGenerator) != 1 || len(rsaGenerator[0].Parameters) != 1 {
+		t.Fatalf("RSAKeyGenerator.<init>#1 parameters = %#v, want key-size parameter role", rsaGenerator)
+	}
+	p := rsaGenerator[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_value" {
+		t.Fatalf("RSAKeyGenerator.<init>#1 parameters[0] = %#v, want index=0 keySize/argument_value", p)
+	}
+
+	if parents := kb.Hierarchy["org.springframework.security.crypto.encrypt.RsaSecretEncryptor"]; len(parents) != 2 || parents[0] != "org.springframework.security.crypto.encrypt.BytesEncryptor" || parents[1] != "org.springframework.security.crypto.encrypt.TextEncryptor" {
+		t.Fatalf("RsaSecretEncryptor hierarchy = %v, want BytesEncryptor and TextEncryptor", parents)
+	}
+}
