@@ -96,6 +96,47 @@ func TestLoadEmbeddedJavaIncludesTier0GapContracts(t *testing.T) {
 	}
 }
 
+func TestLoadEmbeddedJavaIncludesIssue138LifecycleContracts(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantRole   string
+		wantLib    string
+	}{
+		{"org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>", 1, "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder", "factory", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getAlgorithm", 0, "int", "output", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.build", 1, "org.bouncycastle.openpgp.operator.PGPDataEncryptor", "factory", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.PGPEncryptedDataGenerator.open", 2, "java.io.OutputStream", "operation", "bouncycastle-openpgp"},
+		{"com.google.crypto.tink.KeysetHandle.generateNew", 1, "com.google.crypto.tink.KeysetHandle", "factory", "tink"},
+		{"com.google.crypto.tink.Aead.encrypt", 2, "byte[]", "operation", "tink"},
+		{"com.google.crypto.tink.Aead.decrypt", 2, "byte[]", "operation", "tink"},
+		{"org.apache.xml.security.encryption.XMLCipher.getInstance", 1, "org.apache.xml.security.encryption.XMLCipher", "factory", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.init", 2, "void", "config", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.doFinal", 2, "org.w3c.dom.Document", "operation", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.doFinal", 3, "org.w3c.dom.Document", "operation", "apache-santuario-xmlsec"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.wantReturn || got[0].Role != tt.wantRole || got[0].SourceLibrary != tt.wantLib {
+				t.Fatalf("%s#%d = %#v, want return %s, role %s, library %s", tt.method, tt.arity, got[0], tt.wantReturn, tt.wantRole, tt.wantLib)
+			}
+		})
+	}
+}
+
 // TestLoadEmbeddedJava_BouncyCastleRoleCoverage is the issue-103 (WU1/BC-YAML)
 // acceptance test scoped to what a unit test can verify without a real BC
 // corpus (see internal/scan/bcprov_fragment_profile_test.go for the
@@ -165,5 +206,61 @@ func TestLoadEmbeddedJava_BouncyCastleRoleCoverage(t *testing.T) {
 	// contract is reachable via hierarchy without a per-engine duplicate.
 	if parents := kb.Hierarchy["org.bouncycastle.crypto.engines.AESEngine"]; len(parents) != 1 || parents[0] != "org.bouncycastle.crypto.BlockCipher" {
 		t.Fatalf("AESEngine hierarchy = %v, want [BlockCipher]", parents)
+	}
+}
+
+func TestLoadEmbeddedJava_NimbusAndSpringLifecycleCoverage(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		{"com.nimbusds.jose.JWEObject.<init>", 2, "com.nimbusds.jose.JWEObject", "factory"},
+		{"com.nimbusds.jose.JWEObject.encrypt", 1, "void", "operation"},
+		{"com.nimbusds.jose.JWEObject.decrypt", 1, "void", "operation"},
+		{"com.nimbusds.jose.JWEEncrypter.encrypt", 3, "com.nimbusds.jose.JWECryptoParts", "operation"},
+		{"com.nimbusds.jose.JWEDecrypter.decrypt", 6, "byte[]", "operation"},
+		{"com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>", 1, "com.nimbusds.jose.jwk.gen.RSAKeyGenerator", "factory"},
+		{"org.springframework.security.crypto.password.PasswordEncoder.encode", 1, "java.lang.String", "operation"},
+		{"org.springframework.security.crypto.password.PasswordEncoder.matches", 2, "boolean", "operation"},
+		{"org.springframework.security.crypto.encrypt.Encryptors.stronger", 2, "org.springframework.security.crypto.encrypt.BytesEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>", 0, "org.springframework.security.crypto.encrypt.RsaSecretEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.BytesEncryptor.encrypt", 1, "byte[]", "operation"},
+		{"org.springframework.security.crypto.encrypt.BytesEncryptor.decrypt", 1, "byte[]", "operation"},
+		{"org.springframework.security.crypto.encrypt.TextEncryptor.encrypt", 1, "java.lang.String", "operation"},
+		{"org.springframework.security.crypto.encrypt.TextEncryptor.decrypt", 1, "java.lang.String", "operation"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, got[0], tt.want, tt.role)
+			}
+		})
+	}
+
+	rsaGenerator := kb.ContractsFor("com.nimbusds.jose.jwk.gen.RSAKeyGenerator.<init>", 1)
+	if len(rsaGenerator) != 1 || len(rsaGenerator[0].Parameters) != 1 {
+		t.Fatalf("RSAKeyGenerator.<init>#1 parameters = %#v, want key-size parameter role", rsaGenerator)
+	}
+	p := rsaGenerator[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_value" {
+		t.Fatalf("RSAKeyGenerator.<init>#1 parameters[0] = %#v, want index=0 keySize/argument_value", p)
+	}
+
+	if parents := kb.Hierarchy["org.springframework.security.crypto.encrypt.RsaSecretEncryptor"]; len(parents) != 2 || parents[0] != "org.springframework.security.crypto.encrypt.BytesEncryptor" || parents[1] != "org.springframework.security.crypto.encrypt.TextEncryptor" {
+		t.Fatalf("RsaSecretEncryptor hierarchy = %v, want BytesEncryptor and TextEncryptor", parents)
 	}
 }

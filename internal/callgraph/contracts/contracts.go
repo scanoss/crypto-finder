@@ -23,7 +23,12 @@ var pythonFS embed.FS
 //go:embed rust/*.yaml
 var rustFS embed.FS
 
+//go:embed go/*.yaml
+var goFS embed.FS
+
 const (
+	// ecosystemGo is the ecosystem identifier for the Go contract KB.
+	ecosystemGo = "go"
 	// ecosystemPython is the ecosystem identifier for the Python contract KB.
 	ecosystemPython = "python"
 	// ecosystemRust is the ecosystem identifier for the Rust contract KB.
@@ -459,6 +464,8 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 	switch ecosystem {
 	case "java":
 		return &javaFS, "java"
+	case ecosystemGo:
+		return &goFS, ecosystemGo
 	case ecosystemPython:
 		return &pythonFS, ecosystemPython
 	case ecosystemRust:

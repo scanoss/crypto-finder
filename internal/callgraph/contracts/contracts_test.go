@@ -687,6 +687,16 @@ func TestLoadEmbedded_Rust(t *testing.T) {
 	}
 }
 
+func TestLoadEmbedded_Go(t *testing.T) {
+	kb, err := contracts.LoadEmbedded("go")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"go\"): %v", err)
+	}
+	if kb.Ecosystem != "go" {
+		t.Fatalf("Ecosystem = %q, want go", kb.Ecosystem)
+	}
+}
+
 // TestContractsFor_ReturnsCorrectSlice
 // kb.ContractsFor("javax.crypto.Cipher.unwrap", 3) returns 3 conditional entries.
 func TestContractsFor_ReturnsCorrectSlice(t *testing.T) {

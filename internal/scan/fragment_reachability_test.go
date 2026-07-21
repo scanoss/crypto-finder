@@ -110,6 +110,65 @@ func TestBuildGraphFragmentExport13_DerivesSupportingCallsFromObjectLifecycle(t 
 	}
 }
 
+func TestBuildGraphFragmentExport_Issue138ExportsXMLCipherLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ownerID := callgraph.FunctionID{Package: "com.acme", Type: "XmlCrypto", Name: "encrypt#1"}
+	factoryID := callgraph.FunctionID{Package: "org.apache.xml.security.encryption", Type: "XMLCipher", Name: "getInstance#1"}
+	initID := callgraph.FunctionID{Package: "org.apache.xml.security.encryption", Type: "XMLCipher", Name: "init#2"}
+	finalID := callgraph.FunctionID{Package: "org.apache.xml.security.encryption", Type: "XMLCipher", Name: "doFinal#2"}
+
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		ownerID.String(): {
+			ID:        ownerID,
+			FilePath:  "XmlCrypto.java",
+			StartLine: 1,
+			EndLine:   8,
+			Calls: []callgraph.FunctionCall{
+				{Callee: factoryID, FilePath: "XmlCrypto.java", Line: 3, Raw: "XMLCipher.getInstance(XMLCipher.AES_256_GCM)", AssignedVar: "cipher"},
+				{Callee: initID, FilePath: "XmlCrypto.java", Line: 4, Raw: "cipher.init(XMLCipher.ENCRYPT_MODE, key)", ReceiverVar: "cipher"},
+				{Callee: finalID, FilePath: "XmlCrypto.java", Line: 5, Raw: "cipher.doFinal(document, element)", ReceiverVar: "cipher"},
+			},
+		},
+		factoryID.String(): {ID: factoryID, FilePath: "XMLCipher.java", StartLine: 1, ReturnType: "org.apache.xml.security.encryption.XMLCipher", Parameters: []callgraph.FunctionParameter{{Type: "java.lang.String"}}},
+		initID.String():    {ID: initID, FilePath: "XMLCipher.java", StartLine: 2, ReturnType: "void", Parameters: []callgraph.FunctionParameter{{Type: "int"}, {Type: "java.security.Key"}}},
+		finalID.String():   {ID: finalID, FilePath: "XMLCipher.java", StartLine: 3, ReturnType: "org.w3c.dom.Document", Parameters: []callgraph.FunctionParameter{{Type: "org.w3c.dom.Document"}, {Type: "org.w3c.dom.Element"}}},
+	}}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "XmlCrypto.java",
+		Language: "java",
+		CryptographicAssets: []entities.CryptographicAsset{{
+			FindingID: "xmlcipher-aes-256",
+			StartLine: 3,
+			EndLine:   3,
+			Match:     "XMLCipher.getInstance(XMLCipher.AES_256_GCM)",
+			Rules:     []entities.RuleInfo{{ID: "java.santuario.xmlcipher"}},
+			Metadata:  map[string]string{"api": "wrong.on.purpose", "assetType": "algorithm"},
+		}},
+	}}}
+
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	if len(payload.CryptoAnnotations) != 1 {
+		t.Fatalf("crypto_annotations = %#v, want one finding", payload.CryptoAnnotations)
+	}
+
+	supportByName := map[string]string{}
+	for _, support := range payload.SupportingCalls {
+		if support.SupportingCall != nil {
+			supportByName[support.SupportingCall.FunctionName] = support.Category
+		}
+	}
+	if supportByName["org.apache.xml.security.encryption.XMLCipher.init"] != "config" {
+		t.Fatalf("XMLCipher.init category = %q, want config; supporting_calls = %#v", supportByName["org.apache.xml.security.encryption.XMLCipher.init"], payload.SupportingCalls)
+	}
+	if supportByName["org.apache.xml.security.encryption.XMLCipher.doFinal"] != "operation" {
+		t.Fatalf("XMLCipher.doFinal category = %q, want operation; supporting_calls = %#v", supportByName["org.apache.xml.security.encryption.XMLCipher.doFinal"], payload.SupportingCalls)
+	}
+	if len(payload.CryptoAnnotations[0].SupportingCallIDs) != 2 {
+		t.Fatalf("supporting_call_ids = %#v, want init and doFinal", payload.CryptoAnnotations[0].SupportingCallIDs)
+	}
+}
+
 // lastSegment returns the substring after the final dot, or the input unchanged.
 func lastSegment(s string) string {
 	if i := lastIndexByte(s, '.'); i >= 0 {

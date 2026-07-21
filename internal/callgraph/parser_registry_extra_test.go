@@ -84,7 +84,7 @@ func TestNewTypeResolverForEcosystem(t *testing.T) {
 	if resolver := NewTypeResolverForEcosystem("java", javaruntime.Config{}); resolver == nil {
 		t.Fatal("expected Java type resolver")
 	}
-	if resolver := NewTypeResolverForEcosystem("go", javaruntime.Config{}); resolver != nil {
-		t.Fatalf("expected nil type resolver for go, got %#v", resolver)
+	if _, ok := NewTypeResolverForEcosystem("go", javaruntime.Config{}).(*GoContractTypeResolver); !ok {
+		t.Fatal("expected GoContractTypeResolver")
 	}
 }
