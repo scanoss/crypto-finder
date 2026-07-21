@@ -31,6 +31,8 @@ func NewTypeResolverForEcosystem(ecosystem string, javaRuntime javaruntime.Confi
 	switch ecosystem {
 	case "c":
 		return NewCContractTypeResolverFromEmbedded()
+	case "cpp", "c++":
+		return NewCPPContractTypeResolverFromEmbedded()
 	case "go":
 		return NewGoContractTypeResolverFromEmbedded()
 	case "java":

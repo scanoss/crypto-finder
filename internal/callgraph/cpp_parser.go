@@ -142,6 +142,7 @@ func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packa
 		Parameters:   cParameters(declarator, src),
 	}
 	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
+	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
 	return decl
 }
 
@@ -217,6 +218,48 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 		return nil
 	}
 	return call
+}
+
+func (p *CPPParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) []SourceNode {
+	var sources []SourceNode
+	p.walkReturnSources(body, src, filePath, packagePath, staticFunctions, &sources)
+	return sources
+}
+
+func (p *CPPParser) walkReturnSources(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, sources *[]SourceNode) {
+	if node.Type() == "lambda_expression" {
+		return
+	}
+	if node.Type() == cNodeReturnStatement {
+		if expr := cReturnExpression(node); expr != nil {
+			if source, ok := p.returnSource(expr, src, filePath, packagePath, staticFunctions); ok {
+				*sources = append(*sources, source)
+			}
+		}
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkReturnSources(node.Child(i), src, filePath, packagePath, staticFunctions, sources)
+	}
+}
+
+func (p *CPPParser) returnSource(expr *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) (SourceNode, bool) {
+	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
+	switch expr.Type() {
+	case cNodeCallExpression:
+		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions)
+		if call == nil {
+			return SourceNode{}, false
+		}
+		callee := call.Callee
+		callee.Name = fmt.Sprintf("%s#%d", callee.Name, len(call.Arguments))
+		return SourceNode{Type: sourceNodeCallResult, CallTarget: &callee, Location: location}, true
+	case cNodeIdentifier:
+		return SourceNode{Type: sourceNodeVariable, Name: expr.Content(src), Location: location}, true
+	case fieldExpressionNode:
+		return SourceNode{Type: sourceNodeField, Name: expr.Content(src), Location: location}, true
+	}
+	return SourceNode{}, false
 }
 
 func cppCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
