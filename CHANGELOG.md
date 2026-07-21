@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rust callgraph inference now recognizes RustCrypto `chacha20poly1305` 0.11 factories and AEAD operations, including ChaCha20-Poly1305 and XChaCha20-Poly1305 detached and in-place calls. (#125)
 - Rust callgraph builds now load schema-v2 contract knowledge bases and select the Rust contract type resolver. (#69)
 - Go callgraph builds now load schema-v2 contract knowledge bases and select the Go contract type resolver. (#75)
 - Python callgraph inference now covers synchronous and asynchronous Azure Key Vault Secrets client construction and secret set, get, deleted-secret, backup, and restore results. (scanoss/crypto_rules#115)
