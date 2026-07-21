@@ -90,6 +90,30 @@ func TestRustParser_ReturnFactory_PopulatesCallTarget(t *testing.T) {
 	}
 }
 
+func TestRustParser_Chacha20Poly1305CallsKeepConcreteTypeEvidence(t *testing.T) {
+	fns := parseRustInline(t, `use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+fn seal(key: Key, nonce: Nonce, plaintext: &[u8], buffer: &mut [u8]) {
+    let cipher = ChaCha20Poly1305::new(&key);
+    cipher.encrypt(&nonce, plaintext);
+    cipher.encrypt_inout_detached(&nonce, b"", buffer);
+}`)
+
+	fn := rustFunctionByName(t, fns, "seal")
+	if len(fn.Calls) != 3 {
+		t.Fatalf("calls = %#v, want constructor plus two operations", fn.Calls)
+	}
+	want := []FunctionID{
+		{Package: "chacha20poly1305", Type: "ChaCha20Poly1305", Name: "new"},
+		{Package: "chacha20poly1305", Type: "ChaCha20Poly1305", Name: "encrypt"},
+		{Package: "chacha20poly1305", Type: "ChaCha20Poly1305", Name: "encrypt_inout_detached"},
+	}
+	for i, expected := range want {
+		if fn.Calls[i].Callee != expected {
+			t.Fatalf("calls[%d] = %#v, want %#v", i, fn.Calls[i].Callee, expected)
+		}
+	}
+}
+
 func TestRustParser_UnknownAndBareReturn_NoReturnSources(t *testing.T) {
 	fns := parseRustInline(t, `fn unknown(flag: bool) -> Key { if flag { key } else { other } }
 fn bare() { return; }`)
