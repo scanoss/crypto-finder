@@ -537,6 +537,46 @@ func TestInferReturnTypes_Propagated(t *testing.T) {
 	}
 }
 
+func TestInferReturnTypes_PropagatedFromArityQualifiedCallee(t *testing.T) {
+	kb, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: c
+library:
+  name: test-c
+contracts:
+  - method: example.EVP_CIPHER_CTX_new
+    arity: 0
+    return:
+      type: EVP_CIPHER_CTX*
+      confidence: high
+`))
+	if err != nil {
+		t.Fatalf("load test KB: %v", err)
+	}
+
+	externalID := FunctionID{Package: "example", Name: "EVP_CIPHER_CTX_new#0"}
+	leafID := FunctionID{Package: "example", Name: "leaf"}
+	leaf := &FunctionDecl{
+		ID:            leafID,
+		ReturnType:    "EVP_CIPHER_CTX*",
+		ReturnSources: []SourceNode{{Type: sourceNodeCallResult, CallTarget: &externalID}},
+	}
+	wrapper := &FunctionDecl{
+		ID:            FunctionID{Package: "example", Name: "wrapper"},
+		ReturnType:    "EVP_CIPHER_CTX*",
+		Calls:         []FunctionCall{{Callee: leafID}},
+		ReturnSources: []SourceNode{{Type: sourceNodeCallResult, CallTarget: &FunctionID{Package: "example", Name: "leaf#0"}}},
+	}
+	graph := buildTestCallGraph(leaf, wrapper)
+
+	if err := InferReturnTypes(graph, kb); err != nil {
+		t.Fatalf("InferReturnTypes: %v", err)
+	}
+	if wrapper.InferredReturn == nil || wrapper.InferredReturn.Type != "EVP_CIPHER_CTX*" || wrapper.InferredReturn.Origin != OriginPropagated {
+		t.Fatalf("wrapper InferredReturn = %#v, want propagated EVP_CIPHER_CTX*", wrapper.InferredReturn)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // T4.17 — mutual recursion fixpoint
 // ---------------------------------------------------------------------------
