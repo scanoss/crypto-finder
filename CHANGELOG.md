@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- C callgraph builds now select the contract type resolver and apply contract inference to pointer-returning functions. (#88)
+- C callgraph builds now select the C contract type resolver; pointer-returning functions can use contract inference when C knowledge bases are embedded. (#88)
 - C++ callgraph parsing now recognizes C++ source and header files, include paths, namespace-qualified and receiver calls, assignment targets, and 1-based half-open call columns. (#68)
 - Go callgraph contracts now model the legacy `github.com/golang-fips/openssl/v2` API's symmetric, KDF, public-key, and post-quantum cryptographic lifecycles. (#127)
 - Graph-fragment exports now carry complete canonical target signatures and hierarchy-proven compatible callable signatures, allowing interface-typed dependency calls to join concrete crypto entry points without fabricating call edges. (#136)
@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner failure messages now explain documented semgrep/opengrep exit codes (`opengrep execution failed with exit code 7 (rule configuration contains no valid rules)`) and attach a sanitized stderr tail (ANSI-stripped, single line, capped on UTF-8 rune boundaries) to logs and error details; the failure debug log records rule configs + target instead of dumping the full command line. (#112)
 
 ### Fixed
+- C callgraph pointer-return inference now propagates through in-project wrapper functions while preserving arity-qualified contract lookup. (#153)
 - Rust callgraph contracts now resolve associated functions using the canonical Rust callable identity, enabling inferred return types from embedded contracts. (#74)
 - Nested-call findings now attribute matched operations and canonical call identities to the tightest source invocation instead of an enclosing call. (#134)
 - Supporting-call catalogs now preserve every callable overload deterministically instead of selecting one by traversal order. (#131)

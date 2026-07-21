@@ -664,8 +664,15 @@ func candidateFromCallResult(
 	}
 
 	// Propagation: callee has an inferred type already.
-	calleeKey := ct.String()
-	if callee, ok := graph.Functions[calleeKey]; ok && callee.InferredReturn != nil {
+	callee := graph.Functions[ct.String()]
+	if callee == nil && arity >= 0 {
+		// C return sources carry arity for contract lookup, while C declarations
+		// keep their source identity because C has no function overloading.
+		undecorated := *ct
+		undecorated.Name = BaseFunctionName(undecorated.Name)
+		callee = graph.Functions[undecorated.String()]
+	}
+	if callee != nil && callee.InferredReturn != nil {
 		ir := callee.InferredReturn
 		if ir.Origin != OriginJoinFailed {
 			return candidate{
