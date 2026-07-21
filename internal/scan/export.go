@@ -36,6 +36,7 @@ const (
 	callGraphExportMaxDepth        = 32
 	callGraphExportMaxChains       = 128
 	maxExportSourceResolutionDepth = 8
+	constructorMethodName          = "<init>"
 )
 
 // --- v4 JSON schema types (simplified) ---
@@ -2803,7 +2804,7 @@ func mergeExportParameterTypeRefs(existing []exportTypeRef, fallback []callgraph
 
 func normalizeExportReturnType(id callgraph.FunctionID, returnType string) string {
 	trimmed := strings.TrimSpace(returnType)
-	if callgraph.BaseFunctionName(id.Name) != "<init>" {
+	if callgraph.BaseFunctionName(id.Name) != constructorMethodName {
 		return trimmed
 	}
 	if trimmed != "" && trimmed != "void" {
@@ -2931,7 +2932,7 @@ func exportDisplaySymbolAndAliases(id callgraph.FunctionID, functionName string)
 }
 
 func constructorDisplaySymbol(id callgraph.FunctionID, fallback string) string {
-	if callgraph.BaseFunctionName(id.Name) != "<init>" {
+	if callgraph.BaseFunctionName(id.Name) != constructorMethodName {
 		return fallback
 	}
 	typeName := sanitizeSymbol(id.Type)

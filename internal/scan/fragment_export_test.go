@@ -139,6 +139,45 @@ func TestBuildGraphFragmentExport_PreservesSupportingOverloadsAcrossRepeatedExpo
 	}
 }
 
+func TestBuildGraphFragmentExport_ExportsHierarchyCompatibleCanonicalSignatures(t *testing.T) {
+	t.Parallel()
+
+	interfaceID := callgraph.FunctionID{Package: "security", Type: "PasswordEncoder", Name: "encode#1"}
+	concreteID := callgraph.FunctionID{Package: "security", Type: "BCryptPasswordEncoder", Name: "encode#1"}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			interfaceID.String(): {ID: interfaceID, Parameters: []callgraph.FunctionParameter{{Type: "CharSequence"}}, ReturnType: "String"},
+			concreteID.String():  {ID: concreteID, Parameters: []callgraph.FunctionParameter{{Type: "CharSequence"}}, ReturnType: "String"},
+		},
+		TypeHierarchy: map[string][]string{
+			"security.BCryptPasswordEncoder": {"security.PasswordEncoder"},
+		},
+	}
+
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	var concrete *graphfrag.GraphFragmentFunction
+	for i := range payload.Functions {
+		if payload.Functions[i].Key == concreteID.String() {
+			concrete = &payload.Functions[i]
+			break
+		}
+	}
+	if concrete == nil {
+		t.Fatalf("missing concrete function: %#v", payload.Functions)
+	}
+	want := "security.PasswordEncoder.encode(CharSequence): String"
+	found := false
+	for _, signature := range concrete.CompatibleCanonicalSignatures {
+		found = signature == want
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("CompatibleCanonicalSignatures = %#v, want %q", concrete.CompatibleCanonicalSignatures, want)
+	}
+}
+
 func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
 	t.Parallel()
 

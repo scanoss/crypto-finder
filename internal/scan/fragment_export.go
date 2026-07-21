@@ -613,6 +613,9 @@ func buildFragmentExternalCall(
 		EndCol:               res.EndCol,
 	}
 	external.TargetFunctionName = fragmentTargetFunctionName(ctx, callerKey, callerDecl, calleeKey, &external)
+	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
+		external.TargetCanonicalSignature = buildExportFunctionMetadata(ctx.graph, calleeID, nil).CanonicalSignature
+	}
 	if call != nil {
 		external.Raw = call.Raw
 		external.ReceiverVar = call.ReceiverVar
@@ -1053,18 +1056,19 @@ func (ctx *exportBuildContext) callSignatureIndexForCaller(callerKey string, cal
 func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID, decl *callgraph.FunctionDecl) graphfrag.GraphFragmentFunction {
 	meta := buildExportFunctionMetadata(ctx.graph, id, decl)
 	fn := graphfrag.GraphFragmentFunction{
-		Key:                id.String(),
-		FunctionName:       meta.FunctionName,
-		CanonicalSignature: meta.CanonicalSignature,
-		Package:            id.Package,
-		Type:               id.Type,
-		Name:               id.Name,
-		ReturnType:         meta.ReturnType,
-		ParameterTypes:     meta.ParameterTypes,
-		Visibility:         meta.Visibility,
-		OwnerVisibility:    meta.OwnerVisibility,
-		DisplaySymbol:      meta.DisplaySymbol,
-		Aliases:            cloneStringSlice(meta.Aliases),
+		Key:                           id.String(),
+		FunctionName:                  meta.FunctionName,
+		CanonicalSignature:            meta.CanonicalSignature,
+		CompatibleCanonicalSignatures: compatibleCanonicalSignatures(ctx, id, decl),
+		Package:                       id.Package,
+		Type:                          id.Type,
+		Name:                          id.Name,
+		ReturnType:                    meta.ReturnType,
+		ParameterTypes:                meta.ParameterTypes,
+		Visibility:                    meta.Visibility,
+		OwnerVisibility:               meta.OwnerVisibility,
+		DisplaySymbol:                 meta.DisplaySymbol,
+		Aliases:                       cloneStringSlice(meta.Aliases),
 	}
 	if decl != nil {
 		fn.FilePath = normalizeExportPath(ctx, decl.FilePath).FilePath
@@ -1072,6 +1076,63 @@ func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID
 		fn.EndLine = decl.EndLine
 	}
 	return fn
+}
+
+// compatibleCanonicalSignatures emits only source-hierarchy-proven parent
+// callable signatures. The concrete declaration keeps its own canonical
+// signature; these are additional join keys for interface/override clients.
+func compatibleCanonicalSignatures(ctx *exportBuildContext, id callgraph.FunctionID, decl *callgraph.FunctionDecl) []string {
+	if ctx == nil || ctx.graph == nil || decl == nil || id.Package == "" || id.Type == "" {
+		return nil
+	}
+	method := callgraph.BaseFunctionName(id.Name)
+	if method == "" || method == constructorMethodName || method == "<clinit>" {
+		return nil
+	}
+	owner := id.Package + "." + id.Type
+	return compatibleParentSignatures(ctx, hierarchyAncestors(ctx.graph.TypeHierarchy, owner), method, len(decl.Parameters))
+}
+
+func hierarchyAncestors(hierarchy map[string][]string, owner string) []string {
+	seen := map[string]bool{owner: true}
+	pending := append([]string(nil), hierarchy[owner]...)
+	var ancestors []string
+	for len(pending) > 0 {
+		parent := pending[0]
+		pending = pending[1:]
+		if parent == "" || seen[parent] {
+			continue
+		}
+		seen[parent] = true
+		ancestors = append(ancestors, parent)
+		pending = append(pending, hierarchy[parent]...)
+	}
+	return ancestors
+}
+
+func compatibleParentSignatures(ctx *exportBuildContext, parents []string, method string, arity int) []string {
+	compatible := make(map[string]bool)
+	for _, parent := range parents {
+		for _, candidate := range ctx.declsByMethod[method] {
+			candidateID := candidate.decl.ID
+			if candidateID.Package+"."+candidateID.Type != parent || len(candidate.decl.Parameters) != arity {
+				continue
+			}
+			signature := buildExportFunctionMetadata(ctx.graph, candidateID, candidate.decl).CanonicalSignature
+			if signature != "" {
+				compatible[signature] = true
+			}
+		}
+	}
+	if len(compatible) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(compatible))
+	for signature := range compatible {
+		out = append(out, signature)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {

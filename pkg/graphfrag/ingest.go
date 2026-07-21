@@ -41,19 +41,20 @@ func appendFragmentFunctions(frag *Fragment, functions []GraphFragmentFunction) 
 	for i := range functions {
 		fn := &functions[i]
 		frag.Functions = append(frag.Functions, Function{
-			Signature:          fn.Key,
-			FunctionName:       fn.FunctionName,
-			DeclaringType:      fn.Type,
-			CanonicalSignature: fn.CanonicalSignature,
-			ReturnType:         fn.ReturnType,
-			ParameterTypes:     fn.ParameterTypes,
-			Visibility:         fn.Visibility,
-			OwnerVisibility:    fn.OwnerVisibility,
-			StartLine:          fn.StartLine,
-			EndLine:            fn.EndLine,
-			FilePath:           fn.FilePath,
-			DisplaySymbol:      fn.DisplaySymbol,
-			Aliases:            append([]string(nil), fn.Aliases...),
+			Signature:                     fn.Key,
+			FunctionName:                  fn.FunctionName,
+			DeclaringType:                 fn.Type,
+			CanonicalSignature:            fn.CanonicalSignature,
+			CompatibleCanonicalSignatures: append([]string(nil), fn.CompatibleCanonicalSignatures...),
+			ReturnType:                    fn.ReturnType,
+			ParameterTypes:                fn.ParameterTypes,
+			Visibility:                    fn.Visibility,
+			OwnerVisibility:               fn.OwnerVisibility,
+			StartLine:                     fn.StartLine,
+			EndLine:                       fn.EndLine,
+			FilePath:                      fn.FilePath,
+			DisplaySymbol:                 fn.DisplaySymbol,
+			Aliases:                       append([]string(nil), fn.Aliases...),
 		})
 	}
 }
@@ -119,21 +120,22 @@ func appendExternalCalls(frag *Fragment, calls []GraphFragmentExternal) {
 	for i := range calls {
 		ec := &calls[i]
 		frag.ExternalCalls = append(frag.ExternalCalls, ExternalCall{
-			Caller:               ec.CallerKey,
-			TargetSignature:      ec.TargetKey,
-			Raw:                  ec.Raw,
-			Resolution:           normalizeResolutionKind(ec.Resolution),
-			DeclaredType:         ec.DeclaredType,
-			MethodName:           ec.MethodName,
-			Arity:                ec.Arity,
-			CallSite:             ec.Line,
-			ReceiverVar:          ec.ReceiverVar,
-			AssignedVar:          ec.AssignedVar,
-			ChainID:              ec.ChainID,
-			StartCol:             ec.StartCol,
-			EndCol:               ec.EndCol,
-			EntryCall:            toCallSite(ec.EntryCall),
-			ResolvedReceiverType: ec.ResolvedReceiverType,
+			Caller:                   ec.CallerKey,
+			TargetSignature:          ec.TargetKey,
+			TargetCanonicalSignature: ec.TargetCanonicalSignature,
+			Raw:                      ec.Raw,
+			Resolution:               normalizeResolutionKind(ec.Resolution),
+			DeclaredType:             ec.DeclaredType,
+			MethodName:               ec.MethodName,
+			Arity:                    ec.Arity,
+			CallSite:                 ec.Line,
+			ReceiverVar:              ec.ReceiverVar,
+			AssignedVar:              ec.AssignedVar,
+			ChainID:                  ec.ChainID,
+			StartCol:                 ec.StartCol,
+			EndCol:                   ec.EndCol,
+			EntryCall:                toCallSite(ec.EntryCall),
+			ResolvedReceiverType:     ec.ResolvedReceiverType,
 		})
 	}
 }

@@ -85,6 +85,9 @@ type Function struct {
 	DeclaringType string
 	// CanonicalSignature is the canonical function signature (1.2+).
 	CanonicalSignature string
+	// CompatibleCanonicalSignatures are hierarchy-proven inherited or override
+	// identities that resolve to this declaration.
+	CompatibleCanonicalSignatures []string
 	// ReturnType is the declared return type (1.2+).
 	ReturnType string
 	// ParameterTypes lists the declared parameter types in order (1.2+).
@@ -338,6 +341,8 @@ const (
 type ExternalCall struct {
 	Caller          string
 	TargetSignature string
+	// TargetCanonicalSignature is the complete callable join key when known.
+	TargetCanonicalSignature string
 
 	// Raw is the source call expression (e.g. "gen.init"). Carried so the
 	// annotate path can reproduce a supporting call's matched_operation.expression
