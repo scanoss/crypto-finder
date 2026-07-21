@@ -39,6 +39,7 @@ func buildCallSiteParameters(ctx *exportBuildContext, call *callgraph.FunctionCa
 	}
 	return mergeCallParameters(
 		ctx,
+		nil,
 		&call.Callee,
 		callee,
 		call.Arguments,

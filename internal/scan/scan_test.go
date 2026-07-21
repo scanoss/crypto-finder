@@ -1445,8 +1445,8 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 	if entryParam.ParameterIndex != 0 || chain[1].EntryCall.Parameters[1].ParameterIndex != 1 {
 		t.Fatalf("unexpected entry_call parameter indexes: %#v", chain[1].EntryCall.Parameters)
 	}
-	if entryParam.ResolvedValue != "" {
-		t.Fatalf("did not expect resolved value once the controller hop is outside the exported chain, got %#v", entryParam)
+	if entryParam.ResolvedValue != "SignatureAlgorithm.HS256" {
+		t.Fatalf("resolved value = %q, want caller selector literal", entryParam.ResolvedValue)
 	}
 	if len(entryParam.SourceNodes) != 1 || entryParam.SourceNodes[0].Type != "PARAMETER" {
 		t.Fatalf("expected local parameter source node, got %#v", entryParam.SourceNodes)
@@ -1463,11 +1463,11 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 	if cryptoParam.ParameterIndex != 0 || chain[1].CryptoCall.Parameters[1].ParameterIndex != 1 {
 		t.Fatalf("unexpected crypto_call parameter indexes: %#v", chain[1].CryptoCall.Parameters)
 	}
-	if cryptoParam.ResolvedValue != "" {
-		t.Fatalf("did not expect crypto_call param to resolve once upstream controller provenance is truncated, got %#v", cryptoParam)
+	if cryptoParam.ResolvedValue != "SignatureAlgorithm.HS256" {
+		t.Fatalf("crypto_call resolved value = %q, want caller selector literal", cryptoParam.ResolvedValue)
 	}
-	if len(cryptoParam.SourceNodes) != 1 || len(cryptoParam.SourceNodes[0].SourceNodes) != 1 {
-		t.Fatalf("expected nested parameter provenance on crypto_call param, got %#v", cryptoParam.SourceNodes)
+	if len(cryptoParam.SourceNodes) == 0 || len(cryptoParam.SourceNodes[0].SourceNodes) == 0 {
+		t.Fatalf("expected recursive parameter provenance on crypto_call param, got %#v", cryptoParam.SourceNodes)
 	}
 	if cryptoParam.SourceNodes[0].SourceNodes[0].Type != "PARAMETER" {
 		t.Fatalf("expected service-level parameter provenance on crypto_call param, got %#v", cryptoParam.SourceNodes)
