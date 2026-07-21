@@ -165,6 +165,28 @@ func TestTerminalEdgeIndex_ColumnAwareSelection(t *testing.T) {
 		}
 	})
 
+	t.Run("nested invocation spans select the matched edge", func(t *testing.T) {
+		edges := []fragEdge{
+			{raw: "cipher.encrypt(new KeyParameter(key))", line: 5, startCol: 10, endCol: 49},
+			{raw: "new KeyParameter(key)", line: 5, startCol: 25, endCol: 46},
+		}
+		for _, tt := range []struct {
+			name       string
+			start, end int
+			want       int
+		}{
+			{"nested constructor", 25, 46, 1},
+			{"enclosing invocation", 10, 49, 0},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				asset := entities.CryptographicAsset{StartLine: 5, EndLine: 5, StartCol: tt.start, EndCol: tt.end}
+				if got := terminalEdgeIndex(edges, asset); got != tt.want {
+					t.Fatalf("terminalEdgeIndex = %d, want %d", got, tt.want)
+				}
+			})
+		}
+	})
+
 	t.Run("fluent chain on one line - chain root (AssignedVar) selected", func(t *testing.T) {
 		edges := []fragEdge{
 			{raw: "Password.hash(p)", line: 6, startCol: 1, endCol: 17, identity: objectIdentity{ChainID: "c1"}},
@@ -173,9 +195,11 @@ func TestTerminalEdgeIndex_ColumnAwareSelection(t *testing.T) {
 				identity: objectIdentity{ChainID: "c1", AssignedVar: "hash"},
 			},
 		}
-		asset := entities.CryptographicAsset{StartLine: 6, EndLine: 6, StartCol: 1, EndCol: 46}
-		if got := terminalEdgeIndex(edges, asset); got != 1 {
-			t.Fatalf("terminalEdgeIndex = %d, want 1 (chain root with AssignedVar)", got)
+		for _, endCol := range []int{17, 46} {
+			asset := entities.CryptographicAsset{StartLine: 6, EndLine: 6, StartCol: 1, EndCol: endCol}
+			if got := terminalEdgeIndex(edges, asset); got != 1 {
+				t.Fatalf("span [1,%d) selected edge %d, want chain root", endCol, got)
+			}
 		}
 	})
 

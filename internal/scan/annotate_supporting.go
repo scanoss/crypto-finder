@@ -208,13 +208,13 @@ func edgeCandidateViews(edges []fragEdge) []candidateView {
 // running the SAME position/chain selection policy (terminal_selection.go) as the
 // live exporter (findCryptoCallNode) over the cached fragment's edges. Because
 // graph-fragment 1.4 edges now carry call columns (start_col/end_col), the
-// column-intersection anchor is identical on both paths — so a finding's terminal,
+// source-position anchor is identical on both paths — so a finding's terminal,
 // and therefore its derived supporting calls, match a live
-// `scan --export-graph-fragment` even on multi-call / fluent-chain lines.
+// `scan --export-graph-fragment` even on nested / multi-call / fluent-chain lines.
 //
 // Steps mirror findCryptoCallNode:
 //  1. line-range candidates (edges on the finding's line);
-//  2. column intersection (shared columnFilterIndices);
+//  2. column intersection and tightest containing span (shared columnFilterIndices);
 //  3. chain-root, then longest-chain tie-break (shared);
 //  4. fallback for legacy column-less fragments (schema < 1.4, every column 0) or
 //     non-chain calls: see annotateNonChainEdgeIndex.
