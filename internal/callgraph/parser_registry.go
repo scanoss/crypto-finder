@@ -27,6 +27,8 @@ func NewParserForEcosystem(ecosystem string, opts ...ParserOption) Parser {
 // Returns nil if no type resolver is available (tree-sitter-only resolution).
 func NewTypeResolverForEcosystem(ecosystem string, javaRuntime javaruntime.Config) TypeResolver {
 	switch ecosystem {
+	case "go":
+		return NewGoContractTypeResolverFromEmbedded()
 	case "java":
 		return NewJavaBytecodeTypeResolver(javaRuntime)
 	case "python":
