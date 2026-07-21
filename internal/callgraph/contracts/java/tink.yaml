@@ -27,6 +27,7 @@ contracts:
     return:
       type: com.google.crypto.tink.KeysetHandle
       confidence: high
+    role: factory
 
   # getPrimitive(Class<P>) — classic arity-1 form, conditional on the requested
   # primitive class literal.
@@ -109,12 +110,14 @@ contracts:
     return:
       type: "byte[]"
       confidence: high
+    role: operation
 
   - method: com.google.crypto.tink.Aead.decrypt
     arity: 2
     return:
       type: "byte[]"
       confidence: high
+    role: operation
 
   - method: com.google.crypto.tink.Mac.computeMac
     arity: 1

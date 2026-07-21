@@ -96,6 +96,47 @@ func TestLoadEmbeddedJavaIncludesTier0GapContracts(t *testing.T) {
 	}
 }
 
+func TestLoadEmbeddedJavaIncludesIssue138LifecycleContracts(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantRole   string
+		wantLib    string
+	}{
+		{"org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>", 1, "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder", "factory", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getAlgorithm", 0, "int", "output", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.build", 1, "org.bouncycastle.openpgp.operator.PGPDataEncryptor", "factory", "bouncycastle-openpgp"},
+		{"org.bouncycastle.openpgp.PGPEncryptedDataGenerator.open", 2, "java.io.OutputStream", "operation", "bouncycastle-openpgp"},
+		{"com.google.crypto.tink.KeysetHandle.generateNew", 1, "com.google.crypto.tink.KeysetHandle", "factory", "tink"},
+		{"com.google.crypto.tink.Aead.encrypt", 2, "byte[]", "operation", "tink"},
+		{"com.google.crypto.tink.Aead.decrypt", 2, "byte[]", "operation", "tink"},
+		{"org.apache.xml.security.encryption.XMLCipher.getInstance", 1, "org.apache.xml.security.encryption.XMLCipher", "factory", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.init", 2, "void", "config", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.doFinal", 2, "org.w3c.dom.Document", "operation", "apache-santuario-xmlsec"},
+		{"org.apache.xml.security.encryption.XMLCipher.doFinal", 3, "org.w3c.dom.Document", "operation", "apache-santuario-xmlsec"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.wantReturn || got[0].Role != tt.wantRole || got[0].SourceLibrary != tt.wantLib {
+				t.Fatalf("%s#%d = %#v, want return %s, role %s, library %s", tt.method, tt.arity, got[0], tt.wantReturn, tt.wantRole, tt.wantLib)
+			}
+		})
+	}
+}
+
 // TestLoadEmbeddedJava_BouncyCastleRoleCoverage is the issue-103 (WU1/BC-YAML)
 // acceptance test scoped to what a unit test can verify without a real BC
 // corpus (see internal/scan/bcprov_fragment_profile_test.go for the

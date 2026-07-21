@@ -82,7 +82,7 @@ func TestBuildCallSiteParameters(t *testing.T) {
 			// with just the Type field, but only if Type != "".
 			want: func() []callGraphParameter {
 				callee := graph.Functions[calleeID.String()]
-				return mergeCallParameters(ctx, &calleeID, callee, nil, nil, "Service.java", 5)
+				return mergeCallParameters(ctx, nil, &calleeID, callee, nil, nil, "Service.java", 5)
 			}(),
 		},
 		{
@@ -95,7 +95,7 @@ func TestBuildCallSiteParameters(t *testing.T) {
 			},
 			want: func() []callGraphParameter {
 				callee := graph.Functions[calleeID.String()]
-				return mergeCallParameters(ctx, &calleeID, callee, []string{`"AES"`}, nil, "Service.java", 5)
+				return mergeCallParameters(ctx, nil, &calleeID, callee, []string{`"AES"`}, nil, "Service.java", 5)
 			}(),
 		},
 		{
@@ -140,7 +140,7 @@ func TestBuildCallSiteParameters(t *testing.T) {
 						},
 					},
 				}
-				return mergeCallParameters(ctx, &calleeID, callee, []string{"algo"}, argSources, "Service.java", 5)
+				return mergeCallParameters(ctx, nil, &calleeID, callee, []string{"algo"}, argSources, "Service.java", 5)
 			}(),
 		},
 	}
