@@ -47,6 +47,38 @@ func TestEcosystemFromHints_C(t *testing.T) {
 	}
 }
 
+func TestEcosystemFromHints_CPP(t *testing.T) {
+	for _, hint := range []string{ecosystemCPP, "c++"} {
+		if got := ecosystemFromHints(t.TempDir(), []string{hint}); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%q hint) = %q, want cpp", hint, got)
+		}
+	}
+
+	for _, name := range []string{"crypto.cc", "crypto.cpp", "crypto.cxx", "crypto.hpp"} {
+		filePath := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(filePath, []byte("int main() { return 0; }"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ecosystemFromHints(filePath, nil); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%s file) = %q, want cpp", filepath.Ext(name), got)
+		}
+	}
+}
+
+func TestEcosystemFromHints_CPPHeaderOverridesCHint(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "crypto.h")
+	if err := os.WriteFile(headerPath, []byte("namespace Botan { class HashFunction {}; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{headerPath, dir} {
+		if got := ecosystemFromHints(target, []string{"c"}); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%q, c hint) = %q, want cpp", target, got)
+		}
+	}
+}
+
 func TestNewFindingsCache_NoneBackend(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := &config.Config{}

@@ -8,6 +8,8 @@ func NewParserForEcosystem(ecosystem string, opts ...ParserOption) Parser {
 	switch ecosystem {
 	case "c":
 		return NewCParser(opts...)
+	case "cpp", "c++":
+		return NewCPPParser(opts...)
 	case "go":
 		return NewGoParser(opts...)
 	case "java":

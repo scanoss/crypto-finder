@@ -21,6 +21,15 @@ func TestNewParserForEcosystem_IncludeTestsOption(t *testing.T) {
 			},
 		},
 		{
+			ecosystem: "cpp",
+			check: func(t *testing.T, parser Parser) {
+				p, ok := parser.(*CPPParser)
+				if !ok || !p.includeTests {
+					t.Fatalf("expected CPPParser with includeTests, got %#v", parser)
+				}
+			},
+		},
+		{
 			ecosystem: "go",
 			check: func(t *testing.T, parser Parser) {
 				p, ok := parser.(*GoParser)

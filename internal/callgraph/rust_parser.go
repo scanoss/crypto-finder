@@ -498,7 +498,7 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 			Line:      line,
 			Arguments: args,
 		}
-	case rustNodeFieldExpression:
+	case fieldExpressionNode:
 		// Method call like `self.encrypt(...)` or `obj.method(...)`
 		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, varTypes)
 	}
