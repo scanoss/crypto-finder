@@ -1,0 +1,196 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ring
+  coordinates:
+    - ring
+  version_range: ">=0.17.0,<0.18.0"
+  description: "ring cryptography library"
+
+contracts:
+  - method: ring::aead::UnboundKey.new
+    arity: 2
+    return: { type: ring::aead::UnboundKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: key_material
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ring::aead::LessSafeKey.new
+    arity: 1
+    return: { type: ring::aead::LessSafeKey, confidence: high }
+    role: factory
+  - method: ring::aead::Nonce.assume_unique_for_key
+    arity: 1
+    return: { type: ring::aead::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: value
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: ring::aead::LessSafeKey.seal_in_place_append_tag
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters: &aead_operation
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: aad
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+
+  - method: ring::digest.digest
+    arity: 2
+    return: { type: ring::digest::Digest, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: ring::digest::Context.new
+    arity: 1
+    return: { type: ring::digest::Context, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: ring::digest::Context.update
+    arity: 1
+    return: { type: (), confidence: high }
+    role: operation
+  - method: ring::digest::Context.finish
+    arity: 0
+    return: { type: ring::digest::Digest, confidence: high }
+    role: output
+
+  - method: ring::hmac::Key.new
+    arity: 2
+    return: { type: ring::hmac::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: key_value
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ring::hmac::Key.generate
+    arity: 2
+    return: { type: ring::hmac::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: ring::hmac.sign
+    arity: 2
+    return: { type: ring::hmac::Tag, confidence: high }
+    role: operation
+  - method: ring::hmac.verify
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+  - method: ring::hmac::Context.with_key
+    arity: 1
+    return: { type: ring::hmac::Context, confidence: high }
+    role: factory
+  - method: ring::hmac::Context.update
+    arity: 1
+    return: { type: (), confidence: high }
+    role: operation
+  - method: ring::hmac::Context.sign
+    arity: 0
+    return: { type: ring::hmac::Tag, confidence: high }
+    role: output
+
+  - method: ring::hkdf::Salt.new
+    arity: 2
+    return: { type: ring::hkdf::Salt, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: value
+        role: metadata-contributing
+        contributes: { property: saltSize, derivation: argument_bit_length }
+  - method: ring::hkdf::Salt.extract
+    arity: 1
+    return: { type: ring::hkdf::Prk, confidence: high }
+    role: operation
+  - method: ring::hkdf::Prk.expand
+    arity: 2
+    return: { type: ring::hkdf::Okm, confidence: high }
+    role: operation
+  - method: ring::hkdf::Okm.fill
+    arity: 1
+    return: { type: (), confidence: high }
+    role: output
+
+  - method: ring::agreement::EphemeralPrivateKey.generate
+    arity: 2
+    return: { type: ring::agreement::EphemeralPrivateKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: ring::agreement::EphemeralPrivateKey.compute_public_key
+    arity: 0
+    return: { type: ring::agreement::PublicKey, confidence: high }
+    role: output
+  - method: ring::agreement::UnparsedPublicKey.new
+    arity: 2
+    return: { type: ring::agreement::UnparsedPublicKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: ring::signature::Ed25519KeyPair.from_pkcs8
+    arity: 1
+    return: { type: ring::signature::Ed25519KeyPair, confidence: high }
+    role: factory
+  - method: ring::signature::Ed25519KeyPair.sign
+    arity: 1
+    return: { type: ring::signature::Signature, confidence: high }
+    role: operation
+  - method: ring::signature::UnparsedPublicKey.new
+    arity: 2
+    return: { type: ring::signature::UnparsedPublicKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: ring::signature::UnparsedPublicKey.verify
+    arity: 2
+    return: { type: (), confidence: high }
+    role: operation
+
+hierarchy: {}

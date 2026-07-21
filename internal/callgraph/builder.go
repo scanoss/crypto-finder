@@ -803,7 +803,7 @@ func (b *Builder) expandAbstractClassDispatch(
 	// default constructor, unparsed overload) fans out to EVERY same-arity
 	// constructor in the namespace root — on the bcprov corpus that synthesized
 	// 6.58M of the graph's 7.16M edges, all semantically impossible.
-	if base := BaseFunctionName(callee.Name); base == "<init>" || base == "<clinit>" {
+	if base := BaseFunctionName(callee.Name); base == constructorMethodName || base == clinitMethodName {
 		return nil
 	}
 	calleeKey := callee.String()
