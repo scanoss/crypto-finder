@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
 func TestCPPParser_ParseDirectory(t *testing.T) {
@@ -192,6 +194,45 @@ void Botan::caller() {
 	caller := (FunctionID{Package: "example/crypto", Type: "Botan", Name: "caller"}).String()
 	if !containsString(graph.Callers[target], caller) {
 		t.Fatalf("Callers[%q] = %#v, want %q", target, graph.Callers[target], caller)
+	}
+}
+
+func TestCPPParser_NamespaceQualifiedReturnSource(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "crypto.cpp")
+	src := `auto build_hash() {
+	    auto ignored = []() { return CryptoPP::SHA256(); };
+	    return Botan::HashFunction::create("SHA-256");
+}
+`
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := NewCPPParser().ParseDirectory(dir, "example/crypto")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 || len(analyses[0].Functions) != 1 {
+		t.Fatalf("analyses = %#v, want one function", analyses)
+	}
+
+	fn := &analyses[0].Functions[0]
+	sources := fn.ReturnSources
+	want := FunctionID{Package: "example/crypto", Type: "Botan::HashFunction", Name: "create#1"}
+	if len(sources) != 1 || sources[0].Type != sourceNodeCallResult || sources[0].CallTarget == nil || *sources[0].CallTarget != want {
+		t.Fatalf("ReturnSources = %#v, want one call result for %v", sources, want)
+	}
+	kb := &contracts.KnowledgeBase{Contracts: map[string][]contracts.Contract{
+		"example/crypto.Botan::HashFunction.create#1": {{
+			Return: contracts.ContractReturn{Type: "Botan::HashFunction", Confidence: ConfidenceHigh},
+		}},
+	}}
+	if err := InferReturnTypes(buildTestCallGraph(fn), kb); err != nil {
+		t.Fatalf("InferReturnTypes error: %v", err)
+	}
+	if fn.InferredReturn == nil || fn.InferredReturn.Type != "Botan::HashFunction" {
+		t.Fatalf("InferredReturn = %#v, want Botan::HashFunction", fn.InferredReturn)
 	}
 }
 

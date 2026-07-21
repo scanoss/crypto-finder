@@ -93,6 +93,11 @@ func TestNewTypeResolverForEcosystem(t *testing.T) {
 	if _, ok := NewTypeResolverForEcosystem("c", javaruntime.Config{}).(*CContractTypeResolver); !ok {
 		t.Fatal("expected CContractTypeResolver")
 	}
+	for _, ecosystem := range []string{"cpp", "c++"} {
+		if _, ok := NewTypeResolverForEcosystem(ecosystem, javaruntime.Config{}).(*CPPContractTypeResolver); !ok {
+			t.Fatalf("expected CPPContractTypeResolver for %q", ecosystem)
+		}
+	}
 	if resolver := NewTypeResolverForEcosystem("java", javaruntime.Config{}); resolver == nil {
 		t.Fatal("expected Java type resolver")
 	}
