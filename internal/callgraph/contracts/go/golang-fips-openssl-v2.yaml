@@ -1,0 +1,366 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: golang-fips-openssl-v2
+  coordinates:
+    - "github.com/golang-fips/openssl/v2"
+  version_range: ">=2.0.0,<3.0.0"
+  description: "Legacy Go OpenSSL v2 cryptographic bindings"
+
+# API inventory source: upstream v2 branch at 9696eb4fdc48b79fdcb0381b341ffbb143d9d942.
+# Capability probes and OpenSSL/FIPS runtime setup are intentionally omitted: they do not
+# construct, configure, or execute a source-visible cryptographic operation.
+contracts:
+  # Symmetric ciphers and MAC/hash factories.
+  - method: github.com/golang-fips/openssl/v2.NewAESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/golang-fips/openssl/v2.NewChaCha20Poly1305
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/golang-fips/openssl/v2.NewDESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/golang-fips/openssl/v2.NewTripleDESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/golang-fips/openssl/v2.NewGCMTLS
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: config
+  - method: github.com/golang-fips/openssl/v2.NewGCMTLS13
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: config
+  - method: github.com/golang-fips/openssl/v2.NewHMAC
+    arity: 2
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/golang-fips/openssl/v2.NewSHA256
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewSHA512
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewSHA3_256
+    arity: 0
+    return: {type: github.com/golang-fips/openssl/v2.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewSHAKE128
+    arity: 0
+    return: {type: github.com/golang-fips/openssl/v2.SHAKE, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewCSHAKE128
+    arity: 2
+    return: {type: github.com/golang-fips/openssl/v2.SHAKE, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: functionName, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: customization, derivation: argument_value}
+
+  # KDFs and TLS PRF.
+  - method: github.com/golang-fips/openssl/v2.ExtractHKDF
+    arity: 3
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: sharedSecret, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: salt, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.ExpandHKDFOneShot
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: info, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.ExpandTLS13KDF
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: label, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: context, derivation: argument_value}
+      - index: 4
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.PBKDF2
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: password, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: salt, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+  - method: github.com/golang-fips/openssl/v2.TLS1PRF
+    arity: 5
+    return: {type: error, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: output, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: sharedSecret, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: label, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: seed, derivation: argument_value}
+      - index: 4
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+
+  # Public key factories and operations.
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyRSA
+    arity: 2
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyRSA", confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyRSA
+    arity: 8
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyRSA", confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.EncryptRSAOAEP
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.DecryptRSAOAEP
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.SignRSAPSS
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: digest, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.VerifyRSAPSS
+    arity: 5
+    return: {type: error, confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyECDSA
+    arity: 4
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyECDSA", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.SignMarshalECDSA
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyEd25519
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.SignEd25519
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyECDH
+    arity: 2
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyECDH", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.ECDH
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.(*PrivateKeyEd25519).Public
+    arity: 0
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyEd25519", confidence: high}
+    role: output
+  - method: github.com/golang-fips/openssl/v2.(*PrivateKeyECDH).PublicKey
+    arity: 0
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyECDH", confidence: high}
+    role: output
+
+  # Post-quantum key material and operations.
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyMLKEM768
+    arity: 0
+    return: {type: github.com/golang-fips/openssl/v2.DecapsulationKeyMLKEM768, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewDecapsulationKeyMLKEM768
+    arity: 1
+    return: {type: github.com/golang-fips/openssl/v2.DecapsulationKeyMLKEM768, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: seed, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.(DecapsulationKeyMLKEM768).Decapsulate
+    arity: 1
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.(DecapsulationKeyMLKEM768).EncapsulationKey
+    arity: 0
+    return: {type: github.com/golang-fips/openssl/v2.EncapsulationKeyMLKEM768, confidence: high}
+    role: output
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyMLDSA
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyMLDSA", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.(*PrivateKeyMLDSA).Sign
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: context, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.(*PrivateKeyMLDSA).PublicKey
+    arity: 0
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyMLDSA", confidence: high}
+    role: output
+
+  # DSA and RC4 are stable legacy API identities. They remain modeled without
+  # inferring runtime provider or compliance state.
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyDSA
+    arity: 3
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyDSA", confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyDSA
+    arity: 2
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyDSA", confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.SignDSA
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.VerifyDSA
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.NewRC4Cipher
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.RC4Cipher", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+
+hierarchy: {}

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Go callgraph contracts now model the legacy `github.com/golang-fips/openssl/v2` API's symmetric, KDF, public-key, and post-quantum cryptographic lifecycles. (#127)
 - Graph-fragment exports now carry complete canonical target signatures and hierarchy-proven compatible callable signatures, allowing interface-typed dependency calls to join concrete crypto entry points without fabricating call edges. (#136)
 - Java callgraph contracts now model the version-pinned Nimbus JOSE JWE and Spring Security Crypto lifecycles, including factory, operation, output, hierarchy, and key-size parameter-role semantics. (#137)
 - Java callgraph lifecycle contracts now cover Bouncy Castle OpenPGP builders, Tink AEAD operations, and Apache Santuario XMLCipher factories and finalization. (#138)
