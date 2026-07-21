@@ -18,7 +18,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -207,13 +209,8 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	// instead of trusting languageHints[0] blindly. When hints come from an
 	// explicit --languages flag, the user's ordering is honored as-is.
 	for _, hint := range languageHints {
-		switch hint {
-		case "c", "go", ecosystemJava, "python", "rust":
-			return hint
-		case ecosystemCPP, "c++":
-			return ecosystemCPP
-		case ecosystemNode, "javascript", "typescript":
-			return ecosystemNode
+		if ecosystem := ecosystemFromHint(target, hint); ecosystem != "" {
+			return ecosystem
 		}
 	}
 
@@ -242,6 +239,66 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	default:
 		return ""
 	}
+}
+
+func ecosystemFromHint(target, hint string) string {
+	switch hint {
+	case "c":
+		if cppHeaderTarget(target) {
+			return ecosystemCPP
+		}
+		return hint
+	case "go", ecosystemJava, "python", "rust":
+		return hint
+	case ecosystemCPP, "c++":
+		return ecosystemCPP
+	case ecosystemNode, "javascript", "typescript":
+		return ecosystemNode
+	default:
+		return ""
+	}
+}
+
+var errCPPHeaderDetected = errors.New("c++ header detected")
+
+func cppHeaderTarget(target string) bool {
+	info, err := os.Stat(target)
+	if err != nil {
+		return false
+	}
+	if !info.IsDir() {
+		return isCPPHeader(target)
+	}
+
+	err = filepath.WalkDir(target, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "build", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if isCPPHeader(path) {
+			return errCPPHeaderDetected
+		}
+		return nil
+	})
+	return errors.Is(err, errCPPHeaderDetected)
+}
+
+func isCPPHeader(path string) bool {
+	if strings.ToLower(filepath.Ext(path)) != ".h" {
+		return false
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	text := string(contents)
+	return strings.Contains(text, "namespace ") || strings.Contains(text, "class ") || strings.Contains(text, "template<") || strings.Contains(text, "template <") || strings.Contains(text, "::")
 }
 
 func resolveJavaRuntimeConfig(cfg *config.Config) (javaruntime.Config, error) {

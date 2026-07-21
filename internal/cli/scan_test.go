@@ -65,6 +65,20 @@ func TestEcosystemFromHints_CPP(t *testing.T) {
 	}
 }
 
+func TestEcosystemFromHints_CPPHeaderOverridesCHint(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "crypto.h")
+	if err := os.WriteFile(headerPath, []byte("namespace Botan { class HashFunction {}; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{headerPath, dir} {
+		if got := ecosystemFromHints(target, []string{"c"}); got != ecosystemCPP {
+			t.Fatalf("ecosystemFromHints(%q, c hint) = %q, want cpp", target, got)
+		}
+	}
+}
+
 func TestNewFindingsCache_NoneBackend(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := &config.Config{}

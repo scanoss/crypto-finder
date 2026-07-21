@@ -126,13 +126,13 @@ func (p *CPPParser) extractInclude(node *sitter.Node, src []byte, analysis *File
 
 func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) *FunctionDecl {
 	declarator := node.ChildByFieldName("declarator")
-	name := cppDeclaratorName(declarator, src)
+	name, typeName := cppDeclaratorIdentity(declarator, src)
 	body := node.ChildByFieldName("body")
 	if name == "" || body == nil {
 		return nil
 	}
 	decl := &FunctionDecl{
-		ID:           FunctionID{Package: cFunctionPackage(packagePath, filePath, name, staticFunctions), Name: name},
+		ID:           FunctionID{Package: cFunctionPackage(packagePath, filePath, name, staticFunctions), Type: typeName, Name: name},
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
@@ -146,15 +146,22 @@ func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packa
 }
 
 func cppDeclaratorName(node *sitter.Node, src []byte) string {
+	name, _ := cppDeclaratorIdentity(node, src)
+	return name
+}
+
+func cppDeclaratorIdentity(node *sitter.Node, src []byte) (name, typeName string) {
 	if node == nil {
-		return ""
+		return "", ""
 	}
 	switch node.Type() {
-	case cNodeIdentifier, "qualified_identifier":
+	case cNodeIdentifier:
+		return node.Content(src), ""
+	case "qualified_identifier":
 		parts := strings.Split(node.Content(src), "::")
-		return parts[len(parts)-1]
+		return parts[len(parts)-1], strings.Join(parts[:len(parts)-1], "::")
 	default:
-		return cppDeclaratorName(node.ChildByFieldName("declarator"), src)
+		return cppDeclaratorIdentity(node.ChildByFieldName("declarator"), src)
 	}
 }
 
@@ -174,6 +181,7 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 	if function == nil {
 		return nil
 	}
+	chainID, assignedVar := cppCallChainContext(node, src)
 	call := &FunctionCall{
 		Callee:      FunctionID{Package: packagePath},
 		Raw:         function.Content(src),
@@ -181,7 +189,8 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 		Line:        int(node.StartPoint().Row) + 1,
 		StartCol:    int(node.StartPoint().Column) + 1,
 		EndCol:      int(node.EndPoint().Column) + 1,
-		AssignedVar: cAssignedVar(node, src),
+		AssignedVar: assignedVar,
+		ChainID:     chainID,
 		Arguments:   cCallArguments(node, src),
 	}
 	switch function.Type() {
@@ -208,6 +217,37 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 		return nil
 	}
 	return call
+}
+
+func cppCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
+	root := cppChainRoot(node)
+	if !sameSyntaxNode(root, node) {
+		return fmt.Sprintf("%d", root.StartByte()), ""
+	}
+	function := node.ChildByFieldName("function")
+	if function != nil && function.Type() == fieldExpressionNode {
+		argument := function.ChildByFieldName("argument")
+		if argument != nil && argument.Type() == cNodeCallExpression {
+			chainID = fmt.Sprintf("%d", root.StartByte())
+		}
+	}
+	return chainID, cAssignedVar(root, src)
+}
+
+func cppChainRoot(node *sitter.Node) *sitter.Node {
+	root := node
+	for {
+		field := root.Parent()
+		if field == nil || field.Type() != fieldExpressionNode || !sameSyntaxNode(field.ChildByFieldName("argument"), root) {
+			break
+		}
+		call := field.Parent()
+		if call == nil || call.Type() != cNodeCallExpression || !sameSyntaxNode(call.ChildByFieldName("function"), field) {
+			break
+		}
+		root = call
+	}
+	return root
 }
 
 // SkipDirs returns build and dependency directories excluded from C++ traversal.
