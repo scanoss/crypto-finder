@@ -71,7 +71,7 @@ internal/callgraph/contracts/
 ├── contracts.go           # loader, types, validation
 ├── java/
 │   └── jdk-crypto.yaml    # JDK JCA/JCE contracts (shipped in v1)
-├── go/                    # future: stdlib + x/crypto + ...
+├── go/                    # schema-v2 Go callgraph contracts
 ├── python/                # pyca-cryptography, pycryptodome, pycryptodomex, paramiko
 └── rust/                  # schema-v2 Rust callgraph contracts
 ```
@@ -99,6 +99,9 @@ To add a library:
 2. Set `schema_version: "2"`, `ecosystem: <name>`, and a unique `library.name`.
 3. Author contracts and hierarchy edges following the same shape as `jdk-crypto.yaml`.
 4. Tests run automatically — no Go code changes required.
+
+Go contract method names use the canonical `FunctionID.String()` form:
+`package/path.Function` or `package/path.(*Receiver).Method`.
 
 ## Detection vs reachability (rules, supporting calls, new languages)
 
