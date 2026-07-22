@@ -731,7 +731,8 @@ func candidateFromKBContracts(
 
 	// Determine whether any condition's arg index is resolved.
 	anyResolved := false
-	for _, c := range conds {
+	for i := range conds {
+		c := &conds[i]
 		if _, ok := resolvedArgs[c.When.ArgIndex]; ok {
 			anyResolved = true
 			break
@@ -760,7 +761,8 @@ func candidateFromKBContracts(
 // arg values are resolved. Returns a candidate only when exactly 1 branch matches.
 func resolveExactConditionalMatch(conds []contracts.Contract, resolvedArgs map[int]string) (candidate, bool) {
 	var exactMatched []contracts.Contract
-	for _, c := range conds {
+	for i := range conds {
+		c := &conds[i]
 		argIdx := c.When.ArgIndex
 		resolvedVal, resolved := resolvedArgs[argIdx]
 		if !resolved {
@@ -768,7 +770,7 @@ func resolveExactConditionalMatch(conds []contracts.Contract, resolvedArgs map[i
 		}
 		for _, v := range c.When.ArgValueIn {
 			if v == resolvedVal {
-				exactMatched = append(exactMatched, c)
+				exactMatched = append(exactMatched, *c)
 				break
 			}
 		}

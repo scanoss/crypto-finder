@@ -11,10 +11,13 @@ library:
 contracts:
   - method: org.apache.xml.security.encryption.XMLCipher.getInstance
     arity: 0
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
   - method: org.apache.xml.security.encryption.XMLCipher.getInstance
     arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
     parameters:
@@ -26,10 +29,13 @@ contracts:
   # factory role are stable, while the selector position is not.
   - method: org.apache.xml.security.encryption.XMLCipher.getInstance
     arity: 2
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
   - method: org.apache.xml.security.encryption.XMLCipher.getInstance
     arity: 3
+    parameter_types: [java.lang.String, java.lang.String, java.lang.String]
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
     parameters:
@@ -39,10 +45,14 @@ contracts:
         contributes: { property: transformation, derivation: argument_value }
   - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
     arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
   - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
     arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
     parameters:
@@ -52,22 +62,30 @@ contracts:
         contributes: { property: transformation, derivation: argument_value }
   - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
     arity: 3
+    parameter_types: [java.lang.String, java.lang.String, java.lang.String]
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
   - method: org.apache.xml.security.encryption.XMLCipher.getProviderInstance
     arity: 4
+    canonical_return_type: org.apache.xml.security.encryption.XMLCipher
     return: { type: org.apache.xml.security.encryption.XMLCipher, confidence: high }
     role: factory
   - method: org.apache.xml.security.encryption.XMLCipher.init
     arity: 2
+    parameter_types: [int, java.security.Key]
+    canonical_return_type: void
     return: { type: void, confidence: high }
     role: config
   - method: org.apache.xml.security.encryption.XMLCipher.doFinal
     arity: 2
+    canonical_return_type: org.w3c.dom.Document
     return: { type: org.w3c.dom.Document, confidence: high }
     role: operation
   - method: org.apache.xml.security.encryption.XMLCipher.doFinal
     arity: 3
+    parameter_types: [org.w3c.dom.Document, org.w3c.dom.Element, boolean]
+    canonical_return_type: org.w3c.dom.Document
     return: { type: org.w3c.dom.Document, confidence: high }
     role: operation
 

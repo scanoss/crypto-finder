@@ -138,12 +138,13 @@ func annotateLifecycleSiblings(
 	edges []fragEdge,
 	terminalIdx int,
 ) []graphfrag.GraphFragmentSupporting {
-	terminalID := edges[terminalIdx].identity
-	out := make([]graphfrag.GraphFragmentSupporting, 0, len(edges))
+	identities := make([]objectIdentity, len(edges))
 	for i := range edges {
-		if i == terminalIdx || !isLifecycleSibling(edges[i].identity, terminalID) {
-			continue
-		}
+		identities[i] = edges[i].identity
+	}
+	indices := lifecycleCallIndices(identities, terminalIdx)
+	out := make([]graphfrag.GraphFragmentSupporting, 0, len(indices))
+	for _, i := range indices {
 		// The supporting call lives in the finding's file; use the detection
 		// finding's normalized, relative path for file_path and the
 		// path-derived supporting_id so both match the live exporter.

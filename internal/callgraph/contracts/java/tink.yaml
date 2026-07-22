@@ -18,12 +18,15 @@ library:
 contracts:
   - method: com.google.crypto.tink.KeyTemplates.get
     arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.google.crypto.tink.KeyTemplate
     return:
       type: com.google.crypto.tink.KeyTemplate
       confidence: high
 
   - method: com.google.crypto.tink.KeysetHandle.generateNew
     arity: 1
+    canonical_return_type: com.google.crypto.tink.KeysetHandle
     return:
       type: com.google.crypto.tink.KeysetHandle
       confidence: high
@@ -33,6 +36,8 @@ contracts:
   # primitive class literal.
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 1
+    parameter_types: [java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.Aead
     when:
       arg_index: 0
       arg_value_in: ["com.google.crypto.tink.Aead.class", "Aead.class"]
@@ -42,6 +47,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 1
+    parameter_types: [java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.Mac
     when:
       arg_index: 0
       arg_value_in: ["com.google.crypto.tink.Mac.class", "Mac.class"]
@@ -51,6 +58,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 1
+    parameter_types: [java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.PublicKeySign
     when:
       arg_index: 0
       arg_value_in: ["com.google.crypto.tink.PublicKeySign.class", "PublicKeySign.class"]
@@ -60,6 +69,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 1
+    parameter_types: [java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.PublicKeyVerify
     when:
       arg_index: 0
       arg_value_in: ["com.google.crypto.tink.PublicKeyVerify.class", "PublicKeyVerify.class"]
@@ -70,6 +81,8 @@ contracts:
   # getPrimitive(Configuration, Class<P>) — newer arity-2 form; class is arg[1].
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 2
+    parameter_types: [com.google.crypto.tink.Configuration, java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.Aead
     when:
       arg_index: 1
       arg_value_in: ["com.google.crypto.tink.Aead.class", "Aead.class"]
@@ -79,6 +92,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 2
+    parameter_types: [com.google.crypto.tink.Configuration, java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.Mac
     when:
       arg_index: 1
       arg_value_in: ["com.google.crypto.tink.Mac.class", "Mac.class"]
@@ -88,6 +103,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 2
+    parameter_types: [com.google.crypto.tink.Configuration, java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.PublicKeySign
     when:
       arg_index: 1
       arg_value_in: ["com.google.crypto.tink.PublicKeySign.class", "PublicKeySign.class"]
@@ -97,6 +114,8 @@ contracts:
 
   - method: com.google.crypto.tink.KeysetHandle.getPrimitive
     arity: 2
+    parameter_types: [com.google.crypto.tink.Configuration, java.lang.Class]
+    canonical_return_type: com.google.crypto.tink.PublicKeyVerify
     when:
       arg_index: 1
       arg_value_in: ["com.google.crypto.tink.PublicKeyVerify.class", "PublicKeyVerify.class"]
@@ -107,6 +126,8 @@ contracts:
   # Terminal operations — truthful returns that terminate the chain.
   - method: com.google.crypto.tink.Aead.encrypt
     arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: "byte[]"
     return:
       type: "byte[]"
       confidence: high
@@ -114,6 +135,8 @@ contracts:
 
   - method: com.google.crypto.tink.Aead.decrypt
     arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: "byte[]"
     return:
       type: "byte[]"
       confidence: high

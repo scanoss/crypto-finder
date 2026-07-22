@@ -95,6 +95,13 @@ Each YAML carries a `library:` block with `name`, optional `coordinates`, option
 `version_range`, and optional `description`. The `library.name` propagates onto every
 contract's `SourceLibrary` field for diagnostic identification across libraries.
 
+Contracts may declare `parameter_types` and `canonical_return_type` when method plus
+arity (and any resolved condition) identifies one unambiguous declared signature.
+The parameter list length must equal `arity`. Omit canonical fields when multiple
+same-arity overloads remain possible; call-site source provenance then selects the
+concrete signature instead of the KB guessing one overload. Keep these fields distinct
+from semantic `return.type`, which may intentionally model only one inferred value.
+
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schema is independent (currently 6.0).
 

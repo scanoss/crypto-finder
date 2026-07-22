@@ -1182,7 +1182,7 @@ func (p *JavaParser) traceOriginExpression(
 	node := SourceNode{
 		Type:         kindToSourceType(info.kind),
 		Name:         expr,
-		DeclaredType: info.typeName,
+		DeclaredType: qualifyJavaSourceType(info.typeName, analysis),
 		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
 	}
 	if info.kind == javaVarOriginKindParameter {
@@ -2587,7 +2587,7 @@ func (p *JavaParser) traceIdentifierNode(
 	sn := SourceNode{
 		Type:         kindToSourceType(info.kind),
 		Name:         varName,
-		DeclaredType: info.typeName,
+		DeclaredType: qualifyJavaSourceType(info.typeName, analysis),
 		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
 	}
 	if info.kind == javaVarOriginKindParameter {
@@ -2610,6 +2610,28 @@ func (p *JavaParser) traceIdentifierNode(
 	}
 
 	return []SourceNode{sn}
+}
+
+func qualifyJavaSourceType(typeName string, analysis *FileAnalysis) string {
+	trimmed := strings.TrimSpace(typeName)
+	if trimmed == "" || analysis == nil {
+		return trimmed
+	}
+	suffix := ""
+	for strings.HasSuffix(trimmed, "[]") {
+		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "[]"))
+		suffix += "[]"
+	}
+	if strings.Contains(trimmed, ".") || strings.ContainsAny(trimmed, "<>") {
+		return trimmed + suffix
+	}
+	if pkg, ok := analysis.Imports[trimmed]; ok {
+		return pkg + "." + trimmed + suffix
+	}
+	if pkg, ok := knownWildcardImportPackage(trimmed, analysis.WildcardImports); ok {
+		return pkg + "." + trimmed + suffix
+	}
+	return trimmed + suffix
 }
 
 // traceObjectCreationNode handles `new ClassName(...)` → CALL_RESULT with <init> as CallTarget.

@@ -42,7 +42,8 @@ const acceptanceCondition = `param[0]==true,param[algorithm]~=^AES,param[1|key]:
 
 type acceptanceCase struct {
 	name, ecosystem, fixture, source, provider string
-	pinFile, pinText                           string
+	pinFile                                    string
+	pinTexts                                   []string
 	matches                                    []acceptanceMatch
 }
 
@@ -54,6 +55,7 @@ type acceptanceMatch struct {
 	runtimeProvider      bool
 	requiresSupport      bool
 	supportingCategories []string
+	supportingSignatures map[string]string
 }
 
 type acceptanceResult struct {
@@ -76,7 +78,7 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 		{
 			name: "java", ecosystem: "java", fixture: "dependency_intelligence_java",
 			source: "src/main/java/example/Acceptance.java", provider: "BC",
-			pinFile: "pom.xml", pinText: "<version>1.78.1</version>",
+			pinFile: "pom.xml", pinTexts: []string{"<version>1.78.1</version>", "<version>1.13.0</version>", "<version>4.0.3</version>"},
 			matches: []acceptanceMatch{
 				{
 					needle: "new JcePGPDataEncryptorBuilder(alg)", ruleID: "java.acceptance.pgp-builder",
@@ -94,6 +96,24 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 				{needle: "params.getKey()", ruleID: "java.acceptance.key-output", api: "org.bouncycastle.crypto.params.KeyParameter.getKey", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
 				{needle: "gcm.getOutputSize(16)", ruleID: "java.acceptance.gcm", api: "org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize", requiresSupport: true, supportingCategories: []string{"config"}},
 				{needle: "new AESEngine()", ruleID: "java.acceptance.engine", api: "org.bouncycastle.crypto.engines.AESEngine.<init>", requiresSupport: true, supportingCategories: []string{"operation"}},
+				{
+					needle: "KeysetHandle.generateNew(template)", ruleID: "java.acceptance.tink-aead",
+					api: "com.google.crypto.tink.KeysetHandle.generateNew", requiresSupport: true,
+					supportingCategories: []string{"operation"},
+					supportingSignatures: map[string]string{
+						"com.google.crypto.tink.Aead.encrypt": "com.google.crypto.tink.Aead.encrypt(byte[], byte[]): byte[]",
+						"com.google.crypto.tink.Aead.decrypt": "com.google.crypto.tink.Aead.decrypt(byte[], byte[]): byte[]",
+					},
+				},
+				{
+					needle: "XMLCipher.getInstance(XMLCipher.AES_256_GCM)", ruleID: "java.acceptance.xml-cipher",
+					api: "org.apache.xml.security.encryption.XMLCipher.getInstance", requiresSupport: true,
+					supportingCategories: []string{"config", "operation"},
+					supportingSignatures: map[string]string{
+						"org.apache.xml.security.encryption.XMLCipher.init":    "org.apache.xml.security.encryption.XMLCipher.init(int, java.security.Key): void",
+						"org.apache.xml.security.encryption.XMLCipher.doFinal": "org.apache.xml.security.encryption.XMLCipher.doFinal(org.w3c.dom.Document, org.w3c.dom.Element): org.w3c.dom.Document",
+					},
+				},
 				{needle: `Cipher.getInstance("AES/GCM/NoPadding", "BC")`, ruleID: "java.acceptance.static-provider", api: "javax.crypto.Cipher.getInstance", staticProvider: true},
 				{needle: `Cipher.getInstance("AES/GCM/NoPadding", runtimeProvider)`, ruleID: "java.acceptance.runtime-provider", api: "javax.crypto.Cipher.getInstance", runtimeProvider: true},
 			},
@@ -101,7 +121,7 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 		{
 			name: "python", ecosystem: "python", fixture: "dependency_intelligence_python",
 			source: "acceptance.py", provider: "pycryptodomex",
-			pinFile: "requirements.txt", pinText: "pycryptodomex==3.20.0",
+			pinFile: "requirements.txt", pinTexts: []string{"pycryptodomex==3.20.0"},
 			matches: []acceptanceMatch{
 				{needle: "AES.new(key, AES.MODE_GCM)", ruleID: "python.acceptance.aes-new", api: "Cryptodome.Cipher.AES.new", requiresSupport: true},
 				{needle: "cipher.encrypt(data)", ruleID: "python.acceptance.aes-encrypt", api: "Cryptodome.Cipher.AES.AESCipher.encrypt", requiresSupport: true, supportingCategories: []string{"factory"}},
@@ -366,6 +386,26 @@ func assertFragmentContract(t *testing.T, tc acceptanceCase, payload *graphfrag.
 		}
 		for _, category := range match.supportingCategories {
 			assert.Truef(t, findingCategories[category], "finding %s missing applicable %s support: %#v", op.RuleID, category, op.SupportingCallIDs)
+		}
+		for functionName, signature := range match.supportingSignatures {
+			found := false
+			for _, id := range op.SupportingCallIDs {
+				call := supportByID[id]
+				if call.SupportingCall != nil && call.SupportingCall.FunctionName == functionName {
+					found = true
+					assert.Equal(t, signature, call.SupportingCall.CanonicalSignature, "finding %s supporting call %s", op.RuleID, functionName)
+				}
+			}
+			assert.Truef(t, found, "finding %s missing supporting call %s", op.RuleID, functionName)
+			externalFound := false
+			for i := range payload.ExternalCalls {
+				call := &payload.ExternalCalls[i]
+				if call.TargetFunctionName == functionName {
+					externalFound = true
+					assert.Equal(t, signature, call.TargetCanonicalSignature, "external call %s", functionName)
+				}
+			}
+			assert.Truef(t, externalFound, "missing external call %s", functionName)
 		}
 	}
 	assert.Equal(t, len(tc.matches), seen, "expected crypto annotations by rule")
@@ -663,7 +703,9 @@ func assertDependencyPin(t *testing.T, target string, tc acceptanceCase) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(target, tc.pinFile))
 	require.NoError(t, err)
-	require.Contains(t, string(data), tc.pinText, "fixture dependency pin")
+	for _, pin := range tc.pinTexts {
+		require.Contains(t, string(data), pin, "fixture dependency pin")
+	}
 }
 
 func repositoryRoot(t *testing.T) string {

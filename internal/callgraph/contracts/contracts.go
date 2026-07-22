@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,11 +79,19 @@ type KnowledgeBase struct {
 
 // Contract describes a single KB entry mapping a method call to an inferred return type.
 type Contract struct {
-	Method        string
-	Arity         int
-	When          *Condition // nil = unconditional contract
-	Return        ContractReturn
-	SourceLibrary string // populated by Load() from the v2 YAML library.name field
+	Method string
+	Arity  int
+	When   *Condition // nil = unconditional contract
+	Return ContractReturn
+	// ParameterTypes optionally supplies the canonical declared parameter types
+	// when method+arity identifies one unambiguous signature. It is omitted for
+	// overload sets that share the same method and arity.
+	ParameterTypes []string
+	// CanonicalReturnType optionally supplies the callable's declared return
+	// type. It is distinct from Return.Type, which is semantic inference data
+	// and may intentionally omit tuple/error components.
+	CanonicalReturnType string
+	SourceLibrary       string // populated by Load() from the v2 YAML library.name field
 	// Role classifies a method's part in a crypto object's lifecycle (e.g.
 	// "factory", "config", "output", "operation") so exported supporting
 	// calls can carry semantic categories without duplicating crypto rule
@@ -257,10 +266,12 @@ type yamlLibrary struct {
 }
 
 type yamlContract struct {
-	Method string     `yaml:"method"`
-	Arity  int        `yaml:"arity"`
-	When   *yamlWhen  `yaml:"when"`
-	Return yamlReturn `yaml:"return"`
+	Method              string     `yaml:"method"`
+	Arity               int        `yaml:"arity"`
+	ParameterTypes      []string   `yaml:"parameter_types,omitempty"`
+	CanonicalReturnType string     `yaml:"canonical_return_type,omitempty"`
+	When                *yamlWhen  `yaml:"when"`
+	Return              yamlReturn `yaml:"return"`
 	// Role classifies the method's lifecycle part; see Contract.Role.
 	Role string `yaml:"role,omitempty"`
 	// Parameters declares per-parameter roles; see Contract.Parameters.
@@ -376,6 +387,9 @@ func validateContract(i int, c yamlContract) (*Condition, error) {
 	if c.Arity < 0 {
 		return nil, fmt.Errorf("contracts: contract[%d] (%s): arity must be >= 0, got %d", i, c.Method, c.Arity)
 	}
+	if err := validateCanonicalSignature(i, c); err != nil {
+		return nil, err
+	}
 	if c.Return.Type == "" {
 		return nil, fmt.Errorf("contracts: contract[%d] (%s): return.type is required", i, c.Method)
 	}
@@ -400,6 +414,23 @@ func validateContract(i int, c yamlContract) (*Condition, error) {
 		ArgIndex:   c.When.ArgIndex,
 		ArgValueIn: c.When.ArgValueIn,
 	}, nil
+}
+
+func validateCanonicalSignature(i int, c yamlContract) error {
+	if len(c.ParameterTypes) > 0 {
+		if len(c.ParameterTypes) != c.Arity {
+			return fmt.Errorf("contracts: contract[%d] (%s): parameter_types length %d must equal arity %d", i, c.Method, len(c.ParameterTypes), c.Arity)
+		}
+		for j, parameterType := range c.ParameterTypes {
+			if strings.TrimSpace(parameterType) == "" {
+				return fmt.Errorf("contracts: contract[%d] (%s): parameter_types[%d] must not be empty", i, c.Method, j)
+			}
+		}
+	}
+	if c.CanonicalReturnType != "" && strings.TrimSpace(c.CanonicalReturnType) == "" {
+		return fmt.Errorf("contracts: contract[%d] (%s): canonical_return_type must not be empty", i, c.Method)
+	}
+	return nil
 }
 
 // validateParameters checks that the Parameters sub-schema entries of a
@@ -442,7 +473,8 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 // indexContracts validates and indexes all contract entries into the KnowledgeBase.
 func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 	unconditionalSeen := make(map[string]struct{})
-	for i, c := range raw.Contracts {
+	for i := range raw.Contracts {
+		c := raw.Contracts[i]
 		when, err := validateContract(i, c)
 		if err != nil {
 			return err
@@ -460,13 +492,15 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 			unconditionalSeen[key] = struct{}{}
 		}
 		kb.Contracts[key] = append(kb.Contracts[key], Contract{
-			Method:        c.Method,
-			Arity:         c.Arity,
-			When:          when,
-			Return:        ContractReturn{Type: c.Return.Type, Confidence: c.Return.Confidence},
-			SourceLibrary: raw.Library.Name,
-			Role:          c.Role,
-			Parameters:    params,
+			Method:              c.Method,
+			Arity:               c.Arity,
+			When:                when,
+			Return:              ContractReturn{Type: c.Return.Type, Confidence: c.Return.Confidence},
+			ParameterTypes:      append([]string(nil), c.ParameterTypes...),
+			CanonicalReturnType: c.CanonicalReturnType,
+			SourceLibrary:       raw.Library.Name,
+			Role:                c.Role,
+			Parameters:          params,
 		})
 	}
 	return nil
@@ -639,6 +673,10 @@ func cloneKB(kb *KnowledgeBase) *KnowledgeBase {
 	for k, v := range kb.Contracts {
 		dst := make([]Contract, len(v))
 		copy(dst, v)
+		for i := range dst {
+			dst[i].ParameterTypes = append([]string(nil), v[i].ParameterTypes...)
+			dst[i].Parameters = append([]ParameterContract(nil), v[i].Parameters...)
+		}
 		clone.Contracts[k] = dst
 	}
 	for k, v := range kb.Hierarchy {
@@ -717,7 +755,7 @@ func mergeContracts(kbs []*KnowledgeBase) (map[string][]Contract, error) {
 	result := make(map[string][]Contract, len(index))
 	for key, byCondition := range index {
 		cs := make([]Contract, 0, len(byCondition))
-		for _, c := range byCondition {
+		for _, c := range byCondition { //nolint:gocritic // Map iteration cannot use indexing.
 			cs = append(cs, c)
 		}
 		result[key] = cs
@@ -732,23 +770,37 @@ func mergeContracts(kbs []*KnowledgeBase) (map[string][]Contract, error) {
 // divergent values HARD-ERROR naming both libraries, mirroring the
 // pre-existing return-type conflict discipline.
 func mergeContractGroup(index map[string]Contract, cs []Contract, key string) error {
-	for _, c := range cs {
+	for i := range cs {
+		c := cs[i]
 		ck := conditionKey(c.When)
 		existing, exists := index[ck]
 		if !exists {
 			index[ck] = c
 			continue
 		}
+		if len(existing.ParameterTypes) == 0 && len(c.ParameterTypes) > 0 {
+			existing.ParameterTypes = slices.Clone(c.ParameterTypes)
+		}
+		if len(c.ParameterTypes) == 0 && len(existing.ParameterTypes) > 0 {
+			c.ParameterTypes = slices.Clone(existing.ParameterTypes)
+		}
+		if existing.CanonicalReturnType == "" {
+			existing.CanonicalReturnType = c.CanonicalReturnType
+		}
+		if c.CanonicalReturnType == "" {
+			c.CanonicalReturnType = existing.CanonicalReturnType
+		}
 		// Rule 1: identical return+role+parameters → idempotent
 		if contractsEquivalent(existing, c) {
+			index[ck] = existing
 			continue
 		}
 		// Rule 2: same condition + divergent return/role/parameters → HARD ERROR
 		return fmt.Errorf(
-			"contracts: contract conflict for %s: library %q has return %q (%s) role %q; library %q has return %q (%s) role %q",
+			"contracts: contract conflict for %s: library %q has return %q (%s) canonical signature (%v): %q role %q; library %q has return %q (%s) canonical signature (%v): %q role %q",
 			key,
-			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence, existing.Role,
-			c.SourceLibrary, c.Return.Type, c.Return.Confidence, c.Role,
+			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence, existing.ParameterTypes, existing.CanonicalReturnType, existing.Role,
+			c.SourceLibrary, c.Return.Type, c.Return.Confidence, c.ParameterTypes, c.CanonicalReturnType, c.Role,
 		)
 	}
 	return nil
@@ -760,6 +812,8 @@ func mergeContractGroup(index map[string]Contract, cs []Contract, key string) er
 func contractsEquivalent(a, b Contract) bool {
 	return a.Return.Type == b.Return.Type &&
 		a.Return.Confidence == b.Return.Confidence &&
+		slices.Equal(a.ParameterTypes, b.ParameterTypes) &&
+		a.CanonicalReturnType == b.CanonicalReturnType &&
 		a.Role == b.Role &&
 		parametersKey(a.Parameters) == parametersKey(b.Parameters)
 }

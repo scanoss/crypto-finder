@@ -67,7 +67,8 @@ func (r *PythonContractTypeResolver) ResolveTypes(graph *CallGraph, _ []PackageD
 		contractList := r.kb.ContractsForTolerant(fqn, arity)
 
 		// Find the first unconditional contract (When == nil) and apply it.
-		for _, c := range contractList {
+		for i := range contractList {
+			c := &contractList[i]
 			if c.When == nil && c.Return.Type != "" {
 				fn.ReturnType = c.Return.Type
 				break
