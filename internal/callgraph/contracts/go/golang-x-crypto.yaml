@@ -1,0 +1,1081 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: golang-x-crypto
+  coordinates:
+    - "golang.org/x/crypto"
+  version_range: ">=0.48.0,<0.49.0"
+  description: "Go supplementary cryptography libraries"
+
+# Inventory sources: golang.org/x/crypto v0.48.0 source and the 85 x/crypto
+# detection rules at scanoss/crypto_rules b6730e8721570f2ffaa8b841ddf2e845eca8e277.
+# Imports, constants, type conversions, and composite literals are non-callable and
+# intentionally omitted. ed25519.GenerateKey is parser-unsupported because its
+# private key is the second result of a tuple; ssh.ParseKnownHosts is likewise
+# unsupported because its public key is the third result. The blake2s rule also
+# expands to Sum128, which is skipped because v0.48.0 exports no such API.
+contracts:
+  - method: "golang.org/x/crypto/argon2.IDKey"
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "iterations", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "memory", derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "parallelism", derivation: argument_value } }
+      - { index: 5, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+  - method: "golang.org/x/crypto/argon2.Key"
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "iterations", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "memory", derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "parallelism", derivation: argument_value } }
+      - { index: 5, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+  - method: "golang.org/x/crypto/bcrypt.GenerateFromPassword"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "cost", derivation: argument_value } }
+  - method: "golang.org/x/crypto/bcrypt.CompareHashAndPassword"
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "passwordHash", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+  - method: "golang.org/x/crypto/bcrypt.Cost"
+    arity: 1
+    return: { type: "int", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "passwordHash", derivation: argument_value } }
+  - method: "golang.org/x/crypto/pbkdf2.Key"
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "iterations", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+      - { index: 4, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
+  - method: "golang.org/x/crypto/scrypt.Key"
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "cpuMemoryCost", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "blockSize", derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "parallelism", derivation: argument_value } }
+      - { index: 5, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+  - method: "golang.org/x/crypto/hkdf.New"
+    arity: 4
+    return: { type: "io.Reader", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "secret", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "info", derivation: argument_value } }
+  - method: "golang.org/x/crypto/hkdf.Extract"
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "secret", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+  - method: "golang.org/x/crypto/hkdf.Expand"
+    arity: 3
+    return: { type: "io.Reader", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "pseudorandomKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "info", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blake2b.New256"
+    arity: 1
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2b.Sum256"
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blake2b.New384"
+    arity: 1
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2b.Sum384"
+    arity: 1
+    return: { type: "[48]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blake2b.New512"
+    arity: 1
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2b.Sum512"
+    arity: 1
+    return: { type: "[64]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blake2b.New"
+    arity: 2
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2b.NewXOF"
+    arity: 2
+    return: { type: "golang.org/x/crypto/blake2b.XOF", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2s.New128"
+    arity: 1
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2s.New256"
+    arity: 1
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blake2s.Sum256"
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blake2s.NewXOF"
+    arity: 2
+    return: { type: "golang.org/x/crypto/blake2s.XOF", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/md4.New"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/ripemd160.New"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/poly1305.New"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/poly1305.MAC", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/poly1305.Sum"
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/poly1305.Verify"
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "mac", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/poly1305.(*MAC).Write"
+    arity: 1
+    return: { type: "int", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/poly1305.(*MAC).Sum"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/poly1305.(*MAC).Verify"
+    arity: 1
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "mac", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.New224"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.New256"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.New384"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.New512"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.Sum224"
+    arity: 1
+    return: { type: "[28]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.Sum256"
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.Sum384"
+    arity: 1
+    return: { type: "[48]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.Sum512"
+    arity: 1
+    return: { type: "[64]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.NewLegacyKeccak256"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.NewLegacyKeccak512"
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.NewShake128"
+    arity: 0
+    return: { type: "golang.org/x/crypto/sha3.ShakeHash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.NewShake256"
+    arity: 0
+    return: { type: "golang.org/x/crypto/sha3.ShakeHash", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/sha3.ShakeSum128"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.ShakeSum256"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.NewCShake128"
+    arity: 2
+    return: { type: "golang.org/x/crypto/sha3.ShakeHash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "functionName", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "customization", derivation: argument_value } }
+  - method: "golang.org/x/crypto/sha3.NewCShake256"
+    arity: 2
+    return: { type: "golang.org/x/crypto/sha3.ShakeHash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "functionName", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "customization", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blowfish.NewCipher"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/blowfish.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/blowfish.(*Cipher).Encrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blowfish.(*Cipher).Decrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/cast5.NewCipher"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/cast5.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/cast5.(*Cipher).Encrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/cast5.(*Cipher).Decrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/twofish.NewCipher"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/twofish.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/twofish.(*Cipher).Encrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/twofish.(*Cipher).Decrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/xtea.NewCipher"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/xtea.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/xtea.(*Cipher).Encrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/xtea.(*Cipher).Decrypt"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blowfish.NewSaltedCipher"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/blowfish.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "salt", derivation: argument_value } }
+  - method: "golang.org/x/crypto/blowfish.ExpandKey"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "cipher", derivation: argument_value } }
+  - method: "golang.org/x/crypto/tea.NewCipher"
+    arity: 1
+    return: { type: "crypto/cipher.Block", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/tea.NewCipherWithRounds"
+    arity: 2
+    return: { type: "crypto/cipher.Block", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "rounds", derivation: argument_value } }
+  - method: "golang.org/x/crypto/chacha20.NewUnauthenticatedCipher"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/chacha20.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+  - method: "golang.org/x/crypto/chacha20.HChaCha20"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+  - method: "golang.org/x/crypto/chacha20.(*Cipher).SetCounter"
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "counter", derivation: argument_value } }
+  - method: "golang.org/x/crypto/chacha20.(*Cipher).XORKeyStream"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/chacha20poly1305.New"
+    arity: 1
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/chacha20poly1305.NewX"
+    arity: 1
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/xts.NewCipher"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/xts.Cipher", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/xts.(*Cipher).Encrypt"
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "sectorNumber", derivation: argument_value } }
+  - method: "golang.org/x/crypto/xts.(*Cipher).Decrypt"
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "sectorNumber", derivation: argument_value } }
+  - method: "golang.org/x/crypto/bn256.Pair"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/bn256.GT", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "group1Point", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "group2Point", derivation: argument_value } }
+  - method: "golang.org/x/crypto/curve25519.ScalarMult"
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/curve25519.X25519"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/curve25519.ScalarBaseMult"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ed25519.NewKeyFromSeed"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ed25519.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "seed", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ed25519.Sign"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ed25519.Verify"
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "signature", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/secretbox.Seal"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/nacl/secretbox.Open"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/salsa20/salsa.XORKeyStream"
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "counter", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/salsa20/salsa.HSalsa20"
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "constant", derivation: argument_value } }
+  - method: "golang.org/x/crypto/salsa20/salsa.Core208"
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PrivateKey).Generate"
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "randomSource", derivation: argument_type } }
+  - method: "golang.org/x/crypto/otr.(*PrivateKey).Import"
+    arity: 1
+    return: { type: "bool", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PrivateKey).Parse"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PrivateKey).Serialize"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PrivateKey).Sign"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "randomSource", derivation: argument_type } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "digest", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PublicKey).Parse"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PublicKey).Serialize"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PublicKey).Verify"
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "digest", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "signature", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*PublicKey).Fingerprint"
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/otr.(*Conversation).Authenticate"
+    arity: 2
+    return: { type: "[][]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "question", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "sharedSecret", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*Conversation).End"
+    arity: 0
+    return: { type: "[][]byte", confidence: high }
+    role: config
+  - method: "golang.org/x/crypto/otr.(*Conversation).IsEncrypted"
+    arity: 0
+    return: { type: "bool", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/otr.(*Conversation).Receive"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/otr.(*Conversation).SMPQuestion"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/otr.(*Conversation).Send"
+    arity: 1
+    return: { type: "[][]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+  - method: "golang.org/x/crypto/cryptobyte.NewBuilder"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/cryptobyte.Builder", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "buffer", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).Discover"
+    arity: 1
+    return: { type: "golang.org/x/crypto/acme.Directory", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).GetReg"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Account", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).UpdateReg"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Account", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).DeactivateReg"
+    arity: 1
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).AccountKeyRollover"
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/acme.(*Client).Register"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/acme.Account", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/acme.(*Client).Authorize"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Authorization", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).AuthorizeIP"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Authorization", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).AuthorizeOrder"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/acme.Order", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).GetAuthorization"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Authorization", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).WaitAuthorization"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Authorization", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).RevokeAuthorization"
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: "golang.org/x/crypto/acme.(*Client).GetChallenge"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Challenge", confidence: high }
+    role: output
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).Accept"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Challenge", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).DNS01ChallengeRecord"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).HTTP01ChallengeResponse"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).HTTP01ChallengePath"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).TLSALPN01ChallengeCert"
+    arity: 3
+    return: { type: "crypto/tls.Certificate", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "identifier", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).TLSSNI01ChallengeCert"
+    arity: 2
+    return: { type: "crypto/tls.Certificate", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).TLSSNI02ChallengeCert"
+    arity: 2
+    return: { type: "crypto/tls.Certificate", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "challenge", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).GetOrder"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Order", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).WaitOrder"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/acme.Order", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).CreateCert"
+    arity: 4
+    return: { type: "[][]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "csr", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).CreateOrderCert"
+    arity: 4
+    return: { type: "[][]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, role: metadata-contributing, contributes: { property: "csr", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).FetchCert"
+    arity: 3
+    return: { type: "[][]byte", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/acme.(*Client).RevokeCert"
+    arity: 4
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "certificate", derivation: argument_value } }
+  - method: "golang.org/x/crypto/acme.(*Client).ListCertAlternates"
+    arity: 2
+    return: { type: "[]string", confidence: high }
+    role: output
+  - method: "golang.org/x/crypto/ocsp.CreateRequest"
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "certificate", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "issuer", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "requestOptions", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ocsp.ParseRequest"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/ocsp.Request", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "request", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ocsp.CreateResponse"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "issuer", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "responderCertificate", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "response", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ocsp.ParseResponse"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/ocsp.Response", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "response", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "issuer", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ocsp.ParseResponseForCert"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/ocsp.Response", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "response", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "certificate", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "issuer", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ocsp.(*Response).CheckSignatureFrom"
+    arity: 1
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "issuer", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.Encrypt"
+    arity: 5
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "recipients", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.SymmetricallyEncrypt"
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "passphrase", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.ReadMessage"
+    arity: 4
+    return: { type: "*golang.org/x/crypto/openpgp.MessageDetails", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "keyring", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.Sign"
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.DetachSign"
+    arity: 4
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.DetachSignText"
+    arity: 4
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.ArmoredDetachSign"
+    arity: 4
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.ArmoredDetachSignText"
+    arity: 4
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.CheckDetachedSignature"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/openpgp.Entity", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyring", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "signature", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.CheckArmoredDetachedSignature"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/openpgp.Entity", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyring", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "signature", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.NewEntity"
+    arity: 4
+    return: { type: "*golang.org/x/crypto/openpgp.Entity", confidence: high }
+    role: factory
+    parameters:
+      - { index: 3, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.ReadEntity"
+    arity: 1
+    return: { type: "*golang.org/x/crypto/openpgp.Entity", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/openpgp.ReadKeyRing"
+    arity: 1
+    return: { type: "golang.org/x/crypto/openpgp.EntityList", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/openpgp.ReadArmoredKeyRing"
+    arity: 1
+    return: { type: "golang.org/x/crypto/openpgp.EntityList", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/openpgp.(*Entity).SignIdentity"
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "identity", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.(*Entity).Serialize"
+    arity: 1
+    return: { type: "error", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp.(*Entity).SerializePrivate"
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/pkcs12.Decode"
+    arity: 2
+    return: { type: "interface{}", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "pkcs12Data", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "password", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParsePrivateKey"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParsePrivateKeyWithPassphrase"
+    arity: 2
+    return: { type: "golang.org/x/crypto/ssh.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "passphrase", derivation: argument_value } }
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParseRawPrivateKey"
+    arity: 1
+    return: { type: "interface{}", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParseRawPrivateKeyWithPassphrase"
+    arity: 2
+    return: { type: "interface{}", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "passphrase", derivation: argument_value } }
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParseDSAPrivateKey"
+    arity: 1
+    return: { type: "*crypto/dsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParsePublicKey"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.ParseAuthorizedKey"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "keyData", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.MarshalPrivateKey"
+    arity: 2
+    return: { type: "*encoding/pem.Block", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.MarshalPrivateKeyWithPassphrase"
+    arity: 3
+    return: { type: "*encoding/pem.Block", confidence: high }
+    role: output
+    parameters:
+      - { index: 2, role: metadata-contributing, contributes: { property: "passphrase", derivation: argument_value } }
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.MarshalAuthorizedKey"
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.NewPublicKey"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.NewSignerFromKey"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.NewSignerFromSigner"
+    arity: 1
+    return: { type: "golang.org/x/crypto/ssh.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.NewCertSigner"
+    arity: 2
+    return: { type: "golang.org/x/crypto/ssh.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "certificate", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "signer", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.FingerprintSHA256"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.FingerprintLegacyMD5"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_type } }
+  - method: "golang.org/x/crypto/ssh.Dial"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/ssh.Client", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, role: metadata-contributing, contributes: { property: "clientConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.NewClientConn"
+    arity: 3
+    return: { type: "golang.org/x/crypto/ssh.Conn", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, role: metadata-contributing, contributes: { property: "clientConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.NewClient"
+    arity: 3
+    return: { type: "*golang.org/x/crypto/ssh.Client", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/ssh.NewServerConn"
+    arity: 2
+    return: { type: "*golang.org/x/crypto/ssh.ServerConn", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "serverConfig", derivation: argument_value } }

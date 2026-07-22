@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Go callgraph contracts now model the standard library's rule-covered symmetric, public-key, KDF, MAC, digest, random, TLS, and X.509 cryptographic lifecycles. (#76)
+- Go callgraph contracts now model the rule-covered `golang.org/x/crypto` hashing, cipher, KDF, key, certificate, and protocol lifecycles. (#77)
 - Node callgraph builds now load embedded schema-v2 contract knowledge bases and select the Node contract type resolver. (#82)
 - C callgraph contracts now model wolfSSL wolfCrypt rule APIs and their stateful setup, update, and key import/export lifecycles. (#91)
 - JavaScript and TypeScript callgraph parsing now records mapped function return sources for direct values, calls, and constructors. (#81)
