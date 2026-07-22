@@ -42,6 +42,8 @@ func NewTypeResolverForEcosystem(ecosystem string, javaRuntime javaruntime.Confi
 		return NewGoContractTypeResolverFromEmbedded()
 	case "java":
 		return NewJavaBytecodeTypeResolver(javaRuntime)
+	case "node", "javascript", "typescript":
+		return NewNodeContractTypeResolverFromEmbedded()
 	case "python":
 		return NewPythonContractTypeResolverFromEmbedded()
 	case "rust":

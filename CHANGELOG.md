@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Node callgraph builds now load embedded schema-v2 contract knowledge bases and select the Node contract type resolver. (#82)
 - JavaScript and TypeScript callgraph parsing now records mapped function return sources for direct values, calls, and constructors. (#81)
 - C callgraph contracts now model the rule-covered Mbed TLS 3.6 LTS PKCS#7, LMS, public-key, TLS, and X.509 lifecycles. (#92)
 - C++ callgraph builds now load embedded schema-v2 contract knowledge bases. (#95)

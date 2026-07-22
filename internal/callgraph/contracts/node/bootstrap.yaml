@@ -1,0 +1,9 @@
+schema_version: "2"
+ecosystem: node
+# ponytail: go:embed needs one YAML match; remove this file when the first Node library KB lands.
+library:
+  name: node-bootstrap
+  description: "Bootstrap for embedded Node callgraph contracts"
+
+contracts: []
+hierarchy: {}
