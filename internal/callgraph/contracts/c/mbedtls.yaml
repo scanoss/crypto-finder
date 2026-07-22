@@ -1,0 +1,237 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: mbedtls
+  coordinates:
+    - mbedtls
+  version_range: ">=3.6.7,<4.0.0"
+  description: "Mbed TLS 3.6 LTS public cryptographic APIs"
+
+# Inventory sources: Mbed TLS 3.6.7 public headers and crypto_rules mbedtls.yaml
+# blob 077e379cb77b02ce182623b54660796aa24efb8f. All 28 mbedtls_* symbols
+# selected by the current C rules are contracted. PSA-only symbols are outside this
+# ticket's mbedtls_* scope. covered-existing/skipped-unsupported/needs-follow-up:
+# none. Protocol and certificate lifecycle calls are included where rules exist.
+contracts:
+
+  # Leighton-Micali signatures.
+  - method: mbedtls_lms_export_public_key
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: mbedtls_lms_generate_private_key
+    arity: 7
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 2
+        name: otstype
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 6
+        name: seed_size
+        role: metadata-contributing
+        contributes: {property: seedLength, derivation: argument_value}
+  - method: mbedtls_lms_import_public_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: mbedtls_lms_private_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_lms_public_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_lms_sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: msg_size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_lms_verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: msg_size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+      - index: 4
+        name: sig_size
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # Public-key contexts and operations.
+  - method: mbedtls_pk_import_into_psa
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: mbedtls_pk_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_pk_sign
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: hash_len
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: mbedtls_pk_verify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: hash_len
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: sig_len
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # PKCS#7 signed data.
+  - method: mbedtls_pkcs7_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_pkcs7_signed_data_verify
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: datalen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_pkcs7_signed_hash_verify
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+
+  # TLS context lifecycle.
+  - method: mbedtls_ssl_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_ssl_setup
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+
+  # X.509 certificate-revocation lists.
+  - method: mbedtls_x509_crl_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_x509_crl_parse
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_crl_parse_der
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_crl_parse_file
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+
+  # X.509 certificates.
+  - method: mbedtls_x509_crt_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_x509_crt_parse
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_crt_parse_der
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_crt_parse_file
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+
+  # X.509 certificate-signing requests.
+  - method: mbedtls_x509_csr_init
+    arity: 1
+    return: {type: void, confidence: high}
+    role: factory
+  - method: mbedtls_x509_csr_parse
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_csr_parse_der
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_x509_csr_parse_file
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+
+hierarchy: {}
