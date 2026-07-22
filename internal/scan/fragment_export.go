@@ -1229,8 +1229,7 @@ func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
-			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
-			chains := buildCallChains(ctx, containingFn, nil)
+			chains := buildFindingGraph(ctx, finding, asset).CallChains
 			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)
 			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
 			for i := range supportingCalls {

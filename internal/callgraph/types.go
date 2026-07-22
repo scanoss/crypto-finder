@@ -275,6 +275,24 @@ type SourceNode struct {
 	Location *SourceLocation
 	// SourceNodes traces where THIS node's value came from (recursive)
 	SourceNodes []SourceNode
+	// Flow carries optional branch/call-position semantics without inflating
+	// every SourceNode in the graph.
+	Flow *SourceFlow
+}
+
+// SourceFlow carries optional branch and call-position semantics.
+type SourceFlow struct {
+	Guard        *SourceGuard
+	ReturnValue  bool
+	CallArgument bool
+}
+
+// SourceGuard describes a simple parameter equality branch or its default.
+// Consumers keep every candidate when the selected parameter is unresolved.
+type SourceGuard struct {
+	ParameterIndex int
+	Value          string
+	Default        bool
 }
 
 // SourceLocation identifies a position in source code.
@@ -457,6 +475,8 @@ type CallChainStep struct {
 	Function FunctionID
 	FilePath string
 	Line     int
+	StartCol int
+	EndCol   int
 }
 
 // ParseFunctionID parses a fully-qualified function string back into a FunctionID.

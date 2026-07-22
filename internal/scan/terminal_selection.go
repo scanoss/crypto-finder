@@ -19,6 +19,7 @@ type candidateView struct {
 	ChainID     string
 	AssignedVar string
 	RawLen      int
+	Constructor bool
 }
 
 // identityIndices returns [0, 1, ..., n-1] — the full candidate set, used when a
@@ -63,6 +64,10 @@ func columnFilterIndices(views []candidateView, idxs []int, assetStartCol, asset
 }
 
 func tightestContainingIndices(views []candidateView, idxs []int, assetStartCol, assetEndCol int) []int {
+	if exact := exactSpanIndices(views, idxs, assetStartCol, assetEndCol); exact != nil {
+		return exact
+	}
+
 	best := -1
 	for _, i := range idxs {
 		v := views[i]
@@ -90,6 +95,23 @@ func tightestContainingIndices(views []candidateView, idxs []int, assetStartCol,
 		}
 	}
 	return tightest
+}
+
+func exactSpanIndices(views []candidateView, idxs []int, assetStartCol, assetEndCol int) []int {
+	var exact []int
+	for _, i := range idxs {
+		if views[i].StartCol != assetStartCol || views[i].EndCol != assetEndCol {
+			continue
+		}
+		if views[i].Constructor {
+			return []int{i}
+		}
+		exact = append(exact, i)
+	}
+	if len(exact) > 0 && views[exact[0]].ChainID == "" {
+		return exact
+	}
+	return nil
 }
 
 // chainRootIndexAmong returns the index (drawn from idxs) of the fluent-chain

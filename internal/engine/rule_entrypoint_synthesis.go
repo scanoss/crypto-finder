@@ -21,6 +21,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -419,13 +420,182 @@ func appendSyntheticAsset(
 
 // ── rule metadata.crypto extraction ────────────────────────────────────────
 
-// ruleFileCryptoYAML captures just the metadata.crypto block of each rule.
+// ruleFileCryptoYAML captures conditioned metadata plus the structural patterns
+// needed to identify the terminal call independently of informational api metadata.
 type ruleFileCryptoYAML struct {
-	Rules []struct {
-		Metadata struct {
-			Crypto map[string]any `yaml:"crypto"`
-		} `yaml:"metadata"`
-	} `yaml:"rules"`
+	Rules []ruleCryptoYAML `yaml:"rules"`
+}
+
+type ruleCryptoYAML struct {
+	ID             string                  `yaml:"id"`
+	Message        string                  `yaml:"message"`
+	Severity       string                  `yaml:"severity"`
+	Pattern        string                  `yaml:"pattern"`
+	Patterns       []rulePatternYAML       `yaml:"patterns"`
+	PatternSources []rulePatternSourceYAML `yaml:"pattern-sources"`
+	PatternSinks   []rulePatternSourceYAML `yaml:"pattern-sinks"`
+	Metadata       struct {
+		Crypto map[string]any `yaml:"crypto"`
+	} `yaml:"metadata"`
+}
+
+type rulePatternSourceYAML struct {
+	Patterns []rulePatternYAML `yaml:"patterns"`
+}
+
+type rulePatternYAML struct {
+	Pattern           string            `yaml:"pattern"`
+	PatternEither     []rulePatternYAML `yaml:"pattern-either"`
+	MetavariableRegex *struct {
+		Regex string `yaml:"regex"`
+	} `yaml:"metavariable-regex"`
+}
+
+// RuleCryptoMetadata is the rule-owned semantic payload used when a generic
+// source anchor must be specialized after callgraph selector resolution.
+type RuleCryptoMetadata struct {
+	Rule                entities.RuleInfo
+	Metadata            map[string]string
+	ParameterConditions []paramcondition.Condition
+	CaptureNames        []string
+}
+
+// LoadRuleCryptoMetadata indexes conditioned crypto rules by terminal symbols
+// parsed from their sink/direct patterns. Call-site specialization resolves
+// those structural symbols against the selected terminal call; metadata.api is
+// copied to output but never participates in routing.
+func LoadRuleCryptoMetadata(rulePaths []string) map[string][]RuleCryptoMetadata {
+	out := make(map[string][]RuleCryptoMetadata)
+	for _, path := range rulePaths {
+		for _, file := range expandRuleFiles(path) {
+			loadRuleCryptoMetadataFile(out, file)
+		}
+	}
+	return out
+}
+
+func loadRuleCryptoMetadataFile(out map[string][]RuleCryptoMetadata, file string) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	var rf ruleFileCryptoYAML
+	if yaml.Unmarshal(data, &rf) != nil {
+		return
+	}
+	for i := range rf.Rules {
+		appendRuleCryptoMetadata(out, &rf.Rules[i])
+	}
+}
+
+func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCryptoYAML) {
+	entrypoints := ruleCryptoEntrypoints(rule)
+	if len(entrypoints) == 0 {
+		return
+	}
+	metadata := stringifyCryptoBlock(rule.Metadata.Crypto)
+	conditions, err := paramcondition.ParseAll(metadata["parameterCondition"])
+	if err != nil || len(conditions) == 0 {
+		return
+	}
+	candidate := RuleCryptoMetadata{
+		Rule:     entities.RuleInfo{ID: rule.ID, Message: rule.Message, Severity: strings.ToUpper(rule.Severity)},
+		Metadata: metadata, ParameterConditions: conditions, CaptureNames: ruleCaptureNames(rule.PatternSources),
+	}
+	for _, entrypoint := range entrypoints {
+		duplicate := false
+		for _, existing := range out[entrypoint] {
+			if existing.Rule.ID == candidate.Rule.ID && maps.Equal(existing.Metadata, candidate.Metadata) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out[entrypoint] = append(out[entrypoint], candidate)
+		}
+	}
+}
+
+func ruleCryptoEntrypoints(rule *ruleCryptoYAML) []string {
+	var patterns []string
+	if len(rule.PatternSinks) > 0 {
+		for _, sink := range rule.PatternSinks {
+			patterns = appendRulePatternStrings(patterns, sink.Patterns)
+		}
+	} else {
+		patterns = append(patterns, rule.Pattern)
+		patterns = appendRulePatternStrings(patterns, rule.Patterns)
+	}
+
+	var entrypoints []string
+	seen := make(map[string]struct{})
+	for _, pattern := range patterns {
+		entrypoint := rulePatternEntrypoint(pattern)
+		if entrypoint == "" {
+			continue
+		}
+		if _, ok := seen[entrypoint]; ok {
+			continue
+		}
+		seen[entrypoint] = struct{}{}
+		entrypoints = append(entrypoints, entrypoint)
+	}
+	return entrypoints
+}
+
+func appendRulePatternStrings(dst []string, patterns []rulePatternYAML) []string {
+	for _, pattern := range patterns {
+		dst = append(dst, pattern.Pattern)
+		dst = appendRulePatternStrings(dst, pattern.PatternEither)
+	}
+	return dst
+}
+
+func rulePatternEntrypoint(pattern string) string {
+	pattern = strings.TrimSpace(pattern)
+	constructor := strings.HasPrefix(pattern, "new ")
+	if constructor {
+		pattern = strings.TrimSpace(strings.TrimPrefix(pattern, "new "))
+	}
+	open := strings.IndexByte(pattern, '(')
+	if open <= 0 {
+		return ""
+	}
+	symbol := strings.TrimSpace(pattern[:open])
+	if strings.ContainsAny(symbol, " $<>") {
+		return ""
+	}
+	if constructor {
+		return symbol + ".<init>"
+	}
+	return symbol
+}
+
+func ruleCaptureNames(sources []rulePatternSourceYAML) []string {
+	var names []string
+	seen := make(map[string]struct{})
+	for _, source := range sources {
+		for _, pattern := range source.Patterns {
+			if pattern.MetavariableRegex == nil {
+				continue
+			}
+			re, err := regexp.Compile(pattern.MetavariableRegex.Regex)
+			if err != nil {
+				continue
+			}
+			for _, name := range re.SubexpNames() {
+				if name == "" {
+					continue
+				}
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // buildRuleCryptoByAPI walks the ruleset (files and/or directories) and indexes
@@ -462,8 +632,8 @@ func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem strin
 		return
 	}
 
-	for _, r := range rf.Rules {
-		addRuleCrypto(out, r.Metadata.Crypto, ecosystem)
+	for i := range rf.Rules {
+		addRuleCrypto(out, rf.Rules[i].Metadata.Crypto, ecosystem)
 	}
 }
 

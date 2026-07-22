@@ -35,7 +35,13 @@ func (e fragEdge) view() candidateView {
 		ChainID:     e.identity.ChainID,
 		AssignedVar: e.identity.AssignedVar,
 		RawLen:      len(e.raw),
+		Constructor: strings.HasPrefix(strings.TrimSpace(e.raw), "new ") || isConstructorFunctionKey(e.calleeKey),
 	}
+}
+
+func isConstructorFunctionKey(key string) bool {
+	id, err := callgraph.ParseFunctionID(key)
+	return err == nil && callgraph.BaseFunctionName(id.Name) == constructorMethodName
 }
 
 // functionName derives the dotted callee name from the edge's callee key, the

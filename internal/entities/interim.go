@@ -113,6 +113,12 @@ type CryptographicAsset struct {
 	// Uses the same convention as opengrep/semgrep: End.Col = start + len(match).
 	EndCol int `json:"end_col,omitempty"`
 
+	// TerminalStartCol/TerminalEndCol retain the structurally selected enclosing
+	// call for in-process exports when a scanner focuses a nested argument span.
+	// They are routing state, not part of the public finding schema.
+	TerminalStartCol int `json:"-"`
+	TerminalEndCol   int `json:"-"`
+
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
 

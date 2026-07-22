@@ -148,6 +148,12 @@ contracts:
     return:
       type: java.security.MessageDigest
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
 
   - method: java.security.MessageDigest.digest
     arity: 0

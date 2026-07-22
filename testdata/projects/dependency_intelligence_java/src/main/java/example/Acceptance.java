@@ -18,6 +18,7 @@ package example;
 
 import java.security.SecureRandom;
 import java.security.Key;
+import java.security.MessageDigest;
 import javax.crypto.Cipher;
 import com.google.crypto.tink.Aead;
 import com.google.crypto.tink.KeysetHandle;
@@ -27,6 +28,8 @@ import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
+import org.bouncycastle.bcpg.HashAlgorithmTags;
+import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.apache.xml.security.encryption.XMLCipher;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -48,6 +51,22 @@ class Acceptance {
         return new JcePGPDataEncryptorBuilder(alg)
             .setSecureRandom(new SecureRandom())
             .setWithIntegrityPacket(true);
+    }
+
+    String digestName(int algorithm) {
+        return algorithm == HashAlgorithmTags.SHA256 ? "SHA-256" : "SHA-512";
+    }
+
+    MessageDigest digest(int algorithm) throws Exception {
+        return MessageDigest.getInstance(digestName(algorithm));
+    }
+
+    void selectorFixtures(int dynamicAlgorithm) throws Exception {
+        builder(SymmetricKeyAlgorithmTags.AES_128);
+        builder(SymmetricKeyAlgorithmTags.DES);
+        builder(dynamicAlgorithm);
+        digest(HashAlgorithmTags.SHA256);
+        digest(dynamicAlgorithm);
     }
 
     byte[] tink(byte[] data) throws Exception {

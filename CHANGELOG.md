@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner failure messages now explain documented semgrep/opengrep exit codes (`opengrep execution failed with exit code 7 (rule configuration contains no valid rules)`) and attach a sanitized stderr tail (ANSI-stripped, single line, capped on UTF-8 rune boundaries) to logs and error details; the failure debug log records rule configs + target instead of dumping the full command line. (#112)
 
 ### Fixed
+- Java selector findings now preserve per-call-site wrapper values, resolve simple switch-return helpers, and materialize the applicable rule-owned algorithm metadata without guessing dynamic branches. (#135)
 - C++ callgraph contracts now match namespace-qualified library calls independently of the scanned project path and resolve simple typed receiver calls without overriding project-local declarations. (#163)
 - C callgraph contracts now match global library symbols independently of the scanned project's package path while preserving exact project-qualified matches. (#156)
 - C callgraph pointer-return inference now propagates through in-project wrapper functions while preserving arity-qualified contract lookup. (#153)

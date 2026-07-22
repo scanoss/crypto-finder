@@ -21,6 +21,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 const (
@@ -229,6 +230,10 @@ type exportSourceNode struct {
 	CallTargetInferredReturn *exportInferredReturn `json:"call_target_inferred_return,omitempty"`
 	Location                 *exportSourceLocation `json:"location,omitempty"`
 	SourceNodes              []exportSourceNode    `json:"source_nodes,omitempty"`
+	returnValue              bool
+	guard                    *callgraph.SourceGuard
+	callArgument             bool
+	sourceParameterIndex     int
 }
 
 type exportSourceLocation struct {
@@ -1260,6 +1265,9 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	fg.CallChains = buildCallChains(ctx, containingFn, cryptoCall)
+	if len(asset.ParameterConditions) > 0 {
+		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
+	}
 
 	if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason
@@ -1280,6 +1288,19 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	return fg
+}
+
+func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []paramcondition.Condition) [][]callGraphChainNode {
+	filtered := make([][]callGraphChainNode, 0, len(chains))
+	for _, chain := range chains {
+		if len(chain) == 0 || chain[len(chain)-1].CryptoCall == nil {
+			continue
+		}
+		if _, ok := matchParameterConditions(conditions, chain[len(chain)-1].CryptoCall.Parameters); ok {
+			filtered = append(filtered, chain)
+		}
+	}
+	return filtered
 }
 
 // deriveSupportingCallsForFinding recovers a finding's supporting calls from the
@@ -1768,6 +1789,10 @@ func findCryptoCallNode(
 	}
 
 	// Step 2: column intersection filter (when both sides carry column info).
+	if asset.TerminalStartCol > 0 && asset.TerminalEndCol > 0 {
+		asset.StartCol = asset.TerminalStartCol
+		asset.EndCol = asset.TerminalEndCol
+	}
 	candidates := cryptoCallColumnCandidates(lineCandidates, asset)
 
 	// Step 3: tie-break.
@@ -1798,6 +1823,7 @@ func callCandidateViews(calls []*callgraph.FunctionCall) []candidateView {
 			ChainID:     c.ChainID,
 			AssignedVar: c.AssignedVar,
 			RawLen:      len(c.Raw),
+			Constructor: callgraph.BaseFunctionName(c.Callee.Name) == constructorMethodName,
 		}
 	}
 	return views
@@ -1909,7 +1935,15 @@ func findCryptoCall(
 	if bestCall == nil {
 		return nil
 	}
+	return buildCryptoCall(ctx, graph, containingFn, bestCall)
+}
 
+func buildCryptoCall(
+	ctx *exportBuildContext,
+	graph *callgraph.CallGraph,
+	containingFn *callgraph.FunctionDecl,
+	bestCall *callgraph.FunctionCall,
+) *callGraphCalledFunction {
 	callee := graph.Functions[bestCall.Callee.String()]
 	sourcePath := normalizeExportPath(ctx, bestCall.FilePath).FilePath
 	result := &callGraphCalledFunction{
@@ -1975,6 +2009,8 @@ func mergeCallParameters(
 // resolveExportSourceNodes follows simple Java parameter pass-through and return
 // paths before serializing provenance. It keeps every candidate so a dynamic
 // selector remains unresolved instead of choosing an arbitrary caller value.
+//
+//nolint:gocognit // Recursive provenance dispatch intentionally keeps every source-node kind fail-closed.
 func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.FunctionID, nodes []callgraph.SourceNode, depth int) []callgraph.SourceNode {
 	if ctx == nil || ctx.graph == nil || depth >= maxExportSourceResolutionDepth || len(nodes) == 0 {
 		return cloneCallgraphSourceNodes(nodes)
@@ -1990,7 +2026,14 @@ func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.Functi
 			node.SourceNodes = resolveExportSourceNodes(ctx, ownerID, node.SourceNodes, depth+1)
 			if node.CallTarget != nil {
 				if callee := ctx.graph.Functions[node.CallTarget.String()]; callee != nil {
-					node.SourceNodes = append(node.SourceNodes, resolveExportSourceNodes(ctx, node.CallTarget, callee.ReturnSources, depth+1)...)
+					returns := selectGuardedReturnSources(callee.ReturnSources, node.SourceNodes)
+					for i := range returns {
+						if returns[i].Flow == nil {
+							returns[i].Flow = &callgraph.SourceFlow{}
+						}
+						returns[i].Flow.ReturnValue = true
+					}
+					node.SourceNodes = append(node.SourceNodes, resolveExportSourceNodes(ctx, node.CallTarget, returns, depth+1)...)
 				}
 			}
 		case sourceNodeTypeField:
@@ -2019,17 +2062,107 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 	}
 	sort.Slice(callers, func(i, j int) bool { return callers[i].ID.String() < callers[j].ID.String() })
 
-	var sources []callgraph.SourceNode
+	var matches [][]callgraph.SourceNode
 	for _, caller := range callers {
 		for i := range caller.Calls {
 			call := &caller.Calls[i]
 			if call.Callee.String() != calleeID.String() || parameterIndex >= len(call.ArgumentSources) {
 				continue
 			}
-			sources = append(sources, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1)...)
+			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1))
 		}
 	}
-	return sources
+	if len(matches) != 1 {
+		return nil
+	}
+	return matches[0]
+}
+
+//nolint:gocognit // Guard matching must distinguish exact, default, and unresolved branches without guessing.
+func selectGuardedReturnSources(returns, arguments []callgraph.SourceNode) []callgraph.SourceNode {
+	if len(returns) == 0 {
+		return nil
+	}
+	values := make(map[int]string)
+	for i := range arguments {
+		if value, ok := resolveSimpleCallgraphSourceValue([]callgraph.SourceNode{arguments[i]}); ok {
+			values[arguments[i].ParameterIndex] = normalizeSelectorValue(value)
+		}
+	}
+
+	matched := make(map[int]bool)
+	for i := range returns {
+		guard := sourceNodeGuard(&returns[i])
+		if guard == nil || guard.Default {
+			continue
+		}
+		if value, ok := values[guard.ParameterIndex]; ok && value == normalizeSelectorValue(guard.Value) {
+			matched[guard.ParameterIndex] = true
+		}
+	}
+
+	selected := make([]callgraph.SourceNode, 0, len(returns))
+	for i := range returns {
+		source := &returns[i]
+		guard := sourceNodeGuard(source)
+		if guard == nil {
+			selected = append(selected, *source)
+			continue
+		}
+		value, known := values[guard.ParameterIndex]
+		if !known {
+			selected = append(selected, *source)
+			continue
+		}
+		if guard.Default {
+			if !matched[guard.ParameterIndex] {
+				selected = append(selected, *source)
+			}
+			continue
+		}
+		if value == normalizeSelectorValue(guard.Value) {
+			selected = append(selected, *source)
+		}
+	}
+	return selected
+}
+
+func sourceNodeGuard(node *callgraph.SourceNode) *callgraph.SourceGuard {
+	if node == nil || node.Flow == nil {
+		return nil
+	}
+	return node.Flow.Guard
+}
+
+func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bool) {
+	if len(nodes) == 0 {
+		return "", false
+	}
+	var resolved string
+	for _, node := range nodes {
+		value := strings.TrimSpace(node.Value)
+		ok := node.Type == sourceNodeTypeValue && value != ""
+		if !ok && len(node.SourceNodes) > 0 {
+			value, ok = resolveSimpleCallgraphSourceValue(node.SourceNodes)
+		}
+		if !ok {
+			return "", false
+		}
+		if resolved == "" {
+			resolved = value
+		} else if resolved != value {
+			return "", false
+		}
+	}
+	return resolved, resolved != ""
+}
+
+func normalizeSelectorValue(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		return value[1 : len(value)-1]
+	}
+	return value
 }
 
 func cloneCallgraphSourceNodes(nodes []callgraph.SourceNode) []callgraph.SourceNode {
@@ -2048,6 +2181,14 @@ func cloneCallgraphSourceNodes(nodes []callgraph.SourceNode) []callgraph.SourceN
 			location := *nodes[i].Location
 			cloned[i].Location = &location
 		}
+		if nodes[i].Flow != nil {
+			flow := *nodes[i].Flow
+			cloned[i].Flow = &flow
+			if nodes[i].Flow.Guard != nil {
+				guard := *nodes[i].Flow.Guard
+				cloned[i].Flow.Guard = &guard
+			}
+		}
 	}
 	return cloned
 }
@@ -2060,11 +2201,15 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 	result := make([]exportSourceNode, len(nodes))
 	for i, n := range nodes {
 		result[i] = exportSourceNode{
-			Type:         n.Type,
-			Name:         n.Name,
-			DeclaredType: n.DeclaredType,
-			Value:        n.Value,
-			SourceNodes:  convertSourceNodes(ctx, n.SourceNodes, defaultFilePath, defaultLine),
+			Type:                 n.Type,
+			Name:                 n.Name,
+			DeclaredType:         n.DeclaredType,
+			Value:                n.Value,
+			SourceNodes:          convertSourceNodes(ctx, n.SourceNodes, defaultFilePath, defaultLine),
+			returnValue:          n.Flow != nil && n.Flow.ReturnValue,
+			guard:                sourceNodeGuard(&n),
+			callArgument:         n.Flow != nil && n.Flow.CallArgument,
+			sourceParameterIndex: n.ParameterIndex,
 		}
 		if n.Type == sourceNodeTypeParameter {
 			idx := n.ParameterIndex
@@ -2230,8 +2375,21 @@ func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
 }
 
 func resolveDirectExportReturnValue(nodes []exportSourceNode) (string, bool) {
+	if value, handled := resolveGuardedDirectReturnValue(nodes); handled {
+		return value, value != ""
+	}
+	hasMarkedReturn := false
+	for i := range nodes {
+		if nodes[i].returnValue {
+			hasMarkedReturn = true
+			break
+		}
+	}
 	var value string
 	for i := range nodes {
+		if hasMarkedReturn && !nodes[i].returnValue {
+			continue
+		}
 		if nodes[i].Type != sourceNodeTypeValue {
 			continue
 		}
@@ -2242,6 +2400,66 @@ func resolveDirectExportReturnValue(nodes []exportSourceNode) (string, bool) {
 		value = candidate
 	}
 	return value, value != ""
+}
+
+//nolint:gocognit,gocyclo // Mirrors guarded-source selection after path enrichment, retaining all ambiguous candidates.
+func resolveGuardedDirectReturnValue(nodes []exportSourceNode) (string, bool) {
+	hasGuard := false
+	arguments := make(map[int]string)
+	for i := range nodes {
+		if nodes[i].guard != nil {
+			hasGuard = true
+		}
+		if nodes[i].callArgument {
+			if value, ok := resolveSimpleExportSourceValueNode(nodes[i]); ok {
+				arguments[nodes[i].sourceParameterIndex] = normalizeSelectorValue(value)
+			}
+		}
+	}
+	if !hasGuard {
+		return "", false
+	}
+
+	matched := make(map[int]bool)
+	for i := range nodes {
+		guard := nodes[i].guard
+		if guard == nil || guard.Default {
+			continue
+		}
+		if value, ok := arguments[guard.ParameterIndex]; ok && value == normalizeSelectorValue(guard.Value) {
+			matched[guard.ParameterIndex] = true
+		}
+	}
+	var selected []exportSourceNode
+	for i := range nodes {
+		guard := nodes[i].guard
+		if guard == nil {
+			continue
+		}
+		value, known := arguments[guard.ParameterIndex]
+		if !known {
+			selected = append(selected, nodes[i])
+			continue
+		}
+		if guard.Default {
+			if !matched[guard.ParameterIndex] {
+				selected = append(selected, nodes[i])
+			}
+			continue
+		}
+		if value == normalizeSelectorValue(guard.Value) {
+			selected = append(selected, nodes[i])
+		}
+	}
+	returnValue := ""
+	for i := range selected {
+		value, ok := resolveSimpleExportSourceValueNode(selected[i])
+		if !ok || (returnValue != "" && returnValue != value) {
+			return "", true
+		}
+		returnValue = value
+	}
+	return returnValue, true
 }
 
 func looksLikeIntegerLiteralExpr(expr string) bool {
@@ -2328,6 +2546,7 @@ func buildBaseCallChains(
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		return [][]callGraphChainNode{{node}}
 	}
+	chains = expandCallChainCallSites(ctx.graph, chains, callGraphExportMaxChains)
 
 	result := make([][]callGraphChainNode, len(chains))
 	for i, chain := range chains {
@@ -2341,6 +2560,8 @@ func buildBaseCallChains(
 					chain.Steps[j-1].Function,
 					chain.Steps[j-1].FilePath,
 					chain.Steps[j-1].Line,
+					chain.Steps[j-1].StartCol,
+					chain.Steps[j-1].EndCol,
 					step.Function,
 				)
 			}
@@ -2350,6 +2571,56 @@ func buildBaseCallChains(
 	}
 
 	return result
+}
+
+// expandCallChainCallSites preserves distinct invocations when one caller
+// function calls the same wrapper more than once with different selector
+// values. The tracer intentionally deduplicates functions for O(V+E)
+// reachability; export expands only the bounded completed chains so per-call
+// applicability is not lost.
+func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.CallChain, maxChains int) []callgraph.CallChain {
+	var expanded []callgraph.CallChain
+	for _, chain := range chains {
+		variants := expandOneCallChain(graph, chain, maxChains-len(expanded))
+		expanded = append(expanded, variants...)
+		if maxChains > 0 && len(expanded) >= maxChains {
+			return expanded[:maxChains]
+		}
+	}
+	return expanded
+}
+
+//nolint:gocognit // Bounded call-site cross-product is kept together so every cap check remains auditable.
+func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, remaining int) []callgraph.CallChain {
+	variants := []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...)}}
+	for stepIndex := 1; stepIndex < len(chain.Steps); stepIndex++ {
+		caller := graph.Functions[chain.Steps[stepIndex-1].Function.String()]
+		matches := matchingInvocations(caller, chain.Steps[stepIndex].Function.String())
+		if len(matches) == 0 {
+			continue
+		}
+		var next []callgraph.CallChain
+		for _, variant := range variants {
+			for _, call := range matches {
+				cloned := callgraph.CallChain{Steps: append([]callgraph.CallChainStep(nil), variant.Steps...)}
+				cloned.Steps[stepIndex-1].Line = call.Line
+				cloned.Steps[stepIndex-1].StartCol = call.StartCol
+				cloned.Steps[stepIndex-1].EndCol = call.EndCol
+				if call.FilePath != "" {
+					cloned.Steps[stepIndex-1].FilePath = call.FilePath
+				}
+				next = append(next, cloned)
+				if remaining > 0 && len(next) >= remaining {
+					break
+				}
+			}
+			if remaining > 0 && len(next) >= remaining {
+				break
+			}
+		}
+		variants = next
+	}
+	return variants
 }
 
 func exportUserPackages(result *engine.DepScanResult) map[string]bool {
@@ -2545,6 +2816,8 @@ func buildEntryCall(
 	callerID callgraph.FunctionID,
 	callSitePath string,
 	fallbackLine int,
+	startCol int,
+	endCol int,
 	calleeID callgraph.FunctionID,
 ) *callGraphEntryCall {
 	location := normalizeExportPath(ctx, callSitePath)
@@ -2558,7 +2831,7 @@ func buildEntryCall(
 		return entryCall
 	}
 
-	call := findMatchingInvocation(callerFn, calleeID.String())
+	call := findMatchingInvocationAtSpan(callerFn, calleeID.String(), fallbackLine, startCol, endCol)
 	if call == nil {
 		entryCall := &callGraphEntryCall{
 			FilePath: location.FilePath,
@@ -3194,46 +3467,71 @@ func applyFallbackLocation(nodes []exportSourceNode, defaultFilePath string, def
 	}
 }
 
-func findMatchingInvocation(callerFn *callgraph.FunctionDecl, calleeKey string) *callgraph.FunctionCall {
+func findMatchingInvocationAtSpan(callerFn *callgraph.FunctionDecl, calleeKey string, line, startCol, endCol int) *callgraph.FunctionCall {
+	matches := matchingInvocations(callerFn, calleeKey)
+	if startCol > 0 && endCol > 0 {
+		for _, call := range matches {
+			if call.Line == line && call.StartCol == startCol && call.EndCol == endCol {
+				return call
+			}
+		}
+	}
+	for _, call := range matches {
+		if line > 0 && call.Line == line {
+			return call
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches[0]
+}
+
+func matchingInvocations(callerFn *callgraph.FunctionDecl, calleeKey string) []*callgraph.FunctionCall {
 	if callerFn == nil {
 		return nil
 	}
 
 	calleeID, err := callgraph.ParseFunctionID(calleeKey)
-	bestIdx := -1
 	bestScore := -1
+	var best []*callgraph.FunctionCall
 	for i := range callerFn.Calls {
 		call := &callerFn.Calls[i]
-		if call.Callee.String() == calleeKey {
-			return call
-		}
-		if err != nil {
+		score := invocationMatchScore(call, calleeKey, calleeID, err == nil)
+		if score == 0 {
 			continue
-		}
-
-		score := 0
-		switch {
-		case call.Callee.Package == calleeID.Package &&
-			call.Callee.Type == calleeID.Type &&
-			methodArityKey(call.Callee.Name) == methodArityKey(calleeID.Name):
-			score = 80
-		case call.Callee.Type == calleeID.Type &&
-			methodArityKey(call.Callee.Name) == methodArityKey(calleeID.Name):
-			score = 60
-		case methodArityKey(call.Callee.Name) == methodArityKey(calleeID.Name):
-			score = 40
-		case callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name):
-			score = 20
 		}
 		if score > bestScore {
 			bestScore = score
-			bestIdx = i
+			best = []*callgraph.FunctionCall{call}
+		} else if score > 0 && score == bestScore {
+			best = append(best, call)
 		}
 	}
-	if bestIdx >= 0 {
-		return &callerFn.Calls[bestIdx]
+	return best
+}
+
+func invocationMatchScore(call *callgraph.FunctionCall, calleeKey string, calleeID callgraph.FunctionID, parsed bool) int {
+	if call.Callee.String() == calleeKey {
+		return 100
 	}
-	return nil
+	if !parsed {
+		return 0
+	}
+	callMethod := methodArityKey(call.Callee.Name)
+	wantMethod := methodArityKey(calleeID.Name)
+	switch {
+	case call.Callee.Package == calleeID.Package && call.Callee.Type == calleeID.Type && callMethod == wantMethod:
+		return 80
+	case call.Callee.Type == calleeID.Type && callMethod == wantMethod:
+		return 60
+	case callMethod == wantMethod:
+		return 40
+	case callgraph.BaseFunctionName(call.Callee.Name) == callgraph.BaseFunctionName(calleeID.Name):
+		return 20
+	default:
+		return 0
+	}
 }
 
 func methodArityKey(name string) string {

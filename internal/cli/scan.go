@@ -782,6 +782,7 @@ func runScan(_ *cobra.Command, args []string) error {
 	if callGraphResult != nil && callGraphResult.CallGraph != nil {
 		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
 			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
+			scanutil.MaterializeConditionedFindings(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
 		} else {
 			log.Debug().
 				Err(rerr).
