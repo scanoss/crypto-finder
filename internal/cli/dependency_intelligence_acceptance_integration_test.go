@@ -78,6 +78,12 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 			source: "src/main/java/example/Acceptance.java", provider: "BC",
 			pinFile: "pom.xml", pinText: "<version>1.78.1</version>",
 			matches: []acceptanceMatch{
+				{
+					needle: "new JcePGPDataEncryptorBuilder(alg)", ruleID: "java.acceptance.pgp-builder",
+					api:           "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setSecureRandom",
+					wantSymbol:    "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>",
+					wantSignature: "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>(int): JcePGPDataEncryptorBuilder",
+				},
 				{needle: "new KeyParameter(key)", ruleID: "java.acceptance.key-parameter", api: "org.bouncycastle.crypto.params.KeyParameter.<init>", requiresSupport: true, supportingCategories: []string{"factory", "output"}},
 				{
 					needle: "new KeyParameter(data)", ruleID: "java.acceptance.nested-key-parameter",

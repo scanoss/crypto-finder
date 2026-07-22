@@ -1916,6 +1916,9 @@ func mergeCallParameters(
 		if i < len(argSources) && len(argSources[i]) > 0 {
 			p.SourceNodes = convertSourceNodes(ctx, resolveExportSourceNodes(ctx, callerID, argSources[i], 0), filepath.ToSlash(sourceFilePath), sourceLine)
 		}
+		if p.Type == "" {
+			p.Type = uniqueSourceDeclaredType(p.SourceNodes)
+		}
 		p.ResolvedValue = resolveSimpleExportParameterValue(p.ArgumentExpression, p.SourceNodes)
 		if p.Type != "" || p.VariableName != "" || p.ArgumentExpression != "" {
 			params = append(params, p)
@@ -2891,6 +2894,38 @@ func mergeExportParameterTypes(existing, fallback []string) []string {
 	return merged
 }
 
+func parameterTypesFromCallParameters(parameters []callGraphParameter) []string {
+	if len(parameters) == 0 {
+		return nil
+	}
+	types := make([]string, len(parameters))
+	for i := range parameters {
+		types[i] = parameters[i].Type
+	}
+	return types
+}
+
+func uniqueSourceDeclaredType(nodes []exportSourceNode) string {
+	types := make(map[string]struct{})
+	var collect func([]exportSourceNode)
+	collect = func(current []exportSourceNode) {
+		for i := range current {
+			if declared := strings.TrimSpace(current[i].DeclaredType); declared != "" {
+				types[declared] = struct{}{}
+			}
+			collect(current[i].SourceNodes)
+		}
+	}
+	collect(nodes)
+	if len(types) != 1 {
+		return ""
+	}
+	for declared := range types {
+		return declared
+	}
+	return ""
+}
+
 func exportExternalSignature(
 	graph *callgraph.CallGraph,
 	id callgraph.FunctionID,
@@ -2938,10 +2973,10 @@ func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta expor
 		return
 	}
 	call.FunctionName = meta.FunctionName
-	call.CanonicalSignature = meta.CanonicalSignature
 	call.ReturnType = meta.ReturnType
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
-	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+	call.ParameterTypes = mergeExportParameterTypes(meta.ParameterTypes, parameterTypesFromCallParameters(call.Parameters))
+	call.CanonicalSignature = canonicalSignature(call.FunctionName, call.ParameterTypes, call.ReturnType)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
 	call.DisplaySymbol = meta.DisplaySymbol
 	call.Aliases = cloneStringSlice(meta.Aliases)
@@ -2953,10 +2988,10 @@ func applyExportFunctionMetadataToCalledFunction(call *callGraphCalledFunction, 
 		return
 	}
 	call.FunctionName = meta.FunctionName
-	call.CanonicalSignature = meta.CanonicalSignature
 	call.ReturnType = meta.ReturnType
 	call.ReturnTypeRef = cloneExportTypeRef(meta.ReturnTypeRef)
-	call.ParameterTypes = cloneStringSlice(meta.ParameterTypes)
+	call.ParameterTypes = mergeExportParameterTypes(meta.ParameterTypes, parameterTypesFromCallParameters(call.Parameters))
+	call.CanonicalSignature = canonicalSignature(call.FunctionName, call.ParameterTypes, call.ReturnType)
 	call.ParameterTypeRefs = cloneExportTypeRefs(meta.ParameterTypeRefs)
 	call.DisplaySymbol = meta.DisplaySymbol
 	call.Aliases = cloneStringSlice(meta.Aliases)
