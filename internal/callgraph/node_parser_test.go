@@ -126,6 +126,9 @@ export function encrypt(data: Buffer): Buffer {
 	if update.ReceiverVar != "cipher" {
 		t.Errorf("cipher.update ReceiverVar = %q, want cipher", update.ReceiverVar)
 	}
+	if got := encrypt.ReturnSources; len(got) != 1 || got[0].Type != sourceNodeCallResult || got[0].CallTarget == nil || got[0].CallTarget.Name != "update#1" {
+		t.Errorf("ReturnSources = %#v, want cipher.update call result", got)
+	}
 }
 
 func TestNodeParser_ErrorPrefix(t *testing.T) {
@@ -166,6 +169,82 @@ export function outer() {
 	}
 	inner := nodeFunction(t, analysis, "inner")
 	_ = nodeCall(t, inner, "node:crypto", "createHash", "crypto.createHash")
+}
+
+func TestNodeParser_ReturnSources(t *testing.T) {
+	t.Parallel()
+
+	src := `import { createHash } from "node:crypto";
+import { Builder } from "builder-lib";
+import * as sdk from "builder-sdk";
+
+export function direct(value) { return value; }
+export function factory() { return createHash("sha256"); }
+export function construct() { return new Builder(); }
+export function constructMember() { return new sdk.Builder(); }
+export function literal() { return "sha256"; }
+export function unknown(value) { return value ?? "fallback"; }
+export function bare() { return; }
+export const concise = value => value;
+export function outer(value) {
+  function nested() { return createHash("sha512"); }
+  return value;
+}
+export function scopedFactory() {
+  function nested() {
+    const createHash = () => null;
+    return createHash();
+  }
+  return createHash("sha256");
+}
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "returns.js")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := NewNodeParser().ParseFile(filePath, "example-app")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		want SourceNode
+	}{
+		{name: "direct", want: SourceNode{Type: sourceNodeVariable, Name: "value"}},
+		{name: "factory", want: SourceNode{Type: sourceNodeCallResult, CallTarget: &FunctionID{Package: "node:crypto", Name: "createHash#1"}}},
+		{name: "construct", want: SourceNode{Type: sourceNodeCallResult, DeclaredType: "builder-lib.Builder", CallTarget: &FunctionID{Package: "builder-lib", Type: "Builder", Name: constructorMethodName + "#0"}}},
+		{name: "constructMember", want: SourceNode{Type: sourceNodeCallResult, DeclaredType: "builder-sdk.Builder", CallTarget: &FunctionID{Package: "builder-sdk", Type: "Builder", Name: constructorMethodName + "#0"}}},
+		{name: "literal", want: SourceNode{Type: sourceNodeValue, Value: `"sha256"`}},
+		{name: "concise", want: SourceNode{Type: sourceNodeVariable, Name: "value"}},
+		{name: "outer", want: SourceNode{Type: sourceNodeVariable, Name: "value"}},
+		{name: "scopedFactory", want: SourceNode{Type: sourceNodeCallResult, CallTarget: &FunctionID{Package: "node:crypto", Name: "createHash#1"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sources := nodeFunction(t, analysis, tt.name).ReturnSources
+			if len(sources) != 1 {
+				t.Fatalf("ReturnSources = %#v, want one source", sources)
+			}
+			got := sources[0]
+			if got.Type != tt.want.Type || got.Name != tt.want.Name || got.Value != tt.want.Value || got.DeclaredType != tt.want.DeclaredType {
+				t.Fatalf("ReturnSources[0] = %#v, want %#v", got, tt.want)
+			}
+			if tt.want.CallTarget != nil && (got.CallTarget == nil || *got.CallTarget != *tt.want.CallTarget) {
+				t.Fatalf("CallTarget = %#v, want %#v", got.CallTarget, tt.want.CallTarget)
+			}
+			if got.Location == nil || got.Location.FilePath != filePath || got.Location.Line == 0 {
+				t.Fatalf("Location = %#v, want %s with a source line", got.Location, filePath)
+			}
+		})
+	}
+
+	for _, name := range []string{"unknown", "bare"} {
+		if got := nodeFunction(t, analysis, name).ReturnSources; len(got) != 0 {
+			t.Errorf("%s ReturnSources = %#v, want none", name, got)
+		}
+	}
 }
 
 func TestNodeParser_LocalBindingsShadowImports(t *testing.T) {
