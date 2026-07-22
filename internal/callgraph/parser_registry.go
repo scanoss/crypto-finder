@@ -2,13 +2,18 @@ package callgraph
 
 import "github.com/scanoss/crypto-finder/internal/javaruntime"
 
+const (
+	ecosystemCPP         = "cpp"
+	lambdaExpressionNode = "lambda_expression"
+)
+
 // NewParserForEcosystem returns the call graph parser for the given ecosystem.
 // Returns nil if no parser is available for the ecosystem.
 func NewParserForEcosystem(ecosystem string, opts ...ParserOption) Parser {
 	switch ecosystem {
 	case "c":
 		return NewCParser(opts...)
-	case "cpp", "c++":
+	case ecosystemCPP, "c++":
 		return NewCPPParser(opts...)
 	case "go":
 		return NewGoParser(opts...)
@@ -31,7 +36,7 @@ func NewTypeResolverForEcosystem(ecosystem string, javaRuntime javaruntime.Confi
 	switch ecosystem {
 	case "c":
 		return NewCContractTypeResolverFromEmbedded()
-	case "cpp", "c++":
+	case ecosystemCPP, "c++":
 		return NewCPPContractTypeResolverFromEmbedded()
 	case "go":
 		return NewGoContractTypeResolverFromEmbedded()

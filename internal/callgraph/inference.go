@@ -657,11 +657,12 @@ func candidateFromCallResult(
 	// splitMethodArity extracts the FQN (without arity) and the arity integer.
 	// C alone retries a bare global symbol; other ecosystems preserve exact lookup.
 	methodFQN, arity := splitMethodArity(ct)
-	ctrs := kb.ContractsFor(methodFQN, arity)
 	callee := callResultCallee(graph, ct, arity)
+	ctrs := kb.ContractsFor(methodFQN, arity)
 	if len(ctrs) == 0 && kb.Ecosystem == "c" {
 		ctrs = kb.ContractsForCFunction(methodFQN, arity, ct.Linkage == LinkageExternal && callee == nil)
 	}
+	ctrs = cppExternalContracts(kb, ct, arity, callee, ctrs)
 
 	if len(ctrs) > 0 {
 		return candidateFromKBContracts(ctrs, src, kb)
@@ -833,4 +834,18 @@ func splitMethodArity(id *FunctionID) (string, int) {
 		return id.Package + "." + id.Type + "." + base, arity
 	}
 	return id.Package + "." + base, arity
+}
+
+func cppContractMethod(id *FunctionID) string {
+	if id == nil || id.Type == "" {
+		return ""
+	}
+	return id.Type + "." + BaseFunctionName(id.Name)
+}
+
+func cppExternalContracts(kb *contracts.KnowledgeBase, id *FunctionID, arity int, callee *FunctionDecl, current []contracts.Contract) []contracts.Contract {
+	if len(current) > 0 || kb.Ecosystem != ecosystemCPP || id.Type == "" || id.Linkage == LinkageInternal || callee != nil {
+		return current
+	}
+	return kb.ContractsFor(cppContractMethod(id), arity)
 }

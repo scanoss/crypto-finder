@@ -2466,7 +2466,7 @@ func (p *JavaParser) walkForReturnSources(
 	}
 
 	switch node.Type() {
-	case "lambda_expression":
+	case lambdaExpressionNode:
 		// TODO(callgraph-inferred-types v2): walk lambda return statements.
 		// In v1, we must NOT attribute lambda return values to the outer function.
 		// Do not descend.

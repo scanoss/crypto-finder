@@ -966,7 +966,11 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 	}
 	fqn := fullFunctionName(call.Callee)
 	if ctx.kb.Ecosystem != "c" {
-		return ctx.kb.ContractsForTolerant(fqn, arity)
+		matches := ctx.kb.ContractsForTolerant(fqn, arity)
+		if len(matches) == 0 && ctx.kb.Ecosystem == "cpp" && call.Callee.Type != "" && call.Callee.Linkage != callgraph.LinkageInternal && !hasCallDeclaration(ctx.graph, call.Callee) {
+			return ctx.kb.ContractsForTolerant(call.Callee.Type+"."+callgraph.BaseFunctionName(call.Callee.Name), arity)
+		}
+		return matches
 	}
 	if exact := ctx.kb.ContractsFor(fqn, arity); len(exact) > 0 {
 		return exact
@@ -976,6 +980,17 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 	}
 	externalGlobal := call.Callee.Linkage == callgraph.LinkageExternal && ctx.graph.Functions[call.Callee.String()] == nil
 	return ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal)
+}
+
+func hasCallDeclaration(graph *callgraph.CallGraph, id callgraph.FunctionID) bool {
+	if graph == nil {
+		return false
+	}
+	if graph.Functions[id.String()] != nil {
+		return true
+	}
+	id.Name = callgraph.BaseFunctionName(id.Name)
+	return graph.Functions[id.String()] != nil
 }
 
 func flattenReachableSupportingCalls(values map[string]callGraphReachableSupportingCall) []callGraphReachableSupportingCall {
@@ -1517,6 +1532,9 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	// vs. definition line), already separated by dedupSupportingCalls.
 	if ctx.kb != nil {
 		arity := len(sc.ParameterTypes)
+		if ctx.kb.Ecosystem == "cpp" {
+			arity = len(call.Arguments)
+		}
 		matches := contractMatchesForCall(ctx, call, arity)
 		for _, contract := range matches {
 			if contract.Role != "" {
