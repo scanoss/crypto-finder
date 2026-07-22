@@ -1,0 +1,803 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: openssl-evp
+  coordinates:
+    - openssl:libcrypto
+  description: "OpenSSL EVP high-level cryptographic APIs"
+
+# Inventory sources: OpenSSL 3.6.2 public headers and crypto_rules commit
+# 39597ad26c0a968aa927592ca8ac29698018dea1. The list is limited to callable
+# OpenSSL EVP APIs selected by the current C detection rules.
+contracts:
+
+  # Cipher algorithm factories.
+  - method: EVP_aes_128_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_128_xts
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_192_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aes_256_xts
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ede
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ede_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ede3
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_des_ede3_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_rc4
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_rc4_40
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_rc4_hmac_md5
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+
+  # Cipher selection and initialization.
+  - method: EVP_get_cipherbyname
+    arity: 1
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_CIPHER_fetch
+    arity: 3
+    return: {type: "EVP_CIPHER*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_CipherInit_ex
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_EncryptInit_ex
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_DecryptInit_ex
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Digest algorithm factories.
+  - method: EVP_blake2b512
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_blake2s256
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_md4
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_md5
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_ripemd160
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha1
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha224
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha256
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha384
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha512
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha3_224
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha3_256
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha3_384
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sha3_512
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_shake128
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_shake256
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_sm3
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+  - method: EVP_whirlpool
+    arity: 0
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+
+  # Digest selection and operations.
+  - method: EVP_get_digestbyname
+    arity: 1
+    return: {type: "const EVP_MD*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_MD_fetch
+    arity: 3
+    return: {type: "EVP_MD*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_DigestInit
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_DigestInit_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_DigestInit_ex2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_Digest
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: count
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+      - index: 4
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_Q_digest
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: datalen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+
+  # KDF and MAC selection.
+  - method: EVP_KDF_fetch
+    arity: 3
+    return: {type: "EVP_KDF*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_MAC_fetch
+    arity: 3
+    return: {type: "EVP_MAC*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PBE_scrypt
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: passlen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 3
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 4
+        name: N
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: r
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 6
+        name: p
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 9
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: PKCS5_PBKDF2_HMAC
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: passlen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 3
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 4
+        name: iter
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: digest
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Public-key, KEM, and signature selection.
+  - method: EVP_PKEY_CTX_new_id
+    arity: 2
+    return: {type: "EVP_PKEY_CTX*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: id
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_CTX_new_from_name
+    arity: 3
+    return: {type: "EVP_PKEY_CTX*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_Q_keygen
+    arity: 3
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_Q_keygen
+    arity: 4
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: parameter
+        role: metadata-contributing
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: EVP_KEM_fetch
+    arity: 3
+    return: {type: "EVP_KEM*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_SIGNATURE_fetch
+    arity: 3
+    return: {type: "EVP_SIGNATURE*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_new_raw_private_key_ex
+    arity: 5
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keytype
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_new_raw_public_key_ex
+    arity: 5
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keytype
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_get_raw_private_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_raw_public_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_sign_message_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_verify_message_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_rsa_padding
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_rsa_pss_saltlen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_rsa_mgf1_md
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Stateful EVP lifecycles around the rule-selected factories and initializers.
+  - method: EVP_CIPHER_CTX_new
+    arity: 0
+    return: {type: "EVP_CIPHER_CTX*", confidence: high}
+    role: factory
+  - method: EVP_EncryptUpdate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: inl
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_EncryptFinal_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_DecryptUpdate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: inl
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_DecryptFinal_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_CipherUpdate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: inl
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_CipherFinal_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  - method: EVP_MD_CTX_new
+    arity: 0
+    return: {type: "EVP_MD_CTX*", confidence: high}
+    role: factory
+  - method: EVP_DigestUpdate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: count
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_DigestFinal_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_DigestFinalXOF
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  - method: EVP_MAC_CTX_new
+    arity: 1
+    return: {type: "EVP_MAC_CTX*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: mac
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_MAC_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_MAC_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: datalen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_MAC_final
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  - method: EVP_KDF_CTX_new
+    arity: 1
+    return: {type: "EVP_KDF_CTX*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: kdf
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_KDF_derive
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  - method: EVP_PKEY_keygen_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_keygen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_sign_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_sign
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: tbslen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_verify_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_verify
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: siglen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 4
+        name: tbslen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_sign_message_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: inlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_sign_message_final
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_verify_message_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: inlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_verify_message_final
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  - method: EVP_PKEY_encrypt_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_encrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: inlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_decrypt_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_decrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: inlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_PKEY_derive_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_derive_set_peer
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_derive
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  - method: EVP_PKEY_encapsulate_init
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_encapsulate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_decapsulate_init
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_decapsulate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+hierarchy: {}
