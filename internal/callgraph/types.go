@@ -293,6 +293,7 @@ type FileAnalysis struct {
 	FromImports           map[string]bool   // symbols introduced via `from X import Y` (Python only)
 	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
 	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
+	DeclaredTypes         map[string]bool   // source-declared fully qualified types (C++ only)
 	Functions             []FunctionDecl
 }
 
@@ -314,6 +315,12 @@ type CallGraph struct {
 	// JavaPlatformSignatures records whether Java platform signatures from the
 	// pinned runtime were available and used for this graph build.
 	JavaPlatformSignatures *JavaPlatformSignatureMetadata
+	// ProjectDeclaredTypes and ProjectDeclaredFunctions record stable C++
+	// identities owned by unversioned workspace packages. They keep external
+	// contract fallback from overriding project code without hiding contracts
+	// for source-parsed dependencies.
+	ProjectDeclaredTypes     map[string]bool
+	ProjectDeclaredFunctions map[string]bool
 	// EdgeResolutions records how each caller->callee call-site/dispatch variant
 	// was resolved. Keyed by EdgeResolutionKey(callerKey, calleeKey, resolution).
 	// An edge with no entry is an exact, directly-resolved source call. Consumers

@@ -103,9 +103,11 @@ func (b *Builder) PackageSeparator() string {
 func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) (*CallGraph, error) {
 	buildStart := time.Now()
 	graph := &CallGraph{
-		Functions:       make(map[string]*FunctionDecl),
-		Callers:         make(map[string][]string),
-		EdgeResolutions: make(map[string]EdgeResolution),
+		Functions:                make(map[string]*FunctionDecl),
+		Callers:                  make(map[string][]string),
+		EdgeResolutions:          make(map[string]EdgeResolution),
+		ProjectDeclaredTypes:     make(map[string]bool),
+		ProjectDeclaredFunctions: make(map[string]bool),
 	}
 
 	// Phase 1: Parse source files only for packages that need full analysis
@@ -116,6 +118,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 			log.Debug().Err(err).Str("package", pkg.ImportPath).Msg("Failed to analyze package")
 			continue
 		}
+	}
+	if b.ecosystem == ecosystemCPP {
+		markCPPProjectLocalCalls(graph)
 	}
 	sourceParseDuration := time.Since(sourceParseStart)
 
@@ -204,7 +209,7 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
 	if !ok || workers <= 1 {
-		return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph)
+		return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph, pkg.Version == "")
 	}
 	return b.analyzePackageParallel(pkg, graph, cloner, workers)
 }
@@ -281,24 +286,31 @@ func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, clone
 			log.Debug().Err(errs[i]).Str("dir", work[i].dir).Msg("Failed to analyze subdirectory")
 			continue
 		}
-		b.addAnalyses(graph, results[i])
+		b.addAnalyses(graph, results[i], pkg.Version == "")
 	}
 	return nil
 }
 
-func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph) error {
+func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLocal bool) error {
 	analyses, err := b.parser.ParseDirectory(dir, importPath)
 	if err != nil {
 		return err
 	}
 
-	b.addAnalyses(graph, analyses)
-	b.analyzeSubdirs(dir, importPath, graph)
+	b.addAnalyses(graph, analyses, projectLocal)
+	b.analyzeSubdirs(dir, importPath, graph, projectLocal)
 	return nil
 }
 
-func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis) {
+func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
 	for _, analysis := range analyses {
+		if b.ecosystem == ecosystemCPP {
+			if projectLocal {
+				addCPPProjectDeclarations(graph, analysis)
+			} else {
+				clearCPPDependencyLocalLinkage(analysis)
+			}
+		}
 		for i := range analysis.Functions {
 			fn := &analysis.Functions[i]
 			key := fn.ID.String()
@@ -315,7 +327,54 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis) {
 	}
 }
 
-func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph) {
+func clearCPPDependencyLocalLinkage(analysis *FileAnalysis) {
+	for i := range analysis.Functions {
+		fn := &analysis.Functions[i]
+		for j := range fn.Calls {
+			if fn.Calls[j].Callee.Type != "" {
+				fn.Calls[j].Callee.Linkage = ""
+			}
+		}
+		for j := range fn.ReturnSources {
+			target := fn.ReturnSources[j].CallTarget
+			if target != nil && target.Type != "" {
+				target.Linkage = ""
+			}
+		}
+	}
+}
+
+func addCPPProjectDeclarations(graph *CallGraph, analysis *FileAnalysis) {
+	for typeName := range analysis.DeclaredTypes {
+		graph.ProjectDeclaredTypes[typeName] = true
+	}
+	for i := range analysis.Functions {
+		if method := cppContractMethod(&analysis.Functions[i].ID); method != "" {
+			graph.ProjectDeclaredFunctions[method] = true
+		}
+	}
+}
+
+func markCPPProjectLocalCalls(graph *CallGraph) {
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			markCPPProjectLocalTarget(&fn.Calls[i].Callee, graph.ProjectDeclaredTypes, graph.ProjectDeclaredFunctions)
+		}
+		for i := range fn.ReturnSources {
+			if fn.ReturnSources[i].CallTarget != nil {
+				markCPPProjectLocalTarget(fn.ReturnSources[i].CallTarget, graph.ProjectDeclaredTypes, graph.ProjectDeclaredFunctions)
+			}
+		}
+	}
+}
+
+func markCPPProjectLocalTarget(target *FunctionID, declaredTypes, declaredFunctions map[string]bool) {
+	if declaredTypes[target.Type] || declaredTypes[target.Type+"::"+BaseFunctionName(target.Name)] || declaredFunctions[cppContractMethod(target)] {
+		target.Linkage = LinkageInternal
+	}
+}
+
+func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph, projectLocal bool) {
 	// Recurse into subdirectories
 	entries, readErr := os.ReadDir(dir)
 	if readErr != nil {
@@ -334,7 +393,7 @@ func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph) {
 		}
 		subDir := filepath.Join(dir, name)
 		subImportPath := b.parser.SubPackagePath(importPath, name)
-		if err := b.analyzeDir(subDir, subImportPath, graph); err != nil {
+		if err := b.analyzeDir(subDir, subImportPath, graph, projectLocal); err != nil {
 			log.Debug().Err(err).Str("dir", subDir).Msg("Failed to analyze subdirectory")
 		}
 	}
@@ -1094,8 +1153,16 @@ func resolveChainCalleesInFunction(graph *CallGraph, callerKey string, fn *Funct
 
 func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDecl, idxs []int, kb *contracts.KnowledgeBase) int {
 	// Seed the receiver type from the root (innermost) link's KB return type.
-	rootFQN, rootArity := splitMethodArity(&fn.Calls[idxs[0]].Callee)
-	currentType := unconditionalContractReturn(kb.ContractsForTolerant(rootFQN, rootArity))
+	rootCall := &fn.Calls[idxs[0]]
+	rootFQN, rootArity := splitMethodArity(&rootCall.Callee)
+	if kb.Ecosystem == ecosystemCPP && rootArity < 0 {
+		rootArity = len(rootCall.Arguments)
+	}
+	rootContracts := kb.ContractsForTolerant(rootFQN, rootArity)
+	if len(rootContracts) == 0 && kb.Ecosystem == ecosystemCPP && rootCall.Callee.Type != "" && rootCall.Callee.Linkage != LinkageInternal && callResultCallee(graph, &rootCall.Callee, rootArity) == nil {
+		rootContracts = kb.ContractsFor(cppContractMethod(&rootCall.Callee), rootArity)
+	}
+	currentType := unconditionalContractReturn(rootContracts)
 
 	resolved := 0
 	for pos := 1; pos < len(idxs); pos++ {
@@ -1104,6 +1171,9 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 		}
 		call := &fn.Calls[idxs[pos]]
 		base, arity := methodBaseArity(call.Callee.Name)
+		if kb.Ecosystem == ecosystemCPP && arity < 0 {
+			arity = len(call.Arguments)
+		}
 		ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
 		if len(ctrs) == 0 {
 			break // not a known method of the propagated type; stop, do not guess

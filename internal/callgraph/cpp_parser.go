@@ -3,6 +3,7 @@ package callgraph
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,25 +77,59 @@ func (p *CPPParser) parseFile(filePath, packagePath string) (*FileAnalysis, erro
 	}
 	defer tree.Close()
 
-	analysis := &FileAnalysis{FilePath: filePath, PackageName: packagePath, PackagePath: packagePath, Imports: make(map[string]string)}
+	analysis := &FileAnalysis{
+		FilePath:      filePath,
+		PackageName:   packagePath,
+		PackagePath:   packagePath,
+		Imports:       make(map[string]string),
+		DeclaredTypes: make(map[string]bool),
+	}
 	staticFunctions := make(map[string]bool)
 	collectCPPStaticFunctions(tree.RootNode(), src, staticFunctions)
-	p.walkFile(tree.RootNode(), src, filePath, packagePath, staticFunctions, analysis)
+	collectCPPDeclaredTypes(tree.RootNode(), src, "", analysis.DeclaredTypes)
+	p.walkFile(tree.RootNode(), src, filePath, packagePath, "", staticFunctions, analysis.DeclaredTypes, analysis)
 	return analysis, nil
 }
 
-func (p *CPPParser) walkFile(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, analysis *FileAnalysis) {
+func (p *CPPParser) walkFile(node *sitter.Node, src []byte, filePath, packagePath, scope string, staticFunctions, localTypes map[string]bool, analysis *FileAnalysis) {
 	switch node.Type() {
 	case "preproc_include":
 		p.extractInclude(node, src, analysis)
 	case cppNodeFunctionDefinition:
-		if decl := p.parseFunction(node, src, filePath, packagePath, staticFunctions); decl != nil {
+		if decl := p.parseFunction(node, src, filePath, packagePath, scope, staticFunctions, localTypes); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
 		return
 	}
+	scope = cppNestedScope(node, src, scope)
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkFile(node.Child(i), src, filePath, packagePath, staticFunctions, analysis)
+		p.walkFile(node.Child(i), src, filePath, packagePath, scope, staticFunctions, localTypes, analysis)
+	}
+}
+
+func collectCPPDeclaredTypes(node *sitter.Node, src []byte, scope string, result map[string]bool) {
+	nextScope := cppNestedScope(node, src, scope)
+	if nextScope != scope && (node.Type() == "class_specifier" || node.Type() == "struct_specifier") {
+		result[nextScope] = true
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectCPPDeclaredTypes(node.Child(i), src, nextScope, result)
+	}
+}
+
+func cppNestedScope(node *sitter.Node, src []byte, scope string) string {
+	switch node.Type() {
+	case "namespace_definition", "class_specifier", "struct_specifier":
+		name := node.ChildByFieldName("name")
+		if name == nil || name.Content(src) == "" {
+			return scope
+		}
+		if scope == "" {
+			return strings.TrimPrefix(name.Content(src), "::")
+		}
+		return scope + "::" + name.Content(src)
+	default:
+		return scope
 	}
 }
 
@@ -124,9 +159,12 @@ func (p *CPPParser) extractInclude(node *sitter.Node, src []byte, analysis *File
 	}
 }
 
-func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) *FunctionDecl {
+func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packagePath, scope string, staticFunctions, localTypes map[string]bool) *FunctionDecl {
 	declarator := node.ChildByFieldName("declarator")
 	name, typeName := cppDeclaratorIdentity(declarator, src)
+	if typeName == "" {
+		typeName = scope
+	}
 	body := node.ChildByFieldName("body")
 	if name == "" || body == nil {
 		return nil
@@ -139,11 +177,86 @@ func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packa
 		OwnerType:    "module",
 		OwnerName:    packagePath,
 		FunctionType: "function",
-		Parameters:   cParameters(declarator, src),
+		Parameters:   cppParameters(declarator, src),
 	}
-	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
-	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
+	variableTypes := cppVariableTypes(decl.Parameters)
+	p.walkCalls(body, src, filePath, packagePath, staticFunctions, localTypes, variableTypes, &decl.Calls)
+	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions, localTypes, variableTypes)
 	return decl
+}
+
+func cppVariableTypes(parameters []FunctionParameter) map[string]string {
+	types := make(map[string]string)
+	for _, parameter := range parameters {
+		if parameter.Name != "" && parameter.Type != "" {
+			types[parameter.Name] = cppCanonicalType(parameter.Type)
+		}
+	}
+	return types
+}
+
+func recordCPPDeclarationTypes(node *sitter.Node, src []byte, types map[string]string) {
+	typeNode := node.ChildByFieldName("type")
+	if typeNode == nil {
+		return
+	}
+	typeName := cppCanonicalType(typeNode.Content(src))
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		child := node.NamedChild(i)
+		if sameSyntaxNode(child, typeNode) {
+			continue
+		}
+		if name := cDeclaratorName(child, src); name != "" {
+			types[name] = typeName
+		}
+	}
+}
+
+func cppParameters(declarator *sitter.Node, src []byte) []FunctionParameter {
+	result := cParameters(declarator, src)
+	parameters := cDescendantByType(declarator, cNodeParameterList)
+	if parameters == nil || len(result) == 0 {
+		return result
+	}
+
+	resultIndex := 0
+	for i := 0; i < int(parameters.NamedChildCount()); i++ {
+		parameter := parameters.NamedChild(i)
+		if parameter.Type() != "parameter_declaration" {
+			continue
+		}
+		if resultIndex >= len(result) {
+			break
+		}
+		result[resultIndex].Type = cppCanonicalType(result[resultIndex].Type)
+		if result[resultIndex].Name == "" {
+			result[resultIndex].Name = cppVariableDeclaratorName(parameter.ChildByFieldName("declarator"), src)
+		}
+		resultIndex++
+	}
+	return result
+}
+
+func cppVariableDeclaratorName(node *sitter.Node, src []byte) string {
+	if node == nil {
+		return ""
+	}
+	if node.Type() == cNodeIdentifier {
+		return node.Content(src)
+	}
+	if declarator := node.ChildByFieldName("declarator"); declarator != nil {
+		return cppVariableDeclaratorName(declarator, src)
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		if name := cppVariableDeclaratorName(node.NamedChild(i), src); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func cppCanonicalType(typeName string) string {
+	return strings.TrimPrefix(strings.TrimSpace(typeName), "::")
 }
 
 func cppDeclaratorName(node *sitter.Node, src []byte) string {
@@ -156,28 +269,43 @@ func cppDeclaratorIdentity(node *sitter.Node, src []byte) (name, typeName string
 		return "", ""
 	}
 	switch node.Type() {
-	case cNodeIdentifier:
+	case cNodeIdentifier, "field_identifier":
 		return node.Content(src), ""
 	case "qualified_identifier":
-		parts := strings.Split(node.Content(src), "::")
+		parts := strings.Split(strings.TrimPrefix(node.Content(src), "::"), "::")
 		return parts[len(parts)-1], strings.Join(parts[:len(parts)-1], "::")
 	default:
 		return cppDeclaratorIdentity(node.ChildByFieldName("declarator"), src)
 	}
 }
 
-func (p *CPPParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, calls *[]FunctionCall) {
+func (p *CPPParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string, calls *[]FunctionCall) {
+	if cppIntroducesVariableScope(node.Type()) {
+		variableTypes = maps.Clone(variableTypes)
+	}
+	if node.Type() == "declaration" {
+		recordCPPDeclarationTypes(node, src, variableTypes)
+	}
 	if node.Type() == cNodeCallExpression {
-		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions); call != nil {
+		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions, localTypes, variableTypes); call != nil {
 			*calls = append(*calls, *call)
 		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkCalls(node.Child(i), src, filePath, packagePath, staticFunctions, calls)
+		p.walkCalls(node.Child(i), src, filePath, packagePath, staticFunctions, localTypes, variableTypes, calls)
 	}
 }
 
-func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) *FunctionCall {
+func cppIntroducesVariableScope(nodeType string) bool {
+	switch nodeType {
+	case "compound_statement", "if_statement", "switch_statement", "for_statement", "while_statement", "do_statement", "catch_clause", lambdaExpressionNode:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string) *FunctionCall {
 	function := node.ChildByFieldName("function")
 	if function == nil {
 		return nil
@@ -206,48 +334,61 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 		call.Callee.Name = field.Content(src)
 		if argument != nil && argument.Type() == cNodeIdentifier {
 			call.ReceiverVar = argument.Content(src)
+			call.Callee.Type = variableTypes[call.ReceiverVar]
+			if localTypes[call.Callee.Type] {
+				call.Callee.Linkage = LinkageInternal
+			}
 		}
 	case "qualified_identifier":
-		parts := strings.Split(function.Content(src), "::")
+		parts := strings.Split(strings.TrimPrefix(function.Content(src), "::"), "::")
 		if len(parts) < 2 {
 			return nil
 		}
 		call.Callee.Name = parts[len(parts)-1]
 		call.Callee.Type = strings.Join(parts[:len(parts)-1], "::")
+		if localTypes[call.Callee.Type+"::"+call.Callee.Name] {
+			call.Callee.Linkage = LinkageInternal
+		}
 	default:
 		return nil
 	}
 	return call
 }
 
-func (p *CPPParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) []SourceNode {
+func (p *CPPParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string) []SourceNode {
 	var sources []SourceNode
-	p.walkReturnSources(body, src, filePath, packagePath, staticFunctions, &sources)
+	p.walkReturnSources(body, src, filePath, packagePath, staticFunctions, localTypes, variableTypes, &sources)
 	return sources
 }
 
-func (p *CPPParser) walkReturnSources(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, sources *[]SourceNode) {
-	if node.Type() == "lambda_expression" {
+func (p *CPPParser) walkReturnSources(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string, sources *[]SourceNode) {
+	if node.Type() == lambdaExpressionNode {
 		return
+	}
+	if cppIntroducesVariableScope(node.Type()) {
+		variableTypes = maps.Clone(variableTypes)
+	}
+	if node.Type() == "declaration" {
+		recordCPPDeclarationTypes(node, src, variableTypes)
 	}
 	if node.Type() == cNodeReturnStatement {
 		if expr := cReturnExpression(node); expr != nil {
-			if source, ok := p.returnSource(expr, src, filePath, packagePath, staticFunctions); ok {
+			if source, ok := p.returnSource(expr, src, filePath, packagePath, staticFunctions, localTypes, variableTypes); ok {
 				*sources = append(*sources, source)
 			}
 		}
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkReturnSources(node.Child(i), src, filePath, packagePath, staticFunctions, sources)
+		p.walkReturnSources(node.Child(i), src, filePath, packagePath, staticFunctions, localTypes, variableTypes, sources)
 	}
 }
 
-func (p *CPPParser) returnSource(expr *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) (SourceNode, bool) {
+func (p *CPPParser) returnSource(expr *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string) (SourceNode, bool) {
 	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
 	switch expr.Type() {
 	case cNodeCallExpression:
-		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions)
+		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions, localTypes, variableTypes)
 		if call == nil {
 			return SourceNode{}, false
 		}
