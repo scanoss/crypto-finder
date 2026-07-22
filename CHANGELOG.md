@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- JavaScript and TypeScript callgraph parsing now records mapped function return sources for direct values, calls, and constructors. (#81)
 - C callgraph contracts now model the rule-covered Mbed TLS 3.6 LTS PKCS#7, LMS, public-key, TLS, and X.509 lifecycles. (#92)
 - C++ callgraph builds now load embedded schema-v2 contract knowledge bases. (#95)
 - C callgraph contracts now model libsodium 1.x high-level AEAD, authentication, hashing, password-hashing, KDF, key-exchange, box, stream, and signing lifecycles. (#145)

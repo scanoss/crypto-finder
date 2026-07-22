@@ -26,6 +26,8 @@ const (
 	nodeArrowFunction        = "arrow_function"
 	nodeFunctionExpression   = "function_expression"
 	nodeMethodDefinition     = "method_definition"
+	nodeReturnStatement      = "return_statement"
+	nodeNewExpression        = "new_expression"
 )
 
 // NodeParser extracts JavaScript and TypeScript imports, declarations, and calls.
@@ -280,7 +282,7 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 	case "lexical_declaration", "variable_declaration":
 		p.extractAssignedFunctions(node, src, filePath, packagePath, analysis)
 		return
-	case "class_declaration":
+	case javaNodeClassDeclaration:
 		p.extractClassMethods(node, src, filePath, packagePath, analysis)
 		return
 	}
@@ -355,7 +357,93 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	}
 	locals := collectNodeLocalNames(params, body, src)
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
+	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
 	return decl
+}
+
+func (p *NodeParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) []SourceNode {
+	if body.Type() != "statement_block" {
+		if source, ok := p.nodeReturnSource(body, src, filePath, packagePath, owner, imports, locals); ok {
+			return []SourceNode{source}
+		}
+		return nil
+	}
+	var sources []SourceNode
+	p.walkNodeReturnSources(body, src, filePath, packagePath, owner, imports, locals, &sources)
+	return sources
+}
+
+func (p *NodeParser) walkNodeReturnSources(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool, sources *[]SourceNode) {
+	if node == nil {
+		return
+	}
+	if isNodeNestedScope(node.Type()) {
+		return
+	}
+	if node.Type() == nodeReturnStatement {
+		if node.NamedChildCount() > 0 {
+			if source, ok := p.nodeReturnSource(node.NamedChild(0), src, filePath, packagePath, owner, imports, locals); ok {
+				*sources = append(*sources, source)
+			}
+		}
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkNodeReturnSources(node.Child(i), src, filePath, packagePath, owner, imports, locals, sources)
+	}
+}
+
+func (p *NodeParser) nodeReturnSource(expr *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) (SourceNode, bool) {
+	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
+	switch expr.Type() {
+	case nodeCallExpression:
+		call := p.parseNodeCall(expr, src, filePath, packagePath, owner, imports, locals)
+		if call == nil {
+			return SourceNode{}, false
+		}
+		callee := call.Callee
+		callee.Name = fmt.Sprintf("%s#%d", callee.Name, len(call.Arguments))
+		return SourceNode{Type: sourceNodeCallResult, CallTarget: &callee, Location: location}, true
+	case nodeNewExpression:
+		constructor := expr.ChildByFieldName("constructor")
+		if constructor == nil {
+			return SourceNode{}, false
+		}
+		var pkg, typeName string
+		switch constructor.Type() {
+		case goNodeIdentifier:
+			typeName = constructor.Content(src)
+			pkg = packagePath
+			if importedPackage, ok := nodeImportedPackage(imports, locals, typeName); ok {
+				pkg = importedPackage
+			}
+		case nodeMemberExpression:
+			object := constructor.ChildByFieldName("object")
+			property := constructor.ChildByFieldName("property")
+			if object == nil || property == nil {
+				return SourceNode{}, false
+			}
+			first, suffix := splitNodeMemberObject(object.Content(src))
+			var ok bool
+			pkg, ok = nodeImportedPackage(imports, locals, first)
+			if !ok {
+				return SourceNode{}, false
+			}
+			if suffix != "" {
+				pkg += "." + suffix
+			}
+			typeName = property.Content(src)
+		default:
+			return SourceNode{}, false
+		}
+		target := FunctionID{Package: pkg, Type: typeName, Name: fmt.Sprintf("%s#%d", constructorMethodName, len(nodeCallArguments(expr, src)))}
+		return SourceNode{Type: sourceNodeCallResult, DeclaredType: qualifiedType(pkg, typeName), CallTarget: &target, Location: location}, true
+	case goNodeIdentifier:
+		return SourceNode{Type: sourceNodeVariable, Name: expr.Content(src), Location: location}, true
+	case "string", "number", javaNodeBoolLiteralTrue, javaNodeBoolLiteralFalse, "null":
+		return SourceNode{Type: sourceNodeValue, Value: expr.Content(src), Location: location}, true
+	}
+	return SourceNode{}, false
 }
 
 func nodeParameters(node *sitter.Node, src []byte) []FunctionParameter {
@@ -394,6 +482,9 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 	if node == nil {
 		return
 	}
+	if collectNodeNestedBinding(node, src, locals) {
+		return
+	}
 	if node.Type() == nodeVariableDeclarator {
 		name := node.ChildByFieldName("name")
 		if name != nil && name.Type() == goNodeIdentifier {
@@ -414,6 +505,29 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 	}
 }
 
+func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]bool) bool {
+	if !isNodeNestedScope(node.Type()) {
+		return false
+	}
+	switch node.Type() {
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, javaNodeClassDeclaration:
+		if name := node.ChildByFieldName("name"); name != nil {
+			locals[name.Content(src)] = true
+		}
+		return true
+	}
+	return true
+}
+
+func isNodeNestedScope(nodeType string) bool {
+	switch nodeType {
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, javaNodeClassDeclaration:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *NodeParser) extractCalls(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) []FunctionCall {
 	var calls []FunctionCall
 	p.walkNodeCalls(body, src, filePath, packagePath, owner, imports, locals, &calls)
@@ -424,8 +538,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 	if node == nil {
 		return
 	}
-	switch node.Type() {
-	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, "class_declaration":
+	if isNodeNestedScope(node.Type()) {
 		return
 	}
 	if node.Type() == nodeCallExpression {
