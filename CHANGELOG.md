@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- C callgraph contracts now model the rule-covered Mbed TLS 3.6 LTS PKCS#7, LMS, public-key, TLS, and X.509 lifecycles. (#92)
 - C++ callgraph builds now populate namespace-qualified return sources and select the C++ contract type resolver. (#94)
 - C callgraph builds now load embedded schema-v2 contract knowledge bases. (#89)
 - C callgraph builds now select the C contract type resolver; pointer-returning functions can use contract inference when C knowledge bases are embedded. (#88)
