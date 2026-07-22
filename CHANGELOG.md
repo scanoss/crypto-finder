@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - C callgraph contracts now match global library symbols independently of the scanned project's package path while preserving exact project-qualified matches. (#156)
 - C callgraph pointer-return inference now propagates through in-project wrapper functions while preserving arity-qualified contract lookup. (#153)
 - Rust callgraph contracts now resolve associated functions using the canonical Rust callable identity, enabling inferred return types from embedded contracts. (#74)
-- Nested-call findings now attribute matched operations and canonical call identities to the tightest source invocation instead of an enclosing call. (#134)
+- Nested-call findings now attribute matched operations to the tightest source invocation and preserve external constructor arity and parameter types from source provenance. (#134)
 - Supporting-call catalogs now preserve every callable overload deterministically instead of selecting one by traversal order. (#131)
 - Stitched graph-fragment callgraph exports now retain parameter roles on supporting calls. (#130)
 - Concurrent scans sharing the default rules cache no longer expose partial metadata or lose in-flight filtered rule files when another process refreshes the cache. (#128)

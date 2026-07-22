@@ -304,6 +304,76 @@ func TestFindCryptoCallNode(t *testing.T) {
 	})
 }
 
+func TestFindCryptoCall_UsesArgumentSourceTypeForExternalConstructor(t *testing.T) {
+	constructorID := callgraph.FunctionID{
+		Package: "org.bouncycastle.openpgp.operator.jcajce",
+		Type:    "JcePGPDataEncryptorBuilder",
+		Name:    "<init>#1",
+	}
+	owner := &callgraph.FunctionDecl{
+		ID: callgraph.FunctionID{Package: "example", Type: "Acceptance", Name: "builder#1"},
+		Calls: []callgraph.FunctionCall{{
+			Callee:    constructorID,
+			Line:      5,
+			StartCol:  16,
+			EndCol:    55,
+			Arguments: []string{"alg"},
+			ArgumentSources: [][]callgraph.SourceNode{{{
+				Type:           "PARAMETER",
+				Name:           "alg",
+				DeclaredType:   "int",
+				ParameterIndex: 0,
+			}}},
+		}},
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.ID.String(): owner}}
+	ctx := &exportBuildContext{
+		graph: graph,
+		kb: &contracts.KnowledgeBase{Ecosystem: "java", Contracts: map[string][]contracts.Contract{
+			"org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>#1": {{
+				Method: "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>",
+				Arity:  1,
+				Role:   "factory",
+				Parameters: []contracts.ParameterContract{{
+					Index: intPtr(0), Name: "encAlgorithm", Role: "operation-determining",
+					Contributes: &contracts.Contribution{Property: "algorithm", Derivation: "argument_value"},
+				}},
+			}},
+		}},
+	}
+	asset := entities.CryptographicAsset{StartLine: 5, EndLine: 5, StartCol: 16, EndCol: 55}
+
+	got := findCryptoCall(ctx, graph, owner, asset, 5, 5)
+	if got == nil {
+		t.Fatal("findCryptoCall returned nil")
+	}
+	const want = "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>(int): JcePGPDataEncryptorBuilder"
+	if got.CanonicalSignature != want {
+		t.Fatalf("CanonicalSignature = %q, want %q", got.CanonicalSignature, want)
+	}
+
+	support := buildDerivedSupportingCall(ctx, owner, &owner.Calls[0])
+	if support.Category != "factory" || support.SupportingCall == nil || support.SupportingCall.CanonicalSignature != want {
+		t.Fatalf("support = %#v, want arity-1 factory constructor", support)
+	}
+	if roles := support.SupportingCall.ParameterRoles; len(roles) != 1 || roles[0].Role != "operation-determining" ||
+		roles[0].Contributes == nil || roles[0].Contributes.Property != "algorithm" {
+		t.Fatalf("parameter roles = %#v, want algorithm operation-determining role", roles)
+	}
+}
+
+func TestApplyExportFunctionMetadataToCalledFunction_PreservesDeclaredArity(t *testing.T) {
+	call := &callGraphCalledFunction{Parameters: []callGraphParameter{{Type: "String"}, {Type: "int"}}}
+	applyExportFunctionMetadataToCalledFunction(call, exportFunctionMetadata{
+		FunctionName:   "example.Logger.log",
+		ParameterTypes: []string{"Object[]"},
+		ReturnType:     "void",
+	})
+	if got, want := call.CanonicalSignature, "example.Logger.log(Object[]): void"; got != want {
+		t.Fatalf("CanonicalSignature = %q, want declared signature %q", got, want)
+	}
+}
+
 // TestBestChainRootCandidate isolates the chain-root tie-break (step 3a): only
 // chain candidates with AssignedVar set are eligible, non-chain candidates are
 // ignored, and ties between multiple chain roots resolve to the lowest StartCol.

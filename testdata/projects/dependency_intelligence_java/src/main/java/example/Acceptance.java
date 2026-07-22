@@ -16,10 +16,12 @@
 
 package example;
 
+import java.security.SecureRandom;
 import javax.crypto.Cipher;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
 
 interface Processor {
     byte[] apply(byte[] data);
@@ -34,6 +36,12 @@ class SecondProcessor implements Processor {
 }
 
 class Acceptance {
+    JcePGPDataEncryptorBuilder builder(int alg) {
+        return new JcePGPDataEncryptorBuilder(alg)
+            .setSecureRandom(new SecureRandom())
+            .setWithIntegrityPacket(true);
+    }
+
     byte[] run(byte[] data, byte[] key, String runtimeProvider) throws Exception {
         Cipher.getInstance("AES/GCM/NoPadding", "BC");
         Cipher.getInstance("AES/GCM/NoPadding", runtimeProvider);
