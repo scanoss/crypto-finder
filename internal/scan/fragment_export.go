@@ -614,7 +614,19 @@ func buildFragmentExternalCall(
 	}
 	external.TargetFunctionName = fragmentTargetFunctionName(ctx, callerKey, callerDecl, calleeKey, &external)
 	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
-		external.TargetCanonicalSignature = buildExportFunctionMetadata(ctx.graph, calleeID, nil).CanonicalSignature
+		meta := buildExportFunctionMetadata(ctx.graph, calleeID, nil)
+		if call != nil && call.Callee.String() == calleeKey {
+			meta, _ = buildCallExportFunctionMetadata(ctx, call, nil)
+		}
+		parameterTypes := meta.ParameterTypes
+		if external.EntryCall != nil {
+			callTypes := make([]string, len(external.EntryCall.Parameters))
+			for i := range external.EntryCall.Parameters {
+				callTypes[i] = external.EntryCall.Parameters[i].Type
+			}
+			parameterTypes = mergeExportParameterTypes(parameterTypes, callTypes)
+		}
+		external.TargetCanonicalSignature = canonicalSignature(meta.FunctionName, parameterTypes, meta.ReturnType)
 	}
 	if call != nil {
 		external.Raw = call.Raw

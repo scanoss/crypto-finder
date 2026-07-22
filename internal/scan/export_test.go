@@ -374,6 +374,109 @@ func TestApplyExportFunctionMetadataToCalledFunction_PreservesDeclaredArity(t *t
 	}
 }
 
+func TestBuildCallExportFunctionMetadata_DoesNotUseInferredReturnAsDeclared(t *testing.T) {
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "crypto/rsa", Name: "GenerateKey#2"},
+		Arguments: []string{"rand.Reader", "2048"},
+	}
+	ctx := &exportBuildContext{
+		graph: &callgraph.CallGraph{},
+		kb: &contracts.KnowledgeBase{Ecosystem: "go", Contracts: map[string][]contracts.Contract{
+			"crypto/rsa.GenerateKey#2": {{
+				Method: "crypto/rsa.GenerateKey",
+				Arity:  2,
+				Return: contracts.ContractReturn{Type: "*crypto/rsa.PrivateKey", Confidence: "high"},
+			}},
+		}},
+	}
+
+	got, _ := buildCallExportFunctionMetadata(ctx, call, nil)
+	if got.ReturnType != "" {
+		t.Fatalf("ReturnType = %q, want empty declared return", got.ReturnType)
+	}
+}
+
+func TestBuildCallExportFunctionMetadata_ResolvesConditionalCanonicalReturn(t *testing.T) {
+	ctx := conditionalCanonicalReturnContext()
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "com.google.crypto.tink", Type: "KeysetHandle", Name: "getPrimitive#1"},
+		Arguments: []string{"Aead.class"},
+	}
+
+	got, _ := buildCallExportFunctionMetadata(ctx, call, nil)
+	if got.ReturnType != "com.google.crypto.tink.Aead" {
+		t.Fatalf("ReturnType = %q, want resolved Aead return", got.ReturnType)
+	}
+}
+
+func TestBuildCallExportFunctionMetadata_LeavesUnresolvedConditionalReturnEmpty(t *testing.T) {
+	ctx := conditionalCanonicalReturnContext()
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "com.google.crypto.tink", Type: "KeysetHandle", Name: "getPrimitive#1"},
+		Arguments: []string{"primitiveClass"},
+	}
+
+	got, _ := buildCallExportFunctionMetadata(ctx, call, nil)
+	if got.ReturnType != "" {
+		t.Fatalf("ReturnType = %q, want unresolved return omitted", got.ReturnType)
+	}
+}
+
+func TestBuildCallExportFunctionMetadata_LeavesSingletonConditionalReturnEmpty(t *testing.T) {
+	ctx := conditionalCanonicalReturnContext()
+	ctx.kb.Contracts["com.google.crypto.tink.KeysetHandle.getPrimitive#1"] = ctx.kb.Contracts["com.google.crypto.tink.KeysetHandle.getPrimitive#1"][:1]
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "com.google.crypto.tink", Type: "KeysetHandle", Name: "getPrimitive#1"},
+		Arguments: []string{"primitiveClass"},
+	}
+
+	got, _ := buildCallExportFunctionMetadata(ctx, call, nil)
+	if got.ReturnType != "" {
+		t.Fatalf("ReturnType = %q, want unresolved singleton return omitted", got.ReturnType)
+	}
+}
+
+func TestBuildCallExportFunctionMetadata_MixedConditionalProvenanceFailsClosed(t *testing.T) {
+	ctx := conditionalCanonicalReturnContext()
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "com.google.crypto.tink", Type: "KeysetHandle", Name: "getPrimitive#1"},
+		Arguments: []string{"primitiveClass"},
+		ArgumentSources: [][]callgraph.SourceNode{{
+			{Type: "VALUE", Value: "Aead.class"},
+			{Type: "VARIABLE", Name: "runtimeClass"},
+		}},
+	}
+
+	got, _ := buildCallExportFunctionMetadata(ctx, call, nil)
+	if got.ReturnType != "" {
+		t.Fatalf("ReturnType = %q, want mixed provenance to remain unresolved", got.ReturnType)
+	}
+}
+
+func conditionalCanonicalReturnContext() *exportBuildContext {
+	return &exportBuildContext{
+		graph: &callgraph.CallGraph{},
+		kb: &contracts.KnowledgeBase{Ecosystem: "java", Contracts: map[string][]contracts.Contract{
+			"com.google.crypto.tink.KeysetHandle.getPrimitive#1": {
+				{
+					Method:              "com.google.crypto.tink.KeysetHandle.getPrimitive",
+					Arity:               1,
+					When:                &contracts.Condition{ArgIndex: 0, ArgValueIn: []string{"Aead.class"}},
+					ParameterTypes:      []string{"java.lang.Class"},
+					CanonicalReturnType: "com.google.crypto.tink.Aead",
+				},
+				{
+					Method:              "com.google.crypto.tink.KeysetHandle.getPrimitive",
+					Arity:               1,
+					When:                &contracts.Condition{ArgIndex: 0, ArgValueIn: []string{"Mac.class"}},
+					ParameterTypes:      []string{"java.lang.Class"},
+					CanonicalReturnType: "com.google.crypto.tink.Mac",
+				},
+			},
+		}},
+	}
+}
+
 // TestBestChainRootCandidate isolates the chain-root tie-break (step 3a): only
 // chain candidates with AssignedVar set are eligible, non-chain candidates are
 // ignored, and ties between multiple chain roots resolve to the lowest StartCol.

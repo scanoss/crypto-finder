@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -936,7 +937,8 @@ func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []
 }
 
 func parameterRolesFromContracts(matches []contracts.Contract) []callGraphParameterRole {
-	for _, contract := range matches {
+	for i := range matches {
+		contract := &matches[i]
 		if len(contract.Parameters) == 0 {
 			continue
 		}
@@ -968,18 +970,56 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 	if ctx.kb.Ecosystem != "c" {
 		matches := ctx.kb.ContractsForTolerant(fqn, arity)
 		if len(matches) == 0 && ctx.kb.Ecosystem == "cpp" && call.Callee.Type != "" && call.Callee.Linkage != callgraph.LinkageInternal && !hasCallDeclaration(ctx.graph, call.Callee) {
-			return ctx.kb.ContractsForTolerant(call.Callee.Type+"."+callgraph.BaseFunctionName(call.Callee.Name), arity)
+			matches = ctx.kb.ContractsForTolerant(call.Callee.Type+"."+callgraph.BaseFunctionName(call.Callee.Name), arity)
 		}
-		return matches
+		return exactConditionalContracts(matches, call)
 	}
 	if exact := ctx.kb.ContractsFor(fqn, arity); len(exact) > 0 {
-		return exact
+		return exactConditionalContracts(exact, call)
 	}
 	if ctx.graph == nil {
 		return nil
 	}
 	externalGlobal := call.Callee.Linkage == callgraph.LinkageExternal && ctx.graph.Functions[call.Callee.String()] == nil
-	return ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal)
+	return exactConditionalContracts(ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal), call)
+}
+
+func exactConditionalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
+	exact := matchingConditionalContracts(matches, call)
+	if len(exact) > 0 {
+		return exact
+	}
+	return matches
+}
+
+func canonicalContractsForCall(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
+	if exact := matchingConditionalContracts(matches, call); len(exact) > 0 {
+		return exact
+	}
+	unconditional := make([]contracts.Contract, 0, len(matches))
+	for i := range matches {
+		if matches[i].When == nil {
+			unconditional = append(unconditional, matches[i])
+		}
+	}
+	return unconditional
+}
+
+func matchingConditionalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
+	exact := make([]contracts.Contract, 0, len(matches))
+	for i := range matches {
+		condition := matches[i].When
+		if condition == nil || condition.ArgIndex < 0 || condition.ArgIndex >= len(call.Arguments) {
+			continue
+		}
+		argument := strings.TrimSpace(call.Arguments[condition.ArgIndex])
+		if slices.ContainsFunc(condition.ArgValueIn, func(want string) bool {
+			return argument == strings.TrimSpace(want)
+		}) {
+			exact = append(exact, matches[i])
+		}
+	}
+	return exact
 }
 
 func hasCallDeclaration(graph *callgraph.CallGraph, id callgraph.FunctionID) bool {
@@ -1518,7 +1558,8 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		Line:         call.Line,
 		Parameters:   mergeCallParameters(ctx, &containingFn.ID, &call.Callee, callee, call.Arguments, call.ArgumentSources, sourcePath, call.Line),
 	}
-	applyExportFunctionMetadataToCalledFunction(sc, buildExportFunctionMetadata(ctx.graph, call.Callee, callee))
+	callMeta, matches := buildCallExportFunctionMetadata(ctx, call, callee)
+	applyExportFunctionMetadataToCalledFunction(sc, callMeta)
 	support.SupportingCall = sc
 	if support.MatchedOperation != nil && sc.FunctionName != "" {
 		support.MatchedOperation.Symbol = sc.FunctionName
@@ -1535,8 +1576,11 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		if ctx.kb.Ecosystem == "cpp" {
 			arity = len(call.Arguments)
 		}
-		matches := contractMatchesForCall(ctx, call, arity)
-		for _, contract := range matches {
+		if len(matches) == 0 || arity != len(call.Arguments) {
+			matches = contractMatchesForCall(ctx, call, arity)
+		}
+		for i := range matches {
+			contract := &matches[i]
 			if contract.Role != "" {
 				support.Category = contract.Role
 				break
@@ -1873,7 +1917,8 @@ func findCryptoCall(
 		Line:         bestCall.Line,
 		Parameters:   mergeCallParameters(ctx, &containingFn.ID, &bestCall.Callee, callee, bestCall.Arguments, bestCall.ArgumentSources, sourcePath, bestCall.Line),
 	}
-	applyExportFunctionMetadataToCalledFunction(result, buildExportFunctionMetadata(graph, bestCall.Callee, callee))
+	meta, _ := buildCallExportFunctionMetadata(ctx, bestCall, callee)
+	applyExportFunctionMetadataToCalledFunction(result, meta)
 
 	return result
 }
@@ -2530,7 +2575,8 @@ func buildEntryCall(
 		Line:       call.Line,
 		Parameters: mergeCallParameters(ctx, &callerID, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
 	}
-	applyExportFunctionMetadataToEntryCall(entryCall, buildExportFunctionMetadata(graph, call.Callee, calleeFn))
+	meta, _ := buildCallExportFunctionMetadata(ctx, call, calleeFn)
+	applyExportFunctionMetadataToEntryCall(entryCall, meta)
 	callName := fullFunctionName(call.Callee)
 	if callName != fullFunctionName(calleeID) {
 		entryCall.FunctionName = callName
@@ -2732,6 +2778,45 @@ func buildExportFunctionMetadata(
 	return meta
 }
 
+// buildCallExportFunctionMetadata enriches an external call with canonical
+// signature details that the contract KB can state unambiguously. Source or
+// scanned declarations remain authoritative; contracts only fill gaps.
+func buildCallExportFunctionMetadata(
+	ctx *exportBuildContext,
+	call *callgraph.FunctionCall,
+	decl *callgraph.FunctionDecl,
+) (exportFunctionMetadata, []contracts.Contract) {
+	if call == nil {
+		return exportFunctionMetadata{}, nil
+	}
+	meta := buildExportFunctionMetadata(ctx.graph, call.Callee, decl)
+	matches := contractMatchesForCall(ctx, call, len(call.Arguments))
+	if len(matches) == 0 {
+		return meta, nil
+	}
+	canonicalMatches := canonicalContractsForCall(matches, call)
+	if len(canonicalMatches) == 0 {
+		return meta, matches
+	}
+
+	parameterTypes := canonicalMatches[0].ParameterTypes
+	returnType := canonicalMatches[0].CanonicalReturnType
+	for i := 1; i < len(canonicalMatches); i++ {
+		if !slices.Equal(parameterTypes, canonicalMatches[i].ParameterTypes) {
+			parameterTypes = nil
+		}
+		if returnType != canonicalMatches[i].CanonicalReturnType {
+			returnType = ""
+		}
+	}
+	meta.ParameterTypes = mergeExportParameterTypes(meta.ParameterTypes, parameterTypes)
+	if meta.ReturnType == "" {
+		meta.ReturnType = returnType
+	}
+	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
+	return meta, matches
+}
+
 // convertInferredReturnProvenance converts a []callgraph.SourceNode (inference
 // provenance) into the export shape without path normalization. This is used
 // only for the inferred_return.provenance field — the paths are not available
@@ -2906,22 +2991,29 @@ func parameterTypesFromCallParameters(parameters []callGraphParameter) []string 
 }
 
 func uniqueSourceDeclaredType(nodes []exportSourceNode) string {
-	types := make(map[string]struct{})
-	var collect func([]exportSourceNode)
-	collect = func(current []exportSourceNode) {
+	current := nodes
+	for len(current) > 0 {
+		types := make(map[string]struct{})
+		nextCapacity := 0
+		for i := range current {
+			nextCapacity += len(current[i].SourceNodes)
+		}
+		next := make([]exportSourceNode, 0, nextCapacity)
 		for i := range current {
 			if declared := strings.TrimSpace(current[i].DeclaredType); declared != "" {
 				types[declared] = struct{}{}
 			}
-			collect(current[i].SourceNodes)
+			next = append(next, current[i].SourceNodes...)
 		}
-	}
-	collect(nodes)
-	if len(types) != 1 {
-		return ""
-	}
-	for declared := range types {
-		return declared
+		if len(types) == 1 {
+			for declared := range types {
+				return declared
+			}
+		}
+		if len(types) > 1 {
+			return ""
+		}
+		current = next
 	}
 	return ""
 }

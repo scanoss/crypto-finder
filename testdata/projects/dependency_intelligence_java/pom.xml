@@ -9,5 +9,15 @@
       <artifactId>bcprov-jdk18on</artifactId>
       <version>1.78.1</version>
     </dependency>
+    <dependency>
+      <groupId>com.google.crypto.tink</groupId>
+      <artifactId>tink</artifactId>
+      <version>1.13.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.santuario</groupId>
+      <artifactId>xmlsec</artifactId>
+      <version>4.0.3</version>
+    </dependency>
   </dependencies>
 </project>

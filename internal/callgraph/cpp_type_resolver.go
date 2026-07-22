@@ -35,7 +35,9 @@ func (r *CPPContractTypeResolver) ResolveTypes(graph *CallGraph, _ []PackageDir)
 			continue
 		}
 		method, _ := splitMethodArity(&fn.ID)
-		for _, contract := range r.kb.ContractsFor(method, len(fn.Parameters)) {
+		matches := r.kb.ContractsFor(method, len(fn.Parameters))
+		for i := range matches {
+			contract := &matches[i]
 			if contract.When == nil && contract.Return.Type != "" {
 				fn.ReturnType = contract.Return.Type
 				break

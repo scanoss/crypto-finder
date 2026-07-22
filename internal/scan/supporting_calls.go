@@ -7,36 +7,129 @@ import "github.com/scanoss/crypto-finder/internal/callgraph"
 // bound to, and the fluent-chain group it belongs to. It is the shared currency
 // between the live-scan export (which projects it from callgraph.FunctionCall)
 // and the annotate-from-cache path (which projects it from a graph-fragment-1.4
-// edge's receiver_var/assigned_var/chain_id). Both paths run the SAME selection
-// policy (isLifecycleSibling) so they pick the identical set of supporting calls.
+// edge's receiver_var/assigned_var/chain_id). Both paths run the same directional
+// selector below so they pick the identical set of supporting calls.
 type objectIdentity struct {
 	ReceiverVar string
 	AssignedVar string
 	ChainID     string
 }
 
-// isLifecycleSibling reports whether call belongs to the lifecycle of the crypto
-// object identified by terminal. It is the single source of truth for the
-// object-lifecycle selection policy; callers must exclude the terminal call
-// itself. A call is a lifecycle sibling when:
-//
-//   - it is invoked on one of the terminal's object variables (ReceiverVar match);
-//   - it is a sibling link of the same fluent chain (ChainID match);
-//   - it produced one of the terminal's object variables (AssignedVar match).
-func isLifecycleSibling(call, terminal objectIdentity) bool {
-	matchesObjectVar := func(v string) bool {
-		return v != "" && (v == terminal.ReceiverVar || v == terminal.AssignedVar)
+type lifecycleSelector struct {
+	calls       []objectIdentity
+	selected    []bool
+	downVisited map[string]bool
+	upVisited   map[string]bool
+}
+
+// lifecycleCallIndices returns the directional receiver/assignment lifecycle
+// around one terminal call. Factory terminals walk down into the objects they
+// produce; operations walk up through their unique producer path. Keeping those
+// directions separate prevents sibling products of one factory from becoming
+// supporting calls for each other.
+func lifecycleCallIndices(calls []objectIdentity, terminalIdx int) []int {
+	if terminalIdx < 0 || terminalIdx >= len(calls) {
+		return nil
 	}
-	if matchesObjectVar(call.ReceiverVar) {
-		return true
+
+	selector := lifecycleSelector{
+		calls:       calls,
+		selected:    make([]bool, len(calls)),
+		downVisited: make(map[string]bool),
+		upVisited:   make(map[string]bool),
 	}
-	if terminal.ChainID != "" && call.ChainID == terminal.ChainID {
-		return true
+	selector.selected[terminalIdx] = true
+	terminal := calls[terminalIdx]
+	selector.selectChain(terminal.ChainID)
+	switch {
+	case terminal.ReceiverVar == "":
+		selector.selectDescendants(terminal.AssignedVar)
+	case terminal.AssignedVar != "" && selector.hasReceiver(terminal.AssignedVar):
+		selector.selectDescendants(terminal.AssignedVar)
+		selector.selectReceiverCalls(terminal.ReceiverVar, terminal.AssignedVar)
+		selector.selectAncestors(terminal.ReceiverVar)
+	default:
+		selector.selectReceiverCalls(terminal.ReceiverVar, "")
+		selector.selectAncestors(terminal.ReceiverVar)
 	}
-	if matchesObjectVar(call.AssignedVar) {
-		return true
+
+	out := make([]int, 0, len(calls)-1)
+	for i := range calls {
+		if i != terminalIdx && selector.selected[i] {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func (s *lifecycleSelector) hasReceiver(objectVar string) bool {
+	for i := range s.calls {
+		if s.calls[i].ReceiverVar == objectVar {
+			return true
+		}
 	}
 	return false
+}
+
+func (s *lifecycleSelector) selectChain(chainID string) {
+	if chainID == "" {
+		return
+	}
+	for i := range s.calls {
+		if s.calls[i].ChainID == chainID {
+			s.selected[i] = true
+		}
+	}
+}
+
+func (s *lifecycleSelector) selectDescendants(objectVar string) {
+	if objectVar == "" || s.downVisited[objectVar] {
+		return
+	}
+	s.downVisited[objectVar] = true
+	for i := range s.calls {
+		if s.calls[i].ReceiverVar != objectVar {
+			continue
+		}
+		s.selected[i] = true
+		s.selectChain(s.calls[i].ChainID)
+		if s.calls[i].AssignedVar != objectVar {
+			s.selectDescendants(s.calls[i].AssignedVar)
+		}
+	}
+}
+
+func (s *lifecycleSelector) selectAncestors(objectVar string) {
+	if objectVar == "" || s.upVisited[objectVar] {
+		return
+	}
+	s.upVisited[objectVar] = true
+	for i := range s.calls {
+		if s.calls[i].AssignedVar != objectVar {
+			continue
+		}
+		s.selected[i] = true
+		s.selectChain(s.calls[i].ChainID)
+		parentVar := s.calls[i].ReceiverVar
+		if parentVar != "" {
+			s.selectReceiverCalls(parentVar, objectVar)
+			s.selectAncestors(parentVar)
+		}
+	}
+}
+
+func (s *lifecycleSelector) selectReceiverCalls(receiverVar, pathChild string) {
+	for i := range s.calls {
+		if s.calls[i].ReceiverVar != receiverVar {
+			continue
+		}
+		assigned := s.calls[i].AssignedVar
+		if pathChild != "" && assigned != "" && assigned != receiverVar && assigned != pathChild {
+			continue
+		}
+		s.selected[i] = true
+		s.selectChain(s.calls[i].ChainID)
+	}
 }
 
 // deriveObjectLifecycleCalls returns the calls in fn that belong to the
@@ -66,22 +159,20 @@ func deriveObjectLifecycleCalls(fn *callgraph.FunctionDecl, terminal *callgraph.
 		return nil
 	}
 
-	terminalID := objectIdentity{
-		ReceiverVar: terminal.ReceiverVar,
-		AssignedVar: terminal.AssignedVar,
-		ChainID:     terminal.ChainID,
-	}
-
-	out := make([]*callgraph.FunctionCall, 0)
+	identities := make([]objectIdentity, len(fn.Calls))
+	terminalIdx := -1
 	for i := range fn.Calls {
 		c := &fn.Calls[i]
 		if c == terminal {
-			continue
+			terminalIdx = i
 		}
-		callID := objectIdentity{ReceiverVar: c.ReceiverVar, AssignedVar: c.AssignedVar, ChainID: c.ChainID}
-		if isLifecycleSibling(callID, terminalID) {
-			out = append(out, c)
-		}
+		identities[i] = objectIdentity{ReceiverVar: c.ReceiverVar, AssignedVar: c.AssignedVar, ChainID: c.ChainID}
+	}
+
+	indices := lifecycleCallIndices(identities, terminalIdx)
+	out := make([]*callgraph.FunctionCall, 0, len(indices))
+	for _, i := range indices {
+		out = append(out, &fn.Calls[i])
 	}
 	return out
 }

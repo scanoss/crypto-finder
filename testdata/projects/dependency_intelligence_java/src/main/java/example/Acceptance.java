@@ -17,11 +17,19 @@
 package example;
 
 import java.security.SecureRandom;
+import java.security.Key;
 import javax.crypto.Cipher;
+import com.google.crypto.tink.Aead;
+import com.google.crypto.tink.KeysetHandle;
+import com.google.crypto.tink.aead.AeadKeyTemplates;
+import com.google.crypto.tink.proto.KeyTemplate;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder;
+import org.apache.xml.security.encryption.XMLCipher;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 interface Processor {
     byte[] apply(byte[] data);
@@ -40,6 +48,20 @@ class Acceptance {
         return new JcePGPDataEncryptorBuilder(alg)
             .setSecureRandom(new SecureRandom())
             .setWithIntegrityPacket(true);
+    }
+
+    byte[] tink(byte[] data) throws Exception {
+        KeyTemplate template = AeadKeyTemplates.AES128_GCM;
+        KeysetHandle handle = KeysetHandle.generateNew(template);
+        Aead aead = handle.getPrimitive(Aead.class);
+        byte[] encrypted = aead.encrypt(data, data);
+        return aead.decrypt(encrypted, data);
+    }
+
+    Document xml(Document document, Element element, Key key) throws Exception {
+        XMLCipher cipher = XMLCipher.getInstance(XMLCipher.AES_256_GCM);
+        cipher.init(XMLCipher.ENCRYPT_MODE, key);
+        return cipher.doFinal(document, element);
     }
 
     byte[] run(byte[] data, byte[] key, String runtimeProvider) throws Exception {

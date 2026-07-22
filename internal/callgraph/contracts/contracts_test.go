@@ -1,6 +1,7 @@
 package contracts_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -98,6 +99,85 @@ hierarchy: {}
 	_, err := contracts.Load([]byte(yamlNegArity))
 	if err == nil {
 		t.Fatal("expected error for arity -1, got nil")
+	}
+}
+
+func TestLoadKnowledgeBase_ParsesCanonicalSignatureTypes(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: test
+contracts:
+  - method: example.Cipher.init
+    arity: 2
+    parameter_types: [int, java.security.Key]
+    canonical_return_type: void
+    return: {type: void, confidence: high}
+hierarchy: {}
+`)
+
+	got := kb.ContractsFor("example.Cipher.init", 2)
+	if len(got) != 1 || !slices.Equal(got[0].ParameterTypes, []string{"int", "java.security.Key"}) {
+		t.Fatalf("parameter types = %#v", got)
+	}
+	if got[0].CanonicalReturnType != "void" {
+		t.Fatalf("canonical return type = %q, want void", got[0].CanonicalReturnType)
+	}
+}
+
+func TestMerge_CanonicalParameterTypesEnrichUnknownContract(t *testing.T) {
+	withoutTypes := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library: {name: without-types}
+contracts:
+  - method: example.Cipher.init
+    arity: 2
+    return: {type: void, confidence: high}
+hierarchy: {}
+`)
+	withTypes := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library: {name: with-types}
+contracts:
+  - method: example.Cipher.init
+    arity: 2
+    parameter_types: [int, java.security.Key]
+    return: {type: void, confidence: high}
+hierarchy: {}
+`)
+
+	merged, err := contracts.Merge(withoutTypes, withTypes)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	matches := merged.ContractsFor("example.Cipher.init", 2)
+	if len(matches) != 1 || !slices.Equal(matches[0].ParameterTypes, []string{"int", "java.security.Key"}) {
+		t.Fatalf("merged parameter types = %#v, want canonical types", matches)
+	}
+}
+
+func TestLoadKnowledgeBase_RejectsParameterTypesArityMismatch(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: java
+library:
+  name: test
+contracts:
+  - method: example.Cipher.init
+    arity: 2
+    parameter_types: [int]
+    return: {type: void, confidence: high}
+hierarchy: {}
+`))
+	if err == nil || !strings.Contains(err.Error(), "parameter_types length 1 must equal arity 2") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

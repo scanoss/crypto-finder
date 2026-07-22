@@ -100,35 +100,74 @@ func TestDeriveObjectLifecycleCalls_KeygenObjectAndConstructor(t *testing.T) {
 	}
 }
 
-// TestIsLifecycleSibling pins the shared object-lifecycle selection policy used
-// by BOTH the live-scan export and the annotate-from-cache path. If the two
-// paths ever diverge on which calls are "supporting", served reachability stops
-// matching a live scan — so this policy is the single source of truth.
-func TestIsLifecycleSibling(t *testing.T) {
-	t.Parallel()
-
-	genTerminal := objectIdentity{ReceiverVar: "gen"} // terminal call on the generator receiver
-	chainTerminal := objectIdentity{ChainID: "167"}   // terminal link in fluent chain 167
-
-	cases := []struct {
-		name     string
-		call     objectIdentity
-		terminal objectIdentity
-		want     bool
-	}{
-		{"receiver-var match (gen.init on gen)", objectIdentity{ReceiverVar: "gen"}, genTerminal, true},
-		{"assigned-var match (constructor binds gen)", objectIdentity{AssignedVar: "gen"}, genTerminal, true},
-		{"chain match (sibling fluent link)", objectIdentity{ChainID: "167"}, chainTerminal, true},
-		{"different receiver var", objectIdentity{ReceiverVar: "other"}, genTerminal, false},
-		{"different chain id", objectIdentity{ChainID: "999"}, chainTerminal, false},
-		{"empty call identity never matches", objectIdentity{}, genTerminal, false},
-		{"empty chain ids do not group", objectIdentity{ChainID: ""}, objectIdentity{ChainID: ""}, false},
+func TestDeriveObjectLifecycleCalls_FollowsProducedPrimitive(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "KeysetHandle", Name: "generateNew#1"}, AssignedVar: "handle", Line: 5},
+			{Callee: callgraph.FunctionID{Type: "KeysetHandle", Name: "getPrimitive#1"}, ReceiverVar: "handle", AssignedVar: "aead", Line: 6},
+			{Callee: callgraph.FunctionID{Type: "Aead", Name: "encrypt#2"}, ReceiverVar: "aead", AssignedVar: "ciphertext", Line: 7},
+			{Callee: callgraph.FunctionID{Type: "Aead", Name: "decrypt#2"}, ReceiverVar: "aead", Line: 8},
+			{Callee: callgraph.FunctionID{Type: "Logger", Name: "info#1"}, ReceiverVar: "logger", Line: 9},
+		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isLifecycleSibling(tc.call, tc.terminal); got != tc.want {
-				t.Errorf("isLifecycleSibling(%+v, %+v) = %v, want %v", tc.call, tc.terminal, got, tc.want)
-			}
-		})
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, &fn.Calls[0]))
+	want := []string{"decrypt", "encrypt", "getPrimitive"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
+func TestDeriveObjectLifecycleCalls_DoesNotCrossProducedPrimitiveBranches(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "KeysetHandle", Name: "generateNew#1"}, AssignedVar: "handle", Line: 5},
+			{Callee: callgraph.FunctionID{Type: "KeysetHandle", Name: "getPrimitive#1"}, ReceiverVar: "handle", AssignedVar: "aead", Line: 6},
+			{Callee: callgraph.FunctionID{Type: "KeysetHandle", Name: "getPrimitive#1"}, ReceiverVar: "handle", AssignedVar: "mac", Line: 7},
+			{Callee: callgraph.FunctionID{Type: "Aead", Name: "encrypt#2"}, ReceiverVar: "aead", Line: 8},
+			{Callee: callgraph.FunctionID{Type: "Mac", Name: "computeMac#1"}, ReceiverVar: "mac", Line: 9},
+		},
+	}
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, &fn.Calls[3]))
+	want := []string{"generateNew", "getPrimitive"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
+func TestDeriveObjectLifecycleCalls_FollowsReceiverFactoryResultOnly(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "Factory", Name: "<init>#0"}, AssignedVar: "factory", Line: 5},
+			{Callee: callgraph.FunctionID{Type: "Factory", Name: "create#1"}, ReceiverVar: "factory", AssignedVar: "encryptor", Line: 6},
+			{Callee: callgraph.FunctionID{Type: "Factory", Name: "create#1"}, ReceiverVar: "factory", AssignedVar: "decryptor", Line: 7},
+			{Callee: callgraph.FunctionID{Type: "Cipher", Name: "init#2"}, ReceiverVar: "encryptor", Line: 8},
+			{Callee: callgraph.FunctionID{Type: "Cipher", Name: "doFinal#2"}, ReceiverVar: "encryptor", Line: 9},
+			{Callee: callgraph.FunctionID{Type: "Cipher", Name: "doFinal#2"}, ReceiverVar: "decryptor", Line: 10},
+		},
+	}
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, &fn.Calls[1]))
+	want := []string{"<init>", "doFinal", "init"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
+func TestDeriveObjectLifecycleCalls_KeepsReceiverSetupWhenOperationResultIsUsed(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "MessageDigest", Name: "getInstance#1"}, AssignedVar: "digest", Line: 5},
+			{Callee: callgraph.FunctionID{Type: "MessageDigest", Name: "update#1"}, ReceiverVar: "digest", Line: 6},
+			{Callee: callgraph.FunctionID{Type: "MessageDigest", Name: "digest#0"}, ReceiverVar: "digest", AssignedVar: "hash", Line: 7},
+			{Callee: callgraph.FunctionID{Type: "byte[]", Name: "clone#0"}, ReceiverVar: "hash", Line: 8},
+		},
+	}
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, &fn.Calls[2]))
+	want := []string{"clone", "getInstance", "update"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
 	}
 }
