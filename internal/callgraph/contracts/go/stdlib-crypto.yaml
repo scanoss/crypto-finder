@@ -1,0 +1,1002 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: go-stdlib-crypto
+  coordinates:
+    - stdlib:crypto
+  version_range: ">=1.25.0,<1.26.0"
+  description: "Go standard-library cryptography APIs"
+
+# Inventory sources: Go 1.25.3 package documentation/source and the 102 Go
+# stdlib crypto rules on scanoss/crypto_rules main as of 2026-07-22. Constants,
+# type literals, and configuration fields are rule assets but not callable
+# contract identities, so they are intentionally absent here.
+contracts:
+  # Symmetric cipher factories and operations.
+  - method: crypto/aes.NewCipher
+    arity: 1
+    return: { type: crypto/cipher.Block, confidence: high }
+    role: factory
+    parameters: &key_material
+      - { index: 0, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: crypto/des.NewCipher
+    arity: 1
+    return: { type: crypto/cipher.Block, confidence: high }
+    role: factory
+    parameters: *key_material
+  - method: crypto/des.NewTripleDESCipher
+    arity: 1
+    return: { type: crypto/cipher.Block, confidence: high }
+    role: factory
+    parameters: *key_material
+  - method: crypto/cipher.NewGCM
+    arity: 1
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters: &block_cipher
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: crypto/cipher.NewGCMWithNonceSize
+    arity: 2
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: nonceSize, derivation: argument_value } }
+  - method: crypto/cipher.NewGCMWithRandomNonce
+    arity: 1
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters: *block_cipher
+  - method: crypto/cipher.NewGCMWithTagSize
+    arity: 2
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: tagSize, derivation: argument_value } }
+  - method: crypto/cipher.NewCBCEncrypter
+    arity: 2
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters: &mode_factory
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
+  - method: crypto/cipher.NewCBCDecrypter
+    arity: 2
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters: *mode_factory
+  - method: crypto/cipher.NewCFBEncrypter
+    arity: 2
+    return: { type: crypto/cipher.Stream, confidence: high }
+    role: factory
+    parameters: *mode_factory
+  - method: crypto/cipher.NewCFBDecrypter
+    arity: 2
+    return: { type: crypto/cipher.Stream, confidence: high }
+    role: factory
+    parameters: *mode_factory
+  - method: crypto/cipher.NewCTR
+    arity: 2
+    return: { type: crypto/cipher.Stream, confidence: high }
+    role: factory
+    parameters: *mode_factory
+  - method: crypto/cipher.NewOFB
+    arity: 2
+    return: { type: crypto/cipher.Stream, confidence: high }
+    role: factory
+    parameters: *mode_factory
+  - method: crypto/cipher.(Block).Encrypt
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters: &block_operation
+      - { index: 0, role: metadata-contributing, contributes: { property: output, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: crypto/cipher.(Block).Decrypt
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters: *block_operation
+  - method: crypto/cipher.(BlockMode).CryptBlocks
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters: *block_operation
+  - method: crypto/cipher.(Stream).XORKeyStream
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters: *block_operation
+  - method: crypto/cipher.(AEAD).Seal
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &aead_operation
+      - { index: 1, role: metadata-contributing, contributes: { property: nonce, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: associatedData, derivation: argument_value } }
+  - method: crypto/cipher.(AEAD).Open
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: nonce, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: associatedData, derivation: argument_value } }
+  - method: crypto/rc4.NewCipher
+    arity: 1
+    return: { type: "*crypto/rc4.Cipher", confidence: high }
+    role: factory
+    parameters: *key_material
+  - method: crypto/rc4.(*Cipher).XORKeyStream
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters: *block_operation
+  - method: crypto/rc4.(*Cipher).Reset
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+
+  # DSA, ECDH, ECDSA, and Ed25519 key lifecycles.
+  - method: crypto/dsa.GenerateParameters
+    arity: 3
+    return: { type: error, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: parameters, derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: parameterSet, derivation: argument_value } }
+  - method: crypto/dsa.GenerateKey
+    arity: 2
+    return: { type: error, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+  - method: crypto/dsa.Sign
+    arity: 3
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+    parameters: &dsa_sign
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: crypto/dsa.Verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+
+  - method: crypto/ecdh.P256
+    arity: 0
+    return: { type: crypto/ecdh.Curve, confidence: high }
+    role: factory
+  - method: crypto/ecdh.P384
+    arity: 0
+    return: { type: crypto/ecdh.Curve, confidence: high }
+    role: factory
+  - method: crypto/ecdh.P521
+    arity: 0
+    return: { type: crypto/ecdh.Curve, confidence: high }
+    role: factory
+  - method: crypto/ecdh.X25519
+    arity: 0
+    return: { type: crypto/ecdh.Curve, confidence: high }
+    role: factory
+  - method: crypto/ecdh.(Curve).GenerateKey
+    arity: 1
+    return: { type: "*crypto/ecdh.PrivateKey", confidence: high }
+    role: factory
+  - method: crypto/ecdh.(Curve).NewPrivateKey
+    arity: 1
+    return: { type: "*crypto/ecdh.PrivateKey", confidence: high }
+    role: factory
+    parameters: *key_material
+  - method: crypto/ecdh.(Curve).NewPublicKey
+    arity: 1
+    return: { type: "*crypto/ecdh.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: crypto/ecdh.(*PrivateKey).ECDH
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: crypto/ecdh.(*PrivateKey).PublicKey
+    arity: 0
+    return: { type: "*crypto/ecdh.PublicKey", confidence: high }
+    role: output
+  - method: crypto/ecdh.(*PrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/ecdh.(*PublicKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+  - method: crypto/elliptic.P224
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+  - method: crypto/elliptic.P256
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+  - method: crypto/elliptic.P384
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+  - method: crypto/elliptic.P521
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+
+  - method: crypto/ecdsa.GenerateKey
+    arity: 2
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: curve, derivation: argument_value } }
+  - method: crypto/ecdsa.ParseRawPrivateKey
+    arity: 2
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters: &ecdsa_parse
+      - { index: 0, role: operation-determining, contributes: { property: curve, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: crypto/ecdsa.ParseUncompressedPublicKey
+    arity: 2
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+    parameters: *ecdsa_parse
+  - method: crypto/ecdsa.Sign
+    arity: 3
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+    parameters: *dsa_sign
+  - method: crypto/ecdsa.SignASN1
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: *dsa_sign
+  - method: crypto/ecdsa.Verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters: &ecdsa_verify
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: crypto/ecdsa.VerifyASN1
+    arity: 3
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: crypto/ecdsa.(*PrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: crypto/ecdsa.(*PrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/ecdsa.(*PrivateKey).ECDH
+    arity: 0
+    return: { type: "*crypto/ecdh.PrivateKey", confidence: high }
+    role: output
+  - method: crypto/ecdsa.(*PublicKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/ecdsa.(*PublicKey).ECDH
+    arity: 0
+    return: { type: "*crypto/ecdh.PublicKey", confidence: high }
+    role: output
+
+  - method: crypto/ed25519.NewKeyFromSeed
+    arity: 1
+    return: { type: crypto/ed25519.PrivateKey, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: crypto/ed25519.Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &ed25519_sign
+      - { index: 0, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: crypto/ed25519.Verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters: &ed25519_verify
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: crypto/ed25519.VerifyWithOptions
+    arity: 4
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 3, role: operation-determining, contributes: { property: options, derivation: argument_value } }
+  - method: crypto/ed25519.(PrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: crypto/ed25519.(PrivateKey).Seed
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/ed25519.(PrivateKey).Public
+    arity: 0
+    return: { type: crypto.PublicKey, confidence: high }
+    role: output
+
+  # KDF, MAC, digest, and random APIs.
+  - method: crypto/hkdf.Key
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &kdf_parameters
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: sharedSecret, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: info, derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: crypto/hkdf.Extract
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: sharedSecret, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+  - method: crypto/hkdf.Expand
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: info, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: crypto/pbkdf2.Key
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: iterations, derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: crypto/hmac.New
+    arity: 2
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: crypto/hmac.Equal
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: authenticationTag, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: authenticationTag, derivation: argument_value } }
+  - method: hash.(Hash).Write
+    arity: 1
+    return: { type: int, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: hash.(Hash).Sum
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: hash.(Hash).Reset
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+
+  - method: crypto/md5.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/md5.Sum
+    arity: 1
+    return: { type: "[16]byte", confidence: high }
+    role: operation
+    parameters: &digest_input
+      - { index: 0, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: crypto/sha1.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha1.Sum
+    arity: 1
+    return: { type: "[20]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha256.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha256.New224
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha256.Sum224
+    arity: 1
+    return: { type: "[28]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha256.Sum256
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha512.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha512.New384
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha512.New512_224
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha512.New512_256
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: crypto/sha512.Sum384
+    arity: 1
+    return: { type: "[48]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha512.Sum512
+    arity: 1
+    return: { type: "[64]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha512.Sum512_224
+    arity: 1
+    return: { type: "[28]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha512.Sum512_256
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+
+  - method: crypto/sha3.New224
+    arity: 0
+    return: { type: "*crypto/sha3.SHA3", confidence: high }
+    role: factory
+  - method: crypto/sha3.New256
+    arity: 0
+    return: { type: "*crypto/sha3.SHA3", confidence: high }
+    role: factory
+  - method: crypto/sha3.New384
+    arity: 0
+    return: { type: "*crypto/sha3.SHA3", confidence: high }
+    role: factory
+  - method: crypto/sha3.New512
+    arity: 0
+    return: { type: "*crypto/sha3.SHA3", confidence: high }
+    role: factory
+  - method: crypto/sha3.Sum224
+    arity: 1
+    return: { type: "[28]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.Sum256
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.Sum384
+    arity: 1
+    return: { type: "[48]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.Sum512
+    arity: 1
+    return: { type: "[64]byte", confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.NewSHAKE128
+    arity: 0
+    return: { type: "*crypto/sha3.SHAKE", confidence: high }
+    role: factory
+  - method: crypto/sha3.NewSHAKE256
+    arity: 0
+    return: { type: "*crypto/sha3.SHAKE", confidence: high }
+    role: factory
+  - method: crypto/sha3.NewCSHAKE128
+    arity: 2
+    return: { type: "*crypto/sha3.SHAKE", confidence: high }
+    role: factory
+    parameters: &cshake_parameters
+      - { index: 0, role: metadata-contributing, contributes: { property: functionName, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: customization, derivation: argument_value } }
+  - method: crypto/sha3.NewCSHAKE256
+    arity: 2
+    return: { type: "*crypto/sha3.SHAKE", confidence: high }
+    role: factory
+    parameters: *cshake_parameters
+  - method: crypto/sha3.SumSHAKE128
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &shake_sum
+      - { index: 0, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: crypto/sha3.SumSHAKE256
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: *shake_sum
+  - method: crypto/sha3.(*SHA3).Write
+    arity: 1
+    return: { type: int, confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.(*SHA3).Sum
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/sha3.(*SHA3).Reset
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+  - method: crypto/sha3.(*SHAKE).Write
+    arity: 1
+    return: { type: int, confidence: high }
+    role: operation
+    parameters: *digest_input
+  - method: crypto/sha3.(*SHAKE).Read
+    arity: 1
+    return: { type: int, confidence: high }
+    role: output
+  - method: crypto/sha3.(*SHAKE).Reset
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+
+  - method: crypto/rand.Read
+    arity: 1
+    return: { type: int, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: output, derivation: argument_value } }
+  - method: crypto/rand.Prime
+    arity: 2
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: crypto/rand.Int
+    arity: 2
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+  - method: crypto/rand.Text
+    arity: 0
+    return: { type: string, confidence: high }
+    role: operation
+  # ML-KEM and RSA public-key operations.
+  - method: crypto/mlkem.GenerateKey768
+    arity: 0
+    return: { type: "*crypto/mlkem.DecapsulationKey768", confidence: high }
+    role: factory
+  - method: crypto/mlkem.GenerateKey1024
+    arity: 0
+    return: { type: "*crypto/mlkem.DecapsulationKey1024", confidence: high }
+    role: factory
+  - method: crypto/mlkem.NewDecapsulationKey768
+    arity: 1
+    return: { type: "*crypto/mlkem.DecapsulationKey768", confidence: high }
+    role: factory
+    parameters: &seed_material
+      - { index: 0, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: crypto/mlkem.NewDecapsulationKey1024
+    arity: 1
+    return: { type: "*crypto/mlkem.DecapsulationKey1024", confidence: high }
+    role: factory
+    parameters: *seed_material
+  - method: crypto/mlkem.NewEncapsulationKey768
+    arity: 1
+    return: { type: "*crypto/mlkem.EncapsulationKey768", confidence: high }
+    role: factory
+    parameters: &encapsulation_key
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: crypto/mlkem.NewEncapsulationKey1024
+    arity: 1
+    return: { type: "*crypto/mlkem.EncapsulationKey1024", confidence: high }
+    role: factory
+    parameters: *encapsulation_key
+  - method: crypto/mlkem.(*DecapsulationKey768).Decapsulate
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &kem_ciphertext
+      - { index: 0, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+  - method: crypto/mlkem.(*DecapsulationKey1024).Decapsulate
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: *kem_ciphertext
+  - method: crypto/mlkem.(*EncapsulationKey768).Encapsulate
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: crypto/mlkem.(*EncapsulationKey1024).Encapsulate
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: crypto/mlkem.(*DecapsulationKey768).EncapsulationKey
+    arity: 0
+    return: { type: "*crypto/mlkem.EncapsulationKey768", confidence: high }
+    role: output
+  - method: crypto/mlkem.(*DecapsulationKey1024).EncapsulationKey
+    arity: 0
+    return: { type: "*crypto/mlkem.EncapsulationKey1024", confidence: high }
+    role: output
+  - method: crypto/mlkem.(*DecapsulationKey768).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/mlkem.(*DecapsulationKey1024).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/mlkem.(*EncapsulationKey768).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: crypto/mlkem.(*EncapsulationKey1024).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+  - method: crypto/rsa.GenerateKey
+    arity: 2
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters: &rsa_keygen
+      - { index: 1, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: crypto/rsa.GenerateMultiPrimeKey
+    arity: 3
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: primeCount, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: crypto/rsa.EncryptPKCS1v15
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &rsa_encrypt
+      - { index: 1, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: crypto/rsa.DecryptPKCS1v15
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &rsa_decrypt
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+  - method: crypto/rsa.DecryptPKCS1v15SessionKey
+    arity: 4
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: sharedSecret, derivation: argument_value } }
+  - method: crypto/rsa.EncryptOAEP
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: label, derivation: argument_value } }
+  - method: crypto/rsa.DecryptOAEP
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: label, derivation: argument_value } }
+  - method: crypto/rsa.SignPKCS1v15
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters: &rsa_sign
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: crypto/rsa.SignPSS
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 4, role: operation-determining, contributes: { property: options, derivation: argument_value } }
+  - method: crypto/rsa.VerifyPKCS1v15
+    arity: 4
+    return: { type: error, confidence: high }
+    role: operation
+    parameters: &rsa_verify
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: crypto/rsa.VerifyPSS
+    arity: 5
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 4, role: operation-determining, contributes: { property: options, derivation: argument_value } }
+  - method: crypto/rsa.(*PrivateKey).Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: options, derivation: argument_value } }
+  - method: crypto/rsa.(*PrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: options, derivation: argument_value } }
+  - method: crypto/rsa.(*PrivateKey).Precompute
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+  - method: crypto/rsa.(*PrivateKey).Public
+    arity: 0
+    return: { type: crypto.PublicKey, confidence: high }
+    role: output
+  - method: crypto/rsa.(*PrivateKey).Validate
+    arity: 0
+    return: { type: error, confidence: high }
+    role: output
+
+  # X.509 and TLS certificate APIs selected by the rule corpus.
+  - method: crypto/tls.LoadX509KeyPair
+    arity: 2
+    return: { type: crypto/tls.Certificate, confidence: high }
+    role: factory
+  - method: crypto/tls.X509KeyPair
+    arity: 2
+    return: { type: crypto/tls.Certificate, confidence: high }
+    role: factory
+  - method: crypto/x509.CreateCertificate
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: certificateTemplate, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: issuerCertificate, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+  - method: crypto/x509.CreateCertificateRequest
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: certificateRequest, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+  - method: crypto/x509.CreateRevocationList
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: revocationList, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: issuerCertificate, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+  - method: crypto/x509.DecryptPEMBlock
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: encryptedKeyMaterial, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: crypto/x509.EncryptPEMBlock
+    arity: 5
+    return: { type: "*encoding/pem.Block", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: blockType, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 4, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: crypto/x509.IsEncryptedPEMBlock
+    arity: 1
+    return: { type: bool, confidence: high }
+    role: output
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: crypto/x509.MarshalECPrivateKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters: &private_key
+      - { index: 0, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+  - method: crypto/x509.MarshalPKCS1PrivateKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters: *private_key
+  - method: crypto/x509.MarshalPKCS1PublicKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters: &public_key
+      - { index: 0, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: crypto/x509.MarshalPKCS8PrivateKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters: *private_key
+  - method: crypto/x509.MarshalPKIXPublicKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+    parameters: *public_key
+  - method: crypto/x509.ParseCRL
+    arity: 1
+    return: { type: "*crypto/x509/pkix.CertificateList", confidence: high }
+    role: factory
+    parameters: &encoded_input
+      - { index: 0, role: metadata-contributing, contributes: { property: encodedData, derivation: argument_value } }
+  - method: crypto/x509.ParseDERCRL
+    arity: 1
+    return: { type: "*crypto/x509/pkix.CertificateList", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParseECPrivateKey
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParsePKCS1PrivateKey
+    arity: 1
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParsePKCS1PublicKey
+    arity: 1
+    return: { type: "*crypto/rsa.PublicKey", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParsePKCS8PrivateKey
+    arity: 1
+    return: { type: any, confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParsePKIXPublicKey
+    arity: 1
+    return: { type: any, confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.NewCertPool
+    arity: 0
+    return: { type: "*crypto/x509.CertPool", confidence: high }
+    role: factory
+  - method: crypto/x509.SystemCertPool
+    arity: 0
+    return: { type: "*crypto/x509.CertPool", confidence: high }
+    role: factory
+  - method: crypto/x509.(*CertPool).AddCert
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters: &certificate_input
+      - { index: 0, role: metadata-contributing, contributes: { property: certificate, derivation: argument_value } }
+  - method: crypto/x509.(*CertPool).AddCertWithConstraint
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: certificate, derivation: argument_value } }
+      - { index: 1, role: operation-determining, contributes: { property: constraint, derivation: argument_value } }
+  - method: crypto/x509.(*CertPool).AppendCertsFromPEM
+    arity: 1
+    return: { type: bool, confidence: high }
+    role: config
+    parameters: *encoded_input
+  - method: crypto/x509.ParseCertificate
+    arity: 1
+    return: { type: "*crypto/x509.Certificate", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.ParseCertificates
+    arity: 1
+    return: { type: "[]*crypto/x509.Certificate", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.(*Certificate).Verify
+    arity: 1
+    return: { type: "[][]*crypto/x509.Certificate", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: verificationOptions, derivation: argument_value } }
+  - method: crypto/x509.(*Certificate).CheckSignature
+    arity: 3
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: signedData, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: crypto/x509.(*Certificate).CheckSignatureFrom
+    arity: 1
+    return: { type: error, confidence: high }
+    role: operation
+    parameters: *certificate_input
+  - method: crypto/x509.(*Certificate).CheckCRLSignature
+    arity: 1
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: revocationList, derivation: argument_value } }
+  - method: crypto/x509.(*Certificate).CreateCRL
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: revokedCertificates, derivation: argument_value } }
+  - method: crypto/x509.ParseCertificateRequest
+    arity: 1
+    return: { type: "*crypto/x509.CertificateRequest", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.(*CertificateRequest).CheckSignature
+    arity: 0
+    return: { type: error, confidence: high }
+    role: operation
+  - method: crypto/x509.ParseRevocationList
+    arity: 1
+    return: { type: "*crypto/x509.RevocationList", confidence: high }
+    role: factory
+    parameters: *encoded_input
+  - method: crypto/x509.(*RevocationList).CheckSignatureFrom
+    arity: 1
+    return: { type: error, confidence: high }
+    role: operation
+    parameters: *certificate_input
+
+hierarchy: {}
