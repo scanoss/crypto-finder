@@ -1019,6 +1019,71 @@ class Sample {
 	}
 }
 
+func TestJavaParser_ReturnSwitch_PreservesSelectorGuards(t *testing.T) {
+	t.Parallel()
+
+	source := `package example;
+class DigestSelector {
+    String name(int algorithm) {
+        return switch (algorithm) {
+            case 1 -> "MD5";
+            case 2, 3 -> "SHA-256";
+            default -> "SHA-512";
+        };
+    }
+}`
+
+	fns := parseJavaInline(t, source)
+	fn := findFunctionByName(fns, "name")
+	if fn == nil {
+		t.Fatal("name function not found")
+	}
+	if len(fn.ReturnSources) != 4 {
+		t.Fatalf("ReturnSources = %#v, want one guarded value per switch label", fn.ReturnSources)
+	}
+	wants := []struct {
+		value      string
+		guardValue string
+		isDefault  bool
+	}{
+		{value: `"MD5"`, guardValue: "1"},
+		{value: `"SHA-256"`, guardValue: "2"},
+		{value: `"SHA-256"`, guardValue: "3"},
+		{value: `"SHA-512"`, isDefault: true},
+	}
+	for i, want := range wants {
+		got := fn.ReturnSources[i]
+		if got.Type != "VALUE" || got.Value != want.value || got.Flow == nil || got.Flow.Guard == nil {
+			t.Fatalf("ReturnSources[%d] = %#v, want guarded %q", i, got, want.value)
+		}
+		if got.Flow.Guard.ParameterIndex != 0 || got.Flow.Guard.Value != want.guardValue || got.Flow.Guard.Default != want.isDefault {
+			t.Fatalf("ReturnSources[%d].Guard = %#v, want index=0 value=%q default=%v", i, got.Flow.Guard, want.guardValue, want.isDefault)
+		}
+	}
+}
+
+func TestJavaParser_ReturnTernary_PreservesSelectorGuards(t *testing.T) {
+	t.Parallel()
+
+	source := `package example;
+class DigestSelector {
+    String name(int algorithm) {
+        return algorithm == 1 ? "SHA-256" : "SHA-512";
+    }
+}`
+
+	fn := findFunctionByName(parseJavaInline(t, source), "name")
+	if fn == nil || len(fn.ReturnSources) != 2 {
+		t.Fatalf("ReturnSources = %#v, want two guarded ternary values", fn)
+	}
+	if got := fn.ReturnSources[0]; got.Value != `"SHA-256"` || got.Flow == nil || got.Flow.Guard == nil || got.Flow.Guard.ParameterIndex != 0 || got.Flow.Guard.Value != "1" || got.Flow.Guard.Default {
+		t.Fatalf("true branch = %#v, want algorithm == 1 guard", got)
+	}
+	if got := fn.ReturnSources[1]; got.Value != `"SHA-512"` || got.Flow == nil || got.Flow.Guard == nil || got.Flow.Guard.ParameterIndex != 0 || !got.Flow.Guard.Default {
+		t.Fatalf("false branch = %#v, want default guard", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Batch 6: Argument provenance in traceMethodInvocationNode (T6.1, T6.2)
 // ---------------------------------------------------------------------------

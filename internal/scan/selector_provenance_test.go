@@ -101,3 +101,102 @@ func TestBuildGraphFragmentExport_LeavesAmbiguousSelectorUnresolved(t *testing.T
 		t.Fatalf("resolved_value = %q, want unresolved dynamic selector", got)
 	}
 }
+
+func TestBuildCallGraphExport_PreservesSelectorPerCallerPath(t *testing.T) {
+	t.Parallel()
+
+	firstID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "first#0"}
+	secondID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "second#0"}
+	buildID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "build#1"}
+	ctorID := callgraph.FunctionID{Package: "org.bouncycastle.openpgp.operator.jcajce", Type: "JcePGPDataEncryptorBuilder", Name: "<init>#1"}
+
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		firstID.String(): {
+			ID: firstID, FilePath: "PGPFlow.java", StartLine: 1, EndLine: 3,
+			Calls: []callgraph.FunctionCall{{Callee: buildID, FilePath: "PGPFlow.java", Line: 2, Arguments: []string{"SymmetricKeyAlgorithmTags.AES_128"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.AES_128"}}}}},
+		},
+		secondID.String(): {
+			ID: secondID, FilePath: "PGPFlow.java", StartLine: 5, EndLine: 7,
+			Calls: []callgraph.FunctionCall{{Callee: buildID, FilePath: "PGPFlow.java", Line: 6, Arguments: []string{"SymmetricKeyAlgorithmTags.DES"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.DES"}}}}},
+		},
+		buildID.String(): {
+			ID: buildID, FilePath: "PGPFlow.java", StartLine: 9, EndLine: 11,
+			Parameters: []callgraph.FunctionParameter{{Name: "algorithm", Type: "int"}},
+			Calls: []callgraph.FunctionCall{{
+				Callee: ctorID, FilePath: "PGPFlow.java", Line: 10, StartCol: 16, EndCol: 63,
+				Arguments: []string{"algorithm"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "PARAMETER", Name: "algorithm", ParameterIndex: 0}}},
+			}},
+		},
+	}, Callers: map[string][]string{buildID.String(): {firstID.String(), secondID.String()}}}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "PGPFlow.java", Language: "java",
+		CryptographicAssets: []entities.CryptographicAsset{{
+			FindingID: "pgp-selector", StartLine: 10, EndLine: 10, StartCol: 16, EndCol: 63,
+			Match: "new JcePGPDataEncryptorBuilder(algorithm)", Rules: []entities.RuleInfo{{ID: "java.pgp.dynamic"}},
+			Metadata: map[string]string{"api": "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>"},
+		}},
+	}}}
+
+	payload := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	if len(payload.FindingGraphs) != 1 || len(payload.FindingGraphs[0].CallChains) != 2 {
+		t.Fatalf("finding graphs = %#v, want two caller paths", payload.FindingGraphs)
+	}
+	got := make(map[string]bool)
+	for _, chain := range payload.FindingGraphs[0].CallChains {
+		last := chain[len(chain)-1]
+		if last.CryptoCall == nil || len(last.CryptoCall.Parameters) != 1 {
+			t.Fatalf("chain = %#v, want one crypto selector parameter", chain)
+		}
+		got[last.CryptoCall.Parameters[0].ResolvedValue] = true
+	}
+	for _, want := range []string{"SymmetricKeyAlgorithmTags.AES_128", "SymmetricKeyAlgorithmTags.DES"} {
+		if !got[want] {
+			t.Fatalf("resolved caller values = %#v, missing %q", got, want)
+		}
+	}
+}
+
+func TestBuildCallGraphExport_PreservesSelectorPerSameLineCallSite(t *testing.T) {
+	t.Parallel()
+
+	callerID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "run#0"}
+	buildID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "build#1"}
+	ctorID := callgraph.FunctionID{Package: "org.bouncycastle.openpgp.operator.jcajce", Type: "JcePGPDataEncryptorBuilder", Name: "<init>#1"}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		callerID.String(): {
+			ID: callerID, FilePath: "PGPFlow.java", StartLine: 1, EndLine: 3,
+			Calls: []callgraph.FunctionCall{
+				{Callee: buildID, FilePath: "PGPFlow.java", Line: 2, StartCol: 4, EndCol: 37, Arguments: []string{"SymmetricKeyAlgorithmTags.AES_128"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.AES_128"}}}},
+				{Callee: buildID, FilePath: "PGPFlow.java", Line: 2, StartCol: 40, EndCol: 69, Arguments: []string{"SymmetricKeyAlgorithmTags.DES"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.DES"}}}},
+			},
+		},
+		buildID.String(): {
+			ID: buildID, FilePath: "PGPFlow.java", StartLine: 5, EndLine: 7,
+			Parameters: []callgraph.FunctionParameter{{Name: "algorithm", Type: "int"}},
+			Calls: []callgraph.FunctionCall{{
+				Callee: ctorID, FilePath: "PGPFlow.java", Line: 6, StartCol: 16, EndCol: 63,
+				Arguments: []string{"algorithm"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "PARAMETER", Name: "algorithm", ParameterIndex: 0}}},
+			}},
+		},
+	}, Callers: map[string][]string{buildID.String(): {callerID.String()}}}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "PGPFlow.java", Language: "java",
+		CryptographicAssets: []entities.CryptographicAsset{{
+			FindingID: "pgp-same-line", StartLine: 6, EndLine: 6, StartCol: 16, EndCol: 63,
+			Match: "new JcePGPDataEncryptorBuilder(algorithm)", Rules: []entities.RuleInfo{{ID: "java.pgp.dynamic"}},
+			Metadata: map[string]string{"api": "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>"},
+		}},
+	}}}
+
+	payload := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	if len(payload.FindingGraphs) != 1 || len(payload.FindingGraphs[0].CallChains) != 2 {
+		t.Fatalf("finding graphs = %#v, want two same-line call-site paths", payload.FindingGraphs)
+	}
+	got := make(map[string]bool)
+	for _, chain := range payload.FindingGraphs[0].CallChains {
+		got[chain[len(chain)-1].CryptoCall.Parameters[0].ResolvedValue] = true
+	}
+	if !got["SymmetricKeyAlgorithmTags.AES_128"] || !got["SymmetricKeyAlgorithmTags.DES"] {
+		t.Fatalf("resolved same-line values = %#v, want AES_128 and DES", got)
+	}
+}

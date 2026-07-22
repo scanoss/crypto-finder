@@ -1272,6 +1272,19 @@ func (p *JavaParser) traceMethodCallExpression(
 	if receiverSources := p.traceMethodCallReceiverSources(object, analysis, currentClass, varTypes, origins, depth+1); len(receiverSources) > 0 {
 		node.SourceNodes = receiverSources
 	}
+	open := strings.Index(expr, "(")
+	closeIdx := strings.LastIndex(expr, ")")
+	if open >= 0 && closeIdx > open {
+		args := parseArgumentsFromDelimitedContent(expr[open : closeIdx+1])
+		for i, arg := range args {
+			argumentSources := p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, depth+1)
+			for j := range argumentSources {
+				argumentSources[j].ParameterIndex = i
+				argumentSources[j].Flow = &SourceFlow{CallArgument: true}
+			}
+			node.SourceNodes = append(node.SourceNodes, argumentSources...)
+		}
+	}
 	if analysis != nil {
 		target := p.resolveCallee(object, javaMethodWithArity(method, argc), analysis, currentClass, varTypes)
 		node.CallTarget = &target
@@ -2519,6 +2532,10 @@ func (p *JavaParser) traceExpressionNode(
 		return p.traceMethodInvocationNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 	case "ternary_expression":
 		return p.traceTernaryExpressionNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
+	case "switch_expression":
+		if nodes := p.traceSwitchExpressionNode(node, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments); len(nodes) > 0 {
+			return nodes
+		}
 	case "string_literal", "character_literal", "null_literal",
 		"decimal_integer_literal", "hex_integer_literal", "octal_integer_literal",
 		"binary_integer_literal", "decimal_floating_point_literal",
@@ -2538,6 +2555,78 @@ func (p *JavaParser) traceExpressionNode(
 		return nil
 	}
 	return p.traceExpression(expr, analysis, currentClass, varTypes, varOrigins, 0)
+}
+
+// traceSwitchExpressionNode preserves simple parameter-selected return values
+// such as `return switch (algorithm) { case 1 -> "MD5"; default -> "SHA-512"; }`.
+// Each value carries a language-neutral equality/default guard so a caller's
+// concrete argument can select the applicable return without guessing.
+//
+//nolint:gocognit,gocyclo // Tree-sitter switch rules require explicit label/value/default traversal.
+func (p *JavaParser) traceSwitchExpressionNode(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+	bodyAssignments map[string][]*sitter.Node,
+) []SourceNode {
+	selector := unwrapJavaParenthesizedExpression(node.ChildByFieldName("condition"))
+	if selector == nil {
+		return nil
+	}
+	origin, ok := varOrigins[strings.TrimSpace(selector.Content(src))]
+	if !ok || origin.kind != javaVarOriginKindParameter || origin.paramIndex < 0 {
+		return nil
+	}
+
+	body := node.ChildByFieldName("body")
+	if body == nil {
+		return nil
+	}
+	var result []SourceNode
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		rule := body.NamedChild(i)
+		if rule == nil || rule.Type() != "switch_rule" || rule.NamedChildCount() < 2 {
+			continue
+		}
+		label := rule.NamedChild(0)
+		valueNode := rule.NamedChild(1)
+		if valueNode != nil && valueNode.Type() == "expression_statement" && valueNode.NamedChildCount() > 0 {
+			valueNode = valueNode.NamedChild(0)
+		}
+		values := p.traceExpressionNode(valueNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
+		if len(values) == 0 || label == nil || label.Type() != "switch_label" {
+			continue
+		}
+		if label.NamedChildCount() == 0 {
+			for j := range values {
+				values[j].Flow = &SourceFlow{Guard: &SourceGuard{ParameterIndex: origin.paramIndex, Default: true}}
+				result = append(result, values[j])
+			}
+			continue
+		}
+		for j := 0; j < int(label.NamedChildCount()); j++ {
+			caseValue := strings.TrimSpace(label.NamedChild(j).Content(src))
+			for k := range values {
+				candidate := values[k]
+				candidate.Flow = &SourceFlow{Guard: &SourceGuard{ParameterIndex: origin.paramIndex, Value: caseValue}}
+				result = append(result, candidate)
+			}
+		}
+	}
+	return result
+}
+
+func unwrapJavaParenthesizedExpression(node *sitter.Node) *sitter.Node {
+	for node != nil && node.Type() == "parenthesized_expression" {
+		if node.NamedChildCount() == 0 {
+			return nil
+		}
+		node = node.NamedChild(0)
+	}
+	return node
 }
 
 // traceIdentifierNode handles identifier and field_access AST nodes in
@@ -2706,6 +2795,7 @@ func (p *JavaParser) traceMethodInvocationNode(
 			argSources := p.traceExpressionNode(argNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
 			for k := range argSources {
 				argSources[k].ParameterIndex = j
+				argSources[k].Flow = &SourceFlow{CallArgument: true}
 			}
 			sn.SourceNodes = append(sn.SourceNodes, argSources...)
 		}
@@ -2715,8 +2805,8 @@ func (p *JavaParser) traceMethodInvocationNode(
 	return []SourceNode{sn}
 }
 
-// traceTernaryExpressionNode handles `condition ? expr1 : expr2` by collecting
-// SourceNodes from both branches (expr1 and expr2), skipping the condition.
+// traceTernaryExpressionNode preserves equality guards for simple
+// parameter-selected returns and otherwise collects both branches unresolved.
 func (p *JavaParser) traceTernaryExpressionNode(
 	node *sitter.Node,
 	src []byte,
@@ -2726,6 +2816,18 @@ func (p *JavaParser) traceTernaryExpressionNode(
 	varOrigins map[string]varOrigin,
 	bodyAssignments map[string][]*sitter.Node,
 ) []SourceNode {
+	if parameterIndex, guardValue, ok := ternaryEqualityParameterGuard(node, src, varOrigins); ok {
+		consequence := p.traceExpressionNode(node.ChildByFieldName("consequence"), src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
+		alternative := p.traceExpressionNode(node.ChildByFieldName("alternative"), src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
+		for i := range consequence {
+			consequence[i].Flow = &SourceFlow{Guard: &SourceGuard{ParameterIndex: parameterIndex, Value: guardValue}}
+		}
+		for i := range alternative {
+			alternative[i].Flow = &SourceFlow{Guard: &SourceGuard{ParameterIndex: parameterIndex, Default: true}}
+		}
+		return append(consequence, alternative...)
+	}
+
 	var result []SourceNode
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -2737,6 +2839,26 @@ func (p *JavaParser) traceTernaryExpressionNode(
 		result = append(result, p.traceExpressionNode(child, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)...)
 	}
 	return result
+}
+
+func ternaryEqualityParameterGuard(node *sitter.Node, src []byte, varOrigins map[string]varOrigin) (int, string, bool) {
+	condition := unwrapJavaParenthesizedExpression(node.ChildByFieldName("condition"))
+	if condition == nil || condition.Type() != "binary_expression" {
+		return 0, "", false
+	}
+	operator := condition.ChildByFieldName("operator")
+	left := unwrapJavaParenthesizedExpression(condition.ChildByFieldName("left"))
+	right := unwrapJavaParenthesizedExpression(condition.ChildByFieldName("right"))
+	if operator == nil || operator.Content(src) != "==" || left == nil || right == nil {
+		return 0, "", false
+	}
+	if origin, ok := varOrigins[strings.TrimSpace(left.Content(src))]; ok && origin.kind == javaVarOriginKindParameter && origin.paramIndex >= 0 {
+		return origin.paramIndex, strings.TrimSpace(right.Content(src)), true
+	}
+	if origin, ok := varOrigins[strings.TrimSpace(right.Content(src))]; ok && origin.kind == javaVarOriginKindParameter && origin.paramIndex >= 0 {
+		return origin.paramIndex, strings.TrimSpace(left.Content(src)), true
+	}
+	return 0, "", false
 }
 
 // returnStatementExpressionNode returns the expression child node from a
