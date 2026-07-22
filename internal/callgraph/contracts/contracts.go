@@ -32,6 +32,9 @@ var cFS embed.FS
 //go:embed cpp/*.yaml
 var cppFS embed.FS
 
+//go:embed node/*.yaml
+var nodeFS embed.FS
+
 const (
 	// ecosystemC is the ecosystem identifier for the C contract KB.
 	ecosystemC = "c"
@@ -39,6 +42,8 @@ const (
 	ecosystemCPP = "cpp"
 	// ecosystemGo is the ecosystem identifier for the Go contract KB.
 	ecosystemGo = "go"
+	// ecosystemNode is the ecosystem identifier for the Node contract KB.
+	ecosystemNode = "node"
 	// ecosystemPython is the ecosystem identifier for the Python contract KB.
 	ecosystemPython = "python"
 	// ecosystemRust is the ecosystem identifier for the Rust contract KB.
@@ -495,6 +500,8 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 		return &cppFS, ecosystemCPP
 	case ecosystemGo:
 		return &goFS, ecosystemGo
+	case ecosystemNode:
+		return &nodeFS, ecosystemNode
 	case ecosystemPython:
 		return &pythonFS, ecosystemPython
 	case ecosystemRust:

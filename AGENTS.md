@@ -74,6 +74,7 @@ internal/callgraph/contracts/
 ├── java/
 │   └── jdk-crypto.yaml    # JDK JCA/JCE contracts (shipped in v1)
 ├── go/                    # schema-v2 Go callgraph contracts
+├── node/                  # schema-v2 Node callgraph contracts
 ├── python/                # pyca-cryptography, pycryptodome, pycryptodomex, paramiko
 └── rust/                  # schema-v2 Rust callgraph contracts
 ```

@@ -104,4 +104,9 @@ func TestNewTypeResolverForEcosystem(t *testing.T) {
 	if _, ok := NewTypeResolverForEcosystem("go", javaruntime.Config{}).(*GoContractTypeResolver); !ok {
 		t.Fatal("expected GoContractTypeResolver")
 	}
+	for _, ecosystem := range []string{"node", "javascript", "typescript"} {
+		if _, ok := NewTypeResolverForEcosystem(ecosystem, javaruntime.Config{}).(*NodeContractTypeResolver); !ok {
+			t.Fatalf("expected NodeContractTypeResolver for %q", ecosystem)
+		}
+	}
 }
