@@ -35,8 +35,13 @@ func TestLoadEmbeddedCIncludesWolfSSLContracts(t *testing.T) {
 				if parameter.Index != nil {
 					index = *parameter.Index
 				}
+				property, derivation := "", ""
+				if parameter.Contributes != nil {
+					property = parameter.Contributes.Property
+					derivation = parameter.Contributes.Derivation
+				}
 				parameters = append(parameters, fmt.Sprintf("%d:%s:%s:%s", index, parameter.Role,
-					parameter.Contributes.Property, parameter.Contributes.Derivation))
+					property, derivation))
 			}
 			inventory = append(inventory, fmt.Sprintf("%s#%d:%s:%s:%s:%s", contract.Method, contract.Arity,
 				contract.Role, contract.Return.Type, contract.Return.Confidence, strings.Join(parameters, ",")))
