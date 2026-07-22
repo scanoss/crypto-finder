@@ -1,0 +1,4121 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: wolfssl-wolfcrypt
+  coordinates:
+    - wolfssl:wolfcrypt
+  version_range: ">=5.9.2,<6.0.0"
+  description: "wolfSSL wolfCrypt public cryptographic APIs"
+
+# Inventory sources: wolfSSL v5.9.2-stable public headers at tag commit
+# ac01707f552c611fbd135cc723b2682b3e7f80f2 and crypto_rules PR #148 merge
+# commit b6730e8721570f2ffaa8b841ddf2e845eca8e277. All 257 exact public
+# wc_* symbols selected by the current C detection rules are contracted, plus
+# the 364 stateful initialization, configuration, update, and key import/export
+# calls that support those terminal operations. Free/teardown and unrelated
+# protocol/certificate surfaces have no contract-native lifecycle role and remain
+# outside this rule-paired slice. covered-existing/skipped-unsupported: none.
+contracts:
+
+  # aes.h
+  - method: wc_AesCbcDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesCbcEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesCcmDecrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesCcmEncrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesCcmEncrypt_ex
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: ivOutSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesCcmSetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesCcmSetNonce
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesCtrEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesCtrSetKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_AesCtsDecryptUpdate
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesCtsEncryptUpdate
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEaxAuthDataUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEaxDecryptAuth
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 6
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 8
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesEaxDecryptFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEaxDecryptUpdate
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEaxEncryptAuth
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 6
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 8
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesEaxEncryptFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesEaxEncryptUpdate
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEaxInit
+    arity: 7
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesEcbDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesEcbEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesGcmDecrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesGcmDecryptFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesGcmDecryptInit
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmDecryptUpdate
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesGcmEncrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesGcmEncryptFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesGcmEncryptInit
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmEncryptInit_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: ivOutSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmEncryptUpdate
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesGcmEncrypt_ex
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: ivOutSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_AesGcmInit
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmSetExtIV
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmSetIV
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: wc_AesGcmSetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesGcmSetKey_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesGetKeySize
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_AesInit
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AesInit_Id
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AesInit_Label
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AesKeyUnWrap
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_AesKeyUnWrap_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_AesKeyWrap
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_AesKeyWrap_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_AesSetIV
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_AesSetKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_AesSetKeyDirect
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_AesSivDecrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesSivDecrypt_ex
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesSivEncrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesSivEncrypt_ex
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 5
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+  - method: wc_AesXtsDecrypt
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsDecryptConsecutiveSectors
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsDecryptFinal
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsDecryptInit
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_AesXtsDecryptSector
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsDecryptUpdate
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsEncrypt
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsEncryptConsecutiveSectors
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsEncryptFinal
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsEncryptInit
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_AesXtsEncryptSector
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsEncryptUpdate
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AesXtsInit
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AesXtsSetKey
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_AesXtsSetKeyNoInit
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_Gmac
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_GmacSetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_GmacUpdate
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 6
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: wc_GmacVerify
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: ivSz
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+      - index: 7
+        name: authTagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+
+  # arc4.h
+  - method: wc_Arc4Init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Arc4Process
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Arc4SetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: length
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # ascon.h
+  - method: wc_AsconAEAD128_DecryptFinal
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AsconAEAD128_DecryptUpdate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AsconAEAD128_EncryptFinal
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AsconAEAD128_EncryptUpdate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AsconAEAD128_Init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AsconAEAD128_SetAD
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: adSz
+        role: metadata-contributing
+        contributes: {property: associatedDataLength, derivation: argument_value}
+  - method: wc_AsconAEAD128_SetKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_AsconAEAD128_SetNonce
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_AsconHash256_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_AsconHash256_Init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_AsconHash256_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # blake2.h
+  - method: wc_Blake2bFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Blake2bHmacInit
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_Blake2bHmacUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Blake2bUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Blake2sFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Blake2sHmacInit
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_Blake2sHmacUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Blake2sUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_InitBlake2b
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_InitBlake2b_WithKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_InitBlake2s
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_InitBlake2s_WithKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # camellia.h
+  - method: wc_CamelliaCbcDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CamelliaCbcEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CamelliaDecryptDirect
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CamelliaEncryptDirect
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CamelliaSetIV
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_CamelliaSetKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # chacha.h
+  - method: wc_Chacha_Process
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Chacha_SetIV
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Chacha_SetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_XChacha_SetKey
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: nonceSz
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+
+  # chacha20_poly1305.h
+  - method: wc_ChaCha20Poly1305_CheckTag
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ChaCha20Poly1305_Decrypt
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ChaCha20Poly1305_Encrypt
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ChaCha20Poly1305_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ChaCha20Poly1305_Init
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: isEncrypt
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_ChaCha20Poly1305_UpdateAad
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ChaCha20Poly1305_UpdateData
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_XChaCha20Poly1305_Decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 7
+        name: nonce_len
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 9
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_XChaCha20Poly1305_Encrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 7
+        name: nonce_len
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 9
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_XChaCha20Poly1305_Init
+    arity: 8
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: nonce_len
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 6
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 7
+        name: isEncrypt
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+
+  # cmac.h
+  - method: wc_AesCmacGenerate
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesCmacGenerate_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesCmacVerify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_AesCmacVerify_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_CmacFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CmacFinalNoFree
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_CmacUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_InitCmac
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_InitCmac_Id
+    arity: 9
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_InitCmac_Label
+    arity: 8
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_InitCmac_ex
+    arity: 7
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # curve25519.h
+  - method: wc_curve25519_export_key_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_export_key_raw_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_export_private_raw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_export_private_raw_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_export_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_export_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve25519_generic
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_curve25519_generic_blind
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_curve25519_import_private
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_import_private_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_import_private_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_import_private_raw_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_import_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_import_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve25519_init_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve25519_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_curve25519_make_priv
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_curve25519_make_pub
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve25519_make_pub_blind
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve25519_set_nonblock
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_set_rng
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve25519_shared_secret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_curve25519_shared_secret_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+
+  # curve448.h
+  - method: wc_curve448_export_key_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_export_key_raw_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_export_private_raw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_export_private_raw_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_export_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_export_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_curve448_import_private
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_import_private_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_import_private_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_import_private_raw_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_import_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_import_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_curve448_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve448_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_curve448_make_pub
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_curve448_shared_secret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_curve448_shared_secret_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+
+  # des3.h
+  - method: wc_Des3Init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Des3_CbcDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des3_CbcEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des3_EcbDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des3_EcbEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des3_SetIV
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Des3_SetKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: wc_Des_CbcDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des_CbcEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des_EcbDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des_EcbEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Des_SetIV
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: wc_Des_SetKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: dir
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+
+  # dh.h
+  - method: wc_DhAgree
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_DhAgree_ct
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_DhExportKeyPair
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_DhExportParamsRaw
+    arity: 7
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_DhGenerateKeyPair
+    arity: 6
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_DhGeneratePublic
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_DhImportKeyPair
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DhKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DhSetCheckKey
+    arity: 9
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DhSetKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DhSetKey_ex
+    arity: 7
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DhSetNamedKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: name
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_DhSetNonBlock
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_InitDhKey
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitDhKey_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+
+  # dsa.h
+  - method: wc_DsaExportKeyRaw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_DsaExportParamsRaw
+    arity: 7
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_DsaImportParamsRaw
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DsaImportParamsRawCheck
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DsaPrivateKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DsaPublicKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_DsaSign
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_DsaSign_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_DsaVerify
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_DsaVerify_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: digestSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_InitDsaKey
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitDsaKey_h
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MakeDsaKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_SetDsaPublicKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # ecc.h
+  - method: wc_X963_KDF
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: sinfoSz
+        role: metadata-contributing
+        contributes: {property: infoLength, derivation: argument_value}
+      - index: 6
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_ecc_ctx_reset
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_ctx_set_algo
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_ctx_set_info
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_ctx_set_kdf_salt
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_ctx_set_own_salt
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_ctx_set_peer_salt
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_curve_cache_init
+    arity: 0
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_decrypt
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_encrypt
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_encrypt_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_export_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_export_point_der
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+    parameters:
+      - index: 0
+        name: curve_idx
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_export_point_der_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+    parameters:
+      - index: 0
+        name: curve_idx
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_export_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_export_private_raw
+    arity: 7
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_export_public_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_export_x963
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_export_x963_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_fp_init
+    arity: 0
+    return: {type: void, confidence: high}
+    role: factory
+  - method: wc_ecc_get_key_id
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ecc_get_sets
+    arity: 0
+    return: {type: "const ecc_set_type *", confidence: high}
+    role: output
+  - method: wc_ecc_get_sets_count
+    arity: 0
+    return: {type: size_t, confidence: high}
+    role: output
+  - method: wc_ecc_import_point_der
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: curve_idx
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_point_der_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: curve_idx
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_private_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_import_private_key_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 5
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_raw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: curveName
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_raw_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_unsigned
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_x963
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_import_x963_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_import_x963_ex2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_init_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_init_id
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_init_label
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_ecc_make_key_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_make_key_ex2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_make_pub
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_make_pub_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_point_is_at_infinity
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ecc_set_curve
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: curve_id
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_ecc_set_custom_curve
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_set_deterministic
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_set_deterministic_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_ecc_set_flags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_set_handle
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_set_nonblock
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_set_rng
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_shared_secret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_shared_secret_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_sign_hash
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_sign_hash_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ecc_sign_set_k
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ecc_verify_hash
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: siglen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 3
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_ecc_verify_hash_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+
+  # ed25519.h
+  - method: wc_ed25519_export_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed25519_export_private
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed25519_export_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed25519_export_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed25519_import_private_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed25519_import_private_key_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed25519_import_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed25519_import_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed25519_import_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed25519_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed25519_init_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed25519_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_ed25519_make_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed25519_sign_msg
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ed25519_sign_msg_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519_verify_msg
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_ed25519_verify_msg_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 6
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 8
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519_verify_msg_final
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_ed25519_verify_msg_init
+    arity: 6
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 3
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 5
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519_verify_msg_update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ed25519ctx_sign_msg
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519ctx_verify_msg
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519ph_sign_hash
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519ph_sign_msg
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519ph_verify_hash
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed25519ph_verify_msg
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+
+  # ed448.h
+  - method: wc_ed448_export_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed448_export_private
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed448_export_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed448_export_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ed448_import_private_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed448_import_private_key_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed448_import_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed448_import_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed448_import_public_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ed448_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed448_init_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed448_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_ed448_make_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ed448_sign_msg
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448_sign_msg_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448_verify_msg
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448_verify_msg_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 6
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 8
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448_verify_msg_final
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_ed448_verify_msg_init
+    arity: 6
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 3
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 5
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448_verify_msg_update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ed448ph_sign_hash
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448ph_sign_msg
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448ph_verify_hash
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_ed448ph_verify_msg
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 7
+        name: contextLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+
+  # falcon.h
+  - method: wc_Falcon_PrivateKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Falcon_PublicKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_falcon_export_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_falcon_export_private
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_falcon_export_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_falcon_export_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_falcon_import_private_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_falcon_import_private_only
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_falcon_import_public
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_falcon_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_falcon_init_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_falcon_init_id
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_falcon_init_label
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_falcon_set_level
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: level
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_falcon_sign_msg
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+
+  # hash.h
+  - method: wc_HashGetDigestSize
+    arity: 1
+    return: {type: int, confidence: high}
+    role: output
+    parameters:
+      - index: 0
+        name: hash_type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_HashInit
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_HashInit_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_HashSetFlags
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_HashUpdate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_Md5Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Md5Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_OidGetHash
+    arity: 1
+    return: {type: "enum wc_HashType", confidence: high}
+    role: output
+  - method: wc_Sha224Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha224Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha256Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha256Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha384Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha384Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_224Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_224Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_256Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_256Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_384Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_384Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_512Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_512Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_224Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_224Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_256Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_256Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ShaHash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ShaHash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Shake128Hash
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Shake128Hash_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Shake256Hash
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Shake256Hash_ex
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Sm3Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sm3Hash_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+
+  # hmac.h
+  - method: wc_HKDF
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: saltSz
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 6
+        name: infoSz
+        role: metadata-contributing
+        contributes: {property: infoLength, derivation: argument_value}
+      - index: 8
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_HKDF_Expand
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: infoSz
+        role: metadata-contributing
+        contributes: {property: infoLength, derivation: argument_value}
+      - index: 6
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_HKDF_Expand_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: infoSz
+        role: metadata-contributing
+        contributes: {property: infoLength, derivation: argument_value}
+      - index: 6
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_HKDF_Extract
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: saltSz
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 4
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_HKDF_Extract_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: saltSz
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 4
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_HKDF_ex
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: inKeySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: saltSz
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 6
+        name: infoSz
+        role: metadata-contributing
+        contributes: {property: infoLength, derivation: argument_value}
+      - index: 8
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_HmacFinal
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_HmacFinal_Software
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_HmacInit
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_HmacInit_Id
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_HmacInit_Label
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_HmacSetKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: length
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_HmacSetKey_Software
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keySz
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_HmacSetKey_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: length
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: wc_HmacUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_HmacUpdate_Software
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # md2.h
+  - method: wc_InitMd2
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Md2Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Md2Hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Md2Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # md4.h
+  - method: wc_InitMd4
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Md4Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Md4Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # md5.h
+  - method: wc_InitMd5
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitMd5_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Md5Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Md5GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Md5SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Md5SizeSet
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: wc_Md5Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # poly1305.h
+  - method: wc_Poly1305Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Poly1305SetKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Poly1305Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Poly1305_EncodeSizes
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Poly1305_EncodeSizes64
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Poly1305_MAC
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: tagSz
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+
+  # pwdbased.h
+  - method: wc_PBKDF1
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: pLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 4
+        name: sLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: kLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 7
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_PBKDF1_ex
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keyLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 3
+        name: ivLen
+        role: metadata-contributing
+        contributes: {property: ivLength, derivation: argument_value}
+      - index: 5
+        name: passwdLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 7
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 9
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_PBKDF2
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: pLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 4
+        name: sLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: kLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 7
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_PBKDF2_ex
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: pLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 4
+        name: sLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: kLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 7
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_PBKDF_max_iterations_set
+    arity: 1
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_scrypt
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: passLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 4
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 5
+        name: cost
+        role: metadata-contributing
+        contributes: {property: cost, derivation: argument_value}
+      - index: 6
+        name: blockSize
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 7
+        name: parallel
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 8
+        name: dkLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_scrypt_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: passLen
+        role: metadata-contributing
+        contributes: {property: passwordLength, derivation: argument_value}
+      - index: 4
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: blockSize
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 7
+        name: parallel
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 8
+        name: dkLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # rc2.h
+  - method: wc_Rc2CbcDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Rc2CbcEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Rc2EcbDecrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Rc2EcbEncrypt
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Rc2SetIV
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Rc2SetKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: length
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # ripemd.h
+  - method: wc_InitRipeMd
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_RipeMdFinal
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_RipeMdUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # rsa.h
+  - method: wc_InitRsaKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitRsaKey_Id
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitRsaKey_Label
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitRsaKey_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MakeRsaKey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: e
+        role: metadata-contributing
+        contributes: {property: publicExponent, derivation: argument_value}
+  - method: wc_NewRsaKey
+    arity: 3
+    return: {type: "RsaKey*", confidence: high}
+    role: factory
+  - method: wc_NewRsaKey_Id
+    arity: 5
+    return: {type: "RsaKey*", confidence: high}
+    role: factory
+  - method: wc_NewRsaKey_Label
+    arity: 4
+    return: {type: "RsaKey*", confidence: high}
+    role: factory
+  - method: wc_RsaExportKey
+    arity: 11
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_RsaGetKeyId
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_RsaPSS_Sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 4
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: wc_RsaPSS_Sign_ex
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 4
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+      - index: 6
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: wc_RsaPSS_Verify
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 4
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: wc_RsaPSS_VerifyCheck
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: digestLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 6
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 7
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: wc_RsaPSS_VerifyCheckInline
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 6
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: wc_RsaPSS_VerifyInline
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: wc_RsaPSS_VerifyInline_ex
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+      - index: 5
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: wc_RsaPSS_Verify_ex
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 4
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+      - index: 6
+        name: saltLen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: wc_RsaPrivateDecrypt
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_RsaPrivateDecryptInline
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_RsaPrivateKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaPrivateKeyDecodeRaw
+    arity: 17
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaPublicEncrypt
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_RsaPublicEncrypt_ex
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 6
+        name: type
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+      - index: 7
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 8
+        name: mgf
+        role: operation-determining
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+      - index: 10
+        name: labelSz
+        role: metadata-contributing
+        contributes: {property: labelLength, derivation: argument_value}
+  - method: wc_RsaPublicKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaPublicKeyDecodeRaw
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaSSL_Sign
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_RsaSSL_Verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: outLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_RsaSSL_VerifyInline
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_RsaSetNonBlock
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaSetNonBlockTime
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_RsaSetRNG
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+
+  # sha.h
+  - method: wc_InitSha
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_ShaFinal
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ShaFinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_ShaGetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_ShaSetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_ShaSizeSet
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: wc_ShaUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # sha256.h
+  - method: wc_InitSha224
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha224_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha256
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha256_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Sha224Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha224GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha224SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha224Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha256Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha256FinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha256GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha256SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha256SizeSet
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: wc_Sha256Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # sha3.h
+  - method: wc_InitSha3_224
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha3_256
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha3_384
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha3_512
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitShake128
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitShake256
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Sha3_224_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_224_GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha3_224_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_256_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_256_GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha3_256_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_384_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_384_GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha3_384_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_512_Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_512_GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha3_512_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha3_SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Shake128_Final
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Shake128_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Shake256_Final
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: wc_Shake256_Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # sha512.h
+  - method: wc_InitSha384
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha384_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512_224
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512_224_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512_256
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512_256_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_InitSha512_ex
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_Sha384Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha384FinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha384GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha384SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha384Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512FinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha512SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha512Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_224Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_224FinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_224GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha512_224SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha512_224Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_256Final
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_256FinalRaw
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_Sha512_256GetHash
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_Sha512_256SetFlags
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_Sha512_256Update
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # siphash.h
+  - method: wc_InitSipHash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_SipHash
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_SipHashFinal
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outSz
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: wc_SipHashUpdate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+
+  # wc_lms.h
+  - method: wc_LmsKey_ExportPub
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_LmsKey_ExportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_LmsKey_ExportPub_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_LmsKey_ImportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_LmsKey_Init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_LmsKey_InitId
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_LmsKey_InitLabel
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_LmsKey_MakeKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_LmsKey_SetContext
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_LmsKey_SetLmsParm
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_LmsKey_SetParameters
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: levels
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 2
+        name: height
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 3
+        name: winternitz
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_LmsKey_SetParameters_ex
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: levels
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 2
+        name: height
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 3
+        name: winternitz
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_LmsKey_SetReadCb
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_LmsKey_SetWriteCb
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_LmsKey_Sign
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_LmsKey_Verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_hss_verify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # wc_mldsa.h
+  - method: wc_MlDsaKey_ExportKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_MlDsaKey_ExportPrivRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_MlDsaKey_ExportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_MlDsaKey_ImportKey
+    arity: 5
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlDsaKey_ImportPrivRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlDsaKey_ImportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlDsaKey_Init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlDsaKey_InitId
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlDsaKey_InitLabel
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlDsaKey_MakeKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlDsaKey_MakeKeyFromSeed
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlDsaKey_PrivateKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlDsaKey_PublicKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlDsaKey_SetParams
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: level
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_MlDsaKey_Sign
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlDsaKey_SignCtx
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_MlDsaKey_SignCtxHash
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 6
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 7
+        name: hashAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_MlDsaKey_SignCtxHashWithSeed
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 6
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 7
+        name: hashAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_MlDsaKey_SignCtxWithSeed
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_MlDsaKey_SignMuWithSeed
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlDsaKey_SignWithSeed
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlDsaKey_Verify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_MlDsaKey_VerifyCtx
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 4
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_MlDsaKey_VerifyCtxHash
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 4
+        name: ctxLen
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 6
+        name: hashLen
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 7
+        name: hashAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_MlDsaKey_VerifyMu
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigLen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # wc_mlkem.h
+  - method: wc_MlKemKey_Decapsulate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlKemKey_DecodePrivateKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlKemKey_DecodePublicKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_MlKemKey_Encapsulate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlKemKey_EncapsulateWithRandom
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_MlKemKey_EncodePrivateKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_MlKemKey_EncodePublicKey
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_MlKemKey_Init
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_MlKemKey_Init_Id
+    arity: 6
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_MlKemKey_Init_Label
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_MlKemKey_MakeKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_MlKemKey_MakeKeyWithRandom
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+
+  # wc_slhdsa.h
+  - method: wc_SlhDsaKey_ExportPrivate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_SlhDsaKey_ExportPublic
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_SlhDsaKey_ImportPrivate
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_SlhDsaKey_ImportPublic
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_SlhDsaKey_Init
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: param
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_SlhDsaKey_Init_id
+    arity: 6
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: param
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_SlhDsaKey_Init_label
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: param
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: wc_SlhDsaKey_MakeKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_SlhDsaKey_MakeKeyWithRandom
+    arity: 7
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_SlhDsaKey_PrivateKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_SlhDsaKey_PublicKeyDecode
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_SlhDsaKey_Sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_SlhDsaKey_SignDeterministic
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_SlhDsaKey_SignHash
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 4
+        name: hashSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_SlhDsaKey_SignHashDeterministic
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 4
+        name: hashSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_SlhDsaKey_SignHashWithRandom
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 4
+        name: hashSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: wc_SlhDsaKey_SignMsgDeterministic
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_SlhDsaKey_SignMsgWithRandom
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_SlhDsaKey_SignWithRandom
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: wc_SlhDsaKey_Verify
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 6
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_SlhDsaKey_VerifyHash
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ctxSz
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+      - index: 4
+        name: hashSz
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: hashType
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 7
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: wc_SlhDsaKey_VerifyMsg
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # wc_xmss.h
+  - method: wc_XmssKey_ExportPub
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_XmssKey_ExportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_XmssKey_ExportPub_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+  - method: wc_XmssKey_ImportPubRaw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_ImportPubRaw_ex
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_Init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_XmssKey_InitId
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_XmssKey_InitLabel
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_XmssKey_MakeKey
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+  - method: wc_XmssKey_SetContext
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_SetParamStr
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_SetReadCb
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_SetWriteCb
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: wc_XmssKey_Sign
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: wc_XmssKey_Verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: sigSz
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+hierarchy: {}
