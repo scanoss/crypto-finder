@@ -6,7 +6,7 @@ library:
   coordinates:
     - "com.google.crypto.tink:tink"
     - "com.google.crypto.tink:tink-android"
-  version_range: ">=1.7,<2.0"
+  version_range: "1.13.0"
   description: "Google Tink high-level crypto API contracts (KeysetHandle -> primitive -> operation)"
 
 # Tink hides primitives behind KeysetHandle.getPrimitive(<Primitive>.class). These
