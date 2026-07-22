@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - C callgraph contracts now model libsodium 1.x high-level AEAD, authentication, hashing, password-hashing, KDF, key-exchange, box, stream, and signing lifecycles. (#145)
+- C callgraph inference now models OpenSSL EVP cipher, digest, KDF, MAC, public-key, KEM, and signature APIs selected by the shipped C detection rules. (#90)
 - C++ callgraph builds now populate namespace-qualified return sources and select the C++ contract type resolver. (#94)
 - C callgraph builds now load embedded schema-v2 contract knowledge bases. (#89)
 - C callgraph builds now select the C contract type resolver; pointer-returning functions can use contract inference when C knowledge bases are embedded. (#88)

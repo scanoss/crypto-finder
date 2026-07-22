@@ -1,9 +1,0 @@
-schema_version: "2"
-ecosystem: c
-# ponytail: go:embed needs one YAML match; remove this file when the first C library KB lands.
-library:
-  name: c-bootstrap
-  description: "Bootstrap for embedded C callgraph contracts"
-
-contracts: []
-hierarchy: {}
