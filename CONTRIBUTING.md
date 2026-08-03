@@ -166,20 +166,26 @@ Fix any issues reported by the linter. Common rules include:
 ### Test Coverage
 
 - Maintain or improve the current test coverage
-- Run coverage report:
+- Generate an HTML coverage report (runs the tests first, writes `coverage.html`):
   ```bash
-  make test-coverage
+  make coverage
+  ```
+- Check the coverage thresholds the CI enforces (requires `go-test-coverage`,
+  configured in `.testcoverage.yml`):
+  ```bash
+  go install github.com/vladopajic/go-test-coverage/v2@latest
+  make coverage-check
   ```
 - Aim for at least 80% coverage for new code
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests locally (writes coverage.out)
 make test
 
-# Run tests with coverage
-make test-coverage
+# Run tests in Docker, same environment as CI (includes semgrep + opengrep)
+make test-docker
 
 # Run tests for a specific package
 go test ./internal/scanner/...
@@ -187,6 +193,12 @@ go test ./internal/scanner/...
 # Run a specific test
 go test -run TestScannerName ./internal/scanner/
 ```
+
+`make test` runs the suite with your local toolchain: tests that shell out to a
+real scanner are skipped when `opengrep`/`semgrep` are not installed. CI runs
+`make test-docker`, which builds `Dockerfile.test` (Go + semgrep + opengrep) and
+runs the full suite inside it — use it before submitting scanner-touching
+changes so the integration tests actually execute.
 
 ## Pull Request Process
 
