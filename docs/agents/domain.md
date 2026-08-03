@@ -1,6 +1,7 @@
 # Domain Docs
 
-Before exploring, read the root `CONTEXT.md` and relevant ADRs under `docs/adr/`.
+Before exploring, read the root `CONTEXT.md` and relevant ADRs under `docs/adr/`
+(see `docs/adr/README.md`; the directory may contain no ADRs yet).
 
 This repository uses a single-context layout:
 
