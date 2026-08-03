@@ -4,6 +4,10 @@ Project-specific conventions for AI agents and human contributors working in thi
 Read this file before making non-trivial changes. It documents conventions that are
 load-bearing but not enforceable by lint or compiler alone.
 
+Human-readable counterparts: the architecture, pipeline, and package map live in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the published failure code/stage
+taxonomy lives in [docs/ERROR_CODES.md](docs/ERROR_CODES.md).
+
 ## Changelog (HARD REQUIREMENT)
 
 Every user-facing change — new flag, behavior change, schema bump, bug fix, performance
@@ -69,14 +73,18 @@ The callgraph inference engine consumes language-agnostic YAML knowledge bases u
 ```
 internal/callgraph/contracts/
 ├── contracts.go           # loader, types, validation
-├── c/                     # schema-v2 C callgraph contracts
-├── cpp/                   # schema-v2 C++ callgraph contracts
-├── java/
-│   └── jdk-crypto.yaml    # JDK JCA/JCE contracts (shipped in v1)
-├── go/                    # schema-v2 Go callgraph contracts
-├── node/                  # schema-v2 Node callgraph contracts
-├── python/                # pyca-cryptography, pycryptodome, pycryptodomex, paramiko
-└── rust/                  # schema-v2 Rust callgraph contracts
+├── c/                     # openssl-evp, libsodium, mbedtls, wolfssl-wolfcrypt
+├── cpp/                   # bootstrap placeholder (no library KBs yet)
+├── go/                    # stdlib-crypto, golang-x-crypto, golang-fips-openssl-v2
+├── java/                  # jdk-crypto, bouncycastle (+ openpgp), tink-1.13.0, jjwt,
+│                          #   nimbus-jose-jwt, apache-santuario-xmlsec, apache-sshd,
+│                          #   password4j, spring-security-crypto
+├── node/                  # bootstrap placeholder (no library KBs yet)
+├── python/                # pyca-cryptography, pycryptodome(x), paramiko, passlib,
+│                          #   bcrypt, argon2-cffi, pynacl, pyopenssl, m2crypto,
+│                          #   pyjwt, flask-jwt-extended, pyotp, werkzeug, boto3,
+│                          #   azure-keyvault-keys, azure-keyvault-secrets
+└── rust/                  # ring, chacha20poly1305 (+ bootstrap)
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
@@ -103,7 +111,9 @@ concrete signature instead of the KB guessing one overload. Keep these fields di
 from semantic `return.type`, which may intentionally model only one inferred value.
 
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
-INTERNAL to the loader; the partner-facing export schema is independent (currently 6.0).
+INTERNAL to the loader; the partner-facing export schema is independent (currently
+`6.6` for the callgraph export — `pkg/graphfrag.CallgraphSchemaVersion` — and
+`graph-fragment-1.8` for the fragment export — `pkg/graphfrag.SchemaVersion`).
 
 To add a library:
 1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
