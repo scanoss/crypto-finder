@@ -318,7 +318,10 @@ contracts:
     return:
       type: io.netty.handler.ssl.SslContext
       confidence: high
-    role: factory
+    # Terminal action that materializes the SslContext from the configured
+    # builder. role: operation (not factory) — forClient/forServer are the
+    # factories that create the builder; build() executes the construction.
+    role: operation
 
 hierarchy:
   io.netty.handler.ssl.SslContextBuilder:

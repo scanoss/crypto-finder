@@ -318,8 +318,9 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 		{builder + ".secureRandom", 1, builder, "config"},
 		{builder + ".endpointIdentificationAlgorithm", 1, builder, "config"},
 		{builder + ".serverName", 1, builder, "config"},
-		// Terminal: build() produces the SslContext engine object.
-		{builder + ".build", 0, "io.netty.handler.ssl.SslContext", "factory"},
+		// Terminal: build() executes construction of the SslContext (operation,
+		// not factory — forClient/forServer are the builder factories).
+		{builder + ".build", 0, "io.netty.handler.ssl.SslContext", "operation"},
 	}
 
 	for _, tt := range tests {
