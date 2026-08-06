@@ -185,6 +185,13 @@ contracts:
     role: factory
 
   # ── jwcrypto.jwk.JWK — output / serialization ───────────────────────────────
+  # export/export_public/export_private/export_symmetric return a JSON string by
+  # default and a dict when called with as_dict=True. The return type therefore
+  # depends on an argument VALUE, not arity (e.g. export_public(True) -> dict and
+  # export_public(False) -> str share arity 1), which this schema's arity-keyed
+  # return typing cannot express. These methods carry role: output (terminal
+  # serialization, not crypto entry points), so the default builtins.str return
+  # is modeled; the as_dict=True dict return is a documented, low-impact gap.
 
   - method: jwcrypto.jwk.JWK.export
     arity: 0
@@ -382,7 +389,11 @@ contracts:
     role: factory
 
 hierarchy:
+  # jwcrypto.jwk.JWK is declared `class JWK(dict)`, so its direct parent is
+  # builtins.dict (which in turn derives from builtins.object).
   jwcrypto.jwk.JWK:
+    - builtins.dict
+  builtins.dict:
     - builtins.object
   jwcrypto.jws.JWS:
     - builtins.object

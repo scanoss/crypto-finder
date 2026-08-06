@@ -697,6 +697,16 @@ func TestLoadEmbedded_Python_Jwcrypto(t *testing.T) {
 			t.Errorf("hierarchy[%q] is empty", typ)
 		}
 	}
+
+	// jwcrypto.jwk.JWK is `class JWK(dict)`: assert the direct parent is
+	// builtins.dict (not a bare non-empty parent), and that builtins.dict in
+	// turn derives from builtins.object.
+	if got := kb.Hierarchy["jwcrypto.jwk.JWK"]; len(got) != 1 || got[0] != "builtins.dict" {
+		t.Errorf("hierarchy[jwcrypto.jwk.JWK] = %#v, want [builtins.dict]", got)
+	}
+	if got := kb.Hierarchy["builtins.dict"]; len(got) != 1 || got[0] != "builtins.object" {
+		t.Errorf("hierarchy[builtins.dict] = %#v, want [builtins.object]", got)
+	}
 }
 
 func TestLoadEmbedded_Python_Boto3KMSClientCondition(t *testing.T) {
