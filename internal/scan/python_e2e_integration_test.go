@@ -538,6 +538,182 @@ def decode(jwt_token, key, algorithms=None, options=None, audience=None, issuer=
 	}
 }
 
+// TestPythonE2E_Jwcrypto_JWK_Generate_Synthesis proves that mining jwcrypto's own
+// jwk.py for JWK.generate produces a synthesized crypto entry point carrying the
+// contract-KB factory role (scanoss/crypto-finder#181, rules anchor
+// scanoss/crypto_rules#169: api=jwcrypto.jwk.JWK.generate).
+//
+// The jwcrypto.yaml KB declares `jwcrypto.jwk.JWK.generate` -> jwcrypto.jwk.JWK
+// (role: factory). When mining jwcrypto's own source, the Python parser emits a
+// FunctionDecl for `generate` with Package="jwcrypto.jwk" and Type="JWK". The
+// synthesis join matches the rule api "jwcrypto.jwk.JWK.generate" and emits a
+// crypto entry point — this is the public-export proof that the KB entry
+// resolves against real jwcrypto source, not just the embedded-contract loader.
+func TestPythonE2E_Jwcrypto_JWK_Generate_Synthesis(t *testing.T) {
+	t.Parallel()
+
+	src := `"""jwcrypto jwk.py stub (for synthesis test)."""
+
+class JWK:
+    @classmethod
+    def generate(cls, **kwargs):
+        """Generate a new JWK key of the requested kty."""
+        pass
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "jwk.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jwk"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	ruleDir := t.TempDir()
+	ruleBody := "rules:\n" +
+		"  - id: python.jwcrypto.algorithm.pke.rsa.keygen\n" +
+		"    metadata:\n" +
+		"      crypto:\n" +
+		"        assetType: algorithm\n" +
+		"        algorithmPrimitive: pke\n" +
+		"        algorithmFamily: RSA\n" +
+		"        operation: keygen\n" +
+		"        api: jwcrypto.jwk.JWK.generate\n"
+	rulePath := filepath.Join(ruleDir, "rule.yaml")
+	if err := os.WriteFile(rulePath, []byte(ruleBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := &entities.InterimReport{}
+	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
+	if n == 0 {
+		fqns := make([]string, 0, len(graph.Functions))
+		for k := range graph.Functions {
+			fqns = append(fqns, k)
+		}
+		t.Fatalf("jwcrypto JWK.generate synthesis: expected >=1 synthesized entry point, got 0; graph FQNs: %v", fqns)
+	}
+	if api := report.Findings[0].CryptographicAssets[0].Metadata["api"]; api != "jwcrypto.jwk.JWK.generate" {
+		t.Errorf("synthesized api = %q, want jwcrypto.jwk.JWK.generate", api)
+	}
+}
+
+// TestPythonE2E_Jwcrypto_JWS_AddSignature_Synthesis mirrors the JWK.generate proof
+// above for the JWS signing operation (rules anchor
+// scanoss/crypto_rules#169: api=jwcrypto.jws.JWS.add_signature). The jwcrypto.yaml
+// KB tags this contract role: operation.
+func TestPythonE2E_Jwcrypto_JWS_AddSignature_Synthesis(t *testing.T) {
+	t.Parallel()
+
+	src := `"""jwcrypto jws.py stub (for synthesis test)."""
+
+class JWS:
+    def __init__(self, payload=None, header_registry=None):
+        pass
+
+    def add_signature(self, key, alg=None, protected=None, header=None):
+        """Adds a new signature to the object."""
+        pass
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "jws.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jws"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	ruleDir := t.TempDir()
+	ruleBody := "rules:\n" +
+		"  - id: python.jwcrypto.algorithm.mac.hmac.jws-sign\n" +
+		"    metadata:\n" +
+		"      crypto:\n" +
+		"        assetType: algorithm\n" +
+		"        algorithmPrimitive: mac\n" +
+		"        algorithmFamily: HMAC\n" +
+		"        operation: sign\n" +
+		"        api: jwcrypto.jws.JWS.add_signature\n"
+	rulePath := filepath.Join(ruleDir, "rule.yaml")
+	if err := os.WriteFile(rulePath, []byte(ruleBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := &entities.InterimReport{}
+	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
+	if n == 0 {
+		fqns := make([]string, 0, len(graph.Functions))
+		for k := range graph.Functions {
+			fqns = append(fqns, k)
+		}
+		t.Fatalf("jwcrypto JWS.add_signature synthesis: expected >=1 synthesized entry point, got 0; graph FQNs: %v", fqns)
+	}
+	if api := report.Findings[0].CryptographicAssets[0].Metadata["api"]; api != "jwcrypto.jws.JWS.add_signature" {
+		t.Errorf("synthesized api = %q, want jwcrypto.jws.JWS.add_signature", api)
+	}
+}
+
+// TestPythonE2E_Jwcrypto_JWE_AddRecipient_Synthesis mirrors the same proof for JWE
+// encryption (rules anchor scanoss/crypto_rules#169: api=jwcrypto.jwe.JWE.add_recipient).
+func TestPythonE2E_Jwcrypto_JWE_AddRecipient_Synthesis(t *testing.T) {
+	t.Parallel()
+
+	src := `"""jwcrypto jwe.py stub (for synthesis test)."""
+
+class JWE:
+    def __init__(self, plaintext=None, protected=None, unprotected=None, aad=None,
+                 algs=None, recipient=None, header=None, header_registry=None,
+                 flattened=True):
+        pass
+
+    def add_recipient(self, key, header=None):
+        """Encrypt the plaintext with the given key."""
+        pass
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "jwe.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jwe"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	ruleDir := t.TempDir()
+	ruleBody := "rules:\n" +
+		"  - id: python.jwcrypto.algorithm.ae.aes-gcm.jwe-content-encrypt\n" +
+		"    metadata:\n" +
+		"      crypto:\n" +
+		"        assetType: algorithm\n" +
+		"        algorithmPrimitive: ae\n" +
+		"        algorithmFamily: AES\n" +
+		"        operation: encrypt\n" +
+		"        api: jwcrypto.jwe.JWE.add_recipient\n"
+	rulePath := filepath.Join(ruleDir, "rule.yaml")
+	if err := os.WriteFile(rulePath, []byte(ruleBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := &entities.InterimReport{}
+	n := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{rulePath}, "python")
+	if n == 0 {
+		fqns := make([]string, 0, len(graph.Functions))
+		for k := range graph.Functions {
+			fqns = append(fqns, k)
+		}
+		t.Fatalf("jwcrypto JWE.add_recipient synthesis: expected >=1 synthesized entry point, got 0; graph FQNs: %v", fqns)
+	}
+	if api := report.Findings[0].CryptographicAssets[0].Metadata["api"]; api != "jwcrypto.jwe.JWE.add_recipient" {
+		t.Errorf("synthesized api = %q, want jwcrypto.jwe.JWE.add_recipient", api)
+	}
+}
+
 // TestPythonE2E_Bcrypt_ConsumerScan_NoSynthesis verifies the safety property from
 // decision #1715: synthesis does NOT fire in a consumer scan (code that CALLS
 // bcrypt.hashpw but does not DEFINE it). The lowered gate does not over-synthesize.
