@@ -1,0 +1,170 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: commons-codec-blake3
+  coordinates:
+    - "commons-codec:commons-codec"
+  version_range: ">=1.16,<2.0"
+  description: >-
+    Apache Commons Codec's hand-rolled BLAKE3 lifecycle contracts —
+    org.apache.commons.codec.digest.Blake3's three mode-selecting factories
+    (initHash/initKeyedHash/initKeyDerivationFunction), the two one-shot
+    statics that inline a full factory->update->doFinalize chain
+    (hash/keyedHash), the self-returning absorb step (update), the
+    self-returning finalize/reset steps, and the fixed 32-byte (256-bit) key
+    size initKeyedHash enforces. Verified against commons-codec 1.19.0
+    (org/apache/commons/codec/digest/Blake3.java).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#187)
+#
+# Scope per issue AC: Blake3 is a Type-2 stateful/fluent API exposing THREE
+# independent modes from one engine — plain hash/XOF, keyed hash (MAC/PRF),
+# and key derivation (KDF) — each anchored by its own crypto_rules#164 rule
+# (PR #167: semgrep-rules/java/commons-codec/algorithm/{hash,mac,kdf}/blake3/
+# rules.yaml). The rule `api:` metadata anchors on the mode-selecting factory
+# (initHash / initKeyedHash / initKeyDerivationFunction) even though the
+# pattern-either also matches the corresponding one-shot static (hash /
+# keyedHash respectively), so both forms are contracted here to keep
+# reachability intact regardless of which call-site form a consumer uses.
+#
+# Every public method on org.apache.commons.codec.digest.Blake3 (1.19.0) was
+# inventoried against the primary source (a local unpack of the released jar,
+# /home/ubuntu/Projects/SCANOSS/delete_me/crypto-recall-audit/commons-codec-
+# 1.19.0/org/apache/commons/codec/digest/Blake3.java, verified against the
+# upstream Apache-2.0 source). The private constructor Blake3(int[], int) and
+# the private nested ChunkState/EngineState/Output classes plus private
+# static compression helpers (compress/g/round/pack*/unpack*) are not public
+# API and are excluded.
+#
+# Disposition legend: contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+#   initHash()                          contracted (factory, arity 0) — rules api anchor (crypto_rules#164/PR167: hash rule api=Blake3.initHash)
+#   initKeyedHash(byte[])                contracted (factory, arity 1) — rules api anchor (mac rule api=Blake3.initKeyedHash); param 0 (key) contributes "keySize" (argument_bit_length), matching the mac rule's fixed algorithmParameterSetIdentifier="256"
+#   initKeyDerivationFunction(byte[])    contracted (factory, arity 1) — rules api anchor (kdf rule api=Blake3.initKeyDerivationFunction)
+#   hash(byte[])                        contracted (factory, arity 1) — rules pattern-either anchor (hash rule also matches `Blake3.hash(...)`); one-shot inline of initHash().update(data).doFinalize(OUT_LEN)
+#   keyedHash(byte[],byte[])             contracted (factory, arity 2) — rules pattern-either anchor (mac rule also matches `Blake3.keyedHash(...)`); one-shot inline of initKeyedHash(key).update(data).doFinalize(OUT_LEN)
+#   update(byte[])                      contracted (config, arity 1) — self-returning absorb step, PR167 fixtures chain `hasher.update(data)` off every factory
+#   update(byte[],int,int)               contracted (config, arity 3) — self-returning absorb step, offset/length variant
+#   doFinalize(byte[])                   contracted (operation, arity 1) — self-returning finalize step; see arity-collision note below
+#   doFinalize(byte[],int,int)           contracted (operation, arity 3) — self-returning finalize step, offset/length variant
+#   doFinalize(int)                      skipped-unsupported (arity 1) — see arity-collision note below
+#   reset()                              contracted (config, arity 0) — self-returning re-init of engine state; not a crypto_rules#164 anchor, included for exhaustive-inventory completeness of the class's public lifecycle surface
+#
+# Arity-collision note (doFinalize#1): Blake3 declares TWO public overloads
+# that both resolve to method+arity key "...Blake3.doFinalize#1":
+#   - doFinalize(byte[] out)      -> Blake3   (self-returning, continues the fluent chain)
+#   - doFinalize(int nrBytes)     -> byte[]   (terminal squeeze-and-return, no further chaining)
+# The KB schema keys contracts by method+arity, and the `when:` conditional
+# mechanism differentiates by literal ARGUMENT VALUE, not by parameter type —
+# it cannot disambiguate a same-arity overload pair by signature alone. Per
+# the crypto-kb-author skill's guidance ("pick the more accurate single
+# contract"), doFinalize(byte[]) is the one contracted at arity 1: every
+# crypto_rules#164/PR167 test fixture and the issue #187 AC's "self-
+# referencing fluent chain" requirement exercise ONLY the byte[]-out form
+# (`hasher.doFinalize(out)`, `kdf.doFinalize(derivedKey)`) — doFinalize(int)
+# never appears in any anchored call site. doFinalize(int) is recorded here
+# as skipped-unsupported/needs-follow-up: the engine has no parameter-type-
+# based overload resolution today, so a hypothetical `Blake3.doFinalize(32)`
+# call site would (incorrectly) resolve through the byte[] contract's Return
+# until that capability exists.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── Factories: the three mode-selecting init* methods and the two ─────────
+  # ── one-shot statics that inline the full factory->update->doFinalize ─────
+  # ── chain for callers who don't need streaming input. ─────────────────────
+
+  - method: org.apache.commons.codec.digest.Blake3.initHash
+    arity: 0
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: factory
+
+  - method: org.apache.commons.codec.digest.Blake3.initKeyedHash
+    arity: 1
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+
+  - method: org.apache.commons.codec.digest.Blake3.initKeyDerivationFunction
+    arity: 1
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: factory
+
+  - method: org.apache.commons.codec.digest.Blake3.hash
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: factory
+
+  - method: org.apache.commons.codec.digest.Blake3.keyedHash
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: factory
+
+  # ── Config/absorb: update(...) self-returns Blake3, keeping the fluent ────
+  # ── chain resolvable across an arbitrary number of absorb calls. ──────────
+
+  - method: org.apache.commons.codec.digest.Blake3.update
+    arity: 1
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: config
+
+  - method: org.apache.commons.codec.digest.Blake3.update
+    arity: 3
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: config
+
+  # ── Operation/output: doFinalize(...) self-returns Blake3 for the ────────
+  # ── byte[]-out overloads (see the arity-collision note above for why ─────
+  # ── doFinalize(int) is not separately contracted). ────────────────────────
+
+  - method: org.apache.commons.codec.digest.Blake3.doFinalize
+    arity: 1
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: operation
+
+  - method: org.apache.commons.codec.digest.Blake3.doFinalize
+    arity: 3
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: operation
+
+  # ── Config: reset() self-returns Blake3, rewinding engine state back to ──
+  # ── construction time so the same instance can be reused. ────────────────
+
+  - method: org.apache.commons.codec.digest.Blake3.reset
+    arity: 0
+    return:
+      type: org.apache.commons.codec.digest.Blake3
+      confidence: high
+    role: config
+
+hierarchy:
+  org.apache.commons.codec.digest.Blake3:
+    - java.lang.Object
+  java.lang.Object: []
