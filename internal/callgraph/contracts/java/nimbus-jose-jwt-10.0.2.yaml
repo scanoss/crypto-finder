@@ -310,7 +310,7 @@ library:
 # #181/PR186), not a KB authoring defect -- the two nested-class contracts
 # above are still the correct schema-level mapping (proven via
 # TestLoadEmbeddedJava_NimbusJoseJwt1002JSONLifecycle in
-# internal/callgraph/contracts/java_libraries_test.go, which asserts
+# internal/callgraph/contracts/nimbus_jose_jwt_10_0_2_java_library_test.go, which asserts
 # ContractsFor("com.nimbusds.jose.JWSObjectJSON.Signature.verify", 1) etc.
 # directly against the loaded KB and so does not depend on the parser's
 # receiver resolution), and fixing java_parser.go's qualified-receiver
