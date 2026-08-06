@@ -1,0 +1,359 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: spring-security-crypto-7.1
+  coordinates:
+    - "org.springframework.security:spring-security-crypto"
+  version_range: ">=7.0.0,<7.2.0"
+  description: >-
+    Spring Security Crypto 7.1 encoder lifecycle contracts, additive to the
+    version-pinned 6.3.4 KB (spring-security-crypto.yaml): the new
+    org.springframework.security.crypto.password4j.* Password4j-backed
+    PasswordEncoder wrappers, the PasswordEncoderFactories default
+    DelegatingPasswordEncoder factory, the hand-rolled
+    org.springframework.security.crypto.bcrypt.BCrypt static Blowfish-EKS
+    terminal, and the previously-uncontracted AesBytesEncryptor
+    constructors and Encryptors.delux text-encryptor factory. Verified
+    against spring-security-crypto 7.1.0 source (bcrypt/BCrypt.java,
+    password4j/*.java, factory/PasswordEncoderFactories.java,
+    encrypt/AesBytesEncryptor.java, encrypt/Encryptors.java).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#182)
+#
+# Scope per issue AC + task brief: lifecycle contracts for the Spring
+# Security Crypto 7.1 ENCODER surface -- (1) the password4j-backed
+# PasswordEncoder wrappers new in 7.0/7.1, (2) the PasswordEncoderFactories
+# default-encoder factory, (3) the hand-rolled BCrypt static terminal, and
+# (4) AesBytesEncryptor/Encryptors, which the 6.3.4 KB left uncontracted.
+# This is deliberately narrower than the joined crypto_rules#170/#162 rules
+# PR, which also adds rule coverage for the legacy digest-based encoders
+# (Md4PasswordEncoder, MessageDigestPasswordEncoder, LdapShaPasswordEncoder,
+# StandardPasswordEncoder) and RsaRawEncryptor -- those are pre-existing
+# PasswordEncoder/BytesEncryptor implementations independent of this 7.1
+# ticket's narrow AC and are recorded as needs-follow-up below rather than
+# silently expanded into scope.
+#
+# Every public method/constructor on the classes below was inventoried
+# against spring-security-crypto 7.1.0 source. Disposition legend:
+# contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# org.springframework.security.crypto.bcrypt.BCrypt (hand-rolled, public;
+# structural fork of org.mindrot.jbcrypt.BCrypt, own package -- see
+# crypto_rules#162 review note)
+#   hashpw(String,String)              contracted (operation, arity 2)
+#   hashpw(byte[],String)              contracted (operation, arity 2) -- collapsed, identical return
+#   checkpw(String,String)             contracted (operation, arity 2)
+#   checkpw(byte[],String)             contracted (operation, arity 2) -- collapsed, identical return
+#   gensalt()                          contracted (factory, arity 0)
+#   gensalt(String)/gensalt(int)       contracted (factory, arity 1) -- collapsed, identical return
+#   gensalt(String,int)/gensalt(int,SecureRandom)
+#                                       contracted (factory, arity 2) -- collapsed, identical return
+#   gensalt(String,int,SecureRandom)   contracted (factory, arity 3)
+#
+# org.springframework.security.crypto.factory.PasswordEncoderFactories
+#   createDelegatingPasswordEncoder()  contracted (factory, arity 0) -- declared
+#                                        return is the PasswordEncoder interface,
+#                                        but the concrete runtime type is always
+#                                        DelegatingPasswordEncoder (source-confirmed);
+#                                        asserting the concrete type is the same
+#                                        "generic-declared-return" high-leverage
+#                                        case the skill calls out for
+#                                        Cipher.unwrap, not skipped-informative.
+#
+# org.springframework.security.crypto.password4j.* (new in 7.0, public)
+#   BcryptPassword4jPasswordEncoder.<init>()            contracted (factory, arity 0)
+#   BcryptPassword4jPasswordEncoder.<init>(BcryptFunction) contracted (factory, arity 1)
+#   Argon2Password4jPasswordEncoder.<init>()            contracted (factory, arity 0)
+#   Argon2Password4jPasswordEncoder.<init>(Argon2Function) contracted (factory, arity 1)
+#   ScryptPassword4jPasswordEncoder.<init>()            contracted (factory, arity 0)
+#   ScryptPassword4jPasswordEncoder.<init>(ScryptFunction) contracted (factory, arity 1)
+#   Pbkdf2Password4jPasswordEncoder.<init>()            contracted (factory, arity 0)
+#   Pbkdf2Password4jPasswordEncoder.<init>(PBKDF2Function) contracted (factory, arity 1)
+#   Pbkdf2Password4jPasswordEncoder.<init>(PBKDF2Function,int) contracted (factory, arity 2)
+#   BalloonHashingPassword4jPasswordEncoder.<init>()    contracted (factory, arity 0)
+#   BalloonHashingPassword4jPasswordEncoder.<init>(BalloonHashingFunction) contracted (factory, arity 1)
+#   BalloonHashingPassword4jPasswordEncoder.<init>(BalloonHashingFunction,int) contracted (factory, arity 2)
+#   {Bcrypt,Argon2,Scrypt}Password4jPasswordEncoder.encode/matches/upgradeEncoding
+#                                       covered-existing -- resolve via
+#                                        PasswordEncoder.encode/matches/
+#                                        upgradeEncoding (spring-security-crypto.yaml,
+#                                        6.3.4) through the hierarchy edges below;
+#                                        AbstractValidatingPasswordEncoder declares
+#                                        these `final`, so no subclass override
+#                                        has a distinct signature to contract
+#                                        (skill: "prefer the shared interface").
+#   Pbkdf2Password4jPasswordEncoder.encode/matches/upgradeEncoding
+#                                       covered-existing -- same reasoning
+#                                        (extends AbstractValidatingPasswordEncoder
+#                                        directly).
+#   BalloonHashingPassword4jPasswordEncoder.encode/matches/upgradeEncoding
+#                                       covered-existing -- same reasoning.
+#   package-private Password4jPasswordEncoder abstract base (encodeNonNullPassword/
+#   matchesNonNull/upgradeEncodingNonNull)
+#                                       skipped-non-crypto -- package-private
+#                                        template-method glue, not public API.
+#
+# org.springframework.security.crypto.encrypt.AesBytesEncryptor (public final;
+# pre-existing since early Spring Security, left uncontracted by 6.3.4)
+#   <init>(String,CharSequence)                       contracted (factory, arity 2)
+#   <init>(String,CharSequence,BytesKeyGenerator)      contracted (factory, arity 3) -- collapsed
+#   <init>(SecretKey,BytesKeyGenerator,CipherAlgorithm) contracted (factory, arity 3) -- collapsed into
+#                                                          the arity-3 entry above (identical
+#                                                          AesBytesEncryptor return; the two
+#                                                          overloads' parameter TYPES differ but
+#                                                          the KB only keys on arity/return, per
+#                                                          the netty-tls.yaml collapsing precedent
+#                                                          -- the RULE-side algorithm-selection
+#                                                          ambiguity crypto_rules#162 leaves
+#                                                          unmatched for this arity is a distinct,
+#                                                          out-of-scope concern).
+#   <init>(String,CharSequence,BytesKeyGenerator,CipherAlgorithm) contracted (factory, arity 4)
+#   encrypt(byte[])/decrypt(byte[])    covered-existing -- resolve via
+#                                        BytesEncryptor.encrypt/decrypt
+#                                        (spring-security-crypto.yaml, 6.3.4)
+#                                        through the new AesBytesEncryptor ->
+#                                        BytesEncryptor hierarchy edge below.
+#   CipherAlgorithm (enum)             skipped-non-crypto -- enum constant, not a
+#                                        method; algorithm-mode selection is
+#                                        crypto_rules#162 rule metadata
+#                                        (parameterCondition), not KB grammar.
+#
+# org.springframework.security.crypto.encrypt.Encryptors (public final factory
+# class; standard/stronger already contracted in 6.3.4)
+#   standard(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml, 6.3.4)
+#   stronger(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml, 6.3.4)
+#   delux(CharSequence,CharSequence)   contracted (factory, arity 2) -- ticket AC scope
+#   text(CharSequence,CharSequence)    needs-follow-up -- identical shape to delux()
+#                                        (wraps standard() in the same package-private
+#                                        HexEncodingTextEncryptor) but not named in the
+#                                        approved AC scope ("standard/stronger/delux");
+#                                        left as a follow-up rather than silently
+#                                        expanding scope.
+#   noOpText()                        skipped-non-crypto -- literal no-op passthrough
+#                                        encryptor, not a cryptographic factory.
+#
+# Deferred (belongs to the joined crypto_rules#162/#170 rules PR's broader
+# scope, not this KB ticket's narrow AC):
+#   password.Md4PasswordEncoder, password.MessageDigestPasswordEncoder,
+#   password.LdapShaPasswordEncoder, password.StandardPasswordEncoder,
+#   password.NoOpPasswordEncoder      needs-follow-up -- legacy digest-based
+#                                        PasswordEncoder implementations,
+#                                        pre-existing since old Spring Security
+#                                        releases (not new to 7.1); already have
+#                                        crypto_rules#162 rule coverage
+#                                        independent of this KB ticket.
+#   encrypt.RsaRawEncryptor            needs-follow-up -- pre-existing class,
+#                                        out of this ticket's encoder-lifecycle
+#                                        scope; already has crypto_rules#162
+#                                        rule coverage.
+#   encrypt.BouncyCastleAes{Cbc,Gcm}BytesEncryptor
+#                                       needs-follow-up -- BouncyCastle-backed
+#                                        siblings of AesBytesEncryptor, out of
+#                                        this ticket's narrow AC.
+#
+# Note on scope boundary: no `when:` conditional contracts are declared.
+# Every contracted method's return type here is fixed regardless of the
+# BCryptVersion/strength/Function argument a caller passes in (unlike e.g.
+# Cipher.unwrap, where the mode argument selects the Java return type) --
+# algorithm-family/parameter selection stays in crypto_rules metadata
+# (parameterCondition), never in this KB, per the crypto-kb-author skill's
+# "Condition and provider ownership" rule.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── Hand-rolled BCrypt terminal (org.springframework.security.crypto.bcrypt.BCrypt) ──
+  # A structural fork of org.mindrot.jbcrypt.BCrypt (own package, own class --
+  # confirmed via source; see crypto_rules#162 review note), reached directly
+  # by BCryptPasswordEncoder internally and by any caller importing it
+  # directly. hashpw(String,String) and hashpw(byte[],String) share arity 2
+  # and an identical String return -- collapsed into one contract, matching
+  # the netty-tls.yaml precedent for same-arity/same-return overload families.
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.hashpw
+    arity: 2
+    return: { type: java.lang.String, confidence: high }
+    role: operation
+
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.checkpw
+    arity: 2
+    return: { type: boolean, confidence: high }
+    role: operation
+
+  # gensalt(...) always allocates a fresh BCRYPT_SALT_LEN=16-byte salt
+  # (BCrypt.java 7.1.0) regardless of which overload is called; the arities
+  # below collapse same-arity/same-return sibling overloads the same way the
+  # hashpw collapse above does (gensalt(String,int) and
+  # gensalt(int,SecureRandom) both arity 2; gensalt(String) and gensalt(int)
+  # both arity 1).
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.gensalt
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.gensalt
+    arity: 1
+    return: { type: java.lang.String, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.gensalt
+    arity: 2
+    return: { type: java.lang.String, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.bcrypt.BCrypt.gensalt
+    arity: 3
+    return: { type: java.lang.String, confidence: high }
+    role: factory
+
+  # ── PasswordEncoderFactories: the actual default DelegatingPasswordEncoder ──
+  # Declared return type is the PasswordEncoder interface, but the concrete
+  # runtime type is always DelegatingPasswordEncoder
+  # (factory/PasswordEncoderFactories.java 7.1.0: `return new
+  # DelegatingPasswordEncoder(encodingId, encoders);`) -- asserting the
+  # concrete type is the same "generic-declared return" high-leverage case
+  # the skill calls out for Cipher.unwrap, not a skipped-informative-return.
+  - method: org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder
+    arity: 0
+    return: { type: org.springframework.security.crypto.password.DelegatingPasswordEncoder, confidence: high }
+    role: factory
+
+  # ── Password4j-backed encoders (org.springframework.security.crypto.password4j, new in 7.0/7.1) ──
+  # Every concrete class below extends the package-private
+  # Password4jPasswordEncoder (Bcrypt/Argon2/Scrypt) or extends
+  # AbstractValidatingPasswordEncoder directly (Pbkdf2/BalloonHashing, which
+  # carry their own caller-visible saltLength state) -- either way `implements
+  # PasswordEncoder` transitively (AbstractValidatingPasswordEncoder declares
+  # encode()/matches()/upgradeEncoding() `final`, dispatching to each
+  # subclass's *NonNullPassword template method), so those three operations
+  # resolve via the existing PasswordEncoder contract in
+  # spring-security-crypto.yaml (6.3.4) through the hierarchy edges below --
+  # no per-class encode/matches override is authored here (skill: "operation
+  # authoring rule -- prefer the shared interface"). The no-arg constructor
+  # delegates to com.password4j.AlgorithmFinder's defaults, an EXTERNAL
+  # library concern; the *Function-arg constructor's own parameters are
+  # deliberately not modeled here -- the delegation boundary the ticket AC
+  # calls out: this KB does not duplicate Password4j internals.
+  - method: org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder, confidence: high }
+    role: factory
+
+  # Pbkdf2/BalloonHashing additionally expose a 2-arg (function, saltLength)
+  # constructor -- all three arities still return the encoder type
+  # unconditionally.
+  - method: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder, confidence: high }
+    role: factory
+
+  - method: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder, confidence: high }
+    role: factory
+
+  # ── AesBytesEncryptor: previously-uncontracted BytesEncryptor implementation ──
+  # All three public constructor arities return AesBytesEncryptor
+  # unconditionally; arity 3 collapses two overloads that share the arity
+  # ((String,CharSequence,BytesKeyGenerator) and
+  # (SecretKey,BytesKeyGenerator,CipherAlgorithm)) -- both return
+  # AesBytesEncryptor, so the collapse is safe for KB return-type purposes
+  # even though crypto_rules#162 leaves that specific arity's RULE coverage
+  # unmatched (a rule-side algorithm-selection ambiguity between the two
+  # overloads' differing parameter TYPES, not a return-type ambiguity; stays
+  # out of scope for this KB per the "Condition and provider ownership"
+  # rule). encrypt()/decrypt() are not re-declared here: they resolve via the
+  # existing BytesEncryptor.encrypt/decrypt operation contract in
+  # spring-security-crypto.yaml through the hierarchy edge below.
+  - method: org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.AesBytesEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.encrypt.AesBytesEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>
+    arity: 4
+    return: { type: org.springframework.security.crypto.encrypt.AesBytesEncryptor, confidence: high }
+    role: factory
+
+  # ── Encryptors: the previously-uncontracted delux() text-encryptor factory ──
+  # Encryptors.delux(password, salt) wraps stronger(...) (AES-256-GCM) in a
+  # HexEncodingTextEncryptor; that wrapper class itself is package-private
+  # (not part of the public API surface), so only the public factory method
+  # is contracted -- its TextEncryptor return resolves encrypt()/decrypt()
+  # via the existing TextEncryptor operation contract in
+  # spring-security-crypto.yaml.
+  - method: org.springframework.security.crypto.encrypt.Encryptors.delux
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.TextEncryptor, confidence: high }
+    role: factory
+
+hierarchy:
+  # Redeclared (idempotent with spring-security-crypto.yaml's 6.3.4 edges)
+  # because this file's own contracts depend on them for reachability -- see
+  # the crypto-kb-author skill's "DO redeclare hierarchy edges YOUR library
+  # depends on" rule.
+  org.springframework.security.crypto.password.PasswordEncoder:
+    - java.lang.Object
+  org.springframework.security.crypto.password.DelegatingPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.encrypt.BytesEncryptor:
+    - java.lang.Object
+  org.springframework.security.crypto.encrypt.AesBytesEncryptor:
+    - org.springframework.security.crypto.encrypt.BytesEncryptor
+  org.springframework.security.crypto.encrypt.TextEncryptor:
+    - java.lang.Object
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []
