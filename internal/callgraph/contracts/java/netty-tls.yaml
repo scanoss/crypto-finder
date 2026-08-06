@@ -1,0 +1,328 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: netty-tls
+  coordinates:
+    - "io.netty:netty-handler"
+  version_range: ">=4.2.0,<4.3.0"
+  description: >-
+    Netty TLS builder lifecycle contracts — SslContextBuilder factory
+    (forClient/forServer), fluent configuration (sslProvider, protocols,
+    ciphers, keyManager, trustManager, and the remaining self-returning
+    builder methods), and the build() terminal that produces the SslContext
+    engine object. Verified against netty-handler 4.2.15.Final
+    (io/netty/handler/ssl/SslContextBuilder.java).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#183)
+#
+# Scope per issue AC: SslContextBuilder is a Type-2 fluent/builder API whose
+# crypto meaning lives on the API boundary (see the crypto_rules#168 api
+# anchors below), not in a detectable primitive call inside its own body.
+# Every public method on io.netty.handler.ssl.SslContextBuilder (4.2.15.Final)
+# was inventoried against the primary source
+# (netty-handler-4.2.15.Final/io/netty/handler/ssl/SslContextBuilder.java, a
+# local unpack of the released jar verified against the upstream Apache-2.0
+# source). The private constructor SslContextBuilder(boolean) and the private
+# static helper toArray(...) are not public API and are excluded.
+#
+# Overloads that share one method name AND one arity (Java varargs count as
+# one Object[] slot, per the crypto-kb-author skill) collapse into a SINGLE
+# contract entry: they all return io.netty.handler.ssl.SslContextBuilder
+# identically, and the loader hard-rejects two unconditional entries for the
+# same method+arity key, so an overload's distinct parameter TYPES are not
+# separately modeled — only its arity and (shared) return type are. This is
+# safe here because every SslContextBuilder overload family that shares an
+# arity also shares an identical return type; none of the collapsed groups
+# below hide a return-type disagreement.
+#
+# Disposition legend: contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+#   forClient()                                       contracted (factory, arity 0) — rules api anchor (crypto_rules#168: SslContextBuilder.forClient)
+#   forServer(KeyManagerFactory)                       contracted (factory, arity 1)
+#   forServer(KeyManager)                              contracted (factory, arity 1) — collapsed into the arity-1 entry above (identical return)
+#   forServer(File,File)                               contracted (factory, arity 2) — rules api anchor (crypto_rules#168: SslContextBuilder.forServer + server-pem-key-material)
+#   forServer(InputStream,InputStream)                 contracted (factory, arity 2) — collapsed into the arity-2 entry above
+#   forServer(PrivateKey,X509Certificate...)           contracted (factory, arity 2) — collapsed into the arity-2 entry above
+#   forServer(PrivateKey,Iterable)                     contracted (factory, arity 2) — collapsed into the arity-2 entry above
+#   forServer(File,File,String)                        contracted (factory, arity 3) — rules api anchor (crypto_rules#168: server-pem-key-material)
+#   forServer(InputStream,InputStream,String)          contracted (factory, arity 3) — collapsed into the arity-3 entry above
+#   forServer(PrivateKey,String,X509Certificate...)    contracted (factory, arity 3) — collapsed into the arity-3 entry above
+#   forServer(PrivateKey,String,Iterable)              contracted (factory, arity 3) — collapsed into the arity-3 entry above
+#   option(SslContextOption,T)                         contracted (config, arity 2) — generic per-context option bag, no algorithm-specific value
+#   sslProvider(SslProvider)                           contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.sslProvider); param 0 contributes "provider" (argument_value)
+#   keyStoreType(String)                               contracted (config, arity 1)
+#   sslContextProvider(Provider)                       contracted (config, arity 1) — JCA java.security.Provider selection for the JDK path, distinct from SslProvider above
+#   trustManager(File)                                 contracted (config, arity 1)
+#   trustManager(InputStream)                          contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   trustManager(X509Certificate...)                   contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   trustManager(Iterable)                             contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   trustManager(TrustManagerFactory)                  contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   trustManager(TrustManager)                         contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   keyManager(KeyManagerFactory)                      contracted (config, arity 1)
+#   keyManager(KeyManager)                             contracted (config, arity 1) — collapsed into the arity-1 entry above
+#   keyManager(File,File)                              contracted (config, arity 2)
+#   keyManager(InputStream,InputStream)                contracted (config, arity 2) — collapsed into the arity-2 entry above
+#   keyManager(PrivateKey,X509Certificate...)          contracted (config, arity 2) — collapsed into the arity-2 entry above
+#   keyManager(PrivateKey,Iterable)                    contracted (config, arity 2) — collapsed into the arity-2 entry above
+#   keyManager(File,File,String)                       contracted (config, arity 3)
+#   keyManager(InputStream,InputStream,String)         contracted (config, arity 3) — collapsed into the arity-3 entry above
+#   keyManager(PrivateKey,String,X509Certificate...)   contracted (config, arity 3) — collapsed into the arity-3 entry above
+#   keyManager(PrivateKey,String,Iterable)             contracted (config, arity 3) — collapsed into the arity-3 entry above
+#   addCredential(OpenSslCredential)                    contracted (config, arity 1) — BoringSSL-only multi-cert credential
+#   addCredentials(OpenSslCredential...)                contracted (config, arity 1) — collapsed with its own Iterable overload (same arity/return)
+#   addCredentials(Iterable)                            contracted (config, arity 1) — collapsed into the arity-1 addCredentials entry above
+#   ciphers(Iterable)                                   contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.ciphers)
+#   ciphers(Iterable,CipherSuiteFilter)                 contracted (config, arity 2)
+#   applicationProtocolConfig(ApplicationProtocolConfig) contracted (config, arity 1) — ALPN negotiation config; not itself a crypto primitive (per audit report) but a required link in the fluent chain
+#   sessionCacheSize(long)                               contracted (config, arity 1)
+#   sessionTimeout(long)                                 contracted (config, arity 1)
+#   clientAuth(ClientAuth)                               contracted (config, arity 1)
+#   protocols(String...)                                 contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.protocols); param 0 contributes "protocolVersion" (argument_value)
+#   protocols(Iterable)                                  contracted (config, arity 1) — collapsed into the arity-1 protocols entry above
+#   startTls(boolean)                                    contracted (config, arity 1)
+#   enableOcsp(boolean)                                  contracted (config, arity 1)
+#   secureRandom(SecureRandom)                           contracted (config, arity 1)
+#   endpointIdentificationAlgorithm(String)              contracted (config, arity 1)
+#   serverName(SNIServerName)                            contracted (config, arity 1) — client-only SNI; build() still throws server-side, chain shape is identical
+#   build()                                              contracted (factory, arity 0) — terminal builder call; produces the SslContext engine object (issue AC: "Resolve build() to SslContext")
+#
+# Out of scope / follow-up:
+#   io.netty.handler.ssl.SslContext.newEngine(...)/.newHandler(...) — the
+#   SSLEngine/SslHandler "engine-producing" step that consumes an already-built
+#   SslContext — needs-follow-up. Issue #183's AC and the joined
+#   crypto_rules#168 rules anchor only on SslContextBuilder.{forClient,
+#   forServer, sslProvider, protocols, ciphers} plus the server key-material
+#   rule; SslContext's own instance methods are a distinct class outside this
+#   builder-lifecycle ticket's narrow scope.
+#
+# Note on scope boundary: no `when:` conditional contracts are declared. Every
+# contracted method's return type is fixed (SslContextBuilder, or SslContext
+# for build()) regardless of the SslProvider/protocol/cipher values a caller
+# passes in — unlike e.g. Cipher.unwrap, where the mode argument selects the
+# Java return type. The two `parameters:` entries below (sslProvider,
+# protocols) only carry METADATA (which literal was selected), never a
+# return-type selection, and duplicate no parameterCondition grammar: the
+# actual condition matching (param[0]==SslProvider.JDK, etc.) stays owned by
+# crypto_rules#168's rule metadata, per the crypto-kb-author skill's
+# "Condition and provider ownership" rule.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── Factories: forClient()/forServer(...) create the builder itself ────────
+
+  - method: io.netty.handler.ssl.SslContextBuilder.forClient
+    arity: 0
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: factory
+
+  - method: io.netty.handler.ssl.SslContextBuilder.forServer
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: factory
+
+  - method: io.netty.handler.ssl.SslContextBuilder.forServer
+    arity: 2
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: factory
+
+  - method: io.netty.handler.ssl.SslContextBuilder.forServer
+    arity: 3
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: factory
+
+  # ── Fluent configuration: every method self-returns SslContextBuilder ──────
+
+  - method: io.netty.handler.ssl.SslContextBuilder.option
+    arity: 2
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.sslProvider
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: provider
+        role: metadata-contributing
+        contributes:
+          property: provider
+          derivation: argument_value
+
+  - method: io.netty.handler.ssl.SslContextBuilder.keyStoreType
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.sslContextProvider
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.trustManager
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.keyManager
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.keyManager
+    arity: 2
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.keyManager
+    arity: 3
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.addCredential
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.addCredentials
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.ciphers
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.ciphers
+    arity: 2
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.applicationProtocolConfig
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.sessionCacheSize
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.sessionTimeout
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.clientAuth
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.protocols
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: protocols
+        role: metadata-contributing
+        contributes:
+          property: protocolVersion
+          derivation: argument_value
+
+  - method: io.netty.handler.ssl.SslContextBuilder.startTls
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.enableOcsp
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.secureRandom
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.endpointIdentificationAlgorithm
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  - method: io.netty.handler.ssl.SslContextBuilder.serverName
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+    role: config
+
+  # ── Terminal: build() produces the SslContext engine object ────────────────
+
+  - method: io.netty.handler.ssl.SslContextBuilder.build
+    arity: 0
+    return:
+      type: io.netty.handler.ssl.SslContext
+      confidence: high
+    role: factory
+
+hierarchy:
+  io.netty.handler.ssl.SslContextBuilder:
+    - java.lang.Object
+  io.netty.handler.ssl.SslContext:
+    - java.lang.Object
+  java.lang.Object: []

@@ -264,3 +264,108 @@ func TestLoadEmbeddedJava_NimbusAndSpringLifecycleCoverage(t *testing.T) {
 		t.Fatalf("RsaSecretEncryptor hierarchy = %v, want BytesEncryptor and TextEncryptor", parents)
 	}
 }
+
+// TestLoadEmbeddedJava_NettyTLSBuilderLifecycle verifies the Netty
+// SslContextBuilder fluent lifecycle contracts (scanoss/crypto-finder#183):
+// forClient/forServer factories, the self-returning fluent configuration
+// methods (sslProvider, protocols, ciphers, keyManager, trustManager, and the
+// remaining builder methods), and the build() terminal that produces the
+// SslContext engine object — including the return types, lifecycle roles,
+// and the rules-anchor api FQNs (scanoss/crypto_rules#168) they must resolve
+// through.
+func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	const builder = "io.netty.handler.ssl.SslContextBuilder"
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		// Factories.
+		{builder + ".forClient", 0, builder, "factory"},
+		{builder + ".forServer", 1, builder, "factory"},
+		{builder + ".forServer", 2, builder, "factory"},
+		{builder + ".forServer", 3, builder, "factory"},
+		// Fluent configuration — every method self-returns SslContextBuilder,
+		// which is what lets the chain keep resolving across every call.
+		{builder + ".option", 2, builder, "config"},
+		{builder + ".sslProvider", 1, builder, "config"},
+		{builder + ".keyStoreType", 1, builder, "config"},
+		{builder + ".sslContextProvider", 1, builder, "config"},
+		{builder + ".trustManager", 1, builder, "config"},
+		{builder + ".keyManager", 1, builder, "config"},
+		{builder + ".keyManager", 2, builder, "config"},
+		{builder + ".keyManager", 3, builder, "config"},
+		{builder + ".addCredential", 1, builder, "config"},
+		{builder + ".addCredentials", 1, builder, "config"},
+		{builder + ".ciphers", 1, builder, "config"},
+		{builder + ".ciphers", 2, builder, "config"},
+		{builder + ".applicationProtocolConfig", 1, builder, "config"},
+		{builder + ".sessionCacheSize", 1, builder, "config"},
+		{builder + ".sessionTimeout", 1, builder, "config"},
+		{builder + ".clientAuth", 1, builder, "config"},
+		{builder + ".protocols", 1, builder, "config"},
+		{builder + ".startTls", 1, builder, "config"},
+		{builder + ".enableOcsp", 1, builder, "config"},
+		{builder + ".secureRandom", 1, builder, "config"},
+		{builder + ".endpointIdentificationAlgorithm", 1, builder, "config"},
+		{builder + ".serverName", 1, builder, "config"},
+		// Terminal: build() produces the SslContext engine object.
+		{builder + ".build", 0, "io.netty.handler.ssl.SslContext", "factory"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			c := got[0]
+			if c.Return.Type != tt.want || c.Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, c, tt.want, tt.role)
+			}
+			if c.Return.Confidence != "high" {
+				t.Fatalf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+			}
+			if c.SourceLibrary != "netty-tls" {
+				t.Fatalf("%s#%d source library = %q, want netty-tls", tt.method, tt.arity, c.SourceLibrary)
+			}
+		})
+	}
+
+	// sslProvider's SslProvider argument (index 0) contributes a "provider"
+	// metadata role, mirroring the RSAKeyGenerator keySize pattern above.
+	sslProvider := kb.ContractsFor(builder+".sslProvider", 1)
+	if len(sslProvider) != 1 || len(sslProvider[0].Parameters) != 1 {
+		t.Fatalf("sslProvider#1 parameters = %#v, want a single provider parameter role", sslProvider)
+	}
+	if p := sslProvider[0].Parameters[0]; p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" ||
+		p.Contributes == nil || p.Contributes.Property != "provider" || p.Contributes.Derivation != "argument_value" {
+		t.Fatalf("sslProvider#1 parameters[0] = %#v, want index=0 provider/argument_value", p)
+	}
+
+	// protocols' String... argument (index 0) contributes a "protocolVersion"
+	// metadata role.
+	protocols := kb.ContractsFor(builder+".protocols", 1)
+	if len(protocols) != 1 || len(protocols[0].Parameters) != 1 {
+		t.Fatalf("protocols#1 parameters = %#v, want a single protocolVersion parameter role", protocols)
+	}
+	if p := protocols[0].Parameters[0]; p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" ||
+		p.Contributes == nil || p.Contributes.Property != "protocolVersion" || p.Contributes.Derivation != "argument_value" {
+		t.Fatalf("protocols#1 parameters[0] = %#v, want index=0 protocolVersion/argument_value", p)
+	}
+
+	for _, typ := range []string{builder, "io.netty.handler.ssl.SslContext"} {
+		if len(kb.Hierarchy[typ]) == 0 {
+			t.Errorf("hierarchy[%q] is empty", typ)
+		}
+	}
+}

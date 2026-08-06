@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Python callgraph contracts now model the version-pinned jwcrypto 1.5.8 JOSE lifecycle: JWK generation and import factories, JWS sign/verify operations, JWE encrypt/decrypt operations, and the JWT sign/encrypt wrapper, including factory/config/operation/output lifecycle roles and a keyType parameter-role derivation on `JWK.generate`. (#181)
+- Java callgraph contracts now model the Netty 4.2 (`netty-handler`) `SslContextBuilder` TLS builder lifecycle: the `forClient`/`forServer` factories, the self-returning fluent configuration methods (`sslProvider`, `protocols`, `ciphers`, `keyManager`, `trustManager`, and the remaining builder methods), and the `build()` terminal that produces the `SslContext` engine object, including `provider`/`protocolVersion` parameter-role derivations and the factory/config lifecycle roles the exported `supporting_calls` carry as `category`. (#183)
 - Go callgraph contracts now model the standard library's rule-covered symmetric, public-key, KDF, MAC, digest, random, TLS, and X.509 cryptographic lifecycles. (#76)
 - Go callgraph contracts now model the rule-covered `golang.org/x/crypto` hashing, cipher, KDF, key, certificate, and protocol lifecycles. (#77)
 - Node callgraph builds now load embedded schema-v2 contract knowledge bases and select the Node contract type resolver. (#82)
