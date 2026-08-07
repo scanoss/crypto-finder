@@ -370,3 +370,93 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadEmbeddedJava_SpringSecurityCrypto71EncoderLifecycle is the
+// scanoss/crypto-finder#182 acceptance test: the version-pinned 7.1 KB
+// (spring-security-crypto-7.1.yaml) loads alongside the pre-existing 6.3.4 KB
+// (spring-security-crypto.yaml) without conflict, contracts the new
+// password4j-backed encoder constructors, the PasswordEncoderFactories
+// default DelegatingPasswordEncoder factory, the hand-rolled BCrypt static
+// terminal, and the previously-uncontracted AesBytesEncryptor/Encryptors.delux
+// surface -- and that the 6.3.4 PasswordEncoder.encode/matches/
+// upgradeEncoding contract still resolves for the new password4j encoder
+// classes purely through hierarchy (no per-class override is authored).
+func TestLoadEmbeddedJava_SpringSecurityCrypto71EncoderLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		{"org.springframework.security.crypto.bcrypt.BCrypt.hashpw", 2, "java.lang.String", "operation"},
+		{"org.springframework.security.crypto.bcrypt.BCrypt.checkpw", 2, "boolean", "operation"},
+		{"org.springframework.security.crypto.bcrypt.BCrypt.gensalt", 0, "java.lang.String", "factory"},
+		{"org.springframework.security.crypto.bcrypt.BCrypt.gensalt", 1, "java.lang.String", "factory"},
+		{"org.springframework.security.crypto.bcrypt.BCrypt.gensalt", 2, "java.lang.String", "factory"},
+		{"org.springframework.security.crypto.bcrypt.BCrypt.gensalt", 3, "java.lang.String", "factory"},
+		{
+			"org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder",
+			0, "org.springframework.security.crypto.password.DelegatingPasswordEncoder", "factory",
+		},
+		{"org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder.<init>", 0, "org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder.<init>", 1, "org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder.<init>", 0, "org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder.<init>", 1, "org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder.<init>", 2, "org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder.<init>", 2, "org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>", 2, "org.springframework.security.crypto.encrypt.AesBytesEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>", 3, "org.springframework.security.crypto.encrypt.AesBytesEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>", 4, "org.springframework.security.crypto.encrypt.AesBytesEncryptor", "factory"},
+		{"org.springframework.security.crypto.encrypt.Encryptors.delux", 2, "org.springframework.security.crypto.encrypt.TextEncryptor", "factory"},
+		// Preserved-meaning check: the pre-existing 6.3.4 entries must be
+		// untouched by the new 7.1 file (issue AC: "without weakening the
+		// existing 6.3.4 contract").
+		{"org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder.<init>", 0, "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder", "factory"},
+		{"org.springframework.security.crypto.encrypt.Encryptors.standard", 2, "org.springframework.security.crypto.encrypt.BytesEncryptor", "factory"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, got[0], tt.want, tt.role)
+			}
+		})
+	}
+
+	// The new password4j encoder classes must resolve encode/matches purely
+	// via hierarchy into the pre-existing 6.3.4 PasswordEncoder contract --
+	// no per-class override is authored in spring-security-crypto-7.1.yaml.
+	for _, class := range []string{
+		"org.springframework.security.crypto.password4j.BcryptPassword4jPasswordEncoder",
+		"org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder",
+		"org.springframework.security.crypto.password4j.ScryptPassword4jPasswordEncoder",
+		"org.springframework.security.crypto.password4j.Pbkdf2Password4jPasswordEncoder",
+		"org.springframework.security.crypto.password4j.BalloonHashingPassword4jPasswordEncoder",
+	} {
+		parents := kb.Hierarchy[class]
+		if len(parents) != 1 || parents[0] != "org.springframework.security.crypto.password.PasswordEncoder" {
+			t.Errorf("%s hierarchy = %v, want [PasswordEncoder]", class, parents)
+		}
+		if encode := kb.ContractsFor(class+".encode", 1); len(encode) != 0 {
+			t.Errorf("%s.encode#1 should not be directly contracted (resolves via PasswordEncoder hierarchy), got %#v", class, encode)
+		}
+	}
+
+	if parents := kb.Hierarchy["org.springframework.security.crypto.encrypt.AesBytesEncryptor"]; len(parents) != 1 || parents[0] != "org.springframework.security.crypto.encrypt.BytesEncryptor" {
+		t.Fatalf("AesBytesEncryptor hierarchy = %v, want [BytesEncryptor]", parents)
+	}
+	if parents := kb.Hierarchy["org.springframework.security.crypto.password.DelegatingPasswordEncoder"]; len(parents) != 1 || parents[0] != "org.springframework.security.crypto.password.PasswordEncoder" {
+		t.Fatalf("DelegatingPasswordEncoder hierarchy = %v, want [PasswordEncoder]", parents)
+	}
+}
