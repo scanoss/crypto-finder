@@ -11,10 +11,10 @@ import (
 // scanoss/crypto-finder#184 acceptance test: the version-pinned 10.0.2 KB
 // (nimbus-jose-jwt-10.0.2.yaml) loads alongside the pre-existing 9.37.3 KB
 // (nimbus-jose-jwt.yaml) without conflict, contracts the new
-// JOSEObjectJSON/JWSObjectJSON/JWEObjectJSON JSON-serialisation family --
+// JOSEObjectJSON/JWSObjectJSON/JWEObjectJSON JSON-serialization family --
 // parse/construct (factory), sign/verify and encrypt/decrypt (operation),
-// and the general/flattened serialisation methods (output) -- and that the
-// 9.37.3 JWSObject/JWEObject compact-serialisation contracts are untouched.
+// and the general/flattened serialization methods (output) -- and that the
+// 9.37.3 JWSObject/JWEObject compact-serialization contracts are untouched.
 func TestLoadEmbeddedJava_NimbusJoseJwt1002JSONLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -99,7 +99,7 @@ func TestLoadEmbeddedJava_NimbusJoseJwt1002JSONLifecycle(t *testing.T) {
 		})
 	}
 
-	// Preserved-meaning check: the pre-existing 9.37.3 compact-serialisation
+	// Preserved-meaning check: the pre-existing 9.37.3 compact-serialization
 	// entries must be untouched by the new 10.0.2 file (issue AC: "preserving
 	// the working 9.37.3 model").
 	preserved := []struct {

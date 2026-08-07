@@ -19,7 +19,7 @@ import (
 // 7.1 test (spring_security_crypto_71_export_test.go) exercise, for a
 // synthesized-entry-point finding anchored on JWSObjectJSON.<init> /
 // JWEObjectJSON.<init>: construct (factory), sign/encrypt/decrypt
-// (operation), the general/flattened serialisation methods (output), and
+// (operation), the general/flattened serialization methods (output), and
 // parse (factory) all resolve through deriveContractSupportingCalls
 // (internal/scan/export.go), which walks the contract KB by builder-type
 // lineage rather than requiring an in-source call chain.

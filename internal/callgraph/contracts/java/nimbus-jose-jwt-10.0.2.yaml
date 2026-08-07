@@ -7,11 +7,11 @@ library:
     - "com.nimbusds:nimbus-jose-jwt"
   version_range: ">=10.0.0,<10.1.0"
   description: >-
-    Nimbus JOSE+JWT 10.0.2 JSON serialisation lifecycle contracts, additive
+    Nimbus JOSE+JWT 10.0.2 JSON serialization lifecycle contracts, additive
     to the version-pinned 9.37.3 KB (nimbus-jose-jwt.yaml), which is left
     untouched: the JOSEObjectJSON/JWSObjectJSON/JWEObjectJSON family
     (RFC 7515 §7.2 / RFC 7516 §7.2 general and flattened JSON
-    serialisation), their nested Signature/Recipient value types, and the
+    serialization), their nested Signature/Recipient value types, and the
     parse/construct, sign/verify, encrypt/decrypt, and serialization roles
     across that surface. Verified against nimbus-jose-jwt 10.0.2 source
     (com/nimbusds/jose/{JOSEObjectJSON,JSONSerializable,JWSObjectJSON,
@@ -258,7 +258,7 @@ library:
 #                                                (complete() -> Base64URL) on
 #                                                the existing COMPACT
 #                                                JWSObject.sign() path, not
-#                                                the JSON serialisation
+#                                                the JSON serialization
 #                                                surface this ticket audits;
 #                                                a distinct feature area,
 #                                                left for a follow-up ticket
@@ -342,7 +342,7 @@ contracts:
     return: { type: com.nimbusds.jose.JWSObjectJSON, confidence: high }
     role: factory
 
-  # ── JWSObjectJSON: JWS JSON serialisation lifecycle ─────────────────────────
+  # ── JWSObjectJSON: JWS JSON serialization lifecycle ─────────────────────────
   - method: com.nimbusds.jose.JWSObjectJSON.<init>
     arity: 1
     return: { type: com.nimbusds.jose.JWSObjectJSON, confidence: high }
@@ -399,7 +399,7 @@ contracts:
     return: { type: boolean, confidence: high }
     role: operation
 
-  # ── JWEObjectJSON: JWE JSON serialisation lifecycle ─────────────────────────
+  # ── JWEObjectJSON: JWE JSON serialization lifecycle ─────────────────────────
   - method: com.nimbusds.jose.JWEObjectJSON.<init>
     arity: 1
     return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
