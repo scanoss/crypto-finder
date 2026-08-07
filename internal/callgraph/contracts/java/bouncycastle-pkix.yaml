@@ -1,0 +1,872 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: bouncycastle-pkix
+  coordinates:
+    - "org.bouncycastle:bcpkix-jdk18on"
+  version_range: ">=1.78,<2.0"
+  description: >-
+    Bouncy Castle bcpkix PKI builder lifecycle contracts -- X.509 certificate
+    builders (org.bouncycastle.cert), CMS signed/enveloped-data generators and
+    the SignerInfoGenerator/content-encryptor builders that feed them
+    (org.bouncycastle.cms), the ContentSigner/ContentVerifierProvider/
+    DigestCalculatorProvider operator builders shared across cert/CMS/PKCS/OCSP
+    (org.bouncycastle.operator), the PKCS#10 certification-request builder
+    (org.bouncycastle.pkcs), and the OCSPReqBuilder request lifecycle
+    (org.bouncycastle.cert.ocsp). Declared separately from the bcprov
+    lightweight-API coverage in bouncycastle.yaml, which bcpkix depends on but
+    does not overlap namespace-wise. Verified against bcpkix-jdk18on 1.84
+    sources (org/bouncycastle/{cert,cms,operator,pkcs}/**).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#185)
+#
+# Scope per issue AC: "the smallest high-level CMS, PKIX, and operator
+# lifecycle contract needed for Bouncy Castle bcpkix joins" -- the builder-
+# heavy factory/config/operation/output surfaces of org.bouncycastle.{cert,
+# cms,operator,pkcs} plus the OCSPReqBuilder request lifecycle named in the
+# task brief, grounded in the two existing scanoss/crypto_rules anchors this
+# ticket must join (crypto-rules/semgrep-rules/java/bouncycastle/protocol/cms/
+# rules.yaml: org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init> and
+# org.bouncycastle.cms.CMSSignedDataGenerator.<init>) and extended to the
+# builder classes that construct the ContentSigner/OutputEncryptor/
+# SignerInfoGenerator objects those two rule sinks and CMS generators actually
+# consume, plus the X.509/PKCS#10 certificate-request builder pair the issue's
+# "PKIX/certificate" AC line names explicitly. Every public method/constructor
+# on the classes below was inventoried against bcpkix-jdk18on 1.84 source.
+# Disposition legend: contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# org.bouncycastle.cert.X509v3CertificateBuilder (core builder; no rule anchor
+# exists yet for direct instantiation, but named explicitly in the issue's
+# task brief as the canonical bcpkix builder shape)
+#   <init>(X500Name,BigInteger,Date,Date,X500Name,SubjectPublicKeyInfo)         contracted (factory, arity 6)
+#   <init>(X500Name,BigInteger,Time,Time,X500Name,SubjectPublicKeyInfo)        contracted (factory, arity 6) -- collapsed into the arity-6 entry above (identical return)
+#   <init>(X500Name,BigInteger,Date,Date,Locale,X500Name,SubjectPublicKeyInfo) contracted (factory, arity 7)
+#   <init>(X509CertificateHolder template)                                     contracted (factory, arity 1)
+#   setSubjectUniqueID(boolean[])                                              contracted (config, arity 1)
+#   setIssuerUniqueID(boolean[])                                               contracted (config, arity 1)
+#   addExtension(oid,critical,ASN1Encodable)                                   contracted (config, arity 3)
+#   addExtension(oid,critical,byte[])                                          contracted (config, arity 3) -- collapsed into the arity-3 entry above (identical return)
+#   addExtension(Extension)                                                    contracted (config, arity 1)
+#   replaceExtension(oid,critical,ASN1Encodable)                               contracted (config, arity 3)
+#   replaceExtension(oid,critical,byte[])                                      contracted (config, arity 3) -- collapsed into the arity-3 entry above
+#   replaceExtension(Extension)                                                contracted (config, arity 1)
+#   removeExtension(ASN1ObjectIdentifier)                                      contracted (config, arity 1)
+#   copyAndAddExtension(oid,critical,X509CertificateHolder)                    contracted (config, arity 3)
+#   build(ContentSigner)                                                       contracted (factory, arity 1) -- terminal, produces X509CertificateHolder
+#   build(ContentSigner,boolean,ContentSigner)                                 contracted (factory, arity 3) -- terminal, delta/alt-signature variant
+#   hasExtension(ASN1ObjectIdentifier)/getExtension(ASN1ObjectIdentifier)      skipped-informative-return -- read-only accessors returning already-specific ASN.1 types, not part of the fluent build chain
+#
+# org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder (extends
+# X509v3CertificateBuilder -- addExtension/build/etc. resolve via the
+# inherited base contract + the hierarchy edge below, per the skill's "prefer
+# the shared interface" rule; only the subclass's OWN constructors and its
+# genuinely distinct copyAndAddExtension(X509Certificate) override are
+# authored here)
+#   <init>(X500Name,BigInteger,Date,Date,X500Name,SubjectPublicKeyInfo)        contracted (factory, arity 6)
+#   <init>(X500Name,BigInteger,Date,Date,X500Name,PublicKey)                   contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   <init>(X500Name,BigInteger,Time,Time,X500Name,PublicKey)                   contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   <init>(X500Principal,BigInteger,Date,Date,X500Principal,PublicKey)         contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   <init>(X509Certificate,BigInteger,Date,Date,X500Principal,PublicKey)       contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   <init>(X509Certificate,BigInteger,Date,Date,X500Name,PublicKey)            contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   <init>(X509Certificate template)                                           contracted (factory, arity 1)
+#   copyAndAddExtension(oid,critical,X509Certificate)                          contracted (config, arity 3) -- distinct override: X509Certificate param + covariant JcaX509v3CertificateBuilder return, not a copy of the base's X509CertificateHolder-typed overload
+#   addExtension/replaceExtension/removeExtension/build/setSubjectUniqueID/
+#   setIssuerUniqueID (all inherited, not overridden)                         covered-existing -- resolve via X509v3CertificateBuilder's contracts through the hierarchy edge below
+#
+# org.bouncycastle.cert.bc.BcX509v3CertificateBuilder (extends
+# X509v3CertificateBuilder; same inheritance reasoning as the Jca variant)
+#   <init>(X500Name,BigInteger,Date,Date,X500Name,AsymmetricKeyParameter)          contracted (factory, arity 6)
+#   <init>(X509CertificateHolder,BigInteger,Date,Date,X500Name,AsymmetricKeyParameter) contracted (factory, arity 6) -- collapsed into the arity-6 entry above
+#   addExtension/replaceExtension/removeExtension/build (all inherited)       covered-existing -- via hierarchy edge below
+#
+# org.bouncycastle.cert.jcajce.JcaX509CertificateConverter (the BC-holder ->
+# JCA-certificate bridge every cert-issuance chain ends with)
+#   <init>()                                                                   contracted (factory, arity 0)
+#   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed, identical return
+#   getCertificate(X509CertificateHolder)                                      contracted (operation, arity 1) -- high-leverage: converts the BC-native holder into the JCA java.security.cert.X509Certificate the rest of the JDK trusts
+#
+# org.bouncycastle.operator.jcajce.JcaContentSignerBuilder (rule anchor:
+# crypto_rules protocol/cms/rules.yaml pattern-sink `new
+# JcaContentSignerBuilder($ALGO)`, tagged under the CMSSignedDataGenerator
+# api; also the ContentSigner factory X509v3CertificateBuilder.build and
+# PKCS10CertificationRequestBuilder.build consume)
+#   <init>(String signatureAlgorithm)                                          contracted (factory, arity 1)
+#   <init>(String,PublicKey)                                                   contracted (factory, arity 2)
+#   <init>(String,AlgorithmIdentifier)                                         contracted (factory, arity 2) -- collapsed into the arity-2 entry above
+#   <init>(String,AlgorithmParameterSpec)                                      contracted (factory, arity 2) -- collapsed into the arity-2 entry above
+#   <init>(String,AlgorithmParameterSpec,AlgorithmIdentifier)                  contracted (factory, arity 3)
+#   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed
+#   setSecureRandom(SecureRandom)                                              contracted (config, arity 1)
+#   build(PrivateKey)                                                          contracted (factory, arity 1) -- terminal, produces org.bouncycastle.operator.ContentSigner; algorithmName param (index 0 of the constructor) is the rule-anchor's own metadata-selection argument, already owned by crypto_rules -- no `parameters:` derivation duplicated here per the "condition and provider ownership" rule
+#
+# org.bouncycastle.operator.bc.BcContentSignerBuilder (abstract; rule anchor:
+# crypto_rules pattern-sink text `new BcContentSignerBuilder($ALGO)`, which
+# does not match this class's real arity-2 constructor since the class is
+# abstract and not directly instantiable -- the rule's own precision gap is
+# out of this KB's scope. build()'s shared declaration is authored on the
+# abstract base per "prefer the shared interface"; the base's own
+# constructor is NOT contracted since no call site can ever instantiate an
+# abstract class directly)
+#   setSecureRandom(SecureRandom)                                              contracted (config, arity 1)
+#   build(AsymmetricKeyParameter)                                              contracted (factory, arity 1) -- terminal, produces ContentSigner; shared by every Bc*ContentSignerBuilder subclass via the hierarchy edges below
+#
+# org.bouncycastle.operator.bc.{Bc RSA,EC,DSA}ContentSignerBuilder (concrete
+# algorithm-specific subclasses -- own constructor only, build() inherited)
+#   BcRSAContentSignerBuilder.<init>(AlgorithmIdentifier,AlgorithmIdentifier)   contracted (factory, arity 2)
+#   BcECContentSignerBuilder.<init>(AlgorithmIdentifier,AlgorithmIdentifier)    contracted (factory, arity 2)
+#   BcDSAContentSignerBuilder.<init>(AlgorithmIdentifier,AlgorithmIdentifier)   contracted (factory, arity 2)
+#   BcEdECContentSignerBuilder, BcHssLmsContentSignerBuilder                    needs-follow-up -- same shape, out of this ticket's "smallest" surface; add alongside their post-quantum/EdDSA rule anchors when those land
+#
+# org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder (the
+# verification-side counterpart JcaContentSignerBuilder pairs with)
+#   <init>()                                                                   contracted (factory, arity 0)
+#   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed
+#   build(X509CertificateHolder)/build(X509Certificate)/build(PublicKey)/
+#   build(SubjectPublicKeyInfo)                                                contracted (factory, arity 1) -- all four overloads share arity 1 and an identical ContentVerifierProvider return, collapsed per the netty-tls.yaml overload-collapsing precedent
+#
+# org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder (abstract;
+# same inheritance reasoning as BcContentSignerBuilder -- own no-arg
+# constructor not contracted, build() authored on the shared base)
+#   build(X509CertificateHolder)/build(AsymmetricKeyParameter)                 contracted (factory, arity 1) -- collapsed, identical ContentVerifierProvider return
+#   BcRSAContentVerifierProviderBuilder.<init>(DigestAlgorithmIdentifierFinder) contracted (factory, arity 1)
+#   BcECContentVerifierProviderBuilder.<init>(DigestAlgorithmIdentifierFinder)  contracted (factory, arity 1)
+#   BcDSAContentVerifierProviderBuilder.<init>(DigestAlgorithmIdentifierFinder) contracted (factory, arity 1)
+#   BcEdDSAContentVerifierProviderBuilder, BcHssLmsContentVerifierProviderBuilder needs-follow-up -- same reasoning as the signer-builder siblings above
+#
+# org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder (the
+# DigestCalculatorProvider every SignerInfoGeneratorBuilder needs)
+#   <init>()                                                                   contracted (factory, arity 0)
+#   setHelper(JcaJceHelper)                                                    contracted (config, arity 1)
+#   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed
+#   build()                                                                    contracted (factory, arity 0) -- terminal, produces org.bouncycastle.operator.DigestCalculatorProvider
+#
+# org.bouncycastle.cms.CMSSignedDataGenerator (rule anchor:
+# crypto_rules#cms.signature api = org.bouncycastle.cms.CMSSignedDataGenerator.<init>)
+#   <init>()                                                                   contracted (factory, arity 0)
+#   <init>(DigestAlgorithmIdentifierFinder)                                    contracted (factory, arity 1)
+#   setDefiniteLengthEncoding(boolean)                                        contracted (config, arity 1)
+#   setEncoding(String)                                                        contracted (config, arity 1)
+#   generate(CMSTypedData)                                                     contracted (operation, arity 1) -- terminal; computes the CMS signature over the content, produces CMSSignedData
+#   generate(CMSTypedData,boolean)                                             contracted (operation, arity 2) -- terminal; computes the CMS signature
+#   generateCounterSigners(SignerInformation)                                  contracted (operation, arity 1) -- returns SignerInformationStore
+#
+# org.bouncycastle.cms.CMSSignedGenerator (shared base CMSSignedDataGenerator
+# and CMSSignedDataStreamGenerator both extend -- config methods authored here
+# so both subclasses resolve them via the hierarchy edge)
+#   addCertificate(X509CertificateHolder)                                      contracted (config, arity 1)
+#   addCertificates(Store)                                                     contracted (config, arity 1)
+#   addCRL(X509CRLHolder)                                                      contracted (config, arity 1)
+#   addCRLs(Store)                                                             contracted (config, arity 1)
+#   addAttributeCertificate(X509AttributeCertificateHolder)                    contracted (config, arity 1)
+#   addAttributeCertificates(Store)                                            contracted (config, arity 1)
+#   addSigners(SignerInformationStore)                                         contracted (config, arity 1)
+#   addSignerInfoGenerator(SignerInfoGenerator)                                contracted (config, arity 1)
+#   addDigestAlgorithms(Set)                                                   contracted (config, arity 1)
+#   addOtherRevocationInfo(oid,ASN1Encodable)/addOtherRevocationInfo(oid,Store) needs-follow-up -- rarely-used other-revocation-info escape hatch, out of this ticket's "smallest" surface
+#   getGeneratedDigests()                                                      skipped-informative-return -- returns a plain Map snapshot, not part of the builder lifecycle
+#
+# org.bouncycastle.cms.CMSEnvelopedDataGenerator (rule anchor:
+# crypto_rules#cms.encryption api = org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init>)
+#   <init>()                                                                   contracted (factory, arity 0)
+#   generate(CMSTypedData,OutputEncryptor)                                     contracted (operation, arity 2) -- terminal; encrypts the content, produces CMSEnvelopedData
+#
+# org.bouncycastle.cms.CMSEnvelopedGenerator (shared base
+# CMSEnvelopedDataGenerator/CMSEnvelopedDataStreamGenerator/
+# CMSAuthEnvelopedGenerator extend)
+#   setUnprotectedAttributeGenerator(CMSAttributeTableGenerator)               contracted (config, arity 1)
+#   setOriginatorInfo(OriginatorInformation)                                   contracted (config, arity 1)
+#   addRecipientInfoGenerator(RecipientInfoGenerator)                          contracted (config, arity 1)
+#
+# org.bouncycastle.cms.SignerInfoGeneratorBuilder (the object
+# addSignerInfoGenerator above consumes; needs a ContentSigner + a
+# DigestCalculatorProvider to build)
+#   <init>(DigestCalculatorProvider)                                           contracted (factory, arity 1)
+#   <init>(DigestCalculatorProvider,CMSSignatureEncryptionAlgorithmFinder)     contracted (factory, arity 2)
+#   setDirectSignature(boolean)                                                contracted (config, arity 1)
+#   setContentDigest(AlgorithmIdentifier)                                      contracted (config, arity 1)
+#   setSignedAttributeGenerator(CMSAttributeTableGenerator)                    contracted (config, arity 1)
+#   setUnsignedAttributeGenerator(CMSAttributeTableGenerator)                  contracted (config, arity 1)
+#   build(ContentSigner,X509CertificateHolder)                                 contracted (factory, arity 2) -- terminal, produces SignerInfoGenerator
+#   build(ContentSigner,byte[])                                                contracted (factory, arity 2) -- collapsed into the arity-2 entry above (identical return)
+#
+# org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder (standalone JCA
+# wrapper -- composes an internal SignerInfoGeneratorBuilder rather than
+# extending it, so it needs its OWN full contract set, not just a hierarchy
+# edge)
+#   <init>(DigestCalculatorProvider)                                           contracted (factory, arity 1)
+#   <init>(DigestCalculatorProvider,CMSSignatureEncryptionAlgorithmFinder)     contracted (factory, arity 2)
+#   setDirectSignature(boolean)                                                contracted (config, arity 1)
+#   setContentDigest(AlgorithmIdentifier)                                      contracted (config, arity 1)
+#   setSignedAttributeGenerator(CMSAttributeTableGenerator)                    contracted (config, arity 1)
+#   setUnsignedAttributeGenerator(CMSAttributeTableGenerator)                  contracted (config, arity 1)
+#   build(ContentSigner,X509CertificateHolder)                                 contracted (factory, arity 2) -- terminal
+#   build(ContentSigner,byte[])                                                contracted (factory, arity 2) -- collapsed into the arity-2 entry above
+#   build(ContentSigner,X509Certificate)                                       contracted (factory, arity 2) -- collapsed into the arity-2 entry above
+#
+# org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder (the
+# OutputEncryptor factory CMSEnvelopedDataGenerator.generate consumes)
+#   <init>(ASN1ObjectIdentifier)                                               contracted (factory, arity 1)
+#   <init>(AlgorithmIdentifier)                                                contracted (factory, arity 1) -- collapsed into the arity-1 entry above
+#   <init>(ASN1ObjectIdentifier,int keySize)                                   contracted (factory, arity 2)
+#   setEnableSha256HKdf(boolean)                                               contracted (config, arity 1)
+#   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed
+#   setSecureRandom(SecureRandom)                                              contracted (config, arity 1)
+#   setAlgorithmParameters(AlgorithmParameters)                                contracted (config, arity 1)
+#   build()                                                                    contracted (factory, arity 0) -- terminal, produces org.bouncycastle.operator.OutputEncryptor
+#   build(byte[])/build(SecretKey)                                             contracted (factory, arity 1) -- collapsed, identical OutputEncryptor return
+#
+# org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder (BC-lightweight
+# counterpart of JceCMSContentEncryptorBuilder)
+#   <init>(ASN1ObjectIdentifier)                                               contracted (factory, arity 1)
+#   <init>(ASN1ObjectIdentifier,int keySize)                                   contracted (factory, arity 2)
+#   setSecureRandom(SecureRandom)                                              contracted (config, arity 1)
+#   build()                                                                    contracted (factory, arity 0) -- terminal
+#   build(byte[])                                                              contracted (factory, arity 1) -- terminal
+#
+# org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder (issue AC:
+# "PKIX/certificate" surface -- the CSR-issuance builder)
+#   <init>(PKCS10CertificationRequestBuilder original)                         contracted (factory, arity 1)
+#   <init>(X500Name,SubjectPublicKeyInfo)                                      contracted (factory, arity 2)
+#   setAttribute(oid,ASN1Encodable)/setAttribute(oid,ASN1Encodable[])          contracted (config, arity 2) -- collapsed, identical return
+#   addAttribute(oid,ASN1Encodable)/addAttribute(oid,ASN1Encodable[])          contracted (config, arity 2) -- collapsed, identical return
+#   setLeaveOffEmptyAttributes(boolean)                                        contracted (config, arity 1)
+#   build(ContentSigner)                                                       contracted (factory, arity 1) -- terminal, produces PKCS10CertificationRequest
+#   build(ContentSigner,SubjectPublicKeyInfo,ContentSigner)                    contracted (factory, arity 3) -- terminal, alt-signature variant
+#
+# org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder (extends
+# PKCS10CertificationRequestBuilder -- only the subclass's own constructors
+# and its distinct build(ContentSigner,PublicKey,ContentSigner) override,
+# which differs from the base's arity-3 build by taking a JCA PublicKey
+# instead of SubjectPublicKeyInfo, are authored here)
+#   <init>(X500Name,PublicKey)                                                 contracted (factory, arity 2)
+#   <init>(X500Principal,PublicKey)                                            contracted (factory, arity 2) -- collapsed into the arity-2 entry above
+#   build(ContentSigner,PublicKey,ContentSigner)                               contracted (factory, arity 3) -- own FQN, no collision with the base class's arity-3 entry
+#   build(ContentSigner)/setAttribute/addAttribute/setLeaveOffEmptyAttributes
+#   (all inherited)                                                            covered-existing -- via the hierarchy edge below
+#
+# org.bouncycastle.cert.ocsp.OCSPReqBuilder (task-brief-named example of a
+# bcpkix builder outside the CMS/cert core; kept minimal per "smallest"
+# scope -- OCSPReqBuilder only, not the response-side BasicOCSPRespBuilder)
+#   <init>() (compiler-generated default constructor -- no explicit
+#   constructor is declared in source, but `new OCSPReqBuilder()` is real,
+#   callable public API)                                                       contracted (factory, arity 0)
+#   addRequest(CertificateID)                                                  contracted (config, arity 1)
+#   addRequest(CertificateID,Extensions)                                       contracted (config, arity 2)
+#   setRequestorName(X500Name)/setRequestorName(GeneralName)                   contracted (config, arity 1) -- collapsed, identical return
+#   setRequestExtensions(Extensions)                                           contracted (config, arity 1)
+#   build()                                                                    contracted (factory, arity 0) -- terminal, produces OCSPReq (unsigned request)
+#   build(ContentSigner,X509CertificateHolder[])                               contracted (factory, arity 2) -- terminal, produces OCSPReq (signed request)
+#
+# Out of scope / needs-follow-up (bcpkix surfaces real but outside this
+# ticket's "smallest ... CMS, PKIX, and operator" AC; each is a self-contained
+# follow-up ticket, not a silent scope expansion):
+#   org.bouncycastle.cert.ocsp.BasicOCSPRespBuilder, RespGenerator            needs-follow-up -- OCSP response-side builder, mirrors OCSPReqBuilder's shape but not named in the issue AC
+#   org.bouncycastle.tsp.{TimeStampRequestGenerator,TimeStampResponseGenerator,
+#   TimeStampTokenGenerator}                                                  needs-follow-up -- RFC 3161 timestamp-protocol builders; a distinct bcpkix package the issue's AC line ("CMS, PKIX/certificate, and operator-builder") does not name
+#   org.bouncycastle.cert.{X509v1CertificateBuilder,X509v2CRLBuilder,
+#   X509v2AttributeCertificateBuilder}                                        needs-follow-up -- legacy/CRL/attribute-certificate builder siblings of X509v3CertificateBuilder, out of the "smallest" surface
+#   org.bouncycastle.pkcs.{PKCS12PfxPduBuilder,PKCS12SafeBagBuilder,
+#   PKCS8EncryptedPrivateKeyInfoBuilder}                                       needs-follow-up -- PKCS#12/PKCS#8 container builders, a distinct sub-surface of org.bouncycastle.pkcs from the CSR builder this ticket covers
+#   org.bouncycastle.cmc, org.bouncycastle.dvcs, org.bouncycastle.est,
+#   org.bouncycastle.eac, org.bouncycastle.its, org.bouncycastle.voms,
+#   org.bouncycastle.mozilla, org.bouncycastle.openssl                        needs-follow-up -- separate bcpkix protocol packages (CMC, DVCS, EST, EAC, ITS, VOMS, Mozilla SPKAC, OpenSSL PEM parsing) entirely outside this ticket's CMS/PKIX/operator scope
+#   org.bouncycastle.operator.{jcajce,bc}.{Jce,Bc}*Key{Wrapper,Unwrapper}      needs-follow-up -- CMS key-wrap operator family (AsymmetricKeyWrapper/SymmetricKeyWrapper implementations); adjacent to but distinct from the ContentSigner/ContentVerifierProvider/DigestCalculatorProvider builders this ticket covers
+#   org.bouncycastle.cms.{Jce,Bc}*Recipient*                                  needs-follow-up -- CMS decryption-side Recipient/RecipientInfoGenerator family (KeyTrans/KeyAgree/KEK/Password/KEM); a large sub-surface of its own
+#   org.bouncycastle.cms.CMS*DataStreamGenerator/*DataParser                  needs-follow-up -- streaming and parsing variants of the generators contracted above
+#
+# Note on scope boundary: no `when:` conditional contracts are declared.
+# Every contracted method's return type here is fixed regardless of the
+# algorithm/OID/provider argument a caller passes (e.g. JcaContentSignerBuilder
+# always returns ContentSigner, JceCMSContentEncryptorBuilder always returns
+# OutputEncryptor) -- unlike Cipher.unwrap, where the mode argument selects
+# the Java return type. Algorithm-name/OID selection stays in crypto_rules
+# metadata (parameterCondition), never in this KB, per the crypto-kb-author
+# skill's "Condition and provider ownership" rule.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── org.bouncycastle.cert: X.509 certificate builders ──────────────────────
+
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.<init>
+    arity: 6
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.<init>
+    arity: 7
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.setSubjectUniqueID
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.setIssuerUniqueID
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.addExtension
+    arity: 3
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.addExtension
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.replaceExtension
+    arity: 3
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.replaceExtension
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.removeExtension
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.copyAndAddExtension
+    arity: 3
+    return: { type: org.bouncycastle.cert.X509v3CertificateBuilder, confidence: high }
+    role: config
+
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.cert.X509CertificateHolder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.X509v3CertificateBuilder.build
+    arity: 3
+    return: { type: org.bouncycastle.cert.X509CertificateHolder, confidence: high }
+    role: factory
+
+  # ── JcaX509v3CertificateBuilder: own constructors + distinct override only;
+  # addExtension/replaceExtension/removeExtension/build/setSubjectUniqueID/
+  # setIssuerUniqueID resolve via the hierarchy edge to X509v3CertificateBuilder ──
+
+  - method: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder.<init>
+    arity: 6
+    return: { type: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder.copyAndAddExtension
+    arity: 3
+    return: { type: org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder, confidence: high }
+    role: config
+
+  # ── BcX509v3CertificateBuilder: own constructors only; the rest inherited ──
+
+  - method: org.bouncycastle.cert.bc.BcX509v3CertificateBuilder.<init>
+    arity: 6
+    return: { type: org.bouncycastle.cert.bc.BcX509v3CertificateBuilder, confidence: high }
+    role: factory
+
+  # ── JcaX509CertificateConverter: BC holder -> JCA X509Certificate bridge ──
+
+  - method: org.bouncycastle.cert.jcajce.JcaX509CertificateConverter.<init>
+    arity: 0
+    return: { type: org.bouncycastle.cert.jcajce.JcaX509CertificateConverter, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.jcajce.JcaX509CertificateConverter.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.cert.jcajce.JcaX509CertificateConverter, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.jcajce.JcaX509CertificateConverter.getCertificate
+    arity: 1
+    return: { type: java.security.cert.X509Certificate, confidence: high }
+    role: operation
+
+  # ── org.bouncycastle.operator: ContentSigner / ContentVerifierProvider /
+  # DigestCalculatorProvider builders shared across cert/CMS/PKCS/OCSP ────────
+
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.<init>
+    arity: 3
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.ContentSigner, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.operator.bc.BcContentSignerBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.operator.bc.BcContentSignerBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.bc.BcContentSignerBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.ContentSigner, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.operator.bc.BcRSAContentSignerBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.operator.bc.BcRSAContentSignerBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.bc.BcECContentSignerBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.operator.bc.BcECContentSignerBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.bc.BcDSAContentSignerBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.operator.bc.BcDSAContentSignerBuilder, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder.<init>
+    arity: 0
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.ContentVerifierProvider, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.ContentVerifierProvider, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.bc.BcRSAContentVerifierProviderBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.operator.bc.BcRSAContentVerifierProviderBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.bc.BcECContentVerifierProviderBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.operator.bc.BcECContentVerifierProviderBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.bc.BcDSAContentVerifierProviderBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.operator.bc.BcDSAContentVerifierProviderBuilder, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder.<init>
+    arity: 0
+    return: { type: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder.setHelper
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder.build
+    arity: 0
+    return: { type: org.bouncycastle.operator.DigestCalculatorProvider, confidence: high }
+    role: factory
+
+  # ── org.bouncycastle.cms: CMS signed/enveloped-data generators ─────────────
+
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.cms.CMSSignedDataGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cms.CMSSignedDataGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.setDefiniteLengthEncoding
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.setEncoding
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.generate
+    arity: 1
+    return: { type: org.bouncycastle.cms.CMSSignedData, confidence: high }
+    role: operation
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.generate
+    arity: 2
+    return: { type: org.bouncycastle.cms.CMSSignedData, confidence: high }
+    role: operation
+  - method: org.bouncycastle.cms.CMSSignedDataGenerator.generateCounterSigners
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInformationStore, confidence: high }
+    role: operation
+
+  # role: config -- shared CMSSignedGenerator base methods, so
+  # CMSSignedDataGenerator (and any sibling stream generator) resolve them
+  # through the hierarchy edge below.
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addCertificate
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addCertificates
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addCRL
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addCRLs
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addAttributeCertificate
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addAttributeCertificates
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addSigners
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addSignerInfoGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSSignedGenerator.addDigestAlgorithms
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+
+  - method: org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.cms.CMSEnvelopedDataGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.CMSEnvelopedDataGenerator.generate
+    arity: 2
+    return: { type: org.bouncycastle.cms.CMSEnvelopedData, confidence: high }
+    role: operation
+
+  # role: config -- shared CMSEnvelopedGenerator base methods.
+  - method: org.bouncycastle.cms.CMSEnvelopedGenerator.setUnprotectedAttributeGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSEnvelopedGenerator.setOriginatorInfo
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.CMSEnvelopedGenerator.addRecipientInfoGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+
+  # ── SignerInfoGenerator builders: feed CMSSignedGenerator.addSignerInfoGenerator ──
+
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.setDirectSignature
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.setContentDigest
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.setSignedAttributeGenerator
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.setUnsignedAttributeGenerator
+    arity: 1
+    return: { type: org.bouncycastle.cms.SignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.SignerInfoGeneratorBuilder.build
+    arity: 2
+    return: { type: org.bouncycastle.cms.SignerInfoGenerator, confidence: high }
+    role: factory
+
+  # JcaSignerInfoGeneratorBuilder is a standalone JCA wrapper (composition,
+  # not inheritance) -- it needs its own full contract set.
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.setDirectSignature
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.setContentDigest
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.setSignedAttributeGenerator
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.setUnsignedAttributeGenerator
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder.build
+    arity: 2
+    return: { type: org.bouncycastle.cms.SignerInfoGenerator, confidence: high }
+    role: factory
+
+  # ── CMS content-encryptor builders: feed CMSEnvelopedDataGenerator.generate ──
+
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.setEnableSha256HKdf
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.setAlgorithmParameters
+    arity: 1
+    return: { type: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.build
+    arity: 0
+    return: { type: org.bouncycastle.operator.OutputEncryptor, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.OutputEncryptor, confidence: high }
+    role: factory
+
+  - method: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder.build
+    arity: 0
+    return: { type: org.bouncycastle.operator.OutputEncryptor, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.operator.OutputEncryptor, confidence: high }
+    role: factory
+
+  # ── org.bouncycastle.pkcs: PKCS#10 certification-request builder ──────────
+
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.setAttribute
+    arity: 2
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.addAttribute
+    arity: 2
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.setLeaveOffEmptyAttributes
+    arity: 1
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequest, confidence: high }
+    role: factory
+  - method: org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder.build
+    arity: 3
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequest, confidence: high }
+    role: factory
+
+  # JcaPKCS10CertificationRequestBuilder extends PKCS10CertificationRequestBuilder
+  # -- only its own constructors and its distinct build(...,PublicKey,...)
+  # override are authored here.
+  - method: org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder.<init>
+    arity: 2
+    return: { type: org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder.build
+    arity: 3
+    return: { type: org.bouncycastle.pkcs.PKCS10CertificationRequest, confidence: high }
+    role: factory
+
+  # ── org.bouncycastle.cert.ocsp: OCSP request builder ────────────────────────
+
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.<init>
+    arity: 0
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReqBuilder, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.addRequest
+    arity: 1
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReqBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.addRequest
+    arity: 2
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReqBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.setRequestorName
+    arity: 1
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReqBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.setRequestExtensions
+    arity: 1
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReqBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.build
+    arity: 0
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReq, confidence: high }
+    role: factory
+  - method: org.bouncycastle.cert.ocsp.OCSPReqBuilder.build
+    arity: 2
+    return: { type: org.bouncycastle.cert.ocsp.OCSPReq, confidence: high }
+    role: factory
+
+hierarchy:
+  # cert: Jca/Bc builders extend the core X509v3CertificateBuilder, so their
+  # inherited addExtension/replaceExtension/removeExtension/build/
+  # setSubjectUniqueID/setIssuerUniqueID resolve through this edge.
+  org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder:
+    - org.bouncycastle.cert.X509v3CertificateBuilder
+  org.bouncycastle.cert.bc.BcX509v3CertificateBuilder:
+    - org.bouncycastle.cert.X509v3CertificateBuilder
+  org.bouncycastle.cert.X509v3CertificateBuilder:
+    - java.lang.Object
+  org.bouncycastle.cert.X509CertificateHolder:
+    - java.lang.Object
+  org.bouncycastle.cert.jcajce.JcaX509CertificateConverter:
+    - java.lang.Object
+
+  # Redeclared (idempotent with jdk-crypto.yaml) because
+  # JcaX509CertificateConverter.getCertificate's return depends on it for
+  # reachability -- see the crypto-kb-author skill's "DO redeclare hierarchy
+  # edges YOUR library depends on" rule.
+  java.security.cert.X509Certificate:
+    - java.security.cert.Certificate
+  java.security.cert.Certificate:
+    - java.lang.Object
+
+  # operator: concrete Bc*ContentSignerBuilder/Bc*ContentVerifierProviderBuilder
+  # subclasses extend their respective abstract base, so build() (authored on
+  # the base only, per "prefer the shared interface") resolves for each.
+  org.bouncycastle.operator.jcajce.JcaContentSignerBuilder:
+    - java.lang.Object
+  org.bouncycastle.operator.bc.BcContentSignerBuilder:
+    - java.lang.Object
+  org.bouncycastle.operator.bc.BcRSAContentSignerBuilder:
+    - org.bouncycastle.operator.bc.BcContentSignerBuilder
+  org.bouncycastle.operator.bc.BcECContentSignerBuilder:
+    - org.bouncycastle.operator.bc.BcContentSignerBuilder
+  org.bouncycastle.operator.bc.BcDSAContentSignerBuilder:
+    - org.bouncycastle.operator.bc.BcContentSignerBuilder
+  org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder:
+    - java.lang.Object
+  org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder:
+    - java.lang.Object
+  org.bouncycastle.operator.bc.BcRSAContentVerifierProviderBuilder:
+    - org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder
+  org.bouncycastle.operator.bc.BcECContentVerifierProviderBuilder:
+    - org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder
+  org.bouncycastle.operator.bc.BcDSAContentVerifierProviderBuilder:
+    - org.bouncycastle.operator.bc.BcContentVerifierProviderBuilder
+  org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder:
+    - java.lang.Object
+  org.bouncycastle.operator.ContentSigner:
+    - java.lang.Object
+  org.bouncycastle.operator.ContentVerifierProvider:
+    - java.lang.Object
+  org.bouncycastle.operator.DigestCalculatorProvider:
+    - java.lang.Object
+  org.bouncycastle.operator.OutputEncryptor:
+    - java.lang.Object
+
+  # cms: CMSSignedDataGenerator/CMSEnvelopedDataGenerator extend their shared
+  # config-method bases (addCertificate/addSignerInfoGenerator/
+  # addRecipientInfoGenerator/etc.).
+  org.bouncycastle.cms.CMSSignedDataGenerator:
+    - org.bouncycastle.cms.CMSSignedGenerator
+  org.bouncycastle.cms.CMSSignedGenerator:
+    - java.lang.Object
+  org.bouncycastle.cms.CMSEnvelopedDataGenerator:
+    - org.bouncycastle.cms.CMSEnvelopedGenerator
+  org.bouncycastle.cms.CMSEnvelopedGenerator:
+    - java.lang.Object
+  org.bouncycastle.cms.CMSSignedData:
+    - java.lang.Object
+  org.bouncycastle.cms.CMSEnvelopedData:
+    - java.lang.Object
+  org.bouncycastle.cms.SignerInformationStore:
+    - java.lang.Object
+  org.bouncycastle.cms.SignerInfoGeneratorBuilder:
+    - java.lang.Object
+  org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder:
+    - java.lang.Object
+  org.bouncycastle.cms.SignerInfoGenerator:
+    - java.lang.Object
+  org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder:
+    - java.lang.Object
+  org.bouncycastle.cms.bc.BcCMSContentEncryptorBuilder:
+    - java.lang.Object
+
+  # pkcs: JcaPKCS10CertificationRequestBuilder extends
+  # PKCS10CertificationRequestBuilder, so the inherited build(ContentSigner)/
+  # setAttribute/addAttribute/setLeaveOffEmptyAttributes resolve through it.
+  org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder:
+    - org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder
+  org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder:
+    - java.lang.Object
+  org.bouncycastle.pkcs.PKCS10CertificationRequest:
+    - java.lang.Object
+
+  # cert.ocsp: OCSP request builder + its output.
+  org.bouncycastle.cert.ocsp.OCSPReqBuilder:
+    - java.lang.Object
+  org.bouncycastle.cert.ocsp.OCSPReq:
+    - java.lang.Object
+
+  java.lang.Object: []
