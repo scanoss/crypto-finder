@@ -46,8 +46,8 @@ library:
 #   initKeyDerivationFunction(byte[])    contracted (factory, arity 1) — rules api anchor (kdf rule api=Blake3.initKeyDerivationFunction)
 #   hash(byte[])                        contracted (factory, arity 1) — rules pattern-either anchor (hash rule also matches `Blake3.hash(...)`); one-shot inline of initHash().update(data).doFinalize(OUT_LEN)
 #   keyedHash(byte[],byte[])             contracted (factory, arity 2) — rules pattern-either anchor (mac rule also matches `Blake3.keyedHash(...)`); one-shot inline of initKeyedHash(key).update(data).doFinalize(OUT_LEN)
-#   update(byte[])                      contracted (config, arity 1) — self-returning absorb step, PR167 fixtures chain `hasher.update(data)` off every factory
-#   update(byte[],int,int)               contracted (config, arity 3) — self-returning absorb step, offset/length variant
+#   update(byte[])                      contracted (operation, arity 1) — self-returning absorb step feeds input into the running hash (the digest operation itself, not configuration); PR167 fixtures chain `hasher.update(data)` off every factory
+#   update(byte[],int,int)               contracted (operation, arity 3) — self-returning absorb step (digest operation), offset/length variant
 #   doFinalize(byte[])                   contracted (operation, arity 1) — self-returning finalize step; see arity-collision note below
 #   doFinalize(byte[],int,int)           contracted (operation, arity 3) — self-returning finalize step, offset/length variant
 #   doFinalize(int)                      skipped-unsupported (arity 1) — see arity-collision note below
@@ -119,7 +119,8 @@ contracts:
       confidence: high
     role: factory
 
-  # ── Config/absorb: update(...) self-returns Blake3, keeping the fluent ────
+  # ── Operation/absorb: update(...) feeds input into the running hash (the ──
+  # ── digest operation itself); self-returns Blake3, keeping the fluent ─────
   # ── chain resolvable across an arbitrary number of absorb calls. ──────────
 
   - method: org.apache.commons.codec.digest.Blake3.update
@@ -127,14 +128,14 @@ contracts:
     return:
       type: org.apache.commons.codec.digest.Blake3
       confidence: high
-    role: config
+    role: operation
 
   - method: org.apache.commons.codec.digest.Blake3.update
     arity: 3
     return:
       type: org.apache.commons.codec.digest.Blake3
       confidence: high
-    role: config
+    role: operation
 
   # ── Operation/output: doFinalize(...) self-returns Blake3 for the ────────
   # ── byte[]-out overloads (see the arity-collision note above for why ─────

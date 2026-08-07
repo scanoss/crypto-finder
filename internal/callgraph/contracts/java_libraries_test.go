@@ -376,7 +376,7 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 // three mode-selecting factories (initHash/initKeyedHash/
 // initKeyDerivationFunction), the two one-shot statics that inline a full
 // factory->update->doFinalize chain (hash/keyedHash), the self-returning
-// update (config/absorb) and doFinalize (operation) steps, and reset —
+// update (operation/absorb) and doFinalize (operation) steps, and reset —
 // including the return types, lifecycle roles, and the rules-anchor api
 // FQNs (scanoss/crypto_rules#164, PR #167) they must resolve through.
 func TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle(t *testing.T) {
@@ -402,9 +402,10 @@ func TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle(t *testing.T) {
 		// One-shot statics that inline factory->update->doFinalize.
 		{blake3 + ".hash", 1, "byte[]", "factory"},
 		{blake3 + ".keyedHash", 2, "byte[]", "factory"},
-		// Config/absorb -- self-returning so the fluent chain keeps resolving.
-		{blake3 + ".update", 1, blake3, "config"},
-		{blake3 + ".update", 3, blake3, "config"},
+		// Operation/absorb -- feeds input into the running hash (the digest
+		// operation itself); self-returning so the fluent chain keeps resolving.
+		{blake3 + ".update", 1, blake3, "operation"},
+		{blake3 + ".update", 3, blake3, "operation"},
 		// Operation/output -- doFinalize(byte[]...) self-returns too.
 		{blake3 + ".doFinalize", 1, blake3, "operation"},
 		{blake3 + ".doFinalize", 3, blake3, "operation"},
