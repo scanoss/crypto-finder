@@ -203,9 +203,15 @@ func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *tes
 			engine.SyntheticEntryPointRuleID,
 		},
 	}
-	for api := range wantRulesByAPI {
+	for api, wantRuleIDs := range wantRulesByAPI {
 		if len(byAPIAndRule[api]) == 0 {
 			t.Errorf("no synthesized entry point for rule anchor api %q; got apis: %v", api, byAPIAndRule)
+			continue
+		}
+		for _, wantRuleID := range wantRuleIDs {
+			if !byAPIAndRule[api][wantRuleID] {
+				t.Errorf("api %q missing expected rule %q; got rules: %v", api, wantRuleID, byAPIAndRule[api])
+			}
 		}
 	}
 
