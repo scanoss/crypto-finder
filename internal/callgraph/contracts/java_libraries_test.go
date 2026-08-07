@@ -371,6 +371,91 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 	}
 }
 
+// TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle verifies the Commons Codec
+// Blake3 stateful/fluent lifecycle contracts (scanoss/crypto-finder#187): the
+// three mode-selecting factories (initHash/initKeyedHash/
+// initKeyDerivationFunction), the two one-shot statics that inline a full
+// factory->update->doFinalize chain (hash/keyedHash), the self-returning
+// update (operation/absorb) and doFinalize (operation) steps, and reset —
+// including the return types, lifecycle roles, and the rules-anchor api
+// FQNs (scanoss/crypto_rules#164, PR #167) they must resolve through.
+func TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	const blake3 = "org.apache.commons.codec.digest.Blake3"
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		// Mode-selecting factories -- the three independent Blake3 modes.
+		{blake3 + ".initHash", 0, blake3, "factory"},
+		{blake3 + ".initKeyedHash", 1, blake3, "factory"},
+		{blake3 + ".initKeyDerivationFunction", 1, blake3, "factory"},
+		// One-shot statics that inline factory->update->doFinalize.
+		{blake3 + ".hash", 1, "byte[]", "factory"},
+		{blake3 + ".keyedHash", 2, "byte[]", "factory"},
+		// Operation/absorb -- feeds input into the running hash (the digest
+		// operation itself); self-returning so the fluent chain keeps resolving.
+		{blake3 + ".update", 1, blake3, "operation"},
+		{blake3 + ".update", 3, blake3, "operation"},
+		// Operation/output -- doFinalize(byte[]...) self-returns too.
+		{blake3 + ".doFinalize", 1, blake3, "operation"},
+		{blake3 + ".doFinalize", 3, blake3, "operation"},
+		// Config -- reset() rewinds engine state, also self-returning.
+		{blake3 + ".reset", 0, blake3, "config"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			c := got[0]
+			if c.Return.Type != tt.want || c.Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, c, tt.want, tt.role)
+			}
+			if c.Return.Confidence != "high" {
+				t.Fatalf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+			}
+			if c.SourceLibrary != "commons-codec-blake3" {
+				t.Fatalf("%s#%d source library = %q, want commons-codec-blake3", tt.method, tt.arity, c.SourceLibrary)
+			}
+		})
+	}
+
+	// initKeyedHash's key argument (index 0) contributes a "keySize" metadata
+	// role via bit-length derivation, mirroring the RSAKeyGenerator/
+	// KeyParameter pattern used elsewhere in this KB.
+	initKeyedHash := kb.ContractsFor(blake3+".initKeyedHash", 1)
+	if len(initKeyedHash) != 1 || len(initKeyedHash[0].Parameters) != 1 {
+		t.Fatalf("initKeyedHash#1 parameters = %#v, want a single keySize parameter role", initKeyedHash)
+	}
+	if p := initKeyedHash[0].Parameters[0]; p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" ||
+		p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("initKeyedHash#1 parameters[0] = %#v, want index=0 keySize/argument_bit_length", p)
+	}
+
+	// doFinalize(int nrBytes) is a deliberate arity-collision omission (see
+	// the YAML's arity-collision note): only the byte[]-out overload is
+	// contracted at arity 1, so the KB must not carry a phantom second entry.
+	if got := kb.ContractsFor(blake3+".doFinalize", 1); len(got) != 1 {
+		t.Fatalf("doFinalize#1 contracts = %d, want exactly 1 (the byte[]-out overload)", len(got))
+	}
+
+	if len(kb.Hierarchy[blake3]) == 0 {
+		t.Errorf("hierarchy[%q] is empty", blake3)
+	}
+}
+
 // TestLoadEmbeddedJava_SpringSecurityCrypto71EncoderLifecycle is the
 // scanoss/crypto-finder#182 acceptance test: the version-pinned 7.1 KB
 // (spring-security-crypto-7.1.yaml) loads alongside the pre-existing 6.3.4 KB
