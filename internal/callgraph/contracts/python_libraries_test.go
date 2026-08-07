@@ -581,6 +581,134 @@ func TestLoadEmbedded_Python_Tier0GapLibraries(t *testing.T) {
 	}
 }
 
+// TestLoadEmbedded_Python_Jwcrypto verifies the jwcrypto JOSE lifecycle
+// contracts (scanoss/crypto-finder#181): JWK generate/import factories, JWS
+// sign/verify operations, JWE encrypt/decrypt operations, and the JWT
+// sign/encrypt wrapper, including their lifecycle roles.
+func TestLoadEmbedded_Python_Jwcrypto(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantRole   string
+	}{
+		// JWK generation / import
+		{"jwcrypto.jwk.JWK.<init>", 0, "jwcrypto.jwk.JWK", "factory"},
+		{"jwcrypto.jwk.JWK.generate", 1, "jwcrypto.jwk.JWK", "factory"},
+		{"jwcrypto.jwk.JWK.generate_key", 0, "builtins.NoneType", "config"},
+		{"jwcrypto.jwk.JWK.import_key", 0, "builtins.NoneType", "config"},
+		{"jwcrypto.jwk.JWK.from_json", 1, "jwcrypto.jwk.JWK", "factory"},
+		{"jwcrypto.jwk.JWK.from_password", 1, "jwcrypto.jwk.JWK", "factory"},
+		{"jwcrypto.jwk.JWK.import_from_pyca", 1, "builtins.NoneType", "config"},
+		{"jwcrypto.jwk.JWK.import_from_pem", 1, "builtins.NoneType", "config"},
+		{"jwcrypto.jwk.JWK.from_pyca", 1, "jwcrypto.jwk.JWK", "factory"},
+		{"jwcrypto.jwk.JWK.from_pem", 1, "jwcrypto.jwk.JWK", "factory"},
+		// JWK output / serialization
+		{"jwcrypto.jwk.JWK.export", 0, "builtins.str", "output"},
+		{"jwcrypto.jwk.JWK.export_public", 0, "builtins.str", "output"},
+		{"jwcrypto.jwk.JWK.export_private", 0, "builtins.str", "output"},
+		{"jwcrypto.jwk.JWK.export_symmetric", 0, "builtins.str", "output"},
+		{"jwcrypto.jwk.JWK.public", 0, "jwcrypto.jwk.JWK", "output"},
+		{"jwcrypto.jwk.JWK.export_to_pem", 2, "builtins.bytes", "output"},
+		{"jwcrypto.jwk.JWK.thumbprint", 0, "builtins.str", "output"},
+		{"jwcrypto.jwk.JWK.thumbprint_uri", 0, "builtins.str", "output"},
+		// JWS signing / verification
+		{"jwcrypto.jws.JWS.<init>", 1, "jwcrypto.jws.JWS", "factory"},
+		{"jwcrypto.jws.JWS.add_signature", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jws.JWS.verify", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jws.JWS.deserialize", 1, "builtins.NoneType", "config"},
+		{"jwcrypto.jws.JWS.serialize", 0, "builtins.str", "output"},
+		{"jwcrypto.jws.JWS.from_jose_token", 1, "jwcrypto.jws.JWS", "factory"},
+		// JWE encryption / decryption
+		{"jwcrypto.jwe.JWE.<init>", 1, "jwcrypto.jwe.JWE", "factory"},
+		{"jwcrypto.jwe.JWE.add_recipient", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jwe.JWE.decrypt", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jwe.JWE.deserialize", 1, "builtins.NoneType", "config"},
+		{"jwcrypto.jwe.JWE.serialize", 0, "builtins.str", "output"},
+		{"jwcrypto.jwe.JWE.from_jose_token", 1, "jwcrypto.jwe.JWE", "factory"},
+		// JWT sign/encrypt wrapper
+		{"jwcrypto.jwt.JWT.<init>", 2, "jwcrypto.jwt.JWT", "factory"},
+		{"jwcrypto.jwt.JWT.make_signed_token", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jwt.JWT.make_encrypted_token", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jwt.JWT.validate", 1, "builtins.NoneType", "operation"},
+		{"jwcrypto.jwt.JWT.deserialize", 1, "builtins.NoneType", "config"},
+		{"jwcrypto.jwt.JWT.serialize", 0, "builtins.str", "output"},
+		{"jwcrypto.jwt.JWT.from_jose_token", 1, "jwcrypto.jwt.JWT", "factory"},
+	}
+
+	for _, tt := range tests {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Errorf("%s#%d: no contracts found", tt.method, tt.arity)
+			continue
+		}
+		c := got[0]
+		if c.Return.Type != tt.wantReturn {
+			t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+		}
+		if c.Role != tt.wantRole {
+			t.Errorf("%s#%d role = %q, want %q", tt.method, tt.arity, c.Role, tt.wantRole)
+		}
+		if c.SourceLibrary != "jwcrypto" {
+			t.Errorf("%s#%d source library = %q, want jwcrypto", tt.method, tt.arity, c.SourceLibrary)
+		}
+		if c.Return.Confidence != "high" {
+			t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+		}
+	}
+
+	// The rules-referenced anchors (scanoss/crypto_rules#169) must resolve
+	// via the arity-tolerant Python lookup at their real call-site arities
+	// (e.g. JWK.generate(kty="RSA", size=2048) is arity 2, JWE.add_recipient
+	// is sometimes called with a header kwarg, etc.) even though the
+	// canonical contract entries above use the lowest-arity real call shape.
+	tolerant := []struct {
+		method string
+		arity  int
+	}{
+		{"jwcrypto.jwk.JWK.generate", 2},
+		{"jwcrypto.jwe.JWE.add_recipient", 2},
+		{"jwcrypto.jws.JWS.add_signature", 2},
+		{"jwcrypto.jws.JWS.verify", 2},
+	}
+	for _, tt := range tolerant {
+		if got := kb.ContractsForTolerant(tt.method, tt.arity); len(got) == 0 {
+			t.Errorf("ContractsForTolerant(%s, %d): expected fallback match, got 0", tt.method, tt.arity)
+		}
+	}
+
+	// JWK.generate's "kty" parameter (index 0) contributes a keyType role,
+	// mirroring the nimbus-jose-jwt RSAKeyGenerator keySize pattern.
+	gen := kb.ContractsFor("jwcrypto.jwk.JWK.generate", 1)
+	if len(gen) != 1 || len(gen[0].Parameters) != 1 {
+		t.Fatalf("JWK.generate#1 parameters = %#v, want a single kty parameter role", gen)
+	}
+	p := gen[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keyType" || p.Contributes.Derivation != "argument_value" {
+		t.Fatalf("JWK.generate#1 parameters[0] = %#v, want index=0 keyType/argument_value", p)
+	}
+
+	for _, typ := range []string{"jwcrypto.jwk.JWK", "jwcrypto.jws.JWS", "jwcrypto.jwe.JWE", "jwcrypto.jwt.JWT"} {
+		if len(kb.Hierarchy[typ]) == 0 {
+			t.Errorf("hierarchy[%q] is empty", typ)
+		}
+	}
+
+	// jwcrypto.jwk.JWK is `class JWK(dict)`: assert the direct parent is
+	// builtins.dict (not a bare non-empty parent), and that builtins.dict in
+	// turn derives from builtins.object.
+	if got := kb.Hierarchy["jwcrypto.jwk.JWK"]; len(got) != 1 || got[0] != "builtins.dict" {
+		t.Errorf("hierarchy[jwcrypto.jwk.JWK] = %#v, want [builtins.dict]", got)
+	}
+	if got := kb.Hierarchy["builtins.dict"]; len(got) != 1 || got[0] != "builtins.object" {
+		t.Errorf("hierarchy[builtins.dict] = %#v, want [builtins.object]", got)
+	}
+}
+
 func TestLoadEmbedded_Python_Boto3KMSClientCondition(t *testing.T) {
 	t.Parallel()
 
