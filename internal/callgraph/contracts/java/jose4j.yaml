@@ -1,0 +1,931 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jose4j
+  coordinates:
+    - "org.bitbucket.b_c:jose4j"
+  version_range: ">=0.9.0,<0.10.0"
+  description: >-
+    jose4j JOSE (JWE/JWK) lifecycle contracts — JWE key-management algorithm
+    factories (RsaKeyManagementAlgorithm's RSA-OAEP/RSA1_5 variants, AES key
+    wrap, AES-GCM key wrap, PBES2, direct), the shared KeyManagementAlgorithm/
+    ContentEncryptionAlgorithm operation interfaces, the hand-rolled
+    AesCbcHmacSha2ContentEncryptionAlgorithm encrypt-then-MAC composite, the
+    hand-rolled ConcatKDF and PBKDF2 key-derivation classes, and the JWK
+    generators (Rsa/Ec/Oct/Okp). Verified against jose4j 0.9.6
+    (org/jose4j/jwe/, org/jose4j/jwe/kdf/, org/jose4j/jwk/, org/jose4j/keys/,
+    org/jose4j/jwa/).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#188)
+#
+# Scope per issue AC and the paired scanoss/crypto_rules#174/#175 rules PR:
+# the P2 (JWE key-mgmt parameter detail) + P3 (keygen/JWK material) + hand-rolled
+# (ConcatKDF/PBKDF2/AES-CBC-HMAC) gaps identified by the jose4j-0.9.6 recall
+# audit (report-jose4j-0.9.6.md). The P1 verification/consumption surface
+# (JwtConsumerBuilder security-posture config, AlgorithmConstraints.NO_CONSTRAINTS,
+# alg:none, JsonWebSignature/JsonWebEncryption fluent setters, JWKS resolvers)
+# is EXPLICITLY OUT OF SCOPE — crypto_rules#174 defers it pending a metadata-shape
+# decision (see semgrep-rules/java/jose4j/algorithm/signature/rules.yaml's P1
+# comment block). Needs-follow-up once #174's P1 schema decision lands; do not
+# contract JwtConsumerBuilder/JsonWebSignature/JsonWebEncryption/JWKS-resolver
+# lifecycle in this file.
+#
+# Every public (non-private/non-package-private) method and constructor across
+# org.jose4j.jwe (KeyManagementAlgorithm family + ContentEncryptionAlgorithm
+# family), org.jose4j.jwe.kdf, org.jose4j.jwk (*JwkGenerator), and
+# org.jose4j.keys (*KeyUtil) was inventoried against jose4j 0.9.6 source.
+# Disposition legend: contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# org.jose4j.jwa.Algorithm (interface root)
+#   getJavaAlgorithm/getAlgorithmIdentifier/getKeyPersuasion/getKeyType/isAvailable
+#                                skipped-informative-return — String/enum/boolean
+#                                accessors, no generic/conditional return to infer.
+#
+# org.jose4j.jwe.KeyManagementAlgorithm (interface, extends Algorithm)
+#   manageForEncrypt              contracted (operation, arity 5) — shared by every
+#                                  concrete key-mgmt algorithm below (the
+#                                  crypto-kb-author "operation" rule: author on the
+#                                  shared interface, not per concrete override).
+#   prepareForDecrypt              contracted (operation, arity 3)
+#   manageForDecrypt                contracted (operation, arity 5) — Rsa1_5
+#                                  overrides this with the RFC 7516 §11.5
+#                                  Bleichenbacher countermeasure (behaviorally
+#                                  distinct) but keeps the identical signature/
+#                                  return type, so it is covered-existing via
+#                                  this interface entry, not separately authored.
+#   validateEncryptionKey/validateDecryptionKey
+#                                skipped-informative-return — void, key-size
+#                                floor enforcement only (see the paired
+#                                java.jose4j.related-crypto-material.key.min-rsa-key-length
+#                                rule, which anchors on the MIN_RSA_KEY_LENGTH
+#                                field directly, not a method return).
+#
+# org.jose4j.jwe.ContentEncryptionAlgorithm (interface, extends Algorithm)
+#   getContentEncryptionKeyDescriptor  contracted (output, arity 0)
+#   encrypt                        contracted (operation, arity 6) — shared
+#                                  interface entry; AesCbcHmacSha2ContentEncryptionAlgorithm's
+#                                  own public 6-arg encrypt (the crypto_rules#174
+#                                  rule-anchored method) has an IDENTICAL
+#                                  signature/return, so per the "operation"
+#                                  authoring rule it is covered-existing via
+#                                  this interface entry + the hierarchy edge
+#                                  below, not duplicated.
+#   decrypt                        contracted (operation, arity 5) — same
+#                                  covered-existing reasoning for
+#                                  AesCbcHmacSha2ContentEncryptionAlgorithm.decrypt.
+#
+# org.jose4j.jwe.RsaKeyManagementAlgorithm extends WrappingKeyManagementAlgorithm
+#   <init>(String,String)          contracted (factory, arity 2)
+#   RsaOaep.<init>()                contracted (factory, arity 0) — rule anchor
+#                                  (crypto_rules#175: pke.rsa-oaep-sha1-transformation,
+#                                  api RsaKeyManagementAlgorithm.RsaOaep.<init>)
+#   RsaOaep256.<init>()             contracted (factory, arity 0) — rule anchor
+#                                  (pke.rsa-oaep-sha256-transformation)
+#   Rsa1_5.<init>()                 contracted (factory, arity 0) — rule anchor
+#                                  (pke.rsa1_5-transformation)
+#   Rsa1_5.manageForDecrypt         covered-existing (see KeyManagementAlgorithm
+#                                  note above)
+#   validateEncryptionKey/validateDecryptionKey/isAvailable
+#                                skipped-informative-return / skipped-non-crypto
+#
+# org.jose4j.jwe.WrappingKeyManagementAlgorithm (abstract base, extends
+# AlgorithmInfo implements KeyManagementAlgorithm)
+#   <init>(String,String)          skipped-unsupported — abstract class, never
+#                                  directly instantiated; reachability for its
+#                                  concrete subclasses' constructors (above and
+#                                  below) does not depend on contracting this.
+#   manageForEncrypt/manageForEnc/initCipher/prepareForDecrypt/manageForDecrypt/unwrap
+#                                covered-existing via the KeyManagementAlgorithm
+#                                interface entries (manageForEnc/initCipher/unwrap
+#                                are protected helpers, not public API).
+#
+# org.jose4j.jwe.AesKeyWrapManagementAlgorithm extends WrappingKeyManagementAlgorithm
+#   <init>(String,int)              contracted (factory, arity 2) — rule anchor
+#                                  (crypto_rules#175: key-wrap.aes-kw, api
+#                                  AesKeyWrapManagementAlgorithm.<init>)
+#   Aes128/Aes192/Aes256.<init>()   contracted (factory, arity 0 each)
+#   getKeyByteLength/setUseGeneralProviderContext
+#                                skipped-non-crypto — package-private, not
+#                                public API.
+#   validateEncryptionKey/validateDecryptionKey/validateKey/isAvailable
+#                                skipped-informative-return / skipped-non-crypto
+#
+# org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm extends AlgorithmInfo implements
+# KeyManagementAlgorithm
+#   <init>(String,int)              contracted (factory, arity 2) — rule anchor
+#                                  (crypto_rules#175: key-wrap.aes-gcm-kw, api
+#                                  AesGcmKeyEncryptionAlgorithm.<init>)
+#   Aes128Gcm/Aes192Gcm/Aes256Gcm.<init>()
+#                                contracted (factory, arity 0 each)
+#   manageForEncrypt/prepareForDecrypt/manageForDecrypt (overrides)
+#                                covered-existing via the KeyManagementAlgorithm
+#                                interface entries (identical signatures).
+#   validateEncryptionKey/validateDecryptionKey/validateKey/isAvailable
+#                                skipped-informative-return / skipped-non-crypto
+#
+# org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm extends AlgorithmInfo
+# implements KeyManagementAlgorithm
+#   <init>(String,String,AesKeyWrapManagementAlgorithm)
+#                                contracted (factory, arity 3) — rule anchor
+#                                (crypto_rules#175: kdf.pbes2, api
+#                                Pbes2HmacShaWithAesKeyWrapAlgorithm.<init>)
+#   HmacSha256Aes128/HmacSha384Aes192/HmacSha512Aes256.<init>()
+#                                contracted (factory, arity 0 each)
+#   manageForEncrypt/prepareForDecrypt/manageForDecrypt (overrides)
+#                                covered-existing via the KeyManagementAlgorithm
+#                                interface entries.
+#   deriveForEncrypt/deriveKey     skipped-non-crypto — protected/private, not
+#                                public API.
+#   setDefaultIterationCount(long)  contracted (config, arity 1) — the PBES2
+#                                default-iteration-count override (audit:
+#                                default 65536, floor 1000, ceiling 2499999);
+#                                param 0 contributes "iterations".
+#   setDefaultSaltByteLength(int)   contracted (config, arity 1) — param 0
+#                                contributes "saltLength".
+#   setMaxIterationCount(long)      contracted (config, arity 1) — param 0
+#                                contributes "maxIterations".
+#   getDefaultIterationCount/getDefaultSaltByteLength/getMaxIterationCount
+#                                skipped-informative-return — long/int getters
+#                                mirroring the setters above, no additional
+#                                lifecycle value.
+#   validateEncryptionKey/validateDecryptionKey/validateKey/isAvailable
+#                                skipped-informative-return / skipped-non-crypto
+#
+# org.jose4j.jwe.DirectKeyManagementAlgorithm extends AlgorithmInfo implements
+# KeyManagementAlgorithm
+#   <init>()                     contracted (factory, arity 0) — the paired
+#                                rule (crypto_rules#175: ae.direct) anchors on
+#                                the KeyManagementAlgorithmIdentifiers.DIRECT
+#                                FIELD reference, not this constructor (fields
+#                                aren't KB-contractable, see below), but the
+#                                constructor is contracted for lifecycle
+#                                completeness across the KeyManagementAlgorithm
+#                                family.
+#   manageForEncrypt/prepareForDecrypt/manageForDecrypt
+#                                covered-existing via the KeyManagementAlgorithm
+#                                interface entries.
+#   validateEncryptionKey/validateDecryptionKey/isAvailable
+#                                skipped-informative-return / skipped-non-crypto
+#
+# org.jose4j.jwe.KeyManagementAlgorithmIdentifiers.DIRECT (constant field)
+#                                skipped-unsupported — schema v2 contracts model
+#                                methods/constructors (method+arity keys), not
+#                                static field references; the paired rule
+#                                matches the field literal directly and needs
+#                                no KB return-type inference.
+#
+# org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm extends AlgorithmInfo
+# implements ContentEncryptionAlgorithm
+#   <init>(String,int,String,int)   contracted (factory, arity 4)
+#   Aes128CbcHmacSha256/Aes192CbcHmacSha384/Aes256CbcHmacSha512.<init>()
+#                                contracted (factory, arity 0 each)
+#   encrypt(6-arg public)           covered-existing via ContentEncryptionAlgorithm.encrypt
+#                                (crypto_rules#175 rule anchor: aes-cbc-hmac-encrypt,
+#                                api AesCbcHmacSha2ContentEncryptionAlgorithm.encrypt —
+#                                identical signature/return to the interface
+#                                entry above, so the shared contract resolves
+#                                through the hierarchy edge below).
+#   encrypt(6-arg package-private overload with `iv`)
+#                                skipped-non-crypto — package-private, not
+#                                public API.
+#   decrypt(5-arg public)           covered-existing via ContentEncryptionAlgorithm.decrypt
+#                                (crypto_rules#175 rule anchor: aes-cbc-hmac-decrypt).
+#   getHmacJavaAlgorithm/getTagTruncationLength
+#                                skipped-informative-return — String/int
+#                                getters, no generic/conditional return.
+#   isAvailable                    skipped-non-crypto
+#
+# org.jose4j.jwe.AesGcmContentEncryptionAlgorithm (plain AES-GCM content
+# encryption, distinct from the key-wrap AesGcmKeyEncryptionAlgorithm above)
+#                                covered-existing — audit report: "Covered by
+#                                baseline (adequate via JCA-internal detection):
+#                                AEAD/CBC-HMAC Cipher.init/IvParameterSpec/
+#                                GCMParameterSpec". Unlike AesCbcHmacSha2ContentEncryptionAlgorithm
+#                                (a hand-rolled encrypt-then-MAC composite with
+#                                no single detectable JCA primitive call), this
+#                                class's crypto signal is a plain Cipher/GCMParameterSpec
+#                                sequence already covered by the generic JCA
+#                                ruleset; not part of crypto_rules#174/#175's
+#                                new gap scope.
+#
+# org.jose4j.jwe.kdf.ConcatKeyDerivationFunction implements
+# ConcatenationKeyDerivationFunctionWithSha256
+#   <init>(String)                  contracted (factory, arity 1) — rule anchor
+#                                  (crypto_rules#175: kdf.concat-kdf)
+#   <init>(String,String)           contracted (factory, arity 2)
+#   kdf(byte[],int,byte[])          contracted (operation, arity 3) — rule
+#                                  anchor (kdf.concat-kdf-derive); param 1
+#                                  (keydatalen) contributes "derivedKeyLength".
+#   kdf(byte[],int,byte[],byte[],byte[],byte[],byte[])
+#                                contracted (operation, arity 7) — the
+#                                OtherInfo-assembling convenience overload
+#                                (delegates to the 3-arg form); same return
+#                                type/role.
+#   getReps                        skipped-non-crypto — package-private helper.
+#
+# org.jose4j.jwe.kdf.ConcatKeyDerivationFunctionFactory
+#                                skipped-non-crypto — package-private class
+#                                (no public modifier), not public API.
+#
+# org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2 (no interface)
+#   <init>(String)                  contracted (factory, arity 1) — rule anchor
+#                                  (crypto_rules#175: kdf.pbkdf2-handrolled)
+#   derive(byte[],byte[],int,int)   contracted (operation, arity 4); param 2
+#                                  (iterationCount) contributes "iterations".
+#   derive(byte[],byte[],int,int,String)
+#                                contracted (operation, arity 5) — rule anchor
+#                                (kdf.pbkdf2-handrolled-derive); param 2
+#                                contributes "iterations".
+#   f                               skipped-non-crypto — package-private helper.
+#
+# org.jose4j.jwk.RsaJwkGenerator / EcJwkGenerator / OctJwkGenerator / OkpJwkGenerator
+#   generateJwk (all overloads)     contracted (factory) — rule anchors
+#                                  (crypto_rules#175 related-crypto-material.key.*-jwk-keygen).
+#                                  Declared returns (RsaJsonWebKey/
+#                                  EllipticCurveJsonWebKey/OctetSequenceJsonWebKey/
+#                                  OctetKeyPairJsonWebKey) are already
+#                                  informative as declared, but contracted per
+#                                  the crypto-kb-author guidance (author anyway;
+#                                  the role tag + parameter derivation is what
+#                                  the export needs) with keySize/curve/subtype
+#                                  parameter derivations, mirroring jwcrypto's
+#                                  JWK.generate keyType derivation.
+#
+# org.jose4j.keys.RsaKeyUtil / EcKeyUtil / OctetKeyPairUtil (extend KeyPairUtil)
+#   generateKeyPair                 contracted (factory) — rule anchors
+#                                  (crypto_rules#175 related-crypto-material.key.*-keyutil-keygen).
+#                                  Declared return java.security.KeyPair is a
+#                                  standard JDK type (already informative), but
+#                                  contracted for role tagging + curve/keySize
+#                                  parameter derivation, matching the rule
+#                                  anchors exactly.
+#   <init> (both overloads)         needs-follow-up — Type-1 internal provider/
+#                                  SecureRandom wiring, not rule-anchored.
+#   publicKey/privateKey/getRsaPrivateKey (RsaKeyUtil), publicKey/privateKey
+#   (EcKeyUtil)                     needs-follow-up — valid KeySpec-construction
+#                                  crypto API, but outside this issue's
+#                                  rule-anchored P2/P3 scope; candidate for a
+#                                  dedicated "jose4j key material construction"
+#                                  ticket.
+#   OctetKeyPairUtil.getOctetKeyPairUtil (static subtype-dispatch factory)
+#                                needs-follow-up — Type-2-ish dispatch factory
+#                                (EdDsaKeyUtil vs XDHKeyUtil by subtype name),
+#                                not independently rule-anchored (OkpJwkGenerator's
+#                                own contract above already types the JWK
+#                                generator's result).
+#   OctetKeyPairUtil.publicKey/privateKey/rawPublicKey/rawPrivateKey (and the
+#   EdDsaKeyUtil/XDHKeyUtil concrete overrides that do the actual Ed25519/Ed448
+#   point-compression and X25519/X448 u-coordinate coding)
+#                                needs-follow-up — audit report hand-rolled
+#                                gaps #5/#6 (EdDsaKeyUtil.java, XDHKeyUtil.java);
+#                                NOT part of crypto_rules#174/#175's rule scope
+#                                (no rules.yaml entries reference them), so out
+#                                of this ticket per the issue's paired-rules
+#                                requirement.
+#
+# org.jose4j.jwk.OctetSequenceJsonWebKey extends JsonWebKey
+#   <init>(Key) / <init>(Map)        contracted (factory, arity 1 — both
+#                                  overloads collapse to one entry, identical
+#                                  return type per the crypto-kb-author
+#                                  overload-collapsing convention) — the Map
+#                                  overload is the crypto_rules#175
+#                                  octet-sequence-aes-labeling rule's
+#                                  pattern-inside anchor class.
+#
+# org.jose4j.jwk.JsonWebKey / PublicJsonWebKey (abstract bases)
+#   Factory.newJwk / Factory.newPublicJwk (generic "kty"-dispatch factories)
+#                                needs-follow-up — valid Type-2 dispatch
+#                                factories used internally by every *JwkGenerator
+#                                above, but not named in this issue's AC or
+#                                crypto_rules#174/#175's rule set; candidate
+#                                follow-up ticket if JWK parse/import lifecycle
+#                                (as opposed to generation) needs its own
+#                                contracts.
+#
+# org.jose4j.jwe.EcdhKeyAgreementAlgorithm / EcdhKeyAgreementWithAesKeyWrapAlgorithm
+#                                needs-follow-up — audit report only lists
+#                                these as the CALLER of the newly-contracted
+#                                ConcatKeyDerivationFunction (hand-rolled gap #1);
+#                                the ECDH_ES/ECDH_ES_A*KW algorithm identifiers
+#                                themselves already have pre-existing baseline
+#                                coverage (java.jose4j.algorithm.key-agree.ecdh,
+#                                predates crypto_rules#174/#175) and neither
+#                                class's own constructor/manageForEncrypt
+#                                override is referenced by any #175 rule "api"
+#                                anchor, so contracting their lifecycle is out
+#                                of this ticket's paired-rules scope.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── org.jose4j.jwe.KeyManagementAlgorithm (interface) — shared operation ───
+  # role: operation is authored on the interface only; every concrete
+  # implementer below (RsaKeyManagementAlgorithm, AesKeyWrapManagementAlgorithm,
+  # AesGcmKeyEncryptionAlgorithm, Pbes2HmacShaWithAesKeyWrapAlgorithm,
+  # DirectKeyManagementAlgorithm) resolves through the hierarchy edges.
+
+  - method: org.jose4j.jwe.KeyManagementAlgorithm.manageForEncrypt
+    arity: 5
+    return:
+      type: org.jose4j.jwe.ContentEncryptionKeys
+      confidence: high
+    role: operation
+
+  - method: org.jose4j.jwe.KeyManagementAlgorithm.prepareForDecrypt
+    arity: 3
+    return:
+      type: org.jose4j.jwa.CryptoPrimitive
+      confidence: high
+    role: operation
+
+  - method: org.jose4j.jwe.KeyManagementAlgorithm.manageForDecrypt
+    arity: 5
+    return:
+      type: java.security.Key
+      confidence: high
+    role: operation
+
+  # ── org.jose4j.jwe.ContentEncryptionAlgorithm (interface) — shared operation ─
+
+  - method: org.jose4j.jwe.ContentEncryptionAlgorithm.getContentEncryptionKeyDescriptor
+    arity: 0
+    return:
+      type: org.jose4j.jwe.ContentEncryptionKeyDescriptor
+      confidence: high
+    role: output
+
+  - method: org.jose4j.jwe.ContentEncryptionAlgorithm.encrypt
+    arity: 6
+    return:
+      type: org.jose4j.jwe.ContentEncryptionParts
+      confidence: high
+    role: operation
+
+  - method: org.jose4j.jwe.ContentEncryptionAlgorithm.decrypt
+    arity: 5
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # ── org.jose4j.jwe.RsaKeyManagementAlgorithm — RSA JWE key management ───────
+
+  - method: org.jose4j.jwe.RsaKeyManagementAlgorithm.<init>
+    arity: 2
+    return:
+      type: org.jose4j.jwe.RsaKeyManagementAlgorithm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep256.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep256
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.RsaKeyManagementAlgorithm.Rsa1_5.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.RsaKeyManagementAlgorithm.Rsa1_5
+      confidence: high
+    role: factory
+
+  # ── org.jose4j.jwe.AesKeyWrapManagementAlgorithm — plain AES key wrap ───────
+
+  - method: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.<init>
+    arity: 2
+    return:
+      type: org.jose4j.jwe.AesKeyWrapManagementAlgorithm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes128.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes128
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes192.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes192
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes256.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes256
+      confidence: high
+    role: factory
+
+  # ── org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm — AES-GCM key wrap ──────────
+
+  - method: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.<init>
+    arity: 2
+    return:
+      type: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes128Gcm.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes128Gcm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes192Gcm.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes192Gcm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes256Gcm.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes256Gcm
+      confidence: high
+    role: factory
+
+  # ── org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm — PBES2 ──────────────
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.<init>
+    arity: 3
+    return:
+      type: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha256Aes128.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha256Aes128
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha384Aes192.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha384Aes192
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha512Aes256.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha512Aes256
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.setDefaultIterationCount
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: defaultIterationCount
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.setDefaultSaltByteLength
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: defaultSaltByteLength
+        role: metadata-contributing
+        contributes:
+          property: saltLength
+          derivation: argument_value
+
+  - method: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.setMaxIterationCount
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: maxIterationCount
+        role: metadata-contributing
+        contributes:
+          property: maxIterations
+          derivation: argument_value
+
+  # ── org.jose4j.jwe.DirectKeyManagementAlgorithm — "dir" ─────────────────────
+
+  - method: org.jose4j.jwe.DirectKeyManagementAlgorithm.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.DirectKeyManagementAlgorithm
+      confidence: high
+    role: factory
+
+  # ── org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm — hand-rolled ───
+  # encrypt-then-MAC composite (jose4j 0.9.6 audit hand-rolled gap #3).
+
+  - method: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.<init>
+    arity: 4
+    return:
+      type: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes128CbcHmacSha256.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes128CbcHmacSha256
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes192CbcHmacSha384.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes192CbcHmacSha384
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes256CbcHmacSha512.<init>
+    arity: 0
+    return:
+      type: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes256CbcHmacSha512
+      confidence: high
+    role: factory
+
+  # ── org.jose4j.jwe.kdf.ConcatKeyDerivationFunction — hand-rolled ConcatKDF ──
+  # NIST SP 800-56A §5.8.1 (jose4j 0.9.6 audit hand-rolled gap #1).
+
+  - method: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.<init>
+    arity: 1
+    return:
+      type: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.<init>
+    arity: 2
+    return:
+      type: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.kdf
+    arity: 3
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: keydatalen
+        role: metadata-contributing
+        contributes:
+          property: derivedKeyLength
+          derivation: argument_value
+
+  - method: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.kdf
+    arity: 7
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # ── org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2 — hand-rolled ────
+  # PBKDF2, RFC 2898 (jose4j 0.9.6 audit hand-rolled gap #2).
+
+  - method: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.<init>
+    arity: 1
+    return:
+      type: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2
+      confidence: high
+    role: factory
+
+  - method: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.derive
+    arity: 4
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: iterationCount
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+
+  - method: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.derive
+    arity: 5
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: iterationCount
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+
+  # ── org.jose4j.jwk.RsaJwkGenerator — RSA JWK generation ─────────────────────
+
+  - method: org.jose4j.jwk.RsaJwkGenerator.generateJwk
+    arity: 1
+    return:
+      type: org.jose4j.jwk.RsaJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: org.jose4j.jwk.RsaJwkGenerator.generateJwk
+    arity: 3
+    return:
+      type: org.jose4j.jwk.RsaJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  # ── org.jose4j.jwk.EcJwkGenerator — EC JWK generation ───────────────────────
+
+  - method: org.jose4j.jwk.EcJwkGenerator.generateJwk
+    arity: 1
+    return:
+      type: org.jose4j.jwk.EllipticCurveJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: spec
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  - method: org.jose4j.jwk.EcJwkGenerator.generateJwk
+    arity: 3
+    return:
+      type: org.jose4j.jwk.EllipticCurveJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: spec
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  # ── org.jose4j.jwk.OctJwkGenerator — oct (symmetric) JWK generation ────────
+
+  - method: org.jose4j.jwk.OctJwkGenerator.generateJwk
+    arity: 1
+    return:
+      type: org.jose4j.jwk.OctetSequenceJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keyLengthInBits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: org.jose4j.jwk.OctJwkGenerator.generateJwk
+    arity: 2
+    return:
+      type: org.jose4j.jwk.OctetSequenceJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keyLengthInBits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  # ── org.jose4j.jwk.OkpJwkGenerator — OKP (Ed25519/Ed448/X25519/X448) ────────
+
+  - method: org.jose4j.jwk.OkpJwkGenerator.generateJwk
+    arity: 1
+    return:
+      type: org.jose4j.jwk.OctetKeyPairJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: subtype
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  - method: org.jose4j.jwk.OkpJwkGenerator.generateJwk
+    arity: 3
+    return:
+      type: org.jose4j.jwk.OctetKeyPairJsonWebKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: subtype
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  # ── org.jose4j.keys.*KeyUtil.generateKeyPair — KeyPairGenerator wrappers ────
+  # backing the *JwkGenerator classes above; rule-anchored by
+  # crypto_rules#175's related-crypto-material.key.*-keyutil-keygen rules.
+
+  - method: org.jose4j.keys.RsaKeyUtil.generateKeyPair
+    arity: 1
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: org.jose4j.keys.EcKeyUtil.generateKeyPair
+    arity: 1
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: spec
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  - method: org.jose4j.keys.OctetKeyPairUtil.generateKeyPair
+    arity: 1
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes:
+          property: curve
+          derivation: argument_value
+
+  # ── org.jose4j.jwk.OctetSequenceJsonWebKey — "oct" JWK material ─────────────
+  # both <init>(Key) and <init>(Map) overloads collapse into this single
+  # arity-1 entry (identical return type, per the overload-collapsing
+  # convention established in netty-tls.yaml). The Map overload is the
+  # crypto_rules#175 octet-sequence-aes-labeling rule's pattern-inside anchor.
+
+  - method: org.jose4j.jwk.OctetSequenceJsonWebKey.<init>
+    arity: 1
+    return:
+      type: org.jose4j.jwk.OctetSequenceJsonWebKey
+      confidence: high
+    role: factory
+
+hierarchy:
+  # ── jwa root ─────────────────────────────────────────────────────────────
+  org.jose4j.jwa.Algorithm:
+    - java.lang.Object
+  org.jose4j.jwa.AlgorithmInfo:
+    - org.jose4j.jwa.Algorithm
+    - java.lang.Object
+  org.jose4j.jwa.CryptoPrimitive:
+    - java.lang.Object
+
+  # ── KeyManagementAlgorithm family ────────────────────────────────────────
+  org.jose4j.jwe.KeyManagementAlgorithm:
+    - org.jose4j.jwa.Algorithm
+  org.jose4j.jwe.WrappingKeyManagementAlgorithm:
+    - org.jose4j.jwa.AlgorithmInfo
+    - org.jose4j.jwe.KeyManagementAlgorithm
+  org.jose4j.jwe.RsaKeyManagementAlgorithm:
+    - org.jose4j.jwe.WrappingKeyManagementAlgorithm
+  org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep:
+    - org.jose4j.jwe.RsaKeyManagementAlgorithm
+  org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep256:
+    - org.jose4j.jwe.RsaKeyManagementAlgorithm
+  org.jose4j.jwe.RsaKeyManagementAlgorithm.Rsa1_5:
+    - org.jose4j.jwe.RsaKeyManagementAlgorithm
+  org.jose4j.jwe.AesKeyWrapManagementAlgorithm:
+    - org.jose4j.jwe.WrappingKeyManagementAlgorithm
+  org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes128:
+    - org.jose4j.jwe.AesKeyWrapManagementAlgorithm
+  org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes192:
+    - org.jose4j.jwe.AesKeyWrapManagementAlgorithm
+  org.jose4j.jwe.AesKeyWrapManagementAlgorithm.Aes256:
+    - org.jose4j.jwe.AesKeyWrapManagementAlgorithm
+  org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm:
+    - org.jose4j.jwa.AlgorithmInfo
+    - org.jose4j.jwe.KeyManagementAlgorithm
+  org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes128Gcm:
+    - org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm
+  org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes192Gcm:
+    - org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm
+  org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.Aes256Gcm:
+    - org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm
+  org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm:
+    - org.jose4j.jwa.AlgorithmInfo
+    - org.jose4j.jwe.KeyManagementAlgorithm
+  org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha256Aes128:
+    - org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm
+  org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha384Aes192:
+    - org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm
+  org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.HmacSha512Aes256:
+    - org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm
+  org.jose4j.jwe.DirectKeyManagementAlgorithm:
+    - org.jose4j.jwa.AlgorithmInfo
+    - org.jose4j.jwe.KeyManagementAlgorithm
+
+  # ── ContentEncryptionAlgorithm family ────────────────────────────────────
+  org.jose4j.jwe.ContentEncryptionAlgorithm:
+    - org.jose4j.jwa.Algorithm
+  org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm:
+    - org.jose4j.jwa.AlgorithmInfo
+    - org.jose4j.jwe.ContentEncryptionAlgorithm
+  org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes128CbcHmacSha256:
+    - org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm
+  org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes192CbcHmacSha384:
+    - org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm
+  org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.Aes256CbcHmacSha512:
+    - org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm
+
+  # ── JWE support value types (manageForEncrypt/prepareForDecrypt/encrypt
+  #    return types) ─────────────────────────────────────────────────────────
+  org.jose4j.jwe.ContentEncryptionKeys:
+    - java.lang.Object
+  org.jose4j.jwe.ContentEncryptionParts:
+    - java.lang.Object
+  org.jose4j.jwe.ContentEncryptionKeyDescriptor:
+    - java.lang.Object
+
+  # ── hand-rolled KDFs ─────────────────────────────────────────────────────
+  org.jose4j.jwe.kdf.ConcatKeyDerivationFunction:
+    - java.lang.Object
+  org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2:
+    - java.lang.Object
+
+  # ── JWK family (JsonWebKey / PublicJsonWebKey) ──────────────────────────
+  org.jose4j.jwk.JsonWebKey:
+    - java.lang.Object
+  org.jose4j.jwk.PublicJsonWebKey:
+    - org.jose4j.jwk.JsonWebKey
+  org.jose4j.jwk.RsaJsonWebKey:
+    - org.jose4j.jwk.PublicJsonWebKey
+  org.jose4j.jwk.EllipticCurveJsonWebKey:
+    - org.jose4j.jwk.PublicJsonWebKey
+  org.jose4j.jwk.OctetKeyPairJsonWebKey:
+    - org.jose4j.jwk.PublicJsonWebKey
+  org.jose4j.jwk.OctetSequenceJsonWebKey:
+    - org.jose4j.jwk.JsonWebKey
+
+  # ── redeclared JDK roots this library's contracts depend on ────────────
+  java.security.Key:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+  java.lang.Object: []
