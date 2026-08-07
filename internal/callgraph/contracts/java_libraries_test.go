@@ -371,6 +371,138 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 	}
 }
 
+// TestLoadEmbeddedJava_BouncyCastlePkixLifecycle verifies the bcpkix builder
+// lifecycle contracts (scanoss/crypto-finder#185): the X509v3CertificateBuilder
+// cert-issuance chain (factory constructors, fluent addExtension/
+// replaceExtension config, and the build() terminal producing
+// X509CertificateHolder), the JcaContentSignerBuilder/BcContentSignerBuilder
+// ContentSigner factories the crypto_rules CMS rules anchor on, the
+// CMSSignedDataGenerator/CMSEnvelopedDataGenerator generators the
+// crypto_rules protocol/cms rules anchor on directly, the SignerInfoGenerator
+// builders that feed them, the PKCS#10 certification-request builder, and
+// the OCSPReqBuilder request lifecycle -- including return types, lifecycle
+// roles, the collapsed-overload arities, and the abstract-builder hierarchy
+// edges that let concrete Bc*ContentSignerBuilder/Bc*ContentVerifierProviderBuilder
+// subclasses resolve their inherited build() through the shared base.
+func TestLoadEmbeddedJava_BouncyCastlePkixLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	const (
+		x509v3Builder    = "org.bouncycastle.cert.X509v3CertificateBuilder"
+		jcaX509v3Builder = "org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder"
+		certHolder       = "org.bouncycastle.cert.X509CertificateHolder"
+		jcaSignerBuilder = "org.bouncycastle.operator.jcajce.JcaContentSignerBuilder"
+		bcSignerBuilder  = "org.bouncycastle.operator.bc.BcContentSignerBuilder"
+		bcRSASigner      = "org.bouncycastle.operator.bc.BcRSAContentSignerBuilder"
+		contentSigner    = "org.bouncycastle.operator.ContentSigner"
+		cmsSignedGen     = "org.bouncycastle.cms.CMSSignedDataGenerator"
+		cmsEnvelopedGen  = "org.bouncycastle.cms.CMSEnvelopedDataGenerator"
+		signerInfoGen    = "org.bouncycastle.cms.SignerInfoGenerator"
+		signerInfoBldr   = "org.bouncycastle.cms.SignerInfoGeneratorBuilder"
+		jceEncryptorBldr = "org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder"
+		outputEncryptor  = "org.bouncycastle.operator.OutputEncryptor"
+		pkcs10Builder    = "org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder"
+		pkcs10Req        = "org.bouncycastle.pkcs.PKCS10CertificationRequest"
+		ocspReqBuilder   = "org.bouncycastle.cert.ocsp.OCSPReqBuilder"
+		ocspReq          = "org.bouncycastle.cert.ocsp.OCSPReq"
+	)
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		// X509v3CertificateBuilder: factory constructors, fluent config, terminal build.
+		{x509v3Builder + ".<init>", 6, x509v3Builder, "factory"},
+		{x509v3Builder + ".<init>", 7, x509v3Builder, "factory"},
+		{x509v3Builder + ".<init>", 1, x509v3Builder, "factory"},
+		{x509v3Builder + ".addExtension", 3, x509v3Builder, "config"},
+		{x509v3Builder + ".addExtension", 1, x509v3Builder, "config"},
+		{x509v3Builder + ".replaceExtension", 3, x509v3Builder, "config"},
+		{x509v3Builder + ".copyAndAddExtension", 3, x509v3Builder, "config"},
+		{x509v3Builder + ".build", 1, certHolder, "factory"},
+		{x509v3Builder + ".build", 3, certHolder, "factory"},
+		// JcaX509v3CertificateBuilder: own constructors + distinct override only.
+		{jcaX509v3Builder + ".<init>", 6, jcaX509v3Builder, "factory"},
+		{jcaX509v3Builder + ".copyAndAddExtension", 3, jcaX509v3Builder, "config"},
+		// ContentSigner factories.
+		{jcaSignerBuilder + ".<init>", 1, jcaSignerBuilder, "factory"},
+		{jcaSignerBuilder + ".build", 1, contentSigner, "factory"},
+		{bcSignerBuilder + ".build", 1, contentSigner, "factory"},
+		{bcRSASigner + ".<init>", 2, bcRSASigner, "factory"},
+		// CMS generators (the crypto_rules protocol/cms rule anchors).
+		{cmsSignedGen + ".<init>", 0, cmsSignedGen, "factory"},
+		{cmsSignedGen + ".generate", 1, "org.bouncycastle.cms.CMSSignedData", "operation"},
+		{cmsEnvelopedGen + ".<init>", 0, cmsEnvelopedGen, "factory"},
+		{cmsEnvelopedGen + ".generate", 2, "org.bouncycastle.cms.CMSEnvelopedData", "operation"},
+		// SignerInfoGenerator + content-encryptor builders CMS generators consume.
+		{signerInfoBldr + ".<init>", 1, signerInfoBldr, "factory"},
+		{signerInfoBldr + ".build", 2, signerInfoGen, "factory"},
+		{jceEncryptorBldr + ".<init>", 1, jceEncryptorBldr, "factory"},
+		{jceEncryptorBldr + ".build", 0, outputEncryptor, "factory"},
+		{jceEncryptorBldr + ".build", 1, outputEncryptor, "factory"},
+		// PKCS#10 certification-request builder.
+		{pkcs10Builder + ".<init>", 2, pkcs10Builder, "factory"},
+		{pkcs10Builder + ".build", 1, pkcs10Req, "factory"},
+		// OCSP request builder.
+		{ocspReqBuilder + ".<init>", 0, ocspReqBuilder, "factory"},
+		{ocspReqBuilder + ".build", 0, ocspReq, "factory"},
+		{ocspReqBuilder + ".build", 2, ocspReq, "factory"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			c := got[0]
+			if c.Return.Type != tt.want || c.Role != tt.role {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q", tt.method, tt.arity, c, tt.want, tt.role)
+			}
+			if c.Return.Confidence != "high" {
+				t.Fatalf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+			}
+			if c.SourceLibrary != "bouncycastle-pkix" {
+				t.Fatalf("%s#%d source library = %q, want bouncycastle-pkix", tt.method, tt.arity, c.SourceLibrary)
+			}
+		})
+	}
+
+	// Overload-collapsing sanity: JcaX509v3CertificateBuilder.<init>#6
+	// collapses FIVE distinct source overloads into a single contract entry
+	// (they all return JcaX509v3CertificateBuilder identically).
+	if got := kb.ContractsFor(jcaX509v3Builder+".<init>", 6); len(got) != 1 {
+		t.Fatalf("%s.<init>#6 contracts = %d, want exactly 1 (collapsed overload)", jcaX509v3Builder, len(got))
+	}
+
+	// Abstract-builder hierarchy: BcRSAContentSignerBuilder extends
+	// BcContentSignerBuilder, so its inherited build(AsymmetricKeyParameter)
+	// resolves through this edge rather than needing a per-subclass contract.
+	if parents := kb.Hierarchy[bcRSASigner]; len(parents) != 1 || parents[0] != bcSignerBuilder {
+		t.Fatalf("%s hierarchy = %v, want [%s]", bcRSASigner, parents, bcSignerBuilder)
+	}
+
+	// JcaX509v3CertificateBuilder/BcX509v3CertificateBuilder both extend the
+	// core X509v3CertificateBuilder, so their inherited addExtension/build/etc.
+	// resolve through this edge.
+	if parents := kb.Hierarchy[jcaX509v3Builder]; len(parents) != 1 || parents[0] != x509v3Builder {
+		t.Fatalf("%s hierarchy = %v, want [%s]", jcaX509v3Builder, parents, x509v3Builder)
+	}
+
+	for _, typ := range []string{x509v3Builder, certHolder, contentSigner, cmsSignedGen, cmsEnvelopedGen, pkcs10Builder, ocspReqBuilder} {
+		if len(kb.Hierarchy[typ]) == 0 {
+			t.Errorf("hierarchy[%q] is empty", typ)
+		}
+	}
+}
+
 // TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle verifies the Commons Codec
 // Blake3 stateful/fluent lifecycle contracts (scanoss/crypto-finder#187): the
 // three mode-selecting factories (initHash/initKeyedHash/
