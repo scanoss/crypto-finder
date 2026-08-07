@@ -428,7 +428,7 @@ func TestJose4j_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *testi
 	graph, err := callgraph.NewBuilder(callgraph.NewJavaParser()).
 		BuildFromDirectories([]callgraph.PackageDir{
 			{Dir: filepath.Join(root, "jwe"), ImportPath: "org.jose4j.jwe"},
-			{Dir: filepath.Join(root, "jwe/kdf"), ImportPath: "org.jose4j.jwe.kdf"},
+			{Dir: filepath.Join(root, "jwe", "kdf"), ImportPath: "org.jose4j.jwe.kdf"},
 			{Dir: filepath.Join(root, "jwk"), ImportPath: "org.jose4j.jwk"},
 			{Dir: filepath.Join(root, "keys"), ImportPath: "org.jose4j.keys"},
 		}, nil)
