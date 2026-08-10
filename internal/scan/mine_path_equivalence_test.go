@@ -297,6 +297,7 @@ func assertFragmentStructuralCompleteness(t *testing.T, payload *graphfrag.Graph
 	t.Helper()
 	if payload == nil {
 		t.Fatal("payload is nil")
+		return
 	}
 	fnKeys := make(map[string]bool, len(payload.Functions))
 	for i := range payload.Functions {
