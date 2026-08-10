@@ -51,9 +51,9 @@ type exportBuildContext struct {
 	// callChainCache holds structural (non-expanded) chain nodes by containing
 	// function id. callChainRawCache holds the tracer steps for the same key so
 	// callgraph export can expand call sites without re-running TraceBackLimited.
-	callChainCache         map[string][][]callGraphChainNode
-	callChainRawCache      map[string][]callgraph.CallChain
-	callChainRemainingUses map[string]int
+	callChainCache          map[string][][]callGraphChainNode
+	callChainRawCache       map[string][]callgraph.CallChain
+	callChainRemainingUses  map[string]int
 	fragmentEdgeResolutions map[string][]fragmentEdgeResolution
 	userPackages            map[string]bool
 	packageSeparator        string
@@ -2705,14 +2705,6 @@ func materializeCallChainNodes(
 		result[i] = path
 	}
 	return result
-}
-
-// buildBaseCallChains returns structural paths only (no call-site expansion).
-func buildBaseCallChains(
-	ctx *exportBuildContext,
-	containingFn *callgraph.FunctionDecl,
-) [][]callGraphChainNode {
-	return cloneCallGraphChains(structuralCallChains(ctx, containingFn))
 }
 
 // expandCallChainCallSites preserves distinct invocations when one caller

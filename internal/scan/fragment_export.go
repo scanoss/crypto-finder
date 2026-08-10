@@ -1241,18 +1241,6 @@ func fragmentEntryPointChains(
 	return filterConditionedCallChains(chains, asset.ParameterConditions)
 }
 
-// buildGraphFragmentCryptoAnnotations is retained for tests that target
-// annotations alone; production export uses materializeGraphFragmentCrypto.
-func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {
-	annotations, _, _ := materializeGraphFragmentCrypto(ctx, result)
-	return annotations
-}
-
-func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentSupporting {
-	_, supporting, _ := materializeGraphFragmentCrypto(ctx, result)
-	return supporting
-}
-
 // fragmentSupportingFromInternal maps an internal call-graph supporting-call
 // entry to its graph-fragment representation.
 func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.GraphFragmentSupporting {
@@ -1270,11 +1258,6 @@ func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.
 		MatchedOperation:   fragmentMatchedOperation(internal.MatchedOperation),
 		SupportingCall:     buildGraphFragmentCryptoCall(internal.SupportingCall),
 	}
-}
-
-func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoEntryPoint {
-	_, _, entryPoints := materializeGraphFragmentCrypto(ctx, result)
-	return entryPoints
 }
 
 type graphFragmentEntryPointData struct {
