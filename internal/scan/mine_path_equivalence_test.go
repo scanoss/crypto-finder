@@ -60,7 +60,7 @@ func TestMinePathFragment_StructuralCompleteness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			payload := BuildGraphFragmentExport(tc.result)
-			assertFragmentStructuralCompleteness(t, payload)
+			assertFragmentStructuralCompleteness(t, &payload)
 		})
 	}
 }
@@ -74,7 +74,7 @@ func assertMinePathFragmentMatchesOracle(t *testing.T, result *engine.DepScanRes
 	assertCryptoAnnotationsEqual(t, got.CryptoAnnotations, wantAnn)
 	assertSupportingCallsEqual(t, got.SupportingCalls, wantSupp)
 	assertCryptoEntryPointsEqual(t, got.CryptoEntryPoints, wantEntry)
-	assertFragmentStructuralCompleteness(t, got)
+	assertFragmentStructuralCompleteness(t, &got)
 }
 
 // oracleMinePathFragmentCrypto independently implements the post-#214 mine-path
@@ -293,16 +293,20 @@ func stringSlicesEqual(a, b []string) bool {
 
 // assertFragmentStructuralCompleteness locks quantity/quality invariants that
 // must hold for any mine-path fragment, independent of the oracle.
-func assertFragmentStructuralCompleteness(t *testing.T, payload graphfrag.GraphFragmentExport) {
+func assertFragmentStructuralCompleteness(t *testing.T, payload *graphfrag.GraphFragmentExport) {
 	t.Helper()
+	if payload == nil {
+		t.Fatal("payload is nil")
+	}
 	fnKeys := make(map[string]bool, len(payload.Functions))
-	for _, fn := range payload.Functions {
-		if fn.Key != "" {
-			fnKeys[fn.Key] = true
+	for i := range payload.Functions {
+		if key := payload.Functions[i].Key; key != "" {
+			fnKeys[key] = true
 		}
 	}
 	suppIDs := make(map[string]bool, len(payload.SupportingCalls))
-	for _, sc := range payload.SupportingCalls {
+	for i := range payload.SupportingCalls {
+		sc := &payload.SupportingCalls[i]
 		if sc.SupportingID == "" {
 			t.Fatalf("supporting_calls entry missing supporting_id")
 		}
@@ -313,7 +317,8 @@ func assertFragmentStructuralCompleteness(t *testing.T, payload graphfrag.GraphF
 	}
 
 	annFindings := make(map[string]bool)
-	for _, ann := range payload.CryptoAnnotations {
+	for i := range payload.CryptoAnnotations {
+		ann := &payload.CryptoAnnotations[i]
 		if ann.FindingID == "" {
 			t.Fatalf("crypto_annotation missing finding_id")
 		}
@@ -330,7 +335,8 @@ func assertFragmentStructuralCompleteness(t *testing.T, payload graphfrag.GraphF
 
 	// Every annotation finding must appear on at least one entry point with depth >= 1.
 	foundOnEntry := make(map[string]int) // finding_id → min depth seen
-	for _, ep := range payload.CryptoEntryPoints {
+	for i := range payload.CryptoEntryPoints {
+		ep := &payload.CryptoEntryPoints[i]
 		if ep.FunctionKey == "" {
 			t.Fatalf("crypto_entry_point missing function_key")
 		}
