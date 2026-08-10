@@ -2,6 +2,7 @@ package contracts_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
@@ -1010,6 +1011,130 @@ func TestLoadEmbeddedJava_PasswordHasherLifecycle(t *testing.T) {
 	for child, wantParent := range hierarchyWants {
 		if parents := kb.Hierarchy[child]; len(parents) == 0 || parents[0] != wantParent {
 			t.Fatalf("%s hierarchy = %v, want first parent %s", child, kb.Hierarchy[child], wantParent)
+		}
+	}
+}
+
+// TestLoadEmbeddedJava_NaClBindingLifecycle verifies the Java libsodium/NaCl
+// binding contracts (scanoss/crypto-finder#205): lazysodium-java's rule-anchored
+// AEAD/Box/GenericHash/PwHash/SecretBox/Sign interface pairs plus key material,
+// and kalium's Box/SecretBox/SealedBox/Aead/Hash/Password/key surfaces. It pins
+// the Lazy-vs-Native split (high-level object returns vs boolean buffer forms),
+// the algorithm-bearing native AEAD entry points, and the work-factor and key
+// parameter roles.
+func TestLoadEmbeddedJava_NaClBindingLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// lazysodium: facade construction and key material.
+		{"com.goterl.lazysodium.LazySodiumJava.<init>", 1, "com.goterl.lazysodium.LazySodiumJava", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.SodiumJava.<init>", 0, "com.goterl.lazysodium.SodiumJava", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.utils.Key.fromBytes", 1, "com.goterl.lazysodium.utils.Key", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.utils.Key.generate", 2, "com.goterl.lazysodium.utils.Key", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.utils.KeyPair.getSecretKey", 0, "com.goterl.lazysodium.utils.Key", "output", "lazysodium"},
+		// lazysodium Lazy forms return high-level objects.
+		{"com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxKeygen", 0, "com.goterl.lazysodium.utils.Key", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxEasy", 3, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxDetached", 3, "com.goterl.lazysodium.utils.DetachedEncrypt", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxKeypair", 0, "com.goterl.lazysodium.utils.KeyPair", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxEasy", 3, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxSealEasy", 2, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHash", 2, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHashStr", 3, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHashStrVerify", 2, "boolean", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignKeypair", 0, "com.goterl.lazysodium.utils.KeyPair", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignDetached", 2, "java.lang.String", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignVerifyDetached", 3, "boolean", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.AEAD.Lazy.keygen", 1, "com.goterl.lazysodium.utils.Key", "factory", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.AEAD.Lazy.encrypt", 5, "java.lang.String", "operation", "lazysodium"},
+		// lazysodium Native forms are buffer-based and boolean/void-returning;
+		// the AEAD names carry the algorithm family.
+		{"com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxEasy", 5, "boolean", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfEncrypt", 9, "boolean", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMEncrypt", 9, "boolean", "operation", "lazysodium"},
+		{"com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMKeygen", 1, "void", "factory", "lazysodium"},
+		// kalium: rule anchors are the Box/Hash/SecretBox constructors.
+		{"org.abstractj.kalium.crypto.Box.<init>", 2, "org.abstractj.kalium.crypto.Box", "factory", "kalium"},
+		{"org.abstractj.kalium.crypto.SecretBox.<init>", 1, "org.abstractj.kalium.crypto.SecretBox", "factory", "kalium"},
+		{"org.abstractj.kalium.crypto.Hash.<init>", 0, "org.abstractj.kalium.crypto.Hash", "factory", "kalium"},
+		{"org.abstractj.kalium.crypto.Box.encrypt", 2, "byte[]", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.SecretBox.decrypt", 2, "byte[]", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.SealedBox.encrypt", 1, "byte[]", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.Aead.useAesGcm", 0, "org.abstractj.kalium.crypto.Aead", "config", "kalium"},
+		{"org.abstractj.kalium.crypto.Aead.encrypt", 3, "byte[]", "operation", "kalium"},
+		// kalium Hash splits byte[] (arity 1) from String (arity 2 with encoder).
+		{"org.abstractj.kalium.crypto.Hash.sha256", 1, "byte[]", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.Hash.sha256", 2, "java.lang.String", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.Password.hash", 4, "java.lang.String", "operation", "kalium"},
+		{"org.abstractj.kalium.crypto.Password.verify", 2, "boolean", "operation", "kalium"},
+		{"org.abstractj.kalium.keys.SigningKey.sign", 1, "byte[]", "operation", "kalium"},
+		{"org.abstractj.kalium.keys.VerifyKey.verify", 2, "boolean", "operation", "kalium"},
+		{"org.abstractj.kalium.keys.KeyPair.getPrivateKey", 0, "org.abstractj.kalium.keys.PrivateKey", "output", "kalium"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// cryptoGenericHashKeygen is the one lazysodium name where the Lazy and
+	// Native forms share arity 1: Lazy(int) -> Key vs Native(byte[]) -> void.
+	// They must stay distinct contracts keyed by the declaring interface.
+	lazyKeygen := kb.ContractsFor("com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashKeygen", 1)
+	nativeKeygen := kb.ContractsFor("com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashKeygen", 1)
+	if len(lazyKeygen) != 1 || lazyKeygen[0].Return.Type != "com.goterl.lazysodium.utils.Key" {
+		t.Fatalf("GenericHash.Lazy.cryptoGenericHashKeygen#1 = %#v, want Key", lazyKeygen)
+	}
+	if len(nativeKeygen) != 1 || nativeKeygen[0].Return.Type != "void" {
+		t.Fatalf("GenericHash.Native.cryptoGenericHashKeygen#1 = %#v, want void", nativeKeygen)
+	}
+
+	// The AEAD.Lazy methods take the algorithm as a trailing enum argument, so
+	// that parameter must be operation-determining rather than metadata.
+	aeadEncrypt := kb.ContractsFor("com.goterl.lazysodium.interfaces.AEAD.Lazy.encrypt", 5)
+	if len(aeadEncrypt) != 1 || len(aeadEncrypt[0].Parameters) != 1 {
+		t.Fatalf("AEAD.Lazy.encrypt#5 parameters = %#v, want the trailing method parameter", aeadEncrypt)
+	}
+	p := aeadEncrypt[0].Parameters[0]
+	if p.Index == nil || *p.Index != 4 || p.Role != "operation-determining" ||
+		p.Contributes == nil || p.Contributes.Property != "algorithm" {
+		t.Fatalf("AEAD.Lazy.encrypt#5 parameters[0] = %#v, want index=4 operation-determining algorithm", p)
+	}
+
+	// LazySodiumJava must resolve to LazySodium, which declares the Lazy/Native
+	// interfaces the operations are authored on.
+	if parents := kb.Hierarchy["com.goterl.lazysodium.LazySodiumJava"]; len(parents) != 1 || parents[0] != "com.goterl.lazysodium.LazySodium" {
+		t.Fatalf("LazySodiumJava hierarchy = %v, want [LazySodium]", parents)
+	}
+	lazySodiumParents := kb.Hierarchy["com.goterl.lazysodium.LazySodium"]
+	for _, want := range []string{
+		"com.goterl.lazysodium.interfaces.AEAD.Lazy",
+		"com.goterl.lazysodium.interfaces.Box.Lazy",
+		"com.goterl.lazysodium.interfaces.GenericHash.Lazy",
+		"com.goterl.lazysodium.interfaces.PwHash.Lazy",
+		"com.goterl.lazysodium.interfaces.SecretBox.Lazy",
+		"com.goterl.lazysodium.interfaces.Sign.Lazy",
+	} {
+		if !slices.Contains(lazySodiumParents, want) {
+			t.Fatalf("LazySodium hierarchy = %v, missing %s", lazySodiumParents, want)
 		}
 	}
 }

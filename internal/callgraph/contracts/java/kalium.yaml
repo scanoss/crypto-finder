@@ -1,0 +1,668 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: kalium
+  coordinates:
+    - "org.abstractj.kalium:kalium"
+  # Verified against upstream source on the 0.8.1-SNAPSHOT tree (abstractj/kalium);
+  # the last published release is 0.8.0 and this surface is unchanged since.
+  version_range: ">=0.7,<1.0"
+  description: "Kalium contracts for the libsodium box, secretbox, sealed-box, AEAD, hash, password, and signing-key lifecycles"
+
+contracts:
+  # =========================================================================
+  # Box — Curve25519-XSalsa20-Poly1305 (org.abstractj.kalium.crypto.Box)
+  # The nonce is the FIRST argument of encrypt/decrypt in kalium.
+  # =========================================================================
+  # Box#2 is overloaded ((byte[],byte[]) / (PublicKey,PrivateKey)) — canonical
+  # signature omitted.
+  - method: org.abstractj.kalium.crypto.Box.<init>
+    arity: 2
+    return:
+      type: org.abstractj.kalium.crypto.Box
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Box.<init>
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.crypto.Box
+    return:
+      type: org.abstractj.kalium.crypto.Box
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Box.encrypt
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Box.encrypt
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Box.decrypt
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Box.decrypt
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # SecretBox — XSalsa20-Poly1305 (org.abstractj.kalium.crypto.SecretBox)
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.SecretBox.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.crypto.SecretBox
+    return:
+      type: org.abstractj.kalium.crypto.SecretBox
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: org.abstractj.kalium.crypto.SecretBox.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.crypto.SecretBox
+    return:
+      type: org.abstractj.kalium.crypto.SecretBox
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.SecretBox.encrypt
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.SecretBox.decrypt
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # SealedBox — crypto_box_seal, anonymous sender
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.SealedBox.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.crypto.SealedBox
+    return:
+      type: org.abstractj.kalium.crypto.SealedBox
+      confidence: high
+    role: factory
+  # SealedBox#2 is overloaded ((String,Encoder) / (byte[],byte[])).
+  - method: org.abstractj.kalium.crypto.SealedBox.<init>
+    arity: 2
+    return:
+      type: org.abstractj.kalium.crypto.SealedBox
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.SealedBox.<init>
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.crypto.SealedBox
+    return:
+      type: org.abstractj.kalium.crypto.SealedBox
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.SealedBox.encrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.SealedBox.decrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Aead — ChaCha20-Poly1305 by default, AES-256-GCM after useAesGcm()
+  # useAesGcm is the fluent link that switches the algorithm for every later
+  # encrypt/decrypt on the same receiver, so algorithm attribution needs the
+  # chain, not the encrypt call alone.
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.Aead.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.crypto.Aead
+    return:
+      type: org.abstractj.kalium.crypto.Aead
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: org.abstractj.kalium.crypto.Aead.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.crypto.Aead
+    return:
+      type: org.abstractj.kalium.crypto.Aead
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Aead.useAesGcm
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.crypto.Aead
+    return:
+      type: org.abstractj.kalium.crypto.Aead
+      confidence: high
+    role: config
+  - method: org.abstractj.kalium.crypto.Aead.encrypt
+    arity: 3
+    parameter_types: ["byte[]", "byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Aead.decrypt
+    arity: 3
+    parameter_types: ["byte[]", "byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Hash — SHA-256 / SHA-512 / BLAKE2b
+  # Each digest name has a byte[]-returning arity-1 form and a String-returning
+  # arity-2 (encoder) form.
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.Hash.<init>
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.crypto.Hash
+    return:
+      type: org.abstractj.kalium.crypto.Hash
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Hash.sha256
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.sha256
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.sha512
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.sha512
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.blake2
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.blake2
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Hash.blake2
+    arity: 4
+    parameter_types: ["byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  # =========================================================================
+  # Password — scrypt (salsa208sha256)
+  # hash#4 is the modular-crypt-string form; hash#5/#6 derive a raw key.
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.Password.<init>
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.crypto.Password
+    return:
+      type: org.abstractj.kalium.crypto.Password
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Password.deriveKey
+    arity: 5
+    parameter_types: [int, "byte[]", "byte[]", int, long]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: length
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: opslimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 4
+        name: memlimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: org.abstractj.kalium.crypto.Password.hash
+    arity: 4
+    parameter_types: ["byte[]", org.abstractj.kalium.encoders.Encoder, int, long]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: opslimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 3
+        name: memlimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: org.abstractj.kalium.crypto.Password.hash
+    arity: 5
+    parameter_types:
+      ["byte[]", org.abstractj.kalium.encoders.Encoder, "byte[]", int, long]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 3
+        name: opslimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 4
+        name: memlimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: org.abstractj.kalium.crypto.Password.hash
+    arity: 6
+    parameter_types:
+      [int, "byte[]", org.abstractj.kalium.encoders.Encoder, "byte[]", int, long]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: length
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 4
+        name: opslimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 5
+        name: memlimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: org.abstractj.kalium.crypto.Password.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Random
+  # =========================================================================
+  - method: org.abstractj.kalium.crypto.Random.<init>
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.crypto.Random
+    return:
+      type: org.abstractj.kalium.crypto.Random
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.crypto.Random.randomBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.crypto.Random.randomBytes
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: n
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+
+  # =========================================================================
+  # Keys (org.abstractj.kalium.keys)
+  # =========================================================================
+  - method: org.abstractj.kalium.keys.KeyPair.<init>
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.keys.KeyPair
+    return:
+      type: org.abstractj.kalium.keys.KeyPair
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.KeyPair.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.keys.KeyPair
+    return:
+      type: org.abstractj.kalium.keys.KeyPair
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.KeyPair.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.keys.KeyPair
+    return:
+      type: org.abstractj.kalium.keys.KeyPair
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.KeyPair.getPublicKey
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.keys.PublicKey
+    return:
+      type: org.abstractj.kalium.keys.PublicKey
+      confidence: high
+    role: output
+  - method: org.abstractj.kalium.keys.KeyPair.getPrivateKey
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.keys.PrivateKey
+    return:
+      type: org.abstractj.kalium.keys.PrivateKey
+      confidence: high
+    role: output
+  # PublicKey/PrivateKey#1 are overloaded (byte[] / hex String) — canonical
+  # signatures omitted.
+  - method: org.abstractj.kalium.keys.PublicKey.<init>
+    arity: 1
+    return:
+      type: org.abstractj.kalium.keys.PublicKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.PrivateKey.<init>
+    arity: 1
+    return:
+      type: org.abstractj.kalium.keys.PrivateKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.PublicKey.toBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: org.abstractj.kalium.keys.PrivateKey.toBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  # Ed25519 signing keys
+  - method: org.abstractj.kalium.keys.SigningKey.<init>
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.keys.SigningKey
+    return:
+      type: org.abstractj.kalium.keys.SigningKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.SigningKey.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.keys.SigningKey
+    return:
+      type: org.abstractj.kalium.keys.SigningKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.SigningKey.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.keys.SigningKey
+    return:
+      type: org.abstractj.kalium.keys.SigningKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.SigningKey.getVerifyKey
+    arity: 0
+    canonical_return_type: org.abstractj.kalium.keys.VerifyKey
+    return:
+      type: org.abstractj.kalium.keys.VerifyKey
+      confidence: high
+    role: output
+  - method: org.abstractj.kalium.keys.SigningKey.sign
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.SigningKey.sign
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.SigningKey.toBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: org.abstractj.kalium.keys.VerifyKey.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.keys.VerifyKey
+    return:
+      type: org.abstractj.kalium.keys.VerifyKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.VerifyKey.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.keys.VerifyKey
+    return:
+      type: org.abstractj.kalium.keys.VerifyKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.VerifyKey.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.VerifyKey.verify
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.VerifyKey.toBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  # HMAC-SHA512/256 authentication keys
+  - method: org.abstractj.kalium.keys.AuthenticationKey.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.abstractj.kalium.keys.AuthenticationKey
+    return:
+      type: org.abstractj.kalium.keys.AuthenticationKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: org.abstractj.kalium.keys.AuthenticationKey.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: org.abstractj.kalium.keys.AuthenticationKey
+    return:
+      type: org.abstractj.kalium.keys.AuthenticationKey
+      confidence: high
+    role: factory
+  - method: org.abstractj.kalium.keys.AuthenticationKey.sign
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.AuthenticationKey.sign
+    arity: 2
+    parameter_types: [java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.AuthenticationKey.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.AuthenticationKey.verify
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, org.abstractj.kalium.encoders.Encoder]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: org.abstractj.kalium.keys.AuthenticationKey.toBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+
+hierarchy:
+  # Every kalium crypto class is a flat java.lang.Object subclass; the keys
+  # package has a small Key interface that only PublicKey/PrivateKey/
+  # AuthenticationKey implement (SigningKey and VerifyKey deliberately do not).
+  org.abstractj.kalium.crypto.Box:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.SecretBox:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.SealedBox:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.Aead:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.Hash:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.Password:
+    - java.lang.Object
+  org.abstractj.kalium.crypto.Random:
+    - java.lang.Object
+  org.abstractj.kalium.keys.Key:
+    - java.lang.Object
+  org.abstractj.kalium.keys.KeyPair:
+    - java.lang.Object
+  org.abstractj.kalium.keys.PublicKey:
+    - org.abstractj.kalium.keys.Key
+  org.abstractj.kalium.keys.PrivateKey:
+    - org.abstractj.kalium.keys.Key
+  org.abstractj.kalium.keys.AuthenticationKey:
+    - org.abstractj.kalium.keys.Key
+  org.abstractj.kalium.keys.SigningKey:
+    - java.lang.Object
+  org.abstractj.kalium.keys.VerifyKey:
+    - java.lang.Object
+  org.abstractj.kalium.encoders.Encoder:
+    - java.lang.Object
+  java.lang.Object: []
