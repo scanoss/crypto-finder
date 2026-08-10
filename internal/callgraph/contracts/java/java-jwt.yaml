@@ -62,18 +62,33 @@ contracts:
       type: com.auth0.jwt.algorithms.Algorithm
       confidence: high
     role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
   - method: com.auth0.jwt.algorithms.Algorithm.HMAC384
     arity: 1
     return:
       type: com.auth0.jwt.algorithms.Algorithm
       confidence: high
     role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
   - method: com.auth0.jwt.algorithms.Algorithm.HMAC512
     arity: 1
     return:
       type: com.auth0.jwt.algorithms.Algorithm
       confidence: high
     role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
   - method: com.auth0.jwt.algorithms.Algorithm.RSA256
     arity: 1
     return:
