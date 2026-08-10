@@ -1,0 +1,758 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: okhttp-tls
+  coordinates:
+    - "com.squareup.okhttp3:okhttp"
+    - "com.squareup.okhttp3:okhttp-tls"
+  # Verified against upstream Kotlin sources and the binary-compatibility API
+  # dumps on the okhttp 5.x line (repo declares 5.5.0-SNAPSHOT; latest release
+  # 5.4.0). The JVM-visible surface is contracted: Kotlin `val` accessors carry
+  # @get:JvmName so Java sees x() rather than getX(), and varargs occupy a
+  # single parameter slot. okhttp3.tls.* ships in the separate okhttp-tls
+  # artifact; both coordinates are listed above.
+  version_range: ">=5.0,<6.0"
+  description: "OkHttp TLS contracts for certificate pinning, connection-spec cipher/TLS-version selection, handshake inspection, and the okhttp-tls certificate helpers"
+
+contracts:
+  # =========================================================================
+  # Certificate pinning (okhttp3.CertificatePinner)
+  # rule anchor: CertificatePinner.Builder.add
+  # =========================================================================
+  - method: okhttp3.CertificatePinner.Builder.<init>
+    arity: 0
+    canonical_return_type: okhttp3.CertificatePinner.Builder
+    return:
+      type: okhttp3.CertificatePinner.Builder
+      confidence: high
+    role: factory
+  # add(pattern, vararg pins) — the varargs pin array is one slot, so the
+  # Java-visible arity is 2 regardless of how many pins a call site passes.
+  - method: okhttp3.CertificatePinner.Builder.add
+    arity: 2
+    parameter_types: [java.lang.String, "java.lang.String[]"]
+    canonical_return_type: okhttp3.CertificatePinner.Builder
+    return:
+      type: okhttp3.CertificatePinner.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 1
+        name: pins
+        role: metadata-contributing
+        contributes: { property: digest, derivation: argument_value }
+  - method: okhttp3.CertificatePinner.Builder.build
+    arity: 0
+    canonical_return_type: okhttp3.CertificatePinner
+    return:
+      type: okhttp3.CertificatePinner
+      confidence: high
+    role: factory
+  # check#2 is overloaded ((String,List) / (String,Certificate[]) deprecated),
+  # both void — canonical signature omitted.
+  - method: okhttp3.CertificatePinner.check
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: okhttp3.CertificatePinner.pin
+    arity: 1
+    parameter_types: [java.security.cert.Certificate]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.CertificatePinner.sha256Hash
+    arity: 1
+    parameter_types: [java.security.cert.X509Certificate]
+    canonical_return_type: okio.ByteString
+    return:
+      type: okio.ByteString
+      confidence: high
+    role: operation
+  - method: okhttp3.CertificatePinner.sha1Hash
+    arity: 1
+    parameter_types: [java.security.cert.X509Certificate]
+    canonical_return_type: okio.ByteString
+    return:
+      type: okio.ByteString
+      confidence: high
+    role: operation
+  - method: okhttp3.CertificatePinner.Pin.<init>
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: okhttp3.CertificatePinner.Pin
+    return:
+      type: okhttp3.CertificatePinner.Pin
+      confidence: high
+    role: factory
+  - method: okhttp3.CertificatePinner.Pin.getHashAlgorithm
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.CertificatePinner.Pin.getHash
+    arity: 0
+    canonical_return_type: okio.ByteString
+    return:
+      type: okio.ByteString
+      confidence: high
+    role: output
+  - method: okhttp3.CertificatePinner.Pin.matchesCertificate
+    arity: 1
+    parameter_types: [java.security.cert.X509Certificate]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Connection specs (okhttp3.ConnectionSpec)
+  # rule anchors: ConnectionSpec, ConnectionSpec.Builder.cipherSuites
+  # NOTE: Builder has no no-arg constructor — the only public form takes a base
+  # ConnectionSpec (typically the MODERN_TLS/COMPATIBLE_TLS constant).
+  # =========================================================================
+  - method: okhttp3.ConnectionSpec.Builder.<init>
+    arity: 1
+    parameter_types: [okhttp3.ConnectionSpec]
+    canonical_return_type: okhttp3.ConnectionSpec.Builder
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: factory
+  # cipherSuites and tlsVersions each have two vararg overloads at arity 1
+  # (typed CipherSuite[]/TlsVersion[] and String[]); the typed forms delegate to
+  # the String forms internally. Canonical signatures are omitted because arity
+  # alone cannot select the overload.
+  - method: okhttp3.ConnectionSpec.Builder.cipherSuites
+    arity: 1
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: cipherSuites
+        role: operation-determining
+        contributes: { property: cipher, derivation: argument_value }
+  - method: okhttp3.ConnectionSpec.Builder.tlsVersions
+    arity: 1
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: tlsVersions
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+  - method: okhttp3.ConnectionSpec.Builder.allEnabledCipherSuites
+    arity: 0
+    canonical_return_type: okhttp3.ConnectionSpec.Builder
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.ConnectionSpec.Builder.allEnabledTlsVersions
+    arity: 0
+    canonical_return_type: okhttp3.ConnectionSpec.Builder
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.ConnectionSpec.Builder.supportsTlsExtensions
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: okhttp3.ConnectionSpec.Builder
+    return:
+      type: okhttp3.ConnectionSpec.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.ConnectionSpec.Builder.build
+    arity: 0
+    canonical_return_type: okhttp3.ConnectionSpec
+    return:
+      type: okhttp3.ConnectionSpec
+      confidence: high
+    role: factory
+  # Kotlin @get:JvmName accessors: Java calls cipherSuites()/tlsVersions(), not
+  # getCipherSuites()/getTlsVersions().
+  - method: okhttp3.ConnectionSpec.cipherSuites
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+  - method: okhttp3.ConnectionSpec.tlsVersions
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+  - method: okhttp3.ConnectionSpec.isTls
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: okhttp3.ConnectionSpec.supportsTlsExtensions
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: okhttp3.ConnectionSpec.isCompatible
+    arity: 1
+    parameter_types: [javax.net.ssl.SSLSocket]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # TLS versions and cipher suites (okhttp3.TlsVersion / okhttp3.CipherSuite)
+  # rule anchors: TlsVersion, TlsVersion.SSL_3_0
+  # TlsVersion.forJavaName throws on an unknown name; CipherSuite.forJavaName
+  # interns a fresh instance instead, so an arbitrary suite string is accepted.
+  # =========================================================================
+  - method: okhttp3.TlsVersion.forJavaName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.TlsVersion
+    return:
+      type: okhttp3.TlsVersion
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: javaName
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+  - method: okhttp3.TlsVersion.javaName
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.CipherSuite.forJavaName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.CipherSuite
+    return:
+      type: okhttp3.CipherSuite
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: javaName
+        role: operation-determining
+        contributes: { property: cipher, derivation: argument_value }
+  - method: okhttp3.CipherSuite.javaName
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Client TLS configuration (okhttp3.OkHttpClient.Builder) — TLS surface only;
+  # interceptors, timeouts, caching, and routing are deliberately not contracted.
+  # =========================================================================
+  - method: okhttp3.OkHttpClient.<init>
+    arity: 0
+    canonical_return_type: okhttp3.OkHttpClient
+    return:
+      type: okhttp3.OkHttpClient
+      confidence: high
+    role: factory
+  - method: okhttp3.OkHttpClient.Builder.<init>
+    arity: 0
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: factory
+  - method: okhttp3.OkHttpClient.newBuilder
+    arity: 0
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: factory
+  # The arity-1 sslSocketFactory is deprecated at ERROR level in Kotlin but is
+  # not name-mangled, so it stays callable (and reachable) from Java.
+  - method: okhttp3.OkHttpClient.Builder.sslSocketFactory
+    arity: 1
+    parameter_types: [javax.net.ssl.SSLSocketFactory]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.sslSocketFactory
+    arity: 2
+    parameter_types:
+      [javax.net.ssl.SSLSocketFactory, javax.net.ssl.X509TrustManager]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.hostnameVerifier
+    arity: 1
+    parameter_types: [javax.net.ssl.HostnameVerifier]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.certificatePinner
+    arity: 1
+    parameter_types: [okhttp3.CertificatePinner]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.connectionSpecs
+    arity: 1
+    parameter_types: [java.util.List]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.protocols
+    arity: 1
+    parameter_types: [java.util.List]
+    canonical_return_type: okhttp3.OkHttpClient.Builder
+    return:
+      type: okhttp3.OkHttpClient.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.OkHttpClient.Builder.build
+    arity: 0
+    canonical_return_type: okhttp3.OkHttpClient
+    return:
+      type: okhttp3.OkHttpClient
+      confidence: high
+    role: factory
+  - method: okhttp3.OkHttpClient.sslSocketFactory
+    arity: 0
+    canonical_return_type: javax.net.ssl.SSLSocketFactory
+    return:
+      type: javax.net.ssl.SSLSocketFactory
+      confidence: high
+    role: output
+  - method: okhttp3.OkHttpClient.x509TrustManager
+    arity: 0
+    canonical_return_type: javax.net.ssl.X509TrustManager
+    return:
+      type: javax.net.ssl.X509TrustManager
+      confidence: high
+    role: output
+  - method: okhttp3.OkHttpClient.certificatePinner
+    arity: 0
+    canonical_return_type: okhttp3.CertificatePinner
+    return:
+      type: okhttp3.CertificatePinner
+      confidence: high
+    role: output
+  - method: okhttp3.OkHttpClient.connectionSpecs
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Handshake inspection (okhttp3.Handshake) — the negotiated result
+  # =========================================================================
+  # get#1 takes an SSLSession; get#4 builds a Handshake from its parts.
+  - method: okhttp3.Handshake.get
+    arity: 1
+    parameter_types: [javax.net.ssl.SSLSession]
+    canonical_return_type: okhttp3.Handshake
+    return:
+      type: okhttp3.Handshake
+      confidence: high
+    role: factory
+  - method: okhttp3.Handshake.get
+    arity: 4
+    parameter_types:
+      [okhttp3.TlsVersion, okhttp3.CipherSuite, java.util.List, java.util.List]
+    canonical_return_type: okhttp3.Handshake
+    return:
+      type: okhttp3.Handshake
+      confidence: high
+    role: factory
+  - method: okhttp3.Handshake.tlsVersion
+    arity: 0
+    canonical_return_type: okhttp3.TlsVersion
+    return:
+      type: okhttp3.TlsVersion
+      confidence: high
+    role: output
+  - method: okhttp3.Handshake.cipherSuite
+    arity: 0
+    canonical_return_type: okhttp3.CipherSuite
+    return:
+      type: okhttp3.CipherSuite
+      confidence: high
+    role: output
+  - method: okhttp3.Handshake.peerCertificates
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+  - method: okhttp3.Handshake.localCertificates
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # okhttp-tls artifact (okhttp3.tls) — certificate and key generation
+  # =========================================================================
+  - method: okhttp3.tls.HeldCertificate.<init>
+    arity: 2
+    parameter_types: [java.security.KeyPair, java.security.cert.X509Certificate]
+    canonical_return_type: okhttp3.tls.HeldCertificate
+    return:
+      type: okhttp3.tls.HeldCertificate
+      confidence: high
+    role: factory
+  - method: okhttp3.tls.HeldCertificate.decode
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.tls.HeldCertificate
+    return:
+      type: okhttp3.tls.HeldCertificate
+      confidence: high
+    role: factory
+  - method: okhttp3.tls.HeldCertificate.certificate
+    arity: 0
+    canonical_return_type: java.security.cert.X509Certificate
+    return:
+      type: java.security.cert.X509Certificate
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HeldCertificate.keyPair
+    arity: 0
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HeldCertificate.certificatePem
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HeldCertificate.privateKeyPkcs8Pem
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HeldCertificate.privateKeyPkcs1Pem
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HeldCertificate.Builder.<init>
+    arity: 0
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: factory
+  # The builder defaults to EC/256 (its init block calls ecdsa256()).
+  - method: okhttp3.tls.HeldCertificate.Builder.ecdsa256
+    arity: 0
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.rsa2048
+    arity: 0
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.keyPair
+    arity: 1
+    parameter_types: [java.security.KeyPair]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.keyPair
+    arity: 2
+    parameter_types: [java.security.PublicKey, java.security.PrivateKey]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.commonName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.organizationalUnit
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.duration
+    arity: 2
+    parameter_types: [long, java.util.concurrent.TimeUnit]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.validityInterval
+    arity: 2
+    parameter_types: [long, long]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.addSubjectAlternativeName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.signedBy
+    arity: 1
+    parameter_types: [okhttp3.tls.HeldCertificate]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HeldCertificate.Builder.certificateAuthority
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: okhttp3.tls.HeldCertificate.Builder
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  # serialNumber#1 is overloaded (long / BigInteger); the long form delegates.
+  - method: okhttp3.tls.HeldCertificate.Builder.serialNumber
+    arity: 1
+    return:
+      type: okhttp3.tls.HeldCertificate.Builder
+      confidence: high
+    role: config
+  # build() is the terminal: it generates the key pair (EC or RSA at the
+  # configured size) and self- or CA-signs with SHA256withECDSA/SHA256withRSA.
+  - method: okhttp3.tls.HeldCertificate.Builder.build
+    arity: 0
+    canonical_return_type: okhttp3.tls.HeldCertificate
+    return:
+      type: okhttp3.tls.HeldCertificate
+      confidence: high
+    role: operation
+  - method: okhttp3.tls.HandshakeCertificates.Builder.<init>
+    arity: 0
+    canonical_return_type: okhttp3.tls.HandshakeCertificates.Builder
+    return:
+      type: okhttp3.tls.HandshakeCertificates.Builder
+      confidence: high
+    role: factory
+  - method: okhttp3.tls.HandshakeCertificates.Builder.heldCertificate
+    arity: 2
+    parameter_types:
+      [okhttp3.tls.HeldCertificate, "java.security.cert.X509Certificate[]"]
+    canonical_return_type: okhttp3.tls.HandshakeCertificates.Builder
+    return:
+      type: okhttp3.tls.HandshakeCertificates.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HandshakeCertificates.Builder.addTrustedCertificate
+    arity: 1
+    parameter_types: [java.security.cert.X509Certificate]
+    canonical_return_type: okhttp3.tls.HandshakeCertificates.Builder
+    return:
+      type: okhttp3.tls.HandshakeCertificates.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HandshakeCertificates.Builder.addPlatformTrustedCertificates
+    arity: 0
+    canonical_return_type: okhttp3.tls.HandshakeCertificates.Builder
+    return:
+      type: okhttp3.tls.HandshakeCertificates.Builder
+      confidence: high
+    role: config
+  # addInsecureHost disables server authentication for a hostname.
+  - method: okhttp3.tls.HandshakeCertificates.Builder.addInsecureHost
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: okhttp3.tls.HandshakeCertificates.Builder
+    return:
+      type: okhttp3.tls.HandshakeCertificates.Builder
+      confidence: high
+    role: config
+  - method: okhttp3.tls.HandshakeCertificates.Builder.build
+    arity: 0
+    canonical_return_type: okhttp3.tls.HandshakeCertificates
+    return:
+      type: okhttp3.tls.HandshakeCertificates
+      confidence: high
+    role: factory
+  - method: okhttp3.tls.HandshakeCertificates.keyManager
+    arity: 0
+    canonical_return_type: javax.net.ssl.X509KeyManager
+    return:
+      type: javax.net.ssl.X509KeyManager
+      confidence: high
+    role: output
+  - method: okhttp3.tls.HandshakeCertificates.trustManager
+    arity: 0
+    canonical_return_type: javax.net.ssl.X509TrustManager
+    return:
+      type: javax.net.ssl.X509TrustManager
+      confidence: high
+    role: output
+  # sslContext()/sslSocketFactory() initialize the SSLContext with the key and
+  # trust managers and a fresh SecureRandom.
+  - method: okhttp3.tls.HandshakeCertificates.sslContext
+    arity: 0
+    canonical_return_type: javax.net.ssl.SSLContext
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: operation
+  - method: okhttp3.tls.HandshakeCertificates.sslSocketFactory
+    arity: 0
+    canonical_return_type: javax.net.ssl.SSLSocketFactory
+    return:
+      type: javax.net.ssl.SSLSocketFactory
+      confidence: high
+    role: operation
+  - method: okhttp3.tls.Certificates.certificatePem
+    arity: 1
+    parameter_types: [java.security.cert.X509Certificate]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: okhttp3.tls.Certificates.decodeCertificatePem
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.cert.X509Certificate
+    return:
+      type: java.security.cert.X509Certificate
+      confidence: high
+    role: factory
+
+hierarchy:
+  # Every okhttp TLS type is a flat java.lang.Object subclass except the
+  # TlsVersion enum; nested Builders are static, so there is no outer receiver.
+  okhttp3.CertificatePinner:
+    - java.lang.Object
+  okhttp3.CertificatePinner.Builder:
+    - java.lang.Object
+  okhttp3.CertificatePinner.Pin:
+    - java.lang.Object
+  okhttp3.ConnectionSpec:
+    - java.lang.Object
+  okhttp3.ConnectionSpec.Builder:
+    - java.lang.Object
+  okhttp3.TlsVersion:
+    - java.lang.Enum
+  okhttp3.CipherSuite:
+    - java.lang.Object
+  okhttp3.Handshake:
+    - java.lang.Object
+  okhttp3.OkHttpClient:
+    - java.lang.Object
+  okhttp3.OkHttpClient.Builder:
+    - java.lang.Object
+  okhttp3.tls.HeldCertificate:
+    - java.lang.Object
+  okhttp3.tls.HeldCertificate.Builder:
+    - java.lang.Object
+  okhttp3.tls.HandshakeCertificates:
+    - java.lang.Object
+  okhttp3.tls.HandshakeCertificates.Builder:
+    - java.lang.Object
+  okhttp3.tls.Certificates:
+    - java.lang.Object
+  okio.ByteString:
+    - java.lang.Object
+  # JCA / JSSE types referenced as returns
+  javax.net.ssl.SSLContext:
+    - java.lang.Object
+  javax.net.ssl.SSLSocketFactory:
+    - java.lang.Object
+  javax.net.ssl.SSLSocket:
+    - java.lang.Object
+  javax.net.ssl.SSLSession:
+    - java.lang.Object
+  javax.net.ssl.X509TrustManager:
+    - java.lang.Object
+  javax.net.ssl.X509KeyManager:
+    - java.lang.Object
+  javax.net.ssl.HostnameVerifier:
+    - java.lang.Object
+  java.security.cert.X509Certificate:
+    - java.security.cert.Certificate
+  java.security.cert.Certificate:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.util.List:
+    - java.lang.Object
+  java.util.concurrent.TimeUnit:
+    - java.lang.Enum
+  java.lang.Enum:
+    - java.lang.Object
+  java.lang.Object: []

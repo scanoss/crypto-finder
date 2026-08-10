@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Java callgraph contracts now model the OkHttp 5.x TLS surface — certificate pinning, `ConnectionSpec` cipher-suite and TLS-version selection, handshake inspection, the TLS-related `OkHttpClient.Builder` configuration, and the `okhttp-tls` `HeldCertificate`/`HandshakeCertificates` certificate and key generation.
 - Java callgraph contracts now model the JSch (`com.jcraft` and the `com.github.mwiede` fork) session, algorithm-configuration, host-key, and key-pair generation/loading lifecycles, and the sshj 0.40 client connect/auth, algorithm-selection, key-provider, and host-key-verification lifecycles.
 - Java callgraph contracts now model the lazysodium-java 5.2 libsodium AEAD, box, secretbox, generic-hash, password-hash, and signing lifecycles (both the high-level `Lazy` and buffer-based `Native` surfaces) and the kalium box, secretbox, sealed-box, AEAD, hash, password, and signing-key lifecycles.
 - Java callgraph contracts now model the jbcrypt, at.favre.lib bcrypt, Lambdaworks scrypt, argon2-jvm, and Jasypt password/KDF facades, including the bcrypt cost, scrypt N/r/p, and Argon2/PBE iteration work factors.

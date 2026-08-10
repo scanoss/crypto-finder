@@ -1268,3 +1268,119 @@ func TestLoadEmbeddedJava_SSHClientLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadEmbeddedJava_OkHttpTLSLifecycle verifies the OkHttp TLS contracts
+// (scanoss/crypto-finder#204): certificate pinning, connection-spec cipher and
+// TLS-version selection, handshake inspection, the TLS-only slice of
+// OkHttpClient.Builder, and the okhttp-tls certificate helpers. It also pins the
+// Kotlin-specific shapes that a naive KB would get wrong: @get:JvmName
+// accessors are x() not getX(), varargs occupy one parameter slot, and
+// ConnectionSpec.Builder has no no-arg constructor.
+func TestLoadEmbeddedJava_OkHttpTLSLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+	}{
+		// Rule anchors: CertificatePinner.Builder.add, ConnectionSpec,
+		// ConnectionSpec.Builder.cipherSuites, TlsVersion.
+		{"okhttp3.CertificatePinner.Builder.add", 2, "okhttp3.CertificatePinner.Builder", "config"},
+		{"okhttp3.CertificatePinner.Builder.build", 0, "okhttp3.CertificatePinner", "factory"},
+		{"okhttp3.CertificatePinner.pin", 1, "java.lang.String", "output"},
+		{"okhttp3.CertificatePinner.sha256Hash", 1, "okio.ByteString", "operation"},
+		{"okhttp3.ConnectionSpec.Builder.cipherSuites", 1, "okhttp3.ConnectionSpec.Builder", "config"},
+		{"okhttp3.ConnectionSpec.Builder.tlsVersions", 1, "okhttp3.ConnectionSpec.Builder", "config"},
+		{"okhttp3.ConnectionSpec.Builder.build", 0, "okhttp3.ConnectionSpec", "factory"},
+		{"okhttp3.ConnectionSpec.isCompatible", 1, "boolean", "operation"},
+		{"okhttp3.TlsVersion.forJavaName", 1, "okhttp3.TlsVersion", "factory"},
+		{"okhttp3.CipherSuite.forJavaName", 1, "okhttp3.CipherSuite", "factory"},
+		// Client TLS configuration.
+		{"okhttp3.OkHttpClient.Builder.sslSocketFactory", 2, "okhttp3.OkHttpClient.Builder", "config"},
+		{"okhttp3.OkHttpClient.Builder.hostnameVerifier", 1, "okhttp3.OkHttpClient.Builder", "config"},
+		{"okhttp3.OkHttpClient.Builder.certificatePinner", 1, "okhttp3.OkHttpClient.Builder", "config"},
+		{"okhttp3.OkHttpClient.Builder.connectionSpecs", 1, "okhttp3.OkHttpClient.Builder", "config"},
+		{"okhttp3.OkHttpClient.Builder.build", 0, "okhttp3.OkHttpClient", "factory"},
+		{"okhttp3.OkHttpClient.x509TrustManager", 0, "javax.net.ssl.X509TrustManager", "output"},
+		// Handshake results.
+		{"okhttp3.Handshake.get", 1, "okhttp3.Handshake", "factory"},
+		{"okhttp3.Handshake.tlsVersion", 0, "okhttp3.TlsVersion", "output"},
+		{"okhttp3.Handshake.cipherSuite", 0, "okhttp3.CipherSuite", "output"},
+		// okhttp-tls certificate generation.
+		{"okhttp3.tls.HeldCertificate.Builder.ecdsa256", 0, "okhttp3.tls.HeldCertificate.Builder", "config"},
+		{"okhttp3.tls.HeldCertificate.Builder.rsa2048", 0, "okhttp3.tls.HeldCertificate.Builder", "config"},
+		{"okhttp3.tls.HeldCertificate.Builder.signedBy", 1, "okhttp3.tls.HeldCertificate.Builder", "config"},
+		{"okhttp3.tls.HeldCertificate.Builder.build", 0, "okhttp3.tls.HeldCertificate", "operation"},
+		{"okhttp3.tls.HeldCertificate.privateKeyPkcs8Pem", 0, "java.lang.String", "output"},
+		{"okhttp3.tls.HandshakeCertificates.Builder.addInsecureHost", 1, "okhttp3.tls.HandshakeCertificates.Builder", "config"},
+		{"okhttp3.tls.HandshakeCertificates.sslContext", 0, "javax.net.ssl.SSLContext", "operation"},
+		{"okhttp3.tls.Certificates.decodeCertificatePem", 1, "java.security.cert.X509Certificate", "factory"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != "okhttp-tls" {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from okhttp-tls", tt.method, tt.arity, got[0], tt.want, tt.role)
+			}
+		})
+	}
+
+	// Kotlin @get:JvmName means the Java-visible accessors are cipherSuites()
+	// and tlsVersions(), never getCipherSuites()/getTlsVersions().
+	for _, method := range []string{"okhttp3.ConnectionSpec.cipherSuites", "okhttp3.ConnectionSpec.tlsVersions"} {
+		if got := kb.ContractsFor(method, 0); len(got) != 1 || got[0].Return.Type != "java.util.List" {
+			t.Fatalf("%s#0 = %#v, want java.util.List", method, got)
+		}
+	}
+	for _, absent := range []string{"okhttp3.ConnectionSpec.getCipherSuites", "okhttp3.ConnectionSpec.getTlsVersions"} {
+		if got := kb.ContractsFor(absent, 0); len(got) != 0 {
+			t.Fatalf("%s#0 = %#v, want no contract (Kotlin @get:JvmName renames it)", absent, got)
+		}
+	}
+
+	// ConnectionSpec.Builder is only constructible from a base spec — a no-arg
+	// form does not exist and must not be contracted.
+	if got := kb.ContractsFor("okhttp3.ConnectionSpec.Builder.<init>", 1); len(got) != 1 {
+		t.Fatalf("ConnectionSpec.Builder.<init>#1 contracts = %d, want 1", len(got))
+	}
+	if got := kb.ContractsFor("okhttp3.ConnectionSpec.Builder.<init>", 0); len(got) != 0 {
+		t.Fatalf("ConnectionSpec.Builder.<init>#0 = %#v, want no contract (no no-arg ctor exists)", got)
+	}
+
+	// Cipher-suite and TLS-version selection is operation-determining: it picks
+	// the algorithms rather than describing them.
+	selectors := map[string]string{
+		"okhttp3.ConnectionSpec.Builder.cipherSuites": "cipher",
+		"okhttp3.ConnectionSpec.Builder.tlsVersions":  "protocolVersion",
+	}
+	for method, property := range selectors {
+		got := kb.ContractsFor(method, 1)
+		if len(got) != 1 || len(got[0].Parameters) != 1 {
+			t.Fatalf("%s#1 parameters = %#v, want one selector parameter", method, got)
+		}
+		p := got[0].Parameters[0]
+		if p.Role != "operation-determining" || p.Contributes == nil || p.Contributes.Property != property {
+			t.Fatalf("%s#1 parameters[0] = %#v, want operation-determining %s", method, p, property)
+		}
+	}
+
+	// TlsVersion is an enum; CipherSuite deliberately is not (it interns
+	// instances through forJavaName).
+	if parents := kb.Hierarchy["okhttp3.TlsVersion"]; len(parents) != 1 || parents[0] != "java.lang.Enum" {
+		t.Fatalf("TlsVersion hierarchy = %v, want [java.lang.Enum]", parents)
+	}
+	if parents := kb.Hierarchy["okhttp3.CipherSuite"]; len(parents) != 1 || parents[0] != "java.lang.Object" {
+		t.Fatalf("CipherSuite hierarchy = %v, want [java.lang.Object]", parents)
+	}
+}
