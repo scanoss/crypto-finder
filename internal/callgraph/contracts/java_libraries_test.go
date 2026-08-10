@@ -949,6 +949,14 @@ func TestLoadEmbeddedJava_PasswordHasherLifecycle(t *testing.T) {
 		{"org.jasypt.digest.StandardByteDigester.digest", 1, "byte[]", "operation", "jasypt"},
 		{"org.jasypt.util.digest.Digester.digest", 1, "byte[]", "operation", "jasypt"},
 		{"org.jasypt.salt.RandomSaltGenerator.<init>", 0, "org.jasypt.salt.RandomSaltGenerator", "factory", "jasypt"},
+		// Asymmetries found by validating against real code: the provider
+		// setters existed only on the String PBE encryptor, and the
+		// String-digester-only configuration was uncontracted.
+		{"org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setProvider", 1, "void", "config", "jasypt"},
+		{"org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setProviderName", 1, "void", "config", "jasypt"},
+		{"org.jasypt.digest.StandardStringDigester.setStringOutputType", 1, "void", "config", "jasypt"},
+		{"org.jasypt.digest.StandardStringDigester.setPrefix", 1, "void", "config", "jasypt"},
+		{"org.jasypt.digest.StandardStringDigester.setUseLenientSaltSizeCheck", 1, "void", "config", "jasypt"},
 	}
 
 	for _, tt := range tests {
