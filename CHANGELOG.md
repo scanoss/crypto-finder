@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Java callgraph contracts now model the Hutool-crypto 5.8 SecureUtil/DigestUtil/SmUtil/KeyUtil factories and the symmetric, digest, MAC, asymmetric, signing, and SM2 lifecycles.
+- Java callgraph contracts now model the I2P ed25519-java (net.i2p.crypto:eddsa) 0.3 EdDSA signing engine, key-pair generation, and key/spec construction lifecycles.
+- Java callgraph contracts now model the PGPainless 1.7 OpenPGP encrypt/sign, decrypt/verify, key-generation, and key-parsing fluent lifecycles.
 - Java callgraph contracts now model the Auth0 java-jwt 4.x token creation, signing, decoding, and verification lifecycles, and the jwks-rsa JWKS provider construction and signing-key resolution lifecycles.
 - Python callgraph contracts now model the python-rsa 4.x key-pair generation, PKCS#1 encryption, signing, and key-serialization lifecycles.
 - Python callgraph contracts now model the python-ecdsa 0.19 SigningKey/VerifyingKey generation, signing, verification, serialization, and ECDH key-agreement lifecycles.
