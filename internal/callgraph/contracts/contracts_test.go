@@ -483,13 +483,16 @@ func TestLoadEmbedded_Java_HierarchyReachability(t *testing.T) {
 	}
 
 	// Known opaque root types that need no hierarchy entry:
-	// - byte[] is a JVM primitive array, not a reference type in the hierarchy
+	// - byte[] / char[] are JVM primitive arrays, not reference types in the
+	//   hierarchy (char[] shows up on password APIs that keep the secret out of
+	//   an immutable String, e.g. BCrypt.Hasher.hashToChar)
 	// - boolean is a JVM primitive (e.g. terminal HashChecker.with* verify calls)
 	// - void / int are JVM primitives (e.g. role:config lifecycle calls like
 	//   GCMBlockCipher.init -> void, SHA256Digest.getDigestSize -> int)
 	// - java.lang.Object is the universal root
 	opaqueRoots := map[string]struct{}{
 		"byte[]":           {},
+		"char[]":           {},
 		"boolean":          {},
 		"void":             {},
 		"int":              {},

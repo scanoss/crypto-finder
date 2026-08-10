@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jbcrypt
+  coordinates:
+    - "org.mindrot:jbcrypt"
+  # Verified against the published org.mindrot:jbcrypt:0.4 artifact (javap over
+  # the Maven Central jar): the shipped class is org/mindrot/jbcrypt/BCrypt.
+  # The jeremyh/jBCrypt GitHub tree is a repackaged redistribution declaring
+  # `package org.mindrot`, so its source FQN differs from the artifact's; the
+  # artifact (and the detection rules) use org.mindrot.jbcrypt.
+  version_range: ">=0.3,<1.0"
+  description: "jBCrypt password hashing contracts for bcrypt hash, verify, and salt generation"
+
+contracts:
+  - method: org.mindrot.jbcrypt.BCrypt.<init>
+    arity: 0
+    canonical_return_type: org.mindrot.jbcrypt.BCrypt
+    return:
+      type: org.mindrot.jbcrypt.BCrypt
+      confidence: high
+    role: factory
+  - method: org.mindrot.jbcrypt.BCrypt.hashpw
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.mindrot.jbcrypt.BCrypt.checkpw
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # gensalt produces the salt (and encodes the cost factor) consumed by hashpw.
+  - method: org.mindrot.jbcrypt.BCrypt.gensalt
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: factory
+  - method: org.mindrot.jbcrypt.BCrypt.gensalt
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: log_rounds
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: org.mindrot.jbcrypt.BCrypt.gensalt
+    arity: 2
+    parameter_types: [int, java.security.SecureRandom]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: log_rounds
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  # Raw EksBlowfish core, public on the instance API.
+  - method: org.mindrot.jbcrypt.BCrypt.crypt_raw
+    arity: 4
+    parameter_types: ["byte[]", "byte[]", int, "int[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+hierarchy:
+  org.mindrot.jbcrypt.BCrypt:
+    - java.lang.Object
+  java.security.SecureRandom:
+    - java.util.Random
+  java.util.Random:
+    - java.lang.Object
+  java.lang.Object: []

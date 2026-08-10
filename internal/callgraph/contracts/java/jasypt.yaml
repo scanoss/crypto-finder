@@ -1,0 +1,836 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jasypt
+  coordinates:
+    - "org.jasypt:jasypt"
+  # Verified against upstream source on the 1.9.4-SNAPSHOT tree (jasypt/jasypt);
+  # the API surface contracted here is unchanged since 1.9.x releases.
+  version_range: ">=1.9,<2.0"
+  description: "Jasypt contracts for the password-encryptor, text/binary encryptor, digester, and StandardPBE engine lifecycles"
+
+contracts:
+  # =========================================================================
+  # Password encryptors (org.jasypt.util.password)
+  # Contracted on the PasswordEncryptor interface plus each concrete facade's
+  # constructor: the constructor is what pins the algorithm (Basic = MD5,
+  # Strong = SHA-256/100k iterations), and the concrete classes are final.
+  # =========================================================================
+  - method: org.jasypt.util.password.BasicPasswordEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.password.BasicPasswordEncryptor
+    return:
+      type: org.jasypt.util.password.BasicPasswordEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.password.StrongPasswordEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.password.StrongPasswordEncryptor
+    return:
+      type: org.jasypt.util.password.StrongPasswordEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.password.ConfigurablePasswordEncryptor
+    return:
+      type: org.jasypt.util.password.ConfigurablePasswordEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.password.PasswordEncryptor.encryptPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.jasypt.util.password.PasswordEncryptor.checkPassword
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # ConfigurablePasswordEncryptor's setters select the digest algorithm; jasypt
+  # setters are void throughout (no fluent API anywhere in the library).
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.setConfig
+    arity: 1
+    parameter_types: [org.jasypt.digest.config.DigesterConfig]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.setPlainDigest
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.setProvider
+    arity: 1
+    parameter_types: [java.security.Provider]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.password.ConfigurablePasswordEncryptor.setProviderName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+
+  # =========================================================================
+  # Text encryptors (org.jasypt.util.text) — encrypt/decrypt are String→String
+  # =========================================================================
+  - method: org.jasypt.util.text.BasicTextEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.text.BasicTextEncryptor
+    return:
+      type: org.jasypt.util.text.BasicTextEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.text.StrongTextEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.text.StrongTextEncryptor
+    return:
+      type: org.jasypt.util.text.StrongTextEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.text.AES256TextEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.text.AES256TextEncryptor
+    return:
+      type: org.jasypt.util.text.AES256TextEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.text.TextEncryptor.encrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.jasypt.util.text.TextEncryptor.decrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  # setPassword/setPasswordCharArray are declared on the concrete text
+  # encryptors, not on the TextEncryptor interface.
+  - method: org.jasypt.util.text.BasicTextEncryptor.setPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.text.BasicTextEncryptor.setPasswordCharArray
+    arity: 1
+    parameter_types: ["char[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.text.StrongTextEncryptor.setPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.text.StrongTextEncryptor.setPasswordCharArray
+    arity: 1
+    parameter_types: ["char[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.text.AES256TextEncryptor.setPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.util.text.AES256TextEncryptor.setPasswordCharArray
+    arity: 1
+    parameter_types: ["char[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+
+  # =========================================================================
+  # Binary encryptors (org.jasypt.util.binary) — encrypt/decrypt are byte[]→byte[]
+  # so they are contracted on their own interface, distinct from the text ones.
+  # =========================================================================
+  - method: org.jasypt.util.binary.BasicBinaryEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.binary.BasicBinaryEncryptor
+    return:
+      type: org.jasypt.util.binary.BasicBinaryEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.binary.StrongBinaryEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.binary.StrongBinaryEncryptor
+    return:
+      type: org.jasypt.util.binary.StrongBinaryEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.binary.AES256BinaryEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.binary.AES256BinaryEncryptor
+    return:
+      type: org.jasypt.util.binary.AES256BinaryEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.binary.BinaryEncryptor.encrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.jasypt.util.binary.BinaryEncryptor.decrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Digester facade (org.jasypt.util.digest.Digester)
+  # =========================================================================
+  - method: org.jasypt.util.digest.Digester.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.util.digest.Digester
+    return:
+      type: org.jasypt.util.digest.Digester
+      confidence: high
+    role: factory
+  - method: org.jasypt.util.digest.Digester.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.jasypt.util.digest.Digester
+    return:
+      type: org.jasypt.util.digest.Digester
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  # Digester#2 is overloaded ((String,String) / (String,Provider)) — canonical
+  # signature omitted.
+  - method: org.jasypt.util.digest.Digester.<init>
+    arity: 2
+    return:
+      type: org.jasypt.util.digest.Digester
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.util.digest.Digester.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.util.digest.Digester.digest
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # StandardPBE engines (org.jasypt.encryption.pbe)
+  # The String and Byte engines share an identical arity-1 void setter surface
+  # but differ in the encrypt/decrypt return type, so each is contracted on its
+  # own class.
+  # =========================================================================
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.encryption.pbe.StandardPBEStringEncryptor
+    return:
+      type: org.jasypt.encryption.pbe.StandardPBEStringEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setPasswordCharArray
+    arity: 1
+    parameter_types: ["char[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setKeyObtentionIterations
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyObtentionIterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setSaltGenerator
+    arity: 1
+    parameter_types: [org.jasypt.salt.SaltGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setIvGenerator
+    arity: 1
+    parameter_types: [org.jasypt.iv.IvGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setConfig
+    arity: 1
+    parameter_types: [org.jasypt.encryption.pbe.config.PBEConfig]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setProvider
+    arity: 1
+    parameter_types: [java.security.Provider]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setProviderName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setStringOutputType
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.initialize
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.encrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.jasypt.encryption.pbe.StandardPBEStringEncryptor.decrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.encryption.pbe.StandardPBEByteEncryptor
+    return:
+      type: org.jasypt.encryption.pbe.StandardPBEByteEncryptor
+      confidence: high
+    role: factory
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setPassword
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setPasswordCharArray
+    arity: 1
+    parameter_types: ["char[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setKeyObtentionIterations
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyObtentionIterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setSaltGenerator
+    arity: 1
+    parameter_types: [org.jasypt.salt.SaltGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setIvGenerator
+    arity: 1
+    parameter_types: [org.jasypt.iv.IvGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setConfig
+    arity: 1
+    parameter_types: [org.jasypt.encryption.pbe.config.PBEConfig]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.initialize
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.encrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.decrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Standard digesters (org.jasypt.digest)
+  # digest/matches differ in type between the String and Byte digester, so each
+  # is contracted on its own class.
+  # =========================================================================
+  - method: org.jasypt.digest.StandardStringDigester.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.digest.StandardStringDigester
+    return:
+      type: org.jasypt.digest.StandardStringDigester
+      confidence: high
+    role: factory
+  - method: org.jasypt.digest.StandardStringDigester.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.digest.StandardStringDigester.setIterations
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+  - method: org.jasypt.digest.StandardStringDigester.setSaltSizeBytes
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: saltSizeBytes
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: org.jasypt.digest.StandardStringDigester.setSaltGenerator
+    arity: 1
+    parameter_types: [org.jasypt.salt.SaltGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.setConfig
+    arity: 1
+    parameter_types: [org.jasypt.digest.config.DigesterConfig]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.initialize
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.digest
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: org.jasypt.digest.StandardStringDigester.matches
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: org.jasypt.digest.StandardByteDigester.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.digest.StandardByteDigester
+    return:
+      type: org.jasypt.digest.StandardByteDigester
+      confidence: high
+    role: factory
+  - method: org.jasypt.digest.StandardByteDigester.setAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.jasypt.digest.StandardByteDigester.setIterations
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+  - method: org.jasypt.digest.StandardByteDigester.setSaltSizeBytes
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: saltSizeBytes
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: org.jasypt.digest.StandardByteDigester.setSaltGenerator
+    arity: 1
+    parameter_types: [org.jasypt.salt.SaltGenerator]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardByteDigester.initialize
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardByteDigester.digest
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: org.jasypt.digest.StandardByteDigester.matches
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Salt and IV generators (param objects of setSaltGenerator/setIvGenerator)
+  # =========================================================================
+  - method: org.jasypt.salt.RandomSaltGenerator.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.salt.RandomSaltGenerator
+    return:
+      type: org.jasypt.salt.RandomSaltGenerator
+      confidence: high
+    role: factory
+  - method: org.jasypt.salt.RandomSaltGenerator.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.jasypt.salt.RandomSaltGenerator
+    return:
+      type: org.jasypt.salt.RandomSaltGenerator
+      confidence: high
+    role: factory
+  - method: org.jasypt.salt.SaltGenerator.generateSalt
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: lengthBytes
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: org.jasypt.iv.RandomIvGenerator.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.iv.RandomIvGenerator
+    return:
+      type: org.jasypt.iv.RandomIvGenerator
+      confidence: high
+    role: factory
+  - method: org.jasypt.iv.RandomIvGenerator.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.jasypt.iv.RandomIvGenerator
+    return:
+      type: org.jasypt.iv.RandomIvGenerator
+      confidence: high
+    role: factory
+  - method: org.jasypt.iv.NoIvGenerator.<init>
+    arity: 0
+    canonical_return_type: org.jasypt.iv.NoIvGenerator
+    return:
+      type: org.jasypt.iv.NoIvGenerator
+      confidence: high
+    role: factory
+  - method: org.jasypt.iv.IvGenerator.generateIv
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: lengthBytes
+        role: metadata-contributing
+        contributes: { property: ivLength, derivation: argument_value }
+
+hierarchy:
+  # Password encryptors
+  org.jasypt.util.password.PasswordEncryptor:
+    - java.lang.Object
+  org.jasypt.util.password.BasicPasswordEncryptor:
+    - org.jasypt.util.password.PasswordEncryptor
+  org.jasypt.util.password.StrongPasswordEncryptor:
+    - org.jasypt.util.password.PasswordEncryptor
+  org.jasypt.util.password.ConfigurablePasswordEncryptor:
+    - org.jasypt.util.password.PasswordEncryptor
+  # Text encryptors
+  org.jasypt.util.text.TextEncryptor:
+    - java.lang.Object
+  org.jasypt.util.text.BasicTextEncryptor:
+    - org.jasypt.util.text.TextEncryptor
+  org.jasypt.util.text.StrongTextEncryptor:
+    - org.jasypt.util.text.TextEncryptor
+  org.jasypt.util.text.AES256TextEncryptor:
+    - org.jasypt.util.text.TextEncryptor
+  # Binary encryptors
+  org.jasypt.util.binary.BinaryEncryptor:
+    - java.lang.Object
+  org.jasypt.util.binary.BasicBinaryEncryptor:
+    - org.jasypt.util.binary.BinaryEncryptor
+  org.jasypt.util.binary.StrongBinaryEncryptor:
+    - org.jasypt.util.binary.BinaryEncryptor
+  org.jasypt.util.binary.AES256BinaryEncryptor:
+    - org.jasypt.util.binary.BinaryEncryptor
+  # Digesters
+  org.jasypt.util.digest.Digester:
+    - java.lang.Object
+  org.jasypt.digest.StringDigester:
+    - java.lang.Object
+  org.jasypt.digest.ByteDigester:
+    - java.lang.Object
+  org.jasypt.digest.StandardStringDigester:
+    - org.jasypt.digest.StringDigester
+  org.jasypt.digest.StandardByteDigester:
+    - org.jasypt.digest.ByteDigester
+  # PBE engines
+  org.jasypt.encryption.StringEncryptor:
+    - java.lang.Object
+  org.jasypt.encryption.ByteEncryptor:
+    - java.lang.Object
+  org.jasypt.encryption.pbe.PasswordBased:
+    - java.lang.Object
+  org.jasypt.encryption.pbe.CleanablePasswordBased:
+    - org.jasypt.encryption.pbe.PasswordBased
+  org.jasypt.encryption.pbe.PBEStringEncryptor:
+    - org.jasypt.encryption.StringEncryptor
+    - org.jasypt.encryption.pbe.PasswordBased
+  org.jasypt.encryption.pbe.PBEStringCleanablePasswordEncryptor:
+    - org.jasypt.encryption.pbe.PBEStringEncryptor
+    - org.jasypt.encryption.pbe.CleanablePasswordBased
+  org.jasypt.encryption.pbe.StandardPBEStringEncryptor:
+    - org.jasypt.encryption.pbe.PBEStringCleanablePasswordEncryptor
+  org.jasypt.encryption.pbe.PBEByteEncryptor:
+    - org.jasypt.encryption.ByteEncryptor
+    - org.jasypt.encryption.pbe.PasswordBased
+  org.jasypt.encryption.pbe.PBEByteCleanablePasswordEncryptor:
+    - org.jasypt.encryption.pbe.PBEByteEncryptor
+    - org.jasypt.encryption.pbe.CleanablePasswordBased
+  org.jasypt.encryption.pbe.StandardPBEByteEncryptor:
+    - org.jasypt.encryption.pbe.PBEByteCleanablePasswordEncryptor
+  # Salt / IV generators
+  org.jasypt.salt.SaltGenerator:
+    - java.lang.Object
+  org.jasypt.salt.RandomSaltGenerator:
+    - org.jasypt.salt.SaltGenerator
+  org.jasypt.iv.IvGenerator:
+    - java.lang.Object
+  org.jasypt.iv.RandomIvGenerator:
+    - org.jasypt.iv.IvGenerator
+  org.jasypt.iv.NoIvGenerator:
+    - org.jasypt.iv.IvGenerator
+  # Config param types
+  org.jasypt.digest.config.DigesterConfig:
+    - java.lang.Object
+  org.jasypt.encryption.pbe.config.PBEConfig:
+    - java.lang.Object
+  java.security.Provider:
+    - java.lang.Object
+  java.lang.Object: []
