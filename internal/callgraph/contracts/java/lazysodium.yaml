@@ -1,0 +1,1063 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: lazysodium
+  coordinates:
+    - "com.goterl:lazysodium-java"
+  # Verified against upstream source at release 5.2.0 (terl/lazysodium-java).
+  version_range: ">=5.0,<6.0"
+  description: "Lazysodium-java contracts for the libsodium AEAD, box, secretbox, generic-hash, password-hash, and signing lifecycles"
+
+contracts:
+  # =========================================================================
+  # Sodium handles and lazy facade construction
+  # LazySodiumJava implements every *.Lazy / *.Native interface pair, so the
+  # interface-authored operations below resolve on a LazySodiumJava receiver
+  # through the hierarchy edges at the bottom of this file.
+  # =========================================================================
+  - method: com.goterl.lazysodium.SodiumJava.<init>
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.SodiumJava
+    return:
+      type: com.goterl.lazysodium.SodiumJava
+      confidence: high
+    role: factory
+  # SodiumJava#1 is overloaded (LibraryLoader.Mode / String absolutePath).
+  - method: com.goterl.lazysodium.SodiumJava.<init>
+    arity: 1
+    return:
+      type: com.goterl.lazysodium.SodiumJava
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.LazySodiumJava.<init>
+    arity: 1
+    parameter_types: [com.goterl.lazysodium.SodiumJava]
+    canonical_return_type: com.goterl.lazysodium.LazySodiumJava
+    return:
+      type: com.goterl.lazysodium.LazySodiumJava
+      confidence: high
+    role: factory
+  # LazySodiumJava#2 is overloaded ((SodiumJava,Charset) / (SodiumJava,MessageEncoder)).
+  - method: com.goterl.lazysodium.LazySodiumJava.<init>
+    arity: 2
+    return:
+      type: com.goterl.lazysodium.LazySodiumJava
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.LazySodiumJava.<init>
+    arity: 3
+    parameter_types:
+      [
+        com.goterl.lazysodium.SodiumJava,
+        java.nio.charset.Charset,
+        com.goterl.lazysodium.interfaces.MessageEncoder,
+      ]
+    canonical_return_type: com.goterl.lazysodium.LazySodiumJava
+    return:
+      type: com.goterl.lazysodium.LazySodiumJava
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Key material (com.goterl.lazysodium.utils)
+  # =========================================================================
+  # Key#1 is overloaded (byte[] / hex String / plain String / base64 String).
+  - method: com.goterl.lazysodium.utils.Key.fromBytes
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: com.goterl.lazysodium.utils.Key.fromHexString
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.Key.fromPlainString
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.Key.fromPlainString
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.Key.fromBase64String
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.Key.fromBase64String
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.Base64Facade]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.Key.generate
+    arity: 2
+    parameter_types: [com.goterl.lazysodium.LazySodium, int]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: com.goterl.lazysodium.utils.Key.getAsBytes
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.goterl.lazysodium.utils.Key.getAsHexString
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.goterl.lazysodium.utils.KeyPair.<init>
+    arity: 2
+    parameter_types:
+      [com.goterl.lazysodium.utils.Key, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.utils.KeyPair.getPublicKey
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: output
+  - method: com.goterl.lazysodium.utils.KeyPair.getSecretKey
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # SecretBox — XSalsa20-Poly1305 (interfaces.SecretBox)
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxKeygen
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxEasy
+    arity: 3
+    parameter_types:
+      [java.lang.String, "byte[]", com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxOpenEasy
+    arity: 3
+    parameter_types:
+      [java.lang.String, "byte[]", com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxDetached
+    arity: 3
+    parameter_types:
+      [java.lang.String, "byte[]", com.goterl.lazysodium.utils.Key]
+    canonical_return_type: com.goterl.lazysodium.utils.DetachedEncrypt
+    return:
+      type: com.goterl.lazysodium.utils.DetachedEncrypt
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Lazy.cryptoSecretBoxOpenDetached
+    arity: 3
+    parameter_types:
+      [
+        com.goterl.lazysodium.utils.DetachedEncrypt,
+        "byte[]",
+        com.goterl.lazysodium.utils.Key,
+      ]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  # Native buffer-based forms; arity separates them from every Lazy method.
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxKeygen
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxEasy
+    arity: 5
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxOpenEasy
+    arity: 5
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxDetached
+    arity: 6
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.SecretBox.Native.cryptoSecretBoxOpenDetached
+    arity: 6
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Box — Curve25519-XSalsa20-Poly1305 (interfaces.Box)
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxKeypair
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxSeedKeypair
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxEasy
+    arity: 3
+    parameter_types:
+      [java.lang.String, "byte[]", com.goterl.lazysodium.utils.KeyPair]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxOpenEasy
+    arity: 3
+    parameter_types:
+      [java.lang.String, "byte[]", com.goterl.lazysodium.utils.KeyPair]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  # cryptoBoxBeforeNm has a 1-arg KeyPair form and a 2-arg raw-key form.
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxBeforeNm
+    arity: 1
+    parameter_types: [com.goterl.lazysodium.utils.KeyPair]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxBeforeNm
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxEasyAfterNm
+    arity: 3
+    parameter_types: [java.lang.String, "byte[]", java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxOpenEasyAfterNm
+    arity: 3
+    parameter_types: [java.lang.String, "byte[]", java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxDetachedAfterNm
+    arity: 3
+    parameter_types: [java.lang.String, "byte[]", java.lang.String]
+    canonical_return_type: com.goterl.lazysodium.utils.DetachedEncrypt
+    return:
+      type: com.goterl.lazysodium.utils.DetachedEncrypt
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxOpenDetachedAfterNm
+    arity: 3
+    parameter_types:
+      [com.goterl.lazysodium.utils.DetachedEncrypt, "byte[]", java.lang.String]
+    canonical_return_type: com.goterl.lazysodium.utils.DetachedDecrypt
+    return:
+      type: com.goterl.lazysodium.utils.DetachedDecrypt
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxSealEasy
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Lazy.cryptoBoxSealOpenEasy
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.KeyPair]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  # Native forms
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxKeypair
+    arity: 2
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxSeedKeypair
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxEasy
+    arity: 6
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxOpenEasy
+    arity: 6
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxDetached
+    arity: 7
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxOpenDetached
+    arity: 7
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxSeal
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Box.Native.cryptoBoxSealOpen
+    arity: 5
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # GenericHash — BLAKE2b (interfaces.GenericHash)
+  # NOTE: cryptoGenericHashKeygen is the one name where the Lazy and Native
+  # forms share arity 1 with different params and returns (Lazy(int) -> Key vs
+  # Native(byte[]) -> void). They are distinct contract keys because the
+  # declaring interface differs; a LazySodiumJava receiver implements both, so
+  # call-site parameter provenance is what selects the right one.
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashKeygen
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashKeygen
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHash
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHash
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashInit
+    arity: 3
+    parameter_types: ["byte[]", com.goterl.lazysodium.utils.Key, int]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashUpdate
+    arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Lazy.cryptoGenericHashFinal
+    arity: 2
+    parameter_types: ["byte[]", int]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashKeygen
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHash
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHash
+    arity: 6
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashInit
+    arity: 2
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashInit
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashUpdate
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.GenericHash.Native.cryptoGenericHashFinal
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # PwHash — Argon2 (interfaces.PwHash)
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHash
+    arity: 6
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: cryptoPwHashLen
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: opsLimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 4
+        name: memLimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHashStr
+    arity: 3
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: opsLimit
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 2
+        name: memLimit
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHashStrRemoveNulls
+    arity: 3
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.PwHash.Lazy.cryptoPwHashStrVerify
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.PwHash.Native.cryptoPwHash
+    arity: 8
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.PwHash.Native.cryptoPwHashStr
+    arity: 5
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.PwHash.Native.cryptoPwHashStrVerify
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.PwHash.Native.cryptoPwHashStrNeedsRehash
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Sign — Ed25519 (interfaces.Sign)
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignKeypair
+    arity: 0
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignSeedKeypair
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignSecretKeyPair
+    arity: 1
+    parameter_types: [com.goterl.lazysodium.utils.Key]
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  # cryptoSign#2 is overloaded ((String,String) / (String,Key)) with the same
+  # String return — canonical signature omitted.
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSign
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignOpen
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignDetached
+    arity: 2
+    parameter_types: [java.lang.String, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.cryptoSignVerifyDetached
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.lang.String, com.goterl.lazysodium.utils.Key]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Lazy.convertKeyPairEd25519ToCurve25519
+    arity: 1
+    parameter_types: [com.goterl.lazysodium.utils.KeyPair]
+    canonical_return_type: com.goterl.lazysodium.utils.KeyPair
+    return:
+      type: com.goterl.lazysodium.utils.KeyPair
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignKeypair
+    arity: 2
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignSeedKeypair
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSign
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignOpen
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignDetached
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignVerifyDetached
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignInit
+    arity: 1
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignUpdate
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignFinalCreate
+    arity: 4
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.Sign.Native.cryptoSignFinalVerify
+    arity: 3
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # AEAD (interfaces.AEAD)
+  # The Lazy forms take the algorithm as a trailing AEAD.Method enum argument,
+  # so the contract cannot pin an algorithm; the Native names encode the
+  # algorithm family directly and are the precise attribution points.
+  # =========================================================================
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.keygen
+    arity: 1
+    parameter_types: [com.goterl.lazysodium.interfaces.AEAD.Method]
+    canonical_return_type: com.goterl.lazysodium.utils.Key
+    return:
+      type: com.goterl.lazysodium.utils.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.encrypt
+    arity: 5
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 4
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.encrypt
+    arity: 6
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 5
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.decrypt
+    arity: 5
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 4
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.decrypt
+    arity: 6
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 5
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.encryptDetached
+    arity: 6
+    canonical_return_type: com.goterl.lazysodium.utils.DetachedEncrypt
+    return:
+      type: com.goterl.lazysodium.utils.DetachedEncrypt
+      confidence: high
+    role: operation
+    parameters:
+      - index: 5
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.goterl.lazysodium.interfaces.AEAD.Lazy.decryptDetached
+    arity: 6
+    canonical_return_type: com.goterl.lazysodium.utils.DetachedDecrypt
+    return:
+      type: com.goterl.lazysodium.utils.DetachedDecrypt
+      confidence: high
+    role: operation
+    parameters:
+      - index: 5
+        name: method
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  # Native, algorithm-bearing entry points: ChaCha20-Poly1305 (original and
+  # IETF), XChaCha20-Poly1305 IETF, and AES-256-GCM.
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305Keygen
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305Encrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305Decrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305EncryptDetached
+    arity: 10
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305DecryptDetached
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305IetfKeygen
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305IetfEncrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305IetfDecrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305IetfEncryptDetached
+    arity: 10
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadChaCha20Poly1305IetfDecryptDetached
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfKeygen
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfEncrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfDecrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfEncryptDetached
+    arity: 10
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadXChaCha20Poly1305IetfDecryptDetached
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMKeygen
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: factory
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMEncrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMDecrypt
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMEncryptDetached
+    arity: 10
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMDecryptDetached
+    arity: 9
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: com.goterl.lazysodium.interfaces.AEAD.Native.cryptoAeadAES256GCMIsAvailable
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+
+hierarchy:
+  # LazySodium implements every Lazy/Native interface pair; LazySodiumJava adds
+  # the Java-only Scrypt and StreamJava pairs.
+  com.goterl.lazysodium.LazySodium:
+    - com.goterl.lazysodium.interfaces.AEAD.Lazy
+    - com.goterl.lazysodium.interfaces.AEAD.Native
+    - com.goterl.lazysodium.interfaces.Box.Lazy
+    - com.goterl.lazysodium.interfaces.Box.Native
+    - com.goterl.lazysodium.interfaces.GenericHash.Lazy
+    - com.goterl.lazysodium.interfaces.GenericHash.Native
+    - com.goterl.lazysodium.interfaces.PwHash.Lazy
+    - com.goterl.lazysodium.interfaces.PwHash.Native
+    - com.goterl.lazysodium.interfaces.SecretBox.Lazy
+    - com.goterl.lazysodium.interfaces.SecretBox.Native
+    - com.goterl.lazysodium.interfaces.Sign.Lazy
+    - com.goterl.lazysodium.interfaces.Sign.Native
+  com.goterl.lazysodium.LazySodiumJava:
+    - com.goterl.lazysodium.LazySodium
+  com.goterl.lazysodium.Sodium:
+    - java.lang.Object
+  com.goterl.lazysodium.SodiumJava:
+    - com.goterl.lazysodium.Sodium
+  com.goterl.lazysodium.interfaces.AEAD.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.AEAD.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.AEAD.Method:
+    - java.lang.Enum
+  com.goterl.lazysodium.interfaces.Box.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.Box.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.GenericHash.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.GenericHash.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.PwHash.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.PwHash.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.SecretBox.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.SecretBox.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.Sign.Lazy:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.Sign.Native:
+    - java.lang.Object
+  com.goterl.lazysodium.interfaces.MessageEncoder:
+    - java.lang.Object
+  com.goterl.lazysodium.utils.Key:
+    - java.lang.Object
+  com.goterl.lazysodium.utils.KeyPair:
+    - java.lang.Object
+  com.goterl.lazysodium.utils.Base64Facade:
+    - java.lang.Object
+  com.goterl.lazysodium.utils.DetachedEncrypt:
+    - java.lang.Object
+  com.goterl.lazysodium.utils.DetachedDecrypt:
+    - java.lang.Object
+  java.lang.Enum:
+    - java.lang.Object
+  java.nio.charset.Charset:
+    - java.lang.Object
+  java.lang.Object: []

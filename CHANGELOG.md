@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Java callgraph contracts now model the lazysodium-java 5.2 libsodium AEAD, box, secretbox, generic-hash, password-hash, and signing lifecycles (both the high-level `Lazy` and buffer-based `Native` surfaces) and the kalium box, secretbox, sealed-box, AEAD, hash, password, and signing-key lifecycles.
 - Java callgraph contracts now model the jbcrypt, at.favre.lib bcrypt, Lambdaworks scrypt, argon2-jvm, and Jasypt password/KDF facades, including the bcrypt cost, scrypt N/r/p, and Argon2/PBE iteration work factors.
 - Java callgraph contracts now model the Hutool-crypto 5.8 SecureUtil/DigestUtil/SmUtil/KeyUtil factories and the symmetric, digest, MAC, asymmetric, signing, and SM2 lifecycles.
 - Java callgraph contracts now model the I2P ed25519-java (net.i2p.crypto:eddsa) 0.3 EdDSA signing engine, key-pair generation, and key/spec construction lifecycles.
