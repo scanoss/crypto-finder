@@ -1,0 +1,496 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: gcp-kms
+  # Coordinate hygiene: the client lives in google-cloud-kms, but every request,
+  # response, and resource proto type lives in the generated proto artifact,
+  # which google-cloud-kms pins transitively. Both are listed because contracts
+  # here reference FQNs from each.
+  coordinates:
+    - "com.google.cloud:google-cloud-kms"
+    - "com.google.api.grpc:proto-google-cloud-kms-v1"
+  # Verified with javap against the published google-cloud-kms-2.55.0.jar and
+  # its pinned proto-google-cloud-kms-v1-0.146.0.jar.
+  version_range: ">=2.0,<3.0"
+  description: "Google Cloud KMS contracts for client construction, remote encrypt/decrypt, asymmetric sign/decrypt, MAC, random-byte generation, and key-resource creation"
+
+contracts:
+  # =========================================================================
+  # Client construction (rule anchor: KeyManagementServiceClient.create)
+  # create#1 is overloaded (settings / stub) — canonical signature omitted.
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.create
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.KeyManagementServiceClient
+    return:
+      type: com.google.cloud.kms.v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.create
+    arity: 1
+    return:
+      type: com.google.cloud.kms.v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Symmetric encrypt/decrypt. Each has a request-object form at arity 1 and
+  # convenience (name, data) forms at arity 2; the arity-2 group is overloaded
+  # on the name type (ResourceName / CryptoKeyPathName / String), so canonical
+  # signatures are omitted there.
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.encrypt
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.EncryptRequest]
+    canonical_return_type: com.google.cloud.kms.v1.EncryptResponse
+    return:
+      type: com.google.cloud.kms.v1.EncryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.encrypt
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.EncryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.decrypt
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.DecryptRequest]
+    canonical_return_type: com.google.cloud.kms.v1.DecryptResponse
+    return:
+      type: com.google.cloud.kms.v1.DecryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.decrypt
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.DecryptResponse
+      confidence: high
+    role: operation
+  # rawEncrypt/rawDecrypt expose the raw AES modes and only take request objects.
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.rawEncrypt
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.RawEncryptRequest]
+    canonical_return_type: com.google.cloud.kms.v1.RawEncryptResponse
+    return:
+      type: com.google.cloud.kms.v1.RawEncryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.rawDecrypt
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.RawDecryptRequest]
+    canonical_return_type: com.google.cloud.kms.v1.RawDecryptResponse
+    return:
+      type: com.google.cloud.kms.v1.RawDecryptResponse
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Asymmetric operations and MAC
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.asymmetricSign
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.AsymmetricSignRequest]
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricSignResponse
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.asymmetricSign
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.asymmetricDecrypt
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.AsymmetricDecryptRequest]
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricDecryptResponse
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricDecryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.asymmetricDecrypt
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricDecryptResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.macSign
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.MacSignRequest]
+    canonical_return_type: com.google.cloud.kms.v1.MacSignResponse
+    return:
+      type: com.google.cloud.kms.v1.MacSignResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.macSign
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.MacSignResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.macVerify
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.MacVerifyRequest]
+    canonical_return_type: com.google.cloud.kms.v1.MacVerifyResponse
+    return:
+      type: com.google.cloud.kms.v1.MacVerifyResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.macVerify
+    arity: 3
+    return:
+      type: com.google.cloud.kms.v1.MacVerifyResponse
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Random bytes and key-resource creation
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.generateRandomBytes
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.GenerateRandomBytesRequest]
+    canonical_return_type: com.google.cloud.kms.v1.GenerateRandomBytesResponse
+    return:
+      type: com.google.cloud.kms.v1.GenerateRandomBytesResponse
+      confidence: high
+    role: operation
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.generateRandomBytes
+    arity: 3
+    parameter_types:
+      [java.lang.String, int, com.google.cloud.kms.v1.ProtectionLevel]
+    canonical_return_type: com.google.cloud.kms.v1.GenerateRandomBytesResponse
+    return:
+      type: com.google.cloud.kms.v1.GenerateRandomBytesResponse
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: lengthBytes
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createCryptoKey
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.CreateCryptoKeyRequest]
+    canonical_return_type: com.google.cloud.kms.v1.CryptoKey
+    return:
+      type: com.google.cloud.kms.v1.CryptoKey
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createCryptoKey
+    arity: 3
+    return:
+      type: com.google.cloud.kms.v1.CryptoKey
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createCryptoKeyVersion
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.CreateCryptoKeyVersionRequest]
+    canonical_return_type: com.google.cloud.kms.v1.CryptoKeyVersion
+    return:
+      type: com.google.cloud.kms.v1.CryptoKeyVersion
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createCryptoKeyVersion
+    arity: 2
+    return:
+      type: com.google.cloud.kms.v1.CryptoKeyVersion
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createKeyRing
+    arity: 1
+    parameter_types: [com.google.cloud.kms.v1.CreateKeyRingRequest]
+    canonical_return_type: com.google.cloud.kms.v1.KeyRing
+    return:
+      type: com.google.cloud.kms.v1.KeyRing
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.createKeyRing
+    arity: 3
+    return:
+      type: com.google.cloud.kms.v1.KeyRing
+      confidence: high
+    role: factory
+  # getPublicKey#1 mixes the request-object form with two convenience forms
+  # (CryptoKeyVersionName / String), all returning PublicKey.
+  - method: com.google.cloud.kms.v1.KeyManagementServiceClient.getPublicKey
+    arity: 1
+    return:
+      type: com.google.cloud.kms.v1.PublicKey
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Request builders (rule anchors: *Request.newBuilder)
+  # newBuilder#1 takes a prototype request to copy.
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.EncryptRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.EncryptRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.EncryptRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.DecryptRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.DecryptRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.DecryptRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.AsymmetricSignRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.MacSignRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.MacSignRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.MacSignRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.CreateCryptoKeyRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.CreateCryptoKeyRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.CreateCryptoKeyRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.GenerateRandomBytesRequest.newBuilder
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.GenerateRandomBytesRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.GenerateRandomBytesRequest.Builder
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.EncryptRequest.Builder.setName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.google.cloud.kms.v1.EncryptRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.EncryptRequest.Builder
+      confidence: high
+    role: config
+  - method: com.google.cloud.kms.v1.EncryptRequest.Builder.setPlaintext
+    arity: 1
+    parameter_types: [com.google.protobuf.ByteString]
+    canonical_return_type: com.google.cloud.kms.v1.EncryptRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.EncryptRequest.Builder
+      confidence: high
+    role: config
+  - method: com.google.cloud.kms.v1.EncryptRequest.Builder.setAdditionalAuthenticatedData
+    arity: 1
+    parameter_types: [com.google.protobuf.ByteString]
+    canonical_return_type: com.google.cloud.kms.v1.EncryptRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.EncryptRequest.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: additionalAuthenticatedData
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+  - method: com.google.cloud.kms.v1.EncryptRequest.Builder.build
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.EncryptRequest
+    return:
+      type: com.google.cloud.kms.v1.EncryptRequest
+      confidence: high
+    role: factory
+  - method: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder.setName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+      confidence: high
+    role: config
+  # setDigest#1 is overloaded (Digest / Digest.Builder).
+  - method: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder.setDigest
+    arity: 1
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+      confidence: high
+    role: config
+  - method: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder.setData
+    arity: 1
+    parameter_types: [com.google.protobuf.ByteString]
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder
+      confidence: high
+    role: config
+  - method: com.google.cloud.kms.v1.AsymmetricSignRequest.Builder.build
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.AsymmetricSignRequest
+    return:
+      type: com.google.cloud.kms.v1.AsymmetricSignRequest
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Response and resource material
+  # =========================================================================
+  - method: com.google.cloud.kms.v1.EncryptResponse.getCiphertext
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.DecryptResponse.getPlaintext
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.AsymmetricSignResponse.getSignature
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.AsymmetricDecryptResponse.getPlaintext
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.MacSignResponse.getMac
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.MacVerifyResponse.getSuccess
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.GenerateRandomBytesResponse.getData
+    arity: 0
+    canonical_return_type: com.google.protobuf.ByteString
+    return:
+      type: com.google.protobuf.ByteString
+      confidence: high
+    role: output
+  # The algorithm lives on CryptoKeyVersion and PublicKey, not on CryptoKey
+  # (which only carries the purpose and a version template).
+  - method: com.google.cloud.kms.v1.CryptoKeyVersion.getAlgorithm
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm
+    return:
+      type: com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.CryptoKey.getPurpose
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.CryptoKey.CryptoKeyPurpose
+    return:
+      type: com.google.cloud.kms.v1.CryptoKey.CryptoKeyPurpose
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.PublicKey.getPem
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.google.cloud.kms.v1.PublicKey.getAlgorithm
+    arity: 0
+    canonical_return_type: com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm
+    return:
+      type: com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm
+      confidence: high
+    role: output
+
+hierarchy:
+  com.google.cloud.kms.v1.KeyManagementServiceClient:
+    - java.lang.Object
+  com.google.cloud.kms.v1.EncryptRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.EncryptRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.DecryptRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.DecryptRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.RawEncryptRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.RawDecryptRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.AsymmetricSignRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.AsymmetricSignRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.AsymmetricDecryptRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.MacSignRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.MacSignRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.MacVerifyRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.GenerateRandomBytesRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.GenerateRandomBytesRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CreateCryptoKeyRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CreateCryptoKeyRequest.Builder:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CreateCryptoKeyVersionRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CreateKeyRingRequest:
+    - java.lang.Object
+  com.google.cloud.kms.v1.EncryptResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.DecryptResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.RawEncryptResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.RawDecryptResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.AsymmetricSignResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.AsymmetricDecryptResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.MacSignResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.MacVerifyResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.GenerateRandomBytesResponse:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CryptoKey:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CryptoKey.CryptoKeyPurpose:
+    - java.lang.Enum
+  com.google.cloud.kms.v1.CryptoKeyVersion:
+    - java.lang.Object
+  com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm:
+    - java.lang.Enum
+  com.google.cloud.kms.v1.KeyRing:
+    - java.lang.Object
+  com.google.cloud.kms.v1.PublicKey:
+    - java.lang.Object
+  com.google.cloud.kms.v1.ProtectionLevel:
+    - java.lang.Enum
+  com.google.protobuf.ByteString:
+    - java.lang.Object
+  java.lang.Enum:
+    - java.lang.Object
+  java.lang.Object: []

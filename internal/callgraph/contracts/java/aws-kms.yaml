@@ -1,0 +1,749 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: aws-kms
+  # Coordinate hygiene: AWS ships two independent SDK generations with
+  # disjoint packages, and real projects use either. Both are contracted here
+  # because the FQNs never collide:
+  #   * v2 -> software.amazon.awssdk:kms          (software.amazon.awssdk.services.kms)
+  #   * v1 -> com.amazonaws:aws-java-sdk-kms      (com.amazonaws.services.kms)
+  # v1 is in maintenance mode (end-of-support announced), so a project may pin
+  # either; the KB must resolve both rather than assuming v2.
+  coordinates:
+    - "software.amazon.awssdk:kms"
+    - "com.amazonaws:aws-java-sdk-kms"
+  # Verified with javap against the published kms-2.31.0.jar (v2) and
+  # aws-java-sdk-kms-1.12.780.jar (v1).
+  version_range: ">=1.11"
+  description: "AWS KMS contracts for both SDK generations: client construction, remote encrypt/decrypt, sign/verify, MAC, data-key generation, and random-byte operations"
+
+contracts:
+  # =========================================================================
+  # SDK v2 client (software.amazon.awssdk.services.kms)
+  # rule anchors: KmsClient.create, KmsClient.builder
+  # Every operation has a (XRequest) and a (Consumer<XRequest.Builder>) form at
+  # arity 1 with the same response type, so canonical signatures are omitted.
+  # =========================================================================
+  - method: software.amazon.awssdk.services.kms.KmsClient.create
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.KmsClient
+    return:
+      type: software.amazon.awssdk.services.kms.KmsClient
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.KmsClientBuilder
+    return:
+      type: software.amazon.awssdk.services.kms.KmsClientBuilder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.encrypt
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.decrypt
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.sign
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.verify
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.VerifyResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateMac
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateMacResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.verifyMac
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.VerifyMacResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.reEncrypt
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.ReEncryptResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.deriveSharedSecret
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.DeriveSharedSecretResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateDataKey
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateDataKeyPair
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateDataKeyPairResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateDataKeyWithoutPlaintext
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateDataKeyWithoutPlaintextResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateDataKeyPairWithoutPlaintext
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateDataKeyPairWithoutPlaintextResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.createKey
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.CreateKeyResponse
+    return:
+      type: software.amazon.awssdk.services.kms.model.CreateKeyResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.createKey
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.CreateKeyResponse
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateRandom
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.GenerateRandomResponse
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateRandomResponse
+      confidence: high
+    role: operation
+  - method: software.amazon.awssdk.services.kms.KmsClient.generateRandom
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateRandomResponse
+      confidence: high
+    role: operation
+
+  # --- v2 request builders (rule anchors: *Request.builder) ---
+  - method: software.amazon.awssdk.services.kms.model.EncryptRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.DecryptRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.VerifyRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.VerifyRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.VerifyRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.GenerateRandomRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.GenerateRandomRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateRandomRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.GenerateMacRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.GenerateMacRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.GenerateMacRequest.Builder
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.CreateKeyRequest.builder
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.CreateKeyRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.CreateKeyRequest.Builder
+      confidence: high
+    role: factory
+  # v2 builder configuration. keyId/plaintext/message carry the key reference and
+  # the data; encryptionAlgorithm/signingAlgorithm select the algorithm and are
+  # each overloaded (String / enum spec) at arity 1.
+  - method: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder.keyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder.plaintext
+    arity: 1
+    parameter_types: [software.amazon.awssdk.core.SdkBytes]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder.encryptionAlgorithm
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: encryptionAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: software.amazon.awssdk.services.kms.model.EncryptRequest.Builder.build
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.EncryptRequest
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptRequest
+      confidence: high
+    role: factory
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.keyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.message
+    arity: 1
+    parameter_types: [software.amazon.awssdk.core.SdkBytes]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.messageType
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.signingAlgorithm
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: signingAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.build
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.SignRequest
+    return:
+      type: software.amazon.awssdk.services.kms.model.SignRequest
+      confidence: high
+    role: factory
+
+  # --- v2 response material (SdkBytes carries the actual key/cipher/signature) ---
+  - method: software.amazon.awssdk.services.kms.model.EncryptResponse.ciphertextBlob
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.EncryptResponse.encryptionAlgorithm
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.EncryptionAlgorithmSpec
+    return:
+      type: software.amazon.awssdk.services.kms.model.EncryptionAlgorithmSpec
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.DecryptResponse.plaintext
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.SignResponse.signature
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.SignResponse.signingAlgorithm
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.SigningAlgorithmSpec
+    return:
+      type: software.amazon.awssdk.services.kms.model.SigningAlgorithmSpec
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.VerifyResponse.signatureValid
+    arity: 0
+    canonical_return_type: java.lang.Boolean
+    return:
+      type: java.lang.Boolean
+      confidence: high
+    role: output
+  # The data-key plaintext accessor is plaintext() in v2 (there is no
+  # plaintextKey()); ciphertextBlob() is the wrapped copy.
+  - method: software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse.plaintext
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse.ciphertextBlob
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+  - method: software.amazon.awssdk.services.kms.model.GenerateRandomResponse.plaintext
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.core.SdkBytes
+    return:
+      type: software.amazon.awssdk.core.SdkBytes
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # SDK v1 client (com.amazonaws.services.kms)
+  # rule anchors: AWSKMSClientBuilder.standard/defaultClient, new *Request()
+  # =========================================================================
+  - method: com.amazonaws.services.kms.AWSKMSClientBuilder.standard
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.AWSKMSClientBuilder
+    return:
+      type: com.amazonaws.services.kms.AWSKMSClientBuilder
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMSClientBuilder.defaultClient
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.AWSKMS
+    return:
+      type: com.amazonaws.services.kms.AWSKMS
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMS.encrypt
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.EncryptRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.EncryptResult
+    return:
+      type: com.amazonaws.services.kms.model.EncryptResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.decrypt
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.DecryptRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.DecryptResult
+    return:
+      type: com.amazonaws.services.kms.model.DecryptResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.sign
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.SignRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.SignResult
+    return:
+      type: com.amazonaws.services.kms.model.SignResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.verify
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.VerifyRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyResult
+    return:
+      type: com.amazonaws.services.kms.model.VerifyResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.generateMac
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.GenerateMacRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateMacResult
+    return:
+      type: com.amazonaws.services.kms.model.GenerateMacResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.verifyMac
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.VerifyMacRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyMacResult
+    return:
+      type: com.amazonaws.services.kms.model.VerifyMacResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.reEncrypt
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.ReEncryptRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.ReEncryptResult
+    return:
+      type: com.amazonaws.services.kms.model.ReEncryptResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.generateDataKey
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.GenerateDataKeyRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyResult
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyResult
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMS.generateDataKeyPair
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.GenerateDataKeyPairRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyPairResult
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyPairResult
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMS.createKey
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.CreateKeyResult
+    return:
+      type: com.amazonaws.services.kms.model.CreateKeyResult
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMS.createKey
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.CreateKeyRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.CreateKeyResult
+    return:
+      type: com.amazonaws.services.kms.model.CreateKeyResult
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.AWSKMS.generateRandom
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateRandomResult
+    return:
+      type: com.amazonaws.services.kms.model.GenerateRandomResult
+      confidence: high
+    role: operation
+  - method: com.amazonaws.services.kms.AWSKMS.generateRandom
+    arity: 1
+    parameter_types: [com.amazonaws.services.kms.model.GenerateRandomRequest]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateRandomResult
+    return:
+      type: com.amazonaws.services.kms.model.GenerateRandomResult
+      confidence: high
+    role: operation
+
+  # --- v1 request objects: plain constructors plus fluent withXxx setters.
+  # withEncryptionAlgorithm/withSigningAlgorithm are overloaded (String / enum
+  # spec) at arity 1, so those omit canonical signatures.
+  - method: com.amazonaws.services.kms.model.EncryptRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.EncryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.EncryptRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.EncryptRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.EncryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.EncryptRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.EncryptRequest.withPlaintext
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.EncryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.EncryptRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.EncryptRequest.withEncryptionAlgorithm
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.EncryptRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: encryptionAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.DecryptRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.DecryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.DecryptRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.DecryptRequest.withCiphertextBlob
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.DecryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.DecryptRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.DecryptRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.DecryptRequest
+    return:
+      type: com.amazonaws.services.kms.model.DecryptRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.DecryptRequest.withEncryptionAlgorithm
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.DecryptRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: encryptionAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.SignRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.SignRequest
+    return:
+      type: com.amazonaws.services.kms.model.SignRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.SignRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.SignRequest
+    return:
+      type: com.amazonaws.services.kms.model.SignRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.SignRequest.withMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.SignRequest
+    return:
+      type: com.amazonaws.services.kms.model.SignRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.SignRequest.withSigningAlgorithm
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.SignRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: signingAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.withKeySpec
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keySpec
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.withNumberOfBytes
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: numberOfBytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  # --- v1 result material (ByteBuffer in v1, SdkBytes in v2) ---
+  - method: com.amazonaws.services.kms.model.EncryptResult.getCiphertextBlob
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.DecryptResult.getPlaintext
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.SignResult.getSignature
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyResult.getPlaintext
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyResult.getCiphertextBlob
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+
+hierarchy:
+  # v2
+  software.amazon.awssdk.services.kms.KmsClient:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.KmsClientBuilder:
+    - java.lang.Object
+  software.amazon.awssdk.core.SdkBytes:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.EncryptRequest:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.EncryptRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.DecryptRequest:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.DecryptRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.SignRequest:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.SignRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.VerifyRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateRandomRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateMacRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.CreateKeyRequest.Builder:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.EncryptResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.DecryptResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.SignResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.VerifyResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateMacResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.VerifyMacResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.ReEncryptResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.DeriveSharedSecretResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateDataKeyPairResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateDataKeyWithoutPlaintextResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateDataKeyPairWithoutPlaintextResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.CreateKeyResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.GenerateRandomResponse:
+    - java.lang.Object
+  software.amazon.awssdk.services.kms.model.EncryptionAlgorithmSpec:
+    - java.lang.Enum
+  software.amazon.awssdk.services.kms.model.SigningAlgorithmSpec:
+    - java.lang.Enum
+  # v1
+  com.amazonaws.services.kms.AWSKMS:
+    - java.lang.Object
+  com.amazonaws.services.kms.AWSKMSClientBuilder:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.EncryptRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.DecryptRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.SignRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateDataKeyRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.EncryptResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.DecryptResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.SignResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.VerifyResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateMacResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.VerifyMacResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.ReEncryptResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateDataKeyResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateDataKeyPairResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.CreateKeyResult:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateRandomResult:
+    - java.lang.Object
+  java.nio.ByteBuffer:
+    - java.lang.Object
+  java.lang.Boolean:
+    - java.lang.Object
+  java.lang.Enum:
+    - java.lang.Object
+  java.lang.Object: []

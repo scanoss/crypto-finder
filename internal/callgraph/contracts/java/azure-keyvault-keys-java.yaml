@@ -1,0 +1,640 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  # The Python ecosystem has its own azure-keyvault-keys KB; library names only
+  # need to be unique per ecosystem, but the -java suffix keeps diagnostics
+  # unambiguous when both appear in one report.
+  name: azure-keyvault-keys-java
+  coordinates:
+    - "com.azure:azure-security-keyvault-keys"
+  # Verified with javap against the published azure-security-keyvault-keys-4.9.2
+  # jar (MANIFEST Implementation-Version 4.9.2).
+  version_range: ">=4.0,<5.0"
+  description: "Azure Key Vault Keys contracts for cryptography and key client construction, remote encrypt/decrypt, sign/verify, key wrapping, and key creation or import"
+
+contracts:
+  # =========================================================================
+  # Cryptography client construction
+  # rule anchor: new CryptographyClientBuilder()
+  # The builder's arity-1 config methods each have a trait-interface bridge
+  # overload (returning TokenCredentialTrait/HttpTrait/ConfigurationTrait); only
+  # the source-visible concrete-builder form is contracted.
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.<init>
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.keyIdentifier
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.jsonWebKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.JsonWebKey]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.credential
+    arity: 1
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableKeyCaching
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  # disableChallengeResourceVerification turns off the authentication-challenge
+  # resource check.
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableChallengeResourceVerification
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.buildClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClient
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClient
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.buildAsyncClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Remote crypto operations (CryptographyClient)
+  # encrypt#2 and decrypt#2 are ambiguous by arity: (algorithm, data) and
+  # (parameters, context) both exist and return the same result type, so
+  # canonical signatures are omitted for those two. The remaining operations are
+  # unambiguous per arity.
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.encrypt
+    arity: 2
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.EncryptResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.encrypt
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.EncryptResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.EncryptResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.decrypt
+    arity: 2
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.DecryptResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.decrypt
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.DecryptResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.DecryptResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.sign
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.sign
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.verify
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.verify
+    arity: 4
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+      confidence: high
+    role: operation
+  # signData/verifyData hash the input before signing, unlike sign/verify which
+  # take a pre-computed digest.
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.signData
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.signData
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.verifyData
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.verifyData
+    arity: 4
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.VerifyResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.wrapKey
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.WrapResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.WrapResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.wrapKey
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.WrapResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.WrapResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.unwrapKey
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.UnwrapResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.UnwrapResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.unwrapKey
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+        com.azure.core.util.Context,
+      ]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.UnwrapResult
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.UnwrapResult
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClient.getKey
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Key management client (rule anchor: new KeyClientBuilder())
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.<init>
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.KeyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.KeyClientBuilder
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.vaultUrl
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.KeyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.KeyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.credential
+    arity: 1
+    return:
+      type: com.azure.security.keyvault.keys.KeyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.disableChallengeResourceVerification
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.KeyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.KeyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.buildClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.KeyClient
+    return:
+      type: com.azure.security.keyvault.keys.KeyClient
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.buildAsyncClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.KeyAsyncClient
+    return:
+      type: com.azure.security.keyvault.keys.KeyAsyncClient
+      confidence: high
+    role: factory
+  # createKey#1 takes a CreateKeyOptions; createKey#2 takes (name, KeyType).
+  - method: com.azure.security.keyvault.keys.KeyClient.createKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.createKey
+    arity: 2
+    parameter_types:
+      [java.lang.String, com.azure.security.keyvault.keys.models.KeyType]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: keyType
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.KeyClient.createRsaKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateRsaKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.createEcKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateEcKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.createOctKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.importKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.ImportKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.importKey
+    arity: 2
+    parameter_types:
+      [java.lang.String, com.azure.security.keyvault.keys.models.JsonWebKey]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyClient.getKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.KeyClient.backupKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.KeyClient.restoreKeyBackup
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Algorithm selectors (rule anchors: EncryptionAlgorithm.$C, SignatureAlgorithm.$C)
+  # These are ExpandableStringEnum types, so fromString accepts arbitrary names
+  # rather than being limited to the declared constants.
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm.fromString
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm.fromString
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm.fromString
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # =========================================================================
+  # Result material
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getCipherText
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getIv
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getAuthenticationTag
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getAlgorithm
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.DecryptResult.getPlainText
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.SignResult.getSignature
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.SignResult.getAlgorithm
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.VerifyResult.isValid
+    arity: 0
+    canonical_return_type: java.lang.Boolean
+    return:
+      type: java.lang.Boolean
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.WrapResult.getEncryptedKey
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.UnwrapResult.getKey
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+
+hierarchy:
+  com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.CryptographyClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyClientBuilder:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyAsyncClient:
+    - java.lang.Object
+  # The algorithm selectors are ExpandableStringEnum, not java.lang.Enum.
+  com.azure.core.util.ExpandableStringEnum:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm:
+    - com.azure.core.util.ExpandableStringEnum
+  com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm:
+    - com.azure.core.util.ExpandableStringEnum
+  com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm:
+    - com.azure.core.util.ExpandableStringEnum
+  com.azure.security.keyvault.keys.models.KeyType:
+    - com.azure.core.util.ExpandableStringEnum
+  com.azure.security.keyvault.keys.cryptography.models.EncryptResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.DecryptResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.SignResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.VerifyResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.WrapResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.UnwrapResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.KeyVaultKey:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.JsonWebKey:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.CreateKeyOptions:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.CreateRsaKeyOptions:
+    - com.azure.security.keyvault.keys.models.CreateKeyOptions
+  com.azure.security.keyvault.keys.models.CreateEcKeyOptions:
+    - com.azure.security.keyvault.keys.models.CreateKeyOptions
+  com.azure.security.keyvault.keys.models.CreateOctKeyOptions:
+    - com.azure.security.keyvault.keys.models.CreateKeyOptions
+  com.azure.security.keyvault.keys.models.ImportKeyOptions:
+    - java.lang.Object
+  com.azure.core.util.Context:
+    - java.lang.Object
+  java.lang.Boolean:
+    - java.lang.Object
+  java.lang.Object: []
