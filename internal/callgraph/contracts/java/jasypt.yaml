@@ -492,6 +492,22 @@ contracts:
       type: void
       confidence: high
     role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setProvider
+    arity: 1
+    parameter_types: [java.security.Provider]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.setProviderName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
   - method: org.jasypt.encryption.pbe.StandardPBEByteEncryptor.initialize
     arity: 0
     canonical_return_type: void
@@ -585,6 +601,49 @@ contracts:
     role: config
   - method: org.jasypt.digest.StandardStringDigester.initialize
     arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  # String-digester-only configuration: output encoding, fixed affixes, and the
+  # salt/normalization compatibility switches. The Byte digester has none of
+  # these.
+  - method: org.jasypt.digest.StandardStringDigester.setStringOutputType
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.setPrefix
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.setSuffix
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.setUseLenientSaltSizeCheck
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: org.jasypt.digest.StandardStringDigester.setUnicodeNormalizationIgnored
+    arity: 1
+    parameter_types: [boolean]
     canonical_return_type: void
     return:
       type: void

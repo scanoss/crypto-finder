@@ -5,6 +5,11 @@ library:
   name: lazysodium
   coordinates:
     - "com.goterl:lazysodium-java"
+  # Scope note: this KB covers the JVM artifact only. The Android artifact
+  # (com.goterl:lazysodium-android) exposes the same interfaces through
+  # LazySodiumAndroid/SodiumAndroid, which are NOT declared in the hierarchy
+  # below, so Android consumers resolve nothing from here. Adding them is a
+  # separate KB decision, not an omission of this one.
   # Verified against upstream source at release 5.2.0 (terl/lazysodium-java).
   version_range: ">=5.0,<6.0"
   description: "Lazysodium-java contracts for the libsodium AEAD, box, secretbox, generic-hash, password-hash, and signing lifecycles"
