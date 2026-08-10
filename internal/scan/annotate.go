@@ -240,7 +240,7 @@ func indexFragmentOpsByFindingID(fragment graphfrag.Fragment) map[string]graphfr
 }
 
 // sortGraphFragmentCryptoOps orders annotations identically to the full export
-// (buildGraphFragmentCryptoAnnotations) so the two outputs are byte-identical.
+// (materializeGraphFragmentCrypto) so the two outputs are byte-identical.
 func sortGraphFragmentCryptoOps(ops []graphfrag.GraphFragmentCryptoOp) {
 	sort.SliceStable(ops, func(i, j int) bool {
 		if ops[i].FunctionKey != ops[j].FunctionKey {
