@@ -1,0 +1,538 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: java-jwt
+  coordinates:
+    - "com.auth0:java-jwt"
+  # Covers the java-jwt 4.x API surface, verified against library source at
+  # release 4.6.0. The RSA*PSS factories exist only from 4.6.0 (annotated
+  # inline); older 4.x code simply never calls them.
+  version_range: ">=4.0,<5.0"
+  description: "Auth0 java-jwt contracts for JWT creation, signing, decoding, and verification lifecycles"
+
+contracts:
+  # --- Entry points (com.auth0.jwt.JWT) ---
+  - method: com.auth0.jwt.JWT.<init>
+    arity: 0
+    canonical_return_type: com.auth0.jwt.JWT
+    return:
+      type: com.auth0.jwt.JWT
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.JWT.decode
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.DecodedJWT
+    return:
+      type: com.auth0.jwt.interfaces.DecodedJWT
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.JWT.decodeJwt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.DecodedJWT
+    return:
+      type: com.auth0.jwt.interfaces.DecodedJWT
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.JWT.create
+    arity: 0
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.JWT.require
+    arity: 1
+    parameter_types: [com.auth0.jwt.algorithms.Algorithm]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: factory
+
+  # --- Algorithm factories (com.auth0.jwt.algorithms.Algorithm) ---
+  # HMAC factories are overloaded (String / byte[]) at the same arity, RSA and
+  # ECDSA factories at arity 1 accept either a KeyProvider or a Key — canonical
+  # signature fields are omitted where more than one same-arity overload exists.
+  - method: com.auth0.jwt.algorithms.Algorithm.HMAC256
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.HMAC384
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.HMAC512
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA256
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA256
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA384
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA384
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA512
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA512
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  # RSA-PSS (PS256/PS384/PS512) factories were added in java-jwt 4.6.0.
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA256PSS
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA256PSS
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA384PSS
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA384PSS
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA512PSS
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.RSA512PSS
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.RSAPublicKey,
+        java.security.interfaces.RSAPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA256
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA256
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.ECPublicKey,
+        java.security.interfaces.ECPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA384
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA384
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.ECPublicKey,
+        java.security.interfaces.ECPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA512
+    arity: 1
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.ECDSA512
+    arity: 2
+    parameter_types:
+      [
+        java.security.interfaces.ECPublicKey,
+        java.security.interfaces.ECPrivateKey,
+      ]
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+  - method: com.auth0.jwt.algorithms.Algorithm.none
+    arity: 0
+    canonical_return_type: com.auth0.jwt.algorithms.Algorithm
+    return:
+      type: com.auth0.jwt.algorithms.Algorithm
+      confidence: high
+    role: factory
+
+  # --- Algorithm raw sign/verify operations ---
+  - method: com.auth0.jwt.algorithms.Algorithm.sign
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: com.auth0.jwt.algorithms.Algorithm.sign
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: com.auth0.jwt.algorithms.Algorithm.verify
+    arity: 1
+    parameter_types: [com.auth0.jwt.interfaces.DecodedJWT]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+
+  # --- Token creation builder (com.auth0.jwt.JWTCreator.Builder) ---
+  # withClaim/withArrayClaim/withHeader/withExpiresAt/... are overloaded at the
+  # same arity (String/Date/Instant/Map/...), so canonical signature fields are
+  # omitted on those entries.
+  - method: com.auth0.jwt.JWTCreator.Builder.withHeader
+    arity: 1
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withIssuer
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withSubject
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withAudience
+    arity: 1
+    parameter_types: ["java.lang.String[]"]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withExpiresAt
+    arity: 1
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withNotBefore
+    arity: 1
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withIssuedAt
+    arity: 1
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withJWTId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withClaim
+    arity: 2
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withNullClaim
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.JWTCreator.Builder
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withArrayClaim
+    arity: 2
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.withPayload
+    arity: 1
+    return:
+      type: com.auth0.jwt.JWTCreator.Builder
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.JWTCreator.Builder.sign
+    arity: 1
+    parameter_types: [com.auth0.jwt.algorithms.Algorithm]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+
+  # --- Verification builder (com.auth0.jwt.interfaces.Verification) ---
+  # Authored on the public interface; JWTVerifier.BaseVerification resolves via
+  # the hierarchy edge below.
+  - method: com.auth0.jwt.interfaces.Verification.withIssuer
+    arity: 1
+    parameter_types: ["java.lang.String[]"]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withSubject
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withAudience
+    arity: 1
+    parameter_types: ["java.lang.String[]"]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withAnyOfAudience
+    arity: 1
+    parameter_types: ["java.lang.String[]"]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.acceptLeeway
+    arity: 1
+    parameter_types: [long]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.acceptExpiresAt
+    arity: 1
+    parameter_types: [long]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.acceptNotBefore
+    arity: 1
+    parameter_types: [long]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.acceptIssuedAt
+    arity: 1
+    parameter_types: [long]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.ignoreIssuedAt
+    arity: 0
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withJWTId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withClaimPresence
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withNullClaim
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwt.interfaces.Verification
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withClaim
+    arity: 2
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.withArrayClaim
+    arity: 2
+    return:
+      type: com.auth0.jwt.interfaces.Verification
+      confidence: high
+    role: config
+  - method: com.auth0.jwt.interfaces.Verification.build
+    arity: 0
+    canonical_return_type: com.auth0.jwt.JWTVerifier
+    return:
+      type: com.auth0.jwt.JWTVerifier
+      confidence: high
+    role: factory
+  # build(Clock) is declared only on the concrete BaseVerification, not the
+  # Verification interface.
+  - method: com.auth0.jwt.JWTVerifier.BaseVerification.build
+    arity: 1
+    canonical_return_type: com.auth0.jwt.JWTVerifier
+    return:
+      type: com.auth0.jwt.JWTVerifier
+      confidence: high
+    role: factory
+
+  # --- Verifier operation (com.auth0.jwt.interfaces.JWTVerifier) ---
+  # verify(String) and verify(DecodedJWT) share arity 1 and both return
+  # DecodedJWT — one unconditional contract, canonical signature omitted.
+  - method: com.auth0.jwt.interfaces.JWTVerifier.verify
+    arity: 1
+    return:
+      type: com.auth0.jwt.interfaces.DecodedJWT
+      confidence: high
+    role: operation
+
+hierarchy:
+  com.auth0.jwt.JWT:
+    - java.lang.Object
+  com.auth0.jwt.JWTCreator:
+    - java.lang.Object
+  com.auth0.jwt.JWTCreator.Builder:
+    - java.lang.Object
+  com.auth0.jwt.algorithms.Algorithm:
+    - java.lang.Object
+  com.auth0.jwt.interfaces.Verification:
+    - java.lang.Object
+  com.auth0.jwt.JWTVerifier.BaseVerification:
+    - com.auth0.jwt.interfaces.Verification
+  com.auth0.jwt.interfaces.JWTVerifier:
+    - java.lang.Object
+  com.auth0.jwt.JWTVerifier:
+    - com.auth0.jwt.interfaces.JWTVerifier
+  com.auth0.jwt.interfaces.Payload:
+    - java.lang.Object
+  com.auth0.jwt.interfaces.Header:
+    - java.lang.Object
+  com.auth0.jwt.interfaces.DecodedJWT:
+    - com.auth0.jwt.interfaces.Payload
+    - com.auth0.jwt.interfaces.Header
+  java.lang.Object: []
