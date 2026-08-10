@@ -1,0 +1,430 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: argon2-jvm
+  coordinates:
+    - "de.mkammerer:argon2-jvm"
+    - "de.mkammerer:argon2-jvm-nolibs"
+  # Verified against upstream source at version 2.12 (phxql/argon2-jvm).
+  version_range: ">=2.0,<3.0"
+  description: "argon2-jvm contracts for Argon2 factory selection, password hashing, verification, and raw KDF operations"
+
+contracts:
+  # --- Factory (de.mkammerer.argon2.Argon2Factory) ---
+  # create returns Argon2, createAdvanced returns Argon2Advanced; both share the
+  # same four arities, so the method name is what distinguishes the declared
+  # return (every runtime object implements both interfaces).
+  - method: de.mkammerer.argon2.Argon2Factory.create
+    arity: 0
+    canonical_return_type: de.mkammerer.argon2.Argon2
+    return:
+      type: de.mkammerer.argon2.Argon2
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Factory.create
+    arity: 1
+    parameter_types: [de.mkammerer.argon2.Argon2Factory.Argon2Types]
+    canonical_return_type: de.mkammerer.argon2.Argon2
+    return:
+      type: de.mkammerer.argon2.Argon2
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Factory.create
+    arity: 2
+    parameter_types: [int, int]
+    canonical_return_type: de.mkammerer.argon2.Argon2
+    return:
+      type: de.mkammerer.argon2.Argon2
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: defaultSaltLength
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+      - index: 1
+        name: defaultHashLength
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2Factory.create
+    arity: 3
+    parameter_types: [de.mkammerer.argon2.Argon2Factory.Argon2Types, int, int]
+    canonical_return_type: de.mkammerer.argon2.Argon2
+    return:
+      type: de.mkammerer.argon2.Argon2
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: defaultSaltLength
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+      - index: 2
+        name: defaultHashLength
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2Factory.createAdvanced
+    arity: 0
+    canonical_return_type: de.mkammerer.argon2.Argon2Advanced
+    return:
+      type: de.mkammerer.argon2.Argon2Advanced
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Factory.createAdvanced
+    arity: 1
+    parameter_types: [de.mkammerer.argon2.Argon2Factory.Argon2Types]
+    canonical_return_type: de.mkammerer.argon2.Argon2Advanced
+    return:
+      type: de.mkammerer.argon2.Argon2Advanced
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Factory.createAdvanced
+    arity: 2
+    parameter_types: [int, int]
+    canonical_return_type: de.mkammerer.argon2.Argon2Advanced
+    return:
+      type: de.mkammerer.argon2.Argon2Advanced
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Factory.createAdvanced
+    arity: 3
+    parameter_types: [de.mkammerer.argon2.Argon2Factory.Argon2Types, int, int]
+    canonical_return_type: de.mkammerer.argon2.Argon2Advanced
+    return:
+      type: de.mkammerer.argon2.Argon2Advanced
+      confidence: high
+    role: factory
+
+  # --- Hashing and verification (de.mkammerer.argon2.Argon2 interface) ---
+  # Authored on the interface; the concrete Argon2i/Argon2d/Argon2id
+  # implementations are package-private and never nameable at a call site.
+  # hash/verify are overloaded per arity (String/char[]/byte[] password, with or
+  # without an explicit Charset) with one declared return each — canonical
+  # signatures omitted. The Argon2 cost parameters occupy indexes 0..2.
+  - method: de.mkammerer.argon2.Argon2.hash
+    arity: 4
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 1
+        name: memory
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2.hash
+    arity: 5
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 1
+        name: memory
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2.verify
+    arity: 2
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2.verify
+    arity: 3
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2.needsRehash
+    arity: 4
+    parameter_types: [java.lang.String, int, int, int]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # wipeArray#1 is overloaded (char[] / byte[]), both void.
+  - method: de.mkammerer.argon2.Argon2.wipeArray
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: operation
+
+  # --- Advanced surface (de.mkammerer.argon2.Argon2Advanced interface) ---
+  - method: de.mkammerer.argon2.Argon2Advanced.rawHash
+    arity: 5
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 1
+        name: memory
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2Advanced.rawHash
+    arity: 6
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: iterations
+        role: metadata-contributing
+        contributes: { property: iterations, derivation: argument_value }
+      - index: 1
+        name: memory
+        role: metadata-contributing
+        contributes: { property: memoryLimit, derivation: argument_value }
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+  # Argon2Advanced adds a salt-explicit hash at arity 6 (the Argon2 interface
+  # tops out at arity 5), so this arity is unambiguous on the subinterface.
+  - method: de.mkammerer.argon2.Argon2Advanced.hash
+    arity: 6
+    parameter_types:
+      [int, int, int, "char[]", java.nio.charset.Charset, "byte[]"]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.pbkdf
+    arity: 6
+    parameter_types: [int, int, int, "byte[]", "byte[]", int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 5
+        name: keyLength
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2Advanced.pbkdf
+    arity: 7
+    parameter_types:
+      [int, int, int, "char[]", java.nio.charset.Charset, "byte[]", int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 6
+        name: keyLength
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: de.mkammerer.argon2.Argon2Advanced.hashAdvanced
+    arity: 7
+    parameter_types:
+      [
+        int,
+        int,
+        int,
+        "byte[]",
+        "byte[]",
+        int,
+        de.mkammerer.argon2.Argon2Version,
+      ]
+    canonical_return_type: de.mkammerer.argon2.HashResult
+    return:
+      type: de.mkammerer.argon2.HashResult
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.rawHashAdvanced
+    arity: 8
+    parameter_types:
+      [
+        int,
+        int,
+        int,
+        "char[]",
+        java.nio.charset.Charset,
+        "byte[]",
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.rawHashAdvanced
+    arity: 9
+    parameter_types:
+      [
+        int,
+        int,
+        int,
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        int,
+        de.mkammerer.argon2.Argon2Version,
+      ]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.verifyAdvanced
+    arity: 9
+    parameter_types:
+      [
+        int,
+        int,
+        int,
+        "char[]",
+        java.nio.charset.Charset,
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.verifyAdvanced
+    arity: 10
+    parameter_types:
+      [
+        int,
+        int,
+        int,
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        int,
+        de.mkammerer.argon2.Argon2Version,
+        "byte[]",
+      ]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: de.mkammerer.argon2.Argon2Advanced.generateSalt
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.Argon2Advanced.generateSalt
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: lengthInBytes
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+
+  # --- Results and helpers ---
+  - method: de.mkammerer.argon2.HashResult.<init>
+    arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: de.mkammerer.argon2.HashResult
+    return:
+      type: de.mkammerer.argon2.HashResult
+      confidence: high
+    role: factory
+  - method: de.mkammerer.argon2.HashResult.getRaw
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: de.mkammerer.argon2.HashResult.getEncoded
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: de.mkammerer.argon2.Argon2Helper.findIterations
+    arity: 4
+    parameter_types: [de.mkammerer.argon2.Argon2, long, int, int]
+    canonical_return_type: int
+    return:
+      type: int
+      confidence: high
+    role: config
+  - method: de.mkammerer.argon2.Argon2Helper.findIterations
+    arity: 5
+    parameter_types:
+      [
+        de.mkammerer.argon2.Argon2,
+        long,
+        int,
+        int,
+        de.mkammerer.argon2.Argon2Helper.IterationLogger,
+      ]
+    canonical_return_type: int
+    return:
+      type: int
+      confidence: high
+    role: config
+
+hierarchy:
+  de.mkammerer.argon2.Argon2:
+    - java.lang.Object
+  de.mkammerer.argon2.Argon2Advanced:
+    - de.mkammerer.argon2.Argon2
+  de.mkammerer.argon2.Argon2Factory:
+    - java.lang.Object
+  de.mkammerer.argon2.Argon2Factory.Argon2Types:
+    - java.lang.Enum
+  de.mkammerer.argon2.Argon2Version:
+    - java.lang.Enum
+  java.lang.Enum:
+    - java.lang.Object
+  de.mkammerer.argon2.HashResult:
+    - java.lang.Object
+  de.mkammerer.argon2.Argon2Helper:
+    - java.lang.Object
+  de.mkammerer.argon2.Argon2Helper.IterationLogger:
+    - java.lang.Object
+  java.nio.charset.Charset:
+    - java.lang.Object
+  java.lang.Object: []

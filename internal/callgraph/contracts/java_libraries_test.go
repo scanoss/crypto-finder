@@ -885,3 +885,131 @@ func TestLoadEmbeddedJava_HutoolEddsaPgpainlessLifecycle(t *testing.T) {
 		t.Fatalf("AES.<init>#1 parameters[0] = %#v, want index=0 keySize/argument_bit_length", p)
 	}
 }
+
+// TestLoadEmbeddedJava_PasswordHasherLifecycle verifies the Java password/KDF
+// facade contracts (scanoss/crypto-finder#202): jbcrypt, favre-bcrypt,
+// lambdaworks-scrypt, argon2-jvm, and jasypt. It pins the rule-anchor methods,
+// the hash/verify entry points and their return types, the lifecycle roles, and
+// the cost/iteration parameter roles that carry the KDF work factors.
+func TestLoadEmbeddedJava_PasswordHasherLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// jbcrypt — the FQN is the one shipped in the org.mindrot:jbcrypt jar.
+		{"org.mindrot.jbcrypt.BCrypt.hashpw", 2, "java.lang.String", "operation", "jbcrypt"},
+		{"org.mindrot.jbcrypt.BCrypt.checkpw", 2, "boolean", "operation", "jbcrypt"},
+		{"org.mindrot.jbcrypt.BCrypt.gensalt", 0, "java.lang.String", "factory", "jbcrypt"},
+		{"org.mindrot.jbcrypt.BCrypt.gensalt", 1, "java.lang.String", "factory", "jbcrypt"},
+		// favre-bcrypt — fluent hasher/verifyer; verify returns Result, not boolean.
+		{"at.favre.lib.crypto.bcrypt.BCrypt.withDefaults", 0, "at.favre.lib.crypto.bcrypt.BCrypt.Hasher", "factory", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.with", 1, "at.favre.lib.crypto.bcrypt.BCrypt.Hasher", "factory", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.verifyer", 0, "at.favre.lib.crypto.bcrypt.BCrypt.Verifyer", "factory", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashToString", 2, "java.lang.String", "operation", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashToChar", 2, "char[]", "operation", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hash", 2, "byte[]", "operation", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Verifyer.verify", 2, "at.favre.lib.crypto.bcrypt.BCrypt.Result", "operation", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Verifyer.verifyStrict", 2, "at.favre.lib.crypto.bcrypt.BCrypt.Result", "operation", "favre-bcrypt"},
+		{"at.favre.lib.crypto.bcrypt.LongPasswordStrategies.hashSha512", 1, "at.favre.lib.crypto.bcrypt.LongPasswordStrategy", "factory", "favre-bcrypt"},
+		// lambdaworks-scrypt — KDF core plus the MCF password facade.
+		{"com.lambdaworks.crypto.SCrypt.scrypt", 6, "byte[]", "operation", "lambdaworks-scrypt"},
+		{"com.lambdaworks.crypto.SCrypt.scryptJ", 6, "byte[]", "operation", "lambdaworks-scrypt"},
+		{"com.lambdaworks.crypto.SCryptUtil.scrypt", 4, "java.lang.String", "operation", "lambdaworks-scrypt"},
+		{"com.lambdaworks.crypto.SCryptUtil.check", 2, "boolean", "operation", "lambdaworks-scrypt"},
+		// argon2-jvm — create vs createAdvanced differ only by declared return.
+		{"de.mkammerer.argon2.Argon2Factory.create", 0, "de.mkammerer.argon2.Argon2", "factory", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2Factory.create", 1, "de.mkammerer.argon2.Argon2", "factory", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2Factory.createAdvanced", 0, "de.mkammerer.argon2.Argon2Advanced", "factory", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2.hash", 4, "java.lang.String", "operation", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2.verify", 2, "boolean", "operation", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2Advanced.rawHash", 5, "byte[]", "operation", "argon2-jvm"},
+		{"de.mkammerer.argon2.Argon2Advanced.generateSalt", 0, "byte[]", "factory", "argon2-jvm"},
+		// jasypt — util facades, PBE engines, and standard digesters.
+		{"org.jasypt.util.password.StrongPasswordEncryptor.<init>", 0, "org.jasypt.util.password.StrongPasswordEncryptor", "factory", "jasypt"},
+		{"org.jasypt.util.password.PasswordEncryptor.encryptPassword", 1, "java.lang.String", "operation", "jasypt"},
+		{"org.jasypt.util.password.PasswordEncryptor.checkPassword", 2, "boolean", "operation", "jasypt"},
+		{"org.jasypt.util.text.BasicTextEncryptor.<init>", 0, "org.jasypt.util.text.BasicTextEncryptor", "factory", "jasypt"},
+		{"org.jasypt.util.text.TextEncryptor.encrypt", 1, "java.lang.String", "operation", "jasypt"},
+		{"org.jasypt.util.binary.BinaryEncryptor.encrypt", 1, "byte[]", "operation", "jasypt"},
+		{"org.jasypt.encryption.pbe.StandardPBEStringEncryptor.<init>", 0, "org.jasypt.encryption.pbe.StandardPBEStringEncryptor", "factory", "jasypt"},
+		{"org.jasypt.encryption.pbe.StandardPBEStringEncryptor.encrypt", 1, "java.lang.String", "operation", "jasypt"},
+		{"org.jasypt.encryption.pbe.StandardPBEByteEncryptor.encrypt", 1, "byte[]", "operation", "jasypt"},
+		{"org.jasypt.digest.StandardStringDigester.digest", 1, "java.lang.String", "operation", "jasypt"},
+		{"org.jasypt.digest.StandardByteDigester.digest", 1, "byte[]", "operation", "jasypt"},
+		{"org.jasypt.util.digest.Digester.digest", 1, "byte[]", "operation", "jasypt"},
+		{"org.jasypt.salt.RandomSaltGenerator.<init>", 0, "org.jasypt.salt.RandomSaltGenerator", "factory", "jasypt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// Work-factor parameter roles: bcrypt cost, scrypt N/r/p, and the jasypt PBE
+	// key-obtention iteration count must all reach the consumer.
+	workFactors := []struct {
+		method     string
+		arity      int
+		index      int
+		property   string
+		derivation string
+	}{
+		{"org.mindrot.jbcrypt.BCrypt.gensalt", 1, 0, "cost", "argument_value"},
+		{"at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashToString", 2, 0, "cost", "argument_value"},
+		{"com.lambdaworks.crypto.SCryptUtil.scrypt", 4, 1, "cost", "argument_value"},
+		{"de.mkammerer.argon2.Argon2.hash", 4, 0, "iterations", "argument_value"},
+		{"org.jasypt.encryption.pbe.StandardPBEStringEncryptor.setKeyObtentionIterations", 1, 0, "iterations", "argument_value"},
+		{"org.jasypt.digest.StandardStringDigester.setIterations", 1, 0, "iterations", "argument_value"},
+	}
+	for _, wf := range workFactors {
+		got := kb.ContractsFor(wf.method, wf.arity)
+		if len(got) != 1 || len(got[0].Parameters) == 0 {
+			t.Fatalf("%s#%d parameters = %#v, want at least one parameter role", wf.method, wf.arity, got)
+		}
+		var found bool
+		for _, p := range got[0].Parameters {
+			if p.Index == nil || *p.Index != wf.index {
+				continue
+			}
+			found = true
+			if p.Role != "metadata-contributing" || p.Contributes == nil ||
+				p.Contributes.Property != wf.property || p.Contributes.Derivation != wf.derivation {
+				t.Fatalf("%s#%d parameters[%d] = %#v, want %s/%s", wf.method, wf.arity, wf.index, p, wf.property, wf.derivation)
+			}
+		}
+		if !found {
+			t.Fatalf("%s#%d has no parameter role at index %d", wf.method, wf.arity, wf.index)
+		}
+	}
+
+	// Concrete facades must resolve to the interfaces the operations are
+	// authored on, and Argon2Advanced must extend Argon2.
+	hierarchyWants := map[string]string{
+		"org.jasypt.util.password.StrongPasswordEncryptor": "org.jasypt.util.password.PasswordEncryptor",
+		"org.jasypt.util.text.BasicTextEncryptor":          "org.jasypt.util.text.TextEncryptor",
+		"org.jasypt.util.binary.BasicBinaryEncryptor":      "org.jasypt.util.binary.BinaryEncryptor",
+		"de.mkammerer.argon2.Argon2Advanced":               "de.mkammerer.argon2.Argon2",
+	}
+	for child, wantParent := range hierarchyWants {
+		if parents := kb.Hierarchy[child]; len(parents) == 0 || parents[0] != wantParent {
+			t.Fatalf("%s hierarchy = %v, want first parent %s", child, kb.Hierarchy[child], wantParent)
+		}
+	}
+}

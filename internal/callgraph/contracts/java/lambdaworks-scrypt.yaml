@@ -1,0 +1,130 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: lambdaworks-scrypt
+  coordinates:
+    - "com.lambdaworks:scrypt"
+  # Verified against upstream source at release 1.4.0 (wg/scrypt).
+  version_range: ">=1.4,<2.0"
+  description: "Lambdaworks scrypt contracts for the scrypt KDF and the SCryptUtil hash/check password facade"
+
+contracts:
+  # --- KDF core (com.lambdaworks.crypto.SCrypt) ---
+  # scrypt dispatches to the native (scryptN) or pure-Java (scryptJ) impl; all
+  # three share the same signature, so each is contracted separately.
+  - method: com.lambdaworks.crypto.SCrypt.scrypt
+    arity: 6
+    parameter_types: ["byte[]", "byte[]", int, int, int, int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: N
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+      - index: 3
+        name: r
+        role: metadata-contributing
+        contributes: { property: blockSize, derivation: argument_value }
+      - index: 4
+        name: p
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+      - index: 5
+        name: dkLen
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: com.lambdaworks.crypto.SCrypt.scryptN
+    arity: 6
+    parameter_types: ["byte[]", "byte[]", int, int, int, int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: N
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+      - index: 3
+        name: r
+        role: metadata-contributing
+        contributes: { property: blockSize, derivation: argument_value }
+      - index: 4
+        name: p
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+      - index: 5
+        name: dkLen
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  - method: com.lambdaworks.crypto.SCrypt.scryptJ
+    arity: 6
+    parameter_types: ["byte[]", "byte[]", int, int, int, int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: N
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+      - index: 3
+        name: r
+        role: metadata-contributing
+        contributes: { property: blockSize, derivation: argument_value }
+      - index: 4
+        name: p
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+      - index: 5
+        name: dkLen
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+
+  # --- Password facade (com.lambdaworks.crypto.SCryptUtil) ---
+  # scrypt derives a modular-crypt-format hash string (16-byte salt, 32-byte
+  # derived key are fixed by the facade); check verifies against it.
+  - method: com.lambdaworks.crypto.SCryptUtil.scrypt
+    arity: 4
+    parameter_types: [java.lang.String, int, int, int]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: N
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+      - index: 2
+        name: r
+        role: metadata-contributing
+        contributes: { property: blockSize, derivation: argument_value }
+      - index: 3
+        name: p
+        role: metadata-contributing
+        contributes: { property: parallelism, derivation: argument_value }
+  - method: com.lambdaworks.crypto.SCryptUtil.check
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+hierarchy:
+  com.lambdaworks.crypto.SCrypt:
+    - java.lang.Object
+  com.lambdaworks.crypto.SCryptUtil:
+    - java.lang.Object
+  java.lang.Object: []
