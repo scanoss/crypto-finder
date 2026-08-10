@@ -1,0 +1,340 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: python-jose
+  coordinates:
+    - python-jose
+  version_range: ">=3.0,<4.0"
+  description: >-
+    python-jose JOSE (JWT/JWS/JWE/JWK) lifecycle contracts — token encode and
+    decode, signing and verification, encryption and decryption, and key
+    construction. Verified against python-jose 3.5.0 (jose/jwt.py, jws.py,
+    jwe.py, jwk.py, backends/base.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: the public module-level functions of jose.jwt, jose.jws, jose.jwe and
+# jose.jwk, plus the caller-visible key classes. Every public
+# (non "_"-prefixed) name was inventoried against the python-jose 3.5.0 wheel
+# source. Disposition legend: contracted | covered-existing |
+# skipped-non-crypto | skipped-informative-return | skipped-unsupported |
+# needs-follow-up.
+#
+# IMPORTANT — namespace discipline vs pyjwt: python-jose call sites resolve to
+# `jose.jwt.*` because the library is imported as `from jose import jwt`. The
+# bare `jwt.encode`/`jwt.decode` FQNs belong to PyJWT (pyjwt.yaml) and MUST NOT
+# be declared here: authlib returns bytes and PyJWT returns str for the same
+# bare spelling, so a bare declaration would either mis-attribute or hard-fail
+# the cross-library merge.
+#
+# jose.jwt (jwt.py)
+#   encode                    contracted (operation)   — rules api anchor; returns str
+#   decode                    contracted (operation)   — rules api anchor; returns dict
+#   get_unverified_header     contracted (output)
+#   get_unverified_headers    contracted (output)      — alias of the above
+#   get_unverified_claims     contracted (output)      — json-loaded dict at jwt level
+#
+# jose.jws (jws.py)
+#   sign                      contracted (operation)   — rules api anchor; returns str
+#   verify                    contracted (operation)   — returns the raw payload BYTES
+#   get_unverified_header     contracted (output)
+#   get_unverified_headers    contracted (output)
+#   get_unverified_claims     contracted (output)      — raw payload bytes at jws level
+#
+# jose.jwe (jwe.py)
+#   encrypt                   contracted (operation)   — rules api anchor; returns BYTES
+#                                                         (compact serialization is bytes
+#                                                         in 3.5.0, docstrings notwithstanding)
+#   decrypt                   contracted (operation)   — returns bytes (None only when the
+#                                                         CEK is invalid — error path)
+#   get_unverified_header     contracted (output)
+#
+# jose.jwk (jwk.py)
+#   construct                 contracted (factory)     — returns a Key-subclass instance
+#   get_key                   skipped-unsupported      — returns a CLASS object
+#                                                         (type[Key]), not an instance;
+#                                                         no instance lifecycle to model
+#   register_key              skipped-non-crypto       — global registry plumbing
+#
+# Key classes (jose/backends; re-exported as jose.jwk.RSAKey etc.)
+#   jose.jwk.{HMACKey,RSAKey,ECKey,AESKey}(key, algorithm)
+#                             contracted (factory)     — module-attribute spelling
+#   jose.backends.{HMACKey,RSAKey,ECKey,AESKey}.<init>
+#                             contracted (factory)     — from-import constructor spelling
+#   DIRKey                    needs-follow-up          — alg "dir" passthrough key; direct
+#                                                         construction is rare in the wild
+#
+# jose.backends.base.Key shared instance surface (base.py; concrete backends
+# override — contracts declared once on the shared base per KB convention)
+#   sign / verify             contracted (operation)
+#   encrypt                   contracted (operation)   — returns (iv, ciphertext, tag)
+#                                                         tuple per the base contract
+#   decrypt                   contracted (operation)
+#   wrap_key / unwrap_key     contracted (operation)
+#   public_key                contracted (output)      — public-half projection
+#   to_pem                    contracted (output)
+#   to_dict                   contracted (output)
+#
+# jose.constants (ALGORITHMS), jose.exceptions, jose.utils
+#                             skipped-non-crypto       — constants/exceptions/helpers
+#
+# Note on `when:` conditionals: none are declared. The algorithm argument
+# selects the crypto algorithm, never the Python return type.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── jose.jwt — token encode/decode ─────────────────────────────────────────
+
+  - method: jose.jwt.encode
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+
+  - method: jose.jwt.decode
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: jose.jwt.get_unverified_header
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.jwt.get_unverified_headers
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.jwt.get_unverified_claims
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  # ── jose.jws — signing/verification ────────────────────────────────────────
+
+  - method: jose.jws.sign
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+
+  - method: jose.jws.verify
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jws.get_unverified_header
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.jws.get_unverified_headers
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.jws.get_unverified_claims
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── jose.jwe — encryption/decryption ───────────────────────────────────────
+
+  - method: jose.jwe.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwe.decrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwe.get_unverified_header
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  # ── jose.jwk — key construction ────────────────────────────────────────────
+
+  - method: jose.jwk.construct
+    arity: 1
+    return:
+      type: jose.backends.base.Key
+      confidence: high
+    role: factory
+
+  # Module-attribute spellings: `from jose import jwk; jwk.RSAKey(key, alg)`.
+  - method: jose.jwk.HMACKey
+    arity: 2
+    return:
+      type: jose.backends.HMACKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.RSAKey
+    arity: 2
+    return:
+      type: jose.backends.RSAKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.ECKey
+    arity: 2
+    return:
+      type: jose.backends.ECKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.AESKey
+    arity: 2
+    return:
+      type: jose.backends.AESKey
+      confidence: high
+    role: factory
+
+  # Constructor spellings: `from jose.backends import RSAKey; RSAKey(key, alg)`.
+  - method: jose.backends.HMACKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.HMACKey
+      confidence: high
+    role: factory
+
+  - method: jose.backends.RSAKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.RSAKey
+      confidence: high
+    role: factory
+
+  - method: jose.backends.ECKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.ECKey
+      confidence: high
+    role: factory
+
+  - method: jose.backends.AESKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.AESKey
+      confidence: high
+    role: factory
+
+  # ── jose.backends.base.Key — shared instance surface ──────────────────────
+
+  - method: jose.backends.base.Key.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.base.Key.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  # encrypt returns the (iv, ciphertext, auth_tag) tuple defined by the base
+  # contract (backends/base.py).
+  - method: jose.backends.base.Key.encrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: jose.backends.base.Key.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.base.Key.wrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.base.Key.unwrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.base.Key.public_key
+    arity: 0
+    return:
+      type: jose.backends.base.Key
+      confidence: high
+    role: output
+
+  - method: jose.backends.base.Key.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: jose.backends.base.Key.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+hierarchy:
+  jose.backends.HMACKey:
+    - jose.backends.base.Key
+  jose.backends.RSAKey:
+    - jose.backends.base.Key
+  jose.backends.ECKey:
+    - jose.backends.base.Key
+  jose.backends.AESKey:
+    - jose.backends.base.Key
+  jose.backends.base.Key:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.object: []

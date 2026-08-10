@@ -729,3 +729,137 @@ func TestLoadEmbedded_Python_Boto3KMSClientCondition(t *testing.T) {
 		t.Errorf("boto3.client#1 return type = %q, want botocore.client.KMS", c.Return.Type)
 	}
 }
+
+// TestLoadEmbedded_Python_RuleOnlyBacklog verifies the six RULE_ONLY-backlog
+// contract KBs (scanoss/crypto-finder#208): rsa, ecdsa, python-jose, authlib,
+// hvac, and google-cloud-kms. For each library it asserts the key factory and
+// operation entries, including their lifecycle roles.
+func TestLoadEmbedded_Python_RuleOnlyBacklog(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	tests := []struct {
+		method     string
+		arity      int
+		wantReturn string
+		wantRole   string
+		wantLib    string
+	}{
+		// rsa — key-pair generation, PKCS#1 operations
+		{"rsa.newkeys", 1, "builtins.tuple", "factory", "rsa"},
+		{"rsa.encrypt", 2, "builtins.bytes", "operation", "rsa"},
+		{"rsa.decrypt", 2, "builtins.bytes", "operation", "rsa"},
+		{"rsa.sign", 3, "builtins.bytes", "operation", "rsa"},
+		{"rsa.verify", 3, "builtins.str", "operation", "rsa"},
+		{"rsa.PublicKey.load_pkcs1", 1, "rsa.PublicKey", "factory", "rsa"},
+		{"rsa.PrivateKey.load_pkcs1", 1, "rsa.PrivateKey", "factory", "rsa"},
+		{"rsa.PrivateKey.save_pkcs1", 0, "builtins.bytes", "output", "rsa"},
+
+		// ecdsa — SigningKey/VerifyingKey lifecycle, ECDH
+		{"ecdsa.SigningKey.generate", 0, "ecdsa.SigningKey", "factory", "ecdsa"},
+		{"ecdsa.SigningKey.from_pem", 1, "ecdsa.SigningKey", "factory", "ecdsa"},
+		{"ecdsa.SigningKey.sign", 1, "builtins.bytes", "operation", "ecdsa"},
+		{"ecdsa.SigningKey.sign_deterministic", 1, "builtins.bytes", "operation", "ecdsa"},
+		{"ecdsa.SigningKey.get_verifying_key", 0, "ecdsa.VerifyingKey", "output", "ecdsa"},
+		{"ecdsa.VerifyingKey.from_string", 1, "ecdsa.VerifyingKey", "factory", "ecdsa"},
+		{"ecdsa.VerifyingKey.verify", 2, "builtins.bool", "operation", "ecdsa"},
+		{"ecdsa.ECDH.<init>", 0, "ecdsa.ECDH", "factory", "ecdsa"},
+		{"ecdsa.ECDH.generate_sharedsecret_bytes", 0, "builtins.bytes", "operation", "ecdsa"},
+
+		// python-jose — jose.jwt/jws/jwe module operations, jwk factory
+		{"jose.jwt.encode", 2, "builtins.str", "operation", "python-jose"},
+		{"jose.jwt.decode", 2, "builtins.dict", "operation", "python-jose"},
+		{"jose.jws.sign", 2, "builtins.str", "operation", "python-jose"},
+		{"jose.jws.verify", 3, "builtins.bytes", "operation", "python-jose"},
+		{"jose.jwe.encrypt", 2, "builtins.bytes", "operation", "python-jose"},
+		{"jose.jwe.decrypt", 2, "builtins.bytes", "operation", "python-jose"},
+		{"jose.jwk.construct", 1, "jose.backends.base.Key", "factory", "python-jose"},
+		{"jose.backends.base.Key.sign", 1, "builtins.bytes", "operation", "python-jose"},
+
+		// authlib — JWS/JWE/JWT lifecycle, JsonWebKey factories
+		{"authlib.jose.JsonWebSignature.<init>", 0, "authlib.jose.JsonWebSignature", "factory", "authlib"},
+		{"authlib.jose.JsonWebSignature.serialize_compact", 3, "builtins.bytes", "operation", "authlib"},
+		{"authlib.jose.JsonWebEncryption.<init>", 0, "authlib.jose.JsonWebEncryption", "factory", "authlib"},
+		{"authlib.jose.JsonWebEncryption.serialize_compact", 3, "builtins.bytes", "operation", "authlib"},
+		{"authlib.jose.JsonWebToken.<init>", 1, "authlib.jose.JsonWebToken", "factory", "authlib"},
+		{"authlib.jose.jwt.encode", 3, "builtins.bytes", "operation", "authlib"},
+		{"authlib.jose.jwt.decode", 2, "builtins.dict", "operation", "authlib"},
+		{"authlib.jose.JsonWebKey.import_key", 1, "authlib.jose.Key", "factory", "authlib"},
+		{"authlib.jose.RSAKey.generate_key", 0, "authlib.jose.RSAKey", "factory", "authlib"},
+		{"authlib.jose.ECKey.exchange_shared_key", 1, "builtins.bytes", "operation", "authlib"},
+
+		// hvac — Client factory, Transit engine lifecycle
+		{"hvac.Client", 0, "hvac.v1.Client", "factory", "hvac"},
+		{"hvac.Client.<init>", 0, "hvac.v1.Client", "factory", "hvac"},
+		{"hvac.api.secrets_engines.transit.Transit.create_key", 1, "requests.Response", "factory", "hvac"},
+		{"hvac.api.secrets_engines.transit.Transit.encrypt_data", 1, "builtins.dict", "operation", "hvac"},
+		{"hvac.api.secrets_engines.transit.Transit.sign_data", 1, "builtins.dict", "operation", "hvac"},
+		{"hvac.api.secrets_engines.transit.Transit.generate_hmac", 2, "builtins.dict", "operation", "hvac"},
+		{"hvac.api.secrets_engines.transit.Transit.export_key", 2, "builtins.dict", "output", "hvac"},
+
+		// google-cloud-kms — client factories (both import spellings), remote ops
+		{"google.cloud.kms.KeyManagementServiceClient", 0, "google.cloud.kms_v1.KeyManagementServiceClient", "factory", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient", 0, "google.cloud.kms_v1.KeyManagementServiceClient", "factory", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient.encrypt", 0, "google.cloud.kms_v1.types.EncryptResponse", "operation", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient.asymmetric_sign", 0, "google.cloud.kms_v1.types.AsymmetricSignResponse", "operation", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient.mac_sign", 0, "google.cloud.kms_v1.types.MacSignResponse", "operation", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient.get_public_key", 0, "google.cloud.kms_v1.types.PublicKey", "output", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceClient.create_crypto_key", 0, "google.cloud.kms_v1.types.CryptoKey", "factory", "google-cloud-kms"},
+		{"google.cloud.kms_v1.KeyManagementServiceAsyncClient.encrypt", 0, "google.cloud.kms_v1.types.EncryptResponse", "operation", "google-cloud-kms"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.method, func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) == 0 {
+				t.Fatalf("%s#%d: no contracts found", tt.method, tt.arity)
+			}
+			c := got[0]
+			if c.Return.Type != tt.wantReturn {
+				t.Errorf("%s#%d return type = %q, want %q", tt.method, tt.arity, c.Return.Type, tt.wantReturn)
+			}
+			if c.Role != tt.wantRole {
+				t.Errorf("%s#%d role = %q, want %q", tt.method, tt.arity, c.Role, tt.wantRole)
+			}
+			if c.SourceLibrary != tt.wantLib {
+				t.Errorf("%s#%d source library = %q, want %q", tt.method, tt.arity, c.SourceLibrary, tt.wantLib)
+			}
+			if c.Return.Confidence != "high" {
+				t.Errorf("%s#%d confidence = %q, want high", tt.method, tt.arity, c.Return.Confidence)
+			}
+		})
+	}
+}
+
+// TestLoadEmbedded_Python_BareJWTNamespaceStaysPyjwt guards the namespace
+// discipline that keeps the #208 backlog KBs merge-safe: the bare
+// `jwt.encode`/`jwt.decode` FQNs (produced by PyJWT's `import jwt`) must stay
+// owned exclusively by pyjwt. python-jose resolves to `jose.jwt.*` and
+// authlib to `authlib.jose.jwt.*`; if either ever declared the bare spelling,
+// their divergent return types (authlib: bytes, pyjwt: str) would hard-fail
+// the merge or silently mis-attribute call sites.
+func TestLoadEmbedded_Python_BareJWTNamespaceStaysPyjwt(t *testing.T) {
+	t.Parallel()
+
+	kb := loadPythonKB(t)
+
+	for _, tt := range []struct {
+		method string
+		arity  int
+	}{
+		{"jwt.encode", 2},
+		{"jwt.decode", 1},
+	} {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) == 0 {
+			t.Fatalf("%s#%d: no contracts found", tt.method, tt.arity)
+		}
+		for _, c := range got {
+			if c.SourceLibrary != "pyjwt" {
+				t.Errorf("%s#%d: contract owned by %q, want pyjwt only", tt.method, tt.arity, c.SourceLibrary)
+			}
+		}
+	}
+}

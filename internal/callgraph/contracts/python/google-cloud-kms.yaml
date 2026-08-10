@@ -1,0 +1,470 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: google-cloud-kms
+  coordinates:
+    - google-cloud-kms
+  version_range: ">=2.0,<4.0"
+  description: >-
+    Google Cloud KMS client lifecycle contracts — KeyManagementServiceClient
+    construction (sync and async), remote encryption, decryption, signing,
+    MAC, KEM decapsulation, random-bytes generation, public-key retrieval,
+    and key-lifecycle management. Verified against google-cloud-kms 3.13.0
+    (google/cloud/kms_v1/services/key_management_service/client.py,
+    async_client.py, kms_v1/types/service.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: KeyManagementServiceClient (sync + async) — constructors,
+# service-account factories, every data-plane crypto operation, and the
+# key-lifecycle RPCs. Every public method was inventoried against the
+# google-cloud-kms 3.13.0 wheel source. Disposition legend: contracted |
+# covered-existing | skipped-non-crypto | skipped-informative-return |
+# skipped-unsupported | needs-follow-up.
+#
+# Import-shape note: `from google.cloud import kms` and
+# `from google.cloud import kms_v1` expose the SAME client classes, so both
+# spellings are contracted for entry points. Instance methods are keyed on
+# the canonical semantic type google.cloud.kms_v1.KeyManagementServiceClient
+# (respectively ...AsyncClient), which the factory contracts return.
+#
+# All RPCs take `(request=None, *, flattened kwargs)` — required positional
+# count is 0 for every method; the arity-tolerant Python lookup covers the
+# request-object-positional call shape (arity 1).
+#
+# KeyManagementServiceClient (client.py)
+#   <init> / kms.X / kms_v1.X          contracted (factory)
+#   from_service_account_file/info/json contracted (factory) — both module
+#                                                              spellings; json is an
+#                                                              alias of file
+#   encrypt / decrypt                   contracted (operation) — rules api anchors
+#   raw_encrypt / raw_decrypt           contracted (operation) — request-only params
+#   asymmetric_sign                     contracted (operation)
+#   asymmetric_decrypt                  contracted (operation) — rules api anchor
+#   mac_sign / mac_verify               contracted (operation) — rules api anchors
+#   decapsulate                         contracted (operation) — ML-KEM (PQC)
+#   generate_random_bytes               contracted (operation) — rules api anchor
+#   get_public_key                      contracted (output)    — rules api anchor
+#   create_crypto_key                   contracted (factory)   — creates key material
+#   create_crypto_key_version           contracted (factory)
+#   import_crypto_key_version           contracted (factory)
+#   create_key_ring / create_import_job contracted (config)    — containers/jobs
+#   update_crypto_key[_version|_primary_version]
+#                                       contracted (config)
+#   destroy/restore_crypto_key_version  contracted (config)
+#   delete_crypto_key[_version]         contracted (config)    — LRO handle return
+#   get_/list_* read accessors          skipped-non-crypto     — resource reads
+#                                                                (get_public_key is the
+#                                                                crypto exception, above)
+#   IAM/location/operation helpers      skipped-non-crypto
+#
+# KeyManagementServiceAsyncClient (async_client.py)
+#   constructors + the same 11 crypto operations
+#                                       contracted             — awaitable results modeled
+#                                                                as the same response types
+#   async key-lifecycle RPCs            needs-follow-up        — mirror the sync surface;
+#                                                                omitted to keep the async
+#                                                                KB to data-plane crypto
+#
+# EkmServiceClient / AutokeyClient / AutokeyAdminClient / HsmManagementClient
+#                                       skipped-non-crypto     — connectivity/config
+#                                                                management, no data-plane
+#                                                                crypto operations
+# kms_v1.types request/response classes skipped-informative-return — proto value
+#                                                                objects, not operations
+#
+# Note on `when:` conditionals: none are declared. The remote key's algorithm
+# determines the crypto semantics server-side; the client-visible response
+# type per method is fixed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── sync client construction ───────────────────────────────────────────────
+
+  # `from google.cloud import kms; kms.KeyManagementServiceClient()`.
+  - method: google.cloud.kms.KeyManagementServiceClient
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  # `from google.cloud import kms_v1; kms_v1.KeyManagementServiceClient()`.
+  - method: google.cloud.kms_v1.KeyManagementServiceClient
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  # `from google.cloud.kms import KeyManagementServiceClient; KeyManagementServiceClient()`.
+  - method: google.cloud.kms.KeyManagementServiceClient.<init>
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.<init>
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms.KeyManagementServiceClient.from_service_account_file
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.from_service_account_file
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms.KeyManagementServiceClient.from_service_account_json
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.from_service_account_json
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms.KeyManagementServiceClient.from_service_account_info
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.from_service_account_info
+    arity: 1
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceClient
+      confidence: high
+    role: factory
+
+  # ── sync client — crypto operations ────────────────────────────────────────
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.encrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.EncryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.DecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.raw_encrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.RawEncryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.raw_decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.RawDecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.asymmetric_sign
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.AsymmetricSignResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.asymmetric_decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.AsymmetricDecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.mac_sign
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.MacSignResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.mac_verify
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.MacVerifyResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.decapsulate
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.DecapsulateResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.generate_random_bytes
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.GenerateRandomBytesResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.get_public_key
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.PublicKey
+      confidence: high
+    role: output
+
+  # ── sync client — key lifecycle ────────────────────────────────────────────
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.create_crypto_key
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKey
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.create_crypto_key_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKeyVersion
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.import_crypto_key_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKeyVersion
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.create_key_ring
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.KeyRing
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.create_import_job
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.ImportJob
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.update_crypto_key
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKey
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.update_crypto_key_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKeyVersion
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.update_crypto_key_primary_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKey
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.destroy_crypto_key_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKeyVersion
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.restore_crypto_key_version
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.CryptoKeyVersion
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.delete_crypto_key
+    arity: 0
+    return:
+      type: google.api_core.operation.Operation
+      confidence: high
+    role: config
+
+  - method: google.cloud.kms_v1.KeyManagementServiceClient.delete_crypto_key_version
+    arity: 0
+    return:
+      type: google.api_core.operation.Operation
+      confidence: high
+    role: config
+
+  # ── async client construction ──────────────────────────────────────────────
+
+  - method: google.cloud.kms.KeyManagementServiceAsyncClient
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceAsyncClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceAsyncClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms.KeyManagementServiceAsyncClient.<init>
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceAsyncClient
+      confidence: high
+    role: factory
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.<init>
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.KeyManagementServiceAsyncClient
+      confidence: high
+    role: factory
+
+  # ── async client — crypto operations (awaitable results) ───────────────────
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.encrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.EncryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.DecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.raw_encrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.RawEncryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.raw_decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.RawDecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.asymmetric_sign
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.AsymmetricSignResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.asymmetric_decrypt
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.AsymmetricDecryptResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.mac_sign
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.MacSignResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.mac_verify
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.MacVerifyResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.decapsulate
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.DecapsulateResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.generate_random_bytes
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.GenerateRandomBytesResponse
+      confidence: high
+    role: operation
+
+  - method: google.cloud.kms_v1.KeyManagementServiceAsyncClient.get_public_key
+    arity: 0
+    return:
+      type: google.cloud.kms_v1.types.PublicKey
+      confidence: high
+    role: output
+
+hierarchy:
+  google.cloud.kms_v1.KeyManagementServiceClient:
+    - builtins.object
+  google.cloud.kms_v1.KeyManagementServiceAsyncClient:
+    - builtins.object
+  google.cloud.kms_v1.types.EncryptResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.DecryptResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.RawEncryptResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.RawDecryptResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.AsymmetricSignResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.AsymmetricDecryptResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.MacSignResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.MacVerifyResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.DecapsulateResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.GenerateRandomBytesResponse:
+    - builtins.object
+  google.cloud.kms_v1.types.PublicKey:
+    - builtins.object
+  google.cloud.kms_v1.types.CryptoKey:
+    - builtins.object
+  google.cloud.kms_v1.types.CryptoKeyVersion:
+    - builtins.object
+  google.cloud.kms_v1.types.KeyRing:
+    - builtins.object
+  google.cloud.kms_v1.types.ImportJob:
+    - builtins.object
+  google.api_core.operation.Operation:
+    - builtins.object
+  builtins.object: []

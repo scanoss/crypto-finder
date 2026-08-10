@@ -1,0 +1,302 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: hvac
+  coordinates:
+    - hvac
+  version_range: ">=1.0,<3.0"
+  description: >-
+    hvac (HashiCorp Vault client) lifecycle contracts — Client construction
+    and the Transit secrets engine's key management, encryption, signing,
+    hashing, HMAC, and random-bytes operations, plus the Transform engine's
+    encode/decode terminals. Verified against hvac 2.4.0 (hvac/v1/__init__.py,
+    hvac/api/secrets_engines/transit.py, transform.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: hvac.Client construction plus the crypto-relevant secrets engines
+# (Transit; Transform encode/decode). Auth methods and non-crypto secret
+# engines are out of scope. Every public (non "_"-prefixed) Transit method was
+# inventoried against the hvac 2.4.0 wheel source. Disposition legend:
+# contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# KNOWN PARSER LIMITATION (spike, issue #208): hvac's dominant call shape is
+# an attribute chain — `client.secrets.transit.encrypt_data(...)` — where
+# `.secrets` (property) and `.transit` (__getattr__-backed attribute) are NOT
+# calls. The Python parser records neither a ChainID nor a ReceiverVar for the
+# terminal call, so the Transit instance-method contracts below cannot be
+# selected by receiver type today; they document the canonical lifecycle and
+# activate for direct-construction call shapes
+# (`Transit(adapter).encrypt_data(...)`) and once attribute-chain receiver
+# resolution lands (parser follow-up). Detection and line-level reachability
+# are unaffected.
+#
+# Return-type note: hvac's default JSONAdapter returns a parsed dict for JSON
+# (HTTP 200) endpoints and the raw requests.Response for 204/empty endpoints;
+# contracts model that default-adapter behavior.
+#
+# hvac.Client (hvac/v1/__init__.py; re-exported at hvac/__init__.py)
+#   Client(...)               contracted (factory)     — `hvac.Client` attr spelling,
+#                                                         `hvac.Client.<init>` and
+#                                                         `hvac.v1.Client.<init>`
+#                                                         from-import spellings
+#   Client.secrets            skipped-unsupported      — property access, not a call
+#   Client auth/sys/read/write surface
+#                             skipped-non-crypto       — Vault API plumbing
+#
+# hvac.api.secrets_engines.Transit (transit.py)
+#   Transit(adapter)          contracted (factory)     — both module spellings
+#   create_key                contracted (factory)     — creates named key material
+#   read_key                  contracted (output)
+#   list_keys                 skipped-non-crypto       — key-name listing
+#   delete_key                contracted (config)
+#   update_key_configuration  contracted (config)
+#   rotate_key                contracted (config)      — key-version lifecycle
+#   export_key                contracted (output)      — key_type param carries the
+#                                                         exported key flavor
+#   encrypt_data              contracted (operation)   — rules api anchor
+#   decrypt_data              contracted (operation)   — rules api anchor
+#   rewrap_data               contracted (operation)
+#   generate_data_key         contracted (operation)   — rules api anchor
+#   generate_random_bytes     contracted (operation)   — rules api anchor
+#   hash_data                 contracted (operation)   — rules api anchor
+#   generate_hmac             contracted (operation)   — rules api anchor
+#   sign_data                 contracted (operation)   — rules api anchor
+#   verify_signed_data        contracted (operation)   — rules api anchor
+#   backup_key                contracted (output)
+#   restore_key               contracted (config)
+#   trim_key                  contracted (config)
+#
+# hvac.api.secrets_engines.Transform (transform.py; Vault Enterprise FPE)
+#   encode / decode           contracted (operation)   — crypto terminals
+#   create_or_update_* / rotate_tokenization_key / read_* / list_* / delete_*
+#                             needs-follow-up          — transform-role/config surface;
+#                                                         no detection rules cover them
+#                                                         yet, revisit with a Transform
+#                                                         rules ticket
+#
+# Note on `when:` conditionals: none are declared. Vault selects algorithms
+# from request parameters server-side; the client-visible return type is
+# always the adapter-shaped response.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── hvac.Client construction ───────────────────────────────────────────────
+
+  # `import hvac; hvac.Client(url=...)` — module-attribute call spelling.
+  - method: hvac.Client
+    arity: 0
+    return:
+      type: hvac.v1.Client
+      confidence: high
+    role: factory
+
+  # `from hvac import Client; Client(url=...)` — constructor spelling.
+  - method: hvac.Client.<init>
+    arity: 0
+    return:
+      type: hvac.v1.Client
+      confidence: high
+    role: factory
+
+  # `from hvac.v1 import Client; Client(url=...)`.
+  - method: hvac.v1.Client.<init>
+    arity: 0
+    return:
+      type: hvac.v1.Client
+      confidence: high
+    role: factory
+
+  # ── Transit engine construction ────────────────────────────────────────────
+
+  # `from hvac.api.secrets_engines import Transit; Transit(adapter=...)`.
+  - method: hvac.api.secrets_engines.Transit.<init>
+    arity: 1
+    return:
+      type: hvac.api.secrets_engines.transit.Transit
+      confidence: high
+    role: factory
+
+  # `from hvac.api.secrets_engines.transit import Transit; Transit(...)`.
+  - method: hvac.api.secrets_engines.transit.Transit.<init>
+    arity: 1
+    return:
+      type: hvac.api.secrets_engines.transit.Transit
+      confidence: high
+    role: factory
+
+  # ── Transit — key lifecycle ────────────────────────────────────────────────
+
+  - method: hvac.api.secrets_engines.transit.Transit.create_key
+    arity: 1
+    return:
+      type: requests.Response
+      confidence: high
+    role: factory
+
+  - method: hvac.api.secrets_engines.transit.Transit.read_key
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: hvac.api.secrets_engines.transit.Transit.delete_key
+    arity: 1
+    return:
+      type: requests.Response
+      confidence: high
+    role: config
+
+  - method: hvac.api.secrets_engines.transit.Transit.update_key_configuration
+    arity: 1
+    return:
+      type: requests.Response
+      confidence: high
+    role: config
+
+  - method: hvac.api.secrets_engines.transit.Transit.rotate_key
+    arity: 1
+    return:
+      type: requests.Response
+      confidence: high
+    role: config
+
+  - method: hvac.api.secrets_engines.transit.Transit.export_key
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+    parameters:
+      - index: 1
+        name: key_type
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: hvac.api.secrets_engines.transit.Transit.backup_key
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: hvac.api.secrets_engines.transit.Transit.restore_key
+    arity: 1
+    return:
+      type: requests.Response
+      confidence: high
+    role: config
+
+  - method: hvac.api.secrets_engines.transit.Transit.trim_key
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: config
+
+  # ── Transit — crypto operations ────────────────────────────────────────────
+
+  - method: hvac.api.secrets_engines.transit.Transit.encrypt_data
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.decrypt_data
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.rewrap_data
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.generate_data_key
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: key_type
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: hvac.api.secrets_engines.transit.Transit.generate_random_bytes
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.hash_data
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.generate_hmac
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.sign_data
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transit.Transit.verify_signed_data
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # ── Transform engine — FPE terminals ───────────────────────────────────────
+
+  - method: hvac.api.secrets_engines.transform.Transform.encode
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: hvac.api.secrets_engines.transform.Transform.decode
+    arity: 1
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+hierarchy:
+  hvac.v1.Client:
+    - builtins.object
+  hvac.api.secrets_engines.transit.Transit:
+    - builtins.object
+  hvac.api.secrets_engines.transform.Transform:
+    - builtins.object
+  requests.Response:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.object: []
