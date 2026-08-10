@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Java callgraph contracts now model the Auth0 java-jwt 4.x token creation, signing, decoding, and verification lifecycles, and the jwks-rsa JWKS provider construction and signing-key resolution lifecycles. (#203)
-- Python callgraph contracts now model the python-rsa 4.x key-pair generation, PKCS#1 encryption, signing, and key-serialization lifecycles. (#208)
-- Python callgraph contracts now model the python-ecdsa 0.19 SigningKey/VerifyingKey generation, signing, verification, serialization, and ECDH key-agreement lifecycles. (#208)
-- Python callgraph contracts now model the python-jose 3.5 JWT/JWS/JWE operations and JWK key-construction lifecycles. (#208)
-- Python callgraph contracts now model the Authlib 1.6 JOSE serialization, JWT encode/decode, and JsonWebKey generation and import lifecycles. (#208)
-- Python callgraph contracts now model the hvac 2.4 Vault client construction and Transit/Transform secrets-engine key-management and crypto-operation lifecycles. (#208)
-- Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. (#208)
+- Java callgraph contracts now model the Auth0 java-jwt 4.x token creation, signing, decoding, and verification lifecycles, and the jwks-rsa JWKS provider construction and signing-key resolution lifecycles.
+- Python callgraph contracts now model the python-rsa 4.x key-pair generation, PKCS#1 encryption, signing, and key-serialization lifecycles.
+- Python callgraph contracts now model the python-ecdsa 0.19 SigningKey/VerifyingKey generation, signing, verification, serialization, and ECDH key-agreement lifecycles.
+- Python callgraph contracts now model the python-jose 3.5 JWT/JWS/JWE operations and JWK key-construction lifecycles.
+- Python callgraph contracts now model the Authlib 1.6 JOSE serialization, JWT encode/decode, and JsonWebKey generation and import lifecycles.
+- Python callgraph contracts now model the hvac 2.4 Vault client construction and Transit/Transform secrets-engine key-management and crypto-operation lifecycles.
+- Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ## [0.18.0] - 2026-08-10
 

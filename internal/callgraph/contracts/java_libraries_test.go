@@ -745,6 +745,18 @@ func TestLoadEmbeddedJava_JavaJwtAndJwksRsaLifecycle(t *testing.T) {
 		})
 	}
 
+	// The HMAC factories take the key material directly; the secret argument
+	// contributes the key size by bit length, mirroring the byte[]-key factory
+	// convention in the bouncycastle-openpgp and go KBs.
+	hmac := kb.ContractsFor("com.auth0.jwt.algorithms.Algorithm.HMAC256", 1)
+	if len(hmac) != 1 || len(hmac[0].Parameters) != 1 {
+		t.Fatalf("Algorithm.HMAC256#1 parameters = %#v, want one secret parameter role", hmac)
+	}
+	p := hmac[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("Algorithm.HMAC256#1 parameters[0] = %#v, want index=0 keySize/argument_bit_length", p)
+	}
+
 	// BaseVerification implements Verification; the concrete verifier and the
 	// concrete JWKS providers must resolve to their interface declarations.
 	if parents := kb.Hierarchy["com.auth0.jwt.JWTVerifier.BaseVerification"]; len(parents) != 1 || parents[0] != "com.auth0.jwt.interfaces.Verification" {
