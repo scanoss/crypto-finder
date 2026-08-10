@@ -1463,6 +1463,20 @@ func TestLoadEmbeddedJava_CloudKmsAndVaultLifecycle(t *testing.T) {
 		{"com.bettercloud.vault.SslConfig.getSslContext", 0, "javax.net.ssl.SSLContext", "output", "vault-java-driver"},
 		{"com.bettercloud.vault.Vault.logical", 0, "com.bettercloud.vault.api.Logical", "factory", "vault-java-driver"},
 		{"com.bettercloud.vault.Vault.pki", 0, "com.bettercloud.vault.api.pki.Pki", "factory", "vault-java-driver"},
+		// Gaps found by validating against real third-party code: the AWS v2
+		// DecryptRequest builder, the AWS v1 bean setters that AWS's own samples
+		// prefer, the Azure async clients used by 8 of 21 Azure samples, and the
+		// Vault Logical methods where the remote crypto actually happens.
+		{"software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.ciphertextBlob", 1, "software.amazon.awssdk.services.kms.model.DecryptRequest.Builder", "config", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.build", 0, "software.amazon.awssdk.services.kms.model.DecryptRequest", "factory", "aws-kms"},
+		{"com.amazonaws.services.kms.model.EncryptRequest.setKeyId", 1, "void", "config", "aws-kms"},
+		{"com.amazonaws.services.kms.model.GenerateDataKeyRequest.setKeySpec", 1, "void", "config", "aws-kms"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt", 2, "reactor.core.publisher.Mono", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.sign", 2, "reactor.core.publisher.Mono", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.KeyAsyncClient.createRsaKey", 1, "reactor.core.publisher.Mono", "factory", "azure-keyvault-keys-java"},
+		{"com.bettercloud.vault.api.Logical.write", 2, "com.bettercloud.vault.response.LogicalResponse", "operation", "vault-java-driver"},
+		{"com.bettercloud.vault.api.Logical.read", 1, "com.bettercloud.vault.response.LogicalResponse", "operation", "vault-java-driver"},
+		{"com.bettercloud.vault.VaultConfig.openTimeout", 1, "com.bettercloud.vault.VaultConfig", "config", "vault-java-driver"},
 	}
 
 	for _, tt := range tests {

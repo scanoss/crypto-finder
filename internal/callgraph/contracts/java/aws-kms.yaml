@@ -232,6 +232,41 @@ contracts:
       type: software.amazon.awssdk.services.kms.model.EncryptRequest
       confidence: high
     role: factory
+  - method: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.ciphertextBlob
+    arity: 1
+    parameter_types: [software.amazon.awssdk.core.SdkBytes]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+      confidence: high
+    role: config
+  - method: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.keyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+      confidence: high
+    role: config
+  # encryptionAlgorithm#1 is overloaded (String / EncryptionAlgorithmSpec).
+  - method: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.encryptionAlgorithm
+    arity: 1
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: encryptionAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: software.amazon.awssdk.services.kms.model.DecryptRequest.Builder.build
+    arity: 0
+    canonical_return_type: software.amazon.awssdk.services.kms.model.DecryptRequest
+    return:
+      type: software.amazon.awssdk.services.kms.model.DecryptRequest
+      confidence: high
+    role: factory
   - method: software.amazon.awssdk.services.kms.model.SignRequest.Builder.keyId
     arity: 1
     parameter_types: [java.lang.String]
@@ -598,6 +633,116 @@ contracts:
     canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
     return:
       type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: numberOfBytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  # v1 also exposes plain bean setters alongside the fluent withX forms, and
+  # AWS's own v1 samples prefer them, so both spellings are contracted.
+  - method: com.amazonaws.services.kms.model.EncryptRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.EncryptRequest.setPlaintext
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.EncryptRequest.setEncryptionAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: encryptionAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.DecryptRequest.setCiphertextBlob
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.DecryptRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.SignRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.SignRequest.setMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.SignRequest.setSigningAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: signingAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  # setKeySpec#1 is overloaded (String / DataKeySpec).
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.setKeySpec
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keySpec
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.setNumberOfBytes
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: void
+    return:
+      type: void
       confidence: high
     role: config
     parameters:

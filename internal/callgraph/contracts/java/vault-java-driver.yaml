@@ -100,6 +100,38 @@ contracts:
       type: com.bettercloud.vault.VaultConfig
       confidence: high
     role: config
+  - method: com.bettercloud.vault.VaultConfig.openTimeout
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.readTimeout
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.environmentLoader
+    arity: 1
+    parameter_types: [com.bettercloud.vault.EnvironmentLoader]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.secretsEnginePathMap
+    arity: 1
+    parameter_types: [java.util.Map]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
   - method: com.bettercloud.vault.VaultConfig.build
     arity: 0
     canonical_return_type: com.bettercloud.vault.VaultConfig
@@ -323,6 +355,60 @@ contracts:
       confidence: high
     role: factory
 
+  # Logical is where the remote crypto actually happens: write against a transit
+  # path performs encrypt/decrypt/sign server-side, and read retrieves key
+  # material. Contracting only the Vault.logical factory edge would leave the
+  # chain broken at exactly the operation.
+  - method: com.bettercloud.vault.api.Logical.write
+    arity: 2
+    parameter_types: [java.lang.String, java.util.Map]
+    canonical_return_type: com.bettercloud.vault.response.LogicalResponse
+    return:
+      type: com.bettercloud.vault.response.LogicalResponse
+      confidence: high
+    role: operation
+  - method: com.bettercloud.vault.api.Logical.read
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.response.LogicalResponse
+    return:
+      type: com.bettercloud.vault.response.LogicalResponse
+      confidence: high
+    role: operation
+  - method: com.bettercloud.vault.api.Logical.read
+    arity: 3
+    parameter_types: [java.lang.String, java.lang.Boolean, java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.response.LogicalResponse
+    return:
+      type: com.bettercloud.vault.response.LogicalResponse
+      confidence: high
+    role: operation
+  - method: com.bettercloud.vault.api.Logical.list
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.response.LogicalResponse
+    return:
+      type: com.bettercloud.vault.response.LogicalResponse
+      confidence: high
+    role: output
+  # delete#2 and unDelete/destroy take a version array.
+  - method: com.bettercloud.vault.api.Logical.delete
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.response.LogicalResponse
+    return:
+      type: com.bettercloud.vault.response.LogicalResponse
+      confidence: high
+    role: operation
+  - method: com.bettercloud.vault.api.Logical.withNameSpace
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.api.Logical
+    return:
+      type: com.bettercloud.vault.api.Logical
+      confidence: high
+    role: config
+
 hierarchy:
   com.bettercloud.vault.Vault:
     - java.lang.Object
@@ -339,6 +425,12 @@ hierarchy:
   com.bettercloud.vault.api.pki.Pki:
     - java.lang.Object
   com.bettercloud.vault.api.mounts.Mounts:
+    - java.lang.Object
+  com.bettercloud.vault.response.LogicalResponse:
+    - java.lang.Object
+  com.bettercloud.vault.EnvironmentLoader:
+    - java.lang.Object
+  java.util.Map:
     - java.lang.Object
   javax.net.ssl.SSLContext:
     - java.lang.Object
