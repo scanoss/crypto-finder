@@ -775,3 +775,113 @@ func TestLoadEmbeddedJava_JavaJwtAndJwksRsaLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadEmbeddedJava_HutoolEddsaPgpainlessLifecycle verifies the Tier 0
+// RULE_ONLY gap contracts (scanoss/crypto-finder#207): hutool-crypto's
+// SecureUtil/DigestUtil/SmUtil/KeyUtil factories and symmetric/digest/MAC/
+// asymmetric lifecycles, i2p-eddsa's signing engine and key/spec construction,
+// and pgpainless's encrypt/decrypt/keygen fluent chains — including the
+// rule-anchor methods, return types, lifecycle roles, and the hierarchy edges
+// that resolve subclasses and chain interfaces.
+func TestLoadEmbeddedJava_HutoolEddsaPgpainlessLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// hutool-crypto: rule anchors (SecureUtil.aes/des/desede/rsa/md5/sha*).
+		{"cn.hutool.crypto.SecureUtil.aes", 1, "cn.hutool.crypto.symmetric.AES", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.SecureUtil.des", 0, "cn.hutool.crypto.symmetric.DES", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.SecureUtil.desede", 1, "cn.hutool.crypto.symmetric.DESede", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.SecureUtil.rsa", 0, "cn.hutool.crypto.asymmetric.RSA", "factory", "hutool-crypto"},
+		// The md5/sha1 arity split: 0 -> digester object, 1 -> hex string.
+		{"cn.hutool.crypto.SecureUtil.md5", 0, "cn.hutool.crypto.digest.MD5", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.SecureUtil.md5", 1, "java.lang.String", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.SecureUtil.hmacSha256", 1, "cn.hutool.crypto.digest.HMac", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.digest.DigestUtil.sha256Hex", 1, "java.lang.String", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.SmUtil.sm2", 0, "cn.hutool.crypto.asymmetric.SM2", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.SmUtil.sm4", 1, "cn.hutool.crypto.symmetric.SM4", "factory", "hutool-crypto"},
+		{"cn.hutool.crypto.KeyUtil.generateKeyPair", 2, "java.security.KeyPair", "factory", "hutool-crypto"},
+		// hutool lifecycle on base classes (subclasses resolve via hierarchy).
+		{"cn.hutool.crypto.symmetric.SymmetricCrypto.encrypt", 1, "byte[]", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.symmetric.SymmetricCrypto.setIv", 1, "cn.hutool.crypto.symmetric.SymmetricCrypto", "config", "hutool-crypto"},
+		{"cn.hutool.crypto.digest.Digester.digestHex", 1, "java.lang.String", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.digest.mac.Mac.digest", 1, "byte[]", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.asymmetric.AsymmetricCrypto.encrypt", 2, "byte[]", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.asymmetric.Sign.sign", 1, "byte[]", "operation", "hutool-crypto"},
+		{"cn.hutool.crypto.asymmetric.SM2.verify", 2, "boolean", "operation", "hutool-crypto"},
+		// i2p-eddsa: rule anchors (new EdDSAEngine, EdDSANamedCurveTable.getByName).
+		{"net.i2p.crypto.eddsa.EdDSAEngine.<init>", 0, "net.i2p.crypto.eddsa.EdDSAEngine", "factory", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.EdDSAEngine.<init>", 1, "net.i2p.crypto.eddsa.EdDSAEngine", "factory", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable.getByName", 1, "net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec", "factory", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.EdDSAEngine.signOneShot", 1, "byte[]", "operation", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.EdDSAEngine.verifyOneShot", 2, "boolean", "operation", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.KeyPairGenerator.generateKeyPair", 0, "java.security.KeyPair", "factory", "i2p-eddsa"},
+		{"net.i2p.crypto.eddsa.EdDSAPrivateKey.<init>", 1, "net.i2p.crypto.eddsa.EdDSAPrivateKey", "factory", "i2p-eddsa"},
+		// pgpainless: rule anchors and the fluent chains.
+		{"org.pgpainless.PGPainless.encryptAndOrSign", 0, "org.pgpainless.encryption_signing.EncryptionBuilder", "factory", "pgpainless"},
+		{"org.pgpainless.PGPainless.decryptAndOrVerify", 0, "org.pgpainless.decryption_verification.DecryptionBuilder", "factory", "pgpainless"},
+		{"org.pgpainless.PGPainless.generateKeyRing", 0, "org.pgpainless.key.generation.KeyRingTemplates", "factory", "pgpainless"},
+		{"org.pgpainless.encryption_signing.EncryptionBuilder.onOutputStream", 1, "org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions", "config", "pgpainless"},
+		{"org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions.withOptions", 1, "org.pgpainless.encryption_signing.EncryptionStream", "factory", "pgpainless"},
+		{"org.pgpainless.encryption_signing.EncryptionStream.getResult", 0, "org.pgpainless.encryption_signing.EncryptionResult", "output", "pgpainless"},
+		{"org.pgpainless.encryption_signing.ProducerOptions.signAndEncrypt", 2, "org.pgpainless.encryption_signing.ProducerOptions", "factory", "pgpainless"},
+		{"org.pgpainless.encryption_signing.EncryptionOptions.addRecipient", 1, "org.pgpainless.encryption_signing.EncryptionOptions", "config", "pgpainless"},
+		{"org.pgpainless.encryption_signing.SigningOptions.addInlineSignature", 3, "org.pgpainless.encryption_signing.SigningOptions", "config", "pgpainless"},
+		{"org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith.withOptions", 1, "org.pgpainless.decryption_verification.DecryptionStream", "factory", "pgpainless"},
+		{"org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionKey", 1, "org.pgpainless.decryption_verification.ConsumerOptions", "config", "pgpainless"},
+		{"org.pgpainless.decryption_verification.DecryptionStream.getMetadata", 0, "org.pgpainless.decryption_verification.MessageMetadata", "output", "pgpainless"},
+		{"org.pgpainless.key.generation.KeyRingTemplates.modernKeyRing", 1, "org.bouncycastle.openpgp.PGPSecretKeyRing", "factory", "pgpainless"},
+		{"org.pgpainless.key.generation.KeyRingBuilder.build", 0, "org.bouncycastle.openpgp.PGPSecretKeyRing", "factory", "pgpainless"},
+		{"org.pgpainless.key.parsing.KeyRingReader.secretKeyRing", 1, "org.bouncycastle.openpgp.PGPSecretKeyRing", "factory", "pgpainless"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// Subclasses and chain implementations must resolve to the base/interface
+	// declarations the lifecycle contracts are authored on.
+	hierarchyWants := map[string]string{
+		"cn.hutool.crypto.symmetric.AES":                                      "cn.hutool.crypto.symmetric.SymmetricCrypto",
+		"cn.hutool.crypto.symmetric.SM4":                                      "cn.hutool.crypto.symmetric.SymmetricCrypto",
+		"cn.hutool.crypto.digest.MD5":                                         "cn.hutool.crypto.digest.Digester",
+		"cn.hutool.crypto.digest.HMac":                                        "cn.hutool.crypto.digest.mac.Mac",
+		"cn.hutool.crypto.asymmetric.RSA":                                     "cn.hutool.crypto.asymmetric.AsymmetricCrypto",
+		"net.i2p.crypto.eddsa.EdDSAEngine":                                    "java.security.Signature",
+		"org.pgpainless.encryption_signing.EncryptionBuilder.WithOptionsImpl": "org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions",
+		"org.pgpainless.decryption_verification.OpenPgpMessageInputStream":    "org.pgpainless.decryption_verification.DecryptionStream",
+	}
+	for child, wantParent := range hierarchyWants {
+		if parents := kb.Hierarchy[child]; len(parents) == 0 || parents[0] != wantParent {
+			t.Fatalf("%s hierarchy = %v, want first parent %s", child, kb.Hierarchy[child], wantParent)
+		}
+	}
+
+	// The AES key-material constructor contributes keySize by bit length.
+	aes := kb.ContractsFor("cn.hutool.crypto.symmetric.AES.<init>", 1)
+	if len(aes) != 1 || len(aes[0].Parameters) != 1 {
+		t.Fatalf("AES.<init>#1 parameters = %#v, want one key parameter role", aes)
+	}
+	p := aes[0].Parameters[0]
+	if p.Index == nil || *p.Index != 0 || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keySize" || p.Contributes.Derivation != "argument_bit_length" {
+		t.Fatalf("AES.<init>#1 parameters[0] = %#v, want index=0 keySize/argument_bit_length", p)
+	}
+}

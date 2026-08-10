@@ -1,0 +1,878 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: pgpainless
+  coordinates:
+    - "org.pgpainless:pgpainless-core"
+  # Verified against upstream source at release 1.7.8 (Kotlin sources; the
+  # JVM-visible surface is contracted, with @JvmOverloads default parameters
+  # expanded into their per-arity Java overloads). pgpainless 2.x changes key
+  # returns (KeyRingTemplates produce org.bouncycastle.openpgp.api.OpenPGPKey
+  # instead of PGPSecretKeyRing) and deprecates the static entry points — a 2.x
+  # KB would conflict on method+arity and needs its own follow-up decision.
+  version_range: ">=1.7,<2.0"
+  description: "PGPainless contracts for the OpenPGP encrypt/sign, decrypt/verify, key-generation, and key-parsing fluent lifecycles"
+
+contracts:
+  # --- Entry points (org.pgpainless.PGPainless statics) ---
+  - method: org.pgpainless.PGPainless.encryptAndOrSign
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionBuilder
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.decryptAndOrVerify
+    arity: 0
+    canonical_return_type: org.pgpainless.decryption_verification.DecryptionBuilder
+    return:
+      type: org.pgpainless.decryption_verification.DecryptionBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.generateKeyRing
+    arity: 0
+    canonical_return_type: org.pgpainless.key.generation.KeyRingTemplates
+    return:
+      type: org.pgpainless.key.generation.KeyRingTemplates
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.buildKeyRing
+    arity: 0
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.readKeyRing
+    arity: 0
+    canonical_return_type: org.pgpainless.key.parsing.KeyRingReader
+    return:
+      type: org.pgpainless.key.parsing.KeyRingReader
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.modifyKeyRing
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPSecretKeyRing]
+    canonical_return_type: org.pgpainless.key.modification.secretkeyring.SecretKeyRingEditor
+    return:
+      type: org.pgpainless.key.modification.secretkeyring.SecretKeyRingEditor
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.modifyKeyRing
+    arity: 2
+    parameter_types: [org.bouncycastle.openpgp.PGPSecretKeyRing, java.util.Date]
+    canonical_return_type: org.pgpainless.key.modification.secretkeyring.SecretKeyRingEditor
+    return:
+      type: org.pgpainless.key.modification.secretkeyring.SecretKeyRingEditor
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.inspectKeyRing
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPKeyRing]
+    canonical_return_type: org.pgpainless.key.info.KeyRingInfo
+    return:
+      type: org.pgpainless.key.info.KeyRingInfo
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.inspectKeyRing
+    arity: 2
+    parameter_types: [org.bouncycastle.openpgp.PGPKeyRing, java.util.Date]
+    canonical_return_type: org.pgpainless.key.info.KeyRingInfo
+    return:
+      type: org.pgpainless.key.info.KeyRingInfo
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.extractCertificate
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPSecretKeyRing]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.PGPainless.mergeCertificate
+    arity: 2
+    parameter_types:
+      [
+        org.bouncycastle.openpgp.PGPPublicKeyRing,
+        org.bouncycastle.openpgp.PGPPublicKeyRing,
+      ]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRing
+      confidence: high
+    role: factory
+  # asciiArmor#1 is overloaded (PGPKeyRing / PGPSignature), both returning
+  # String — canonical signature omitted.
+  - method: org.pgpainless.PGPainless.asciiArmor
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: org.pgpainless.PGPainless.asciiArmor
+    arity: 2
+    parameter_types: [org.bouncycastle.openpgp.PGPKeyRing, java.io.OutputStream]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: output
+
+  # --- Encryption chain ---
+  - method: org.pgpainless.encryption_signing.EncryptionBuilder.<init>
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionBuilder
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.EncryptionBuilder.onOutputStream
+    arity: 1
+    parameter_types: [java.io.OutputStream]
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions
+      confidence: high
+    role: config
+  # Authored on the chain interface; EncryptionBuilder.WithOptionsImpl resolves
+  # through the hierarchy edge below.
+  - method: org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions.withOptions
+    arity: 1
+    parameter_types: [org.pgpainless.encryption_signing.ProducerOptions]
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionStream
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionStream
+      confidence: high
+    role: factory
+  # close() finalizes the OpenPGP message (writes trailing packets); getResult
+  # is only valid afterwards.
+  - method: org.pgpainless.encryption_signing.EncryptionStream.close
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: org.pgpainless.encryption_signing.EncryptionStream.getResult
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionResult
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionResult
+      confidence: high
+    role: output
+
+  # --- ProducerOptions ---
+  - method: org.pgpainless.encryption_signing.ProducerOptions.signAndEncrypt
+    arity: 2
+    parameter_types:
+      [
+        org.pgpainless.encryption_signing.EncryptionOptions,
+        org.pgpainless.encryption_signing.SigningOptions,
+      ]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.ProducerOptions.sign
+    arity: 1
+    parameter_types: [org.pgpainless.encryption_signing.SigningOptions]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.ProducerOptions.encrypt
+    arity: 1
+    parameter_types: [org.pgpainless.encryption_signing.EncryptionOptions]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.ProducerOptions.noEncryptionNoSigning
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.ProducerOptions.setAsciiArmor
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.ProducerOptions.setCleartextSigned
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.ProducerOptions.setFileName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.ProducerOptions.setModificationDate
+    arity: 1
+    parameter_types: [java.util.Date]
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.ProducerOptions.applyCRLFEncoding
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.ProducerOptions.overrideCompressionAlgorithm
+    arity: 1
+    canonical_return_type: org.pgpainless.encryption_signing.ProducerOptions
+    return:
+      type: org.pgpainless.encryption_signing.ProducerOptions
+      confidence: high
+    role: config
+
+  # --- EncryptionOptions ---
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.get
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.encryptCommunications
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.encryptDataAtRest
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: factory
+  # addRecipient(s) are overloaded per arity (key vs key+userId vs
+  # key+selector) — canonical signatures omitted.
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addRecipient
+    arity: 1
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addRecipient
+    arity: 2
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addRecipient
+    arity: 3
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addRecipients
+    arity: 1
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addRecipients
+    arity: 2
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addPassphrase
+    arity: 1
+    parameter_types: [org.pgpainless.util.Passphrase]
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.addMessagePassphrase
+    arity: 1
+    parameter_types: [org.pgpainless.util.Passphrase]
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.EncryptionOptions.overrideEncryptionAlgorithm
+    arity: 1
+    canonical_return_type: org.pgpainless.encryption_signing.EncryptionOptions
+    return:
+      type: org.pgpainless.encryption_signing.EncryptionOptions
+      confidence: high
+    role: config
+
+  # --- SigningOptions ---
+  # addInlineSignature/addDetachedSignature carry @JvmOverloads defaults, so
+  # the Java-visible overloads span arities 2..5; every variant returns
+  # SigningOptions. Canonical signatures omitted on the overloaded arities.
+  - method: org.pgpainless.encryption_signing.SigningOptions.get
+    arity: 0
+    canonical_return_type: org.pgpainless.encryption_signing.SigningOptions
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.encryption_signing.SigningOptions.overrideHashAlgorithm
+    arity: 1
+    canonical_return_type: org.pgpainless.encryption_signing.SigningOptions
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addSignature
+    arity: 2
+    canonical_return_type: org.pgpainless.encryption_signing.SigningOptions
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addInlineSignatures
+    arity: 3
+    canonical_return_type: org.pgpainless.encryption_signing.SigningOptions
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addInlineSignature
+    arity: 2
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addInlineSignature
+    arity: 3
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addInlineSignature
+    arity: 4
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addInlineSignature
+    arity: 5
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addDetachedSignatures
+    arity: 3
+    canonical_return_type: org.pgpainless.encryption_signing.SigningOptions
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addDetachedSignature
+    arity: 2
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addDetachedSignature
+    arity: 3
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addDetachedSignature
+    arity: 4
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.encryption_signing.SigningOptions.addDetachedSignature
+    arity: 5
+    return:
+      type: org.pgpainless.encryption_signing.SigningOptions
+      confidence: high
+    role: config
+
+  # --- Decryption chain ---
+  - method: org.pgpainless.decryption_verification.DecryptionBuilder.<init>
+    arity: 0
+    canonical_return_type: org.pgpainless.decryption_verification.DecryptionBuilder
+    return:
+      type: org.pgpainless.decryption_verification.DecryptionBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.decryption_verification.DecryptionBuilder.onInputStream
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith
+    return:
+      type: org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith.withOptions
+    arity: 1
+    parameter_types: [org.pgpainless.decryption_verification.ConsumerOptions]
+    canonical_return_type: org.pgpainless.decryption_verification.DecryptionStream
+    return:
+      type: org.pgpainless.decryption_verification.DecryptionStream
+      confidence: high
+    role: factory
+  # close() performs the integrity verification of the consumed message;
+  # getMetadata is only valid afterwards.
+  - method: org.pgpainless.decryption_verification.DecryptionStream.close
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: org.pgpainless.decryption_verification.DecryptionStream.getMetadata
+    arity: 0
+    canonical_return_type: org.pgpainless.decryption_verification.MessageMetadata
+    return:
+      type: org.pgpainless.decryption_verification.MessageMetadata
+      confidence: high
+    role: output
+
+  # --- ConsumerOptions ---
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.get
+    arity: 0
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: factory
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionKey
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPSecretKeyRing]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionKey
+    arity: 2
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionKeys
+    arity: 1
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionKeys
+    arity: 2
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addDecryptionPassphrase
+    arity: 1
+    parameter_types: [org.pgpainless.util.Passphrase]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addMessagePassphrase
+    arity: 1
+    parameter_types: [org.pgpainless.util.Passphrase]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addVerificationCert
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPPublicKeyRing]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addVerificationCerts
+    arity: 1
+    parameter_types: [org.bouncycastle.openpgp.PGPPublicKeyRingCollection]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  # addVerificationOfDetachedSignatures#1 is overloaded (InputStream /
+  # List<PGPSignature>) — canonical signature omitted.
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addVerificationOfDetachedSignatures
+    arity: 1
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.addVerificationOfDetachedSignature
+    arity: 1
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.setSessionKey
+    arity: 1
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.verifyNotBefore
+    arity: 1
+    parameter_types: [java.util.Date]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.verifyNotAfter
+    arity: 1
+    parameter_types: [java.util.Date]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.setMissingKeyPassphraseStrategy
+    arity: 1
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+  - method: org.pgpainless.decryption_verification.ConsumerOptions.setIgnoreMDCErrors
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: org.pgpainless.decryption_verification.ConsumerOptions
+    return:
+      type: org.pgpainless.decryption_verification.ConsumerOptions
+      confidence: high
+    role: config
+
+  # --- Key generation ---
+  # Template methods carry @JvmOverloads passphrase defaults plus a deprecated
+  # String-password overload at the higher arity — every variant returns
+  # PGPSecretKeyRing; canonical signatures omitted on overloaded arities.
+  - method: org.pgpainless.key.generation.KeyRingTemplates.<init>
+    arity: 0
+    canonical_return_type: org.pgpainless.key.generation.KeyRingTemplates
+    return:
+      type: org.pgpainless.key.generation.KeyRingTemplates
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.rsaKeyRing
+    arity: 2
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.rsaKeyRing
+    arity: 3
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.simpleRsaKeyRing
+    arity: 2
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.simpleRsaKeyRing
+    arity: 3
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.simpleEcKeyRing
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.simpleEcKeyRing
+    arity: 2
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.modernKeyRing
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingTemplates.modernKeyRing
+    arity: 2
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingBuilder.<init>
+    arity: 0
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.generation.KeyRingBuilder.setPrimaryKey
+    arity: 1
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: config
+  - method: org.pgpainless.key.generation.KeyRingBuilder.addSubkey
+    arity: 1
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: config
+  # addUserId#1 is overloaded (CharSequence / byte[]) — canonical omitted.
+  - method: org.pgpainless.key.generation.KeyRingBuilder.addUserId
+    arity: 1
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: config
+  - method: org.pgpainless.key.generation.KeyRingBuilder.setExpirationDate
+    arity: 1
+    parameter_types: [java.util.Date]
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: config
+  - method: org.pgpainless.key.generation.KeyRingBuilder.setPassphrase
+    arity: 1
+    parameter_types: [org.pgpainless.util.Passphrase]
+    canonical_return_type: org.pgpainless.key.generation.KeyRingBuilder
+    return:
+      type: org.pgpainless.key.generation.KeyRingBuilder
+      confidence: high
+    role: config
+  - method: org.pgpainless.key.generation.KeyRingBuilder.build
+    arity: 0
+    canonical_return_type: org.bouncycastle.openpgp.PGPSecretKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+
+  # --- Key parsing (org.pgpainless.key.parsing.KeyRingReader) ---
+  # Instance readers are overloaded at arity 1 (InputStream / byte[] / String)
+  # with a single return each; the static read* variants carry a @JvmOverloads
+  # maxIterations default (arities 1 and 2).
+  - method: org.pgpainless.key.parsing.KeyRingReader.<init>
+    arity: 0
+    canonical_return_type: org.pgpainless.key.parsing.KeyRingReader
+    return:
+      type: org.pgpainless.key.parsing.KeyRingReader
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.keyRing
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.publicKeyRing
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.publicKeyRingCollection
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.secretKeyRing
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.secretKeyRingCollection
+    arity: 1
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRingCollection
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readKeyRing
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.bouncycastle.openpgp.PGPKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readKeyRing
+    arity: 2
+    parameter_types: [java.io.InputStream, int]
+    canonical_return_type: org.bouncycastle.openpgp.PGPKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readPublicKeyRing
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readPublicKeyRing
+    arity: 2
+    parameter_types: [java.io.InputStream, int]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readPublicKeyRingCollection
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readPublicKeyRingCollection
+    arity: 2
+    parameter_types: [java.io.InputStream, int]
+    canonical_return_type: org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+    return:
+      type: org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readSecretKeyRing
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.bouncycastle.openpgp.PGPSecretKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readSecretKeyRing
+    arity: 2
+    parameter_types: [java.io.InputStream, int]
+    canonical_return_type: org.bouncycastle.openpgp.PGPSecretKeyRing
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRing
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readSecretKeyRingCollection
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: org.bouncycastle.openpgp.PGPSecretKeyRingCollection
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRingCollection
+      confidence: high
+    role: factory
+  - method: org.pgpainless.key.parsing.KeyRingReader.readSecretKeyRingCollection
+    arity: 2
+    parameter_types: [java.io.InputStream, int]
+    canonical_return_type: org.bouncycastle.openpgp.PGPSecretKeyRingCollection
+    return:
+      type: org.bouncycastle.openpgp.PGPSecretKeyRingCollection
+      confidence: high
+    role: factory
+
+hierarchy:
+  org.pgpainless.PGPainless:
+    - java.lang.Object
+  # Encryption chain: the builder implements its interface; the WithOptionsImpl
+  # nested class implements the WithOptions chain interface the contracts are
+  # authored on.
+  org.pgpainless.encryption_signing.EncryptionBuilderInterface:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.EncryptionBuilder:
+    - org.pgpainless.encryption_signing.EncryptionBuilderInterface
+  org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.EncryptionBuilder.WithOptionsImpl:
+    - org.pgpainless.encryption_signing.EncryptionBuilderInterface.WithOptions
+  org.pgpainless.encryption_signing.EncryptionStream:
+    - java.io.OutputStream
+  java.io.OutputStream:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.ProducerOptions:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.EncryptionOptions:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.SigningOptions:
+    - java.lang.Object
+  org.pgpainless.encryption_signing.EncryptionResult:
+    - java.lang.Object
+  # Decryption chain
+  org.pgpainless.decryption_verification.DecryptionBuilderInterface:
+    - java.lang.Object
+  org.pgpainless.decryption_verification.DecryptionBuilder:
+    - org.pgpainless.decryption_verification.DecryptionBuilderInterface
+  org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith:
+    - java.lang.Object
+  org.pgpainless.decryption_verification.DecryptionBuilder.DecryptWithImpl:
+    - org.pgpainless.decryption_verification.DecryptionBuilderInterface.DecryptWith
+  org.pgpainless.decryption_verification.DecryptionStream:
+    - java.io.InputStream
+  org.pgpainless.decryption_verification.OpenPgpMessageInputStream:
+    - org.pgpainless.decryption_verification.DecryptionStream
+  java.io.InputStream:
+    - java.lang.Object
+  org.pgpainless.decryption_verification.ConsumerOptions:
+    - java.lang.Object
+  org.pgpainless.decryption_verification.MessageMetadata:
+    - java.lang.Object
+  # Key generation / parsing / inspection
+  org.pgpainless.key.generation.KeyRingTemplates:
+    - java.lang.Object
+  org.pgpainless.key.generation.KeyRingBuilder:
+    - java.lang.Object
+  org.pgpainless.key.parsing.KeyRingReader:
+    - java.lang.Object
+  org.pgpainless.key.modification.secretkeyring.SecretKeyRingEditor:
+    - java.lang.Object
+  org.pgpainless.key.info.KeyRingInfo:
+    - java.lang.Object
+  # Bouncy Castle OpenPGP types appearing as returns
+  org.bouncycastle.openpgp.PGPKeyRing:
+    - java.lang.Object
+  org.bouncycastle.openpgp.PGPPublicKeyRing:
+    - org.bouncycastle.openpgp.PGPKeyRing
+  org.bouncycastle.openpgp.PGPSecretKeyRing:
+    - org.bouncycastle.openpgp.PGPKeyRing
+  org.bouncycastle.openpgp.PGPPublicKeyRingCollection:
+    - java.lang.Object
+  org.bouncycastle.openpgp.PGPSecretKeyRingCollection:
+    - java.lang.Object
+  java.lang.Object: []
