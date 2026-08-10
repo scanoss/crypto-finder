@@ -84,17 +84,15 @@ func (w *graphFragmentJSONWriter) writeResult(result *engine.DepScanResult) erro
 		return err
 	}
 
-	cryptoAnnotations := buildGraphFragmentCryptoAnnotations(ctx, result)
+	cryptoAnnotations, supportingCalls, entryPoints := materializeGraphFragmentCrypto(ctx, result)
 	meta.CryptoOps = len(cryptoAnnotations)
 	if err := writeGraphFragmentArrayField(w, "crypto_annotations", cryptoAnnotations, true); err != nil {
 		return err
 	}
-	supportingCalls := buildGraphFragmentSupportingCalls(ctx, result)
 	meta.SupportingCalls = len(supportingCalls)
 	if err := writeGraphFragmentArrayField(w, "supporting_calls", supportingCalls, true); err != nil {
 		return err
 	}
-	entryPoints := buildGraphFragmentCryptoEntryPoints(ctx, result)
 	meta.CryptoEntryPoints = len(entryPoints)
 	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", entryPoints, true); err != nil {
 		return err
@@ -354,9 +352,7 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	}
 	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
 
-	out.CryptoAnnotations = buildGraphFragmentCryptoAnnotations(ctx, result)
-	out.SupportingCalls = buildGraphFragmentSupportingCalls(ctx, result)
-	out.CryptoEntryPoints = buildGraphFragmentCryptoEntryPoints(ctx, result)
+	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCrypto(ctx, result)
 	out.ScanMetadata.FunctionCount = len(out.Functions)
 	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
 	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
@@ -1147,59 +1143,114 @@ func compatibleParentSignatures(ctx *exportBuildContext, parents []string, metho
 	return out
 }
 
-func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {
+// materializeGraphFragmentCrypto builds crypto_annotations, supporting_calls, and
+// crypto_entry_points in one pass over findings. Supporting-call derivation and
+// structural reachability chains are computed once per asset (not three times).
+func materializeGraphFragmentCrypto(
+	ctx *exportBuildContext,
+	result *engine.DepScanResult,
+) (
+	[]graphfrag.GraphFragmentCryptoOp,
+	[]graphfrag.GraphFragmentSupporting,
+	[]graphfrag.GraphFragmentCryptoEntryPoint,
+) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
-		return nil
+		return nil, nil, nil
 	}
-	var out []graphfrag.GraphFragmentCryptoOp
+
+	var annotations []graphfrag.GraphFragmentCryptoOp
+	var supportingOut []graphfrag.GraphFragmentSupporting
+	supportingSeen := make(map[string]bool)
+	entries := make(map[string]*graphFragmentEntryPointData)
+
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
 			op := buildGraphFragmentCryptoAnnotation(ctx, finding, asset)
+			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
 			// Capture the per-finding supporting->finding FK while object identity
 			// still exists (graph-fragment 1.5). The top-level supporting_calls are
 			// deduped across findings and lose it; the annotate path re-derives the
 			// identical set from the cached edges.
-			op.SupportingCallIDs = supportingCallIDsOf(deriveSupportingCallsForFinding(ctx, finding, asset))
-			out = append(out, op)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].FunctionKey != out[j].FunctionKey {
-			return out[i].FunctionKey < out[j].FunctionKey
-		}
-		if out[i].StartLine != out[j].StartLine {
-			return out[i].StartLine < out[j].StartLine
-		}
-		return out[i].FindingID < out[j].FindingID
-	})
-	return out
-}
+			op.SupportingCallIDs = supportingCallIDsOf(supportingCalls)
+			annotations = append(annotations, op)
 
-func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentSupporting {
-	if result == nil || result.Report == nil || result.CallGraph == nil {
-		return nil
-	}
-	var out []graphfrag.GraphFragmentSupporting
-	seen := make(map[string]bool)
-	for _, finding := range result.Report.Findings {
-		for i := range finding.CryptographicAssets {
-			asset := finding.CryptographicAssets[i]
-			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
-			for i := range supportingCalls {
-				sc := &supportingCalls[i]
-				if seen[sc.SupportingID] {
-					continue
+			for j := range supportingCalls {
+				sc := &supportingCalls[j]
+				if !supportingSeen[sc.SupportingID] {
+					supportingSeen[sc.SupportingID] = true
+					supportingOut = append(supportingOut, fragmentSupportingFromInternal(*sc))
 				}
-				seen[sc.SupportingID] = true
-				out = append(out, fragmentSupportingFromInternal(*sc))
+			}
+
+			chains := fragmentEntryPointChains(ctx, finding, asset)
+			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)
+			for j := range supportingCalls {
+				addGraphFragmentSupportingReachability(entries, chains, supportingCalls[j].SupportingID)
 			}
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].SupportingID < out[j].SupportingID
+
+	sort.SliceStable(annotations, func(i, j int) bool {
+		if annotations[i].FunctionKey != annotations[j].FunctionKey {
+			return annotations[i].FunctionKey < annotations[j].FunctionKey
+		}
+		if annotations[i].StartLine != annotations[j].StartLine {
+			return annotations[i].StartLine < annotations[j].StartLine
+		}
+		return annotations[i].FindingID < annotations[j].FindingID
 	})
-	return out
+	sort.SliceStable(supportingOut, func(i, j int) bool {
+		return supportingOut[i].SupportingID < supportingOut[j].SupportingID
+	})
+	return annotations, supportingOut, flattenGraphFragmentEntryPoints(ctx.kb, entries)
+}
+
+// fragmentEntryPointChains returns reverse-reachability chains for fragment
+// crypto_entry_points. Unconditioned assets use memoized structural traceback
+// (function identity + depth only). Conditioned assets need call-site expansion
+// and entry_call parameter provenance so selector-specialized rules keep the
+// correct wrapper paths — same filter semantics as buildFindingGraph.
+func fragmentEntryPointChains(
+	ctx *exportBuildContext,
+	finding entities.Finding,
+	asset entities.CryptographicAsset,
+) [][]callGraphChainNode {
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	if containingFn == nil {
+		return nil
+	}
+	if len(asset.ParameterConditions) == 0 {
+		return cloneCallGraphChains(structuralCallChains(ctx, containingFn))
+	}
+	matchedOperation := buildMatchedOperation(asset)
+	var cryptoCall *callGraphCalledFunction
+	if matchedOperation != nil && matchedOperation.Kind == matchedOperationCall {
+		cryptoCall = findCryptoCall(ctx, ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
+	}
+	raw := structuralTracebackChains(ctx, containingFn)
+	var chains [][]callGraphChainNode
+	if len(raw) == 0 {
+		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
+		chains = [][]callGraphChainNode{{node}}
+	} else {
+		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
+		chains = materializeCallChainNodes(ctx, expanded)
+	}
+	attachCryptoCall(chains, cryptoCall)
+	return filterConditionedCallChains(chains, asset.ParameterConditions)
+}
+
+// buildGraphFragmentCryptoAnnotations is retained for tests that target
+// annotations alone; production export uses materializeGraphFragmentCrypto.
+func buildGraphFragmentCryptoAnnotations(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoOp {
+	annotations, _, _ := materializeGraphFragmentCrypto(ctx, result)
+	return annotations
+}
+
+func buildGraphFragmentSupportingCalls(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentSupporting {
+	_, supporting, _ := materializeGraphFragmentCrypto(ctx, result)
+	return supporting
 }
 
 // fragmentSupportingFromInternal maps an internal call-graph supporting-call
@@ -1222,23 +1273,8 @@ func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.
 }
 
 func buildGraphFragmentCryptoEntryPoints(ctx *exportBuildContext, result *engine.DepScanResult) []graphfrag.GraphFragmentCryptoEntryPoint {
-	if result == nil || result.CallGraph == nil || result.Report == nil {
-		return nil
-	}
-	entries := make(map[string]*graphFragmentEntryPointData)
-	for _, finding := range result.Report.Findings {
-		for i := range finding.CryptographicAssets {
-			asset := finding.CryptographicAssets[i]
-			chains := buildFindingGraph(ctx, finding, asset).CallChains
-			addGraphFragmentFindingReachability(entries, chains, asset.FindingID)
-			supportingCalls := deriveSupportingCallsForFinding(ctx, finding, asset)
-			for i := range supportingCalls {
-				sc := &supportingCalls[i]
-				addGraphFragmentSupportingReachability(entries, chains, sc.SupportingID)
-			}
-		}
-	}
-	return flattenGraphFragmentEntryPoints(ctx.kb, entries)
+	_, _, entryPoints := materializeGraphFragmentCrypto(ctx, result)
+	return entryPoints
 }
 
 type graphFragmentEntryPointData struct {

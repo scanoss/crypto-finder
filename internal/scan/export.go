@@ -48,8 +48,12 @@ type exportBuildContext struct {
 	projectRoot             string
 	dependencies            []exportDependencyRoot
 	containingFunctionCache map[string]cachedContainingFunction
-	callChainCache          map[string][][]callGraphChainNode
-	callChainRemainingUses  map[string]int
+	// callChainCache holds structural (non-expanded) chain nodes by containing
+	// function id. callChainRawCache holds the tracer steps for the same key so
+	// callgraph export can expand call sites without re-running TraceBackLimited.
+	callChainCache         map[string][][]callGraphChainNode
+	callChainRawCache      map[string][]callgraph.CallChain
+	callChainRemainingUses map[string]int
 	fragmentEdgeResolutions map[string][]fragmentEdgeResolution
 	userPackages            map[string]bool
 	packageSeparator        string
@@ -71,6 +75,10 @@ type exportBuildContext struct {
 	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
 	calleeSignatureKeys  map[string]string
 	chainIDsByCallerLine map[string]map[int]string
+	// callsReverseIndex maps callee FunctionID.String() → caller keys, built once
+	// from Functions[].Calls (and merged with graph.Callers). Hand-built test
+	// graphs often omit Callers; production graphs have both.
+	callsReverseIndex map[string][]string
 }
 
 type cachedContainingFunction struct {
@@ -1157,6 +1165,7 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 		projectRoot:             filepath.Clean(result.ProjectRoot),
 		containingFunctionCache: make(map[string]cachedContainingFunction),
 		callChainCache:          make(map[string][][]callGraphChainNode),
+		callChainRawCache:       make(map[string][]callgraph.CallChain),
 		callChainRemainingUses:  make(map[string]int),
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
 		userPackages:            exportUserPackages(result),
@@ -2056,14 +2065,16 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 		return nil
 	}
 
-	callers := make([]*callgraph.FunctionDecl, 0, len(ctx.graph.Functions))
-	for _, caller := range ctx.graph.Functions {
-		callers = append(callers, caller)
-	}
-	sort.Slice(callers, func(i, j int) bool { return callers[i].ID.String() < callers[j].ID.String() })
+	// Prefer a once-built reverse index over scanning every function per hop.
+	// Hand-built tests often omit graph.Callers; production graphs have both.
+	callerKeys := ctx.reverseCallersOf(calleeID.String())
 
 	var matches [][]callgraph.SourceNode
-	for _, caller := range callers {
+	for _, callerKey := range callerKeys {
+		caller := ctx.graph.Functions[callerKey]
+		if caller == nil {
+			continue
+		}
 		for i := range caller.Calls {
 			call := &caller.Calls[i]
 			if call.Callee.String() != calleeID.String() || parameterIndex >= len(call.ArgumentSources) {
@@ -2076,6 +2087,55 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 		return nil
 	}
 	return matches[0]
+}
+
+// reverseCallersOf returns stable-sorted caller function keys for a callee.
+func (ctx *exportBuildContext) reverseCallersOf(calleeKey string) []string {
+	if ctx == nil || ctx.graph == nil || calleeKey == "" {
+		return nil
+	}
+	if ctx.callsReverseIndex == nil {
+		ctx.callsReverseIndex = buildCallsReverseIndex(ctx.graph)
+	}
+	keys := append([]string(nil), ctx.callsReverseIndex[calleeKey]...)
+	sort.Strings(keys)
+	return keys
+}
+
+func buildCallsReverseIndex(graph *callgraph.CallGraph) map[string][]string {
+	index := make(map[string][]string)
+	seen := make(map[string]map[string]bool)
+	add := func(calleeKey, callerKey string) {
+		if calleeKey == "" || callerKey == "" {
+			return
+		}
+		if seen[calleeKey] == nil {
+			seen[calleeKey] = make(map[string]bool)
+		}
+		if seen[calleeKey][callerKey] {
+			return
+		}
+		seen[calleeKey][callerKey] = true
+		index[calleeKey] = append(index[calleeKey], callerKey)
+	}
+	for callerKey, fn := range graph.Functions {
+		if fn == nil {
+			continue
+		}
+		idKey := fn.ID.String()
+		if idKey == "" {
+			idKey = callerKey
+		}
+		for i := range fn.Calls {
+			add(fn.Calls[i].Callee.String(), idKey)
+		}
+	}
+	for calleeKey, callers := range graph.Callers {
+		for _, callerKey := range callers {
+			add(calleeKey, callerKey)
+		}
+	}
+	return index
 }
 
 //nolint:gocognit // Guard matching must distinguish exact, default, and unresolved branches without guessing.
@@ -2505,28 +2565,85 @@ func buildCallChains(
 		return nil
 	}
 
+	// Structural traceback is shared/cached. Call-site expansion (selector-distinct
+	// invocations) applies only on the full finding-graph / callgraph-export path.
+	// Fragment entry-point reachability is function-key + depth and uses
+	// structuralCallChains directly so mine path never pays the expansion cost.
+	ensureCallChainCaches(ctx)
 	cacheKey := containingFn.ID.String()
-	baseChains, ok := ctx.callChainCache[cacheKey]
-	if !ok {
-		baseChains = buildBaseCallChains(ctx, containingFn)
-		if ctx.callChainRemainingUses[cacheKey] > 1 {
-			ctx.callChainCache[cacheKey] = baseChains
-			ok = true
-		}
-	}
-	chains := baseChains
-	if ok {
-		chains = cloneCallGraphChains(baseChains)
+	raw := structuralTracebackChains(ctx, containingFn)
+	// Keep structural node cache warm for fragment export / multi-asset reuse.
+	_ = structuralCallChains(ctx, containingFn)
+	var chains [][]callGraphChainNode
+	if len(raw) == 0 {
+		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
+		chains = [][]callGraphChainNode{{node}}
+	} else {
+		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
+		chains = materializeCallChainNodes(ctx, expanded)
 	}
 	attachCryptoCall(chains, cryptoCall)
 	ctx.consumeCallChainUsage(cacheKey)
 	return chains
 }
 
-func buildBaseCallChains(
+func ensureCallChainCaches(ctx *exportBuildContext) {
+	if ctx == nil {
+		return
+	}
+	if ctx.callChainCache == nil {
+		ctx.callChainCache = make(map[string][][]callGraphChainNode)
+	}
+	if ctx.callChainRawCache == nil {
+		ctx.callChainRawCache = make(map[string][]callgraph.CallChain)
+	}
+	if ctx.callChainRemainingUses == nil {
+		ctx.callChainRemainingUses = make(map[string]int)
+	}
+}
+
+// structuralCallChains returns traceback paths as chain nodes without call-site
+// expansion and without per-step entry_call materialization. Memoized so
+// multi-asset mine exports share one TraceBackLimited per containing function.
+// Fragment crypto_entry_points only need function identity + path depth.
+func structuralCallChains(
 	ctx *exportBuildContext,
 	containingFn *callgraph.FunctionDecl,
 ) [][]callGraphChainNode {
+	if containingFn == nil {
+		return nil
+	}
+	ensureCallChainCaches(ctx)
+	cacheKey := containingFn.ID.String()
+	if cached, ok := ctx.callChainCache[cacheKey]; ok {
+		return cached
+	}
+	raw := structuralTracebackChains(ctx, containingFn)
+	var result [][]callGraphChainNode
+	if len(raw) == 0 {
+		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
+		result = [][]callGraphChainNode{{node}}
+	} else {
+		result = materializeStructuralChainNodes(ctx, raw)
+	}
+	ctx.callChainCache[cacheKey] = result
+	return result
+}
+
+// structuralTracebackChains runs the bounded reverse tracer only (no call-site
+// expansion). Memoizes raw steps.
+func structuralTracebackChains(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+) []callgraph.CallChain {
+	if containingFn == nil {
+		return nil
+	}
+	ensureCallChainCaches(ctx)
+	cacheKey := containingFn.ID.String()
+	if raw, ok := ctx.callChainRawCache[cacheKey]; ok {
+		return raw
+	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
 	chains, truncated := tracer.TraceBackLimited(
 		containingFn.ID,
@@ -2541,13 +2658,31 @@ func buildBaseCallChains(
 			Int("max_chains", callGraphExportMaxChains).
 			Msg("Truncated call chain export for finding function")
 	}
+	ctx.callChainRawCache[cacheKey] = chains
+	return chains
+}
 
-	if len(chains) == 0 {
-		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
-		return [][]callGraphChainNode{{node}}
+// materializeStructuralChainNodes builds function-identity chain nodes only.
+// Skips buildEntryCall — fragment entry-point indexing does not use entry_call.
+func materializeStructuralChainNodes(
+	ctx *exportBuildContext,
+	chains []callgraph.CallChain,
+) [][]callGraphChainNode {
+	result := make([][]callGraphChainNode, len(chains))
+	for i, chain := range chains {
+		path := make([]callGraphChainNode, len(chain.Steps))
+		for j, step := range chain.Steps {
+			path[j] = buildChainNode(ctx, step.Function, step.FilePath)
+		}
+		result[i] = path
 	}
-	chains = expandCallChainCallSites(ctx.graph, chains, callGraphExportMaxChains)
+	return result
+}
 
+func materializeCallChainNodes(
+	ctx *exportBuildContext,
+	chains []callgraph.CallChain,
+) [][]callGraphChainNode {
 	result := make([][]callGraphChainNode, len(chains))
 	for i, chain := range chains {
 		path := make([]callGraphChainNode, len(chain.Steps))
@@ -2569,8 +2704,15 @@ func buildBaseCallChains(
 		enrichCallChain(path)
 		result[i] = path
 	}
-
 	return result
+}
+
+// buildBaseCallChains returns structural paths only (no call-site expansion).
+func buildBaseCallChains(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+) [][]callGraphChainNode {
+	return cloneCallGraphChains(structuralCallChains(ctx, containingFn))
 }
 
 // expandCallChainCallSites preserves distinct invocations when one caller
@@ -2676,6 +2818,7 @@ func (ctx *exportBuildContext) consumeCallChainUsage(cacheKey string) {
 	if remaining <= 1 {
 		delete(ctx.callChainRemainingUses, cacheKey)
 		delete(ctx.callChainCache, cacheKey)
+		delete(ctx.callChainRawCache, cacheKey)
 		return
 	}
 	ctx.callChainRemainingUses[cacheKey] = remaining - 1
