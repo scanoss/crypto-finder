@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Java callgraph contracts now model the cloud KMS and secrets-manager facades: AWS KMS across both SDK generations (`software.amazon.awssdk:kms` and `com.amazonaws:aws-java-sdk-kms`), Google Cloud KMS, Azure Key Vault Keys cryptography and key clients, and the HashiCorp `vault-java-driver` client and TLS configuration.
+- Java callgraph contracts now model the cloud KMS and secrets-manager facades: AWS KMS across both SDK generations (`software.amazon.awssdk:kms` and `com.amazonaws:aws-java-sdk-kms`, including the v1 bean setters), Google Cloud KMS, Azure Key Vault Keys synchronous and asynchronous cryptography and key clients, and the HashiCorp `vault-java-driver` client, TLS configuration, and `Logical` secrets-engine operations.
 - Java callgraph contracts now model the OkHttp 5.x TLS surface — certificate pinning, `ConnectionSpec` cipher-suite and TLS-version selection, handshake inspection, the TLS-related `OkHttpClient.Builder` configuration, and the `okhttp-tls` `HeldCertificate`/`HandshakeCertificates` certificate and key generation.
 - Java callgraph contracts now model the JSch (`com.jcraft` and the `com.github.mwiede` fork) session, algorithm-configuration, host-key, and key-pair generation/loading lifecycles, and the sshj 0.40 client connect/auth, algorithm-selection, key-provider, and host-key-verification lifecycles.
 - Java callgraph contracts now model the lazysodium-java 5.2 libsodium AEAD, box, secretbox, generic-hash, password-hash, and signing lifecycles (both the high-level `Lazy` and buffer-based `Native` surfaces) and the kalium box, secretbox, sealed-box, AEAD, hash, password, and signing-key lifecycles.

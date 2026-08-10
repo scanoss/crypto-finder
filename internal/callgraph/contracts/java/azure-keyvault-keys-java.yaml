@@ -331,6 +331,162 @@ contracts:
     role: output
 
   # =========================================================================
+  # Async cryptography client (CryptographyAsyncClient)
+  # Every method returns reactor.core.publisher.Mono; the concrete result type
+  # is only recoverable from the Mono's type argument, which the contract schema
+  # cannot express, so the declared container type is what is modelled. The
+  # lifecycle role is the load-bearing part here.
+  # encrypt#1/decrypt#1 take a Parameters object; the arity-2 forms take
+  # (algorithm, data).
+  # =========================================================================
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt
+    arity: 1
+    parameter_types:
+      [com.azure.security.keyvault.keys.cryptography.models.EncryptParameters]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt
+    arity: 1
+    parameter_types:
+      [com.azure.security.keyvault.keys.cryptography.models.DecryptParameters]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.sign
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.verify
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.signData
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.verifyData
+    arity: 3
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm,
+        "byte[]",
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.wrapKey
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.unwrapKey
+    arity: 2
+    parameter_types:
+      [
+        com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm,
+        "byte[]",
+      ]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # =========================================================================
   # Key management client (rule anchor: new KeyClientBuilder())
   # =========================================================================
   - method: com.azure.security.keyvault.keys.KeyClientBuilder.<init>
@@ -461,6 +617,96 @@ contracts:
     canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
     return:
       type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+
+  # --- Async key management (KeyAsyncClient); same Mono caveat as above ---
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createKey
+    arity: 2
+    parameter_types:
+      [java.lang.String, com.azure.security.keyvault.keys.models.KeyType]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: keyType
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createRsaKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateRsaKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createEcKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateEcKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createOctKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  # importKey#1 takes ImportKeyOptions; #2 takes (name, JsonWebKey).
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.importKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.ImportKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.importKey
+    arity: 2
+    parameter_types:
+      [java.lang.String, com.azure.security.keyvault.keys.models.JsonWebKey]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.getKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.backupKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.restoreKeyBackup
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
       confidence: high
     role: factory
 
@@ -634,6 +880,14 @@ hierarchy:
   com.azure.security.keyvault.keys.models.ImportKeyOptions:
     - java.lang.Object
   com.azure.core.util.Context:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.EncryptParameters:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.DecryptParameters:
+    - java.lang.Object
+  # Async results are reactor Mono containers; the concrete result type lives in
+  # the type argument, which the schema cannot express.
+  reactor.core.publisher.Mono:
     - java.lang.Object
   java.lang.Boolean:
     - java.lang.Object
