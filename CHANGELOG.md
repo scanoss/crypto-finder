@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Opt-in mine-path wall-clock proof for `bcprov-jdk18on@1.84` (`make proof-bcprov-mine` / `CRYPTO_FINDER_BCPROV_MINE_PROOF=1`); documents the post-#214 recovery under a 10m budget (mining `JOB_TIMEOUT` is 30m). See [docs/BCPROV_MINE_PATH_PROOF.md](docs/BCPROV_MINE_PATH_PROOF.md). (#216)
 - Python callgraph contracts now model the jwcrypto 1.5.8 JOSE key, signing, encryption, and token lifecycles. (#181)
 - Java callgraph contracts now model the Netty 4.2 `SslContextBuilder` TLS builder lifecycle. (#183)
 - Java callgraph contracts now model the Spring Security Crypto 7.1 password-encoder and byte/text encryptor lifecycles. (#182)
