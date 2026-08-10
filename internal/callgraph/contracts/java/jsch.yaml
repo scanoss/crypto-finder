@@ -1,0 +1,723 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jsch
+  coordinates:
+    - "com.jcraft:jsch"
+    - "com.github.mwiede:jsch"
+  # Verified against the maintained com.github.mwiede:jsch fork (2.28.x tree),
+  # which keeps the original com.jcraft.jsch package, so one contract set covers
+  # both coordinates.
+  version_range: ">=0.1.55"
+  description: "JSch contracts for SSH session setup, algorithm configuration, host-key handling, and key-pair generation and loading"
+
+contracts:
+  # =========================================================================
+  # com.jcraft.jsch.JSch — the entry point (rule anchor: JSch.<init>)
+  # =========================================================================
+  - method: com.jcraft.jsch.JSch.<init>
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.JSch
+    return:
+      type: com.jcraft.jsch.JSch
+      confidence: high
+    role: factory
+  # Session has no public constructor: getSession is the only producer, so it is
+  # the mandatory factory edge for every Session-receiver supporting call.
+  - method: com.jcraft.jsch.JSch.getSession
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.jcraft.jsch.Session
+    return:
+      type: com.jcraft.jsch.Session
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.JSch.getSession
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: com.jcraft.jsch.Session
+    return:
+      type: com.jcraft.jsch.Session
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.JSch.getSession
+    arity: 3
+    parameter_types: [java.lang.String, java.lang.String, int]
+    canonical_return_type: com.jcraft.jsch.Session
+    return:
+      type: com.jcraft.jsch.Session
+      confidence: high
+    role: factory
+  # addIdentity#1 takes a private-key path; #2 is overloaded
+  # ((String,String) / (String,byte[]) / (Identity,byte[])).
+  - method: com.jcraft.jsch.JSch.addIdentity
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.addIdentity
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.addIdentity
+    arity: 3
+    parameter_types: [java.lang.String, java.lang.String, "byte[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.addIdentity
+    arity: 4
+    parameter_types: [java.lang.String, "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.removeIdentity
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.removeAllIdentity
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  # setKnownHosts#1 is overloaded (String filename / InputStream).
+  - method: com.jcraft.jsch.JSch.setKnownHosts
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.getHostKeyRepository
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.HostKeyRepository
+    return:
+      type: com.jcraft.jsch.HostKeyRepository
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.JSch.setHostKeyRepository
+    arity: 1
+    parameter_types: [com.jcraft.jsch.HostKeyRepository]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.setIdentityRepository
+    arity: 1
+    parameter_types: [com.jcraft.jsch.IdentityRepository]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.getIdentityRepository
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.IdentityRepository
+    return:
+      type: com.jcraft.jsch.IdentityRepository
+      confidence: high
+    role: output
+  # The static JSch.setConfig pair selects algorithms process-wide; the
+  # two-argument form carries the algorithm list in the value.
+  - method: com.jcraft.jsch.JSch.setConfig
+    arity: 1
+    parameter_types: [java.util.Hashtable]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.JSch.setConfig
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: key
+        role: operation-determining
+        contributes: { property: cryptoConfig, derivation: argument_value }
+      - index: 1
+        name: value
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.jcraft.jsch.JSch.getConfig
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # com.jcraft.jsch.Session — connection, algorithm config, negotiated results
+  # (rule anchor: Session.setConfig)
+  # =========================================================================
+  - method: com.jcraft.jsch.Session.connect
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: com.jcraft.jsch.Session.connect
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  # setConfig#1 is overloaded (Properties / Hashtable) — canonical omitted.
+  - method: com.jcraft.jsch.Session.setConfig
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.setConfig
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: key
+        role: operation-determining
+        contributes: { property: cryptoConfig, derivation: argument_value }
+      - index: 1
+        name: value
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.jcraft.jsch.Session.getConfig
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  # setPassword#1 is overloaded (String / byte[]).
+  - method: com.jcraft.jsch.Session.setPassword
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.setUserInfo
+    arity: 1
+    parameter_types: [com.jcraft.jsch.UserInfo]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.setHostKeyAlias
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.getHostKey
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.HostKey
+    return:
+      type: com.jcraft.jsch.HostKey
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.setHostKeyRepository
+    arity: 1
+    parameter_types: [com.jcraft.jsch.HostKeyRepository]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.getHostKeyRepository
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.HostKeyRepository
+    return:
+      type: com.jcraft.jsch.HostKeyRepository
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.setIdentityRepository
+    arity: 1
+    parameter_types: [com.jcraft.jsch.IdentityRepository]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Session.rekey
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: com.jcraft.jsch.Session.disconnect
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  # Negotiated-algorithm getters — the observable result of the KEX.
+  - method: com.jcraft.jsch.Session.getKexAlgorithm
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.getServerHostKeyAlgorithm
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.getCipherAlgorithmC2S
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.getCipherAlgorithmS2C
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.getMacAlgorithmC2S
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Session.getMacAlgorithmS2C
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # com.jcraft.jsch.KeyPair — generation, loading, export
+  # (rule anchors: KeyPair.genKeyPair, KeyPair.load)
+  # KeyPair has no public constructor and every subclass (KeyPairRSA/DSA/ECDSA/
+  # Ed25519/Ed448/PKCS8) is package-private, so external code can only ever
+  # hold the abstract com.jcraft.jsch.KeyPair type. The algorithm comes from
+  # the int type argument (DSA=1, RSA=2, ECDSA=3, ED25519=5, ED448=6), not from
+  # a return type.
+  # =========================================================================
+  - method: com.jcraft.jsch.KeyPair.genKeyPair
+    arity: 2
+    parameter_types: [com.jcraft.jsch.JSch, int]
+    canonical_return_type: com.jcraft.jsch.KeyPair
+    return:
+      type: com.jcraft.jsch.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.jcraft.jsch.KeyPair.genKeyPair
+    arity: 3
+    parameter_types: [com.jcraft.jsch.JSch, int, int]
+    canonical_return_type: com.jcraft.jsch.KeyPair
+    return:
+      type: com.jcraft.jsch.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+      - index: 2
+        name: key_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: com.jcraft.jsch.KeyPair.load
+    arity: 2
+    parameter_types: [com.jcraft.jsch.JSch, java.lang.String]
+    canonical_return_type: com.jcraft.jsch.KeyPair
+    return:
+      type: com.jcraft.jsch.KeyPair
+      confidence: high
+    role: factory
+  # load#3 is overloaded ((JSch,String,String) / (JSch,byte[],byte[])).
+  - method: com.jcraft.jsch.KeyPair.load
+    arity: 3
+    return:
+      type: com.jcraft.jsch.KeyPair
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.KeyPair.getPublicKeyBlob
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.getFingerPrint
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.getKeySize
+    arity: 0
+    canonical_return_type: int
+    return:
+      type: int
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.getKeyType
+    arity: 0
+    canonical_return_type: int
+    return:
+      type: int
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.getKeyTypeString
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.getSignature
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: com.jcraft.jsch.KeyPair.getSignature
+    arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.jcraft.jsch.KeyPair.getVerifier
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.Signature
+    return:
+      type: com.jcraft.jsch.Signature
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.KeyPair.getVerifier
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.jcraft.jsch.Signature
+    return:
+      type: com.jcraft.jsch.Signature
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  # setPassphrase#1 and decrypt#1 are each overloaded (String / byte[]).
+  - method: com.jcraft.jsch.KeyPair.setPassphrase
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.KeyPair.isEncrypted
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.decrypt
+    arity: 1
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # writePrivateKey/writePublicKey/writeOpenSSHv1PrivateKey are all overloaded
+  # per arity on (OutputStream / String name) — canonical signatures omitted.
+  - method: com.jcraft.jsch.KeyPair.writePrivateKey
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writePrivateKey
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writePublicKey
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writeSECSHPublicKey
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writeOpenSSHv1PrivateKey
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writeOpenSSHv1PrivateKey
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writeOpenSSHv1PrivateKey
+    arity: 3
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.writeOpenSSHv1PrivateKey
+    arity: 4
+    return:
+      type: void
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.KeyPair.dispose
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Host keys (com.jcraft.jsch.HostKey / HostKeyRepository)
+  # =========================================================================
+  - method: com.jcraft.jsch.HostKey.<init>
+    arity: 2
+    parameter_types: [java.lang.String, "byte[]"]
+    canonical_return_type: com.jcraft.jsch.HostKey
+    return:
+      type: com.jcraft.jsch.HostKey
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.HostKey.<init>
+    arity: 3
+    parameter_types: [java.lang.String, int, "byte[]"]
+    canonical_return_type: com.jcraft.jsch.HostKey
+    return:
+      type: com.jcraft.jsch.HostKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.jcraft.jsch.HostKey.<init>
+    arity: 4
+    parameter_types: [java.lang.String, int, "byte[]", java.lang.String]
+    canonical_return_type: com.jcraft.jsch.HostKey
+    return:
+      type: com.jcraft.jsch.HostKey
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.HostKey.<init>
+    arity: 5
+    parameter_types:
+      [java.lang.String, java.lang.String, int, "byte[]", java.lang.String]
+    canonical_return_type: com.jcraft.jsch.HostKey
+    return:
+      type: com.jcraft.jsch.HostKey
+      confidence: high
+    role: factory
+  - method: com.jcraft.jsch.HostKey.getType
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.HostKey.getKey
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  # getFingerPrint takes the JSch instance; there is no arity-0 form.
+  - method: com.jcraft.jsch.HostKey.getFingerPrint
+    arity: 1
+    parameter_types: [com.jcraft.jsch.JSch]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.HostKeyRepository.check
+    arity: 2
+    parameter_types: [java.lang.String, "byte[]"]
+    canonical_return_type: int
+    return:
+      type: int
+      confidence: high
+    role: operation
+  - method: com.jcraft.jsch.HostKeyRepository.add
+    arity: 2
+    parameter_types: [com.jcraft.jsch.HostKey, com.jcraft.jsch.UserInfo]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.HostKeyRepository.getHostKey
+    arity: 0
+    canonical_return_type: com.jcraft.jsch.HostKey[]
+    return:
+      type: com.jcraft.jsch.HostKey[]
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.HostKeyRepository.getHostKey
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: com.jcraft.jsch.HostKey[]
+    return:
+      type: com.jcraft.jsch.HostKey[]
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Identities (com.jcraft.jsch.Identity / IdentityRepository)
+  # =========================================================================
+  - method: com.jcraft.jsch.Identity.getSignature
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: com.jcraft.jsch.Identity.getSignature
+    arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.jcraft.jsch.Identity.getPublicKeyBlob
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.Identity.setPassphrase
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+  - method: com.jcraft.jsch.Identity.getAlgName
+    arity: 0
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.IdentityRepository.getIdentities
+    arity: 0
+    canonical_return_type: java.util.Vector
+    return:
+      type: java.util.Vector
+      confidence: high
+    role: output
+  - method: com.jcraft.jsch.IdentityRepository.add
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: config
+
+hierarchy:
+  com.jcraft.jsch.JSch:
+    - java.lang.Object
+  com.jcraft.jsch.Session:
+    - java.lang.Object
+  com.jcraft.jsch.KeyPair:
+    - java.lang.Object
+  com.jcraft.jsch.HostKey:
+    - java.lang.Object
+  com.jcraft.jsch.HostKey[]:
+    - java.lang.Object
+  com.jcraft.jsch.HostKeyRepository:
+    - java.lang.Object
+  com.jcraft.jsch.Identity:
+    - java.lang.Object
+  com.jcraft.jsch.IdentityRepository:
+    - java.lang.Object
+  com.jcraft.jsch.Signature:
+    - java.lang.Object
+  com.jcraft.jsch.UserInfo:
+    - java.lang.Object
+  java.util.Hashtable:
+    - java.lang.Object
+  java.util.Vector:
+    - java.lang.Object
+  java.lang.Object: []

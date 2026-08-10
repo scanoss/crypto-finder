@@ -1138,3 +1138,133 @@ func TestLoadEmbeddedJava_NaClBindingLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadEmbeddedJava_SSHClientLifecycle verifies the Java SSH facade
+// contracts (scanoss/crypto-finder#201): jsch's JSch/Session/KeyPair/HostKey
+// surfaces and sshj's SSHClient/Config/KeyProvider/HostKeyVerifier surfaces. It
+// pins the rule anchors, the mandatory producer edges (jsch Session and KeyPair
+// have no public constructors), the algorithm-selection config calls, and the
+// key-provider and verifier hierarchies.
+func TestLoadEmbeddedJava_SSHClientLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// jsch rule anchors: JSch.<init>, KeyPair.genKeyPair, KeyPair.load, Session.setConfig.
+		{"com.jcraft.jsch.JSch.<init>", 0, "com.jcraft.jsch.JSch", "factory", "jsch"},
+		{"com.jcraft.jsch.KeyPair.genKeyPair", 2, "com.jcraft.jsch.KeyPair", "factory", "jsch"},
+		{"com.jcraft.jsch.KeyPair.genKeyPair", 3, "com.jcraft.jsch.KeyPair", "factory", "jsch"},
+		{"com.jcraft.jsch.KeyPair.load", 2, "com.jcraft.jsch.KeyPair", "factory", "jsch"},
+		{"com.jcraft.jsch.KeyPair.load", 3, "com.jcraft.jsch.KeyPair", "factory", "jsch"},
+		{"com.jcraft.jsch.Session.setConfig", 2, "void", "config", "jsch"},
+		// jsch: getSession is the only Session producer.
+		{"com.jcraft.jsch.JSch.getSession", 3, "com.jcraft.jsch.Session", "factory", "jsch"},
+		{"com.jcraft.jsch.JSch.setConfig", 2, "void", "config", "jsch"},
+		{"com.jcraft.jsch.JSch.setKnownHosts", 1, "void", "config", "jsch"},
+		{"com.jcraft.jsch.Session.connect", 0, "void", "operation", "jsch"},
+		{"com.jcraft.jsch.Session.getKexAlgorithm", 0, "java.lang.String", "output", "jsch"},
+		{"com.jcraft.jsch.Session.getHostKey", 0, "com.jcraft.jsch.HostKey", "output", "jsch"},
+		{"com.jcraft.jsch.KeyPair.getSignature", 1, "byte[]", "operation", "jsch"},
+		{"com.jcraft.jsch.KeyPair.getFingerPrint", 0, "java.lang.String", "output", "jsch"},
+		{"com.jcraft.jsch.KeyPair.writePrivateKey", 1, "void", "output", "jsch"},
+		{"com.jcraft.jsch.HostKeyRepository.check", 2, "int", "operation", "jsch"},
+		// HostKey.getFingerPrint only exists at arity 1 (it takes the JSch instance).
+		{"com.jcraft.jsch.HostKey.getFingerPrint", 1, "java.lang.String", "output", "jsch"},
+		// sshj rule anchor plus the connect/auth/key-loading lifecycle.
+		{"net.schmizz.sshj.SSHClient.<init>", 0, "net.schmizz.sshj.SSHClient", "factory", "sshj"},
+		{"net.schmizz.sshj.SSHClient.<init>", 1, "net.schmizz.sshj.SSHClient", "factory", "sshj"},
+		{"net.schmizz.sshj.SocketClient.connect", 2, "void", "operation", "sshj"},
+		{"net.schmizz.sshj.SSHClient.addHostKeyVerifier", 1, "void", "config", "sshj"},
+		{"net.schmizz.sshj.SSHClient.authPassword", 2, "void", "operation", "sshj"},
+		{"net.schmizz.sshj.SSHClient.authPublickey", 2, "void", "operation", "sshj"},
+		{"net.schmizz.sshj.SSHClient.loadKeys", 2, "net.schmizz.sshj.userauth.keyprovider.KeyProvider", "factory", "sshj"},
+		{"net.schmizz.sshj.SSHClient.getTransport", 0, "net.schmizz.sshj.transport.Transport", "output", "sshj"},
+		// sshj algorithm selection lives on Config; there is no
+		// setSignatureFactories — setKeyAlgorithms is the signature selector.
+		{"net.schmizz.sshj.DefaultConfig.<init>", 0, "net.schmizz.sshj.DefaultConfig", "factory", "sshj"},
+		{"net.schmizz.sshj.Config.setCipherFactories", 1, "void", "config", "sshj"},
+		{"net.schmizz.sshj.Config.setKeyExchangeFactories", 1, "void", "config", "sshj"},
+		{"net.schmizz.sshj.Config.setKeyAlgorithms", 1, "void", "config", "sshj"},
+		{"net.schmizz.sshj.ConfigImpl.prioritizeSshRsaKeyAlgorithm", 0, "void", "config", "sshj"},
+		// sshj key providers and verifiers.
+		{"net.schmizz.sshj.userauth.keyprovider.KeyProvider.getPrivate", 0, "java.security.PrivateKey", "output", "sshj"},
+		{"net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile.<init>", 0, "net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile", "factory", "sshj"},
+		{"net.schmizz.sshj.userauth.keyprovider.FileKeyProvider.init", 2, "void", "config", "sshj"},
+		{"net.schmizz.sshj.transport.verification.HostKeyVerifier.verify", 3, "boolean", "operation", "sshj"},
+		{"net.schmizz.sshj.transport.verification.PromiscuousVerifier.<init>", 0, "net.schmizz.sshj.transport.verification.PromiscuousVerifier", "factory", "sshj"},
+		{"net.schmizz.sshj.transport.verification.FingerprintVerifier.getInstance", 1, "net.schmizz.sshj.transport.verification.HostKeyVerifier", "factory", "sshj"},
+		{"net.schmizz.sshj.transport.Transport.getSessionID", 0, "byte[]", "output", "sshj"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// jsch KeyPair subclasses are all package-private, so the algorithm can only
+	// come from the int type argument of genKeyPair — it must be
+	// operation-determining, with the key size as metadata.
+	genKeyPair := kb.ContractsFor("com.jcraft.jsch.KeyPair.genKeyPair", 3)
+	if len(genKeyPair) != 1 || len(genKeyPair[0].Parameters) != 2 {
+		t.Fatalf("KeyPair.genKeyPair#3 parameters = %#v, want type and key_size roles", genKeyPair)
+	}
+	byIndex := map[int]contracts.ParameterContract{}
+	for _, p := range genKeyPair[0].Parameters {
+		if p.Index != nil {
+			byIndex[*p.Index] = p
+		}
+	}
+	if p, ok := byIndex[1]; !ok || p.Role != "operation-determining" || p.Contributes == nil || p.Contributes.Property != "keyType" {
+		t.Fatalf("KeyPair.genKeyPair#3 parameters[1] = %#v, want operation-determining keyType", byIndex[1])
+	}
+	if p, ok := byIndex[2]; !ok || p.Role != "metadata-contributing" || p.Contributes == nil || p.Contributes.Property != "keySize" {
+		t.Fatalf("KeyPair.genKeyPair#3 parameters[2] = %#v, want metadata-contributing keySize", byIndex[2])
+	}
+
+	// Both libraries' setConfig-style algorithm selection must expose the config
+	// key as operation-determining and the value as the algorithm list.
+	for _, method := range []string{"com.jcraft.jsch.JSch.setConfig", "com.jcraft.jsch.Session.setConfig"} {
+		got := kb.ContractsFor(method, 2)
+		if len(got) != 1 || len(got[0].Parameters) != 2 {
+			t.Fatalf("%s#2 parameters = %#v, want key and value roles", method, got)
+		}
+		if got[0].Parameters[0].Role != "operation-determining" || got[0].Parameters[1].Contributes == nil ||
+			got[0].Parameters[1].Contributes.Property != "algorithm" {
+			t.Fatalf("%s#2 parameters = %#v, want operation-determining key + algorithm value", method, got[0].Parameters)
+		}
+	}
+
+	// Provider and verifier hierarchies: OpenSSHKeyFile extends PKCS8KeyFile
+	// (not BaseFileKeyProvider directly), and SSHClient inherits connect from
+	// SocketClient.
+	hierarchyWants := map[string]string{
+		"net.schmizz.sshj.SSHClient":                                        "net.schmizz.sshj.SocketClient",
+		"net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile":              "net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile",
+		"net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile":                "net.schmizz.sshj.userauth.keyprovider.BaseFileKeyProvider",
+		"net.schmizz.sshj.transport.verification.PromiscuousVerifier":       "net.schmizz.sshj.transport.verification.HostKeyVerifier",
+		"net.schmizz.sshj.transport.verification.ConsoleKnownHostsVerifier": "net.schmizz.sshj.transport.verification.OpenSSHKnownHosts",
+		"net.schmizz.sshj.DefaultConfig":                                    "net.schmizz.sshj.ConfigImpl",
+	}
+	for child, wantParent := range hierarchyWants {
+		if parents := kb.Hierarchy[child]; len(parents) == 0 || parents[0] != wantParent {
+			t.Fatalf("%s hierarchy = %v, want first parent %s", child, kb.Hierarchy[child], wantParent)
+		}
+	}
+}
