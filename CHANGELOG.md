@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-10
+
 ### Added
 - Opt-in mine-path wall-clock proof for `bcprov-jdk18on@1.84` (`make proof-bcprov-mine` / `CRYPTO_FINDER_BCPROV_MINE_PROOF=1`); documents the post-#214 recovery under a 10m budget (mining `JOB_TIMEOUT` is 30m). See [docs/BCPROV_MINE_PATH_PROOF.md](docs/BCPROV_MINE_PATH_PROOF.md). (#216)
+- Mine-path fragment no-regression equivalence harness (`TestMinePathFragment_*`) locking annotations, supporting calls, and entry-point reachable IDs + chain depths. (#215)
 - Python callgraph contracts now model the jwcrypto 1.5.8 JOSE key, signing, encryption, and token lifecycles. (#181)
 - Java callgraph contracts now model the Netty 4.2 `SslContextBuilder` TLS builder lifecycle. (#183)
 - Java callgraph contracts now model the Spring Security Crypto 7.1 password-encoder and byte/text encryptor lifecycles. (#182)
@@ -54,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner failure messages now explain documented semgrep/opengrep exit codes (`opengrep execution failed with exit code 7 (rule configuration contains no valid rules)`) and attach a sanitized stderr tail (ANSI-stripped, single line, capped on UTF-8 rune boundaries) to logs and error details; the failure debug log records rule configs + target instead of dumping the full command line. (#112)
 
 ### Fixed
-- Mine-path `--export-graph-fragment` no longer precomputes full per-asset call-site-expanded finding graphs to build `crypto_entry_points`. Entry-point reachability uses memoized structural reverse traceback (function identity + depth); supporting-call derivation runs once per asset and is reused for annotations and entry-point linkage. Export quantity/quality is preserved — call-site expansion remains on `--export-callgraph` / finding-graph export only. (#214)
+- Mine-path `--export-graph-fragment` no longer precomputes full per-asset call-site-expanded finding graphs to build `crypto_entry_points`. Entry-point reachability uses memoized structural reverse traceback (function identity + depth); supporting-call derivation runs once per asset and is reused for annotations and entry-point linkage. Export quantity/quality is preserved — call-site expansion remains on `--export-callgraph` / finding-graph export only. Dense libraries such as `bcprov-jdk18on@1.84` complete the mine path in single-digit minutes instead of timing out at 30m. (#214)
 - Parameter provenance resolution no longer scans every function's call list per hop; it uses a once-built reverse-call index (from `Calls` + `Callers`). This removes a multi-minute O(V·calls) hotspot on dense libraries (e.g. BouncyCastle) during conditioned finding materialization and chain `entry_call` export. (#214)
 - Java selector findings now preserve per-call-site wrapper values, resolve simple switch-return helpers, and materialize the applicable rule-owned algorithm metadata without guessing dynamic branches. (#135)
 - C++ callgraph contracts now match namespace-qualified library calls independently of the scanned project path and resolve simple typed receiver calls without overriding project-local declarations. (#163)
@@ -71,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exported JSON no longer HTML-escapes special characters. (#110)
 
 ## [0.13.4] - 2026-07-03
+
 
 ### Changed
 - perf: fixed mining-path hotspots exposed by dispatch fan-out on large libraries — indexed the O(N²)-shaped lookups in `resolveParameterPassthroughDispatch` (bcprov-jdk15on 1.70 callgraph build: 900 s+ timeout → 25 s) and `findCallForCalleeAtLine` now uses a per-caller `(name, arity, line)` index instead of re-scanning per exported edge (full `--export-graph-fragment` mining run: 30 min+ timeout → 153 s, 4.1 GB peak RSS). (#59)
