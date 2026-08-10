@@ -677,3 +677,89 @@ func TestLoadEmbeddedJava_SpringSecurityCrypto71EncoderLifecycle(t *testing.T) {
 		t.Fatalf("DelegatingPasswordEncoder hierarchy = %v, want [PasswordEncoder]", parents)
 	}
 }
+
+// TestLoadEmbeddedJava_JavaJwtAndJwksRsaLifecycle verifies the Auth0 java-jwt
+// and jwks-rsa contracts (scanoss/crypto-finder#203): the JWT.create fluent
+// signing chain, the JWT.require verification chain built on the Verification
+// interface, the Algorithm factories, and the JWKS key-resolution surface
+// (JwkProviderBuilder fluent chain, JwkProvider.get, Jwk.getPublicKey) —
+// including return types, lifecycle roles, and the hierarchy edges that let
+// concrete providers and BaseVerification resolve to their interface
+// declarations.
+func TestLoadEmbeddedJava_JavaJwtAndJwksRsaLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// java-jwt: creation + signing chain.
+		{"com.auth0.jwt.JWT.create", 0, "com.auth0.jwt.JWTCreator.Builder", "factory", "java-jwt"},
+		{"com.auth0.jwt.JWTCreator.Builder.withIssuer", 1, "com.auth0.jwt.JWTCreator.Builder", "config", "java-jwt"},
+		{"com.auth0.jwt.JWTCreator.Builder.withClaim", 2, "com.auth0.jwt.JWTCreator.Builder", "config", "java-jwt"},
+		{"com.auth0.jwt.JWTCreator.Builder.sign", 1, "java.lang.String", "operation", "java-jwt"},
+		// java-jwt: algorithm factories (HMAC/RSA/ECDSA/PSS/none).
+		{"com.auth0.jwt.algorithms.Algorithm.HMAC256", 1, "com.auth0.jwt.algorithms.Algorithm", "factory", "java-jwt"},
+		{"com.auth0.jwt.algorithms.Algorithm.RSA256", 2, "com.auth0.jwt.algorithms.Algorithm", "factory", "java-jwt"},
+		{"com.auth0.jwt.algorithms.Algorithm.RSA512PSS", 2, "com.auth0.jwt.algorithms.Algorithm", "factory", "java-jwt"},
+		{"com.auth0.jwt.algorithms.Algorithm.ECDSA256", 1, "com.auth0.jwt.algorithms.Algorithm", "factory", "java-jwt"},
+		{"com.auth0.jwt.algorithms.Algorithm.none", 0, "com.auth0.jwt.algorithms.Algorithm", "factory", "java-jwt"},
+		// java-jwt: raw sign/verify operations on the Algorithm base.
+		{"com.auth0.jwt.algorithms.Algorithm.sign", 2, "byte[]", "operation", "java-jwt"},
+		{"com.auth0.jwt.algorithms.Algorithm.verify", 1, "void", "operation", "java-jwt"},
+		// java-jwt: verification chain (Verification interface -> JWTVerifier).
+		{"com.auth0.jwt.JWT.require", 1, "com.auth0.jwt.interfaces.Verification", "factory", "java-jwt"},
+		{"com.auth0.jwt.interfaces.Verification.withIssuer", 1, "com.auth0.jwt.interfaces.Verification", "config", "java-jwt"},
+		{"com.auth0.jwt.interfaces.Verification.acceptLeeway", 1, "com.auth0.jwt.interfaces.Verification", "config", "java-jwt"},
+		{"com.auth0.jwt.interfaces.Verification.build", 0, "com.auth0.jwt.JWTVerifier", "factory", "java-jwt"},
+		{"com.auth0.jwt.interfaces.JWTVerifier.verify", 1, "com.auth0.jwt.interfaces.DecodedJWT", "operation", "java-jwt"},
+		{"com.auth0.jwt.JWT.decode", 1, "com.auth0.jwt.interfaces.DecodedJWT", "factory", "java-jwt"},
+		// jwks-rsa: provider construction + key resolution.
+		{"com.auth0.jwk.JwkProviderBuilder.<init>", 1, "com.auth0.jwk.JwkProviderBuilder", "factory", "jwks-rsa"},
+		{"com.auth0.jwk.JwkProviderBuilder.cached", 3, "com.auth0.jwk.JwkProviderBuilder", "config", "jwks-rsa"},
+		{"com.auth0.jwk.JwkProviderBuilder.rateLimited", 3, "com.auth0.jwk.JwkProviderBuilder", "config", "jwks-rsa"},
+		{"com.auth0.jwk.JwkProviderBuilder.build", 0, "com.auth0.jwk.JwkProvider", "factory", "jwks-rsa"},
+		{"com.auth0.jwk.JwkProvider.get", 1, "com.auth0.jwk.Jwk", "factory", "jwks-rsa"},
+		{"com.auth0.jwk.UrlJwkProvider.<init>", 1, "com.auth0.jwk.UrlJwkProvider", "factory", "jwks-rsa"},
+		{"com.auth0.jwk.Jwk.fromValues", 1, "com.auth0.jwk.Jwk", "factory", "jwks-rsa"},
+		{"com.auth0.jwk.Jwk.getPublicKey", 0, "java.security.PublicKey", "output", "jwks-rsa"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// BaseVerification implements Verification; the concrete verifier and the
+	// concrete JWKS providers must resolve to their interface declarations.
+	if parents := kb.Hierarchy["com.auth0.jwt.JWTVerifier.BaseVerification"]; len(parents) != 1 || parents[0] != "com.auth0.jwt.interfaces.Verification" {
+		t.Fatalf("BaseVerification hierarchy = %v, want [Verification]", parents)
+	}
+	if parents := kb.Hierarchy["com.auth0.jwt.JWTVerifier"]; len(parents) != 1 || parents[0] != "com.auth0.jwt.interfaces.JWTVerifier" {
+		t.Fatalf("JWTVerifier hierarchy = %v, want [interfaces.JWTVerifier]", parents)
+	}
+	for _, provider := range []string{
+		"com.auth0.jwk.UrlJwkProvider",
+		"com.auth0.jwk.GuavaCachedJwkProvider",
+		"com.auth0.jwk.RateLimitedJwkProvider",
+	} {
+		if parents := kb.Hierarchy[provider]; len(parents) != 1 || parents[0] != "com.auth0.jwk.JwkProvider" {
+			t.Fatalf("%s hierarchy = %v, want [JwkProvider]", provider, parents)
+		}
+	}
+}
