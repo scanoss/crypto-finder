@@ -1,0 +1,349 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: vault-java-driver
+  coordinates:
+    - "com.bettercloud:vault-java-driver"
+  # Verified with javap against the published com.bettercloud:vault-java-driver
+  # 5.1.0 jar. (The project later moved to io.github.jopenlibs:vault-java-driver;
+  # that coordinate has its own package and is a separate KB if ever needed.)
+  version_range: ">=5.0,<6.0"
+  description: "vault-java-driver contracts for Vault client construction, TLS/token configuration, and the secrets-engine accessors that reach remote crypto operations"
+
+contracts:
+  # =========================================================================
+  # Client construction (rule anchors: new Vault(...), new VaultConfig())
+  # =========================================================================
+  - method: com.bettercloud.vault.Vault.<init>
+    arity: 1
+    parameter_types: [com.bettercloud.vault.VaultConfig]
+    canonical_return_type: com.bettercloud.vault.Vault
+    return:
+      type: com.bettercloud.vault.Vault
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.<init>
+    arity: 2
+    parameter_types: [com.bettercloud.vault.VaultConfig, java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.Vault
+    return:
+      type: com.bettercloud.vault.Vault
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.<init>
+    arity: 3
+    parameter_types:
+      [com.bettercloud.vault.VaultConfig, java.lang.Boolean, java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.Vault
+    return:
+      type: com.bettercloud.vault.Vault
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.withRetries
+    arity: 2
+    parameter_types: [int, int]
+    canonical_return_type: com.bettercloud.vault.Vault
+    return:
+      type: com.bettercloud.vault.Vault
+      confidence: high
+    role: config
+
+  # =========================================================================
+  # Client configuration (com.bettercloud.vault.VaultConfig) — fluent, returns
+  # itself. address/token/sslConfig carry the trust and credential material.
+  # =========================================================================
+  - method: com.bettercloud.vault.VaultConfig.<init>
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.VaultConfig.address
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.token
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.sslConfig
+    arity: 1
+    parameter_types: [com.bettercloud.vault.SslConfig]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.nameSpace
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.engineVersion
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.VaultConfig.build
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.VaultConfig
+    return:
+      type: com.bettercloud.vault.VaultConfig
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # TLS trust configuration (com.bettercloud.vault.SslConfig) — fluent.
+  # verify(false) disables server-certificate verification.
+  # =========================================================================
+  - method: com.bettercloud.vault.SslConfig.<init>
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.SslConfig.verify
+    arity: 1
+    parameter_types: [java.lang.Boolean]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  # The PEM and keystore loaders are distinct method names per source kind
+  # (File / classpath resource / UTF-8 contents), not overloads, so every entry
+  # can declare a canonical signature.
+  - method: com.bettercloud.vault.SslConfig.pemFile
+    arity: 1
+    parameter_types: [java.io.File]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.pemResource
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.pemUTF8
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientPemFile
+    arity: 1
+    parameter_types: [java.io.File]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientKeyPemFile
+    arity: 1
+    parameter_types: [java.io.File]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.keyStoreFile
+    arity: 2
+    parameter_types: [java.io.File, java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientPemResource
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientPemUTF8
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientKeyPemResource
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.clientKeyPemUTF8
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.keyStore
+    arity: 2
+    parameter_types: [java.security.KeyStore, java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.keyStoreResource
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.trustStore
+    arity: 1
+    parameter_types: [java.security.KeyStore]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.trustStoreFile
+    arity: 1
+    parameter_types: [java.io.File]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  - method: com.bettercloud.vault.SslConfig.trustStoreResource
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: config
+  # getSslContext exposes the initialized JSSE context built from the above.
+  - method: com.bettercloud.vault.SslConfig.getSslContext
+    arity: 0
+    canonical_return_type: javax.net.ssl.SSLContext
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: output
+  - method: com.bettercloud.vault.SslConfig.isVerify
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: com.bettercloud.vault.SslConfig.build
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.SslConfig
+    return:
+      type: com.bettercloud.vault.SslConfig
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Secrets-engine accessors — the factory edges from a Vault client to the
+  # engines that perform remote crypto (KV secret storage, PKI issuance, token
+  # auth). The driver has no Transit-engine API of its own, so remote
+  # encrypt/decrypt is reached through Logical.write against a transit path.
+  # =========================================================================
+  - method: com.bettercloud.vault.Vault.logical
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.api.Logical
+    return:
+      type: com.bettercloud.vault.api.Logical
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.auth
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.api.Auth
+    return:
+      type: com.bettercloud.vault.api.Auth
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.pki
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.api.pki.Pki
+    return:
+      type: com.bettercloud.vault.api.pki.Pki
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.pki
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.bettercloud.vault.api.pki.Pki
+    return:
+      type: com.bettercloud.vault.api.pki.Pki
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.seal
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.api.Seal
+    return:
+      type: com.bettercloud.vault.api.Seal
+      confidence: high
+    role: factory
+  - method: com.bettercloud.vault.Vault.mounts
+    arity: 0
+    canonical_return_type: com.bettercloud.vault.api.mounts.Mounts
+    return:
+      type: com.bettercloud.vault.api.mounts.Mounts
+      confidence: high
+    role: factory
+
+hierarchy:
+  com.bettercloud.vault.Vault:
+    - java.lang.Object
+  com.bettercloud.vault.VaultConfig:
+    - java.lang.Object
+  com.bettercloud.vault.SslConfig:
+    - java.lang.Object
+  com.bettercloud.vault.api.Logical:
+    - java.lang.Object
+  com.bettercloud.vault.api.Auth:
+    - java.lang.Object
+  com.bettercloud.vault.api.Seal:
+    - java.lang.Object
+  com.bettercloud.vault.api.pki.Pki:
+    - java.lang.Object
+  com.bettercloud.vault.api.mounts.Mounts:
+    - java.lang.Object
+  javax.net.ssl.SSLContext:
+    - java.lang.Object
+  java.security.KeyStore:
+    - java.lang.Object
+  java.io.File:
+    - java.lang.Object
+  java.lang.Object: []

@@ -1384,3 +1384,161 @@ func TestLoadEmbeddedJava_OkHttpTLSLifecycle(t *testing.T) {
 		t.Fatalf("CipherSuite hierarchy = %v, want [java.lang.Object]", parents)
 	}
 }
+
+// TestLoadEmbeddedJava_CloudKmsAndVaultLifecycle verifies the Java KMS/HSM SDK
+// facade contracts (scanoss/crypto-finder#206): AWS KMS across BOTH SDK
+// generations, GCP KMS, Azure Key Vault Keys, and the HashiCorp vault-java-driver.
+// It pins the rule anchors, the remote crypto operations and their response
+// material, the algorithm-selecting parameters, and the coordinate-hygiene fact
+// that the two AWS generations live in disjoint packages under one KB.
+func TestLoadEmbeddedJava_CloudKmsAndVaultLifecycle(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+		want   string
+		role   string
+		lib    string
+	}{
+		// AWS SDK v2 (software.amazon.awssdk) — rule anchors KmsClient.create /
+		// builder and the *Request.builder factories.
+		{"software.amazon.awssdk.services.kms.KmsClient.create", 0, "software.amazon.awssdk.services.kms.KmsClient", "factory", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.builder", 0, "software.amazon.awssdk.services.kms.KmsClientBuilder", "factory", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.encrypt", 1, "software.amazon.awssdk.services.kms.model.EncryptResponse", "operation", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.decrypt", 1, "software.amazon.awssdk.services.kms.model.DecryptResponse", "operation", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.sign", 1, "software.amazon.awssdk.services.kms.model.SignResponse", "operation", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.generateDataKey", 1, "software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse", "factory", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.KmsClient.generateRandom", 0, "software.amazon.awssdk.services.kms.model.GenerateRandomResponse", "operation", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.model.EncryptRequest.builder", 0, "software.amazon.awssdk.services.kms.model.EncryptRequest.Builder", "factory", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.model.SignRequest.builder", 0, "software.amazon.awssdk.services.kms.model.SignRequest.Builder", "factory", "aws-kms"},
+		{"software.amazon.awssdk.services.kms.model.EncryptResponse.ciphertextBlob", 0, "software.amazon.awssdk.core.SdkBytes", "output", "aws-kms"},
+		// v2's data-key plaintext accessor is plaintext(), not plaintextKey().
+		{"software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse.plaintext", 0, "software.amazon.awssdk.core.SdkBytes", "output", "aws-kms"},
+		// AWS SDK v1 (com.amazonaws) — disjoint package, same KB.
+		{"com.amazonaws.services.kms.AWSKMSClientBuilder.standard", 0, "com.amazonaws.services.kms.AWSKMSClientBuilder", "factory", "aws-kms"},
+		{"com.amazonaws.services.kms.AWSKMSClientBuilder.defaultClient", 0, "com.amazonaws.services.kms.AWSKMS", "factory", "aws-kms"},
+		{"com.amazonaws.services.kms.AWSKMS.encrypt", 1, "com.amazonaws.services.kms.model.EncryptResult", "operation", "aws-kms"},
+		{"com.amazonaws.services.kms.model.EncryptRequest.<init>", 0, "com.amazonaws.services.kms.model.EncryptRequest", "factory", "aws-kms"},
+		{"com.amazonaws.services.kms.model.EncryptRequest.withPlaintext", 1, "com.amazonaws.services.kms.model.EncryptRequest", "config", "aws-kms"},
+		// v1 returns java.nio.ByteBuffer where v2 returns SdkBytes.
+		{"com.amazonaws.services.kms.model.EncryptResult.getCiphertextBlob", 0, "java.nio.ByteBuffer", "output", "aws-kms"},
+		// GCP KMS — rule anchors KeyManagementServiceClient.create and *Request.newBuilder.
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.create", 0, "com.google.cloud.kms.v1.KeyManagementServiceClient", "factory", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.encrypt", 1, "com.google.cloud.kms.v1.EncryptResponse", "operation", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.encrypt", 2, "com.google.cloud.kms.v1.EncryptResponse", "operation", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.asymmetricSign", 1, "com.google.cloud.kms.v1.AsymmetricSignResponse", "operation", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.macSign", 1, "com.google.cloud.kms.v1.MacSignResponse", "operation", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.generateRandomBytes", 3, "com.google.cloud.kms.v1.GenerateRandomBytesResponse", "operation", "gcp-kms"},
+		{"com.google.cloud.kms.v1.KeyManagementServiceClient.createCryptoKey", 1, "com.google.cloud.kms.v1.CryptoKey", "factory", "gcp-kms"},
+		{"com.google.cloud.kms.v1.EncryptRequest.newBuilder", 0, "com.google.cloud.kms.v1.EncryptRequest.Builder", "factory", "gcp-kms"},
+		{"com.google.cloud.kms.v1.AsymmetricSignRequest.newBuilder", 0, "com.google.cloud.kms.v1.AsymmetricSignRequest.Builder", "factory", "gcp-kms"},
+		{"com.google.cloud.kms.v1.EncryptResponse.getCiphertext", 0, "com.google.protobuf.ByteString", "output", "gcp-kms"},
+		// The algorithm is on CryptoKeyVersion/PublicKey, not on CryptoKey.
+		{"com.google.cloud.kms.v1.CryptoKeyVersion.getAlgorithm", 0, "com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm", "output", "gcp-kms"},
+		{"com.google.cloud.kms.v1.PublicKey.getPem", 0, "java.lang.String", "output", "gcp-kms"},
+		// Azure Key Vault — rule anchors new CryptographyClientBuilder() / new KeyClientBuilder().
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.<init>", 0, "com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder", "factory", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.buildClient", 0, "com.azure.security.keyvault.keys.cryptography.CryptographyClient", "factory", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClient.encrypt", 2, "com.azure.security.keyvault.keys.cryptography.models.EncryptResult", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClient.sign", 2, "com.azure.security.keyvault.keys.cryptography.models.SignResult", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClient.verify", 3, "com.azure.security.keyvault.keys.cryptography.models.VerifyResult", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClient.wrapKey", 2, "com.azure.security.keyvault.keys.cryptography.models.WrapResult", "operation", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.KeyClientBuilder.<init>", 0, "com.azure.security.keyvault.keys.KeyClientBuilder", "factory", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.KeyClient.createRsaKey", 1, "com.azure.security.keyvault.keys.models.KeyVaultKey", "factory", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.KeyClient.backupKey", 1, "byte[]", "output", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getCipherText", 0, "byte[]", "output", "azure-keyvault-keys-java"},
+		{"com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm.fromString", 1, "com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm", "factory", "azure-keyvault-keys-java"},
+		// vault-java-driver — rule anchors new Vault(...) / new VaultConfig().
+		{"com.bettercloud.vault.Vault.<init>", 1, "com.bettercloud.vault.Vault", "factory", "vault-java-driver"},
+		{"com.bettercloud.vault.VaultConfig.<init>", 0, "com.bettercloud.vault.VaultConfig", "factory", "vault-java-driver"},
+		{"com.bettercloud.vault.VaultConfig.token", 1, "com.bettercloud.vault.VaultConfig", "config", "vault-java-driver"},
+		{"com.bettercloud.vault.VaultConfig.sslConfig", 1, "com.bettercloud.vault.VaultConfig", "config", "vault-java-driver"},
+		{"com.bettercloud.vault.SslConfig.verify", 1, "com.bettercloud.vault.SslConfig", "config", "vault-java-driver"},
+		{"com.bettercloud.vault.SslConfig.getSslContext", 0, "javax.net.ssl.SSLContext", "output", "vault-java-driver"},
+		{"com.bettercloud.vault.Vault.logical", 0, "com.bettercloud.vault.api.Logical", "factory", "vault-java-driver"},
+		{"com.bettercloud.vault.Vault.pki", 0, "com.bettercloud.vault.api.pki.Pki", "factory", "vault-java-driver"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].Return.Type != tt.want || got[0].Role != tt.role || got[0].SourceLibrary != tt.lib {
+				t.Fatalf("%s#%d = %#v, want return %q with role %q from %q", tt.method, tt.arity, got[0], tt.want, tt.role, tt.lib)
+			}
+		})
+	}
+
+	// Coordinate hygiene: the two AWS SDK generations live in disjoint packages
+	// (software.amazon.awssdk vs com.amazonaws) but are served by one KB, so
+	// both namespaces must report the same source library. The table above
+	// already asserts the operations; this pins the pairing explicitly so a
+	// future split into two KBs cannot pass silently.
+	v2Encrypt := kb.ContractsFor("software.amazon.awssdk.services.kms.KmsClient.encrypt", 1)
+	v1Encrypt := kb.ContractsFor("com.amazonaws.services.kms.AWSKMS.encrypt", 1)
+	if len(v2Encrypt) != 1 || len(v1Encrypt) != 1 {
+		t.Fatalf("AWS encrypt contracts: v2=%d v1=%d, want 1 each", len(v2Encrypt), len(v1Encrypt))
+	}
+	if v2Encrypt[0].SourceLibrary != v1Encrypt[0].SourceLibrary {
+		t.Fatalf("AWS v2 library %q != v1 library %q, want one KB covering both SDK generations",
+			v2Encrypt[0].SourceLibrary, v1Encrypt[0].SourceLibrary)
+	}
+	// The two generations must not be conflated: their response types differ
+	// (SdkBytes vs java.nio.ByteBuffer for the same logical material).
+	if v2Encrypt[0].Return.Type == v1Encrypt[0].Return.Type {
+		t.Fatalf("AWS v2 and v1 encrypt both return %q, want the generation-specific response types", v2Encrypt[0].Return.Type)
+	}
+
+	// Algorithm-selecting arguments must be operation-determining across all
+	// three cloud SDKs, so a consumer can attribute the remote algorithm.
+	selectors := []struct {
+		method string
+		arity  int
+		index  int
+	}{
+		{"software.amazon.awssdk.services.kms.model.EncryptRequest.Builder.encryptionAlgorithm", 1, 0},
+		{"software.amazon.awssdk.services.kms.model.SignRequest.Builder.signingAlgorithm", 1, 0},
+		{"com.amazonaws.services.kms.model.EncryptRequest.withEncryptionAlgorithm", 1, 0},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClient.sign", 2, 0},
+		{"com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm.fromString", 1, 0},
+	}
+	for _, s := range selectors {
+		got := kb.ContractsFor(s.method, s.arity)
+		if len(got) != 1 || len(got[0].Parameters) == 0 {
+			t.Fatalf("%s#%d parameters = %#v, want an algorithm selector role", s.method, s.arity, got)
+		}
+		var found bool
+		for _, p := range got[0].Parameters {
+			if p.Index == nil || *p.Index != s.index {
+				continue
+			}
+			found = true
+			if p.Role != "operation-determining" || p.Contributes == nil || p.Contributes.Property != "algorithm" {
+				t.Fatalf("%s#%d parameters[%d] = %#v, want operation-determining algorithm", s.method, s.arity, s.index, p)
+			}
+		}
+		if !found {
+			t.Fatalf("%s#%d has no parameter role at index %d", s.method, s.arity, s.index)
+		}
+	}
+
+	// Azure's algorithm selectors are ExpandableStringEnum, not java.lang.Enum,
+	// so fromString accepts names beyond the declared constants.
+	for _, typ := range []string{
+		"com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm",
+		"com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm",
+		"com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm",
+	} {
+		if parents := kb.Hierarchy[typ]; len(parents) != 1 || parents[0] != "com.azure.core.util.ExpandableStringEnum" {
+			t.Fatalf("%s hierarchy = %v, want [ExpandableStringEnum]", typ, kb.Hierarchy[typ])
+		}
+	}
+}
