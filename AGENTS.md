@@ -22,6 +22,12 @@ in the same PR as the change. The format is [Keep a Changelog](https://keepachan
   empty `[Unreleased]` section. Do not let releases ship with the changelog behind —
   reconstructing history from merged PRs afterwards is expensive and error-prone.
 
+## User guide
+
+Relevant user-facing capability or behavior changes - commands, flags, outputs, supported workflows, deployment behavior, dependency scanning, or limitations - MUST update the sole-source HTML guide `docs/user-guide/user-guide.html` in the same PR. The guide is standalone, inline-CSS/vanilla-JS, and HTML-first. Do not restore DOCX/PDF deliverables, Node build sources, generated review images, package files, or vendored document engines. Keep only necessary public logo assets under `docs/user-guide/assets/`.
+
+Verify the guide with an HTML parser, prohibited-term grep, `git diff --check`, and a lightweight local HTTP server/browser check as documented in `docs/user-guide/AGENTS.md`.
+
 ## Error handling
 
 This project uses a **two-layer error model**. Mixing the layers is a defect.
