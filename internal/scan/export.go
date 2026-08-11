@@ -1337,14 +1337,61 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	return fg
 }
 
+// filterConditionedCallChains keeps only the chains whose terminal crypto call
+// satisfies the asset's parameter conditions.
+//
+// Each chain gets a three-valued verdict (see evaluateParameterConditions), and
+// the outcome depends on the finding's whole chain set rather than on each chain
+// alone:
+//
+//   - conditionRefuted — an argument resolved and contradicted the predicate.
+//     Positive evidence that this asset does not describe this call site, so the
+//     chain is always dropped. This is what keeps per-call-site selector
+//     materialization from attributing the 128-bit variant to the 256-bit caller
+//     path (internal/cli TestSelectorMaterializationPublicExports).
+//   - conditionMatched — kept.
+//   - conditionUnknown — nothing could be answered. Kept only when NO chain in
+//     the finding was matched: with real evidence present the unknown chains are
+//     noise, but with none present they are the finding's only evidence, and
+//     dropping them would silently zero out its reachability — which the
+//     reachability invariant forbids (docs/ARCHITECTURE.md §5 states it for
+//     metadata.api; the same reasoning applies to any unresolved call metadata).
+//
+// A chain whose terminal crypto call did not resolve at all has no arguments to
+// bind against and is therefore unknown, never refuted.
 func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []paramcondition.Condition) [][]callGraphChainNode {
-	filtered := make([][]callGraphChainNode, 0, len(chains))
-	for _, chain := range chains {
-		if len(chain) == 0 || chain[len(chain)-1].CryptoCall == nil {
+	if len(conditions) == 0 {
+		return chains
+	}
+
+	verdicts := make([]conditionVerdict, len(chains))
+	anyMatched := false
+	for i, chain := range chains {
+		if len(chain) == 0 {
 			continue
 		}
-		if _, ok := matchParameterConditions(conditions, chain[len(chain)-1].CryptoCall.Parameters); ok {
+		terminal := chain[len(chain)-1]
+		if terminal.CryptoCall == nil {
+			verdicts[i] = conditionUnknown
+			continue
+		}
+		verdicts[i] = evaluateParameterConditions(conditions, terminal.CryptoCall.Parameters)
+		anyMatched = anyMatched || verdicts[i] == conditionMatched
+	}
+
+	filtered := make([][]callGraphChainNode, 0, len(chains))
+	for i, chain := range chains {
+		if len(chain) == 0 {
+			continue
+		}
+		switch verdicts[i] {
+		case conditionMatched:
 			filtered = append(filtered, chain)
+		case conditionUnknown:
+			if !anyMatched {
+				filtered = append(filtered, chain)
+			}
+		case conditionRefuted:
 		}
 	}
 	return filtered
