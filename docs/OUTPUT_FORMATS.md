@@ -418,7 +418,7 @@ reported as reachable crypto.
 ```json
 {
   "schema_version": "graph-fragment-1.8",
-  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-1", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-2", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
   ],
