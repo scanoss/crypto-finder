@@ -152,6 +152,44 @@ func TestResolveFluentChainCalleesByContract_JavaVarargsArity(t *testing.T) {
 	}
 }
 
+// TestResolveFluentChainCalleesByContract_VarargsFallbackRejectsPositionalOverloads
+// guards the varargs fallback against false matches: a call site with MORE
+// arguments than any contracted arity of the same method name must NOT
+// collapse onto an ordinary positional (non-varargs) lower-arity overload —
+// it would inherit a contract role that does not belong to the call.
+// SslContextBuilder.ciphers is contracted at arities 1 and 2, neither
+// varargs, so a 3-argument .ciphers(a, b, c) link must stay unresolved
+// (while the chain walk still continues past it).
+func TestResolveFluentChainCalleesByContract_VarargsFallbackRejectsPositionalOverloads(t *testing.T) {
+	kb, err := contracts.LoadEmbedded("java")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(java): %v", err)
+	}
+
+	messy := "SslContextBuilder.forServer(c, k)"
+	fn := &FunctionDecl{
+		ID: FunctionID{Package: "com.example", Type: "TlsSetup", Name: "setup#2"},
+		Calls: []FunctionCall{
+			{Callee: FunctionID{Package: messy + ".ciphers(a, b, c)", Name: "build#0"}, ChainID: "600", Raw: messy + ".ciphers(a, b, c).build", Line: 9},
+			{Callee: FunctionID{Package: messy, Name: "ciphers#3"}, ChainID: "600", Raw: messy + ".ciphers", Line: 9, Arguments: []string{"a", "b", "c"}},
+			{Callee: FunctionID{Package: "io.netty.handler.ssl", Type: "SslContextBuilder", Name: "forServer#2"}, ChainID: "600", Raw: "SslContextBuilder.forServer", Line: 9, Arguments: []string{"c", "k"}},
+		},
+	}
+	graph := &CallGraph{Functions: map[string]*FunctionDecl{fn.ID.String(): fn}}
+
+	ciphersBefore := fn.Calls[1].Callee.String()
+	resolveFluentChainCalleesByContract(graph, kb)
+
+	if got := fn.Calls[1].Callee.String(); got != ciphersBefore {
+		t.Errorf("3-arg ciphers link collapsed onto a positional overload: %q -> %q (contracts at arities 1 and 2 are not varargs)", ciphersBefore, got)
+	}
+	// The unresolved link must still not orphan the rest of the chain.
+	const wantBuild = "io.netty.handler.ssl.(SslContextBuilder).build#0"
+	if got := fn.Calls[0].Callee.String(); got != wantBuild {
+		t.Errorf("build callee = %q, want %q", got, wantBuild)
+	}
+}
+
 // TestResolveFluentChainCalleesByContract_ContinuesPastUnknownLink asserts the
 // chain walk is not halted by one link the KB has no contract for: the unknown
 // link itself is left untouched (no guessing), but — fluent builder methods

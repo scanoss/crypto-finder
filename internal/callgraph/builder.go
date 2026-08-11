@@ -1226,22 +1226,46 @@ func chainLinkContracts(kb *contracts.KnowledgeBase, currentType string, call *F
 // javaVarargsChainContracts retries a Java chain-link contract lookup at
 // successively lower arities to absorb varargs call sites: the contract KB
 // models a Java varargs parameter as one slot (protocols(String...) is keyed
-// at arity 1), so a call passing N literal arguments through the varargs slot
-// misses the exact-arity key. The highest matching arity below the literal
-// count wins (most fixed parameters matched — deterministic, and every KB
-// overload family sharing a method name also shares its return type). Returns
-// the matched contracts and the contract-declared arity, or (nil, callArity)
-// when nothing matches. Java-only: Python already has a name-only fallback in
-// ContractsForTolerant and C/C++ have their own linkage-aware matching, and
-// global Java lookups stay exact-arity (Java overload discipline) — this
-// fallback applies only to fluent-chain link resolution.
+// at arity 1, varargs: true), so a call passing N literal arguments through
+// the varargs slot misses the exact-arity key. A lower-arity match is
+// accepted ONLY when the matched contract set is explicitly marked varargs —
+// an ordinary lower-arity overload of the same name must NOT absorb a call
+// with more arguments (it would inherit a role that does not belong to the
+// call site); such matches are skipped and the descent continues, since a
+// yet-lower arity may hold the genuine varargs family. The highest matching
+// varargs arity below the literal count wins (most fixed parameters matched —
+// deterministic). Returns the matched contracts and the contract-declared
+// arity, or (nil, callArity) when no varargs contract matches. Java-only:
+// Python already has a name-only fallback in ContractsForTolerant and C/C++
+// have their own linkage-aware matching, and global Java lookups stay
+// exact-arity (Java overload discipline) — this fallback applies only to
+// fluent-chain link resolution.
 func javaVarargsChainContracts(kb *contracts.KnowledgeBase, method string, callArity int) ([]contracts.Contract, int) {
 	for arity := callArity - 1; arity >= 1; arity-- {
-		if ctrs := kb.ContractsForTolerant(method, arity); len(ctrs) > 0 {
-			return ctrs, arity
+		ctrs := kb.ContractsForTolerant(method, arity)
+		if len(ctrs) == 0 {
+			continue
 		}
+		if !anyVarargsContract(ctrs) {
+			// A positional (non-varargs) overload at this arity cannot be the
+			// callee of a call site with more arguments; keep descending.
+			continue
+		}
+		return ctrs, arity
 	}
 	return nil, callArity
+}
+
+// anyVarargsContract reports whether at least one contract in the set is
+// explicitly marked varargs (collapsed same-arity overload families share one
+// key, so one varargs member marks the whole entry).
+func anyVarargsContract(ctrs []contracts.Contract) bool {
+	for i := range ctrs {
+		if ctrs[i].Varargs {
+			return true
+		}
+	}
+	return false
 }
 
 // methodBaseArity splits a decorated method name ("withBcrypt#0") into its base

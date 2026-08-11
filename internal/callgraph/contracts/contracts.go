@@ -103,6 +103,13 @@ type Contract struct {
 	// declared parameter list. Nil when the contract carries no parameter
 	// role annotations (the common case).
 	Parameters []ParameterContract
+	// Varargs marks a contract whose final declared parameter is variadic
+	// (Java `String...`). Per the KB convention a varargs parameter occupies
+	// ONE arity slot, so a call site may pass more literal arguments than
+	// Arity; arity-tolerant chain resolution may only collapse a call onto a
+	// lower-arity contract when that contract is explicitly marked varargs.
+	// Absent (false) means every declared parameter is positional.
+	Varargs bool
 }
 
 // Role classifies a contract method's part in a crypto object's lifecycle.
@@ -276,6 +283,9 @@ type yamlContract struct {
 	Role string `yaml:"role,omitempty"`
 	// Parameters declares per-parameter roles; see Contract.Parameters.
 	Parameters []yamlParameterRole `yaml:"parameters,omitempty"`
+	// Varargs marks the final declared parameter as variadic; see
+	// Contract.Varargs. Optional, defaults to false.
+	Varargs bool `yaml:"varargs,omitempty"`
 }
 
 type yamlParameterRole struct {
@@ -401,6 +411,11 @@ func validateContract(i int, c yamlContract) (*Condition, error) {
 			return nil, fmt.Errorf("contracts: contract[%d] (%s): role %q not in {factory, config, output, operation}", i, c.Method, c.Role)
 		}
 	}
+	if c.Varargs && c.Arity < 1 {
+		// The variadic parameter itself occupies one arity slot, so a varargs
+		// contract can never sit at arity 0.
+		return nil, fmt.Errorf("contracts: contract[%d] (%s): varargs requires arity >= 1, got %d", i, c.Method, c.Arity)
+	}
 	if c.When == nil {
 		return nil, nil //nolint:nilnil // nil Condition is the valid "unconditional" signal
 	}
@@ -501,6 +516,7 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 			SourceLibrary:       raw.Library.Name,
 			Role:                c.Role,
 			Parameters:          params,
+			Varargs:             c.Varargs,
 		})
 	}
 	return nil
