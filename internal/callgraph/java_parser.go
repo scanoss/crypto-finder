@@ -2188,6 +2188,25 @@ func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis
 	if !ok {
 		return FunctionID{}, false
 	}
+	// A declared type carries its generic arguments verbatim — "KafkaTemplate<String,
+	// String>", "Map<String, java.util.List<byte[]>>". Erase them ONCE, before any
+	// branch below looks at the name, because every consumer of the result keys on
+	// the bare name:
+	//
+	//   - Class declarations are indexed under the bare identifier: parseJavaClass
+	//     reads the identifier child and never type_parameters, so a callee Type
+	//     carrying generics can never match the declaration it names.
+	//   - The import map and wildcard prefixes are keyed by the bare name, so a
+	//     generic-laden lookup misses and falls through to the scanned file's
+	//     package — the #228 defect.
+	//   - splitQualifiedJavaType splits on the LAST dot, which lands INSIDE the
+	//     angle brackets whenever a generic argument is itself qualified.
+	//     "Map<String, java.util.List<byte[]>>" would otherwise yield the package
+	//     "Map<String, java.util".
+	//
+	// Erasing up front is what keeps all three branches consistent; erasing per
+	// branch leaves whichever branch was missed emitting unjoinable identities.
+	typeName = stripGenericSuffix(typeName)
 	if pkg, typ, ok := splitQualifiedJavaType(typeName); ok {
 		return FunctionID{Package: pkg, Type: typ, Name: method}, true
 	}
