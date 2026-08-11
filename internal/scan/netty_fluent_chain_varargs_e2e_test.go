@@ -261,6 +261,91 @@ func TestNettyFluentChain_VarargsProtocols_ResolvesRolesInBothForms(t *testing.T
 	}
 }
 
+// nonContractedFluentChainConsumerSource is a jedis-shaped consumer of a
+// builder API the contract KB does NOT model: the chain stays unresolved (no
+// contract rewrite applies), so its links fall back to the raw receiver
+// expression — which here carries an inline comment inside the multi-line
+// chain, the second leak surface of scanoss/crypto-finder#195.
+const nonContractedFluentChainConsumerSource = `package com.example;
+
+import redis.clients.jedis.DefaultJedisClientConfig;
+
+public class RedisSetup {
+
+    Object configure() {
+        DefaultJedisClientConfig config = DefaultJedisClientConfig.builder()
+                .ssl(true) // This triggers TLS/SSL internally
+                .connectionTimeoutMillis(3000)
+                .build();
+        return config;
+    }
+}
+`
+
+// TestNonContractedFluentChain_InlineComment_DoesNotLeakIntoSignatures locks
+// the comment half of scanoss/crypto-finder#195: for a NON-contracted
+// static-rooted fluent chain (no KB contract resolves the links), the
+// receiver falls back to its raw source span. That span must exclude Java
+// line and block comments, or the comment text survives whitespace collapse
+// and lands in exported target_canonical_signature values as
+// `...ssl(true)//ThistriggersTLS/SSLinternally.build()`.
+func TestNonContractedFluentChain_InlineComment_DoesNotLeakIntoSignatures(t *testing.T) {
+	t.Parallel()
+
+	consumerDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(consumerDir, "RedisSetup.java"), []byte(nonContractedFluentChainConsumerSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := callgraph.NewBuilderForEcosystem("java", callgraph.NewJavaParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: consumerDir, ImportPath: "com.example"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories(jedis-shaped consumer): %v", err)
+	}
+
+	// Source-level: no callee identity may carry comment tokens.
+	sawChain := false
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			c := &fn.Calls[i]
+			if c.ChainID != "" {
+				sawChain = true
+			}
+			if key := c.Callee.String(); strings.Contains(key, "//") || strings.Contains(key, "/*") {
+				t.Errorf("callee identity carries comment text: %q", key)
+			}
+		}
+	}
+	if !sawChain {
+		t.Fatal("fixture did not produce a fluent chain; the regression is not exercised")
+	}
+
+	// Export-level: the graph-fragment external calls (the mine-path surface
+	// where the leak was observed) must not carry comment tokens or newlines
+	// in their emitted names/signatures.
+	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+		Report:    &entities.InterimReport{},
+		CallGraph: graph,
+		Ecosystem: "java",
+	})
+	if len(payload.ExternalCalls) == 0 {
+		t.Fatal("no external calls exported; the regression is not exercised")
+	}
+	for _, ec := range payload.ExternalCalls {
+		for kind, value := range map[string]string{
+			"target_function_name":       ec.TargetFunctionName,
+			"target_canonical_signature": ec.TargetCanonicalSignature,
+		} {
+			if strings.ContainsAny(value, "\r\n") {
+				t.Errorf("external call %s contains a newline: %q", kind, value)
+			}
+			if strings.Contains(value, "//") || strings.Contains(value, "/*") {
+				t.Errorf("external call %s contains comment text: %q", kind, value)
+			}
+		}
+	}
+}
+
 // TestFullFunctionName_SanitizesPackage locks the export-layer half of
 // scanoss/crypto-finder#195: a callee whose Package carries a raw multi-line
 // receiver expression (the parser's fallback for unresolved static-rooted

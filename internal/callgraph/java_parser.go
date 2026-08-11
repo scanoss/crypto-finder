@@ -46,6 +46,8 @@ const (
 	javaNodeSuperInterfaces      = "super_interfaces"
 	javaNodeTypeList             = "type_list"
 	javaNodeTypeIdentifier       = "type_identifier"
+	javaNodeLineComment          = "line_comment"
+	javaNodeBlockComment         = "block_comment"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -1722,7 +1724,46 @@ func resolveReceiverObject(objectNode *sitter.Node, src []byte) string {
 			return t
 		}
 	}
-	return strings.TrimSpace(objectNode.Content(src))
+	// The raw-span fallback must exclude source comments: a multi-line fluent
+	// chain receiver can carry inline `// ...` or `/* ... */` text that would
+	// otherwise flow into FunctionID and, after whitespace collapse, into
+	// exported symbols and canonical signatures as mangled comment text.
+	return strings.TrimSpace(nodeContentWithoutComments(objectNode, src))
+}
+
+// nodeContentWithoutComments returns a node's source text with every Java
+// comment descendant (line_comment / block_comment) spliced out. Non-comment
+// bytes are preserved verbatim from the original span, so string literals and
+// argument text are never altered; when the span contains no comments the
+// content is returned unchanged.
+func nodeContentWithoutComments(node *sitter.Node, src []byte) string {
+	var spans [][2]uint32
+	collectCommentSpans(node, &spans)
+	if len(spans) == 0 {
+		return node.Content(src)
+	}
+	var b strings.Builder
+	pos := node.StartByte()
+	for _, span := range spans {
+		b.Write(src[pos:span[0]])
+		pos = span[1]
+	}
+	b.Write(src[pos:node.EndByte()])
+	return b.String()
+}
+
+// collectCommentSpans appends the [startByte, endByte) span of every comment
+// node in the subtree, in source order (tree-sitter children are ordered).
+func collectCommentSpans(node *sitter.Node, spans *[][2]uint32) {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case javaNodeLineComment, javaNodeBlockComment:
+			*spans = append(*spans, [2]uint32{child.StartByte(), child.EndByte()})
+		default:
+			collectCommentSpans(child, spans)
+		}
+	}
 }
 
 // constructorRootType walks a fluent chain of method invocations down to its

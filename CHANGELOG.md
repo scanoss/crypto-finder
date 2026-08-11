@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ### Fixed
-- Java fluent-chain contract resolution no longer loses chain links when a varargs method is called with more literal arguments than its collapsed contract arity (e.g. `SslContextBuilder.protocols("TLSv1.3", "TLSv1.2")`): the chain pass retries the lookup at the contract's collapsed arity, keeps walking past unmodeled links instead of orphaning the remainder of the chain (including the terminal `build()`), and exported symbols and canonical signatures no longer leak raw multi-line receiver text from unresolved links. (#195)
+- Java fluent-chain contract resolution no longer loses chain links when a varargs method is called with more literal arguments than its collapsed contract arity (e.g. `SslContextBuilder.protocols("TLSv1.3", "TLSv1.2")`): the chain pass retries the lookup at the contract's collapsed arity, keeps walking past unmodeled links instead of orphaning the remainder of the chain (including the terminal `build()`), and exported symbols and canonical signatures no longer leak raw multi-line receiver text from unresolved links. The Java receiver-text fallback also excludes inline `// ...` and block `/* ... */` comments, so non-contracted fluent chains cannot leak comment text into exported symbols or canonical signatures either. (#195)
 
 ## [0.18.0] - 2026-08-10
 
