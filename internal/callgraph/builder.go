@@ -1170,13 +1170,16 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			break
 		}
 		call := &fn.Calls[idxs[pos]]
-		base, arity := methodBaseArity(call.Callee.Name)
-		if kb.Ecosystem == ecosystemCPP && arity < 0 {
-			arity = len(call.Arguments)
-		}
-		ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
+		ctrs, base, arity := chainLinkContracts(kb, currentType, call)
 		if len(ctrs) == 0 {
-			break // not a known method of the propagated type; stop, do not guess
+			// Not a known method of the propagated type: leave this link
+			// untouched (no guessing), but keep walking the chain. Fluent
+			// builder methods return their receiver, so carrying the current
+			// receiver type forward lets the downstream contracted links
+			// (e.g. the terminal build()) still resolve instead of being
+			// orphaned by one unmodeled link. currentType is only ever a
+			// KB-confirmed type here, never an invented one.
+			continue
 		}
 		pkg, typ := splitQualifiedTypeName(currentType)
 		rewritten := FunctionID{Package: pkg, Type: typ, Name: fmt.Sprintf("%s#%d", base, arity)}
@@ -1197,6 +1200,48 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 		currentType = unconditionalContractReturn(ctrs)
 	}
 	return resolved
+}
+
+// chainLinkContracts looks up the contracts for one fluent-chain link on the
+// propagated receiver type, applying the ecosystem-specific arity rules:
+// C++ falls back to the literal argument count when the callee name carries no
+// arity, and Java retries a varargs-collapsed lookup on an exact-arity miss —
+// the KB models a Java varargs parameter as one slot (protocols(String...) is
+// keyed at arity 1) while the parser emits the call at its literal top-level
+// argument count (.protocols("a", "b") -> arity 2). Returns the matched
+// contracts plus the method base name and the arity the link resolves at (the
+// contract's declared arity when the varargs fallback matched).
+func chainLinkContracts(kb *contracts.KnowledgeBase, currentType string, call *FunctionCall) ([]contracts.Contract, string, int) {
+	base, arity := methodBaseArity(call.Callee.Name)
+	if kb.Ecosystem == ecosystemCPP && arity < 0 {
+		arity = len(call.Arguments)
+	}
+	ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
+	if len(ctrs) == 0 && kb.Ecosystem == ecosystemJava {
+		ctrs, arity = javaVarargsChainContracts(kb, currentType+"."+base, arity)
+	}
+	return ctrs, base, arity
+}
+
+// javaVarargsChainContracts retries a Java chain-link contract lookup at
+// successively lower arities to absorb varargs call sites: the contract KB
+// models a Java varargs parameter as one slot (protocols(String...) is keyed
+// at arity 1), so a call passing N literal arguments through the varargs slot
+// misses the exact-arity key. The highest matching arity below the literal
+// count wins (most fixed parameters matched — deterministic, and every KB
+// overload family sharing a method name also shares its return type). Returns
+// the matched contracts and the contract-declared arity, or (nil, callArity)
+// when nothing matches. Java-only: Python already has a name-only fallback in
+// ContractsForTolerant and C/C++ have their own linkage-aware matching, and
+// global Java lookups stay exact-arity (Java overload discipline) — this
+// fallback applies only to fluent-chain link resolution.
+func javaVarargsChainContracts(kb *contracts.KnowledgeBase, method string, callArity int) ([]contracts.Contract, int) {
+	for arity := callArity - 1; arity >= 1; arity-- {
+		if ctrs := kb.ContractsForTolerant(method, arity); len(ctrs) > 0 {
+			return ctrs, arity
+		}
+	}
+	return nil, callArity
 }
 
 // methodBaseArity splits a decorated method name ("withBcrypt#0") into its base
