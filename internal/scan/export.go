@@ -3689,16 +3689,21 @@ func methodArityKey(name string) string {
 func fullFunctionName(id callgraph.FunctionID) string {
 	base := callgraph.BaseFunctionName(id.Name)
 	typeName := sanitizeSymbol(id.Type)
+	// Package needs the same sanitization as Type: an unresolved static-rooted
+	// fluent chain link falls back to the raw receiver expression as its
+	// Package, which for a multi-line chain carries newlines and indentation
+	// that must never leak into exported symbols or canonical signatures.
+	pkg := sanitizeSymbol(id.Package)
 	if typeName == "" || strings.Contains(typeName, "(") {
-		if id.Package == "" {
+		if pkg == "" {
 			return base
 		}
-		return id.Package + "." + base
+		return pkg + "." + base
 	}
-	if id.Package == "" {
+	if pkg == "" {
 		return typeName + "." + base
 	}
-	return id.Package + "." + typeName + "." + base
+	return pkg + "." + typeName + "." + base
 }
 
 // --- Symbol sanitization ---
