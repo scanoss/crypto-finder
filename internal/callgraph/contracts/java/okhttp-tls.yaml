@@ -31,6 +31,7 @@ contracts:
   # Java-visible arity is 2 regardless of how many pins a call site passes.
   - method: okhttp3.CertificatePinner.Builder.add
     arity: 2
+    varargs: true # add(pattern, vararg pins) — the pin array is one slot
     parameter_types: [java.lang.String, "java.lang.String[]"]
     canonical_return_type: okhttp3.CertificatePinner.Builder
     return:
@@ -132,6 +133,7 @@ contracts:
   # alone cannot select the overload.
   - method: okhttp3.ConnectionSpec.Builder.cipherSuites
     arity: 1
+    varargs: true # vararg overloads (CipherSuite[] / String[]) — one slot
     return:
       type: okhttp3.ConnectionSpec.Builder
       confidence: high
@@ -143,6 +145,7 @@ contracts:
         contributes: { property: cipher, derivation: argument_value }
   - method: okhttp3.ConnectionSpec.Builder.tlsVersions
     arity: 1
+    varargs: true # vararg overloads (TlsVersion[] / String[]) — one slot
     return:
       type: okhttp3.ConnectionSpec.Builder
       confidence: high

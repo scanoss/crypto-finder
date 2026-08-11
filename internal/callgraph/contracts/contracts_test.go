@@ -102,6 +102,61 @@ hierarchy: {}
 	}
 }
 
+func TestLoadKnowledgeBase_ParsesVarargsFlag(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: java
+library:
+  name: test
+contracts:
+  - method: io.netty.handler.ssl.SslContextBuilder.protocols
+    arity: 1
+    varargs: true
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+  - method: io.netty.handler.ssl.SslContextBuilder.ciphers
+    arity: 1
+    return:
+      type: io.netty.handler.ssl.SslContextBuilder
+      confidence: high
+hierarchy: {}
+`)
+	varargs := kb.ContractsFor("io.netty.handler.ssl.SslContextBuilder.protocols", 1)
+	if len(varargs) != 1 || !varargs[0].Varargs {
+		t.Fatalf("protocols#1 varargs flag not loaded: %+v", varargs)
+	}
+	positional := kb.ContractsFor("io.netty.handler.ssl.SslContextBuilder.ciphers", 1)
+	if len(positional) != 1 || positional[0].Varargs {
+		t.Fatalf("ciphers#1 must default to varargs=false: %+v", positional)
+	}
+}
+
+func TestLoadKnowledgeBase_RejectsVarargsAtArityZero(t *testing.T) {
+	t.Parallel()
+
+	yamlVarargsZero := `
+schema_version: "2"
+ecosystem: java
+library:
+  name: test
+contracts:
+  - method: io.netty.handler.ssl.SslContextBuilder.build
+    arity: 0
+    varargs: true
+    return:
+      type: io.netty.handler.ssl.SslContext
+      confidence: high
+hierarchy: {}
+`
+	_, err := contracts.Load([]byte(yamlVarargsZero))
+	if err == nil {
+		t.Fatal("expected error for varargs at arity 0 (the variadic parameter occupies one slot), got nil")
+	}
+}
+
 func TestLoadKnowledgeBase_ParsesCanonicalSignatureTypes(t *testing.T) {
 	t.Parallel()
 
