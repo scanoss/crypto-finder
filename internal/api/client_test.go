@@ -77,13 +77,29 @@ func newTestClient(t *testing.T, apiKey string, handler func(http.ResponseWriter
 		}),
 	}
 
-	return NewClientWithHTTPClient("https://api.example.com", apiKey, httpClient)
+	client, err := NewClientWithHTTPClient("https://api.example.com", apiKey, httpClient)
+	if err != nil {
+		t.Fatalf("NewClientWithHTTPClient() error = %v", err)
+	}
+	return client
+}
+
+func mustClient(t *testing.T) *Client {
+	t.Helper()
+	client, err := NewClient("https://api.example.com", "test-key")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	return client
 }
 
 func TestNewClient(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client, err := NewClient("https://api.example.com", "test-key")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil")
@@ -489,7 +505,7 @@ func TestManifest_TimezoneParsing(t *testing.T) {
 func TestClient_getHeaderValue(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 	headers := http.Header{}
 	headers.Set("Grpc-Metadata-scanoss-ruleset-name", "dca")
 
@@ -502,7 +518,7 @@ func TestClient_getHeaderValue(t *testing.T) {
 func TestClient_manifestFromHeaders_MissingHeaders(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 	headers := http.Header{}
 	headers.Set("scanoss-ruleset-name", "dca")
 	headers.Set("scanoss-ruleset-version", "v1.0.0")
@@ -517,7 +533,7 @@ func TestClient_manifestFromHeaders_MissingHeaders(t *testing.T) {
 func TestClient_manifestFromHeaders_MissingVersionAndChecksum(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 
 	versionHeaders := http.Header{}
 	versionHeaders.Set("scanoss-ruleset-name", "dca")
@@ -541,7 +557,7 @@ func TestClient_manifestFromHeaders_MissingVersionAndChecksum(t *testing.T) {
 func TestClient_manifestFromHeaders_InvalidTime(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 	headers := http.Header{}
 	headers.Set("scanoss-ruleset-name", "dca")
 	headers.Set("scanoss-ruleset-version", "v1.0.0")
@@ -557,7 +573,7 @@ func TestClient_manifestFromHeaders_InvalidTime(t *testing.T) {
 func TestClient_handleHTTPError_Default(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 	resp := &http.Response{
 		StatusCode: http.StatusTeapot,
 		Status:     "418 I'm a teapot",
@@ -582,7 +598,7 @@ func TestClient_handleHTTPError_Default(t *testing.T) {
 func TestClient_handleHTTPError_ReadBodyFailure(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
+	client := mustClient(t)
 	resp := &http.Response{
 		StatusCode: http.StatusBadGateway,
 		Status:     "502 Bad Gateway",
@@ -606,11 +622,14 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 				return nil, context.DeadlineExceeded
 			}),
 		}
-		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		client, err := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		if err != nil {
+			t.Fatalf("NewClientWithHTTPClient() error = %v", err)
+		}
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 		defer cancel()
 
-		_, _, err := client.doDownload(ctx, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err = client.doDownload(ctx, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if !errors.Is(err, ErrTimeout) {
 			t.Fatalf("expected ErrTimeout, got %v", err)
 		}
@@ -631,9 +650,12 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 				}, nil
 			}),
 		}
-		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		client, err := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		if err != nil {
+			t.Fatalf("NewClientWithHTTPClient() error = %v", err)
+		}
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err = client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
 			t.Fatalf("expected read body failure, got %v", err)
 		}
@@ -657,9 +679,12 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 				}, nil
 			}),
 		}
-		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		client, err := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+		if err != nil {
+			t.Fatalf("NewClientWithHTTPClient() error = %v", err)
+		}
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err = client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to close response body") {
 			t.Fatalf("expected close body failure, got %v", err)
 		}
@@ -669,8 +694,8 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 func TestClient_doDownload_InvalidURL(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://api.example.com", "test-key")
-	_, _, err := client.doDownload(context.Background(), "http://[::1")
+	client := mustClient(t)
+	_, _, err := client.doDownload(context.Background(), "https://[::1")
 	if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 		t.Fatalf("expected invalid URL request creation error, got %v", err)
 	}

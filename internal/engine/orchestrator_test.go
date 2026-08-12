@@ -19,11 +19,13 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/rules"
@@ -592,5 +594,60 @@ func TestNewOrchestrator(t *testing.T) {
 
 	if orchestrator.processor == nil {
 		t.Error("orchestrator.processor is nil")
+	}
+}
+
+// A refused insecure transport must keep its own failure code instead of
+// collapsing into the generic rules-load code.
+func TestScan_TransportSecurityFailuresKeepTheirCode(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		cause    error
+		wantCode failure.Code
+	}{
+		{name: "insecure endpoint", cause: api.ErrInsecureEndpoint, wantCode: failure.CodeInsecureEndpoint},
+		{name: "downgrade redirect", cause: api.ErrInsecureRedirect, wantCode: failure.CodeInsecureRedirect},
+		{name: "oversized response", cause: api.ErrResponseTooLarge, wantCode: failure.CodeResponseTooLarge},
+		{name: "unrelated failure", cause: errors.New("disk on fire"), wantCode: failure.CodeRulesLoadFailed},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Wrapped the way the real chain wraps it, with %w at each hop.
+			loadErr := fmt.Errorf("failed to load rules from remote:dca@latest: %w",
+				fmt.Errorf("failed to get ruleset: %w", tc.cause))
+
+			ruleSource := &mockRuleSource{
+				loadFunc: func() ([]string, error) { return nil, loadErr },
+			}
+			orchestrator := NewOrchestrator(
+				&mockDetector{},
+				rules.NewManager(ruleSource),
+				scanner.NewRegistry(),
+			)
+
+			_, err := orchestrator.Scan(context.Background(), ScanOptions{
+				Target:      "/path/to/code",
+				ScannerName: "test-scanner",
+			})
+			if err == nil {
+				t.Fatal("expected error but got none")
+			}
+
+			structured, ok := failure.As(err)
+			if !ok {
+				t.Fatalf("expected structured error, got: %v", err)
+			}
+			if structured.Code != tc.wantCode {
+				t.Fatalf("Code = %q, want %q", structured.Code, tc.wantCode)
+			}
+			if !errors.Is(err, tc.cause) {
+				t.Error("wrapping lost the underlying cause")
+			}
+		})
 	}
 }

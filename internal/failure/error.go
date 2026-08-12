@@ -40,6 +40,9 @@ const (
 	CodeOutputWriterUnavailable     Code = "output_writer_unavailable"
 	CodeOutputWriteFailed           Code = "output_write_failed"
 	CodeFindingsDetected            Code = "findings_detected"
+	CodeInsecureEndpoint            Code = "insecure_endpoint"
+	CodeInsecureRedirect            Code = "insecure_redirect"
+	CodeResponseTooLarge            Code = "response_too_large"
 )
 
 // Failure stages identify which pipeline phase produced a terminal error.
