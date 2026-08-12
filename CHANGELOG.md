@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Breaking:** remote rules now require an `https://` API endpoint. A cleartext `http://` value supplied through `--api-url`, `SCANOSS_API_URL`, or the persisted config file is rejected, and `crypto-finder configure --api-url` refuses to persist one. There is no flag or environment variable to re-enable insecure transport. Deployments that cannot terminate TLS should run with `--no-remote-rules` and supply vetted local rules via `--rules-dir`, which continues to work regardless of the configured endpoint. (#176)
 - Replaced the generated DOCX/PDF Crypto Finder guide with a standalone interactive SCANOSS-branded HTML guide at `docs/user-guide/user-guide.html`.
 
 ### Added
@@ -28,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ### Fixed
+- Remote ruleset downloads no longer follow a redirect that downgrades HTTPS to cleartext, and no longer replay the `x-api-key` credential to a different origin. `net/http` only withholds `Authorization`, `Cookie`, and `WWW-Authenticate` on a cross-domain redirect, so the SCANOSS API key was previously sent verbatim to whatever host a redirect named. Cross-origin HTTPS redirects are still followed, without the credential; same-origin redirects continue to authenticate normally. Transport, downgrade, and credential-boundary failures are reported as distinct failure codes (`insecure_endpoint`, `insecure_redirect`) and never include the credential value. (#176)
+- Ruleset download responses are now capped at 128 MiB instead of being buffered without limit, so an endpoint that keeps streaming can no longer exhaust the scanner's memory. The failure is reported as `response_too_large`. Error responses are bounded to 8 KiB and stripped of control characters before being quoted in a message, so a remote endpoint can no longer inject forged lines into scanner logs, and the response body is now closed on every path instead of only on success. (#176)
+- Endpoint validation no longer echoes the configured API URL back into errors or logs, and rejects a URL that embeds credentials or carries a query string or fragment — the latter silently redirected the request to the host root while still sending the API key. (#176)
 - Java fluent-chain contract resolution no longer loses chain links when a varargs method is called with more literal arguments than its collapsed contract arity (e.g. `SslContextBuilder.protocols("TLSv1.3", "TLSv1.2")`): the chain pass retries the lookup at the contract's collapsed arity, keeps walking past unmodeled links instead of orphaning the remainder of the chain (including the terminal `build()`), and exported symbols and canonical signatures no longer leak raw multi-line receiver text from unresolved links. The fallback is gated on a new `varargs: true` contract-schema marker (populated for the Netty and OkHttp variadic entries), so an ordinary positional lower-arity overload can never absorb a call with more arguments and inherit a role that does not belong to it. The Java receiver-text fallback also excludes inline `// ...` and block `/* ... */` comments, so non-contracted fluent chains cannot leak comment text into exported symbols or canonical signatures either. (#195)
 
 ## [0.18.0] - 2026-08-10
