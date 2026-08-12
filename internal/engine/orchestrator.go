@@ -20,10 +20,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
 
+	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
@@ -32,6 +34,21 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/version"
 )
+
+// rulesLoadFailureCode stops transport-security failures reaching operators
+// with the same code as a missing rules directory.
+func rulesLoadFailureCode(err error) failure.Code {
+	switch {
+	case errors.Is(err, api.ErrInsecureEndpoint):
+		return failure.CodeInsecureEndpoint
+	case errors.Is(err, api.ErrInsecureRedirect):
+		return failure.CodeInsecureRedirect
+	case errors.Is(err, api.ErrResponseTooLarge):
+		return failure.CodeResponseTooLarge
+	default:
+		return failure.CodeRulesLoadFailed
+	}
+}
 
 // Orchestrator coordinates the entire scanning workflow.
 // It manages language detection, rule loading, scanner execution, and result processing.
@@ -140,7 +157,7 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		if err != nil {
 			return nil, failure.WrapUnknown(
 				err,
-				failure.CodeRulesLoadFailed,
+				rulesLoadFailureCode(err),
 				failure.StageRules,
 				"failed to load rules",
 			)

@@ -19,7 +19,9 @@ package cli
 import (
 	"fmt"
 
+	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/failure"
 
 	"github.com/spf13/cobra"
 )
@@ -54,6 +56,19 @@ func init() {
 func runConfigure(_ *cobra.Command, _ []string) error {
 	if configAPIKey == "" && configAPIURL == "" {
 		return fmt.Errorf("at least one of --api-key or --api-url must be provided")
+	}
+
+	// Reject an insecure endpoint before it is persisted, so a cleartext URL
+	// never reaches the config file and fails later at scan time instead.
+	if configAPIURL != "" {
+		if err := api.ValidateEndpoint(configAPIURL); err != nil {
+			return failure.Wrap(
+				err,
+				failure.CodeInsecureEndpoint,
+				failure.StageConfig,
+				"--api-url must be an https:// endpoint",
+			)
+		}
 	}
 
 	cfg := config.GetInstance()

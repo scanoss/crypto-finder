@@ -247,7 +247,17 @@ func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config) (*rules.
 	ruleSources := make([]rules.RuleSource, 0)
 
 	if !annotateNoRemoteRules {
-		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		apiClient, err := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		if err != nil {
+			return nil, failure.Wrap(
+				err,
+				failure.CodeInsecureEndpoint,
+				failure.StageConfig,
+				"remote rules require an https:// API URL; "+
+					"use --no-remote-rules with --rules-dir if the endpoint cannot provide TLS",
+			)
+		}
+
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
 			return nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")

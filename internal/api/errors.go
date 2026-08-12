@@ -39,6 +39,20 @@ var (
 
 	// ErrInvalidChecksum indicates the downloaded content checksum doesn't match.
 	ErrInvalidChecksum = errors.New("checksum verification failed")
+
+	// ErrInsecureEndpoint indicates the configured API endpoint is not HTTPS.
+	// Remote rulesets carry detection semantics and are requested with an API
+	// key, so cleartext transport is refused outright rather than downgraded.
+	ErrInsecureEndpoint = errors.New("insecure endpoint: remote rules require an https:// API URL")
+
+	// ErrInsecureRedirect indicates a redirect attempted to downgrade an HTTPS
+	// request to cleartext. The redirect is refused before any credential or
+	// response body crosses the downgraded connection.
+	ErrInsecureRedirect = errors.New("insecure redirect: refusing to follow an https to http downgrade")
+
+	// ErrResponseTooLarge indicates the ruleset response exceeded the maximum
+	// size the client is willing to buffer.
+	ErrResponseTooLarge = errors.New("response too large: ruleset exceeds the maximum accepted size")
 )
 
 // HTTPError wraps HTTP-specific errors with status code and message.

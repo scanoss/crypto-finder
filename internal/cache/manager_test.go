@@ -97,7 +97,11 @@ func newMockAPIClient(handler func(http.ResponseWriter, *http.Request)) *api.Cli
 		}),
 	}
 
-	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	client, err := api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	if err != nil {
+		panic(err) // hardcoded https base URL: unreachable
+	}
+	return client
 }
 
 // createMockTarballClient creates an API client that returns a minimal valid tarball.

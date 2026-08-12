@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -30,6 +31,13 @@ import (
 )
 
 const (
+	// MaxRulesetResponseBytes caps the buffered ruleset body. Rulesets are a few
+	// megabytes, so this only trips on a runaway or hostile response.
+	MaxRulesetResponseBytes int64 = 128 << 20 // 128 MiB
+
+	// maxErrorBodyBytes caps how much of a non-200 body is quoted into an error.
+	maxErrorBodyBytes int64 = 8 << 10 // 8 KiB
+
 	// API endpoints.
 	rulesetsEndpointFmt = "/v2/cryptography/rulesets/%s/%s/download"
 
@@ -58,26 +66,42 @@ type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	apiKey     string
+
+	// maxResponseBytes is a field so tests can exercise the cap cheaply.
+	maxResponseBytes int64
 }
 
 // NewClient creates a new API client.
-func NewClient(baseURL, apiKey string) *Client {
+// It fails when baseURL is not an HTTPS endpoint.
+func NewClient(baseURL, apiKey string) (*Client, error) {
 	return NewClientWithHTTPClient(baseURL, apiKey, nil)
 }
 
-// NewClientWithHTTPClient creates a new API client with an optional custom HTTP client.
-func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+// NewClientWithHTTPClient takes an optional custom HTTP client. Validating here
+// means no code path can construct an insecure client.
+func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
+	// Trim before validating and storing, so the checked string is the used one.
+	baseURL = strings.TrimSpace(baseURL)
+	if err := ValidateEndpoint(baseURL); err != nil {
+		return nil, err
+	}
+
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Timeout: config.DefaultTimeout,
 		}
 	}
 
+	// Forced onto caller-supplied clients too: a security property, not a
+	// preference.
+	httpClient.CheckRedirect = secureRedirectPolicy()
+
 	return &Client{
-		httpClient: httpClient,
-		baseURL:    baseURL,
-		apiKey:     apiKey,
-	}
+		httpClient:       httpClient,
+		baseURL:          strings.TrimSuffix(baseURL, "/"),
+		apiKey:           apiKey,
+		maxResponseBytes: MaxRulesetResponseBytes,
+	}, nil
 }
 
 // DownloadRuleset downloads a ruleset tarball from the API
@@ -138,10 +162,12 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 }
 
 // doDownload performs a single download attempt.
-func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+//
+//nolint:nonamedreturns // Named returns let the deferred close report its own failure.
+func (c *Client) doDownload(ctx context.Context, url string) (tarball []byte, manifest *Manifest, err error) {
+	req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if reqErr != nil {
+		return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
 	}
 
 	// Add headers
@@ -149,13 +175,23 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	req.Header.Set(headerUserAgent, userAgentValue)
 
 	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
+	resp, doErr := c.httpClient.Do(req)
+	if doErr != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, nil, ErrTimeout
 		}
-		return nil, nil, fmt.Errorf("request failed: %w", err)
+		return nil, nil, fmt.Errorf("request failed: %w", doErr)
 	}
+
+	// Close on every path: a client without a timeout would otherwise leak the
+	// connection on rejected responses.
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil && err == nil {
+			tarball, manifest = nil, nil
+			err = fmt.Errorf("failed to close response body: %w", closeErr)
+		}
+	}()
 
 	// Handle HTTP status codes
 	if resp.StatusCode != http.StatusOK {
@@ -163,15 +199,18 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	}
 
 	// Reconstruct manifest from response headers
-	manifest, err := c.manifestFromHeaders(resp.Header)
+	manifest, err = c.manifestFromHeaders(resp.Header)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reconstruct manifest from headers: %w", err)
 	}
 
-	// Read response body
-	tarball, err := io.ReadAll(resp.Body)
+	// Capped: an unbounded read lets a streaming endpoint exhaust memory.
+	tarball, err = io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if int64(len(tarball)) > c.maxResponseBytes {
+		return nil, nil, fmt.Errorf("%w: limit is %d bytes", ErrResponseTooLarge, c.maxResponseBytes)
 	}
 
 	log.Info().
@@ -179,10 +218,6 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 		Str("version", manifest.Version).
 		Int("size_bytes", len(tarball)).
 		Msg("Ruleset downloaded successfully")
-
-	if err := resp.Body.Close(); err != nil {
-		return nil, nil, fmt.Errorf("failed to close response body: %w", err)
-	}
 
 	return tarball, manifest, nil
 }
@@ -233,13 +268,14 @@ func (c *Client) getHeaderValue(headers http.Header, headerName string) string {
 	return headers.Get(grpcHeaderName)
 }
 
-// handleHTTPError converts HTTP status codes to appropriate errors.
+// handleHTTPError converts HTTP status codes to errors. The body is bounded and
+// sanitized: it is remote content that reaches logs, and 5xx is retried.
 func (c *Client) handleHTTPError(resp *http.Response, url string) error {
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	message := string(body)
+	message := sanitizeErrorBody(body)
 	if message == "" {
 		message = resp.Status
 	}

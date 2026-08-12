@@ -93,7 +93,11 @@ func newRemoteRuleSourceTestClient(
 		}),
 	}
 
-	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	client, err := api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	if err != nil {
+		t.Fatalf("NewClientWithHTTPClient() error = %v", err)
+	}
+	return client
 }
 
 func TestNewRemoteRuleSource(t *testing.T) {

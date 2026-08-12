@@ -583,7 +583,17 @@ func runScan(_ *cobra.Command, args []string) error {
 			Bool("no-cache", scanNoCache).
 			Msg("Remote rules enabled")
 
-		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		apiClient, err := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		if err != nil {
+			return failure.Wrap(
+				err,
+				failure.CodeInsecureEndpoint,
+				failure.StageConfig,
+				"remote rules require an https:// API URL; "+
+					"use --no-remote-rules with --rules-dir if the endpoint cannot provide TLS",
+			)
+		}
+
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
 			return failure.WrapUnknown(
