@@ -33,6 +33,11 @@ const (
 	javaNodeObjectCreation       = "object_creation_expression"
 	javaNodeMethodInvocation     = "method_invocation"
 	javaNodeVariableDeclarator   = "variable_declarator"
+	javaNodeFormalParameter      = "formal_parameter"
+	javaNodeCatchFormalParameter = "catch_formal_parameter"
+	javaNodeCatchType            = "catch_type"
+	javaFieldName                = "name"
+	javaFieldType                = "type"
 	javaNodeAssignmentExpression = "assignment_expression"
 	javaSourceTypeParameter      = "PARAMETER"
 	javaVarOriginKindField       = "field"
@@ -1019,9 +1024,104 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 		}
 	}
 
+	if name, typeName := javaSingleDeclaredVar(node, src); name != "" {
+		varTypes[name] = typeName
+	}
+
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.collectVarTypes(node.Child(i), src, varTypes)
 	}
+}
+
+// javaSingleDeclaredVar binds the declaration forms that introduce exactly one
+// typed name: try-with-resources resources and enhanced-for variables via the
+// grammar's own `type`/`name` fields, plus catch parameters, which need their
+// own path because the grammar nests their type inside `catch_type`.
+//
+// Keying on fields rather than on a list of node types is deliberate. The two
+// multi-variable forms are excluded by the grammar itself — `local_variable_declaration`
+// and `field_declaration` expose `type` but no `name`, since `int a = 1, b = 2;`
+// binds several names through `variable_declarator` children — so they keep the
+// dedicated handling in collectVarTypes and are not matched here.
+//
+// Leaving a form unbound is not cosmetic. An unbound receiver falls through to
+// the scanned file's package, so `jedis.set(...)` inside
+// `try (Jedis jedis = new Jedis(...))` resolved to `com.example.jedis.set`
+// instead of `redis.clients.jedis.Jedis.set` — a callee present in no graph. The
+// edge was never created, so no chain reached user code, and the tracer then
+// dropped every chain for the finding (see Tracer.classifyTraceItem).
+func javaSingleDeclaredVar(node *sitter.Node, src []byte) (string, string) {
+	if node.Type() == javaNodeCatchFormalParameter {
+		return javaCatchDeclaredVar(node, src)
+	}
+	// Parameters are already bound from the enclosing formal_parameters node by
+	// parseJavaParameterList, which strips `final` and annotations and pushes the
+	// text through normalizeJavaReferenceType. Binding them here as well would let
+	// the raw field text overwrite that normalized form on the recursive descent,
+	// changing established resolution for no gain. (Varargs never reach this path
+	// at all: the grammar models them as spread_parameter, which exposes neither
+	// field.)
+	if node.Type() == javaNodeFormalParameter {
+		return "", ""
+	}
+
+	typeNode := node.ChildByFieldName(javaFieldType)
+	nameNode := node.ChildByFieldName(javaFieldName)
+	if typeNode == nil || nameNode == nil {
+		return "", ""
+	}
+	name := strings.TrimSpace(nameNode.Content(src))
+	typeName := strings.TrimSpace(typeNode.Content(src))
+	if name == "" || typeName == "" {
+		return "", ""
+	}
+	return name, typeName
+}
+
+// javaCatchDeclaredVar binds a single-type catch parameter.
+//
+// A multi-catch (`catch (IOException | SQLException e)`) is deliberately left
+// unbound: the static type of that variable is the least upper bound of the
+// alternatives, not any one of them. Binding the first alternative would invent
+// an edge into a concrete class the call may never reach, and a wrong edge is
+// worse than a missing one — it can fabricate a crypto chain that does not exist.
+func javaCatchDeclaredVar(node *sitter.Node, src []byte) (string, string) {
+	nameNode := node.ChildByFieldName(javaFieldName)
+	if nameNode == nil {
+		return "", ""
+	}
+
+	var catchType *sitter.Node
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == javaNodeCatchType {
+			catchType = child
+			break
+		}
+	}
+	if catchType == nil {
+		return "", ""
+	}
+
+	var only *sitter.Node
+	declared := 0
+	for i := 0; i < int(catchType.ChildCount()); i++ {
+		child := catchType.Child(i)
+		if !child.IsNamed() {
+			continue
+		}
+		declared++
+		only = child
+	}
+	if declared != 1 {
+		return "", ""
+	}
+
+	name := strings.TrimSpace(nameNode.Content(src))
+	typeName := strings.TrimSpace(only.Content(src))
+	if name == "" || typeName == "" {
+		return "", ""
+	}
+	return name, typeName
 }
 
 // collectParameterOrigins records method parameter origins for data flow tracing.
@@ -1060,10 +1160,33 @@ func (p *JavaParser) collectVarOrigins(node *sitter.Node, src []byte, filePath s
 		p.collectDeclarationOrigins(node, src, filePath, origins, isField || nodeType == javaNodeFieldDeclaration)
 	}
 
+	if name, typeName := javaSingleDeclaredVar(node, src); name != "" {
+		origins[name] = varOrigin{
+			typeName:    typeName,
+			kind:        "local_variable",
+			initializer: javaSingleDeclaredInitializer(node, src),
+			line:        int(node.StartPoint().Row) + 1,
+			filePath:    filePath,
+			paramIndex:  -1,
+		}
+	}
+
 	fieldChild := isField || nodeType == javaNodeFieldDeclaration
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.collectVarOrigins(node.Child(i), src, filePath, origins, fieldChild)
 	}
+}
+
+// javaSingleDeclaredInitializer returns the source of the expression assigned in
+// a try-with-resources resource. Enhanced-for and catch variables bind no
+// initializer expression, so they yield "".
+func javaSingleDeclaredInitializer(node *sitter.Node, src []byte) string {
+	for i := 0; i < int(node.ChildCount())-1; i++ {
+		if node.Child(i).Type() == "=" {
+			return strings.TrimSpace(node.Child(i + 1).Content(src))
+		}
+	}
+	return ""
 }
 
 func (p *JavaParser) collectDeclarationOrigins(
