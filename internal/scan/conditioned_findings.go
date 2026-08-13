@@ -85,7 +85,8 @@ func materializeConditionedAnchor(
 	terminal := buildCryptoCall(ctx, graph, containingFn, terminalNode)
 	anchor.TerminalStartCol = terminalNode.StartCol
 	anchor.TerminalEndCol = terminalNode.EndCol
-	return appendConditionedChainAssets(finding, anchor, rules, buildCallChains(ctx, containingFn, terminal), existing)
+	chains, _ := buildCallChains(ctx, containingFn, terminal)
+	return appendConditionedChainAssets(finding, anchor, rules, chains, existing)
 }
 
 func conditionedTerminalCall(

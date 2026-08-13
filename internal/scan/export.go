@@ -116,6 +116,14 @@ type callGraphExportFinding struct {
 	UnresolvedReason  string                     `json:"unresolved_reason,omitempty"`
 	SupportingCallIDs []string                   `json:"supporting_call_ids,omitempty"`
 	CallChains        [][]callGraphChainNode     `json:"call_chains,omitempty"`
+	// Reachable answers "does user code reach this crypto", which is a different
+	// question from UnresolvedReason's "which function contains it". A finding can
+	// be perfectly attributed and still unreachable.
+	//
+	// Three states, hence the pointer. Absent means the question does not apply:
+	// the mine path scans a library on its own, where there is no user code to be
+	// reached from, and emitting false there would assert something untrue.
+	Reachable *bool `json:"reachable,omitempty"`
 }
 
 type callGraphDependencyContext struct {
@@ -469,8 +477,12 @@ func streamFindingGraphs(
 
 		fg := buildFindingGraph(ctx, item.finding, item.asset)
 		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
-		addFindingGraphToEntryPointIndex(index, &fg)
-		addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+		// See buildCryptoEntryPoints for why an unreachable finding contributes
+		// no entry point, and why a nil Reachable (the mine path) is exempt.
+		if fg.Reachable == nil || *fg.Reachable {
+			addFindingGraphToEntryPointIndex(index, &fg)
+			addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+		}
 		if err := writer.writeArrayElement(i, fg); err != nil {
 			return nil, nil, nil, err
 		}
@@ -679,6 +691,15 @@ func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGra
 	}
 	referencedSupporting := make(map[string]struct{}, len(supportingByID))
 	for i := range findingGraphs {
+		// An entry point is something user code reaches. A finding the tracer
+		// proved unreachable contributes none: publishing its containing function
+		// here would list a function nothing calls beside the ones that really run,
+		// with nothing to tell them apart. Reachable is nil on the mine path, where
+		// a chainless finding means "graph root" — a library's public API, and its
+		// most important entry point — so that case is deliberately not filtered.
+		if findingGraphs[i].Reachable != nil && !*findingGraphs[i].Reachable {
+			continue
+		}
 		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
 		addFindingGraphSupportingToEntryPointIndex(index, &findingGraphs[i], supportingByID, referencedSupporting)
 	}
@@ -1273,9 +1294,15 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 		}
 	}
 
-	fg.CallChains = buildCallChains(ctx, containingFn, cryptoCall)
+	var traced bool
+	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
 	if len(asset.ParameterConditions) > 0 {
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
+	}
+	// Only a run that knows what user code is can answer the question at all.
+	if containingFn != nil && ctx.userPackages != nil {
+		reachable := traced
+		fg.Reachable = &reachable
 	}
 
 	if unresolvedReason != "" {
@@ -2556,13 +2583,26 @@ func looksLikeEnumConstantExpr(expr string) bool {
 
 // --- Call chains (traced from graph via BFS) ---
 
+// buildCallChains returns the chains reaching the crypto call, and whether they
+// came from an actual traceback.
+//
+// traced=false means the tracer found no chain and the single-node chain below
+// is a stand-in for the containing function. What that stands for depends on the
+// mode, which is why the caller — not this function — decides what it means:
+//
+//   - with dependencies scanned, ctx.userPackages holds the root module and the
+//     tracer keeps only chains reaching it, so an empty traceback means no path
+//     from user code exists: the crypto is present but unreachable.
+//   - on the mine path ctx.userPackages is nil, there is no user code to reach,
+//     and an empty traceback simply means the function is a graph root — which
+//     for a library is its public API, the most valuable entry point of all.
 func buildCallChains(
 	ctx *exportBuildContext,
 	containingFn *callgraph.FunctionDecl,
 	cryptoCall *callGraphCalledFunction,
-) [][]callGraphChainNode {
+) (chainsOut [][]callGraphChainNode, traced bool) {
 	if containingFn == nil {
-		return nil
+		return nil, false
 	}
 
 	// Structural traceback is shared/cached. Call-site expansion (selector-distinct
@@ -2575,7 +2615,8 @@ func buildCallChains(
 	// Keep structural node cache warm for fragment export / multi-asset reuse.
 	_ = structuralCallChains(ctx, containingFn)
 	var chains [][]callGraphChainNode
-	if len(raw) == 0 {
+	traced = len(raw) > 0
+	if !traced {
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		chains = [][]callGraphChainNode{{node}}
 	} else {
@@ -2584,7 +2625,7 @@ func buildCallChains(
 	}
 	attachCryptoCall(chains, cryptoCall)
 	ctx.consumeCallChainUsage(cacheKey)
-	return chains
+	return chains, traced
 }
 
 func ensureCallChainCaches(ctx *exportBuildContext) {

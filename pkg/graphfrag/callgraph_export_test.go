@@ -595,7 +595,7 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 func TestCallgraphSchemaVersion_Is66(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.6" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.6")
+	if CallgraphSchemaVersion != "6.7" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.7")
 	}
 }
