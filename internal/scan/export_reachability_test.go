@@ -398,4 +398,26 @@ func TestBuildCryptoEntryPoints_ExcludesUnreachableFindings(t *testing.T) {
 			}
 		})
 	}
+
+	// Supporting calls reach the index by two routes: through their finding
+	// graph, and through a fallback that picks up any the graphs did not claim.
+	// Skipping an unreachable finding leaves its supporting calls unclaimed, so
+	// without an explicit claim the fallback re-adds them and the finding's
+	// lifecycle returns as standalone entry points.
+	t.Run("unreachable finding does not leak its supporting calls", func(t *testing.T) {
+		fg := graphs(&unreachable)
+		fg[0].SupportingCallIDs = []string{"s1"}
+		supporting := []callGraphSupportingCall{{
+			SupportingID:       "s1",
+			FunctionName:       "redis.clients.jedis.util.Hashing$1.hash",
+			CanonicalSignature: "redis.clients.jedis.util.Hashing$1.hash(byte[]): long",
+		}}
+		if got := buildCryptoEntryPoints(nil, fg, supporting); len(got) != 0 {
+			names := make([]string, 0, len(got))
+			for _, ep := range got {
+				names = append(names, ep.CanonicalSignature)
+			}
+			t.Errorf("entry points = %v, want none", names)
+		}
+	})
 }
