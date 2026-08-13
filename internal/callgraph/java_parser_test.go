@@ -1874,3 +1874,72 @@ class Probe {
 			"is still required by TestJavaParser_ResolvesAnonymousCallbackParameterReceiver")
 	}
 }
+
+// TestJavaParser_CastPreservesObjectIdentity pins that a cast does not break the
+// link between a call and the object it belongs to. jedis wraps a plain socket
+// in TLS using a cast on the assignment and another on the receiver, and losing
+// either one strips the TLS finding of every supporting call.
+func TestJavaParser_CastPreservesObjectIdentity(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+import java.net.Socket;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+
+class Probe {
+    void jedisShape(Socket socket) throws Exception {
+        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        socket = factory.createSocket(socket, "host", 6380, true);
+        ((SSLSocket) socket).setSSLParameters(null);
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Probe.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	byMethod := map[string]*FunctionCall{}
+	for _, fn := range analyses[0].Functions {
+		for i := range fn.Calls {
+			byMethod[fn.Calls[i].Callee.Name] = &fn.Calls[i]
+		}
+	}
+
+	// A cast between the call and its declarator must not hide the assignment,
+	// or the finding has no object and deriveObjectLifecycleCalls finds nothing.
+	if got := byMethod["getDefault#0"]; got == nil {
+		t.Fatal("no getDefault call recorded")
+	} else if got.AssignedVar != "factory" {
+		t.Errorf("cast assignment: AssignedVar = %q, want %q", got.AssignedVar, "factory")
+	}
+
+	// The call on that object links back through the receiver.
+	if got := byMethod["createSocket#4"]; got == nil {
+		t.Error("no createSocket call recorded")
+	} else if got.ReceiverVar != "factory" {
+		t.Errorf("createSocket: ReceiverVar = %q, want %q", got.ReceiverVar, "factory")
+	}
+
+	// A cast receiver is read two ways: the asserted type resolves the method
+	// (socket is declared java.net.Socket, which has no setSSLParameters), while
+	// object identity must reach the variable underneath.
+	got := byMethod["setSSLParameters#1"]
+	if got == nil {
+		t.Fatal("no setSSLParameters call recorded")
+	}
+	if got.Callee.Package != "javax.net.ssl" || got.Callee.Type != "SSLSocket" {
+		t.Errorf("cast receiver: resolved to %s.%s, want javax.net.ssl.SSLSocket",
+			got.Callee.Package, got.Callee.Type)
+	}
+	if got.ReceiverVar != "socket" {
+		t.Errorf("cast receiver: ReceiverVar = %q, want %q", got.ReceiverVar, "socket")
+	}
+}

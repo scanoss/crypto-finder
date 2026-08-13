@@ -37,6 +37,9 @@ const (
 	javaNodeClassBody            = "class_body"
 	javaNodeResourceDecl         = "resource"
 	javaNodeEnhancedFor          = "enhanced_for_statement"
+	javaNodeCastExpression       = "cast_expression"
+	javaNodeParenthesizedExpr    = "parenthesized_expression"
+	javaFieldValue               = "value"
 	javaNodeFormalParameter      = "formal_parameter"
 	javaNodeCatchFormalParameter = "catch_formal_parameter"
 	javaNodeCatchType            = "catch_type"
@@ -1803,8 +1806,20 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	// constructor-rooted fluent chain; otherwise use its source text. Raw above
 	// keeps the original expression for fluent-fallback heuristics.
 	resolveObject := object
+	receiverText := object
 	if objectNode != nil {
 		resolveObject = resolveReceiverObject(objectNode, src)
+		// A cast receiver needs its two halves read differently. The asserted
+		// type is what the method must resolve against — `((SSLSocket) socket)`
+		// declared as java.net.Socket has no setSSLParameters — while object
+		// identity has to reach the variable underneath, so the call joins the
+		// rest of that object's lifecycle.
+		if castType := javaCastTargetType(objectNode, src); castType != "" {
+			resolveObject = castType
+			if inner := unwrapJavaCastAndParens(objectNode); inner != nil {
+				receiverText = strings.TrimSpace(inner.Content(src))
+			}
+		}
 	}
 	callee := p.resolveCallee(resolveObject, javaMethodWithArity(method, len(args)), analysis, currentClass, varTypes)
 	if method == "newInstance" {
@@ -1816,7 +1831,7 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	chainID, assignedVar := callChainContext(node, src)
 	return &FunctionCall{
 		Callee:      callee,
-		ReceiverVar: receiverVarName(object, varTypes, varOrigins),
+		ReceiverVar: receiverVarName(receiverText, varTypes, varOrigins),
 		AssignedVar: assignedVar,
 		ChainID:     chainID,
 		Raw:         raw,
@@ -1921,6 +1936,18 @@ func isCallNode(node *sitter.Node) bool {
 // to when the call is the initializer of a variable declarator or the right side
 // of a simple assignment; otherwise "".
 func assignedVarFromParent(node *sitter.Node, src []byte) string {
+	// A cast or parentheses around the call sit between it and the declarator,
+	// so climb past them before asking what the result binds to. Without this,
+	// `SSLSocketFactory f = (SSLSocketFactory) SSLSocketFactory.getDefault();`
+	// yields no assigned variable, the finding gets no object identity, and
+	// deriveObjectLifecycleCalls can no longer collect the calls made on `f`.
+	for parent := node.Parent(); parent != nil; parent = node.Parent() {
+		if parent.Type() != javaNodeCastExpression && parent.Type() != javaNodeParenthesizedExpr {
+			break
+		}
+		node = parent
+	}
+
 	parent := node.Parent()
 	if parent == nil {
 		return ""
@@ -2934,6 +2961,61 @@ func unwrapJavaParenthesizedExpression(node *sitter.Node) *sitter.Node {
 		node = node.NamedChild(0)
 	}
 	return node
+}
+
+// unwrapJavaCastAndParens strips the parentheses and casts wrapping an
+// expression, returning the operand underneath. `((SSLSocket) socket)` yields
+// the `socket` identifier.
+//
+// A cast is invisible to a reader tracking which object a call belongs to, but
+// not to the AST: it inserts a node between the call and its variable
+// declarator, and between a receiver and its identifier. Both breaks show up in
+// ordinary library code — jedis wraps a plain socket in TLS with a cast on the
+// assignment and another on the receiver.
+func unwrapJavaCastAndParens(node *sitter.Node) *sitter.Node {
+	for node != nil {
+		switch node.Type() {
+		case javaNodeParenthesizedExpr:
+			if node.NamedChildCount() == 0 {
+				return nil
+			}
+			node = node.NamedChild(0)
+		case javaNodeCastExpression:
+			value := node.ChildByFieldName(javaFieldValue)
+			if value == nil {
+				return node
+			}
+			node = value
+		default:
+			return node
+		}
+	}
+	return nil
+}
+
+// javaCastTargetType returns the type a cast asserts, unwrapping any enclosing
+// parentheses first. `((SSLSocket) socket)` yields "SSLSocket".
+//
+// The cast is a type annotation the author wrote by hand, and it is more
+// specific than the variable's declared type — which is the whole reason the
+// cast is there. Resolving `((SSLSocket) socket).setSSLParameters(...)` through
+// the declared type would look the method up on `java.net.Socket`, where it does
+// not exist.
+func javaCastTargetType(node *sitter.Node, src []byte) string {
+	for node != nil && node.Type() == javaNodeParenthesizedExpr {
+		if node.NamedChildCount() == 0 {
+			return ""
+		}
+		node = node.NamedChild(0)
+	}
+	if node == nil || node.Type() != javaNodeCastExpression {
+		return ""
+	}
+	typeNode := node.ChildByFieldName(javaFieldType)
+	if typeNode == nil {
+		return ""
+	}
+	return strings.TrimSpace(typeNode.Content(src))
 }
 
 // traceIdentifierNode handles identifier and field_access AST nodes in
