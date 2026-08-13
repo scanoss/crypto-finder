@@ -361,3 +361,41 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// TestBuildCryptoEntryPoints_ExcludesUnreachableFindings pins that a finding the
+// tracer could not reach from user code contributes no entry point, and that the
+// mine path — where Reachable is nil because there is no user code to reach from
+// — is exempt. A library's public API has no in-library callers, so its findings
+// arrive here chainless; dropping those would delete exactly the entry points
+// mining exists to produce.
+func TestBuildCryptoEntryPoints_ExcludesUnreachableFindings(t *testing.T) {
+	reachable, unreachable := true, false
+	chain := []callGraphChainNode{{FunctionName: "com.example.App.run", CanonicalSignature: "com.example.App.run(): void"}}
+
+	graphs := func(r *bool) []callGraphExportFinding {
+		return []callGraphExportFinding{{
+			FindingID:        "f1",
+			Reachable:        r,
+			MatchedOperation: &callGraphMatchedOperation{Kind: matchedOperationCall, Symbol: "javax.crypto.Cipher.getInstance"},
+			CallChains:       [][]callGraphChainNode{chain},
+		}}
+	}
+
+	cases := []struct {
+		name      string
+		reachable *bool
+		wantEntry bool
+	}{
+		{"reachable from user code", &reachable, true},
+		{"proven unreachable", &unreachable, false},
+		{"mine path, question does not apply", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildCryptoEntryPoints(nil, graphs(tc.reachable), nil)
+			if gotEntry := len(got) > 0; gotEntry != tc.wantEntry {
+				t.Errorf("entry points = %d, want any = %v", len(got), tc.wantEntry)
+			}
+		})
+	}
+}

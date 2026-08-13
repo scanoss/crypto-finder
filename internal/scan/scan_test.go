@@ -475,7 +475,7 @@ func TestBuildCallChains_EvictsCacheAfterLastUse(t *testing.T) {
 		t.Fatal("expected containing function")
 	}
 
-	first := buildCallChains(ctx, containingFn, nil)
+	first, _ := buildCallChains(ctx, containingFn, nil)
 	if len(first) != 1 {
 		t.Fatalf("first buildCallChains len = %d, want 1", len(first))
 	}
@@ -486,7 +486,7 @@ func TestBuildCallChains_EvictsCacheAfterLastUse(t *testing.T) {
 		t.Fatal("expected cached base chains after first call")
 	}
 
-	second := buildCallChains(ctx, containingFn, nil)
+	second, _ := buildCallChains(ctx, containingFn, nil)
 	if len(second) != 1 {
 		t.Fatalf("second buildCallChains len = %d, want 1", len(second))
 	}
