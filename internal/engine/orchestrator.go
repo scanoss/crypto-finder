@@ -190,14 +190,8 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 
 	// Step 4: Initialize scanner
 	if err := scannerInstance.Initialize(ctx, opts.ScannerConfig); err != nil {
-		if ctx.Err() != nil {
-			return nil, failure.Wrap(
-				ctx.Err(),
-				failure.CodeScannerCancelled,
-				failure.StageScan,
-				"scanner initialization canceled",
-				failure.WithDetail("scanner", opts.ScannerName),
-			)
+		if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+			return nil, ctxErr
 		}
 		return nil, failure.WrapUnknown(
 			err,
@@ -206,6 +200,9 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 			fmt.Sprintf("failed to initialize scanner '%s'", opts.ScannerName),
 			failure.WithDetail("scanner", opts.ScannerName),
 		)
+	}
+	if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+		return nil, ctxErr
 	}
 
 	// Step 5: Execute scan

@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -461,6 +462,71 @@ func TestOrchestrator_Scan_ScannerInitializeCancellation(t *testing.T) {
 	structured, ok := failure.As(err)
 	if !ok || structured.Code != failure.CodeScannerCancelled {
 		t.Fatalf("error = %v, want scanner_canceled", err)
+	}
+}
+
+func TestOrchestrator_Scan_InitializeCompletesAfterContextDone(t *testing.T) {
+	tests := []struct {
+		name      string
+		context   func() (context.Context, context.CancelFunc)
+		complete  func(context.Context, context.CancelFunc)
+		code      failure.Code
+		retryable bool
+	}{
+		{
+			name: "canceled",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			complete: func(_ context.Context, cancel context.CancelFunc) {
+				cancel()
+			},
+			code: failure.CodeScannerCancelled,
+		},
+		{
+			name: "deadline exceeded",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), time.Millisecond)
+			},
+			complete: func(ctx context.Context, _ context.CancelFunc) {
+				<-ctx.Done()
+			},
+			code:      failure.CodeScannerTimeout,
+			retryable: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := tt.context()
+			defer cancel()
+
+			mockScan := &mockScanner{
+				initializeFunc: func(got context.Context, _ scanner.Config) error {
+					tt.complete(got, cancel)
+					return nil
+				},
+				scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
+					t.Fatal("Scan() called after initialization completed with a done context")
+					return nil, nil
+				},
+			}
+			registry := scanner.NewRegistry()
+			registry.Register("test-scanner", mockScan)
+			orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{}), registry)
+
+			_, err := orchestrator.Scan(ctx, ScanOptions{Target: "/path/to/code", ScannerName: "test-scanner"})
+			structured, ok := failure.As(err)
+			if !ok || structured.Code != tt.code {
+				t.Fatalf("Scan() error = %v, want %s", err, tt.code)
+			}
+			if structured.Retryable != tt.retryable {
+				t.Fatalf("Scan() retryable = %t, want %t", structured.Retryable, tt.retryable)
+			}
+			if structured.Details["scanner"] != "test-scanner" {
+				t.Fatalf("Scan() scanner detail = %q, want test-scanner", structured.Details["scanner"])
+			}
+		})
 	}
 }
 

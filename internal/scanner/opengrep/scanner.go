@@ -99,14 +99,8 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	// Get opengrep version
 	s.version, err = s.detectVersion(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			return failure.Wrap(
-				ctx.Err(),
-				failure.CodeScannerCancelled,
-				failure.StageScan,
-				"opengrep initialization canceled",
-				failure.WithDetail("scanner", ScannerName),
-			)
+		if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
+			return ctxErr
 		}
 		return failure.Wrap(
 			err,

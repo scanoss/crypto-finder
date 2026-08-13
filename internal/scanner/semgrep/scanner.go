@@ -79,14 +79,8 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 
 	// Get semgrep version
 	s.version = s.detectVersion(ctx)
-	if ctx.Err() != nil {
-		return failure.Wrap(
-			ctx.Err(),
-			failure.CodeScannerCancelled,
-			failure.StageScan,
-			"semgrep initialization canceled",
-			failure.WithDetail("scanner", ScannerName),
-		)
+	if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
+		return ctxErr
 	}
 
 	// Apply configuration
