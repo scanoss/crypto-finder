@@ -21,8 +21,8 @@ import (
 	"os/exec"
 )
 
-// CommandContext starts a scanner command in a process group so cancellation
-// terminates the scanner and any processes it starts.
+// CommandContext starts a scanner command configured so cancellation terminates
+// the scanner and any processes it starts.
 func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	configureCommandCancellation(cmd)

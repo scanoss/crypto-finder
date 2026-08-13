@@ -1,4 +1,4 @@
-//go:build !unix && !windows
+//go:build windows
 
 // Copyright (C) 2026 SCANOSS.COM
 // SPDX-License-Identifier: GPL-2.0-only
@@ -18,6 +18,20 @@
 
 package scanner
 
-import "os/exec"
+import (
+	"os/exec"
+	"strconv"
+)
 
-func configureCommandCancellation(_ *exec.Cmd) {}
+func configureCommandCancellation(cmd *exec.Cmd) {
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+
+		if err := exec.Command("taskkill.exe", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F").Run(); err == nil {
+			return nil
+		}
+		return cmd.Process.Kill()
+	}
+}

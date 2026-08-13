@@ -35,6 +35,10 @@ import (
 )
 
 func TestScanCancellationTerminatesScannerProcess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a compiled CLI and external scanner process")
+	}
+
 	binary := filepath.Join(t.TempDir(), "crypto-finder")
 	build := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
 	if output, err := build.CombinedOutput(); err != nil {
