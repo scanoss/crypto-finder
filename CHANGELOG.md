@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Replaced the generated DOCX/PDF Crypto Finder guide with a standalone interactive SCANOSS-branded HTML guide at `docs/user-guide/user-guide.html`.
+- Dependency-scanning container images now use digest-pinned base/tool images, exact package versions, and checksum-verified installer inputs; CI rejects unpinned tooling.
 
 ### Added
 - Callgraph export findings now carry `reachable`, answering whether user code reaches the crypto — a different question from `unresolved_reason`, which says which function contains it. A finding can be perfectly attributed and still unreachable. Three states: `true`, `false`, and absent when the question does not apply because a library was scanned on its own (`--export-graph-fragment` without dependencies), where there is no user code to be reached from. Callgraph export schema is now `6.7`.

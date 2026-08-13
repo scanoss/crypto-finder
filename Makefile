@@ -18,12 +18,16 @@ LDFLAGS := -ldflags="-s -w \
 # HELP
 # This will output the help for each task
 # thanks to https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
-.PHONY: help
+.PHONY: help verify-dependency-tooling
 
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[0-9a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .DEFAULT_GOAL := help
+
+
+verify-dependency-tooling: ## Verify pinned dependency images, tools, and installer inputs
+	@./scripts/verify-dependency-tooling.sh
 
 
 lint: ## Lints the code
@@ -106,7 +110,7 @@ coverage-check: ## Check coverage thresholds (requires go-test-coverage)
 	    go-test-coverage --config=.testcoverage.yml; \
 	else \
 	    echo "⚠️  go-test-coverage not installed. Install with:"; \
-	    echo "  go install github.com/vladopajic/go-test-coverage/v2@latest"; \
+	    echo "  go install github.com/vladopajic/go-test-coverage/v2@v2.19.0"; \
 	fi
 
 # ============================================================================
@@ -200,7 +204,7 @@ docker-scan-deps: ## Scan with dependency resolution (PROJ=path/to/project)
 		fi; \
 		if [ -f /workspace/code/Pipfile ]; then \
 			echo 'Installing Python dependencies from Pipfile'; \
-			python -m pip install pipenv; \
+			python -m pip install pipenv==2026.7.1; \
 			cd /workspace/code; \
 			if [ -f Pipfile.lock ]; then \
 				PIPENV_VENV_IN_PROJECT=0 pipenv install --system --deploy; \
