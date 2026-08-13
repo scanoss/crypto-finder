@@ -52,6 +52,50 @@ func TestScanCancellationTerminatesScannerProcess(t *testing.T) {
 	}
 }
 
+func TestScanCancellationTerminatesScannerInitializationProbe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a compiled CLI and external scanner process")
+	}
+
+	binary := filepath.Join(t.TempDir(), "crypto-finder")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build crypto-finder: %v\n%s", err, output)
+	}
+
+	dir := t.TempDir()
+	childPIDFile := filepath.Join(dir, "child.pid")
+	writeFakeOpenGrepInitializationProbe(t, filepath.Join(dir, "opengrep"))
+	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
+	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+
+	cmd := exec.Command(binary, "--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
+	cmd.Env = scanCancellationEnv(dir, childPIDFile)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start scan: %v", err)
+	}
+
+	childPID := waitForChildPID(t, childPIDFile)
+	t.Cleanup(func() { _ = syscall.Kill(childPID, syscall.SIGKILL) })
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("send SIGTERM: %v", err)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("cancelled scan exited successfully")
+	}
+
+	var payload failure.Payload
+	if err := json.Unmarshal(stderr.Bytes(), &payload); err != nil {
+		t.Fatalf("decode cancellation error %q: %v", stderr.String(), err)
+	}
+	if payload.Code != failure.CodeScannerCancelled || payload.Stage != failure.StageScan {
+		t.Fatalf("cancellation payload = %#v, want scanner_canceled at scan stage", payload)
+	}
+	waitForProcessExit(t, childPID)
+}
+
 func runCancelledScan(t *testing.T, binary string, signal syscall.Signal) {
 	t.Helper()
 
@@ -114,6 +158,26 @@ esac
 ) &
 echo $! > "$CHILD_PID_FILE"
 wait
+`)
+	if err := os.Chmod(path, 0o700); err != nil {
+		t.Fatalf("make fake opengrep executable: %v", err)
+	}
+}
+
+func writeFakeOpenGrepInitializationProbe(t *testing.T, path string) {
+	t.Helper()
+	writeFile(t, path, `#!/bin/sh
+case "$1:$2" in
+  --version:*)
+    (
+      trap '' INT TERM
+      while :; do sleep 1; done
+    ) &
+    echo $! > "$CHILD_PID_FILE"
+    wait
+    ;;
+  scan:--help|--help:*) exit 0 ;;
+esac
 `)
 	if err := os.Chmod(path, 0o700); err != nil {
 		t.Fatalf("make fake opengrep executable: %v", err)

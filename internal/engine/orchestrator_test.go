@@ -72,14 +72,14 @@ func (m *mockRuleSource) Info() entities.RulesInfo {
 }
 
 type mockScanner struct {
-	initializeFunc func(config scanner.Config) error
+	initializeFunc func(ctx context.Context, config scanner.Config) error
 	scanFunc       func(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error)
 	getInfoFunc    func() scanner.Info
 }
 
-func (m *mockScanner) Initialize(config scanner.Config) error {
+func (m *mockScanner) Initialize(ctx context.Context, config scanner.Config) error {
 	if m.initializeFunc != nil {
-		return m.initializeFunc(config)
+		return m.initializeFunc(ctx, config)
 	}
 	return nil
 }
@@ -400,7 +400,7 @@ func TestOrchestrator_Scan_ScannerInitializeError(t *testing.T) {
 	rulesManager := rules.NewManager(ruleSource)
 
 	mockScan := &mockScanner{
-		initializeFunc: func(_ scanner.Config) error {
+		initializeFunc: func(_ context.Context, _ scanner.Config) error {
 			return errors.New("scanner initialization failed")
 		},
 	}
@@ -433,6 +433,34 @@ func TestOrchestrator_Scan_ScannerInitializeError(t *testing.T) {
 	}
 	if structured.Cause == nil || structured.Cause.Error() != "scanner initialization failed" {
 		t.Fatalf("Cause = %v, want scanner initialization failed", structured.Cause)
+	}
+}
+
+func TestOrchestrator_Scan_ScannerInitializeCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mockScan := &mockScanner{
+		initializeFunc: func(got context.Context, _ scanner.Config) error {
+			if got != ctx {
+				t.Fatal("Initialize() did not receive scan context")
+			}
+			return got.Err()
+		},
+	}
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", mockScan)
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{}), registry)
+
+	_, err := orchestrator.Scan(ctx, ScanOptions{Target: "/path/to/code", ScannerName: "test-scanner"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	structured, ok := failure.As(err)
+	if !ok || structured.Code != failure.CodeScannerCancelled {
+		t.Fatalf("error = %v, want scanner_canceled", err)
 	}
 }
 

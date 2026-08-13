@@ -189,7 +189,16 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	// Step 4: Initialize scanner
-	if err := scannerInstance.Initialize(opts.ScannerConfig); err != nil {
+	if err := scannerInstance.Initialize(ctx, opts.ScannerConfig); err != nil {
+		if ctx.Err() != nil {
+			return nil, failure.Wrap(
+				ctx.Err(),
+				failure.CodeScannerCancelled,
+				failure.StageScan,
+				"scanner initialization canceled",
+				failure.WithDetail("scanner", opts.ScannerName),
+			)
+		}
 		return nil, failure.WrapUnknown(
 			err,
 			failure.CodeScannerInitializationFailed,

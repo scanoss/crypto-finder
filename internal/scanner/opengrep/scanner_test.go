@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
@@ -61,7 +62,7 @@ func TestBuildCommand(t *testing.T) {
 	defer func() {
 		commandOutput = originalCommandOutput
 	}()
-	commandOutput = func(_ string, args ...string) ([]byte, error) {
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "scan" && args[1] == "--help" {
 			return []byte("--x-ignore-semgrepignore-files"), nil
 		}
@@ -75,7 +76,7 @@ func TestBuildCommand(t *testing.T) {
 	rulePaths := []string{"/rules/crypto.yaml", "/rules/hash.yaml"}
 	target := "/tmp/target"
 
-	args := s.buildCommand(target, rulePaths)
+	args := s.buildCommand(context.Background(), target, rulePaths)
 
 	// Verify required arguments
 	expectedArgs := map[string]bool{
@@ -128,7 +129,7 @@ func TestBuildCommand_FallsBackWhenExperimentalIgnoreFlagUnsupported(t *testing.
 	defer func() {
 		commandOutput = originalCommandOutput
 	}()
-	commandOutput = func(_ string, args ...string) ([]byte, error) {
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if len(args) > 1 && args[0] == "scan" && args[1] == "--help" {
 			return []byte("--semgrepignore-filename"), nil
 		}
@@ -136,7 +137,7 @@ func TestBuildCommand_FallsBackWhenExperimentalIgnoreFlagUnsupported(t *testing.
 	}
 
 	s := NewScanner()
-	args := s.buildCommand("/tmp/target", []string{"/rules/crypto.yaml"})
+	args := s.buildCommand(context.Background(), "/tmp/target", []string{"/rules/crypto.yaml"})
 
 	for _, arg := range args {
 		if arg == "--x-ignore-semgrepignore-files" {
@@ -169,7 +170,7 @@ func TestInitialize_WithConfig(t *testing.T) {
 	}
 
 	// Mock command output to return a valid version
-	commandOutput = func(_ string, args ...string) ([]byte, error) {
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "--version" {
 			return []byte("1.12.1"), nil
 		}
@@ -186,7 +187,7 @@ func TestInitialize_WithConfig(t *testing.T) {
 		SkipPatterns: []string{"*.test"},
 	}
 
-	err := s.Initialize(config)
+	err := s.Initialize(context.Background(), config)
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
@@ -220,6 +221,34 @@ func TestInitialize_WithConfig(t *testing.T) {
 	// Verify executable path was set
 	if s.executablePath != "/usr/local/bin/opengrep" {
 		t.Errorf("Expected executablePath '/usr/local/bin/opengrep', got '%s'", s.executablePath)
+	}
+}
+
+func TestInitialize_Canceled(t *testing.T) {
+	originalLookPath := lookPath
+	originalCommandOutput := commandOutput
+	defer func() {
+		lookPath = originalLookPath
+		commandOutput = originalCommandOutput
+	}()
+
+	lookPath = func(_ string) (string, error) {
+		return "/usr/local/bin/opengrep", nil
+	}
+	commandOutput = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := NewScanner().Initialize(ctx, scanner.Config{})
+	if err == nil {
+		t.Fatal("Initialize() error = nil, want cancellation")
+	}
+	if structured, ok := failure.As(err); !ok || structured.Code != failure.CodeScannerCancelled {
+		t.Fatalf("Initialize() error = %v, want scanner_canceled", err)
 	}
 }
 
