@@ -23,10 +23,11 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/xeipuuv/gojsonschema"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/output"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 func TestGeneratedExportsMatchSchemas(t *testing.T) {
