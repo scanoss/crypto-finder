@@ -421,3 +421,68 @@ func TestBuildCryptoEntryPoints_ExcludesUnreachableFindings(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildFindingGraph_PopulatesReachable pins the tri-state at its source. The
+// entry-point filter above is only as good as this: it reads a field it does not
+// compute, so an inverted condition here would silently disarm it.
+func TestBuildFindingGraph_PopulatesReachable(t *testing.T) {
+	t.Parallel()
+
+	userID := callgraph.FunctionID{Package: "com.acme", Type: "App", Name: "run#0"}
+	libID := callgraph.FunctionID{Package: "dep.lib", Type: "Crypto", Name: "hash#0"}
+
+	newGraph := func(withCaller bool) *callgraph.CallGraph {
+		lib := &callgraph.FunctionDecl{ID: libID, FilePath: "Crypto.java", StartLine: 1, EndLine: 5}
+		graph := &callgraph.CallGraph{
+			Functions: map[string]*callgraph.FunctionDecl{libID.String(): lib},
+			Callers:   map[string][]string{},
+		}
+		if withCaller {
+			graph.Functions[userID.String()] = &callgraph.FunctionDecl{
+				ID: userID, FilePath: "App.java", StartLine: 1, EndLine: 9,
+				Calls: []callgraph.FunctionCall{{Callee: libID, FilePath: "App.java", Line: 4}},
+			}
+			graph.Callers[libID.String()] = []string{userID.String()}
+		}
+		return graph
+	}
+
+	finding := entities.Finding{FilePath: "Crypto.java"}
+	asset := entities.CryptographicAsset{FindingID: "f1", StartLine: 3, EndLine: 3}
+
+	cases := []struct {
+		name         string
+		userPackages map[string]bool
+		withCaller   bool
+		want         *bool
+	}{
+		{"user code reaches it", map[string]bool{"com.acme": true}, true, boolPtr(true)},
+		{"no path from user code", map[string]bool{"com.acme": true}, false, boolPtr(false)},
+		// The mine path scans a library alone. A finding with no caller is a graph
+		// root — the library's public API — not something unreachable, so asserting
+		// false here would be a lie about a question that was never asked.
+		{"mine path leaves it unanswered", nil, false, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &exportBuildContext{
+				graph:                   newGraph(tc.withCaller),
+				userPackages:            tc.userPackages,
+				packageSeparator:        ".",
+				containingFunctionCache: make(map[string]cachedContainingFunction),
+			}
+			got := buildFindingGraph(ctx, finding, asset).Reachable
+			switch {
+			case tc.want == nil && got != nil:
+				t.Errorf("Reachable = %v, want absent", *got)
+			case tc.want != nil && got == nil:
+				t.Errorf("Reachable absent, want %v", *tc.want)
+			case tc.want != nil && got != nil && *got != *tc.want:
+				t.Errorf("Reachable = %v, want %v", *got, *tc.want)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
