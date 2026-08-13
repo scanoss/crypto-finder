@@ -395,11 +395,13 @@ func TestExportCallGraph(t *testing.T) {
 		}
 	})
 
-	t.Run("write-error", func(t *testing.T) {
+	t.Run("creates-parent-directory", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "missing", "cg.json")
-		err := ExportCallGraph(out, "json", result)
-		if err == nil || !strings.Contains(err.Error(), "failed to write call graph") {
-			t.Fatalf("expected write error, got: %v", err)
+		if err := ExportCallGraph(out, "json", result); err != nil {
+			t.Fatalf("ExportCallGraph: %v", err)
+		}
+		if _, err := os.Stat(out); err != nil {
+			t.Fatalf("output file was not created: %v", err)
 		}
 	})
 
