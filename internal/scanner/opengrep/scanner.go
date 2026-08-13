@@ -277,7 +277,7 @@ func (s *Scanner) semgrepignoreControlArgs() []string {
 
 // execute runs the opengrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, s.executablePath, args...)
+	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
 		cmd.Dir = s.workDir

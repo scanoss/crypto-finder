@@ -205,7 +205,7 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the semgrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, s.executablePath, args...)
+	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 
 	// Set working directory if specified
 	if s.workDir != "" {
