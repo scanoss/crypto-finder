@@ -1605,3 +1605,102 @@ class Service {
 		})
 	}
 }
+
+// TestJavaParser_BindsSingleVariableDeclarationForms pins the declaration forms
+// whose variable name is not wrapped in a variable_declarator. Before these were
+// bound, a receiver declared in try-with-resources or enhanced-for fell through
+// to the scanned file's package (`com.example.jedis.set`), producing a callee
+// present in no graph and severing every call chain through that variable.
+func TestJavaParser_BindsSingleVariableDeclarationForms(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+import java.io.BufferedReader;
+import java.security.cert.CertPathValidatorException;
+import java.sql.Connection;
+import java.util.List;
+import javax.crypto.Cipher;
+import redis.clients.jedis.Jedis;
+
+class Demo {
+    void resources(List<Cipher> ciphers) throws Exception {
+        try (Jedis jedis = new Jedis("h", 1, null)) {
+            jedis.set("k", "v");
+        }
+        try (final BufferedReader reader = null; Connection conn = null) {
+            reader.readLine();
+            conn.commit();
+        }
+        for (Cipher each : ciphers) {
+            each.doFinal();
+        }
+    }
+
+    void catches() {
+        try {
+            resources(null);
+        } catch (CertPathValidatorException single) {
+            single.getCertPath();
+        } catch (java.io.IOException | java.sql.SQLException multi) {
+            multi.getMessage();
+        }
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Demo.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	resolved := map[string]FunctionID{}
+	for _, fn := range analyses[0].Functions {
+		for _, call := range fn.Calls {
+			resolved[call.Callee.Name] = call.Callee
+		}
+	}
+
+	bound := []struct {
+		method  string
+		pkg     string
+		typeStr string
+		form    string
+	}{
+		{"set#2", "redis.clients.jedis", "Jedis", "try-with-resources"},
+		{"readLine#0", "java.io", "BufferedReader", "try-with-resources, final modifier"},
+		{"commit#0", "java.sql", "Connection", "try-with-resources, second resource"},
+		{"doFinal#0", "javax.crypto", "Cipher", "enhanced-for"},
+		{"getCertPath#0", "java.security.cert", "CertPathValidatorException", "single-type catch"},
+	}
+	for _, tc := range bound {
+		callee, ok := resolved[tc.method]
+		if !ok {
+			t.Errorf("%s: no call recorded for %s", tc.form, tc.method)
+			continue
+		}
+		if callee.Package != tc.pkg || callee.Type != tc.typeStr {
+			t.Errorf("%s: %s resolved to %s.%s, want %s.%s",
+				tc.form, tc.method, callee.Package, callee.Type, tc.pkg, tc.typeStr)
+		}
+	}
+
+	// A multi-catch variable's static type is the least upper bound of its
+	// alternatives, so binding any single alternative would invent an edge into a
+	// class the call may never reach. It must stay unbound.
+	if callee, ok := resolved["getMessage#0"]; ok {
+		for _, alternative := range []string{"IOException", "SQLException"} {
+			if callee.Type == alternative {
+				t.Errorf("multi-catch bound to alternative %s; want unbound (got %s.%s)",
+					alternative, callee.Package, callee.Type)
+			}
+		}
+	}
+}
