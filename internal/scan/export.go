@@ -338,7 +338,7 @@ type exportDependencyRoot struct {
 
 // --- Entry point ---
 
-// ExportCallGraph writes a finding-centric call graph export (schema v4.3).
+// ExportCallGraph writes the current finding-centric callgraph export.
 func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 	if result == nil {
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
