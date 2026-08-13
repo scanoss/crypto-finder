@@ -1704,3 +1704,96 @@ class Demo {
 		}
 	}
 }
+
+// TestJavaParser_RegistersAnonymousClassMethods pins that methods declared in an
+// anonymous class body become functions. jedis publishes its MD5 digest from
+// `Hashing MD5 = new Hashing() { ... }` inside an interface; before these bodies
+// were walked the enclosing crypto call belonged to no function, so the finding
+// exported with unresolved_reason "no_containing_function" and zero call chains.
+func TestJavaParser_RegistersAnonymousClassMethods(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+import java.security.MessageDigest;
+
+interface Hashing {
+    Hashing MD5 = new Hashing() {
+        @Override
+        public long hash(byte[] key) {
+            MessageDigest.getInstance("MD5");
+            return 0L;
+        }
+    };
+
+    long hash(byte[] key);
+}
+
+class Holder {
+    Runnable task = new Runnable() {
+        @Override
+        public void run() {
+            MessageDigest.getInstance("SHA-256");
+        }
+    };
+
+    void build() {
+        Runnable inline = new Runnable() {
+            @Override
+            public void run() {
+                MessageDigest.getInstance("SHA-512");
+            }
+        };
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Hashing.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	byOwner := map[string]*FunctionDecl{}
+	for i := range analyses[0].Functions {
+		fn := &analyses[0].Functions[i]
+		byOwner[fn.ID.Type+"."+fn.ID.Name] = fn
+	}
+
+	cases := []struct {
+		key   string
+		base  string
+		where string
+	}{
+		{"Hashing$1.hash#1", "Hashing", "interface field initializer"},
+		{"Holder$1.run#0", "Runnable", "class field initializer"},
+		{"Holder$2.run#0", "Runnable", "method body"},
+	}
+	for _, tc := range cases {
+		fn, ok := byOwner[tc.key]
+		if !ok {
+			t.Errorf("%s: %s not registered as a function", tc.where, tc.key)
+			continue
+		}
+		// The instantiated supertype must be recorded, otherwise dispatch
+		// expansion cannot link interface call sites to this override.
+		found := false
+		for _, base := range fn.OwnerBases {
+			if base == tc.base {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: %s OwnerBases = %v, want to contain %q", tc.where, tc.key, fn.OwnerBases, tc.base)
+		}
+		if len(fn.Calls) == 0 {
+			t.Errorf("%s: %s recorded no calls", tc.where, tc.key)
+		}
+	}
+}
