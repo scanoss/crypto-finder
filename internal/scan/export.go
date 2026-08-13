@@ -482,6 +482,8 @@ func streamFindingGraphs(
 		if fg.Reachable == nil || *fg.Reachable {
 			addFindingGraphToEntryPointIndex(index, &fg)
 			addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+		} else {
+			claimSupportingCalls(referencedSupporting, &fg)
 		}
 		if err := writer.writeArrayElement(i, fg); err != nil {
 			return nil, nil, nil, err
@@ -698,6 +700,7 @@ func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGra
 		// a chainless finding means "graph root" — a library's public API, and its
 		// most important entry point — so that case is deliberately not filtered.
 		if findingGraphs[i].Reachable != nil && !*findingGraphs[i].Reachable {
+			claimSupportingCalls(referencedSupporting, &findingGraphs[i])
 			continue
 		}
 		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
@@ -765,6 +768,24 @@ func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFin
 			continue
 		}
 		recordEntryPointFinding(ensureEntryPointData(index, node), fg, len(chain)-pos)
+	}
+}
+
+// claimSupportingCalls marks a finding's supporting calls as accounted for
+// without indexing them.
+//
+// Supporting calls reach the entry-point index by two routes: through their
+// finding graph, and through a fallback that sweeps up any the graphs left
+// unclaimed. Skipping an unreachable finding removes the first route but leaves
+// its supporting calls looking orphaned, so the fallback republishes them as
+// standalone entry points — returning through the back door the lifecycle of a
+// finding nothing reaches.
+func claimSupportingCalls(referencedSupporting map[string]struct{}, fg *callGraphExportFinding) {
+	if fg == nil {
+		return
+	}
+	for _, supportingID := range fg.SupportingCallIDs {
+		referencedSupporting[supportingID] = struct{}{}
 	}
 }
 
