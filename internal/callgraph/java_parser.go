@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -33,6 +34,7 @@ const (
 	javaNodeObjectCreation       = "object_creation_expression"
 	javaNodeMethodInvocation     = "method_invocation"
 	javaNodeVariableDeclarator   = "variable_declarator"
+	javaNodeClassBody            = "class_body"
 	javaNodeFormalParameter      = "formal_parameter"
 	javaNodeCatchFormalParameter = "catch_formal_parameter"
 	javaNodeCatchType            = "catch_type"
@@ -250,6 +252,110 @@ func (p *JavaParser) processClass(
 	stampOwnerBases(methodDecls, bases)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
+	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullClassName, ownerVisibility)
+}
+
+// processJavaAnonymousClasses registers the bodies of anonymous class creations
+// (`new Hashing() { ... }`) reachable from a type body. javac compiles each to a
+// class of its own, and crypto libraries routinely put real work in them: jedis
+// initializes its MD5 `MessageDigest` inside `new Hashing() { ... }` held in an
+// interface field.
+//
+// Without this pass the surrounding walk only ever descends into declared class
+// and interface bodies, so those methods never become FunctionDecls. A finding
+// inside one is then exported with `unresolved_reason: "no_containing_function"`
+// and no call chain at all — there is no function to trace back from.
+//
+// Names follow javac's binary form (`Owner$1`, `Owner$2`, numbered in source
+// order) so the identity lines up with the class the bytecode index carries.
+// Anonymous classes nested inside another anonymous class extend that name
+// (`Owner$1$1`) rather than continuing javac's flat per-file numbering; the goal
+// here is a stable unique identity, not binary-compatible naming.
+func (p *JavaParser) processJavaAnonymousClasses(
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	ownerClass string,
+	ownerVisibility string,
+) {
+	anonymous := 0
+
+	var walk func(node *sitter.Node)
+	walk = func(node *sitter.Node) {
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			switch child.Type() {
+			case javaNodeClassDeclaration, javaNodeInterfaceDeclaration:
+				// Declared types own their own subtree via processClass /
+				// processInterface; descending here would register them twice.
+				continue
+			case javaNodeObjectCreation:
+				anonBody := javaAnonymousClassBody(child)
+				if anonBody == nil {
+					break
+				}
+				anonymous++
+				p.processAnonymousClass(child, anonBody, src, filePath, analysis,
+					ownerClass+"$"+strconv.Itoa(anonymous), ownerVisibility)
+				// The body belongs to the call above, but the constructor
+				// arguments may hold anonymous classes of their own.
+				for j := 0; j < int(child.ChildCount()); j++ {
+					if argument := child.Child(j); argument.Type() != javaNodeClassBody {
+						walk(argument)
+					}
+				}
+				continue
+			}
+			walk(child)
+		}
+	}
+
+	walk(body)
+}
+
+// processAnonymousClass registers one anonymous class body under the synthetic
+// name assigned by processJavaAnonymousClasses.
+func (p *JavaParser) processAnonymousClass(
+	creation *sitter.Node,
+	body *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	fullClassName string,
+	ownerVisibility string,
+) {
+	fieldTypes := p.collectJavaFieldTypes(body, src)
+	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
+	methodDecls, constructorDecls := p.collectJavaClassDecls(
+		body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
+
+	// The instantiated type is the anonymous class's sole supertype. Recording it
+	// is what lets dispatch expansion link a `Hashing.hash(...)` call site to the
+	// override that actually holds the crypto.
+	var bases []string
+	if typeNode := creation.ChildByFieldName(javaFieldType); typeNode != nil {
+		if base := strings.TrimSpace(stripGenericSuffix(typeNode.Content(src))); base != "" {
+			bases = []string{base}
+		}
+	}
+	stampOwnerBases(constructorDecls, bases)
+	stampOwnerBases(methodDecls, bases)
+	appendJavaDecls(analysis, constructorDecls)
+	appendJavaDecls(analysis, methodDecls)
+
+	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullClassName, ownerVisibility)
+}
+
+// javaAnonymousClassBody returns the class body of an object creation that
+// declares one (`new Foo() { ... }`), or nil for a plain `new Foo()`.
+func javaAnonymousClassBody(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == javaNodeClassBody {
+			return child
+		}
+	}
+	return nil
 }
 
 func parseJavaClass(node *sitter.Node, src []byte) (string, *sitter.Node) {
@@ -571,6 +677,10 @@ func (p *JavaParser) processInterface(
 	for _, decl := range methodDecls {
 		analysis.Functions = append(analysis.Functions, *decl)
 	}
+
+	// Interface fields are implicitly static finals, and libraries use them to
+	// publish anonymous implementations (jedis: `Hashing MD5 = new Hashing() {...}`).
+	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullInterfaceName, ownerVisibility)
 }
 
 // parseMethodDecl parses a Java method declaration.
