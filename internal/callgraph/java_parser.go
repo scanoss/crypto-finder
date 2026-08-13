@@ -35,6 +35,8 @@ const (
 	javaNodeMethodInvocation     = "method_invocation"
 	javaNodeVariableDeclarator   = "variable_declarator"
 	javaNodeClassBody            = "class_body"
+	javaNodeResourceDecl         = "resource"
+	javaNodeEnhancedFor          = "enhanced_for_statement"
 	javaNodeFormalParameter      = "formal_parameter"
 	javaNodeCatchFormalParameter = "catch_formal_parameter"
 	javaNodeCatchType            = "catch_type"
@@ -287,8 +289,15 @@ func (p *JavaParser) processJavaAnonymousClasses(
 			child := node.Child(i)
 			switch child.Type() {
 			case javaNodeClassDeclaration, javaNodeInterfaceDeclaration:
-				// Declared types own their own subtree via processClass /
-				// processInterface; descending here would register them twice.
+				// A type declared directly in this body is already registered by
+				// collectJavaClassDecls, which calls processClass / processInterface
+				// for it; descending here would register it twice.
+				//
+				// A LOCAL class (declared inside a method body) reaches neither, so
+				// it and any anonymous class inside it stay unregistered. That gap
+				// predates this pass — collectJavaClassDecls only iterates direct
+				// children of the type body — and closing it means registering local
+				// classes as types of their own. Tracked separately.
 				continue
 			case javaNodeObjectCreation:
 				anonBody := javaAnonymousClassBody(child)
@@ -1144,15 +1153,28 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 }
 
 // javaSingleDeclaredVar binds the declaration forms that introduce exactly one
-// typed name: try-with-resources resources and enhanced-for variables via the
-// grammar's own `type`/`name` fields, plus catch parameters, which need their
-// own path because the grammar nests their type inside `catch_type`.
+// typed name and expose it without the `variable_declarator` wrapper that
+// collectVarTypes already walks: try-with-resources resources, enhanced-for
+// variables, and catch parameters.
 //
-// Keying on fields rather than on a list of node types is deliberate. The two
-// multi-variable forms are excluded by the grammar itself — `local_variable_declaration`
-// and `field_declaration` expose `type` but no `name`, since `int a = 1, b = 2;`
-// binds several names through `variable_declarator` children — so they keep the
-// dedicated handling in collectVarTypes and are not matched here.
+// The node types are enumerated on purpose. Reading the grammar's `type`/`name`
+// fields is what makes the resource and enhanced-for cases uniform, but those
+// fields alone do NOT mean "declares a variable": `method_declaration` and
+// `annotation_type_element_declaration` expose them too. The recursive
+// collectors reach method declarations inside anonymous class bodies, so an
+// unrestricted read binds the method's own name to its return type — turning
+// `Cipher run = ...; run.doFinal()` into a call on type `void` once an
+// anonymous class in the same body happens to declare `run()`.
+//
+// Multi-variable forms need no exclusion here: `local_variable_declaration` and
+// `field_declaration` are not listed, and the grammar would not serve them a
+// `name` field anyway, since `int a = 1, b = 2;` binds several names.
+//
+// Parameters are deliberately absent too. parseJavaParameterList already binds
+// them from the enclosing formal_parameters node, stripping `final` and
+// annotations and normalizing through normalizeJavaReferenceType; a second path
+// writing the same keys would let raw field text overwrite that normalized form
+// on the recursive descent.
 //
 // Leaving a form unbound is not cosmetic. An unbound receiver falls through to
 // the scanned file's package, so `jedis.set(...)` inside
@@ -1161,17 +1183,11 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 // edge was never created, so no chain reached user code, and the tracer then
 // dropped every chain for the finding (see Tracer.classifyTraceItem).
 func javaSingleDeclaredVar(node *sitter.Node, src []byte) (string, string) {
-	if node.Type() == javaNodeCatchFormalParameter {
+	switch node.Type() {
+	case javaNodeCatchFormalParameter:
 		return javaCatchDeclaredVar(node, src)
-	}
-	// Parameters are already bound from the enclosing formal_parameters node by
-	// parseJavaParameterList, which strips `final` and annotations and pushes the
-	// text through normalizeJavaReferenceType. Binding them here as well would let
-	// the raw field text overwrite that normalized form on the recursive descent,
-	// changing established resolution for no gain. (Varargs never reach this path
-	// at all: the grammar models them as spread_parameter, which exposes neither
-	// field.)
-	if node.Type() == javaNodeFormalParameter {
+	case javaNodeResourceDecl, javaNodeEnhancedFor:
+	default:
 		return "", ""
 	}
 
@@ -1723,6 +1739,23 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 		if call := p.parseObjectCreation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
 			*calls = append(*calls, *call)
 		}
+
+		// An anonymous class body is also walked here, so its calls are recorded
+		// against the enclosing function as well as against the anonymous method
+		// that owns them. That over-attributes for a body that is merely stored
+		// (`new Runnable() {...}` assigned to a field never runs), but it is
+		// load-bearing for the callback pattern crypto APIs use constantly —
+		// `use(kek, new CipherCallback() { ... cipher.init(...) })`, pinned by
+		// TestJavaParser_ResolvesAnonymousCallbackParameterReceiver.
+		//
+		// It cannot be removed yet. The proper path — the interface call site
+		// dispatching to the anonymous implementation — is broken by a nested-type
+		// naming mismatch: `use` records a call to `(CipherCallback).apply#1`
+		// while the declaration is registered as `(Wrapper.CipherCallback).apply#1`,
+		// so no edge forms and expandInterfaceDispatch never sees the call site.
+		// Dropping the over-attribution today trades a false positive for a
+		// guaranteed false negative. Fix the naming first, confirm dispatch links
+		// the anonymous override, then narrow this walk.
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {

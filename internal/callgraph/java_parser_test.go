@@ -1797,3 +1797,80 @@ class Holder {
 		}
 	}
 }
+
+// TestJavaParser_AnonymousClassScopeIsolation pins the two ways an anonymous
+// class body must stay isolated from the function that constructs it.
+func TestJavaParser_AnonymousClassScopeIsolation(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+import java.security.MessageDigest;
+import javax.crypto.Cipher;
+
+class Probe {
+    void build() {
+        Cipher run = null;
+        Runnable r = new Runnable(guard()) {
+            @Override
+            public void run() {
+                MessageDigest.getInstance("SHA-512");
+            }
+        };
+        run.doFinal();
+    }
+
+    Object guard() { return null; }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Probe.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	calls := map[string][]FunctionID{}
+	for _, fn := range analyses[0].Functions {
+		for _, call := range fn.Calls {
+			calls[fn.ID.Type+"."+fn.ID.Name] = append(calls[fn.ID.Type+"."+fn.ID.Name], call.Callee)
+		}
+	}
+
+	find := func(owner, method string) *FunctionID {
+		for i, callee := range calls[owner] {
+			if callee.Name == method {
+				return &calls[owner][i]
+			}
+		}
+		return nil
+	}
+
+	// A method declaration exposes `type` and `name` fields just like a resource
+	// does. Binding it would rebind the local `run` to the method's return type,
+	// so the receiver would resolve on `void` instead of Cipher.
+	doFinal := find("Probe.build#0", "doFinal#0")
+	if doFinal == nil {
+		t.Fatal("Probe.build#0 recorded no doFinal call")
+	}
+	if doFinal.Package != "javax.crypto" || doFinal.Type != "Cipher" {
+		t.Errorf("run.doFinal() resolved to %s.%s, want javax.crypto.Cipher — an anonymous "+
+			"method named run() must not rebind the local variable", doFinal.Package, doFinal.Type)
+	}
+
+	// The anonymous method owns the calls in its own body.
+	if owned := find("Probe$1.run#0", "getInstance#1"); owned == nil {
+		t.Error("Probe$1.run#0 lost its getInstance call")
+	}
+
+	// The enclosing function still records them too. See walkForCalls: that
+	// over-attribution is currently load-bearing for the callback pattern and
+	// cannot be dropped until interface dispatch reaches anonymous overrides.
+	if leaked := find("Probe.build#0", "getInstance#1"); leaked == nil {
+		t.Error("Probe.build#0 lost the anonymous body call; walkForCalls over-attribution " +
+			"is still required by TestJavaParser_ResolvesAnonymousCallbackParameterReceiver")
+	}
+}
