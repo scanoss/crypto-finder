@@ -1,0 +1,102 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: argon2
+  coordinates:
+    - argon2
+  version_range: ">=0.5.0,<0.6.0"
+  description: "RustCrypto Argon2 password hashing"
+
+# Merged-rule inventory and disposition (RustCrypto argon2 0.5.x):
+# contracted: Argon2.default#0, new#3, new_with_secret#4, from#1,
+# hash_password#2, hash_password_customized#5, verify_password#2,
+# hash_password_into#3, and hash_password_into_with_memory#4.
+# skipped-non-callable: Algorithm::{Argon2id,Argon2i,Argon2d} are constants;
+# generic PasswordHash::{generate,verify_password} wrappers are not Argon2-owned
+# identities; and import-only short Argon2 syntax is unsafe to qualify because
+# OpenGrep 1.12.1 resolves imports file-wide and can match local shadows.
+# skipped-non-terminal: fill_memory#3 only fills caller-provided workspace;
+# it does not hash or verify a password.
+# Upstream API docs: https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html
+# `From<Params>` source: https://docs.rs/argon2/0.5.3/src/argon2/lib.rs.html#631-638
+contracts:
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.default
+  - method: argon2::Argon2.default
+    arity: 0
+    return: { type: argon2::Argon2, confidence: high }
+    role: factory
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.new
+  - method: argon2::Argon2.new
+    arity: 3
+    return: { type: argon2::Argon2, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: version, role: metadata-contributing, contributes: { property: version, derivation: argument_type } }
+      - { index: 2, name: params, role: metadata-contributing, contributes: { property: params, derivation: argument_type } }
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.new_with_secret
+  - method: argon2::Argon2.new_with_secret
+    arity: 4
+    return: { type: argon2::Argon2, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: secret, derivation: argument_value } }
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: version, role: metadata-contributing, contributes: { property: version, derivation: argument_type } }
+      - { index: 3, name: params, role: metadata-contributing, contributes: { property: params, derivation: argument_type } }
+  # https://docs.rs/argon2/0.5.3/src/argon2/lib.rs.html#631-638
+  - method: argon2::Argon2.from
+    arity: 1
+    return: { type: argon2::Argon2, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: params, role: metadata-contributing, contributes: { property: params, derivation: argument_type } }
+
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.hash_password
+  - method: argon2::Argon2.hash_password
+    arity: 2
+    return: { type: password_hash::PasswordHash, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: password, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 1, name: salt, role: metadata-contributing, contributes: { property: salt, derivation: argument_type } }
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.hash_password_customized
+  - method: argon2::Argon2.hash_password_customized
+    arity: 5
+    return: { type: password_hash::PasswordHash, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: password, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: version, role: metadata-contributing, contributes: { property: version, derivation: argument_type } }
+      - { index: 3, name: params, role: metadata-contributing, contributes: { property: params, derivation: argument_type } }
+      - { index: 4, name: salt, role: metadata-contributing, contributes: { property: salt, derivation: argument_type } }
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.verify_password
+  - method: argon2::Argon2.verify_password
+    arity: 2
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: password, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: hash, derivation: argument_type } }
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.hash_password_into
+  - method: argon2::Argon2.hash_password_into
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: password, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 1, name: salt, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+      - { index: 2, name: output, role: metadata-contributing, contributes: { property: output, derivation: argument_value } }
+  # https://docs.rs/argon2/0.5.3/argon2/struct.Argon2.html#method.hash_password_into_with_memory
+  - method: argon2::Argon2.hash_password_into_with_memory
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: password, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+      - { index: 1, name: salt, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+      - { index: 2, name: output, role: metadata-contributing, contributes: { property: output, derivation: argument_value } }
+      - { index: 3, name: memory, role: metadata-contributing, contributes: { property: memory, derivation: argument_type } }
+
+hierarchy: {}

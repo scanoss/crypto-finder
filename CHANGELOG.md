@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rust callgraph contracts now model RustCrypto `argon2` 0.5.x factories plus password hashing and verification operations, retaining supported password, salt, output, and configuration context in callgraph exports. (#72)
 - Callgraph export schema `6.11` and graph-fragment schema `1.11` add optional `supporting_calls[].supporting_call.resolved_key_length` evidence for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls. A resolved literal or simple propagated constant emits raw `bits`, `provenance: "constant"`, and a `source_call` parameter reference; unresolved or ambiguous values emit `provenance: "unknown"` without a fabricated bit length. Terminal findings remain attached to the detected operation, while the field is preserved by live, graph-fragment, and stitched callgraph exports. CBOM output is unchanged. (#272)
 
 ### Fixed
