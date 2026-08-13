@@ -20,8 +20,10 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -215,11 +217,31 @@ func waitForChildPID(t *testing.T, path string) int {
 func waitForProcessExit(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
+	state := ""
 	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		terminated, currentState, err := processTerminated(t.Context(), pid)
+		if err != nil {
+			t.Fatalf("inspect scanner child process %d: %v", pid, err)
+		}
+		if terminated {
 			return
 		}
+		state = currentState
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("scanner child process %d remained alive after cancellation", pid)
+	t.Fatalf("scanner child process %d remained alive after cancellation (state %q)", pid, state)
+}
+
+func processTerminated(ctx context.Context, pid int) (bool, string, error) {
+	output, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return true, "", nil
+		}
+		return false, "", fmt.Errorf("run ps: %w", err)
+	}
+
+	state := strings.TrimSpace(string(output))
+	return strings.HasPrefix(state, "Z"), state, nil
 }
