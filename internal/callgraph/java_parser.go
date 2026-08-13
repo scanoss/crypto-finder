@@ -34,6 +34,7 @@ const (
 	javaNodeObjectCreation       = "object_creation_expression"
 	javaNodeMethodInvocation     = "method_invocation"
 	javaNodeVariableDeclarator   = "variable_declarator"
+	javaNodeModifiers            = "modifiers"
 	javaNodeClassBody            = "class_body"
 	javaNodeResourceDecl         = "resource"
 	javaNodeEnhancedFor          = "enhanced_for_statement"
@@ -734,7 +735,7 @@ func (p *JavaParser) parseMethodDecl(
 			Name:    javaMethodWithArity(name, len(params)),
 		},
 		FilePath:        filePath,
-		StartLine:       int(node.StartPoint().Row) + 1,
+		StartLine:       javaDeclarationStartLine(node),
 		EndLine:         int(node.EndPoint().Row) + 1,
 		OwnerType:       ownerType,
 		OwnerName:       ownerName,
@@ -799,7 +800,7 @@ func (p *JavaParser) parseConstructorDecl(
 			Name:    javaMethodWithArity(constructorMethodName, len(params)),
 		},
 		FilePath:        filePath,
-		StartLine:       int(node.StartPoint().Row) + 1,
+		StartLine:       javaDeclarationStartLine(node),
 		EndLine:         int(node.EndPoint().Row) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
@@ -853,13 +854,41 @@ func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {
 		return "", false
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		visibility := strings.TrimSpace(node.Child(i).Content(src))
+		child := node.Child(i)
+		// A `modifiers` node holds each modifier as a separate child, so descend
+		// rather than compare its whole text. Matching the text only ever worked
+		// for a declaration whose modifiers were exactly "public": add an
+		// annotation and the content becomes "@Override public", which equals no
+		// keyword, and the method is reported package-private.
+		if child.Type() == javaNodeModifiers {
+			if visibility, ok := findJavaVisibilityInNode(child, src); ok {
+				return visibility, true
+			}
+			continue
+		}
+		visibility := strings.TrimSpace(child.Content(src))
 		switch visibility {
 		case VisibilityPublic, VisibilityProtected, VisibilityPrivate:
 			return visibility, true
 		}
 	}
 	return "", false
+}
+
+// javaDeclarationStartLine returns the line a declaration begins on, skipping
+// leading modifiers. tree-sitter starts a declaration node at its annotations,
+// so an annotated method would otherwise report the `@Override` line instead of
+// the signature a reader would jump to.
+func javaDeclarationStartLine(node *sitter.Node) int {
+	if node == nil {
+		return 0
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() != javaNodeModifiers {
+			return int(child.StartPoint().Row) + 1
+		}
+	}
+	return int(node.StartPoint().Row) + 1
 }
 
 func parseJavaMemberVisibility(node *sitter.Node, src []byte, ownerType, functionType string) string {
@@ -1867,6 +1896,22 @@ func receiverVarName(object string, varTypes map[string]string, varOrigins map[s
 
 // isSimpleJavaIdentifier reports whether expr is a single Java identifier (no
 // dots, calls, or operators).
+// isResolvableJavaTypeReference reports whether expr could name a type or a
+// variable holding one: a bare identifier, or a dotted qualified name. Anything
+// carrying call syntax, operators or whitespace is an expression whose type is
+// not knowable from its text.
+func isResolvableJavaTypeReference(expr string) bool {
+	if expr == "" {
+		return false
+	}
+	for _, segment := range strings.Split(expr, ".") {
+		if !isSimpleJavaIdentifier(segment) {
+			return false
+		}
+	}
+	return true
+}
+
 func isSimpleJavaIdentifier(expr string) bool {
 	if expr == "" {
 		return false
@@ -2434,6 +2479,20 @@ func resolveImportedJavaLocalCallee(method string, analysis *FileAnalysis) (Func
 }
 
 func resolveJavaObjectCallee(object, method string, analysis *FileAnalysis, varTypes map[string]string) FunctionID {
+	// A receiver that is itself an expression — `key(key).add(...)`,
+	// `e.getClass().getSimpleName()` — has a type only if the expression's result
+	// type is known, which is not resolved here. Every lookup below keys on a type
+	// NAME, so passing the expression's source text through makes each of them
+	// miss and lands in the final fallback, which adopts that text as the type:
+	// `java.util.(key(key)).add#1`, a callee naming no class that exists.
+	//
+	// Emitting no type is the honest form. It leaves the call recorded — the raw
+	// receiver text is preserved separately for fluent-chain resolution — while
+	// stating that the receiver was never anchored.
+	if !isResolvableJavaTypeReference(object) {
+		return FunctionID{Name: method}
+	}
+
 	simpleClass := simpleJavaObjectName(object)
 
 	if target, ok := resolveImportedJavaObjectCallee(object, simpleClass, method, analysis); ok {
