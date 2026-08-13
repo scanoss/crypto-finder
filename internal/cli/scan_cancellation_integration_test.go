@@ -40,7 +40,7 @@ func TestScanCancellationTerminatesScannerProcess(t *testing.T) {
 	}
 
 	binary := filepath.Join(t.TempDir(), "crypto-finder")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
+	build := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build crypto-finder: %v\n%s", err, output)
 	}
@@ -58,7 +58,7 @@ func TestScanCancellationTerminatesScannerInitializationProbe(t *testing.T) {
 	}
 
 	binary := filepath.Join(t.TempDir(), "crypto-finder")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
+	build := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", binary, "../../cmd/crypto-finder")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build crypto-finder: %v\n%s", err, output)
 	}
@@ -69,7 +69,7 @@ func TestScanCancellationTerminatesScannerInitializationProbe(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
 	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
 
-	cmd := exec.Command(binary, "--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
+	cmd := exec.CommandContext(t.Context(), binary, "--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
 	cmd.Env = scanCancellationEnv(dir, childPIDFile)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -83,7 +83,7 @@ func TestScanCancellationTerminatesScannerInitializationProbe(t *testing.T) {
 		t.Fatalf("send SIGTERM: %v", err)
 	}
 	if err := cmd.Wait(); err == nil {
-		t.Fatal("cancelled scan exited successfully")
+		t.Fatal("canceled scan exited successfully")
 	}
 
 	var payload failure.Payload
@@ -105,7 +105,7 @@ func runCancelledScan(t *testing.T, binary string, signal syscall.Signal) {
 	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
 	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
 
-	cmd := exec.Command(binary, "--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
+	cmd := exec.CommandContext(t.Context(), binary, "--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
 	cmd.Env = scanCancellationEnv(dir, childPIDFile)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -121,7 +121,7 @@ func runCancelledScan(t *testing.T, binary string, signal syscall.Signal) {
 		t.Fatalf("send %s: %v", signal, err)
 	}
 	if err := cmd.Wait(); err == nil {
-		t.Fatal("cancelled scan exited successfully")
+		t.Fatal("canceled scan exited successfully")
 	}
 
 	var payload failure.Payload

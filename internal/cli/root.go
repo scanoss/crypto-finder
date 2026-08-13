@@ -103,7 +103,6 @@ func setupLogging() {
 // Execute runs the root command and exits on error.
 func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	stderrFD, ok := utils.FDToInt(os.Stderr.Fd())
 	isTTY := ok && term.IsTerminal(stderrFD)
@@ -125,8 +124,11 @@ func Execute() {
 		default:
 			pterm.Error.Printfln("%s", err)
 		}
+		stop()
 		os.Exit(1)
 	}
+
+	stop()
 }
 
 func validateErrorOutputFormat(format string) error {

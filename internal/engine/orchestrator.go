@@ -92,6 +92,8 @@ type ScanOptions struct {
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
+//
+//nolint:funlen // Scanner initialization needs context-aware failure classification before scanning.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
 	// Step 1: Detect languages
 	var languages []string
