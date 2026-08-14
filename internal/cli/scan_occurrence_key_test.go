@@ -163,6 +163,7 @@ class Crypto {
 		}
 	}
 }
+
 func TestPrepareReportOccurrenceKeys_EnrichesMixedCAndCPPFiles(t *testing.T) {
 	dir := t.TempDir()
 	cPath := filepath.Join(dir, "crypto.c")

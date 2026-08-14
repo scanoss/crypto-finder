@@ -23,21 +23,25 @@ type occurrenceKeyGroup struct {
 	identity string
 }
 
+type occurrenceKeyCandidate struct {
+	asset      *entities.CryptographicAsset
+	hash       string
+	occurrence string
+}
+
 // AssignOccurrenceKeys attaches structural occurrence keys to canonical findings
 // when the callgraph retains the terminal call's AST anchor.
 func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return
 	}
+	assignOccurrenceKeyGroups(groupOccurrenceKeyCandidates(occurrenceKeyCandidates(result)))
+}
 
+func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandidate {
 	ctx := newExportBuildContext(result)
 	functions := occurrenceAnchorFunctions(result)
-	type candidate struct {
-		asset      *entities.CryptographicAsset
-		hash       string
-		occurrence string
-	}
-	var candidates []candidate
+	var candidates []occurrenceKeyCandidate
 
 	for i := range result.Report.Findings {
 		finding := &result.Report.Findings[i]
@@ -56,10 +60,13 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 			container := buildExportFunctionMetadata(ctx.graph, containing.ID, containing).CanonicalSignature
 			hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, terminal.ASTKind, terminal.NamedASTPath)
 			occurrence := strings.Join([]string{terminal.FilePath, strconv.Itoa(terminal.Line), strconv.Itoa(terminal.StartCol), strconv.Itoa(terminal.EndCol)}, "\n")
-			candidates = append(candidates, candidate{asset: asset, hash: hash, occurrence: occurrence})
+			candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})
 		}
 	}
+	return candidates
+}
 
+func groupOccurrenceKeyCandidates(candidates []occurrenceKeyCandidate) map[string]map[string]*occurrenceKeyGroup {
 	byHash := make(map[string]map[string]*occurrenceKeyGroup, len(candidates))
 	for _, candidate := range candidates {
 		groups := byHash[candidate.hash]
@@ -74,6 +81,10 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 		}
 		group.assets = append(group.assets, candidate.asset)
 	}
+	return byHash
+}
+
+func assignOccurrenceKeyGroups(byHash map[string]map[string]*occurrenceKeyGroup) {
 	for hash, groups := range byHash {
 		ordered := make([]*occurrenceKeyGroup, 0, len(groups))
 		for _, group := range groups {

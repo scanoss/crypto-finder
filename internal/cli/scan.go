@@ -479,38 +479,50 @@ func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, 
 		return result
 	}
 	for _, ecosystem := range reportOccurrenceKeyEcosystems(target, report, languageHints) {
-		if result != nil && result.CallGraph != nil && result.Ecosystem == ecosystem {
-			continue
-		}
-		anchors, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, false)
-		if err != nil {
-			log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build optional source anchors for occurrence keys")
-			continue
-		}
-		if result == nil {
-			result = anchors
-		} else if result.CallGraph == nil {
-			result.CallGraph = anchors.CallGraph
-			if result.RootModule == "" {
-				result.RootModule = anchors.RootModule
-			}
-			if result.Ecosystem == "" {
-				result.Ecosystem = anchors.Ecosystem
-			}
-			if result.ProjectRoot == "" {
-				result.ProjectRoot = anchors.ProjectRoot
-			}
-		}
-		if result.OccurrenceAnchors == nil {
-			result.OccurrenceAnchors = make(map[string]*callgraph.FunctionDecl)
-		}
-		for id, function := range anchors.CallGraph.Functions {
-			result.OccurrenceAnchors[occurrenceAnchorKey(ecosystem, id)] = function
-		}
+		result = addReportOccurrenceKeyAnchors(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, result)
 	}
 	if result != nil {
 		result.Report = report
 		scanutil.AssignOccurrenceKeys(result)
+	}
+	return result
+}
+
+func addReportOccurrenceKeyAnchors(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) *engine.DepScanResult {
+	if result != nil && result.CallGraph != nil && result.Ecosystem == ecosystem {
+		return result
+	}
+	anchors, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, false)
+	if err != nil {
+		log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build optional source anchors for occurrence keys")
+		return result
+	}
+	result = mergeOccurrenceKeyAnchors(result, anchors)
+	if result.OccurrenceAnchors == nil {
+		result.OccurrenceAnchors = make(map[string]*callgraph.FunctionDecl)
+	}
+	for id, function := range anchors.CallGraph.Functions {
+		result.OccurrenceAnchors[occurrenceAnchorKey(ecosystem, id)] = function
+	}
+	return result
+}
+
+func mergeOccurrenceKeyAnchors(result, anchors *engine.DepScanResult) *engine.DepScanResult {
+	if result == nil {
+		return anchors
+	}
+	if result.CallGraph != nil {
+		return result
+	}
+	result.CallGraph = anchors.CallGraph
+	if result.RootModule == "" {
+		result.RootModule = anchors.RootModule
+	}
+	if result.Ecosystem == "" {
+		result.Ecosystem = anchors.Ecosystem
+	}
+	if result.ProjectRoot == "" {
+		result.ProjectRoot = anchors.ProjectRoot
 	}
 	return result
 }

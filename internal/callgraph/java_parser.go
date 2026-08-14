@@ -20,47 +20,48 @@ type JavaParser struct {
 }
 
 const (
-	javaNodeIdentifier           = "identifier"
-	javaNodeScopedIdentifier     = "scoped_identifier"
-	javaNodeGenericType          = "generic_type"
-	javaNodeScopedTypeIdentifier = "scoped_type_identifier"
-	javaNodeClassDeclaration     = "class_declaration"
-	javaNodeInterfaceDeclaration = "interface_declaration"
-	javaNodeFieldDeclaration     = "field_declaration"
-	javaNodeMethodDeclaration    = "method_declaration"
-	javaNodeFormalParameters     = "formal_parameters"
-	javaNodeArgumentList         = "argument_list"
-	javaNodeFieldAccess          = "field_access"
-	javaNodeObjectCreation       = "object_creation_expression"
-	javaNodeMethodInvocation     = "method_invocation"
-	javaNodeVariableDeclarator   = "variable_declarator"
-	javaNodeModifiers            = "modifiers"
-	javaNodeClassBody            = "class_body"
-	javaNodeResourceDecl         = "resource"
-	javaNodeEnhancedFor          = "enhanced_for_statement"
-	javaNodeCastExpression       = "cast_expression"
-	javaNodeParenthesizedExpr    = "parenthesized_expression"
-	javaFieldValue               = "value"
-	javaNodeFormalParameter      = "formal_parameter"
-	javaNodeCatchFormalParameter = "catch_formal_parameter"
-	javaNodeCatchType            = "catch_type"
-	javaFieldName                = "name"
-	javaFieldType                = "type"
-	javaNodeAssignmentExpression = "assignment_expression"
-	javaSourceTypeParameter      = "PARAMETER"
-	javaVarOriginKindField       = "field"
-	javaVarOriginKindParameter   = "parameter"
-	javaFunctionTypeMethod       = "method"
-	javaFunctionTypeConstructor  = "constructor"
-	javaFunctionTypeClassInit    = "class-init"
-	javaNodeStaticInitializer    = "static_initializer"
-	javaThisKeyword              = "this"
-	javaNodeSuperclass           = "superclass"
-	javaNodeSuperInterfaces      = "super_interfaces"
-	javaNodeTypeList             = "type_list"
-	javaNodeTypeIdentifier       = "type_identifier"
-	javaNodeLineComment          = "line_comment"
-	javaNodeBlockComment         = "block_comment"
+	javaNodeIdentifier             = "identifier"
+	javaNodeScopedIdentifier       = "scoped_identifier"
+	javaNodeGenericType            = "generic_type"
+	javaNodeScopedTypeIdentifier   = "scoped_type_identifier"
+	javaNodeClassDeclaration       = "class_declaration"
+	javaNodeInterfaceDeclaration   = "interface_declaration"
+	javaNodeFieldDeclaration       = "field_declaration"
+	javaNodeMethodDeclaration      = "method_declaration"
+	javaNodeConstructorDeclaration = "constructor_declaration"
+	javaNodeFormalParameters       = "formal_parameters"
+	javaNodeArgumentList           = "argument_list"
+	javaNodeFieldAccess            = "field_access"
+	javaNodeObjectCreation         = "object_creation_expression"
+	javaNodeMethodInvocation       = "method_invocation"
+	javaNodeVariableDeclarator     = "variable_declarator"
+	javaNodeModifiers              = "modifiers"
+	javaNodeClassBody              = "class_body"
+	javaNodeResourceDecl           = "resource"
+	javaNodeEnhancedFor            = "enhanced_for_statement"
+	javaNodeCastExpression         = "cast_expression"
+	javaNodeParenthesizedExpr      = "parenthesized_expression"
+	javaFieldValue                 = "value"
+	javaNodeFormalParameter        = "formal_parameter"
+	javaNodeCatchFormalParameter   = "catch_formal_parameter"
+	javaNodeCatchType              = "catch_type"
+	javaFieldName                  = "name"
+	javaFieldType                  = "type"
+	javaNodeAssignmentExpression   = "assignment_expression"
+	javaSourceTypeParameter        = "PARAMETER"
+	javaVarOriginKindField         = "field"
+	javaVarOriginKindParameter     = "parameter"
+	javaFunctionTypeMethod         = "method"
+	javaFunctionTypeConstructor    = "constructor"
+	javaFunctionTypeClassInit      = "class-init"
+	javaNodeStaticInitializer      = "static_initializer"
+	javaThisKeyword                = "this"
+	javaNodeSuperclass             = "superclass"
+	javaNodeSuperInterfaces        = "super_interfaces"
+	javaNodeTypeList               = "type_list"
+	javaNodeTypeIdentifier         = "type_identifier"
+	javaNodeLineComment            = "line_comment"
+	javaNodeBlockComment           = "block_comment"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -475,7 +476,7 @@ func (p *JavaParser) collectJavaClassDecls(
 			if decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				methodDecls = append(methodDecls, decl)
 			}
-		case "constructor_declaration":
+		case javaNodeConstructorDeclaration:
 			if decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				constructorDecls = append(constructorDecls, decl)
 			}
@@ -618,7 +619,7 @@ func (p *JavaParser) collectClassFieldAssignments(
 	assignments := make(map[string]fieldAssignment)
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
-		if child.Type() != "constructor_declaration" {
+		if child.Type() != javaNodeConstructorDeclaration {
 			continue
 		}
 		for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
