@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ### Fixed
+- The scan-progress schema now rejects skip reasons outside `skipped` events and dependency aggregate counts outside completed dependency phases; progress mode documents structured JSON errors for preflight and terminal failures.
 - Dependency-enabled scans now propagate structured scanner cancellation instead of producing partial reports with a successful exit. (#235)
 - Active scans now stop cleanly on SIGINT or SIGTERM, terminate their scan subprocesses, and return the structured `scanner_canceled` error without changing timeout results. (#235)
 - Java declarations carrying annotations report their real visibility and their declaration line. Modifiers are grouped under one AST node, and the visibility scan compared that node's whole text, which only ever matched when a declaration carried nothing else: `@Override public` equals no keyword, so annotated methods were reported `package-private`, and their start line pointed at the annotation rather than the signature.

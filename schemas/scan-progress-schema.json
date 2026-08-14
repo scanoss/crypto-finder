@@ -151,6 +151,49 @@
     },
     {
       "if": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": ["reason"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "skipped"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": [
+              "deps_scanned",
+              "deps_skipped",
+              "deps_failed",
+              "deps_with_findings",
+              "total_dep_findings"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "dependencies"
+          },
+          "status": {
+            "const": "completed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
         "required": ["phase"],
         "properties": {
           "phase": {

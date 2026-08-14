@@ -2,7 +2,7 @@
 
 ## Decision
 
-Issue #237 needs machine-readable scan lifecycle events without changing existing CLI output for current consumers. Structured progress is explicitly enabled by `--progress` and remains disabled by default. When enabled, progress events are newline-delimited JSON on stderr, human-readable logs are suppressed, and stdout/`--output` remain dedicated to findings. `--error-format=json` remains allowed and is redundant; `--error-format=text` is rejected as incompatible with progress mode during preflight.
+Issue #237 needs machine-readable scan lifecycle events without changing existing CLI output for current consumers. Structured progress is explicitly enabled by `--progress` and remains disabled by default. When enabled, progress events are newline-delimited JSON on stderr, human-readable logs are suppressed, and stdout/`--output` remain dedicated to findings. Progress mode selects the existing structured JSON error payload for both preflight and terminal failures. `--error-format=json` remains accepted as a no-op; `--error-format=text` is incompatible with progress mode and rejected during preflight.
 
 Each event uses this versioned envelope:
 
@@ -20,7 +20,7 @@ Each event uses this versioned envelope:
 
 The v1 envelope is published as a JSON Schema and validated in tests. Additive optional fields remain within v1; breaking changes require a schema-version bump. V1 reports lifecycle transitions, measured durations, dependency aggregate counts, and stable skip reasons only. It does not report percentages, estimates, per-file progress, or worker-level progress.
 
-Progress begins only after CLI preflight validation succeeds, so invalid input produces the existing structured error without a misleading scan event. Phase names and ordering follow the actual scan pipeline rather than inventing a fixed sequence:
+Progress begins only after CLI preflight validation succeeds, so invalid input produces the structured JSON error without a misleading scan event. Phase names and ordering follow the actual scan pipeline rather than inventing a fixed sequence:
 
 - `scan` is the overall lifecycle phase.
 - `rules` covers rule loading, filtering, and validation.
@@ -33,7 +33,7 @@ Optional `dependencies` and `export` phases emit `skipped` with `details.reason:
 
 For a completed aggregate dependency phase, `details` contains only these non-negative integer fields: `deps_scanned`, `deps_skipped`, `deps_failed`, `deps_with_findings`, and `total_dep_findings`. For skipped phases, `details` contains the stable `reason` field. No free-form human `message` field is part of v1.
 
-On failure or cancellation, child terminal events are followed by parent terminal events from the inside out, then the existing final structured failure payload. Cancellation uses `status: "canceled"` and the existing `scanner_canceled` code.
+On failure or cancellation, child terminal events are followed by parent terminal events from the inside out, then the existing final structured JSON failure payload. Cancellation uses `status: "canceled"` and the existing `scanner_canceled` code.
 
 ## Consequences
 
