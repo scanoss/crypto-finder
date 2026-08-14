@@ -30,9 +30,9 @@ crypto-finder scan --export-callgraph callgraph.json --output findings.json /pat
 - **OpenGrep** (recommended) or **Semgrep** — the scanning engine. Included in the Docker images.
 
     ```bash
-    # OpenGrep: download from https://github.com/opengrep/opengrep
+    # OpenGrep v1.12.1: download from https://github.com/opengrep/opengrep/releases/tag/v1.12.1
     # Semgrep:
-    pip install semgrep
+    pip install semgrep==1.145.0
     ```
 
 ### Setup
@@ -230,7 +230,7 @@ See [Configuration](docs/CONFIGURATION.md) for the full guide.
 | Document | Contents |
 |----------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline overview, package map, load-bearing invariants |
-| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.6`), graph fragment (`graph-fragment-1.8`), CycloneDX CBOM |
+| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.7`), graph fragment (`graph-fragment-1.8`), CycloneDX CBOM |
 | [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Stable failure code/stage taxonomy emitted by `--error-format json` |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration options and skip patterns |
 | [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) | Dependency scanning, call chain tracing, attribution |

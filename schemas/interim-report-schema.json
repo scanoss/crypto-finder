@@ -1,44 +1,68 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://scanoss.com/schemas/interim-report.json",
   "title": "SCANOSS Crypto-Finder Interim Report",
   "description": "Standardized output format for cryptographic findings from SCANOSS crypto-finder scanners",
   "type": "object",
-  "required": ["version", "tool", "findings"],
+  "required": [
+    "version",
+    "tool",
+    "findings"
+  ],
   "properties": {
     "version": {
+      "const": "1.4",
       "type": "string",
       "description": "Version of the interim report schema (e.g., \"1.4\")",
-      "examples": ["1.4", "1.3", "1.2", "1.1", "1.0"]
+      "examples": [
+        "1.4",
+        "1.3",
+        "1.2",
+        "1.1",
+        "1.0"
+      ]
     },
     "tool": {
-      "$ref": "#/$defs/ToolInfo"
+      "$ref": "#/definitions/ToolInfo"
     },
     "findings": {
       "type": "array",
       "description": "All detected cryptographic assets grouped by file",
       "items": {
-        "$ref": "#/$defs/Finding"
+        "$ref": "#/definitions/Finding"
       }
+    },
+    "rules": {
+      "$ref": "#/definitions/RulesInfo",
+      "description": "Ruleset provenance for the scan; present as an empty object when unavailable."
     }
   },
-  "$defs": {
+  "definitions": {
     "ToolInfo": {
       "type": "object",
       "description": "Metadata about the scanner that produced the report",
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Name of the scanner tool",
-          "examples": ["crypto-finder", "cbom-toolkit"]
+          "examples": [
+            "crypto-finder",
+            "cbom-toolkit"
+          ]
         },
         "version": {
           "type": "string",
           "description": "Version of the scanner tool",
-          "examples": ["1.45.0"]
+          "examples": [
+            "1.45.0"
+          ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Finding": {
       "type": "object",
@@ -56,16 +80,24 @@
         "language": {
           "type": "string",
           "description": "Programming language of the file",
-          "examples": ["java", "python", "go", "javascript", "c", "cpp"]
+          "examples": [
+            "java",
+            "python",
+            "go",
+            "javascript",
+            "c",
+            "cpp"
+          ]
         },
         "cryptographic_assets": {
           "type": "array",
           "description": "All cryptographic materials found in this file",
           "items": {
-            "$ref": "#/$defs/CryptographicAsset"
+            "$ref": "#/definitions/CryptographicAsset"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "CryptographicAsset": {
       "type": "object",
@@ -96,17 +128,20 @@
           "type": "array",
           "description": "Detection rules that identified this cryptographic asset (v1.1+)",
           "items": {
-            "$ref": "#/$defs/RuleInfo"
+            "$ref": "#/definitions/RuleInfo"
           }
         },
         "rule": {
-          "$ref": "#/$defs/RuleInfo",
+          "$ref": "#/definitions/RuleInfo",
           "description": "Single detection rule (deprecated, use 'rules' array in v1.1+)"
         },
         "status": {
           "type": "string",
           "description": "Current state of this finding",
-          "examples": ["pending", "identified"]
+          "examples": [
+            "pending",
+            "identified"
+          ]
         },
         "metadata": {
           "type": "object",
@@ -118,29 +153,62 @@
         "source": {
           "type": "string",
           "description": "How this finding was discovered (v1.2+)",
-          "enum": ["direct", "dependency"]
+          "enum": [
+            "direct",
+            "dependency"
+          ]
         },
         "dependency_info": {
-          "$ref": "#/$defs/DependencyInfo",
+          "$ref": "#/definitions/DependencyInfo",
           "description": "Attribution data when the finding originates from a dependency (v1.2+)"
         },
         "parameter_conditions": {
           "type": "array",
           "description": "Structured predicates parsed from metadata.parameterCondition (v1.4+). Absent when the rule carries no predicate.",
           "items": {
-            "$ref": "#/$defs/ParameterCondition"
+            "$ref": "#/definitions/ParameterCondition"
           }
+        },
+        "start_col": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based match start column, inclusive; omitted when unknown."
+        },
+        "end_col": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based match end column, exclusive; omitted when unknown."
+        },
+        "oid": {
+          "type": "string",
+          "description": "Object identifier for the cryptographic algorithm, when known."
+        },
+        "finding_id": {
+          "type": "string",
+          "description": "Stable opaque identifier used to join this finding to the callgraph export."
         }
       },
       "oneOf": [
-        {"required": ["rules"]},
-        {"required": ["rule"]}
-      ]
+        {
+          "required": [
+            "rules"
+          ]
+        },
+        {
+          "required": [
+            "rule"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "DependencyInfo": {
       "type": "object",
       "description": "Attribution metadata for findings originating from dependencies",
-      "required": ["module", "version"],
+      "required": [
+        "module",
+        "version"
+      ],
       "properties": {
         "module": {
           "type": "string",
@@ -150,12 +218,17 @@
           "type": "string",
           "description": "Dependency version (e.g., \"v0.17.0\")"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "RuleInfo": {
       "type": "object",
       "description": "Information about the detection rule that identified the cryptographic asset",
-      "required": ["id", "message", "severity"],
+      "required": [
+        "id",
+        "message",
+        "severity"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -173,53 +246,112 @@
         "severity": {
           "type": "string",
           "description": "Importance level of the finding",
-          "examples": ["WARNING", "ERROR", "INFO"]
+          "examples": [
+            "WARNING",
+            "ERROR",
+            "INFO"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Ruleset version when known."
         }
-      }
+      },
+      "additionalProperties": false
     },
     "ParameterCondition": {
       "type": "object",
       "description": "One parsed parameterCondition predicate (v1.4+): param[<selector>]<op><value>",
-      "required": ["raw", "selector", "operator", "match", "value"],
+      "required": [
+        "raw",
+        "selector",
+        "operator",
+        "match",
+        "value"
+      ],
       "properties": {
         "raw": {
           "type": "string",
           "description": "Exact source substring this condition was parsed from",
-          "examples": ["param[0]==true", "param[1]:type==javax.crypto.SecretKey"]
+          "examples": [
+            "param[0]==true",
+            "param[1]:type==javax.crypto.SecretKey"
+          ]
         },
         "selector": {
-          "$ref": "#/$defs/ParameterSelector"
+          "$ref": "#/definitions/ParameterSelector"
         },
         "operator": {
           "type": "string",
           "description": "Comparison operator",
-          "enum": ["==", "~="]
+          "enum": [
+            "==",
+            "~="
+          ]
         },
         "match": {
           "type": "string",
           "description": "Whether the predicate compares the argument's value or its static type",
-          "enum": ["value", "type"]
+          "enum": [
+            "value",
+            "type"
+          ]
         },
         "value": {
           "type": "string",
           "description": "Comparison operand, taken verbatim from the source"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "ParameterSelector": {
       "type": "object",
       "description": "Identifies which call argument a predicate binds to (positional, keyword, or both)",
-      "required": ["index", "name"],
+      "required": [
+        "index",
+        "name"
+      ],
       "properties": {
         "index": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "description": "0-based positional argument index; null when the selector is keyword-only"
         },
         "name": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Keyword/parameter name; null when the selector is positional-only"
         }
-      }
+      },
+      "additionalProperties": false
+    },
+    "RulesInfo": {
+      "type": "object",
+      "description": "Provenance of the ruleset used for the scan.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "remote",
+            "local"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "checksum_sha256": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }

@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Replaced the generated DOCX/PDF Crypto Finder guide with a standalone interactive SCANOSS-branded HTML guide at `docs/user-guide/user-guide.html`.
+- Dependency-scanning container images now use digest-pinned base/tool images, exact package versions, and checksum-verified installer inputs; CI rejects unpinned tooling.
+- Report, callgraph, graph-fragment, and annotation file exports now create missing parent directories and replace existing files only after a complete, synced write.
 
 ### Added
+- Published JSON Schemas for the interim report and `--export-callgraph` artifacts, with CI validation of generated exports to catch top-level contract drift.
+- Public Go contracts are available at `pkg/schema` for interim reports and `pkg/failure` for structured terminal errors, preserving the documented JSON fields and compatibility behavior for downstream integrations.
 - Callgraph export findings now carry `reachable`, answering whether user code reaches the crypto — a different question from `unresolved_reason`, which says which function contains it. A finding can be perfectly attributed and still unreachable. Three states: `true`, `false`, and absent when the question does not apply because a library was scanned on its own (`--export-graph-fragment` without dependencies), where there is no user code to be reached from. Callgraph export schema is now `6.7`.
 - Java callgraph contracts now model the cloud KMS and secrets-manager facades: AWS KMS across both SDK generations (`software.amazon.awssdk:kms` and `com.amazonaws:aws-java-sdk-kms`, including the v1 bean setters), Google Cloud KMS, Azure Key Vault Keys synchronous and asynchronous cryptography and key clients, and the HashiCorp `vault-java-driver` client, TLS configuration, and `Logical` secrets-engine operations.
 - Java callgraph contracts now model the OkHttp 5.x TLS surface — certificate pinning, `ConnectionSpec` cipher-suite and TLS-version selection, handshake inspection, the TLS-related `OkHttpClient.Builder` configuration, and the `okhttp-tls` `HeldCertificate`/`HandshakeCertificates` certificate and key generation.

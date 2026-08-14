@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scanoss.com/schemas/callgraph.json",
+  "title": "SCANOSS Crypto-Finder Callgraph Export",
+  "description": "Finding-centric reachability export written by --export-callgraph.",
+  "type": "object",
+  "required": ["schema_version", "scan_metadata", "finding_graphs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "6.7",
+      "type": "string",
+      "description": "Version of the customer-facing callgraph contract."
+    },
+    "scan_metadata": {
+      "$ref": "#/definitions/ScanMetadata"
+    },
+    "finding_graphs": {
+      "type": "array",
+      "description": "One reachability record per interim-report finding.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "supporting_calls": {
+      "type": "array",
+      "description": "Lifecycle and context calls associated with findings.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "crypto_entry_points": {
+      "type": "array",
+      "description": "Reachability index keyed by callable identity.",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "ScanMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": {"type": "string"},
+        "root_module": {"type": "string"},
+        "tool_name": {"type": "string"},
+        "tool_version": {"type": "string"},
+        "exported_at": {"type": "string"},
+        "function_count": {"type": "integer", "minimum": 0},
+        "edge_count": {"type": "integer", "minimum": 0},
+        "java_requested_jdk_major": {"type": "string"},
+        "java_runtime_version": {"type": "string"},
+        "java_platform_signatures_used": {"type": "boolean"},
+        "java_platform_signature_source": {"type": "string"},
+        "java_platform_signature_unavailable_reason": {"type": "string"}
+      }
+    }
+  }
+}

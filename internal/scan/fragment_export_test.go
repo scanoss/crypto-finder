@@ -208,7 +208,7 @@ func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
 			externalID.String(): {initID.String()},
 		},
 	}
-	path := filepath.Join(t.TempDir(), "fragment.json")
+	path := filepath.Join(t.TempDir(), "nested", "fragment.json")
 
 	if err := ExportGraphFragment(path, "json", &engine.DepScanResult{
 		CallGraph:  graph,

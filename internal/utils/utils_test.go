@@ -18,11 +18,44 @@
 package utils
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestWriteFileAtomicCreatesParentsAndPreservesTargetOnFailure(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested", "report.json")
+	if err := WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		_, err := file.WriteString("old")
+		return err
+	}); err != nil {
+		t.Fatalf("initial WriteFileAtomic: %v", err)
+	}
+
+	wantErr := errors.New("write failed")
+	err := WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		if _, writeErr := file.WriteString("partial"); writeErr != nil {
+			return writeErr
+		}
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("WriteFileAtomic error = %v, want %v", err, wantErr)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if got, want := string(data), "old"; got != want {
+		t.Fatalf("target = %q, want %q", got, want)
+	}
+}
 
 func TestDeduplicateSliceOfStrings(t *testing.T) {
 	t.Parallel()
