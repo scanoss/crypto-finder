@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -1092,7 +1093,105 @@ func compatibleCanonicalSignatures(ctx *exportBuildContext, id callgraph.Functio
 		return nil
 	}
 	owner := id.Package + "." + id.Type
-	return compatibleParentSignatures(ctx, hierarchyAncestors(ctx.graph.TypeHierarchy, owner), method, len(decl.Parameters))
+	return compatibleParentSignatures(ctx, hierarchyAncestors(ctx.combinedTypeHierarchy(), owner), method, len(decl.Parameters))
+}
+
+// combinedTypeHierarchy returns the bytecode hierarchy merged with edges
+// recovered from source-declared extends/implements clauses (OwnerBases).
+// Bytecode edges win on conflict; source edges only add what bytecode
+// indexing never saw — in a bare-source scan (mining workspace, no jars)
+// that is the entire hierarchy.
+func (ctx *exportBuildContext) combinedTypeHierarchy() map[string][]string {
+	if ctx.combinedHierarchy != nil {
+		return ctx.combinedHierarchy
+	}
+	merged := make(map[string][]string, len(ctx.graph.TypeHierarchy))
+	for owner, bases := range ctx.graph.TypeHierarchy {
+		merged[owner] = bases
+	}
+	for owner, bases := range sourceTypeHierarchy(ctx.graph) {
+		existing := make(map[string]bool, len(merged[owner]))
+		for _, base := range merged[owner] {
+			existing[base] = true
+		}
+		for _, base := range bases {
+			if !existing[base] {
+				merged[owner] = append(merged[owner], base)
+			}
+		}
+	}
+	ctx.combinedHierarchy = merged
+	return merged
+}
+
+// sourceTypeHierarchy derives owner → base FQN edges from the extends/
+// implements clauses the parser stamps on every declaration (OwnerBases).
+// Bases are recorded as erased simple names, so each is resolved against the
+// types declared in this scan: a same-package declaration wins, otherwise a
+// name that is unique across the scan; an ambiguous or unknown name resolves
+// to nothing rather than guessing.
+func sourceTypeHierarchy(graph *callgraph.CallGraph) map[string][]string {
+	if graph == nil {
+		return nil
+	}
+	typesBySimple := make(map[string][]string)
+	pkgByOwner := make(map[string]string)
+	basesByOwner := make(map[string]map[string]bool)
+	seenOwner := make(map[string]bool)
+	for _, decl := range graph.Functions {
+		if decl == nil || decl.ID.Package == "" || decl.ID.Type == "" {
+			continue
+		}
+		owner := decl.ID.Package + "." + decl.ID.Type
+		if !seenOwner[owner] {
+			seenOwner[owner] = true
+			simple := decl.ID.Type
+			if dot := strings.LastIndex(simple, "."); dot >= 0 {
+				simple = simple[dot+1:]
+			}
+			typesBySimple[simple] = append(typesBySimple[simple], owner)
+			pkgByOwner[owner] = decl.ID.Package
+		}
+		for _, base := range decl.OwnerBases {
+			if base == "" {
+				continue
+			}
+			if basesByOwner[owner] == nil {
+				basesByOwner[owner] = make(map[string]bool)
+			}
+			basesByOwner[owner][base] = true
+		}
+	}
+
+	for simple := range typesBySimple {
+		sort.Strings(typesBySimple[simple])
+	}
+
+	hierarchy := make(map[string][]string, len(basesByOwner))
+	for owner, bases := range basesByOwner {
+		resolvedSet := make(map[string]bool, len(bases))
+		for base := range bases {
+			candidates := typesBySimple[base]
+			resolved := ""
+			if len(candidates) == 1 {
+				resolved = candidates[0]
+			} else {
+				for _, candidate := range candidates {
+					if pkgByOwner[candidate] == pkgByOwner[owner] {
+						resolved = candidate
+						break
+					}
+				}
+			}
+			if resolved == "" || resolved == owner || resolvedSet[resolved] {
+				continue
+			}
+			resolvedSet[resolved] = true
+			hierarchy[owner] = append(hierarchy[owner], resolved)
+		}
+		sort.Strings(hierarchy[owner])
+	}
+	return hierarchy
 }
 
 func hierarchyAncestors(hierarchy map[string][]string, owner string) []string {

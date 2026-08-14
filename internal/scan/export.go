@@ -80,6 +80,12 @@ type exportBuildContext struct {
 	// from Functions[].Calls (and merged with graph.Callers). Hand-built test
 	// graphs often omit Callers; production graphs have both.
 	callsReverseIndex map[string][]string
+	// combinedHierarchy caches the union of the bytecode-derived
+	// graph.TypeHierarchy and the source-declared hierarchy recovered from
+	// FunctionDecl.OwnerBases. Bare-source scans (mining workspaces) index no
+	// jars, so without the source edges every fragment function would export
+	// empty CompatibleCanonicalSignatures. Built lazily by combinedTypeHierarchy.
+	combinedHierarchy map[string][]string
 }
 
 type cachedContainingFunction struct {

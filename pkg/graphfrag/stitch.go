@@ -123,9 +123,9 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		return nil, &ErrMissingFragment{Components: missing}
 	}
 
-	functionsBySignature, functionsByCanonicalSignature := indexFunctions(closure, fragments)
+	functionsBySignature, functionsByCanonicalSignature, dispatchSurfaces := indexFunctions(closure, fragments)
 	functionsByNode := indexFunctionsByNode(closure, fragments)
-	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode)
+	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
 
@@ -324,9 +324,11 @@ func missingFragments(closure []ComponentKey, fragments map[ComponentKey]Fragmen
 	return missing
 }
 
-func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment) (map[string][]graphNode, map[string][]graphNode) {
+func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment) (map[string][]graphNode, map[string][]graphNode, map[graphNode][]graphNode) {
 	byKey := make(map[string][]graphNode)
 	byCanonicalSignature := make(map[string][]graphNode)
+	byOwnCanonical := make(map[string][]graphNode)
+	implsByCompatible := make(map[string][]graphNode)
 	for _, key := range closure {
 		fragment := fragments[key]
 		for i := range fragment.Functions {
@@ -335,15 +337,36 @@ func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment)
 			byKey[fn.Signature] = append(byKey[fn.Signature], node)
 			if fn.CanonicalSignature != "" {
 				byCanonicalSignature[fn.CanonicalSignature] = append(byCanonicalSignature[fn.CanonicalSignature], node)
+				byOwnCanonical[fn.CanonicalSignature] = append(byOwnCanonical[fn.CanonicalSignature], node)
 			}
 			for _, compatible := range fn.CompatibleCanonicalSignatures {
 				if compatible != "" {
 					byCanonicalSignature[compatible] = append(byCanonicalSignature[compatible], node)
+					implsByCompatible[compatible] = append(implsByCompatible[compatible], node)
 				}
 			}
 		}
 	}
-	return byKey, byCanonicalSignature
+
+	// A dispatch surface is a function other functions declare as their
+	// hierarchy parent via CompatibleCanonicalSignatures — an interface method
+	// or an overridden base method. An exact edge landing on one is a call the
+	// producer could only anchor to the declared type; the implementations are
+	// the traversable continuations (expanded under the standard dispatch
+	// policy in applyImmediateEdgePolicy).
+	dispatchSurfaces := make(map[graphNode][]graphNode)
+	for compatible, impls := range implsByCompatible {
+		for _, parent := range byOwnCanonical[compatible] {
+			seen := make(map[graphNode]bool, len(impls))
+			for _, impl := range impls {
+				if impl != parent && !seen[impl] {
+					seen[impl] = true
+					dispatchSurfaces[parent] = append(dispatchSurfaces[parent], impl)
+				}
+			}
+		}
+	}
+	return byKey, byCanonicalSignature, dispatchSurfaces
 }
 
 func indexFunctionsByNode(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[graphNode]Function {
@@ -411,6 +434,7 @@ func buildAdjacency(
 	functionsBySignature map[string][]graphNode,
 	functionsByCanonicalSignature map[string][]graphNode,
 	functionsByNode map[graphNode]Function,
+	dispatchSurfaces map[graphNode][]graphNode,
 ) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
@@ -422,7 +446,7 @@ func buildAdjacency(
 		edges := collectCallEdges(fragment)
 		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature, functionsByCanonicalSignature)
 
-		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed)
+		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes)
 		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed)
 	}
 	return out, suppressed
@@ -561,6 +585,8 @@ func applyImmediateEdgePolicy(
 	resolve edgeResolver,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
+	dispatchSurfaces map[graphNode][]graphNode,
+	ownerTypes map[graphNode]string,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
@@ -578,6 +604,7 @@ func applyImmediateEdgePolicy(
 				continue
 			}
 			appendAdjacencyEdges(adjacency, caller, targets.nodes, e.entryCall)
+			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, adjacency, suppressed)
 		case ResolutionInterfaceDispatch:
 			gk := dispatchKey(key, *e)
 			dispatchGroups[gk] = append(dispatchGroups[gk], *e)
@@ -590,6 +617,43 @@ func applyImmediateEdgePolicy(
 		}
 	}
 	return dispatchGroups
+}
+
+// expandDispatchSurfaces bridges an exact edge that lands on a dispatch
+// surface: the surface node keeps its direct edge (a default/base method body
+// stays traversable), and its implementations are added under the standard
+// dispatch policy — a single implementation traverses, several fail closed
+// unless receiver-type provenance narrows them to exactly one (the same
+// contract applyDispatchGroups enforces for producer-marked dispatch edges).
+func expandDispatchSurfaces(
+	key ComponentKey,
+	e *callEdge,
+	caller graphNode,
+	targets []graphNode,
+	dispatchSurfaces map[graphNode][]graphNode,
+	ownerTypes map[graphNode]string,
+	adjacency map[graphNode][]adjacencyEdge,
+	suppressed *[]SuppressedEdge,
+) {
+	for _, target := range targets {
+		impls := dispatchSurfaces[target]
+		if len(impls) == 0 {
+			continue
+		}
+		if len(impls) == 1 {
+			appendAdjacencyEdges(adjacency, caller, impls, e.entryCall)
+			continue
+		}
+		implEdges := make([]adjacencyEdge, 0, len(impls))
+		for _, impl := range impls {
+			implEdges = append(implEdges, adjacencyEdge{target: impl, entryCall: e.entryCall})
+		}
+		if resolved, ok := disambiguateByReceiverType([]callEdge{*e}, implEdges, ownerTypes); ok {
+			adjacency[caller] = append(adjacency[caller], resolved)
+			continue
+		}
+		*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonAmbiguousDispatch, candidateComponents(impls)))
+	}
 }
 
 func dispatchKey(key ComponentKey, e callEdge) dispatchGroupKey {
