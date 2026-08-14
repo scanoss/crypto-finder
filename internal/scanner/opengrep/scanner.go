@@ -51,8 +51,8 @@ const noSemgrepignoreFilename = ".crypto-finder-no-semgrepignore"
 // Package-level variables for testing (can be overridden in tests).
 var (
 	lookPath      = exec.LookPath
-	commandOutput = func(name string, args ...string) ([]byte, error) {
-		return exec.Command(name, args...).Output()
+	commandOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return scanner.CommandContext(ctx, name, args...).Output()
 	}
 )
 
@@ -77,7 +77,7 @@ func NewScanner() *Scanner {
 }
 
 // Initialize validates that OpenGrep is available and properly configured.
-func (s *Scanner) Initialize(config scanner.Config) error {
+func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	// Use provided executable path or default
 	if config.ExecutablePath != "" {
 		s.executablePath = config.ExecutablePath
@@ -97,8 +97,11 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	s.executablePath = path
 
 	// Get opengrep version
-	s.version, err = s.detectVersion()
+	s.version, err = s.detectVersion(ctx)
 	if err != nil {
+		if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
+			return ctxErr
+		}
 		return failure.Wrap(
 			err,
 			failure.CodeScannerInitializationFailed,
@@ -153,7 +156,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	}
 
 	// Build opengrep command
-	args := s.buildCommand(target, rulePaths)
+	args := s.buildCommand(ctx, target, rulePaths)
 
 	// Execute opengrep
 	output, stderr, err := s.execute(ctx, args)
@@ -197,8 +200,8 @@ func (s *Scanner) GetInfo() scanner.Info {
 }
 
 // detectVersion runs `opengrep --version` to get the installed version.
-func (s *Scanner) detectVersion() (string, error) {
-	output, err := commandOutput(s.executablePath, "--version")
+func (s *Scanner) detectVersion(ctx context.Context) (string, error) {
+	output, err := commandOutput(ctx, s.executablePath, "--version")
 	if err != nil {
 		return "", fmt.Errorf("failed to get opengrep version: %w", err)
 	}
@@ -232,12 +235,12 @@ func (s *Scanner) validateVersion() error {
 }
 
 // buildCommand constructs the opengrep command arguments.
-func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
+func (s *Scanner) buildCommand(ctx context.Context, target string, rulePaths []string) []string {
 	args := []string{
 		"--json",            // JSON output format
 		"--taint-intrafile", // Enable taint analysis
 	}
-	args = append(args, s.semgrepignoreControlArgs()...)
+	args = append(args, s.semgrepignoreControlArgs(ctx)...)
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -258,10 +261,10 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // semgrepignoreControlArgs disables OpenGrep's built-in default ignore file
 // handling so crypto-finder's own skip logic remains the single source of truth.
-func (s *Scanner) semgrepignoreControlArgs() []string {
-	help, err := commandOutput(s.executablePath, "scan", "--help")
+func (s *Scanner) semgrepignoreControlArgs(ctx context.Context) []string {
+	help, err := commandOutput(ctx, s.executablePath, "scan", "--help")
 	if err != nil {
-		help, err = commandOutput(s.executablePath, "--help")
+		help, err = commandOutput(ctx, s.executablePath, "--help")
 	}
 	if err != nil {
 		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
@@ -277,7 +280,7 @@ func (s *Scanner) semgrepignoreControlArgs() []string {
 
 // execute runs the opengrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, s.executablePath, args...)
+	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
 		cmd.Dir = s.workDir

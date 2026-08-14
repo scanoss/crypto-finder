@@ -87,12 +87,21 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
+### Public Go Contract
+
+Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.4"`.
+
+The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `oid`, `finding_id`, `source`, and `dependency_info` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
+
+The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
+
 ### Call Graph Export
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.6`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.7`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
+- **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.
 - **`6.5`** makes `role: operation` contract methods **supporting-call-only**: they are exported as categorized `supporting_calls` referenced by `supporting_call_ids` (including interface-authored contracts resolved to concrete implementations) and are no longer synthesized as operation-only `crypto_entry_points` in live, fragment, or stitched exports.
 - **`6.4`** adds `method_role`, `role_provenance`, and `parameter_roles` — contracts-KB-derived method/parameter role classification (`factory`/`config`/`output`/`operation` on `method_role`; per-parameter `operation-determining`/`metadata-contributing`/`none` with a `contributes: {property, derivation}` block on `parameter_roles`). `method_role`/`role_provenance` appear on `crypto_entry_points`; `parameter_roles` appears on `crypto_entry_points` and on the supporting-call declaration, index-aligned with `parameter_types` — never on call-site parameter literals. These fields are populated on the live (`--export-callgraph`) and graph-fragment export paths and carried through the stitched/served path.
@@ -115,6 +124,15 @@ Schema note: call graph export version **`6.6`** is the current customer-facing 
 - `supporting_calls[]` carries config/lifecycle/context crypto-adjacent calls, such as builder options or parameter setup. These calls are not findings and do not inflate `finding_graphs[]`. As of `6.5`, `role: operation` contract methods (the calls where the cryptographic computation actually executes, e.g. block-processing/finalization methods) are also exported here with a category and referenced via `supporting_call_ids`.
 - Constructor joins remain canonical (`<init>`), while display fields and aliases expose IBM-style names such as `com.acme.Factory.Factory`.
 - `entry_point_index` is not emitted by schema `6.0`. Consumers should migrate to `crypto_entry_points[]`.
+
+### Compatibility and consumer gating
+
+The published JSON Schemas are [`schemas/interim-report-schema.json`](../schemas/interim-report-schema.json) and [`schemas/callgraph-schema.json`](../schemas/callgraph-schema.json). CI validates artifacts generated by the report writer and `--export-callgraph` against them; an undeclared top-level property is a contract failure.
+
+- Adding an optional field requires a schema-version bump, a schema update, and documentation. Consumers must validate an artifact against the published schema for its exact version; an artifact with no matching published schema must fail closed with a clear upgrade message.
+- Removing or renaming a field, changing a field's JSON type or meaning, or making an optional field required is breaking and requires a schema-version bump plus a migration note in `CHANGELOG.md`.
+- Consumers must gate parsing on the artifact's `version` (interim report) or `schema_version` (callgraph), then validate against the matching published schema before processing it.
+- Schema changes and version bumps must update this document, the schema file, generated-export validation, and `CHANGELOG.md` in the same change.
 
 Example:
 
@@ -341,7 +359,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.6`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.7`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the

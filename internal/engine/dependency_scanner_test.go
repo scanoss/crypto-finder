@@ -13,6 +13,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -542,7 +543,10 @@ func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 		{Module: "b", Version: "1", Dir: filepath.Join(t.TempDir(), "bad")},
 	}
 
-	outcomes := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	outcomes, err := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	if err != nil {
+		t.Fatalf("scanDependenciesParallel: %v", err)
+	}
 
 	if len(outcomes) != 3 {
 		t.Fatalf("outcomes len = %d, want 3", len(outcomes))
@@ -561,6 +565,39 @@ func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 	}
 	if sawEmptyTarget.Load() {
 		t.Fatal("scanner should never be called with an empty dependency target")
+	}
+}
+
+func TestDependencyScanner_ScanDependenciesParallel_PropagatesCancellation(t *testing.T) {
+	cancellation := failure.New(failure.CodeScannerCancelled, failure.StageScan, "scan canceled")
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{
+		scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
+			return nil, cancellation
+		},
+	})
+	orch := NewOrchestrator(
+		&mockDetector{},
+		rules.NewManager(&mockRuleSource{}),
+		registry,
+	)
+	ds := &DependencyScanner{
+		orchestrator: orch,
+		resolver:     &fakeResolver{ecosystem: "go"},
+	}
+
+	outcomes, err := ds.scanDependenciesParallel(context.Background(), []dependency.Dependency{{
+		Module: "example.com/dep", Version: "v1", Dir: t.TempDir(),
+	}}, []string{"/rules/go.yaml"}, "", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	if len(outcomes) != 1 {
+		t.Fatalf("outcomes len = %d, want 1", len(outcomes))
+	}
+	structured, ok := failure.As(err)
+	if !ok || structured.Code != failure.CodeScannerCancelled {
+		t.Fatalf("error = %v, want scanner_canceled", err)
+	}
+	if structured != cancellation {
+		t.Fatal("dependency cancellation lost its structured error identity")
 	}
 }
 

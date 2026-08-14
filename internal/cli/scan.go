@@ -457,7 +457,7 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
-func runScan(_ *cobra.Command, args []string) error {
+func runScan(cmd *cobra.Command, args []string) error {
 	target := args[0]
 
 	// Validate flags
@@ -493,7 +493,7 @@ func runScan(_ *cobra.Command, args []string) error {
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 	defer cancel()
 
 	targetDir, err := callGraphTargetDir(target)

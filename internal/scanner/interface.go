@@ -43,12 +43,13 @@ import (
 //	    ExecutablePath: "/usr/local/bin/semgrep",
 //	    Timeout:        10 * time.Minute,
 //	}
-//	if err := scanner.Initialize(config); err != nil {
+//	if err := scanner.Initialize(ctx, config); err != nil {
 //	    log.Fatal(err)
 //	}
 //	report, err := scanner.Scan(ctx, "/path/to/code", []string{"./rules"})
 type Scanner interface {
 	// Initialize validates the scanner is available and properly configured.
+	// ctx cancels initialization probes and their subprocess trees.
 	// This method should be called once before any scanning operations.
 	//
 	// It verifies:
@@ -57,7 +58,7 @@ type Scanner interface {
 	//   - Configuration parameters are valid
 	//
 	// Returns an error if initialization fails.
-	Initialize(config Config) error
+	Initialize(ctx context.Context, config Config) error
 
 	// Scan executes the scanner against the target with given rule paths.
 	// Returns an interim format report containing all findings.

@@ -87,7 +87,7 @@ func initializeScannerOrSkip(t *testing.T, config scanner.Config) *Scanner {
 	t.Helper()
 
 	s := NewScanner()
-	err := s.Initialize(config)
+	err := s.Initialize(context.Background(), config)
 	skipIfOpengrepEnvironmentIssue(t, err)
 	if err != nil {
 		t.Fatalf("Initialize() failed: %v", err)

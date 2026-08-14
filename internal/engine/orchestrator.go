@@ -92,6 +92,8 @@ type ScanOptions struct {
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
+//
+//nolint:funlen // Scanner initialization needs context-aware failure classification before scanning.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
 	// Step 1: Detect languages
 	var languages []string
@@ -189,7 +191,10 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	// Step 4: Initialize scanner
-	if err := scannerInstance.Initialize(opts.ScannerConfig); err != nil {
+	if err := scannerInstance.Initialize(ctx, opts.ScannerConfig); err != nil {
+		if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, failure.WrapUnknown(
 			err,
 			failure.CodeScannerInitializationFailed,
@@ -197,6 +202,9 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 			fmt.Sprintf("failed to initialize scanner '%s'", opts.ScannerName),
 			failure.WithDetail("scanner", opts.ScannerName),
 		)
+	}
+	if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+		return nil, ctxErr
 	}
 
 	// Step 5: Execute scan

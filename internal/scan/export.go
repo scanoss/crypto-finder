@@ -20,6 +20,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
@@ -338,7 +339,7 @@ type exportDependencyRoot struct {
 
 // --- Entry point ---
 
-// ExportCallGraph writes a finding-centric call graph export (schema v4.3).
+// ExportCallGraph writes the current finding-centric callgraph export.
 func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 	if result == nil {
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
@@ -386,15 +387,14 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (ca
 	assets := callGraphExportAssets(result.Report)
 	meta := buildCallGraphExportScanMeta(result)
 
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
-	}
-	bw := bufio.NewWriterSize(file, 1<<20)
-	writer := graphFragmentJSONWriter{w: bw}
-
-	streamed, writeErr := streamCallGraphExport(&writer, ctx, assets, meta)
-	if err := finishBufferedOutput(file, bw, writeErr); err != nil {
+	var streamed streamedCallGraphExport
+	if err := utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		bw := bufio.NewWriterSize(file, 1<<20)
+		writer := graphFragmentJSONWriter{w: bw}
+		var writeErr error
+		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta)
+		return finishBufferedOutput(bw, writeErr)
+	}); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
 	}
 
@@ -519,13 +519,10 @@ func logCallGraphExportProgress(processed, total int, start time.Time) {
 		Msg("Building integration call graph export")
 }
 
-func finishBufferedOutput(file *os.File, bw *bufio.Writer, writeErr error) error {
+func finishBufferedOutput(bw *bufio.Writer, writeErr error) error {
 	err := writeErr
 	if err == nil {
 		err = bw.Flush()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
 	}
 	return err
 }
@@ -584,19 +581,12 @@ func buildCallGraphExportScanMeta(result *engine.DepScanResult) callGraphExportS
 }
 
 func writeIndentedJSONFile(path string, payload any) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(file)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	err = enc.Encode(payload)
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	return err
+	return utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		enc := json.NewEncoder(file)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		return enc.Encode(payload)
+	})
 }
 
 // --- Build pipeline ---

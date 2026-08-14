@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Replaced the generated DOCX/PDF Crypto Finder guide with a standalone interactive SCANOSS-branded HTML guide at `docs/user-guide/user-guide.html`.
+- Dependency-scanning container images now use digest-pinned base/tool images, exact package versions, and checksum-verified installer inputs; CI rejects unpinned tooling.
+- Report, callgraph, graph-fragment, and annotation file exports now create missing parent directories and replace existing files only after a complete, synced write.
 
 ### Added
+- Published JSON Schemas for the interim report and `--export-callgraph` artifacts, with CI validation of generated exports to catch top-level contract drift.
+- Public Go contracts are available at `pkg/schema` for interim reports and `pkg/failure` for structured terminal errors, preserving the documented JSON fields and compatibility behavior for downstream integrations.
 - Callgraph export findings now carry `reachable`, answering whether user code reaches the crypto — a different question from `unresolved_reason`, which says which function contains it. A finding can be perfectly attributed and still unreachable. Three states: `true`, `false`, and absent when the question does not apply because a library was scanned on its own (`--export-graph-fragment` without dependencies), where there is no user code to be reached from. Callgraph export schema is now `6.7`.
 - Java callgraph contracts now model the cloud KMS and secrets-manager facades: AWS KMS across both SDK generations (`software.amazon.awssdk:kms` and `com.amazonaws:aws-java-sdk-kms`, including the v1 bean setters), Google Cloud KMS, Azure Key Vault Keys synchronous and asynchronous cryptography and key clients, and the HashiCorp `vault-java-driver` client, TLS configuration, and `Logical` secrets-engine operations.
 - Java callgraph contracts now model the OkHttp 5.x TLS surface — certificate pinning, `ConnectionSpec` cipher-suite and TLS-version selection, handshake inspection, the TLS-related `OkHttpClient.Builder` configuration, and the `okhttp-tls` `HeldCertificate`/`HandshakeCertificates` certificate and key generation.
@@ -29,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ### Fixed
+- Dependency-enabled scans now propagate structured scanner cancellation instead of producing partial reports with a successful exit. (#235)
+- Active scans now stop cleanly on SIGINT or SIGTERM, terminate their scan subprocesses, and return the structured `scanner_canceled` error without changing timeout results. (#235)
 - Java declarations carrying annotations report their real visibility and their declaration line. Modifiers are grouped under one AST node, and the visibility scan compared that node's whole text, which only ever matched when a declaration carried nothing else: `@Override public` equals no keyword, so annotated methods were reported `package-private`, and their start line pointed at the annotation rather than the signature.
 - `ParseFunctionID` accepts the unanchored form `.name#0` that `FunctionID.String()` produces for a callee whose receiver never resolved to a type. The two were asymmetric, so every edge built through `recordEdgeResolution` from such a call lost its `method_name` — 2468 of jedis's external calls.
 - A receiver that is itself an expression no longer becomes a type name. `key(key).add(...)` and `e.getClass().getSimpleName()` had their source text adopted as the callee's class, producing identities such as `java.util.(key(key)).add#1` that name no class in any graph — 2693 of them when scanning a Redis client. Such calls are now recorded with no type anchor, which is what the resolution actually established. Graph edge count is unchanged.
