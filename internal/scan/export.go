@@ -355,7 +355,7 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 		return fmt.Errorf("unsupported call graph format %q (supported: json)", format)
 	}
 
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	exportStart := time.Now()
 	totalAssets := countExportFindingAssets(result.Report)
 	log.Info().
@@ -594,7 +594,7 @@ func writeIndentedJSONFile(path string, payload any) error {
 // --- Build pipeline ---
 
 func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	ctx := newExportBuildContext(result)
 	totalAssets := countExportFindingAssets(result.Report)
 

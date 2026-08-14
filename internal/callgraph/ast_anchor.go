@@ -38,17 +38,23 @@ func namedASTPath(node *sitter.Node) string {
 }
 
 func namedChildIndex(parent, child *sitter.Node) int {
+	index := 0
 	for i := 0; i < int(parent.NamedChildCount()); i++ {
-		if parent.NamedChild(i).Equal(child) {
-			return i
+		namedChild := parent.NamedChild(i)
+		if strings.Contains(namedChild.Type(), "comment") {
+			continue
 		}
+		if namedChild.Equal(child) {
+			return index
+		}
+		index++
 	}
 	return -1
 }
 
 func isFunctionContainer(kind string) bool {
 	switch kind {
-	case "function_declaration", "function_definition", "function_item", "method_declaration", "constructor_declaration", "method_definition", "arrow_function", "lambda_expression":
+	case "function_declaration", "function_definition", "function_item", "method_declaration", "constructor_declaration", "method_definition", "arrow_function", "function_expression", "generator_function_declaration", "lambda_expression":
 		return true
 	default:
 		return false

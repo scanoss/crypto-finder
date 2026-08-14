@@ -36,7 +36,7 @@ func TestAssignOccurrenceKeys(t *testing.T) {
 	}
 
 	result := newResult("Crypto.java", "run#0", 10, 5, `Cipher.getInstance("AES")`)
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	key := result.Report.Findings[0].CryptographicAssets[0].OccurrenceKey
 	if !regexp.MustCompile(`^v1:[0-9a-f]{16}$`).MatchString(key) {
 		t.Fatalf("occurrence_key = %q, want v1:<16 lowercase hex chars>", key)
@@ -44,7 +44,7 @@ func TestAssignOccurrenceKeys(t *testing.T) {
 
 	for _, match := range []string{`Cipher.getInstance("AES/GCM/NoPadding")`, "changed evidence"} {
 		candidate := newResult("Crypto.java", "run#0", 10, 5, match)
-		assignOccurrenceKeys(candidate)
+		AssignOccurrenceKeys(candidate)
 		if got := candidate.Report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != key {
 			t.Errorf("evidence-only change occurrence_key = %q, want %q", got, key)
 		}
@@ -60,7 +60,7 @@ func TestAssignOccurrenceKeys(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			candidate := newResult(tc.path, tc.function, 10, 5, `Cipher.getInstance("AES")`)
-			assignOccurrenceKeys(candidate)
+			AssignOccurrenceKeys(candidate)
 			if got := candidate.Report.Findings[0].CryptographicAssets[0].OccurrenceKey; got == key {
 				t.Errorf("occurrence_key = %q, want relocation to change it", got)
 			}
@@ -90,7 +90,7 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 		}}},
 	}
 
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	assets := result.Report.Findings[0].CryptographicAssets
 	if assets[0].OccurrenceKey == "" || assets[1].OccurrenceKey != assets[0].OccurrenceKey+"-2" {
 		t.Fatalf("collision keys = %q, %q; want deterministic suffix", assets[0].OccurrenceKey, assets[1].OccurrenceKey)

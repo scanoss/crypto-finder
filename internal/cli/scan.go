@@ -423,7 +423,7 @@ func multiSourceLabel(sources []skip.PatternSource, multi *skip.MultiSource) str
 	return strings.Join(names, ", ")
 }
 
-func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string) (*engine.DepScanResult, error) {
+func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, withTypeResolution bool) (*engine.DepScanResult, error) {
 	targetDir, err := callGraphTargetDir(target)
 	if err != nil {
 		return nil, fmt.Errorf("resolve call graph target: %w", err)
@@ -434,9 +434,19 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
 	}
 
-	cgBuilder, err := newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
-	if err != nil {
-		return nil, err
+	var cgBuilder *callgraph.Builder
+	if withTypeResolution {
+		var err error
+		cgBuilder, err = newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(includeTests))
+		if cgParser == nil {
+			return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
+		}
+		cgBuilder = callgraph.NewBuilderForEcosystem(ecosystem, cgParser)
 	}
 
 	rootModule := scanutil.DetectRootModule(targetDir, ecosystem)
@@ -456,6 +466,27 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 		Ecosystem:   ecosystem,
 		ProjectRoot: targetDir,
 	}, nil
+}
+
+// prepareReportOccurrenceKeys reuses the source-only callgraph path for normal
+// findings output, without starting dependency scanning.
+func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) (*engine.DepScanResult, error) {
+	if scanutil.CountFindings(report) == 0 {
+		return result, nil
+	}
+	if result == nil || result.CallGraph == nil {
+		if ecosystemFromHints(target, languageHints) == "" {
+			return result, nil
+		}
+		var err error
+		result, err = buildStandaloneCallGraphResult(target, report, languageHints, javaRuntime, includeTests, compiledArtifact, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result.Report = report
+	scanutil.AssignOccurrenceKeys(result)
+	return result, nil
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -902,7 +933,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return progressWriteFailure(err)
 			}
 		}
-		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact)
+		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, true)
 		if err != nil {
 			if progress != nil {
 				var progressErr error
@@ -1016,6 +1047,16 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		if err := progress.Skip("export", "scan", "not_requested"); err != nil {
 			return progressWriteFailure(err)
 		}
+	}
+
+	callGraphResult, err = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
+	if err != nil {
+		return failure.WrapUnknown(
+			err,
+			failure.CodeCallGraphBuildFailed,
+			failure.StageCallGraph,
+			"failed to build source anchors for occurrence keys",
+		)
 	}
 
 	report.Version = entities.InterimFormatVersion

@@ -35,7 +35,7 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
 	}
 
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	if err := writeGraphFragmentJSONFile(path, result); err != nil {
 		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
 	}
@@ -325,7 +325,7 @@ func (w *trailingNewlineTrimmer) Flush() error {
 // BuildGraphFragmentExport projects a dependency scan result onto the public
 // graph-fragment export schema.
 func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
-	assignOccurrenceKeys(result)
+	AssignOccurrenceKeys(result)
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
 		ScanMetadata:  buildGraphFragmentScanMetadata(result),

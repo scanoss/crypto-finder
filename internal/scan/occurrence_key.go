@@ -14,9 +14,9 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// assignOccurrenceKeys attaches structural occurrence keys to canonical findings
+// AssignOccurrenceKeys attaches structural occurrence keys to canonical findings
 // when the callgraph retains the terminal call's AST anchor.
-func assignOccurrenceKeys(result *engine.DepScanResult) {
+func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return
 	}
