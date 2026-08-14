@@ -86,6 +86,11 @@ type exportBuildContext struct {
 	// jars, so without the source edges every fragment function would export
 	// empty CompatibleCanonicalSignatures. Built lazily by combinedTypeHierarchy.
 	combinedHierarchy map[string][]string
+	// callChainTruncated records, per containing-function key, whether the
+	// bounded reverse trace hit a cap (max depth / max chains). Surfaced as
+	// reachability=unknown and analysis.call_chains=partial (6.8+); before
+	// that the truncation fact was internal (a log line only).
+	callChainTruncated map[string]bool
 }
 
 type cachedContainingFunction struct {
@@ -130,7 +135,15 @@ type callGraphExportFinding struct {
 	// Three states, hence the pointer. Absent means the question does not apply:
 	// the mine path scans a library on its own, where there is no user code to be
 	// reached from, and emitting false there would assert something untrue.
+	//
+	// Deprecated: kept through 6.x for compatibility; consumers should prefer
+	// Reachability (6.8+), which adds the unknown/not_applicable distinction.
 	Reachable *bool `json:"reachable,omitempty"`
+	// Reachability is the explicit reachability state (6.8+, issue #242): one
+	// of the graphfrag.Reachability* constants.
+	Reachability string `json:"reachability,omitempty"`
+	// Analysis reports call-chain and parameter completeness (6.8+).
+	Analysis *graphfrag.ExportFindingAnalysis `json:"analysis,omitempty"`
 }
 
 type callGraphDependencyContext struct {
@@ -307,6 +320,9 @@ type callGraphCryptoEntryPoint struct {
 	MethodRole     string                   `json:"method_role,omitempty"`
 	RoleProvenance *callGraphRoleProvenance `json:"role_provenance,omitempty"`
 	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
+	// Root marks a chain root (6.8+): the first root-module caller in
+	// dependency mode or an in-degree-zero graph root in standalone mode.
+	Root bool `json:"root,omitempty"`
 }
 
 type callGraphReachableFinding struct {
@@ -427,7 +443,7 @@ func streamCallGraphExport(
 	if err := writeCallGraphPrefix(writer, meta); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	index, supportingByID, referencedSupporting, err := streamFindingGraphs(writer, ctx, assets)
+	index, supportingByID, referencedSupporting, chainRoots, err := streamFindingGraphs(writer, ctx, assets)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -444,6 +460,11 @@ func streamCallGraphExport(
 	}
 
 	entryPoints := flattenEntryPointIndex(ctx.kb, index)
+	for i := range entryPoints {
+		if chainRoots[entryPoints[i].FunctionKey] {
+			entryPoints[i].Root = true
+		}
+	}
 	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -470,10 +491,11 @@ func streamFindingGraphs(
 	writer *graphFragmentJSONWriter,
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,
-) (map[string]*entryPointData, map[string]callGraphSupportingCall, map[string]struct{}, error) {
+) (map[string]*entryPointData, map[string]callGraphSupportingCall, map[string]struct{}, map[string]bool, error) {
 	index := make(map[string]*entryPointData)
 	supportingByID := make(map[string]callGraphSupportingCall)
 	referencedSupporting := make(map[string]struct{})
+	chainRoots := make(map[string]bool)
 	buildStart := time.Now()
 
 	for i := range assets {
@@ -491,15 +513,20 @@ func streamFindingGraphs(
 		} else {
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
+		for _, chain := range fg.CallChains {
+			if len(chain) >= 2 && chain[0].FunctionKey != "" {
+				chainRoots[chain[0].FunctionKey] = true
+			}
+		}
 		if err := writer.writeArrayElement(i, fg); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		logCallGraphExportProgress(i+1, len(assets), buildStart)
 	}
 	if err := writer.endArrayField(len(assets)); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return index, supportingByID, referencedSupporting, nil
+	return index, supportingByID, referencedSupporting, chainRoots, nil
 }
 
 func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []callGraphSupportingCall) {
@@ -670,8 +697,83 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
+	markLiveRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
 
 	return out
+}
+
+// liveReachability classifies one finding graph's reachability state (6.8+,
+// issue #242). traced means TraceBackLimited found at least one genuine chain
+// — the one-node self-chain fallback does not count. Truncation downgrades a
+// would-be unreachable to unknown, never to reachable.
+func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[string]bool, traced, truncated bool) string {
+	switch {
+	case containingFn == nil || userPackages == nil:
+		return graphfrag.ReachabilityNotApplicable
+	case traced:
+		return graphfrag.ReachabilityReachable
+	case truncated:
+		return graphfrag.ReachabilityUnknown
+	default:
+		return graphfrag.ReachabilityUnreachable
+	}
+}
+
+// liveFindingAnalysis reports completeness for one live finding graph.
+// call_chains is partial when the bounded reverse trace hit a cap; parameters
+// reflects how many exported entry-call parameters actually resolved.
+func liveFindingAnalysis(chains [][]callGraphChainNode, truncated bool) *graphfrag.ExportFindingAnalysis {
+	callChains := graphfrag.AnalysisComplete
+	if truncated {
+		callChains = graphfrag.AnalysisPartial
+	}
+	resolved, total := 0, 0
+	for _, chain := range chains {
+		for i := range chain {
+			if chain[i].EntryCall == nil {
+				continue
+			}
+			for _, p := range chain[i].EntryCall.Parameters {
+				total++
+				if p.ResolvedValue != "" || len(p.SourceNodes) > 0 {
+					resolved++
+				}
+			}
+		}
+	}
+	parameters := graphfrag.AnalysisUnavailable
+	switch {
+	case total == 0 || resolved == 0:
+		parameters = graphfrag.AnalysisUnavailable
+	case resolved == total:
+		parameters = graphfrag.AnalysisComplete
+	default:
+		parameters = graphfrag.AnalysisPartial
+	}
+	return &graphfrag.ExportFindingAnalysis{CallChains: callChains, Parameters: parameters}
+}
+
+// markLiveRootEntryPoints flags entry points that are chain roots: the first
+// frame of any genuinely traced (multi-frame) chain. Self-chain fallbacks
+// contribute no root. Synthetic API entry points surface as their own finding
+// graphs and stay identifiable by their rule ID.
+func markLiveRootEntryPoints(entryPoints []callGraphCryptoEntryPoint, findingGraphs []callGraphExportFinding) {
+	roots := make(map[string]bool)
+	for i := range findingGraphs {
+		for _, chain := range findingGraphs[i].CallChains {
+			if len(chain) >= 2 && chain[0].FunctionKey != "" {
+				roots[chain[0].FunctionKey] = true
+			}
+		}
+	}
+	if len(roots) == 0 {
+		return
+	}
+	for i := range entryPoints {
+		if roots[entryPoints[i].FunctionKey] {
+			entryPoints[i].Root = true
+		}
+	}
 }
 
 // buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
@@ -1320,6 +1422,11 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	if containingFn != nil && ctx.userPackages != nil {
 		reachable := traced
 		fg.Reachable = &reachable
+	}
+	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
+	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
+	if fg.Reachability != graphfrag.ReachabilityNotApplicable {
+		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
 	}
 
 	if unresolvedReason != "" {
@@ -2705,6 +2812,9 @@ func ensureCallChainCaches(ctx *exportBuildContext) {
 	if ctx.callChainRemainingUses == nil {
 		ctx.callChainRemainingUses = make(map[string]int)
 	}
+	if ctx.callChainTruncated == nil {
+		ctx.callChainTruncated = make(map[string]bool)
+	}
 }
 
 // structuralCallChains returns traceback paths as chain nodes without call-site
@@ -2763,6 +2873,7 @@ func structuralTracebackChains(
 			Int("max_chains", callGraphExportMaxChains).
 			Msg("Truncated call chain export for finding function")
 	}
+	ctx.callChainTruncated[cacheKey] = truncated
 	ctx.callChainRawCache[cacheKey] = chains
 	return chains
 }
