@@ -533,6 +533,16 @@ type Result struct {
 	// opt-in "show me the uncertain paths too" mode. It never affects Chains.
 	Suppressed []SuppressedEdge
 
+	// composedEntryPoints are root-component functions proven (via the stitched
+	// adjacency) to reach a dependency's mine-time entry points; served as
+	// additional crypto_entry_points for consumer-side canonical_signature joins.
+	composedEntryPoints []CryptoEntryPoint
+	// composedRoots marks composed entry points with in-degree zero.
+	composedRoots map[string]bool
+	// composedFindingDepths maps finding IDs proven reachable through composed
+	// entry points to their minimum composed chain depth.
+	composedFindingDepths map[string]int
+
 	// forwardClosures is the anchor-keyed memo of computed forward reachability
 	// graphs (see StitchOptions.ForwardClosure). nil unless the option is set;
 	// ToCallgraphExport projects each finding's closure (looked up by its

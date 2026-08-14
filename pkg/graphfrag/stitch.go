@@ -123,9 +123,9 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		return nil, &ErrMissingFragment{Components: missing}
 	}
 
-	functionsBySignature, functionsByCanonicalSignature, dispatchSurfaces := indexFunctions(closure, fragments)
+	functionsBySignature, functionsByCanonicalSignature, dispatchSurfaces, aliasByKey := indexFunctions(closure, fragments)
 	functionsByNode := indexFunctionsByNode(closure, fragments)
-	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces)
+	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces, aliasByKey)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
 
@@ -143,6 +143,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// old all-simple-paths forward DFS hangs.
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
+		composeDependencyEntryPoints(root, closure, fragments, adjacency, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 		}
@@ -324,17 +325,25 @@ func missingFragments(closure []ComponentKey, fragments map[ComponentKey]Fragmen
 	return missing
 }
 
-func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment) (map[string][]graphNode, map[string][]graphNode, map[graphNode][]graphNode) {
+func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment) (map[string][]graphNode, map[string][]graphNode, map[graphNode][]graphNode, map[string][]graphNode) {
 	byKey := make(map[string][]graphNode)
 	byCanonicalSignature := make(map[string][]graphNode)
 	byOwnCanonical := make(map[string][]graphNode)
 	implsByCompatible := make(map[string][]graphNode)
+	// aliasByKey maps an overload-suffixed function key ("(C).<init>#3$Map,...")
+	// to its nodes under the unsuffixed spelling ("(C).<init>#3") a call site
+	// emits when the producer could not disambiguate the overload. Alias joins
+	// are served through the dispatch policy, never as silent exact edges.
+	aliasByKey := make(map[string][]graphNode)
 	for _, key := range closure {
 		fragment := fragments[key]
 		for i := range fragment.Functions {
 			node := graphNode{Component: key, Function: fragment.Functions[i].Signature}
 			fn := fragment.Functions[i]
 			byKey[fn.Signature] = append(byKey[fn.Signature], node)
+			if dollar := strings.Index(fn.Signature, "$"); dollar > 0 {
+				aliasByKey[fn.Signature[:dollar]] = append(aliasByKey[fn.Signature[:dollar]], node)
+			}
 			if fn.CanonicalSignature != "" {
 				byCanonicalSignature[fn.CanonicalSignature] = append(byCanonicalSignature[fn.CanonicalSignature], node)
 				byOwnCanonical[fn.CanonicalSignature] = append(byOwnCanonical[fn.CanonicalSignature], node)
@@ -348,7 +357,7 @@ func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment)
 		}
 	}
 
-	return byKey, byCanonicalSignature, buildDispatchSurfaces(implsByCompatible, byOwnCanonical)
+	return byKey, byCanonicalSignature, buildDispatchSurfaces(implsByCompatible, byOwnCanonical), aliasByKey
 }
 
 // buildDispatchSurfaces maps each dispatch surface — a function other
@@ -440,6 +449,7 @@ func buildAdjacency(
 	functionsByCanonicalSignature map[string][]graphNode,
 	functionsByNode map[graphNode]Function,
 	dispatchSurfaces map[graphNode][]graphNode,
+	aliasByKey map[string][]graphNode,
 ) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
@@ -449,9 +459,9 @@ func buildAdjacency(
 		fragment := fragments[key]
 		componentSigs := indexComponentSignatures(key, fragment, out)
 		edges := collectCallEdges(fragment)
-		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature, functionsByCanonicalSignature)
+		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature, functionsByCanonicalSignature, aliasByKey)
 
-		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes)
+		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes, fragments, functionsByNode)
 		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed)
 	}
 	return out, suppressed
@@ -547,15 +557,25 @@ func callEdgeResolver(
 	directDeps map[ComponentKey]bool,
 	functionsBySignature map[string][]graphNode,
 	functionsByCanonicalSignature map[string][]graphNode,
+	aliasByKey map[string][]graphNode,
 ) edgeResolver {
 	return func(e callEdge) edgeTargets {
 		if e.internal {
 			if componentSigs[e.target] {
 				return edgeTargets{nodes: []graphNode{{Component: key, Function: e.target}}}
 			}
-			return edgeTargets{}
+			// Unsuffixed reference to overloaded declarations of this component:
+			// candidates go through the dispatch policy, never a silent edge.
+			var aliased []graphNode
+			for _, node := range aliasByKey[e.target] {
+				if node.Component == key {
+					aliased = append(aliased, node)
+				}
+			}
+			aliased = filterOverloadCandidates(aliased, e.targetCanonicalSignature)
+			return edgeTargets{nodes: aliased, compatibility: len(aliased) > 0}
 		}
-		return externalTargets(e.target, e.targetCanonicalSignature, directDeps, functionsBySignature, functionsByCanonicalSignature)
+		return externalTargets(e.target, e.targetCanonicalSignature, directDeps, functionsBySignature, functionsByCanonicalSignature, aliasByKey)
 	}
 }
 
@@ -565,6 +585,7 @@ func externalTargets(
 	directDeps map[ComponentKey]bool,
 	functionsBySignature map[string][]graphNode,
 	functionsByCanonicalSignature map[string][]graphNode,
+	aliasByKey map[string][]graphNode,
 ) edgeTargets {
 	var targets []graphNode
 	for _, callee := range functionsBySignature[target] {
@@ -573,15 +594,139 @@ func externalTargets(
 		}
 		targets = append(targets, callee)
 	}
-	if len(targets) > 0 || targetCanonicalSignature == "" {
+	if len(targets) > 0 {
 		return edgeTargets{nodes: targets}
 	}
-	for _, callee := range functionsByCanonicalSignature[targetCanonicalSignature] {
+	if targetCanonicalSignature != "" {
+		for _, callee := range functionsByCanonicalSignature[targetCanonicalSignature] {
+			if directDeps[callee.Component] {
+				targets = append(targets, callee)
+			}
+		}
+		if len(targets) > 0 {
+			return edgeTargets{nodes: targets, compatibility: true}
+		}
+	}
+	// Unsuffixed reference to overloaded declarations: dispatch policy decides.
+	for _, callee := range aliasByKey[target] {
 		if directDeps[callee.Component] {
 			targets = append(targets, callee)
 		}
 	}
-	return edgeTargets{nodes: targets, compatibility: true}
+	targets = filterOverloadCandidates(targets, targetCanonicalSignature)
+	return edgeTargets{nodes: targets, compatibility: len(targets) > 0}
+}
+
+// filterOverloadCandidates narrows overload-suffixed alias candidates using
+// the call's canonical parameter types. A "?" parameter matches any candidate
+// type; a known type must match the candidate's suffix type by erased simple
+// name. When the filter would eliminate every candidate the original set is
+// returned — the dispatch policy fails closed on real ambiguity, never on an
+// over-eager filter.
+func filterOverloadCandidates(candidates []graphNode, targetCanonicalSignature string) []graphNode {
+	if len(candidates) < 2 {
+		return candidates
+	}
+	params, ok := canonicalParamSimpleNames(targetCanonicalSignature)
+	if !ok {
+		return candidates
+	}
+	var narrowed []graphNode
+	for _, candidate := range candidates {
+		if overloadSuffixMatches(candidate.Function, params) {
+			narrowed = append(narrowed, candidate)
+		}
+	}
+	if len(narrowed) == 0 {
+		return candidates
+	}
+	return narrowed
+}
+
+// canonicalParamSimpleNames extracts the erased simple parameter type names
+// from a canonical signature's parameter list.
+func canonicalParamSimpleNames(signature string) ([]string, bool) {
+	open := strings.Index(signature, "(")
+	closeIdx := strings.LastIndex(signature, ")")
+	if open < 0 || closeIdx <= open {
+		return nil, false
+	}
+	inner := strings.TrimSpace(signature[open+1 : closeIdx])
+	if inner == "" {
+		return []string{}, true
+	}
+	parts := splitTopLevelCanonicalArgs(inner)
+	names := make([]string, len(parts))
+	for i, part := range parts {
+		names[i] = erasedSimpleTypeName(part)
+	}
+	return names, true
+}
+
+// splitTopLevelCanonicalArgs splits a canonical parameter list on top-level
+// commas, respecting generic-argument nesting.
+func splitTopLevelCanonicalArgs(inner string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(inner); i++ {
+		switch inner[i] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, strings.TrimSpace(inner[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, strings.TrimSpace(inner[start:]))
+	return parts
+}
+
+// erasedSimpleTypeName reduces a (possibly qualified, possibly generic) type
+// text to the erased simple name an overload suffix uses. "?" is preserved.
+func erasedSimpleTypeName(typeText string) string {
+	typeText = strings.TrimSpace(typeText)
+	if angle := strings.Index(typeText, "<"); angle >= 0 {
+		suffix := ""
+		if closeIdx := strings.LastIndex(typeText, ">"); closeIdx >= 0 && closeIdx+1 < len(typeText) {
+			suffix = typeText[closeIdx+1:]
+		}
+		typeText = typeText[:angle] + suffix
+	}
+	arraySuffix := ""
+	for strings.HasSuffix(typeText, "[]") {
+		typeText = typeText[:len(typeText)-2]
+		arraySuffix += "[]"
+	}
+	if dot := strings.LastIndex(typeText, "."); dot >= 0 {
+		typeText = typeText[dot+1:]
+	}
+	return typeText + arraySuffix
+}
+
+// overloadSuffixMatches reports whether an overload-suffixed function key's
+// parameter types are compatible with the call's known parameter types.
+func overloadSuffixMatches(functionKey string, params []string) bool {
+	dollar := strings.Index(functionKey, "$")
+	if dollar < 0 {
+		return true
+	}
+	have := strings.Split(functionKey[dollar+1:], ",")
+	if len(have) != len(params) {
+		return false
+	}
+	for i := range have {
+		if params[i] == "?" {
+			continue
+		}
+		if strings.TrimSpace(have[i]) != params[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func applyImmediateEdgePolicy(
@@ -592,6 +737,8 @@ func applyImmediateEdgePolicy(
 	suppressed *[]SuppressedEdge,
 	dispatchSurfaces map[graphNode][]graphNode,
 	ownerTypes map[graphNode]string,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
@@ -609,7 +756,7 @@ func applyImmediateEdgePolicy(
 				continue
 			}
 			appendAdjacencyEdges(adjacency, caller, targets.nodes, e.entryCall)
-			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, adjacency, suppressed)
+			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, fragments, functionsByNode, adjacency, suppressed)
 		case ResolutionInterfaceDispatch:
 			gk := dispatchKey(key, *e)
 			dispatchGroups[gk] = append(dispatchGroups[gk], *e)
@@ -637,6 +784,8 @@ func expandDispatchSurfaces(
 	targets []graphNode,
 	dispatchSurfaces map[graphNode][]graphNode,
 	ownerTypes map[graphNode]string,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
 ) {
@@ -657,7 +806,7 @@ func expandDispatchSurfaces(
 			adjacency[caller] = append(adjacency[caller], resolved)
 			continue
 		}
-		*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonAmbiguousDispatch, candidateComponents(impls)))
+		*suppressed = append(*suppressed, ambiguousDispatchEdge(key, dispatchKey(key, *e), implEdges, fragments, functionsByNode))
 	}
 }
 
@@ -1492,4 +1641,233 @@ func sortedNodes(opsByNode map[graphNode][]CryptoOperation) []graphNode {
 		return nodes[i].Component.String() < nodes[j].Component.String()
 	})
 	return nodes
+}
+
+// composeDependencyEntryPoints projects each dependency's OWN mine-time
+// entry-point knowledge back onto the root component's call surface. A
+// dependency fragment carries crypto_entry_points whose reachable_findings and
+// chain depths were computed at scan time with full inference — evidence the
+// stitch-time trace cannot always reproduce (reflective instantiation,
+// ambiguous dispatch). When the stitched adjacency shows a root-component
+// function transitively calling one of those entry points, the root function
+// provably reaches the entry point's findings; the composed depth is the
+// stitched hop count plus the entry point's own mine-time chain depth.
+//
+// Only the root component's externally callable surface (public function on a
+// public owner) plus its in-degree-zero graph roots are emitted — that is the
+// join surface a consumer resolves its own code against by canonical_signature.
+func composeDependencyEntryPoints(
+	root ComponentKey,
+	closure []ComponentKey,
+	fragments map[ComponentKey]Fragment,
+	adjacency map[graphNode][]adjacencyEdge,
+	out *Result,
+) {
+	reverse := make(map[graphNode][]graphNode)
+	for caller, edges := range adjacency {
+		for _, edge := range edges {
+			reverse[edge.target] = append(reverse[edge.target], caller)
+		}
+	}
+
+	rootFunctions := make(map[string]Function)
+	rootFragment := fragments[root]
+	for i := range rootFragment.Functions {
+		rootFunctions[rootFragment.Functions[i].Signature] = rootFragment.Functions[i]
+	}
+	hasIncoming := incomingNodes(adjacency)
+
+	composed := make(map[string]*composedEntry)
+
+	for _, dep := range closure {
+		if dep == root {
+			continue
+		}
+		fragment := fragments[dep]
+		translate := servedFindingIDs(dep, &fragment)
+		for i := range fragment.CryptoEntryPoints {
+			ep := &fragment.CryptoEntryPoints[i]
+			if len(ep.ReachableFindings) == 0 {
+				continue
+			}
+			seed := graphNode{Component: dep, Function: ep.FunctionKey}
+			projectEntryPoint(root, ep, translate, backwardDistances(seed, reverse), rootFunctions, hasIncoming, composed)
+		}
+	}
+	if len(composed) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(composed))
+	for key := range composed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	out.composedFindingDepths = make(map[string]int)
+	for _, key := range keys {
+		appendComposedResult(root, rootFunctions[key], composed[key], hasIncoming, out)
+	}
+}
+
+// publicVisibility is the visibility string producers emit for public members.
+const publicVisibility = "public"
+
+// composedEntry accumulates min-depth reachable records for one root function.
+type composedEntry struct {
+	findings   map[string]ReachableFinding
+	supporting map[string]ReachableSupportingCall
+}
+
+// projectEntryPoint records, for every root-component function that reaches
+// one dependency entry point, the composed (hops + mine-time depth) records.
+func projectEntryPoint(
+	root ComponentKey,
+	ep *CryptoEntryPoint,
+	translate map[string]string,
+	distances map[graphNode]int,
+	rootFunctions map[string]Function,
+	hasIncoming map[graphNode]bool,
+	composed map[string]*composedEntry,
+) {
+	for node, distance := range distances {
+		if node.Component != root {
+			continue
+		}
+		fn, ok := rootFunctions[node.Function]
+		if !ok {
+			continue
+		}
+		callable := fn.Visibility == publicVisibility && fn.OwnerVisibility == publicVisibility
+		if !callable && hasIncoming[node] {
+			continue
+		}
+		entry := composed[node.Function]
+		if entry == nil {
+			entry = &composedEntry{
+				findings:   make(map[string]ReachableFinding),
+				supporting: make(map[string]ReachableSupportingCall),
+			}
+			composed[node.Function] = entry
+		}
+		entry.merge(ep, translate, distance)
+	}
+}
+
+// servedFindingIDs maps a dependency's mine-time (annotation-local) finding
+// IDs to the IDs the stitched export serves: the same hash recomputed over the
+// "module@version/"-prefixed file path, mirroring buildExportChain.
+func servedFindingIDs(dep ComponentKey, fragment *Fragment) map[string]string {
+	translate := make(map[string]string, len(fragment.CryptoOperations))
+	for i := range fragment.CryptoOperations {
+		op := &fragment.CryptoOperations[i]
+		if op.FindingID == "" {
+			continue
+		}
+		served := computeFindingID(depPrefixedPath(op.FilePath, fragment.Module, dep.Version), op.StartLine, op.RuleID)
+		if served != "" {
+			translate[op.FindingID] = served
+		}
+	}
+	return translate
+}
+
+// translateFindingID maps an annotation-local finding ID to its served form,
+// falling back to the original when the operation is unknown (legacy data).
+func translateFindingID(translate map[string]string, findingID string) string {
+	if served, ok := translate[findingID]; ok {
+		return served
+	}
+	return findingID
+}
+
+// merge folds one entry point's reachable records into the composed entry,
+// keeping the minimum depth per finding/supporting id.
+func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string, distance int) {
+	for _, rf := range ep.ReachableFindings {
+		findingID := translateFindingID(translate, rf.FindingID)
+		depth := distance + rf.ChainDepth
+		if existing, seen := c.findings[findingID]; !seen || depth < existing.ChainDepth {
+			c.findings[findingID] = ReachableFinding{
+				FindingID:       findingID,
+				ChainDepth:      depth,
+				FindingGraphRef: translateFindingID(translate, rf.FindingGraphRef),
+			}
+		}
+	}
+	for _, sc := range ep.ReachableSupportingCalls {
+		depth := distance + sc.ChainDepth
+		if existing, seen := c.supporting[sc.SupportingID]; !seen || depth < existing.ChainDepth {
+			c.supporting[sc.SupportingID] = ReachableSupportingCall{
+				SupportingID:      sc.SupportingID,
+				ChainDepth:        depth,
+				SupportingCallRef: sc.SupportingCallRef,
+			}
+		}
+	}
+}
+
+// appendComposedResult converts one composed entry into the Result's served
+// form, tracking per-finding minimum composed depth and root classification.
+func appendComposedResult(root ComponentKey, fn Function, entry *composedEntry, hasIncoming map[graphNode]bool, out *Result) {
+	ep := CryptoEntryPoint{
+		FunctionKey:        fn.Signature,
+		FunctionName:       fn.FunctionName,
+		CanonicalSignature: fn.CanonicalSignature,
+		DisplaySymbol:      fn.DisplaySymbol,
+		Aliases:            append([]string(nil), fn.Aliases...),
+		ReturnType:         fn.ReturnType,
+		ParameterTypes:     append([]string(nil), fn.ParameterTypes...),
+		Visibility:         fn.Visibility,
+		OwnerVisibility:    fn.OwnerVisibility,
+	}
+	for _, findingID := range sortedComposedIDs(entry.findings) {
+		rf := entry.findings[findingID]
+		ep.ReachableFindings = append(ep.ReachableFindings, rf)
+		if existing, seen := out.composedFindingDepths[rf.FindingID]; !seen || rf.ChainDepth < existing {
+			out.composedFindingDepths[rf.FindingID] = rf.ChainDepth
+		}
+	}
+	supportingIDs := make([]string, 0, len(entry.supporting))
+	for id := range entry.supporting {
+		supportingIDs = append(supportingIDs, id)
+	}
+	sort.Strings(supportingIDs)
+	for _, id := range supportingIDs {
+		ep.ReachableSupportingCalls = append(ep.ReachableSupportingCalls, entry.supporting[id])
+	}
+	out.composedEntryPoints = append(out.composedEntryPoints, ep)
+	if !hasIncoming[graphNode{Component: root, Function: fn.Signature}] {
+		if out.composedRoots == nil {
+			out.composedRoots = make(map[string]bool)
+		}
+		out.composedRoots[fn.Signature] = true
+	}
+}
+
+func sortedComposedIDs(findings map[string]ReachableFinding) []string {
+	ids := make([]string, 0, len(findings))
+	for id := range findings {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// backwardDistances runs a BFS over the reversed adjacency from seed and
+// returns the minimum hop count to every node that can reach it.
+func backwardDistances(seed graphNode, reverse map[graphNode][]graphNode) map[graphNode]int {
+	distances := map[graphNode]int{seed: 0}
+	queue := []graphNode{seed}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, caller := range reverse[current] {
+			if _, seen := distances[caller]; !seen {
+				distances[caller] = distances[current] + 1
+				queue = append(queue, caller)
+			}
+		}
+	}
+	return distances
 }

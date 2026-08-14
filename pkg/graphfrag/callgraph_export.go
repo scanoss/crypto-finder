@@ -552,14 +552,105 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		}
 		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
 		fg.Analysis = stitchedFindingAnalysis(&fg)
+		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
+	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
 	markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
 	return out
+}
+
+// upgradeComposedReachability marks a finding proven through a composed
+// dependency entry point as reachable. The chain itself is summarized (depth
+// only), not materialized frame by frame, so call-chain analysis is partial.
+func (r *Result) upgradeComposedReachability(fg *ExportFindingGraph) {
+	if fg.Reachability == ReachabilityReachable {
+		return
+	}
+	if _, ok := r.composedFindingDepths[composedFindingKey(fg.FindingID)]; !ok {
+		return
+	}
+	fg.Reachability = ReachabilityReachable
+	if fg.Analysis != nil {
+		fg.Analysis.CallChains = AnalysisPartial
+	}
+}
+
+// composedFindingKey strips a "module@version/" dependency prefix so composed
+// depth lookups match the dependency-local finding IDs carried by fragment
+// entry points.
+func composedFindingKey(findingID string) string {
+	if slash := strings.LastIndex(findingID, "/"); slash >= 0 {
+		return findingID[slash+1:]
+	}
+	return findingID
+}
+
+// appendComposedEntryPoints folds the composed root-component entry points into
+// the served index. An already-present function_key keeps its traced entry (the
+// stitched trace is more precise); new keys are appended and the index is
+// re-sorted for deterministic output.
+func appendComposedEntryPoints(built []ExportCryptoEntryPoint, composed []CryptoEntryPoint, roots map[string]bool) []ExportCryptoEntryPoint {
+	if len(composed) == 0 {
+		return built
+	}
+	present := make(map[string]bool, len(built))
+	for i := range built {
+		present[built[i].FunctionKey] = true
+	}
+	for i := range composed {
+		ep := &composed[i]
+		if present[ep.FunctionKey] {
+			continue
+		}
+		exported := ExportCryptoEntryPoint{
+			FunctionKey:        ep.FunctionKey,
+			FunctionName:       ep.FunctionName,
+			CanonicalSignature: ep.CanonicalSignature,
+			Class:              ownerFromFunctionName(ep.FunctionName),
+			Method:             simpleMethodName(ep.FunctionName),
+			ReturnType:         ep.ReturnType,
+			ParameterTypes:     append([]string(nil), ep.ParameterTypes...),
+			Visibility:         ep.Visibility,
+			OwnerVisibility:    ep.OwnerVisibility,
+			DisplaySymbol:      ep.DisplaySymbol,
+			Aliases:            append([]string(nil), ep.Aliases...),
+			Root:               roots[ep.FunctionKey],
+		}
+		for _, rf := range ep.ReachableFindings {
+			exported.ReachableFindings = append(exported.ReachableFindings, ExportReachableFinding{
+				FindingID:       rf.FindingID,
+				ChainDepth:      rf.ChainDepth,
+				FindingGraphRef: rf.FindingGraphRef,
+			})
+		}
+		for _, sc := range ep.ReachableSupportingCalls {
+			exported.ReachableSupportingCalls = append(exported.ReachableSupportingCalls, ExportReachableSupportingCall(sc))
+		}
+		built = append(built, exported)
+	}
+	sort.Slice(built, func(i, j int) bool { return built[i].FunctionKey < built[j].FunctionKey })
+	return built
+}
+
+// ownerFromFunctionName returns everything before the final ".segment" of a
+// fully qualified function name, mirroring the class field of traced entries.
+func ownerFromFunctionName(functionName string) string {
+	if dot := strings.LastIndex(functionName, "."); dot > 0 {
+		return functionName[:dot]
+	}
+	return ""
+}
+
+func simpleMethodName(functionName string) string {
+	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
+		return functionName[dot+1:]
+	}
+	return functionName
 }
 
 // stitchedReachability classifies one finding graph's reachability state.
