@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Optional `occurrence_key` enrichment now preserves ordinary report output when source anchoring is unavailable, assigns one key to all rules matching the same call, and covers every supported source language in a mixed-language report. (#232)
+- Optional `occurrence_key` enrichment now preserves ordinary report output when source anchoring is unavailable, assigns one key to all rules matching the same call, and covers every supported source language in interim, callgraph, and graph-fragment exports. Mixed C/C++ source trees retain anchors for both languages. (#232)
 
 ### Added
 - Interim report 1.5, callgraph export 6.8, and graph fragments 1.9 add optional `occurrence_key` to canonical findings. The self-versioned structural key is stable across formatting and rule/evidence changes when AST call evidence is available; existing `finding_id` joins are unchanged. (#232)

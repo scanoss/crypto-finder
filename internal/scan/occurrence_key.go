@@ -6,13 +6,22 @@ package scan
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
+
+type occurrenceKeyGroup struct {
+	assets   []*entities.CryptographicAsset
+	line     int
+	col      int
+	identity string
+}
 
 // AssignOccurrenceKeys attaches structural occurrence keys to canonical findings
 // when the callgraph retains the terminal call's AST anchor.
@@ -22,6 +31,7 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	}
 
 	ctx := newExportBuildContext(result)
+	functions := occurrenceAnchorFunctions(result)
 	type candidate struct {
 		asset      *entities.CryptographicAsset
 		hash       string
@@ -34,7 +44,7 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]
 			asset.OccurrenceKey = ""
-			containing := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+			containing := findOccurrenceContainingFunction(functions, finding.FilePath, asset.StartLine)
 			if containing == nil {
 				continue
 			}
@@ -50,36 +60,26 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 		}
 	}
 
-	type occurrenceGroup struct {
-		assets []*entities.CryptographicAsset
-		line   int
-		col    int
-	}
-	byHash := make(map[string]map[string]*occurrenceGroup, len(candidates))
+	byHash := make(map[string]map[string]*occurrenceKeyGroup, len(candidates))
 	for _, candidate := range candidates {
 		groups := byHash[candidate.hash]
 		if groups == nil {
-			groups = make(map[string]*occurrenceGroup)
+			groups = make(map[string]*occurrenceKeyGroup)
 			byHash[candidate.hash] = groups
 		}
 		group := groups[candidate.occurrence]
 		if group == nil {
-			group = &occurrenceGroup{line: candidate.asset.StartLine, col: candidate.asset.StartCol}
+			group = &occurrenceKeyGroup{line: candidate.asset.StartLine, col: candidate.asset.StartCol, identity: candidate.occurrence}
 			groups[candidate.occurrence] = group
 		}
 		group.assets = append(group.assets, candidate.asset)
 	}
 	for hash, groups := range byHash {
-		ordered := make([]*occurrenceGroup, 0, len(groups))
+		ordered := make([]*occurrenceKeyGroup, 0, len(groups))
 		for _, group := range groups {
 			ordered = append(ordered, group)
 		}
-		sort.SliceStable(ordered, func(i, j int) bool {
-			if ordered[i].line != ordered[j].line {
-				return ordered[i].line < ordered[j].line
-			}
-			return ordered[i].col < ordered[j].col
-		})
+		sort.SliceStable(ordered, func(i, j int) bool { return occurrenceKeyGroupLess(ordered[i], ordered[j]) })
 		for i, group := range ordered {
 			key := "v1:" + hash
 			if i > 0 {
@@ -90,6 +90,45 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 			}
 		}
 	}
+}
+
+func occurrenceKeyGroupLess(left, right *occurrenceKeyGroup) bool {
+	if left.line != right.line {
+		return left.line < right.line
+	}
+	if left.col != right.col {
+		return left.col < right.col
+	}
+	return left.identity < right.identity
+}
+
+func occurrenceAnchorFunctions(result *engine.DepScanResult) map[string]*callgraph.FunctionDecl {
+	functions := make(map[string]*callgraph.FunctionDecl)
+	for key, fn := range result.CallGraph.Functions {
+		functions[key] = fn
+	}
+	for key, fn := range result.OccurrenceAnchors {
+		functions[key] = fn
+	}
+	return functions
+}
+
+func findOccurrenceContainingFunction(functions map[string]*callgraph.FunctionDecl, findingPath string, line int) *callgraph.FunctionDecl {
+	normalized := filepath.ToSlash(dependencyRelativePath(findingPath))
+	if normalized == "" {
+		normalized = filepath.ToSlash(findingPath)
+	}
+
+	var best *callgraph.FunctionDecl
+	for _, fn := range functions {
+		if !strings.HasSuffix(filepath.ToSlash(fn.FilePath), normalized) || line < fn.StartLine || line > fn.EndLine {
+			continue
+		}
+		if best == nil || tighterSpan(fn, best) {
+			best = fn
+		}
+	}
+	return best
 }
 
 func occurrenceSourceSubject(result *engine.DepScanResult, asset *entities.CryptographicAsset) string {

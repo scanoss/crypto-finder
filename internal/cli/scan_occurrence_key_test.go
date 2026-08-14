@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -121,6 +122,7 @@ class Crypto {
     Cipher.getInstance("AES");
   }
 }
+
 `,
 		pythonPath: `def run():
     hashlib.sha256(data)
@@ -158,6 +160,56 @@ class Crypto {
 	for _, finding := range exported.Findings {
 		if got := finding.CryptographicAssets[0].OccurrenceKey; got == "" {
 			t.Fatalf("%s occurrence_key omitted", finding.Language)
+		}
+	}
+}
+func TestPrepareReportOccurrenceKeys_EnrichesMixedCAndCPPFiles(t *testing.T) {
+	dir := t.TempDir()
+	cPath := filepath.Join(dir, "crypto.c")
+	cppPath := filepath.Join(dir, "crypto.cpp")
+	for path, source := range map[string]string{
+		cPath: `void run(void) {
+  EVP_sha256();
+}
+`,
+		cppPath: `class Crypto {};
+void run() {
+  EVP_sha512();
+}
+`,
+	} {
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	javaRuntime, err := javaruntime.NewConfig("auto", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{
+		{FilePath: cPath, Language: "c", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 3, EndCol: 15}}},
+		{FilePath: cppPath, Language: "c", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 3, EndLine: 3, StartCol: 3, EndCol: 15}}},
+	}}
+
+	result := prepareReportOccurrenceKeys(dir, report, []string{"c"}, javaRuntime, false, "", nil)
+	if result == nil || len(result.OccurrenceAnchors) != 2 {
+		t.Fatalf("occurrence anchors = %d, want both C and C++ declarations", len(result.OccurrenceAnchors))
+	}
+	for _, ecosystem := range []string{"c\x00", ecosystemCPP + "\x00"} {
+		found := false
+		for key := range result.OccurrenceAnchors {
+			if strings.HasPrefix(key, ecosystem) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q-qualified occurrence anchor", strings.TrimSuffix(ecosystem, "\x00"))
+		}
+	}
+	for _, finding := range report.Findings {
+		if got := finding.CryptographicAssets[0].OccurrenceKey; got == "" {
+			t.Fatalf("%s occurrence_key omitted", filepath.Base(finding.FilePath))
 		}
 	}
 }

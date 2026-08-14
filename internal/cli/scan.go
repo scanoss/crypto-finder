@@ -500,12 +500,12 @@ func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, 
 			if result.ProjectRoot == "" {
 				result.ProjectRoot = anchors.ProjectRoot
 			}
-		} else {
-			for id, function := range anchors.CallGraph.Functions {
-				if _, exists := result.CallGraph.Functions[id]; !exists {
-					result.CallGraph.Functions[id] = function
-				}
-			}
+		}
+		if result.OccurrenceAnchors == nil {
+			result.OccurrenceAnchors = make(map[string]*callgraph.FunctionDecl)
+		}
+		for id, function := range anchors.CallGraph.Functions {
+			result.OccurrenceAnchors[occurrenceAnchorKey(ecosystem, id)] = function
 		}
 	}
 	if result != nil {
@@ -518,14 +518,23 @@ func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, 
 func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport, languageHints []string) []string {
 	seen := make(map[string]bool)
 	ecosystems := make([]string, 0, len(languageHints))
-	add := func(hint string) {
-		ecosystem := ecosystemFromHint(target, hint)
+	addEcosystem := func(ecosystem string) {
 		if ecosystem != "" && !seen[ecosystem] {
 			seen[ecosystem] = true
 			ecosystems = append(ecosystems, ecosystem)
 		}
 	}
+	add := func(hint string) { addEcosystem(ecosystemFromHint(target, hint)) }
 	for _, finding := range report.Findings {
+		if finding.Language == "c" {
+			// A C-language detector can report both C and C++ sources. Build both
+			// source-only parsers so a C++ header never hides .c anchors.
+			addEcosystem("c")
+			if isCPPSource(finding.FilePath) || cppHeaderTarget(target) {
+				addEcosystem(ecosystemCPP)
+			}
+			continue
+		}
 		add(finding.Language)
 	}
 	for _, hint := range languageHints {
@@ -535,6 +544,19 @@ func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport
 		add(ecosystemFromHints(target, languageHints))
 	}
 	return ecosystems
+}
+
+func occurrenceAnchorKey(ecosystem, functionID string) string {
+	return ecosystem + "\x00" + functionID
+}
+
+func isCPPSource(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cc", ".cp", ".cpp", ".cxx", ".c++", ".hh", ".hpp", ".hxx", ".h++":
+		return true
+	default:
+		return false
+	}
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -1038,6 +1060,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
+	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
+
 	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
 		if err := startExport(); err != nil {
 			return err
@@ -1096,8 +1120,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			return progressWriteFailure(err)
 		}
 	}
-
-	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
 
 	report.Version = entities.InterimFormatVersion
 

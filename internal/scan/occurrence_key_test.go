@@ -100,3 +100,11 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 		t.Fatalf("collision key = %q, want %q", assets[2].OccurrenceKey, assets[0].OccurrenceKey+"-2")
 	}
 }
+
+func TestOccurrenceKeyGroupLess_UsesIdentityAfterLocation(t *testing.T) {
+	left := &occurrenceKeyGroup{line: 10, col: 5, identity: "a"}
+	right := &occurrenceKeyGroup{line: 10, col: 5, identity: "b"}
+	if !occurrenceKeyGroupLess(left, right) || occurrenceKeyGroupLess(right, left) {
+		t.Fatal("tied locations must be ordered by occurrence identity")
+	}
+}
