@@ -618,11 +618,13 @@ func externalTargets(
 }
 
 // filterOverloadCandidates narrows overload-suffixed alias candidates using
-// the call's canonical parameter types. A "?" parameter matches any candidate
-// type; a known type must match the candidate's suffix type by erased simple
-// name. When the filter would eliminate every candidate the original set is
-// returned — the dispatch policy fails closed on real ambiguity, never on an
-// over-eager filter.
+// the call's canonical parameter types. Candidates are scored by how many
+// known (non-"?") parameter types match the candidate's suffix types by erased
+// simple name; the unique best-scoring candidate wins. Caller-side types can
+// be imprecise (a call-result argument may carry its receiver's type), so a
+// single mismatched position must not disqualify the only overload the other
+// positions clearly select — but a tie stays ambiguous and the dispatch policy
+// fails closed exactly as before.
 func filterOverloadCandidates(candidates []graphNode, targetCanonicalSignature string) []graphNode {
 	if len(candidates) < 2 {
 		return candidates
@@ -631,9 +633,18 @@ func filterOverloadCandidates(candidates []graphNode, targetCanonicalSignature s
 	if !ok {
 		return candidates
 	}
+	best := -1
 	var narrowed []graphNode
 	for _, candidate := range candidates {
-		if overloadSuffixMatches(candidate.Function, params) {
+		score := overloadMatchScore(candidate.Function, params)
+		switch {
+		case score < 0:
+			continue
+		case score > best:
+			best = score
+			narrowed = narrowed[:0]
+			narrowed = append(narrowed, candidate)
+		case score == best:
 			narrowed = append(narrowed, candidate)
 		}
 	}
@@ -707,26 +718,28 @@ func erasedSimpleTypeName(typeText string) string {
 	return typeText + arraySuffix
 }
 
-// overloadSuffixMatches reports whether an overload-suffixed function key's
-// parameter types are compatible with the call's known parameter types.
-func overloadSuffixMatches(functionKey string, params []string) bool {
+// overloadMatchScore counts how many known (non-"?") call parameter types
+// match an overload-suffixed function key's suffix types. Returns -1 when the
+// candidate has no suffix to compare or a different arity.
+func overloadMatchScore(functionKey string, params []string) int {
 	dollar := strings.Index(functionKey, "$")
 	if dollar < 0 {
-		return true
+		return -1
 	}
 	have := strings.Split(functionKey[dollar+1:], ",")
 	if len(have) != len(params) {
-		return false
+		return -1
 	}
+	score := 0
 	for i := range have {
 		if params[i] == "?" {
 			continue
 		}
-		if strings.TrimSpace(have[i]) != params[i] {
-			return false
+		if strings.TrimSpace(have[i]) == params[i] {
+			score++
 		}
 	}
-	return true
+	return score
 }
 
 func applyImmediateEdgePolicy(

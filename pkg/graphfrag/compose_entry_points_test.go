@@ -16,18 +16,24 @@ func composeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fragment)
 		Component: root,
 		Module:    "org.example.wrapper",
 		Functions: []Function{
-			{Signature: "org.example.wrapper.(Factory).create#0", FunctionName: "org.example.wrapper.Factory.create",
-				CanonicalSignature: "org.example.wrapper.Factory.create(): Client", Visibility: "public", OwnerVisibility: "public"},
-			{Signature: "org.example.wrapper.(Factory.Extended).<init>#1", FunctionName: "org.example.wrapper.Factory.Extended.<init>",
-				CanonicalSignature: "org.example.wrapper.Factory.Extended.<init>(Map): Factory.Extended", Visibility: "public", OwnerVisibility: "public"},
+			{
+				Signature: "org.example.wrapper.(Factory).create#0", FunctionName: "org.example.wrapper.Factory.create",
+				CanonicalSignature: "org.example.wrapper.Factory.create(): Client", Visibility: "public", OwnerVisibility: "public",
+			},
+			{
+				Signature: "org.example.wrapper.(Factory.Extended).<init>#1", FunctionName: "org.example.wrapper.Factory.Extended.<init>",
+				CanonicalSignature: "org.example.wrapper.Factory.Extended.<init>(Map): Factory.Extended", Visibility: "public", OwnerVisibility: "public",
+			},
 		},
 		InternalEdges: []InternalEdge{
 			{Caller: "org.example.wrapper.(Factory).create#0", Callee: "org.example.wrapper.(Factory.Extended).<init>#1", Resolution: ResolutionExact},
 		},
 		ExternalCalls: []ExternalCall{
 			// The super(configs) constructor-delegation edge into the dependency.
-			{Caller: "org.example.wrapper.(Factory.Extended).<init>#1", TargetSignature: "org.example.client.(Client).<init>#1",
-				TargetCanonicalSignature: "org.example.client.Client.<init>(java.util.Map): Client", Resolution: ResolutionExact, MethodName: "<init>", Arity: 1},
+			{
+				Caller: "org.example.wrapper.(Factory.Extended).<init>#1", TargetSignature: "org.example.client.(Client).<init>#1",
+				TargetCanonicalSignature: "org.example.client.Client.<init>(java.util.Map): Client", Resolution: ResolutionExact, MethodName: "<init>", Arity: 1,
+			},
 		},
 	}
 
@@ -37,19 +43,27 @@ func composeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fragment)
 		Functions: []Function{
 			// Two same-arity constructor overloads: the alias join must
 			// disambiguate by the call's canonical parameter type (Map).
-			{Signature: "org.example.client.(Client).<init>#1$Map", FunctionName: "org.example.client.Client.<init>",
-				CanonicalSignature: "org.example.client.Client.<init>(Map): Client", Visibility: "public", OwnerVisibility: "public"},
-			{Signature: "org.example.client.(Client).<init>#1$Properties", FunctionName: "org.example.client.Client.<init>",
-				CanonicalSignature: "org.example.client.Client.<init>(Properties): Client", Visibility: "public", OwnerVisibility: "public"},
+			{
+				Signature: "org.example.client.(Client).<init>#1$Map", FunctionName: "org.example.client.Client.<init>",
+				CanonicalSignature: "org.example.client.Client.<init>(Map): Client", Visibility: "public", OwnerVisibility: "public",
+			},
+			{
+				Signature: "org.example.client.(Client).<init>#1$Properties", FunctionName: "org.example.client.Client.<init>",
+				CanonicalSignature: "org.example.client.Client.<init>(Properties): Client", Visibility: "public", OwnerVisibility: "public",
+			},
 		},
 		CryptoOperations: []CryptoOperation{
-			{Function: "org.example.client.(Ssl).init#0", FindingID: "aaaa1111", RuleID: "rule.tls",
-				Symbol: "javax.net.ssl.SSLContext.getInstance", FilePath: "org/example/client/Ssl.java", StartLine: 10},
+			{
+				Function: "org.example.client.(Ssl).init#0", FindingID: "aaaa1111", RuleID: "rule.tls",
+				Symbol: "javax.net.ssl.SSLContext.getInstance", FilePath: "org/example/client/Ssl.java", StartLine: 10,
+			},
 		},
 		CryptoEntryPoints: []CryptoEntryPoint{
-			{FunctionKey: "org.example.client.(Client).<init>#1$Map", FunctionName: "org.example.client.Client.<init>",
+			{
+				FunctionKey: "org.example.client.(Client).<init>#1$Map", FunctionName: "org.example.client.Client.<init>",
 				CanonicalSignature: "org.example.client.Client.<init>(Map): Client", Visibility: "public", OwnerVisibility: "public",
-				ReachableFindings: []ReachableFinding{{FindingID: "aaaa1111", ChainDepth: 4, FindingGraphRef: "aaaa1111"}}},
+				ReachableFindings: []ReachableFinding{{FindingID: "aaaa1111", ChainDepth: 4, FindingGraphRef: "aaaa1111"}},
+			},
 		},
 	}
 
