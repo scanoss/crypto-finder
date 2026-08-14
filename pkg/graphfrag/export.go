@@ -38,7 +38,7 @@ import (
 // 1.7 adds internal_edges_compact plus internal_edge_strings. It carries the
 // same internal edge fields as internal_edges, but indexes repeated strings and
 // function keys to keep large dependency fragments small.
-const SchemaVersion = "graph-fragment-1.8"
+const SchemaVersion = "graph-fragment-1.9"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -174,6 +174,7 @@ type GraphFragmentFunction struct {
 	Key                           string          `json:"key"`
 	FunctionName                  string          `json:"function_name"`
 	CanonicalSignature            string          `json:"canonical_signature,omitempty"`
+	ErasedSignature               string          `json:"erased_signature,omitempty"`
 	CompatibleCanonicalSignatures []string        `json:"compatible_canonical_signatures,omitempty"`
 	Package                       string          `json:"package,omitempty"`
 	Type                          string          `json:"type,omitempty"`

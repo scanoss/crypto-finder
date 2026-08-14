@@ -301,6 +301,7 @@ type callGraphCryptoEntryPoint struct {
 	FunctionKey              string                             `json:"function_key"`
 	FunctionName             string                             `json:"function_name,omitempty"`
 	CanonicalSignature       string                             `json:"canonical_signature,omitempty"`
+	ErasedSignature          string                             `json:"erased_signature,omitempty"`
 	Class                    string                             `json:"class,omitempty"`
 	Method                   string                             `json:"method"`
 	ReturnType               string                             `json:"return_type,omitempty"`
@@ -343,6 +344,7 @@ type callGraphSupportingCall struct {
 	FunctionKey        string                     `json:"function_key,omitempty"`
 	FunctionName       string                     `json:"function_name,omitempty"`
 	CanonicalSignature string                     `json:"canonical_signature,omitempty"`
+	ErasedSignature    string                     `json:"erased_signature,omitempty"`
 	DisplaySymbol      string                     `json:"display_symbol,omitempty"`
 	Aliases            []string                   `json:"aliases,omitempty"`
 	Category           string                     `json:"category,omitempty"`
@@ -450,6 +452,7 @@ func streamCallGraphExport(
 
 	supportingCalls := sortedSupportingCalls(supportingByID)
 	for i := range supportingCalls {
+		supportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, supportingCalls[i].FunctionKey)
 		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
 			continue
 		}
@@ -464,6 +467,7 @@ func streamCallGraphExport(
 		if chainRoots[entryPoints[i].FunctionKey] {
 			entryPoints[i].Root = true
 		}
+		entryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, entryPoints[i].FunctionKey)
 	}
 	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
 		return streamedCallGraphExport{}, err
@@ -698,6 +702,12 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 	})
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
 	markLiveRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	for i := range out.CryptoEntryPoints {
+		out.CryptoEntryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.CryptoEntryPoints[i].FunctionKey)
+	}
+	for i := range out.SupportingCalls {
+		out.SupportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.SupportingCalls[i].FunctionKey)
+	}
 
 	return out
 }
@@ -3332,6 +3342,7 @@ type exportInferredReturn struct {
 type exportFunctionMetadata struct {
 	FunctionName       string
 	CanonicalSignature string
+	ErasedSignature    string
 	ReturnType         string
 	ReturnTypeRef      *exportTypeRef
 	ParameterTypes     []string
@@ -3374,6 +3385,7 @@ func buildExportFunctionMetadata(
 
 	meta.ReturnType = normalizeExportReturnType(id, meta.ReturnType)
 	meta.CanonicalSignature = canonicalSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType)
+	meta.ErasedSignature = erasedSignature(meta.FunctionName, meta.ParameterTypes, meta.ReturnType, typeParamBoundsOf(decl))
 	meta.DisplaySymbol, meta.Aliases = exportDisplaySymbolAndAliases(id, meta.FunctionName)
 
 	// Populate inferred_return when the inference pass produced a result.
@@ -3677,6 +3689,71 @@ func canonicalSignature(functionName string, parameterTypes []string, returnType
 		signature += ": " + trimmedReturnType
 	}
 	return signature
+}
+
+// erasedSignature builds the generics-erased join form of a canonical
+// signature: every generic argument list is stripped, and type variables
+// (per the declaring class's recorded bounds) are replaced by their erased
+// bound. This is the normal form a bytecode-level consumer reproduces.
+func erasedSignature(functionName string, parameterTypes []string, returnType string, bounds map[string]string) string {
+	if functionName == "" {
+		return ""
+	}
+	params := make([]string, len(parameterTypes))
+	for i := range parameterTypes {
+		params[i] = eraseJavaType(parameterTypes[i], bounds)
+	}
+	signature := functionName + "(" + strings.Join(params, ", ") + ")"
+	if erased := eraseJavaType(returnType, bounds); erased != "" && erased != "?" {
+		signature += ": " + erased
+	}
+	return signature
+}
+
+// eraseJavaType strips generic arguments, preserves array suffixes, and
+// substitutes a type variable with its erased bound ("Object" by default).
+func eraseJavaType(typeText string, bounds map[string]string) string {
+	typeText = strings.TrimSpace(typeText)
+	if typeText == "" {
+		return "?"
+	}
+	if angle := strings.Index(typeText, "<"); angle >= 0 {
+		suffix := ""
+		if closeIdx := strings.LastIndex(typeText, ">"); closeIdx >= 0 && closeIdx+1 < len(typeText) {
+			suffix = typeText[closeIdx+1:]
+		}
+		typeText = typeText[:angle] + suffix
+	}
+	arraySuffix := ""
+	for strings.HasSuffix(typeText, "[]") {
+		typeText = typeText[:len(typeText)-2]
+		arraySuffix += "[]"
+	}
+	if bound, ok := bounds[typeText]; ok && bound != "" {
+		typeText = bound
+	}
+	return typeText + arraySuffix
+}
+
+// erasedSignatureForFunctionKey resolves a served function key to its erased
+// join signature via the call graph's declaration index. Empty when the key
+// has no source declaration (external/JDK symbols).
+func erasedSignatureForFunctionKey(ctx *exportBuildContext, functionKey string) string {
+	if ctx == nil || ctx.graph == nil || functionKey == "" {
+		return ""
+	}
+	decl, ok := ctx.graph.Functions[functionKey]
+	if !ok || decl == nil {
+		return ""
+	}
+	return buildExportFunctionMetadata(ctx.graph, decl.ID, decl).ErasedSignature
+}
+
+func typeParamBoundsOf(decl *callgraph.FunctionDecl) map[string]string {
+	if decl == nil {
+		return nil
+	}
+	return decl.TypeParamBounds
 }
 
 func applyExportFunctionMetadataToEntryCall(call *callGraphEntryCall, meta exportFunctionMetadata) {

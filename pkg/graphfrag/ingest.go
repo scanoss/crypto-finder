@@ -45,6 +45,7 @@ func appendFragmentFunctions(frag *Fragment, functions []GraphFragmentFunction) 
 			FunctionName:                  fn.FunctionName,
 			DeclaringType:                 fn.Type,
 			CanonicalSignature:            fn.CanonicalSignature,
+			ErasedSignature:               fn.ErasedSignature,
 			CompatibleCanonicalSignatures: append([]string(nil), fn.CompatibleCanonicalSignatures...),
 			ReturnType:                    fn.ReturnType,
 			ParameterTypes:                fn.ParameterTypes,

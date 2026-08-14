@@ -255,9 +255,12 @@ func (p *JavaParser) processClass(
 	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
 	bases := extractJavaClassBases(node, src)
 	recordJavaClassBases(analysis, fullClassName, bases)
+	typeParamBounds := extractJavaTypeParamBounds(node, src)
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
+	stampTypeParamBounds(constructorDecls, typeParamBounds)
+	stampTypeParamBounds(methodDecls, typeParamBounds)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullClassName, ownerVisibility)
@@ -388,6 +391,66 @@ func parseJavaClass(node *sitter.Node, src []byte) (string, *sitter.Node) {
 	}
 
 	return className, body
+}
+
+// extractJavaTypeParamBounds reads a class_declaration's type_parameters
+// clause ("<K, V>", "<T extends Foo & Bar>") into a name -> erased-first-bound
+// map ("Object" when unbounded). Method-level type parameters are not yet
+// captured; class-level parameters cover the generic-wrapper join surface.
+func extractJavaTypeParamBounds(node *sitter.Node, src []byte) map[string]string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != "type_parameters" {
+			continue
+		}
+		return parseJavaTypeParamBounds(child.Content(src))
+	}
+	return nil
+}
+
+// parseJavaTypeParamBounds parses the source text of a type_parameters clause.
+func parseJavaTypeParamBounds(text string) map[string]string {
+	text = strings.TrimSpace(text)
+	text = strings.TrimPrefix(text, "<")
+	text = strings.TrimSuffix(text, ">")
+	if text == "" {
+		return nil
+	}
+	bounds := make(map[string]string)
+	for _, part := range splitTopLevelTypeArgs(text) {
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[0]
+		bound := "Object"
+		if len(fields) >= 3 && fields[1] == "extends" {
+			bound = strings.TrimSpace(stripGenericSuffix(fields[2]))
+			if amp := strings.Index(bound, "&"); amp > 0 {
+				bound = strings.TrimSpace(bound[:amp])
+			}
+		}
+		if name != "" {
+			bounds[name] = bound
+		}
+	}
+	if len(bounds) == 0 {
+		return nil
+	}
+	return bounds
+}
+
+// stampTypeParamBounds copies the declaring class's type-parameter bounds onto
+// every decl. No-op when the class declares no type parameters.
+func stampTypeParamBounds(decls []*FunctionDecl, bounds map[string]string) {
+	if len(bounds) == 0 {
+		return
+	}
+	for _, decl := range decls {
+		if decl != nil {
+			decl.TypeParamBounds = bounds
+		}
+	}
 }
 
 // extractJavaClassBases reads a class_declaration's superclass (extends) and

@@ -132,7 +132,11 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	rootFragment := fragments[root]
 	roots := rootNodes(root, rootFragment, adjacency, opts.EntryRootedOnly)
 
-	out := Result{Suppressed: suppressed, operationEntryPoints: indexOperationEntryPoints(closure, fragments)}
+	out := Result{
+		Suppressed:           suppressed,
+		operationEntryPoints: indexOperationEntryPoints(closure, fragments),
+		erasedByFunctionKey:  indexErasedSignatures(closure, fragments),
+	}
 	if opts.EntryRootedOnly {
 		// Serving path. Mirror live `--export-callgraph` (TraceBackLimited): a
 		// backward BFS from each crypto op with a per-op graph-global frontier set.
@@ -1758,6 +1762,21 @@ func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandid
 		}
 	}
 	return reverse, reverseAll
+}
+
+// indexErasedSignatures maps every fragment function key to its erased join
+// signature (1.9+ fragments; absent keys resolve to the empty string).
+func indexErasedSignatures(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[string]string {
+	out := make(map[string]string)
+	for _, key := range closure {
+		fragment := fragments[key]
+		for i := range fragment.Functions {
+			if erased := fragment.Functions[i].ErasedSignature; erased != "" {
+				out[fragment.Functions[i].Signature] = erased
+			}
+		}
+	}
+	return out
 }
 
 // composedEntry accumulates min-depth reachable records for one root function.

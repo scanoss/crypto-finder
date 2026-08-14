@@ -193,6 +193,10 @@ type FunctionDecl struct {
 	ReturnTypeRef   TypeRef
 	Visibility      string
 	OwnerVisibility string
+	// TypeParamBounds maps the declaring class's generic type-parameter names
+	// to their erased first bound ("Object" when unbounded). Used to build the
+	// erased signature consumers join on (Java only).
+	TypeParamBounds map[string]string
 	Parameters      []FunctionParameter
 	Calls           []FunctionCall
 	// ReturnSources traces where return values originate when the parser supports it.

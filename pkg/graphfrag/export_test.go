@@ -189,9 +189,9 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 
 // TestSchemaVersion_Is_1_8 verifies the schema version constant has been bumped.
 // 1.8 removes operation-only crypto entry point synthesis from fragment exports.
-func TestSchemaVersion_Is_1_8(t *testing.T) {
+func TestSchemaVersion_Is_1_9(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.8" {
+	if SchemaVersion != "graph-fragment-1.9" {
 		t.Errorf("SchemaVersion = %q, want graph-fragment-1.8", SchemaVersion)
 	}
 }

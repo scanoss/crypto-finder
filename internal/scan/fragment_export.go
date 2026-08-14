@@ -1062,6 +1062,7 @@ func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID
 		Key:                           id.String(),
 		FunctionName:                  meta.FunctionName,
 		CanonicalSignature:            meta.CanonicalSignature,
+		ErasedSignature:               meta.ErasedSignature,
 		CompatibleCanonicalSignatures: compatibleCanonicalSignatures(ctx, id, decl),
 		Package:                       id.Package,
 		Type:                          id.Type,

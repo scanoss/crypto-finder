@@ -384,6 +384,9 @@ type ExportCryptoEntryPoint struct {
 	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the canonical function signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
+	// ErasedSignature is the generics-erased join form (6.8+): generic
+	// arguments stripped, type variables replaced by their erased bounds.
+	ErasedSignature string `json:"erased_signature,omitempty"`
 	// Class is the enclosing class name.
 	Class string `json:"class,omitempty"`
 	// Method is the simple method name.
@@ -451,6 +454,7 @@ type ExportSupportingCall struct {
 	FunctionKey        string                  `json:"function_key,omitempty"`
 	FunctionName       string                  `json:"function_name,omitempty"`
 	CanonicalSignature string                  `json:"canonical_signature,omitempty"`
+	ErasedSignature    string                  `json:"erased_signature,omitempty"`
 	DisplaySymbol      string                  `json:"display_symbol,omitempty"`
 	Aliases            []string                `json:"aliases,omitempty"`
 	Category           string                  `json:"category,omitempty"`
@@ -561,6 +565,12 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
 	markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	for i := range out.CryptoEntryPoints {
+		out.CryptoEntryPoints[i].ErasedSignature = r.erasedByFunctionKey[out.CryptoEntryPoints[i].FunctionKey]
+	}
+	for i := range out.SupportingCalls {
+		out.SupportingCalls[i].ErasedSignature = r.erasedByFunctionKey[out.SupportingCalls[i].FunctionKey]
+	}
 	return out
 }
 
