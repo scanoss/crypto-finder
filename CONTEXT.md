@@ -65,3 +65,14 @@ _Avoid_: Asset variant ID, downstream CBOM UUID
 A structured predicate describing which argument value or type makes a crypto
 finding applicable.
 _Avoid_: Policy condition, free-text condition
+
+**Structured progress output**:
+An optional machine-readable stream describing the lifecycle of a scan.
+_Avoid_: Human log, structured error
+
+**Progress phase**:
+A lifecycle segment reported by structured progress output. Phase names and
+ordering follow the actual scan pipeline. Optional dependency and export phases
+are explicitly marked as skipped when they are not requested, while callgraph
+is reported only when callgraph work actually runs.
+_Avoid_: Worker trace, call-chain phase

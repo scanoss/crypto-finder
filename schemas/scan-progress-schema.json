@@ -1,0 +1,250 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scanoss.com/schemas/scan-progress.json",
+  "title": "SCANOSS Crypto-Finder Scan Progress Event",
+  "description": "Version 1 JSONL event emitted by crypto-finder when structured progress is enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "schema_version", "phase", "status"],
+  "properties": {
+    "event": {
+      "const": "scan_progress"
+    },
+    "schema_version": {
+      "const": "1"
+    },
+    "phase": {
+      "enum": ["scan", "rules", "detection", "dependencies", "callgraph", "export"]
+    },
+    "status": {
+      "enum": ["started", "completed", "failed", "canceled", "skipped"]
+    },
+    "parent_phase": {
+      "enum": ["scan", "dependencies", "export"]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "not_requested",
+            "ecosystem_unknown",
+            "resolver_unavailable",
+            "parser_unavailable",
+            "callgraph_unavailable"
+          ]
+        },
+        "deps_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deps_skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deps_failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deps_with_findings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_dep_findings": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["reason"],
+          "not": {
+            "anyOf": [
+              {"required": ["deps_scanned"]},
+              {"required": ["deps_skipped"]},
+              {"required": ["deps_failed"]},
+              {"required": ["deps_with_findings"]},
+              {"required": ["total_dep_findings"]}
+            ]
+          }
+        },
+        {
+          "required": [
+            "deps_scanned",
+            "deps_skipped",
+            "deps_failed",
+            "deps_with_findings",
+            "total_dep_findings"
+          ],
+          "not": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "enum": ["started", "skipped"]
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": ["duration_ms"]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "const": "skipped"
+          }
+        }
+      },
+      "then": {
+        "required": ["phase", "details"],
+        "properties": {
+          "phase": {
+            "enum": ["dependencies", "export"]
+          },
+          "details": {
+            "required": ["reason"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase", "status"],
+        "properties": {
+          "phase": {
+            "const": "dependencies"
+          },
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": [
+              "deps_scanned",
+              "deps_skipped",
+              "deps_failed",
+              "deps_with_findings",
+              "total_dep_findings"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": ["reason"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "skipped"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": [
+              "deps_scanned",
+              "deps_skipped",
+              "deps_failed",
+              "deps_with_findings",
+              "total_dep_findings"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "dependencies"
+          },
+          "status": {
+            "const": "completed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase"],
+        "properties": {
+          "phase": {
+            "const": "callgraph"
+          }
+        }
+      },
+      "then": {
+        "required": ["parent_phase"],
+        "properties": {
+          "parent_phase": {
+            "enum": ["dependencies", "export"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase"],
+        "properties": {
+          "phase": {
+            "enum": ["rules", "detection", "dependencies", "export"]
+          }
+        }
+      },
+      "then": {
+        "required": ["parent_phase"],
+        "properties": {
+          "parent_phase": {
+            "const": "scan"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase"],
+        "properties": {
+          "phase": {
+            "const": "scan"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": ["parent_phase"]
+        }
+      }
+    }
+  ]
+}
