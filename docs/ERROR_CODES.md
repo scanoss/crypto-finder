@@ -1,6 +1,12 @@
 # Error Codes
 
-crypto-finder reports terminal failures with a **stable machine-readable code and pipeline stage**. Codes are an external contract consumed by CI parsers and downstream tooling: shipped codes are never renamed (see [AGENTS.md](../AGENTS.md#error-handling)). The source of truth is `internal/failure/error.go`.
+crypto-finder reports terminal failures with a **stable machine-readable code and pipeline stage**. Codes are an external contract consumed by CI parsers and downstream tooling: shipped codes are never renamed (see [AGENTS.md](../AGENTS.md#error-handling)). The public source of truth is `pkg/failure/error.go`; `internal/failure` preserves implementation compatibility.
+
+## Public Go Contract
+
+Go consumers can import `github.com/scanoss/crypto-finder/pkg/failure` for the `Code`, `Stage`, `Error`, and `Payload` types without importing implementation packages. `Code` and `Stage` are string enums; their exported constants are the stable values listed below.
+
+`Payload` serializes `code`, `stage`, `retryable`, and `message` in every payload. `details`, `cause`, and `raw_error` are omitted when empty. `ToPayload` retains compatibility by preserving typed failures through wrapping, defaulting missing typed code or stage to `unknown_error` or `unknown`, and converting unclassified errors to that same fallback payload.
 
 ## Consuming errors in CI
 
@@ -83,7 +89,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 
 ## Adding a new failure mode
 
-1. Add a `Code` constant in `internal/failure/error.go` (and a `Stage` if it is a new pipeline phase).
+1. Add a `Code` constant in `pkg/failure/error.go` (and a `Stage` if it is a new pipeline phase), then re-export it through `internal/failure`.
 2. Wrap the error at the boundary layer (`internal/cli`, `internal/engine`, `internal/scanner`, `internal/dependency`) — never in deep library code.
 3. Add the code to this table.
 4. Never rename a shipped code.
