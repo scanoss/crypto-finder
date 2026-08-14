@@ -36,8 +36,6 @@ type DepScanOptions struct {
 	ScanOptions ScanOptions
 	// Workers is the number of concurrent dependency scans (0 = default to NumCPU/2, capped at 8).
 	Workers int
-	// Progress reports callgraph work performed by the dependency scan.
-	Progress ProgressReporter
 }
 
 // DependencyScanner coordinates dependency resolution, scanning, call graph
@@ -247,10 +245,10 @@ func (ds *DependencyScanner) emptyDependencyScanResult(
 }
 
 func (ds *DependencyScanner) reportProgress(opts DepScanOptions, status string, cause error) error {
-	if opts.Progress == nil {
+	if opts.ScanOptions.Progress == nil {
 		return nil
 	}
-	if err := opts.Progress("callgraph", status, cause); err != nil {
+	if err := opts.ScanOptions.Progress("callgraph", status, cause); err != nil {
 		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
 	}
 	return nil

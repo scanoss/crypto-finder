@@ -636,6 +636,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	var progress *scanutil.ProgressWriter
 	scanStarted := false
+	//nolint:nestif // Scan progress setup keeps its terminal lifecycle together.
 	if scanProgress {
 		progress = scanutil.NewProgressWriter(os.Stderr)
 		if err := progress.Start("scan", ""); err != nil {
@@ -668,6 +669,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// fail callgraph export with "could not determine a supported ecosystem".
 	// The orchestrator will reuse these hints instead of redetecting.
 	detectionStarted := false
+	//nolint:nestif // Pre-detection reports its lifecycle alongside the detection error.
 	if len(scanLanguages) == 0 {
 		if progress != nil {
 			if err := progress.Start("detection", "scan"); err != nil {
@@ -818,7 +820,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 							ScanOptions: scanOpts,
 						}
 						if progress != nil {
-							depOptions.Progress = newProgressReporter(progress, "dependencies")
+							depOptions.ScanOptions.Progress = newProgressReporter(progress, "dependencies")
 						}
 						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, depOptions)
 						if depErr != nil {
@@ -885,6 +887,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		return nil
 	}
 
+	//nolint:nestif // Standalone export keeps progress and Java runtime lifecycle with callgraph construction.
 	if (scanExportCallgraph != "" || scanExportGraphFragment != "") && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
 		if err := startExport(); err != nil {
 			return err
@@ -1001,14 +1004,16 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Dur("duration", time.Since(exportStart)).
 			Msg("Graph fragment export complete")
 	}
-	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
+	//nolint:nestif // Export finalization keeps terminal progress reporting with export lifecycle state.
+	switch {
+	case scanExportCallgraph != "" || scanExportGraphFragment != "":
 		if progress != nil {
 			if err := progress.Complete("export", "scan", nil); err != nil {
 				return progressWriteFailure(err)
 			}
 		}
 		exportCompleted = true
-	} else if progress != nil {
+	case progress != nil:
 		if err := progress.Skip("export", "scan", "not_requested"); err != nil {
 			return progressWriteFailure(err)
 		}

@@ -112,11 +112,11 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 //
-//nolint:funlen // Scanner initialization needs context-aware failure classification before scanning.
+//nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
-		if err = o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); err != nil {
-			return nil, err
+		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
+			return nil, progressErr
 		}
 	}
 	if opts.Progress != nil {
@@ -141,15 +141,16 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 		log.Info().Strs("languages", opts.LanguageHint).Msg("Using provided language hints")
 	} else {
 		// Auto-detect languages so we can use only the needed rules. This significantly optimizes scanner performance.
-		languages, err = o.langDetector.Detect(opts.Target)
-		if err != nil {
+		detectedLanguages, detectErr := o.langDetector.Detect(opts.Target)
+		if detectErr != nil {
 			return nil, failure.WrapUnknown(
-				err,
+				detectErr,
 				failure.CodeLanguageDetectionFailed,
 				failure.StageScan,
 				"failed to detect languages",
 			)
 		}
+		languages = detectedLanguages
 	}
 
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
@@ -161,15 +162,15 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 			cleanupRulePaths()
 		}
 	}()
-	if err = o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); err != nil {
-		return nil, err
+	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); loadErr != nil {
+		return nil, loadErr
 	}
 
 	// Step 3: Get scanner from registry
-	scannerInstance, err := o.scannerReg.Get(opts.ScannerName)
-	if err != nil {
+	scannerInstance, getErr := o.scannerReg.Get(opts.ScannerName)
+	if getErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			getErr,
 			failure.CodeScannerUnavailable,
 			failure.StageScan,
 			"failed to get scanner",
@@ -200,10 +201,10 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 		Name:    version.ToolName,
 		Version: version.Version,
 	}
-	report, err := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
-	if err != nil {
+	report, scanErr := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
+	if scanErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			scanErr,
 			failure.CodeScannerExecutionFailed,
 			failure.StageScan,
 			"scan failed",
@@ -218,10 +219,10 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 	report.Rules = o.rulesManager.Info()
 
 	// Step 6: Process and enrich results
-	enrichedReport, err := o.processor.Process(report, languages, opts.Target)
-	if err != nil {
+	enrichedReport, processErr := o.processor.Process(report, languages, opts.Target)
+	if processErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			processErr,
 			failure.CodeScannerExecutionFailed,
 			failure.StageScan,
 			"failed to process results",
@@ -232,8 +233,8 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 }
 
 func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
-	if err = o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); err != nil {
-		return err
+	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); progressErr != nil {
+		return progressErr
 	}
 	defer func() {
 		status := progressStatusComplete
@@ -247,26 +248,29 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 
 	if len(opts.RulePaths) > 0 {
 		*rawRulePaths = opts.RulePaths
-		*rulePaths, *cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
-		if err != nil {
-			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare pre-loaded rules for scanner")
+		preparedRulePaths, cleanup, loadErr := optimizeRulePathsForScanner(opts.RulePaths)
+		if loadErr != nil {
+			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare pre-loaded rules for scanner")
 		}
+		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
 		log.Debug().Int("count", len(*rulePaths)).Msg("Using pre-loaded rule paths")
 	} else {
-		*rulePaths, err = o.rulesManager.Load()
-		if err != nil {
-			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to load rules")
+		loadedRulePaths, loadErr := o.rulesManager.Load()
+		if loadErr != nil {
+			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to load rules")
 		}
+		*rulePaths = loadedRulePaths
 		log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")
 		*rawRulePaths = *rulePaths
-		*rulePaths, *cleanupRulePaths, err = prepareRulePathsForScanner(*rulePaths, languages)
-		if err != nil {
-			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
+		preparedRulePaths, cleanup, prepareErr := prepareRulePathsForScanner(*rulePaths, languages)
+		if prepareErr != nil {
+			return failure.WrapUnknown(prepareErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
 		}
+		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
 	}
 
-	if err = rules.ValidateParameterConditions(*rawRulePaths); err != nil {
-		return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
+	if validationErr := rules.ValidateParameterConditions(*rawRulePaths); validationErr != nil {
+		return failure.WrapUnknown(validationErr, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
 	}
 	return nil
 }
