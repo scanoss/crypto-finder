@@ -58,7 +58,7 @@ func NewScanner() *Scanner {
 }
 
 // Initialize validates that Semgrep is available and properly configured.
-func (s *Scanner) Initialize(config scanner.Config) error {
+func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	// Use provided executable path or default
 	if config.ExecutablePath != "" {
 		s.executablePath = config.ExecutablePath
@@ -78,7 +78,10 @@ func (s *Scanner) Initialize(config scanner.Config) error {
 	s.executablePath = path
 
 	// Get semgrep version
-	s.version = s.detectVersion()
+	s.version = s.detectVersion(ctx)
+	if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
+		return ctxErr
+	}
 
 	// Apply configuration
 	if config.Timeout > 0 {
@@ -163,9 +166,8 @@ func (s *Scanner) GetInfo() scanner.Info {
 }
 
 // detectVersion runs `semgrep --version` to get the installed version.
-func (s *Scanner) detectVersion() string {
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, s.executablePath, "--version")
+func (s *Scanner) detectVersion(ctx context.Context) string {
+	cmd := scanner.CommandContext(ctx, s.executablePath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
 		return "unknown" // Non-fatal, continue without version
@@ -205,7 +207,7 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 
 // execute runs the semgrep command and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, s.executablePath, args...)
+	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 
 	// Set working directory if specified
 	if s.workDir != "" {

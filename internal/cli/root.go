@@ -18,11 +18,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
@@ -99,6 +102,8 @@ func setupLogging() {
 
 // Execute runs the root command and exits on error.
 func Execute() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
 	stderrFD, ok := utils.FDToInt(os.Stderr.Fd())
 	isTTY := ok && term.IsTerminal(stderrFD)
 	if !ok {
@@ -110,7 +115,7 @@ func Execute() {
 		pterm.DisableColor()
 	}
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		switch {
 		case normalizedErrorOutputFormat() == formatJSON:
 			renderJSONError(os.Stderr, err)
@@ -119,8 +124,11 @@ func Execute() {
 		default:
 			pterm.Error.Printfln("%s", err)
 		}
+		stop()
 		os.Exit(1)
 	}
+
+	stop()
 }
 
 func validateErrorOutputFormat(format string) error {

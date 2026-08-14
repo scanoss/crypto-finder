@@ -82,7 +82,7 @@ func initializeScannerOrFail(t *testing.T, config scanner.Config) *Scanner {
 	t.Helper()
 
 	s := NewScanner()
-	if err := s.Initialize(config); err != nil {
+	if err := s.Initialize(context.Background(), config); err != nil {
 		t.Fatalf("Initialize() failed: %v", err)
 	}
 

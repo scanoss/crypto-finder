@@ -30,7 +30,7 @@ type mockScanner struct {
 	version string
 }
 
-func (m *mockScanner) Initialize(_ Config) error {
+func (m *mockScanner) Initialize(_ context.Context, _ Config) error {
 	return nil
 }
 

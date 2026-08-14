@@ -116,7 +116,10 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
 
-	depResults := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
+	depResults, err := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
+	if err != nil {
+		return nil, err
+	}
 	logDependencyScanSummary(summarizeDependencyResults(depResults))
 
 	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
@@ -319,7 +322,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
-) []depScanResult {
+) ([]depScanResult, error) {
 	workers := dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem())
 
 	orderedDeps := canonicalDependencies(deps)
@@ -357,7 +360,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		Msg("Starting parallel dependency scanning")
 
 	if len(work) == 0 {
-		return outcomes
+		return outcomes, nil
 	}
 
 	// Detach per-dep scan ctx from the parent's deadline. Without this, a long
@@ -411,7 +414,14 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		outcomes[result.index] = result
 	}
 
-	return outcomes
+	for i := range outcomes {
+		structured, ok := failure.As(outcomes[i].err)
+		if ok && structured.Code == failure.CodeScannerCancelled {
+			return outcomes, outcomes[i].err
+		}
+	}
+
+	return outcomes, nil
 }
 
 // scanSingleDep scans a single dependency using the orchestrator.
