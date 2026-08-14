@@ -53,6 +53,65 @@ func TestScanProgressSchema(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name: "skipped-export-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "export",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "skipped-scan-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "scan",
+				"status": "skipped",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "skipped-rules-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "rules",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "skipped-detection-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "detection",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "skipped-callgraph-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "callgraph",
+				"status": "skipped",
+				"parent_phase": "dependencies",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: false,
+		},
+		{
 			name: "completed-dependencies",
 			document: `{
 				"event": "scan_progress",

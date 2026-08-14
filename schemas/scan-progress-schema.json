@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://scanoss.com/schemas/scan-progress.json",
   "title": "SCANOSS Crypto-Finder Scan Progress Event",
   "description": "Version 1 JSONL event emitted by crypto-finder when structured progress is enabled.",
@@ -114,8 +114,11 @@
         }
       },
       "then": {
-        "required": ["details"],
+        "required": ["phase", "details"],
         "properties": {
+          "phase": {
+            "enum": ["dependencies", "export"]
+          },
           "details": {
             "required": ["reason"]
           }
