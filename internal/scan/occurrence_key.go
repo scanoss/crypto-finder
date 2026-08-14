@@ -23,8 +23,9 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 
 	ctx := newExportBuildContext(result)
 	type candidate struct {
-		asset *entities.CryptographicAsset
-		hash  string
+		asset      *entities.CryptographicAsset
+		hash       string
+		occurrence string
 	}
 	var candidates []candidate
 
@@ -44,27 +45,49 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 			location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
 			container := buildExportFunctionMetadata(ctx.graph, containing.ID, containing).CanonicalSignature
 			hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, terminal.ASTKind, terminal.NamedASTPath)
-			candidates = append(candidates, candidate{asset: asset, hash: hash})
+			occurrence := strings.Join([]string{terminal.FilePath, strconv.Itoa(terminal.Line), strconv.Itoa(terminal.StartCol), strconv.Itoa(terminal.EndCol)}, "\n")
+			candidates = append(candidates, candidate{asset: asset, hash: hash, occurrence: occurrence})
 		}
 	}
 
-	byHash := make(map[string][]candidate, len(candidates))
-	for _, candidate := range candidates {
-		byHash[candidate.hash] = append(byHash[candidate.hash], candidate)
+	type occurrenceGroup struct {
+		assets []*entities.CryptographicAsset
+		line   int
+		col    int
 	}
-	for hash, group := range byHash {
-		sort.SliceStable(group, func(i, j int) bool {
-			if group[i].asset.StartLine != group[j].asset.StartLine {
-				return group[i].asset.StartLine < group[j].asset.StartLine
+	byHash := make(map[string]map[string]*occurrenceGroup, len(candidates))
+	for _, candidate := range candidates {
+		groups := byHash[candidate.hash]
+		if groups == nil {
+			groups = make(map[string]*occurrenceGroup)
+			byHash[candidate.hash] = groups
+		}
+		group := groups[candidate.occurrence]
+		if group == nil {
+			group = &occurrenceGroup{line: candidate.asset.StartLine, col: candidate.asset.StartCol}
+			groups[candidate.occurrence] = group
+		}
+		group.assets = append(group.assets, candidate.asset)
+	}
+	for hash, groups := range byHash {
+		ordered := make([]*occurrenceGroup, 0, len(groups))
+		for _, group := range groups {
+			ordered = append(ordered, group)
+		}
+		sort.SliceStable(ordered, func(i, j int) bool {
+			if ordered[i].line != ordered[j].line {
+				return ordered[i].line < ordered[j].line
 			}
-			return group[i].asset.StartCol < group[j].asset.StartCol
+			return ordered[i].col < ordered[j].col
 		})
-		for i := range group {
+		for i, group := range ordered {
 			key := "v1:" + hash
 			if i > 0 {
 				key += "-" + strconv.Itoa(i+1)
 			}
-			group[i].asset.OccurrenceKey = key
+			for _, asset := range group.assets {
+				asset.OccurrenceKey = key
+			}
 		}
 	}
 }

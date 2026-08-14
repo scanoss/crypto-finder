@@ -84,7 +84,8 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 		Report: &entities.InterimReport{Findings: []entities.Finding{{
 			FilePath: "/workspace/Crypto.java",
 			CryptographicAssets: []entities.CryptographicAsset{
-				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25},
+				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25, Rules: []entities.RuleInfo{{ID: "java.cipher.a"}}},
+				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25, Rules: []entities.RuleInfo{{ID: "java.cipher.b"}}},
 				{StartLine: 11, EndLine: 11, StartCol: 5, EndCol: 25},
 			},
 		}}},
@@ -92,7 +93,10 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 
 	AssignOccurrenceKeys(result)
 	assets := result.Report.Findings[0].CryptographicAssets
-	if assets[0].OccurrenceKey == "" || assets[1].OccurrenceKey != assets[0].OccurrenceKey+"-2" {
-		t.Fatalf("collision keys = %q, %q; want deterministic suffix", assets[0].OccurrenceKey, assets[1].OccurrenceKey)
+	if assets[0].OccurrenceKey == "" || assets[1].OccurrenceKey != assets[0].OccurrenceKey {
+		t.Fatalf("same-call keys = %q, %q; want shared key across rules", assets[0].OccurrenceKey, assets[1].OccurrenceKey)
+	}
+	if assets[2].OccurrenceKey != assets[0].OccurrenceKey+"-2" {
+		t.Fatalf("collision key = %q, want %q", assets[2].OccurrenceKey, assets[0].OccurrenceKey+"-2")
 	}
 }

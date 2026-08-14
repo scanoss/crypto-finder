@@ -424,14 +424,17 @@ func multiSourceLabel(sources []skip.PatternSource, multi *skip.MultiSource) str
 }
 
 func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, withTypeResolution bool) (*engine.DepScanResult, error) {
-	targetDir, err := callGraphTargetDir(target)
-	if err != nil {
-		return nil, fmt.Errorf("resolve call graph target: %w", err)
-	}
-
 	ecosystem := ecosystemFromHints(target, languageHints)
 	if ecosystem == "" {
 		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
+	}
+	return buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, withTypeResolution)
+}
+
+func buildStandaloneCallGraphResultForEcosystem(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, withTypeResolution bool) (*engine.DepScanResult, error) {
+	targetDir, err := callGraphTargetDir(target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve call graph target: %w", err)
 	}
 
 	var cgBuilder *callgraph.Builder
@@ -468,25 +471,70 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 	}, nil
 }
 
-// prepareReportOccurrenceKeys reuses the source-only callgraph path for normal
-// findings output, without starting dependency scanning.
-func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) (*engine.DepScanResult, error) {
+// prepareReportOccurrenceKeys reuses source-only callgraphs for normal findings
+// output, without starting dependency scanning. Source anchors are optional, so
+// parser failures leave the existing report unchanged.
+func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) *engine.DepScanResult {
 	if scanutil.CountFindings(report) == 0 {
-		return result, nil
+		return result
 	}
-	if result == nil || result.CallGraph == nil {
-		if ecosystemFromHints(target, languageHints) == "" {
-			return result, nil
+	for _, ecosystem := range reportOccurrenceKeyEcosystems(target, report, languageHints) {
+		if result != nil && result.CallGraph != nil && result.Ecosystem == ecosystem {
+			continue
 		}
-		var err error
-		result, err = buildStandaloneCallGraphResult(target, report, languageHints, javaRuntime, includeTests, compiledArtifact, false)
+		anchors, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, false)
 		if err != nil {
-			return nil, err
+			log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build optional source anchors for occurrence keys")
+			continue
+		}
+		if result == nil {
+			result = anchors
+		} else if result.CallGraph == nil {
+			result.CallGraph = anchors.CallGraph
+			if result.RootModule == "" {
+				result.RootModule = anchors.RootModule
+			}
+			if result.Ecosystem == "" {
+				result.Ecosystem = anchors.Ecosystem
+			}
+			if result.ProjectRoot == "" {
+				result.ProjectRoot = anchors.ProjectRoot
+			}
+		} else {
+			for id, function := range anchors.CallGraph.Functions {
+				if _, exists := result.CallGraph.Functions[id]; !exists {
+					result.CallGraph.Functions[id] = function
+				}
+			}
 		}
 	}
-	result.Report = report
-	scanutil.AssignOccurrenceKeys(result)
-	return result, nil
+	if result != nil {
+		result.Report = report
+		scanutil.AssignOccurrenceKeys(result)
+	}
+	return result
+}
+
+func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport, languageHints []string) []string {
+	seen := make(map[string]bool)
+	ecosystems := make([]string, 0, len(languageHints))
+	add := func(hint string) {
+		ecosystem := ecosystemFromHint(target, hint)
+		if ecosystem != "" && !seen[ecosystem] {
+			seen[ecosystem] = true
+			ecosystems = append(ecosystems, ecosystem)
+		}
+	}
+	for _, finding := range report.Findings {
+		add(finding.Language)
+	}
+	for _, hint := range languageHints {
+		add(hint)
+	}
+	if len(ecosystems) == 0 {
+		add(ecosystemFromHints(target, languageHints))
+	}
+	return ecosystems
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -1049,15 +1097,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
-	callGraphResult, err = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
-	if err != nil {
-		return failure.WrapUnknown(
-			err,
-			failure.CodeCallGraphBuildFailed,
-			failure.StageCallGraph,
-			"failed to build source anchors for occurrence keys",
-		)
-	}
+	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
 
 	report.Version = entities.InterimFormatVersion
 
