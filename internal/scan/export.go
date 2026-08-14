@@ -733,7 +733,8 @@ func liveFindingAnalysis(chains [][]callGraphChainNode, truncated bool) *graphfr
 			if chain[i].EntryCall == nil {
 				continue
 			}
-			for _, p := range chain[i].EntryCall.Parameters {
+			for j := range chain[i].EntryCall.Parameters {
+				p := &chain[i].EntryCall.Parameters[j]
 				total++
 				if p.ResolvedValue != "" || len(p.SourceNodes) > 0 {
 					resolved++
@@ -741,16 +742,10 @@ func liveFindingAnalysis(chains [][]callGraphChainNode, truncated bool) *graphfr
 			}
 		}
 	}
-	parameters := graphfrag.AnalysisUnavailable
-	switch {
-	case total == 0 || resolved == 0:
-		parameters = graphfrag.AnalysisUnavailable
-	case resolved == total:
-		parameters = graphfrag.AnalysisComplete
-	default:
-		parameters = graphfrag.AnalysisPartial
+	return &graphfrag.ExportFindingAnalysis{
+		CallChains: callChains,
+		Parameters: graphfrag.ParameterCompleteness(resolved, total),
 	}
-	return &graphfrag.ExportFindingAnalysis{CallChains: callChains, Parameters: parameters}
 }
 
 // markLiveRootEntryPoints flags entry points that are chain roots: the first

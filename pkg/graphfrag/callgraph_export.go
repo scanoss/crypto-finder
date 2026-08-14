@@ -581,25 +581,38 @@ func stitchedReachability(chains [][]ExportChainNode, anySuppressed bool) string
 
 // stitchedFindingAnalysis reports completeness for one finding graph.
 func stitchedFindingAnalysis(fg *ExportFindingGraph) *ExportFindingAnalysis {
-	callChains := AnalysisComplete
-	if fg.ForwardCalls != nil {
-		if fg.ForwardCalls.Truncated {
-			callChains = AnalysisPartial
-		}
-		for _, ac := range fg.ForwardCalls.AmbiguousCalls {
-			if ac.Completeness == AmbiguityPartial {
-				callChains = AnalysisPartial
-				break
-			}
+	resolved, total := countStitchedParameters(fg.CallChains)
+	return &ExportFindingAnalysis{
+		CallChains: forwardClosureCompleteness(fg.ForwardCalls),
+		Parameters: ParameterCompleteness(resolved, total),
+	}
+}
+
+// forwardClosureCompleteness is partial when the forward walk hit a cap or any
+// ambiguous dispatch group carries partial evidence; complete otherwise.
+func forwardClosureCompleteness(fc *ExportForwardClosure) string {
+	if fc == nil {
+		return AnalysisComplete
+	}
+	if fc.Truncated {
+		return AnalysisPartial
+	}
+	for i := range fc.AmbiguousCalls {
+		if fc.AmbiguousCalls[i].Completeness == AmbiguityPartial {
+			return AnalysisPartial
 		}
 	}
-	resolved, total := 0, 0
-	for _, chain := range fg.CallChains {
-		for _, node := range chain {
-			if node.EntryCall == nil {
+	return AnalysisComplete
+}
+
+func countStitchedParameters(chains [][]ExportChainNode) (resolved, total int) {
+	for _, chain := range chains {
+		for i := range chain {
+			if chain[i].EntryCall == nil {
 				continue
 			}
-			for _, p := range node.EntryCall.Parameters {
+			for j := range chain[i].EntryCall.Parameters {
+				p := &chain[i].EntryCall.Parameters[j]
 				total++
 				if p.ResolvedValue != "" || len(p.SourceNodes) > 0 {
 					resolved++
@@ -607,16 +620,21 @@ func stitchedFindingAnalysis(fg *ExportFindingGraph) *ExportFindingAnalysis {
 			}
 		}
 	}
-	parameters := AnalysisUnavailable
+	return resolved, total
+}
+
+// ParameterCompleteness maps a resolved/total parameter count onto the 6.8
+// analysis vocabulary: unavailable when nothing resolved, complete when
+// everything did, partial in between. Shared by the live and stitched exports.
+func ParameterCompleteness(resolved, total int) string {
 	switch {
 	case total == 0 || resolved == 0:
-		parameters = AnalysisUnavailable
+		return AnalysisUnavailable
 	case resolved == total:
-		parameters = AnalysisComplete
+		return AnalysisComplete
 	default:
-		parameters = AnalysisPartial
+		return AnalysisPartial
 	}
-	return &ExportFindingAnalysis{CallChains: callChains, Parameters: parameters}
 }
 
 // markRootEntryPoints flags entry points that are chain roots: the first frame

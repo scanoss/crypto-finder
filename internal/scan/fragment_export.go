@@ -1134,9 +1134,29 @@ func sourceTypeHierarchy(graph *callgraph.CallGraph) map[string][]string {
 	if graph == nil {
 		return nil
 	}
-	typesBySimple := make(map[string][]string)
-	pkgByOwner := make(map[string]string)
-	basesByOwner := make(map[string]map[string]bool)
+	decls := collectSourceTypeDecls(graph)
+	hierarchy := make(map[string][]string, len(decls.basesByOwner))
+	for owner, bases := range decls.basesByOwner {
+		hierarchy[owner] = decls.resolveBases(owner, bases)
+	}
+	return hierarchy
+}
+
+// sourceTypeDecls indexes the types declared in this scan: simple name →
+// sorted owner FQNs, owner FQN → package, and owner FQN → declared base
+// simple names.
+type sourceTypeDecls struct {
+	typesBySimple map[string][]string
+	pkgByOwner    map[string]string
+	basesByOwner  map[string]map[string]bool
+}
+
+func collectSourceTypeDecls(graph *callgraph.CallGraph) sourceTypeDecls {
+	decls := sourceTypeDecls{
+		typesBySimple: make(map[string][]string),
+		pkgByOwner:    make(map[string]string),
+		basesByOwner:  make(map[string]map[string]bool),
+	}
 	seenOwner := make(map[string]bool)
 	for _, decl := range graph.Functions {
 		if decl == nil || decl.ID.Package == "" || decl.ID.Type == "" {
@@ -1149,49 +1169,58 @@ func sourceTypeHierarchy(graph *callgraph.CallGraph) map[string][]string {
 			if dot := strings.LastIndex(simple, "."); dot >= 0 {
 				simple = simple[dot+1:]
 			}
-			typesBySimple[simple] = append(typesBySimple[simple], owner)
-			pkgByOwner[owner] = decl.ID.Package
+			decls.typesBySimple[simple] = append(decls.typesBySimple[simple], owner)
+			decls.pkgByOwner[owner] = decl.ID.Package
 		}
-		for _, base := range decl.OwnerBases {
-			if base == "" {
-				continue
-			}
-			if basesByOwner[owner] == nil {
-				basesByOwner[owner] = make(map[string]bool)
-			}
-			basesByOwner[owner][base] = true
-		}
+		decls.recordBases(owner, decl.OwnerBases)
 	}
+	for simple := range decls.typesBySimple {
+		sort.Strings(decls.typesBySimple[simple])
+	}
+	return decls
+}
 
-	for simple := range typesBySimple {
-		sort.Strings(typesBySimple[simple])
-	}
-
-	hierarchy := make(map[string][]string, len(basesByOwner))
-	for owner, bases := range basesByOwner {
-		resolvedSet := make(map[string]bool, len(bases))
-		for base := range bases {
-			candidates := typesBySimple[base]
-			resolved := ""
-			if len(candidates) == 1 {
-				resolved = candidates[0]
-			} else {
-				for _, candidate := range candidates {
-					if pkgByOwner[candidate] == pkgByOwner[owner] {
-						resolved = candidate
-						break
-					}
-				}
-			}
-			if resolved == "" || resolved == owner || resolvedSet[resolved] {
-				continue
-			}
-			resolvedSet[resolved] = true
-			hierarchy[owner] = append(hierarchy[owner], resolved)
+func (d sourceTypeDecls) recordBases(owner string, bases []string) {
+	for _, base := range bases {
+		if base == "" {
+			continue
 		}
-		sort.Strings(hierarchy[owner])
+		if d.basesByOwner[owner] == nil {
+			d.basesByOwner[owner] = make(map[string]bool)
+		}
+		d.basesByOwner[owner][base] = true
 	}
-	return hierarchy
+}
+
+// resolveBases maps one owner's declared base simple names onto FQNs: a
+// same-package declaration wins, otherwise a name unique across the scan; an
+// ambiguous or unknown name resolves to nothing rather than guessing.
+func (d sourceTypeDecls) resolveBases(owner string, bases map[string]bool) []string {
+	resolvedSet := make(map[string]bool, len(bases))
+	var out []string
+	for base := range bases {
+		resolved := d.resolveBase(owner, base)
+		if resolved == "" || resolved == owner || resolvedSet[resolved] {
+			continue
+		}
+		resolvedSet[resolved] = true
+		out = append(out, resolved)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (d sourceTypeDecls) resolveBase(owner, base string) string {
+	candidates := d.typesBySimple[base]
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	for _, candidate := range candidates {
+		if d.pkgByOwner[candidate] == d.pkgByOwner[owner] {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func hierarchyAncestors(hierarchy map[string][]string, owner string) []string {

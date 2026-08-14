@@ -348,25 +348,30 @@ func indexFunctions(closure []ComponentKey, fragments map[ComponentKey]Fragment)
 		}
 	}
 
-	// A dispatch surface is a function other functions declare as their
-	// hierarchy parent via CompatibleCanonicalSignatures — an interface method
-	// or an overridden base method. An exact edge landing on one is a call the
-	// producer could only anchor to the declared type; the implementations are
-	// the traversable continuations (expanded under the standard dispatch
-	// policy in applyImmediateEdgePolicy).
-	dispatchSurfaces := make(map[graphNode][]graphNode)
+	return byKey, byCanonicalSignature, buildDispatchSurfaces(implsByCompatible, byOwnCanonical)
+}
+
+// buildDispatchSurfaces maps each dispatch surface — a function other
+// functions declare as their hierarchy parent via
+// CompatibleCanonicalSignatures (an interface method or an overridden base
+// method) — to its implementations. An exact edge landing on a surface is a
+// call the producer could only anchor to the declared type; the
+// implementations are the traversable continuations (expanded under the
+// standard dispatch policy in applyImmediateEdgePolicy).
+func buildDispatchSurfaces(implsByCompatible, byOwnCanonical map[string][]graphNode) map[graphNode][]graphNode {
+	surfaces := make(map[graphNode][]graphNode)
 	for compatible, impls := range implsByCompatible {
 		for _, parent := range byOwnCanonical[compatible] {
 			seen := make(map[graphNode]bool, len(impls))
 			for _, impl := range impls {
 				if impl != parent && !seen[impl] {
 					seen[impl] = true
-					dispatchSurfaces[parent] = append(dispatchSurfaces[parent], impl)
+					surfaces[parent] = append(surfaces[parent], impl)
 				}
 			}
 		}
 	}
-	return byKey, byCanonicalSignature, dispatchSurfaces
+	return surfaces
 }
 
 func indexFunctionsByNode(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[graphNode]Function {
