@@ -187,6 +187,9 @@ func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 	if node1.DependencyInfo.Module != "net.crypto:lib" {
 		t.Errorf("node[1].DependencyInfo.Module = %q, want net.crypto:lib", node1.DependencyInfo.Module)
 	}
+	if node1.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0.0" {
+		t.Errorf("node[1].DependencyInfo.PURL = %q, want pkg:maven/net.crypto/lib@2.0.0", node1.DependencyInfo.PURL)
+	}
 }
 
 // TestToCallgraphExport_EntryCallOnFrame1 asserts that the entry_call on node[1]
@@ -588,14 +591,14 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is66 pins the canonical callgraph schema version
-// at 6.6 — the contract change that serializes ambiguous forward dispatch. The bump
+// TestCallgraphSchemaVersion_Is68 pins the canonical callgraph schema version
+// at 6.8 — the contract change that adds dependency PURLs. The bump
 // is unconditional: it advances regardless of whether any given export
 // actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is66(t *testing.T) {
+func TestCallgraphSchemaVersion_Is68(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.7" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.7")
+	if CallgraphSchemaVersion != "6.8" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.8")
 	}
 }

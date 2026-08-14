@@ -104,6 +104,9 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if dep.Match != `Cipher.getInstance("AES")` || dep.EndLine != 27 {
 		t.Errorf("dep asset match/end_line not carried through: %+v", dep)
 	}
+	if dep.DependencyInfo == nil || dep.DependencyInfo.Module != "net.crypto:lib" || dep.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0" {
+		t.Errorf("dep asset dependency_info = %+v, want module and purl", dep.DependencyInfo)
+	}
 }
 
 // TestToFindingsEnvelope_FindingIDMatchesCallgraphExport is the load-bearing
@@ -173,11 +176,11 @@ func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
 
 	env := ToFindingsEnvelope(app, DependencyGraph{}, fragments, meta)
 
-	if env.Version != "1.4" {
-		t.Errorf("envelope Version = %q, want %q", env.Version, "1.4")
+	if env.Version != "1.5" {
+		t.Errorf("envelope Version = %q, want %q", env.Version, "1.5")
 	}
-	if FindingsSchemaVersion != "1.4" {
-		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.4")
+	if FindingsSchemaVersion != "1.5" {
+		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.5")
 	}
 
 	if len(env.Findings) != 1 || len(env.Findings[0].CryptographicAssets) != 2 {

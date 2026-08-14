@@ -12,7 +12,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 ```json
 {
-  "version": "1.4",
+  "version": "1.5",
   "tool": {
     "name": "crypto-finder",
     "version": "0.1.0"
@@ -44,7 +44,8 @@ The interim report is the primary findings artifact. It contains finding metadat
           "source": "direct|dependency",
           "dependency_info": {
             "module": "golang.org/x/crypto",
-            "version": "v0.17.0"
+            "version": "v0.17.0",
+            "purl": "pkg:golang/golang.org/x/crypto@v0.17.0"
           },
           "finding_id": "a1b2c3d4"
         }
@@ -60,7 +61,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 | Field | Description |
 |-------|-------------|
-| `version` | Format version (currently "1.4") |
+| `version` | Format version (currently "1.5") |
 | `tool.name` | Scanner used (crypto-finder) |
 | `tool.version` | Scanner version |
 | `findings` | Array of file-level findings |
@@ -82,24 +83,26 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `metadata.algorithmMode` | Mode of operation (for block ciphers) |
 | `metadata.algorithmPadding` | Padding scheme used |
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
-| `dependency_info` | Attribution for dependency findings: `module`, `version` (v1.2+) |
+| `dependency_info` | Attribution for dependency findings: `module`, `version`, and optional `purl` (v1.5+) |
 | `finding_id` | Stable short hash used to join the interim report to the call graph export (v1.3+) |
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
 ### Public Go Contract
 
-Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.4"`.
+Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.5"`.
 
 The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `oid`, `finding_id`, `source`, and `dependency_info` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
 
-The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
+The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. Known dependency ecosystems add a canonical `purl`; unknown ecosystems omit it, and missing versions produce versionless package URLs. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
 
 ### Call Graph Export
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.7`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.8`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+
+- **`6.8`** adds an optional canonical `purl` inside dependency context. Live and stitched exports derive it from the scan ecosystem and existing module/version fields, so cached graph fragments gain the field without a fragment schema change.
 
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.
@@ -112,7 +115,7 @@ Schema note: call graph export version **`6.7`** is the current customer-facing 
 
 - Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
-- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info`, and optional `entry_call`.
+- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
@@ -359,11 +362,11 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.7`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.8`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
-  findings.json v1.4 envelope (asset metadata). Its `finding_id`s are computed
+  findings.json v1.5 envelope (asset metadata). Its `finding_id`s are computed
   with the **same inputs** as `ToCallgraphExport`, so the two agree: consumers
   join assets (envelope) to call chains (callgraph) by `finding_id`.
 

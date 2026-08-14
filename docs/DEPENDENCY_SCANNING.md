@@ -858,21 +858,21 @@ Key observations:
 
 ---
 
-## Interim Report Contract (v1.3)
+## Interim Report Contract (v1.5)
 
-Version 1.3 keeps the attribution fields needed to join findings to the separate reachability export. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module and version.
+Version 1.5 keeps the attribution fields needed to join findings to the separate reachability export. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module, version, and the optional canonical package URL.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
-| `dependency_info` | `object` | Dependency findings only | `{module, version}` |
+| `dependency_info` | `object` | Dependency findings only | `{module, version, purl?}` |
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
 
 ## Call Graph Export
 
 When `--export-callgraph` is enabled, Crypto Finder emits a finding-centric JSON export that uses the same relative-path convention as the main report.
 
-Schema note: call graph export version `4.3` adds Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
+Schema note: call graph export version `6.8` is current and adds an optional canonical `purl` inside dependency context. Java runtime provenance remains available in `scan_metadata` for JDK-aware platform signature enrichment.
 
 - Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
