@@ -97,7 +97,7 @@ crypto-finder scan --export-callgraph callgraph.json /path/to/code
 crypto-finder scan --export-graph-fragment fragment.json /path/to/code
 ```
 
-The interim JSON report (findings + metadata) goes to `--output` (stdout by default). The call graph and graph fragment exports are **separate files** written to the paths given to `--export-callgraph` / `--export-graph-fragment`. See [Output Formats](docs/OUTPUT_FORMATS.md) for all schemas.
+The interim JSON report (findings + metadata) goes to `--output` (stdout by default). The call graph and graph fragment exports are **separate files** written to the paths given to `--export-callgraph` / `--export-graph-fragment`. Use `scan --progress` when an integration needs lifecycle JSONL on stderr; it suppresses human logs and leaves findings on stdout or `--output`. See [Output Formats](docs/OUTPUT_FORMATS.md) for all schemas.
 
 ## Re-annotation: `annotate` vs `scan`
 
@@ -150,6 +150,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
 | `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2) |
 | `--findings-cache <backend>` | `disk` | Dependency findings cache backend: `disk`, `none`, `postgres` (also via `SCANOSS_FINDINGS_CACHE_BACKEND`; postgres needs `SCANOSS_FINDINGS_CACHE_DSN`) |
+| `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
 | `--export-callgraph <file>` | — | Write the finding-centric crypto call graph (reachability slices) to `<file>` |
 | `--export-callgraph-format <fmt>` | `json` | Call graph export format (only `json`) |
 | `--export-graph-fragment <file>` | — | Write a reusable structural graph fragment to `<file>` |

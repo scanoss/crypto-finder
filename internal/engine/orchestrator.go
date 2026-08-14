@@ -79,7 +79,26 @@ type ScanOptions struct {
 
 	// JavaRuntimeCacheToken partitions dependency scan caches by Java runtime selection.
 	JavaRuntimeCacheToken string
+
+	// Progress reports the top-level rules and detection lifecycle. Dependency scans
+	// clear it so their workers never emit nested primary scan events.
+	Progress ProgressReporter
+
+	// ProgressDetectionStarted reports that the caller already opened detection
+	// before invoking Scan, for example while it pre-detects languages for export.
+	ProgressDetectionStarted bool
 }
+
+// ProgressReporter receives a lifecycle transition for a scan phase.
+type ProgressReporter func(phase, status string, cause error) error
+
+const (
+	progressPhaseRules     = "rules"
+	progressPhaseDetection = "detection"
+	progressStatusStarted  = "started"
+	progressStatusComplete = "completed"
+	progressStatusFailed   = "failed"
+)
 
 // Scan orchestrates the complete scanning workflow.
 //
@@ -93,11 +112,28 @@ type ScanOptions struct {
 //
 // Returns the final interim report or an error if any step fails.
 //
-//nolint:funlen // Scanner initialization needs context-aware failure classification before scanning.
-func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
+//nolint:gocognit,gocyclo // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
+func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
+	if opts.Progress != nil && !opts.ProgressDetectionStarted {
+		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
+			return nil, progressErr
+		}
+	}
+	if opts.Progress != nil {
+		defer func() {
+			status := progressStatusComplete
+			if err != nil {
+				status = progressStatusFailed
+			}
+			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err); progressErr != nil {
+				result = nil
+				err = progressErr
+			}
+		}()
+	}
+
 	// Step 1: Detect languages
 	var languages []string
-	var err error
 
 	if len(opts.LanguageHint) > 0 {
 		// Use provided language hint
@@ -105,15 +141,16 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		log.Info().Strs("languages", opts.LanguageHint).Msg("Using provided language hints")
 	} else {
 		// Auto-detect languages so we can use only the needed rules. This significantly optimizes scanner performance.
-		languages, err = o.langDetector.Detect(opts.Target)
-		if err != nil {
+		detectedLanguages, detectErr := o.langDetector.Detect(opts.Target)
+		if detectErr != nil {
 			return nil, failure.WrapUnknown(
-				err,
+				detectErr,
 				failure.CodeLanguageDetectionFailed,
 				failure.StageScan,
 				"failed to detect languages",
 			)
 		}
+		languages = detectedLanguages
 	}
 
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
@@ -125,64 +162,15 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 			cleanupRulePaths()
 		}
 	}()
-	if len(opts.RulePaths) > 0 {
-		rawRulePaths = opts.RulePaths
-		rulePaths, cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to prepare pre-loaded rules for scanner",
-			)
-		}
-		log.Debug().Int("count", len(rulePaths)).Msg("Using pre-loaded rule paths")
-	} else {
-		rulePaths, err = o.rulesManager.Load()
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to load rules",
-			)
-		}
-		log.Info().Int("count", len(rulePaths)).Msg("Loaded rules")
-		rawRulePaths = rulePaths
-
-		// Filter rules to only include those matching detected languages.
-		// This significantly reduces scanner overhead for large rule sets.
-		rulePaths, cleanupRulePaths, err = prepareRulePathsForScanner(rulePaths, languages)
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to prepare filtered rules for scanner",
-			)
-		}
-	}
-
-	// Step 2b: Fail-fast validation. Every rule's parameterCondition MUST
-	// parse before any source scanning starts — a malformed predicate is a
-	// hard abort, not a warn-and-continue (resolved proposal decision).
-	// Validated against the raw loaded paths, not the filtered/materialized
-	// set, so this check is unaffected by language filtering or temp-file
-	// rewriting.
-	if err := rules.ValidateParameterConditions(rawRulePaths); err != nil {
-		return nil, failure.WrapUnknown(
-			err,
-			failure.CodeRulesLoadFailed,
-			failure.StageRules,
-			"invalid parameterCondition in ruleset",
-		)
+	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); loadErr != nil {
+		return nil, loadErr
 	}
 
 	// Step 3: Get scanner from registry
-	scannerInstance, err := o.scannerReg.Get(opts.ScannerName)
-	if err != nil {
+	scannerInstance, getErr := o.scannerReg.Get(opts.ScannerName)
+	if getErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			getErr,
 			failure.CodeScannerUnavailable,
 			failure.StageScan,
 			"failed to get scanner",
@@ -213,10 +201,10 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 		Name:    version.ToolName,
 		Version: version.Version,
 	}
-	report, err := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
-	if err != nil {
+	report, scanErr := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
+	if scanErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			scanErr,
 			failure.CodeScannerExecutionFailed,
 			failure.StageScan,
 			"scan failed",
@@ -231,10 +219,10 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	report.Rules = o.rulesManager.Info()
 
 	// Step 6: Process and enrich results
-	enrichedReport, err := o.processor.Process(report, languages, opts.Target)
-	if err != nil {
+	enrichedReport, processErr := o.processor.Process(report, languages, opts.Target)
+	if processErr != nil {
 		return nil, failure.WrapUnknown(
-			err,
+			processErr,
 			failure.CodeScannerExecutionFailed,
 			failure.StageScan,
 			"failed to process results",
@@ -242,4 +230,57 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	return enrichedReport, nil
+}
+
+func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
+	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); progressErr != nil {
+		return progressErr
+	}
+	defer func() {
+		status := progressStatusComplete
+		if err != nil {
+			status = progressStatusFailed
+		}
+		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err); progressErr != nil {
+			err = progressErr
+		}
+	}()
+
+	if len(opts.RulePaths) > 0 {
+		*rawRulePaths = opts.RulePaths
+		preparedRulePaths, cleanup, loadErr := optimizeRulePathsForScanner(opts.RulePaths)
+		if loadErr != nil {
+			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare pre-loaded rules for scanner")
+		}
+		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
+		log.Debug().Int("count", len(*rulePaths)).Msg("Using pre-loaded rule paths")
+	} else {
+		loadedRulePaths, loadErr := o.rulesManager.Load()
+		if loadErr != nil {
+			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to load rules")
+		}
+		*rulePaths = loadedRulePaths
+		log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")
+		*rawRulePaths = *rulePaths
+		preparedRulePaths, cleanup, prepareErr := prepareRulePathsForScanner(*rulePaths, languages)
+		if prepareErr != nil {
+			return failure.WrapUnknown(prepareErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
+		}
+		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
+	}
+
+	if validationErr := rules.ValidateParameterConditions(*rawRulePaths); validationErr != nil {
+		return failure.WrapUnknown(validationErr, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
+	}
+	return nil
+}
+
+func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error) error {
+	if opts.Progress == nil {
+		return nil
+	}
+	if err := opts.Progress(phase, status, cause); err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
+	}
+	return nil
 }

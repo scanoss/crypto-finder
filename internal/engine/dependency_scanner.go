@@ -73,6 +73,23 @@ type DepScanResult struct {
 	Ecosystem    string
 	ProjectRoot  string
 	Dependencies []dependency.Dependency
+	summary      dependencyScanSummary
+}
+
+// ProgressDetails returns the aggregate dependency counters for structured progress.
+func (r *DepScanResult) ProgressDetails() map[string]any {
+	if r == nil {
+		return map[string]any{
+			"deps_scanned": 0, "deps_skipped": 0, "deps_failed": 0, "deps_with_findings": 0, "total_dep_findings": 0,
+		}
+	}
+	return map[string]any{
+		"deps_scanned":       r.summary.depsScanned,
+		"deps_skipped":       r.summary.depsSkippedSource,
+		"deps_failed":        r.summary.depsFailed,
+		"deps_with_findings": r.summary.depsWithFindings,
+		"total_dep_findings": r.summary.totalDepFindings,
+	}
 }
 
 type depScanStatus int
@@ -120,16 +137,26 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	if err != nil {
 		return nil, err
 	}
-	logDependencyScanSummary(summarizeDependencyResults(depResults))
+	summary := summarizeDependencyResults(depResults)
+	logDependencyScanSummary(summary)
+	if err := ds.reportProgress(opts, progressStatusStarted, nil); err != nil {
+		return nil, err
+	}
 
 	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
 	if err != nil {
+		if progressErr := ds.reportProgress(opts, progressStatusFailed, err); progressErr != nil {
+			return nil, progressErr
+		}
 		return nil, failure.WrapUnknown(
 			err,
 			failure.CodeCallGraphBuildFailed,
 			failure.StageCallGraph,
 			"failed to build call graph",
 		)
+	}
+	if err := ds.reportProgress(opts, progressStatusComplete, nil); err != nil {
+		return nil, err
 	}
 
 	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
@@ -150,6 +177,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		Ecosystem:    ds.resolver.Ecosystem(),
 		ProjectRoot:  opts.ScanOptions.Target,
 		Dependencies: canonicalDependencies(resolved.Dependencies),
+		summary:      summary,
 	}, nil
 }
 
@@ -212,7 +240,18 @@ func (ds *DependencyScanner) emptyDependencyScanResult(
 		RootModule:  resolved.RootModule,
 		Ecosystem:   ds.resolver.Ecosystem(),
 		ProjectRoot: opts.ScanOptions.Target,
+		summary:     dependencyScanSummary{},
 	}
+}
+
+func (ds *DependencyScanner) reportProgress(opts DepScanOptions, status string, cause error) error {
+	if opts.ScanOptions.Progress == nil {
+		return nil
+	}
+	if err := opts.ScanOptions.Progress("callgraph", status, cause); err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
+	}
+	return nil
 }
 
 type dependencyScanSummary struct {
@@ -500,6 +539,8 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	depOpts.RulePaths = rulePaths
 	// Set language hint so the orchestrator skips language detection
 	depOpts.LanguageHint = ecosystemToLanguages(ds.resolver.Ecosystem())
+	depOpts.Progress = nil
+	depOpts.ProgressDetectionStarted = false
 	// Preserve only built-in test exclusions for dependency scans. Other user/project
 	// skip patterns should not hide dependency source files.
 	depOpts.ScannerConfig.SkipPatterns = skip.OnlyDefaultTestPatterns(depOpts.ScannerConfig.SkipPatterns)
