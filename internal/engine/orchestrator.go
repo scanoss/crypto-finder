@@ -79,7 +79,26 @@ type ScanOptions struct {
 
 	// JavaRuntimeCacheToken partitions dependency scan caches by Java runtime selection.
 	JavaRuntimeCacheToken string
+
+	// Progress reports the top-level rules and detection lifecycle. Dependency scans
+	// clear it so their workers never emit nested primary scan events.
+	Progress ProgressReporter
+
+	// ProgressDetectionStarted reports that the caller already opened detection
+	// before invoking Scan, for example while it pre-detects languages for export.
+	ProgressDetectionStarted bool
 }
+
+// ProgressReporter receives a lifecycle transition for a scan phase.
+type ProgressReporter func(phase, status string, cause error) error
+
+const (
+	progressPhaseRules     = "rules"
+	progressPhaseDetection = "detection"
+	progressStatusStarted  = "started"
+	progressStatusComplete = "completed"
+	progressStatusFailed   = "failed"
+)
 
 // Scan orchestrates the complete scanning workflow.
 //
@@ -94,10 +113,27 @@ type ScanOptions struct {
 // Returns the final interim report or an error if any step fails.
 //
 //nolint:funlen // Scanner initialization needs context-aware failure classification before scanning.
-func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
+func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
+	if opts.Progress != nil && !opts.ProgressDetectionStarted {
+		if err = o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); err != nil {
+			return nil, err
+		}
+	}
+	if opts.Progress != nil {
+		defer func() {
+			status := progressStatusComplete
+			if err != nil {
+				status = progressStatusFailed
+			}
+			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err); progressErr != nil {
+				result = nil
+				err = progressErr
+			}
+		}()
+	}
+
 	// Step 1: Detect languages
 	var languages []string
-	var err error
 
 	if len(opts.LanguageHint) > 0 {
 		// Use provided language hint
@@ -125,57 +161,8 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 			cleanupRulePaths()
 		}
 	}()
-	if len(opts.RulePaths) > 0 {
-		rawRulePaths = opts.RulePaths
-		rulePaths, cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to prepare pre-loaded rules for scanner",
-			)
-		}
-		log.Debug().Int("count", len(rulePaths)).Msg("Using pre-loaded rule paths")
-	} else {
-		rulePaths, err = o.rulesManager.Load()
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to load rules",
-			)
-		}
-		log.Info().Int("count", len(rulePaths)).Msg("Loaded rules")
-		rawRulePaths = rulePaths
-
-		// Filter rules to only include those matching detected languages.
-		// This significantly reduces scanner overhead for large rule sets.
-		rulePaths, cleanupRulePaths, err = prepareRulePathsForScanner(rulePaths, languages)
-		if err != nil {
-			return nil, failure.WrapUnknown(
-				err,
-				failure.CodeRulesLoadFailed,
-				failure.StageRules,
-				"failed to prepare filtered rules for scanner",
-			)
-		}
-	}
-
-	// Step 2b: Fail-fast validation. Every rule's parameterCondition MUST
-	// parse before any source scanning starts — a malformed predicate is a
-	// hard abort, not a warn-and-continue (resolved proposal decision).
-	// Validated against the raw loaded paths, not the filtered/materialized
-	// set, so this check is unaffected by language filtering or temp-file
-	// rewriting.
-	if err := rules.ValidateParameterConditions(rawRulePaths); err != nil {
-		return nil, failure.WrapUnknown(
-			err,
-			failure.CodeRulesLoadFailed,
-			failure.StageRules,
-			"invalid parameterCondition in ruleset",
-		)
+	if err = o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); err != nil {
+		return nil, err
 	}
 
 	// Step 3: Get scanner from registry
@@ -242,4 +229,54 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.In
 	}
 
 	return enrichedReport, nil
+}
+
+func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
+	if err = o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); err != nil {
+		return err
+	}
+	defer func() {
+		status := progressStatusComplete
+		if err != nil {
+			status = progressStatusFailed
+		}
+		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err); progressErr != nil {
+			err = progressErr
+		}
+	}()
+
+	if len(opts.RulePaths) > 0 {
+		*rawRulePaths = opts.RulePaths
+		*rulePaths, *cleanupRulePaths, err = optimizeRulePathsForScanner(opts.RulePaths)
+		if err != nil {
+			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare pre-loaded rules for scanner")
+		}
+		log.Debug().Int("count", len(*rulePaths)).Msg("Using pre-loaded rule paths")
+	} else {
+		*rulePaths, err = o.rulesManager.Load()
+		if err != nil {
+			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to load rules")
+		}
+		log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")
+		*rawRulePaths = *rulePaths
+		*rulePaths, *cleanupRulePaths, err = prepareRulePathsForScanner(*rulePaths, languages)
+		if err != nil {
+			return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
+		}
+	}
+
+	if err = rules.ValidateParameterConditions(*rawRulePaths); err != nil {
+		return failure.WrapUnknown(err, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
+	}
+	return nil
+}
+
+func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error) error {
+	if opts.Progress == nil {
+		return nil
+	}
+	if err := opts.Progress(phase, status, cause); err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
+	}
+	return nil
 }

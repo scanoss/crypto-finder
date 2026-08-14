@@ -53,9 +53,19 @@ var rootCmd = &cobra.Command{
 	as the default scanning engine and outputs results in a standardized interim JSON format.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		if err := validateErrorOutputFormat(errorOutputFormat); err != nil {
 			return err
+		}
+		if scanProgress && cmd.Root().PersistentFlags().Changed("error-format") && normalizedErrorOutputFormat() == formatText {
+			return failure.New(
+				failure.CodeInvalidArguments,
+				failure.StageInput,
+				"--error-format=text is incompatible with --progress",
+			)
+		}
+		if scanProgress {
+			errorOutputFormat = formatJSON
 		}
 		setupLogging()
 		return nil
@@ -117,7 +127,7 @@ func Execute() {
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		switch {
-		case normalizedErrorOutputFormat() == formatJSON:
+		case scanProgress || normalizedErrorOutputFormat() == formatJSON:
 			renderJSONError(os.Stderr, err)
 		case !isTTY:
 			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
@@ -165,6 +175,8 @@ func renderJSONError(output io.Writer, err error) {
 		}
 	}
 	if _, writeErr := output.Write(append(data, '\n')); writeErr != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+		if !scanProgress {
+			_, _ = fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+		}
 	}
 }

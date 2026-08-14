@@ -108,6 +108,7 @@ var (
 	scanJavaJDKHomes         []string
 	scanJavaCompiledArtifact string
 	scanFindingsCache        string
+	scanProgress             bool
 )
 
 var scanCmd = &cobra.Command{
@@ -187,6 +188,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
 	scanCmd.Flags().StringArrayVar(&scanJavaJDKHomes, "java-jdk-home", []string{}, "Java JDK home mapping in the form <major>=<path> (repeatable)")
 	scanCmd.Flags().StringVar(&scanJavaCompiledArtifact, "java-compiled-artifact", "", "Compiled Java artifact path used for standalone callgraph/type enrichment")
+	scanCmd.Flags().BoolVar(&scanProgress, "progress", false, "Write structured scan progress JSONL to stderr")
 }
 
 func callGraphTargetDir(target string) (string, error) {
@@ -457,7 +459,7 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
-func runScan(cmd *cobra.Command, args []string) error {
+func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	target := args[0]
 
 	// Validate flags
@@ -516,26 +518,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// Create skip matcher for language detection
 	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
-
-	// Pre-detect source languages at the CLI layer when the user did not pass
-	// --languages. This makes the detected languages available to ancillary
-	// features (notably --export-callgraph) that need to know the source
-	// ecosystem before the scanner runs. Without this, repositories without
-	// a build manifest (pom.xml, build.gradle, setup.py, go.mod, Cargo.toml)
-	// fail callgraph export with "could not determine a supported ecosystem".
-	// The orchestrator will reuse these hints instead of redetecting.
-	if len(scanLanguages) == 0 {
-		detected, detectErr := language.NewEnryDetector(skipMatcher).Detect(target)
-		if detectErr != nil {
-			return failure.WrapUnknown(
-				detectErr,
-				failure.CodeLanguageDetectionFailed,
-				failure.StageScan,
-				"failed to detect languages",
-			)
-		}
-		scanLanguages = detected
-	}
 
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(config.InitOptions{
@@ -652,6 +634,64 @@ func runScan(cmd *cobra.Command, args []string) error {
 		log.Info().Msgf("Rules manager configured with %d sources", len(ruleSources))
 	}
 
+	var progress *scanutil.ProgressWriter
+	scanStarted := false
+	if scanProgress {
+		progress = scanutil.NewProgressWriter(os.Stderr)
+		if err := progress.Start("scan", ""); err != nil {
+			return progressWriteFailure(err)
+		}
+		scanStarted = true
+		defer func() {
+			if progress == nil || !scanStarted {
+				return
+			}
+			var progressErr error
+			if isScanCanceled(runErr) {
+				progressErr = progress.Cancel("scan", "", nil)
+			} else if runErr != nil {
+				progressErr = progress.Fail("scan", "", nil)
+			} else {
+				progressErr = progress.Complete("scan", "", nil)
+			}
+			if progressErr != nil {
+				runErr = progressWriteFailure(progressErr)
+			}
+		}()
+	}
+
+	// Pre-detect source languages at the CLI layer when the user did not pass
+	// --languages. This makes the detected languages available to ancillary
+	// features (notably --export-callgraph) that need to know the source
+	// ecosystem before the scanner runs. Without this, repositories without
+	// a build manifest (pom.xml, build.gradle, setup.py, go.mod, Cargo.toml)
+	// fail callgraph export with "could not determine a supported ecosystem".
+	// The orchestrator will reuse these hints instead of redetecting.
+	detectionStarted := false
+	if len(scanLanguages) == 0 {
+		if progress != nil {
+			if err := progress.Start("detection", "scan"); err != nil {
+				return progressWriteFailure(err)
+			}
+			detectionStarted = true
+		}
+		detected, detectErr := language.NewEnryDetector(skipMatcher).Detect(target)
+		if detectErr != nil {
+			if detectionStarted {
+				if progressErr := progress.Fail("detection", "scan", nil); progressErr != nil {
+					return progressWriteFailure(progressErr)
+				}
+			}
+			return failure.WrapUnknown(
+				detectErr,
+				failure.CodeLanguageDetectionFailed,
+				failure.StageScan,
+				"failed to detect languages",
+			)
+		}
+		scanLanguages = detected
+	}
+
 	// Setup dependencies
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
@@ -675,6 +715,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 			Interfile:    scanInterfile,
 		},
 	}
+	if progress != nil {
+		scanOpts.Progress = newProgressReporter(progress, "")
+		scanOpts.ProgressDetectionStarted = detectionStarted
+	}
 
 	log.Info().Msgf("Starting scan of %s with scanner '%s'...", target, scanScanner)
 
@@ -687,6 +731,26 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Dependency scanning phase.
 	//nolint:nestif // This orchestration intentionally branches by ecosystem/resolver/parser/caching availability.
 	if scanDependencies {
+		if progress != nil {
+			if err := progress.Start("dependencies", "scan"); err != nil {
+				return progressWriteFailure(err)
+			}
+		}
+		dependencyCompleted := false
+		defer func() {
+			if progress == nil || dependencyCompleted {
+				return
+			}
+			var progressErr error
+			if isScanCanceled(runErr) {
+				progressErr = progress.Cancel("dependencies", "scan", nil)
+			} else {
+				progressErr = progress.Fail("dependencies", "scan", nil)
+			}
+			if progressErr != nil {
+				runErr = progressWriteFailure(progressErr)
+			}
+		}()
 		ecosystem := scanDepEcosystem
 		if ecosystem == "auto" {
 			ecosystem = ecosystemFromHints(target, scanLanguages)
@@ -705,6 +769,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 			resolver, resolverErr := depRegistry.Get(ecosystem)
 			if resolverErr != nil {
 				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
+				if progress != nil {
+					if err := progress.Skip("dependencies", "scan", "resolver_unavailable"); err != nil {
+						return progressWriteFailure(err)
+					}
+					dependencyCompleted = true
+				}
 			} else {
 				if ecosystem == "java" {
 					if err := ensureJavaRuntime(); err != nil {
@@ -719,10 +789,22 @@ func runScan(cmd *cobra.Command, args []string) error {
 				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
 				if cgParser == nil {
 					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
+					if progress != nil {
+						if err := progress.Skip("dependencies", "scan", "parser_unavailable"); err != nil {
+							return progressWriteFailure(err)
+						}
+						dependencyCompleted = true
+					}
 				} else {
 					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests)
 					if builderErr != nil {
 						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
+						if progress != nil {
+							if err := progress.Skip("dependencies", "scan", "callgraph_unavailable"); err != nil {
+								return progressWriteFailure(err)
+							}
+							dependencyCompleted = true
+						}
 					} else {
 						findingsCache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
 						if cacheErr != nil {
@@ -731,10 +813,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 						defer closeCache()
 
 						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
-						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, engine.DepScanOptions{
+						depOptions := engine.DepScanOptions{
 							Workers:     scanDepWorkers,
 							ScanOptions: scanOpts,
-						})
+						}
+						if progress != nil {
+							depOptions.Progress = newProgressReporter(progress, "dependencies")
+						}
+						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, depOptions)
 						if depErr != nil {
 							return failure.WrapUnknown(
 								depErr,
@@ -745,30 +831,98 @@ func runScan(cmd *cobra.Command, args []string) error {
 						}
 						report = depResult.Report
 						callGraphResult = depResult
+						if progress != nil {
+							if err := progress.Complete("dependencies", "scan", depResult.ProgressDetails()); err != nil {
+								return progressWriteFailure(err)
+							}
+							dependencyCompleted = true
+						}
 					}
 				}
 			}
 		} else {
 			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
+			if progress != nil {
+				if err := progress.Skip("dependencies", "scan", "ecosystem_unknown"); err != nil {
+					return progressWriteFailure(err)
+				}
+				dependencyCompleted = true
+			}
+		}
+	} else if progress != nil {
+		if err := progress.Skip("dependencies", "scan", "not_requested"); err != nil {
+			return progressWriteFailure(err)
 		}
 	}
 
 	engine.EnsureFindingSources(report)
 
+	exportStarted := false
+	exportCompleted := false
+	defer func() {
+		if progress == nil || !exportStarted || exportCompleted {
+			return
+		}
+		var progressErr error
+		if isScanCanceled(runErr) {
+			progressErr = progress.Cancel("export", "scan", nil)
+		} else {
+			progressErr = progress.Fail("export", "scan", nil)
+		}
+		if progressErr != nil {
+			runErr = progressWriteFailure(progressErr)
+		}
+	}()
+
+	startExport := func() error {
+		if progress == nil || exportStarted {
+			return nil
+		}
+		if err := progress.Start("export", "scan"); err != nil {
+			return progressWriteFailure(err)
+		}
+		exportStarted = true
+		return nil
+	}
+
 	if (scanExportCallgraph != "" || scanExportGraphFragment != "") && (callGraphResult == nil || callGraphResult.CallGraph == nil) {
+		if err := startExport(); err != nil {
+			return err
+		}
 		if ecosystemFromHints(target, scanLanguages) == "java" {
 			if err := ensureJavaRuntime(); err != nil {
 				return err
 			}
 		}
+		if progress != nil {
+			if err := progress.Start("callgraph", "export"); err != nil {
+				return progressWriteFailure(err)
+			}
+		}
 		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact)
 		if err != nil {
+			if progress != nil {
+				var progressErr error
+				if isScanCanceled(err) {
+					progressErr = progress.Cancel("callgraph", "export", nil)
+				} else {
+					progressErr = progress.Fail("callgraph", "export", nil)
+				}
+				if progressErr != nil {
+					return progressWriteFailure(progressErr)
+				}
+			}
 			return failure.WrapUnknown(
 				err,
 				failure.CodeCallGraphBuildFailed,
 				failure.StageCallGraph,
 				"failed to build call graph for export",
 			)
+		}
+		if progress != nil {
+			if err := progress.Complete("callgraph", "export", nil); err != nil {
+				return progressWriteFailure(err)
+			}
 		}
 	}
 
@@ -799,6 +953,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 		engine.AssignFindingIDs(report)
 		if callGraphResult != nil {
 			callGraphResult.Report = report
+		}
+	}
+
+	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
+		if err := startExport(); err != nil {
+			return err
 		}
 	}
 
@@ -840,6 +1000,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 			Str("file", scanExportGraphFragment).
 			Dur("duration", time.Since(exportStart)).
 			Msg("Graph fragment export complete")
+	}
+	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
+		if progress != nil {
+			if err := progress.Complete("export", "scan", nil); err != nil {
+				return progressWriteFailure(err)
+			}
+		}
+		exportCompleted = true
+	} else if progress != nil {
+		if err := progress.Skip("export", "scan", "not_requested"); err != nil {
+			return progressWriteFailure(err)
+		}
 	}
 
 	report.Version = entities.InterimFormatVersion
@@ -903,6 +1075,40 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent string) engine.ProgressReporter {
+	return func(phase, status string, cause error) error {
+		parent := "scan"
+		if phase == "callgraph" {
+			parent = callgraphParent
+		}
+		switch status {
+		case "started":
+			return progress.Start(phase, parent)
+		case "completed":
+			return progress.Complete(phase, parent, nil)
+		case "failed":
+			if isScanCanceled(cause) {
+				return progress.Cancel(phase, parent, nil)
+			}
+			return progress.Fail(phase, parent, nil)
+		default:
+			return fmt.Errorf("unknown scan progress status %q", status)
+		}
+	}
+}
+
+func isScanCanceled(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	structured, ok := failure.As(err)
+	return ok && structured.Code == failure.CodeScannerCancelled
+}
+
+func progressWriteFailure(err error) error {
+	return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
 }
 
 // newFindingsCache builds the FindingsCache backend selected by configuration.
