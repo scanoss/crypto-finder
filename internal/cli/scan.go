@@ -636,7 +636,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	var progress *scanutil.ProgressWriter
 	scanStarted := false
-	//nolint:nestif // Scan progress setup keeps its terminal lifecycle together.
 	if scanProgress {
 		progress = scanutil.NewProgressWriter(os.Stderr)
 		if err := progress.Start("scan", ""); err != nil {
@@ -648,11 +647,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return
 			}
 			var progressErr error
-			if isScanCanceled(runErr) {
+			switch {
+			case isScanCanceled(runErr):
 				progressErr = progress.Cancel("scan", "", nil)
-			} else if runErr != nil {
+			case runErr != nil:
 				progressErr = progress.Fail("scan", "", nil)
-			} else {
+			default:
 				progressErr = progress.Complete("scan", "", nil)
 			}
 			if progressErr != nil {
@@ -1004,7 +1004,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Dur("duration", time.Since(exportStart)).
 			Msg("Graph fragment export complete")
 	}
-	//nolint:nestif // Export finalization keeps terminal progress reporting with export lifecycle state.
 	switch {
 	case scanExportCallgraph != "" || scanExportGraphFragment != "":
 		if progress != nil {

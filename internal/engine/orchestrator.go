@@ -112,7 +112,7 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 //
-//nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
+//nolint:gocognit,gocyclo // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
 		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
