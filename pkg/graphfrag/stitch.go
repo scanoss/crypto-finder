@@ -125,7 +125,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 
 	functionsBySignature, functionsByCanonicalSignature, dispatchSurfaces, aliasByKey := indexFunctions(closure, fragments)
 	functionsByNode := indexFunctionsByNode(closure, fragments)
-	adjacency, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces, aliasByKey)
+	adjacency, ambiguousCandidates, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces, aliasByKey)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
 
@@ -143,7 +143,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// old all-simple-paths forward DFS hangs.
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
-		composeDependencyEntryPoints(root, closure, fragments, adjacency, &out)
+		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 		}
@@ -450,8 +450,9 @@ func buildAdjacency(
 	functionsByNode map[graphNode]Function,
 	dispatchSurfaces map[graphNode][]graphNode,
 	aliasByKey map[string][]graphNode,
-) (map[graphNode][]adjacencyEdge, []SuppressedEdge) {
+) (map[graphNode][]adjacencyEdge, map[graphNode][]graphNode, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
+	ambiguous := make(map[graphNode][]graphNode)
 	var suppressed []SuppressedEdge
 	ownerTypes := indexOwnerTypes(closure, fragments)
 
@@ -461,10 +462,10 @@ func buildAdjacency(
 		edges := collectCallEdges(fragment)
 		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature, functionsByCanonicalSignature, aliasByKey)
 
-		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes, fragments, functionsByNode)
-		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed)
+		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes, fragments, functionsByNode, ambiguous)
+		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed, ambiguous)
 	}
-	return out, suppressed
+	return out, ambiguous, suppressed
 }
 
 // indexOwnerTypes maps each node to the declaring type of its function, derived
@@ -752,6 +753,7 @@ func applyImmediateEdgePolicy(
 	ownerTypes map[graphNode]string,
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
+	ambiguous map[graphNode][]graphNode,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
@@ -769,7 +771,7 @@ func applyImmediateEdgePolicy(
 				continue
 			}
 			appendAdjacencyEdges(adjacency, caller, targets.nodes, e.entryCall)
-			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, fragments, functionsByNode, adjacency, suppressed)
+			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, fragments, functionsByNode, adjacency, suppressed, ambiguous)
 		case ResolutionInterfaceDispatch:
 			gk := dispatchKey(key, *e)
 			dispatchGroups[gk] = append(dispatchGroups[gk], *e)
@@ -801,6 +803,7 @@ func expandDispatchSurfaces(
 	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
+	ambiguous map[graphNode][]graphNode,
 ) {
 	for _, target := range targets {
 		impls := dispatchSurfaces[target]
@@ -819,6 +822,7 @@ func expandDispatchSurfaces(
 			adjacency[caller] = append(adjacency[caller], resolved)
 			continue
 		}
+		ambiguous[caller] = append(ambiguous[caller], impls...)
 		*suppressed = append(*suppressed, ambiguousDispatchEdge(key, dispatchKey(key, *e), implEdges, fragments, functionsByNode))
 	}
 }
@@ -844,6 +848,7 @@ func applyDispatchGroups(
 	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
+	ambiguous map[graphNode][]graphNode,
 ) {
 	for _, gk := range sortedDispatchKeys(groups) {
 		group := groups[gk]
@@ -856,6 +861,9 @@ func applyDispatchGroups(
 			if resolved, ok := disambiguateByReceiverType(group, targets, ownerTypes); ok {
 				adjacency[caller] = append(adjacency[caller], resolved)
 				continue
+			}
+			for _, t := range targets {
+				ambiguous[caller] = append(ambiguous[caller], t.target)
 			}
 			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, targets, fragments, functionsByNode))
 			// len(targets) == 0: no implementation in closure -> unreachable,
@@ -1674,14 +1682,10 @@ func composeDependencyEntryPoints(
 	closure []ComponentKey,
 	fragments map[ComponentKey]Fragment,
 	adjacency map[graphNode][]adjacencyEdge,
+	ambiguousCandidates map[graphNode][]graphNode,
 	out *Result,
 ) {
-	reverse := make(map[graphNode][]graphNode)
-	for caller, edges := range adjacency {
-		for _, edge := range edges {
-			reverse[edge.target] = append(reverse[edge.target], caller)
-		}
-	}
+	reverse, reverseAll := composeReverseMaps(adjacency, ambiguousCandidates)
 
 	rootFunctions := make(map[string]Function)
 	rootFragment := fragments[root]
@@ -1704,7 +1708,13 @@ func composeDependencyEntryPoints(
 				continue
 			}
 			seed := graphNode{Component: dep, Function: ep.FunctionKey}
-			projectEntryPoint(root, ep, translate, backwardDistances(seed, reverse), rootFunctions, hasIncoming, composed)
+			proven := backwardDistances(seed, reverse)
+			projectEntryPoint(root, ep, translate, proven, true, rootFunctions, hasIncoming, composed)
+			mayReach := backwardDistances(seed, reverseAll)
+			for node := range proven {
+				delete(mayReach, node)
+			}
+			projectEntryPoint(root, ep, translate, mayReach, false, rootFunctions, hasIncoming, composed)
 		}
 	}
 	if len(composed) == 0 {
@@ -1726,10 +1736,37 @@ func composeDependencyEntryPoints(
 // publicVisibility is the visibility string producers emit for public members.
 const publicVisibility = "public"
 
+// reverseAdjacency inverts the traversable adjacency. The second map
+// additionally crosses fail-closed ambiguous dispatch groups: the entry-point
+// index is may-reach by design, so a consumer-facing entry point may be
+// discovered THROUGH an ambiguous call, while finding-level reachability only
+// ever upgrades on proven paths.
+func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandidates map[graphNode][]graphNode) (map[graphNode][]graphNode, map[graphNode][]graphNode) {
+	reverse := make(map[graphNode][]graphNode)
+	for caller, edges := range adjacency {
+		for _, edge := range edges {
+			reverse[edge.target] = append(reverse[edge.target], caller)
+		}
+	}
+	reverseAll := make(map[graphNode][]graphNode, len(reverse))
+	for target, callers := range reverse {
+		reverseAll[target] = append([]graphNode(nil), callers...)
+	}
+	for caller, candidates := range ambiguousCandidates {
+		for _, candidate := range candidates {
+			reverseAll[candidate] = append(reverseAll[candidate], caller)
+		}
+	}
+	return reverse, reverseAll
+}
+
 // composedEntry accumulates min-depth reachable records for one root function.
 type composedEntry struct {
 	findings   map[string]ReachableFinding
 	supporting map[string]ReachableSupportingCall
+	// provenIDs marks findings reached without crossing an ambiguous dispatch
+	// group; only these feed the finding-level reachability upgrade.
+	provenIDs map[string]bool
 }
 
 // projectEntryPoint records, for every root-component function that reaches
@@ -1739,6 +1776,7 @@ func projectEntryPoint(
 	ep *CryptoEntryPoint,
 	translate map[string]string,
 	distances map[graphNode]int,
+	proven bool,
 	rootFunctions map[string]Function,
 	hasIncoming map[graphNode]bool,
 	composed map[string]*composedEntry,
@@ -1760,10 +1798,11 @@ func projectEntryPoint(
 			entry = &composedEntry{
 				findings:   make(map[string]ReachableFinding),
 				supporting: make(map[string]ReachableSupportingCall),
+				provenIDs:  make(map[string]bool),
 			}
 			composed[node.Function] = entry
 		}
-		entry.merge(ep, translate, distance)
+		entry.merge(ep, translate, distance, proven)
 	}
 }
 
@@ -1796,7 +1835,7 @@ func translateFindingID(translate map[string]string, findingID string) string {
 
 // merge folds one entry point's reachable records into the composed entry,
 // keeping the minimum depth per finding/supporting id.
-func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string, distance int) {
+func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string, distance int, proven bool) {
 	for _, rf := range ep.ReachableFindings {
 		findingID := translateFindingID(translate, rf.FindingID)
 		depth := distance + rf.ChainDepth
@@ -1806,6 +1845,9 @@ func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string,
 				ChainDepth:      depth,
 				FindingGraphRef: translateFindingID(translate, rf.FindingGraphRef),
 			}
+		}
+		if proven {
+			c.provenIDs[findingID] = true
 		}
 	}
 	for _, sc := range ep.ReachableSupportingCalls {
@@ -1837,6 +1879,9 @@ func appendComposedResult(root ComponentKey, fn Function, entry *composedEntry, 
 	for _, findingID := range sortedComposedIDs(entry.findings) {
 		rf := entry.findings[findingID]
 		ep.ReachableFindings = append(ep.ReachableFindings, rf)
+		if !entry.provenIDs[findingID] {
+			continue
+		}
 		if existing, seen := out.composedFindingDepths[rf.FindingID]; !seen || rf.ChainDepth < existing {
 			out.composedFindingDepths[rf.FindingID] = rf.ChainDepth
 		}
