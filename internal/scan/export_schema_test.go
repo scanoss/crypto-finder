@@ -67,7 +67,7 @@ func TestGeneratedExportsMatchSchemas(t *testing.T) {
 			properties:       []string{"findings", "rules", "tool", "version"},
 			outputProperties: []string{"findings", "rules", "tool", "version"},
 			populatedArrays:  []string{"findings"},
-			invalidVersion:   "1.3",
+			invalidVersion:   "1.4",
 		},
 		{
 			name:             "callgraph",
@@ -76,7 +76,7 @@ func TestGeneratedExportsMatchSchemas(t *testing.T) {
 			properties:       []string{"crypto_entry_points", "finding_graphs", "scan_metadata", "schema_version", "supporting_calls"},
 			outputProperties: []string{"crypto_entry_points", "finding_graphs", "scan_metadata", "schema_version", "supporting_calls"},
 			populatedArrays:  []string{"crypto_entry_points", "finding_graphs", "supporting_calls"},
-			invalidVersion:   "6.6",
+			invalidVersion:   "6.7",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

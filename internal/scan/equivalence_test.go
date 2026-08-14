@@ -116,6 +116,15 @@ func TestEquivalence_SingleComponent_StitchMatchesLive(t *testing.T) {
 	if len(stitched.SupportingCalls) == 0 {
 		t.Fatal("fixture produced no supporting_calls; cannot validate the supporting_call_ids FK")
 	}
+	if got := report.Findings[0].CryptographicAssets[0].OccurrenceKey; got == "" {
+		t.Fatal("live export did not assign occurrence_key")
+	}
+	if got, want := live.FindingGraphs[0].OccurrenceKey, report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != want {
+		t.Fatalf("live occurrence_key = %q, want report key %q", got, want)
+	}
+	if got, want := stitched.FindingGraphs[0].OccurrenceKey, live.FindingGraphs[0].OccurrenceKey; got != want {
+		t.Fatalf("stitched occurrence_key = %q, want live key %q", got, want)
+	}
 
 	rep := equiv.Compare(decodeEquiv(t, live), decodeEquiv(t, stitched), res.Suppressed, equiv.Options{})
 	assertEquivClean(t, rep)

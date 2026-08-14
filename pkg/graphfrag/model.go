@@ -401,10 +401,11 @@ type ExternalCall struct {
 // fragments — the stitcher still emits structural chains, just without
 // data-flow / asset metadata (safe degradation).
 type CryptoOperation struct {
-	Function  string
-	FindingID string
-	RuleID    string
-	Symbol    string
+	Function      string
+	FindingID     string
+	OccurrenceKey string
+	RuleID        string
+	Symbol        string
 
 	// FilePath is the source file path (relative to the component root) where
 	// the crypto finding was detected. Used by the callgraph exporter to recompute

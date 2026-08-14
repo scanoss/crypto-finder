@@ -231,7 +231,7 @@ See [Configuration](docs/CONFIGURATION.md) for the full guide.
 | Document | Contents |
 |----------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline overview, package map, load-bearing invariants |
-| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.7`), graph fragment (`graph-fragment-1.8`), CycloneDX CBOM |
+| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.8`), graph fragment (`graph-fragment-1.9`), CycloneDX CBOM |
 | [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Stable failure code/stage taxonomy emitted by `--error-format json` |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration options and skip patterns |
 | [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) | Dependency scanning, call chain tracing, attribution |

@@ -249,6 +249,10 @@ type FunctionCall struct {
 	// EndCol is the 1-based end column (exclusive) of this call expression.
 	// 0 when unknown. Mirrors the opengrep/semgrep convention: exclusive end.
 	EndCol int
+	// ASTKind is the tree-sitter node kind of this call expression.
+	ASTKind string
+	// NamedASTPath is this call's named-node path relative to its containing function.
+	NamedASTPath string
 	// Arguments are the raw argument expressions passed in this invocation.
 	Arguments []string
 	// ArgumentSources traces where each argument value comes from.

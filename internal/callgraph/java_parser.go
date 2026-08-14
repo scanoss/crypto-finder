@@ -1765,6 +1765,7 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 	switch node.Type() {
 	case "method_invocation":
 		if call := p.parseMethodInvocation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	case "object_creation_expression":

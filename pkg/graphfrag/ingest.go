@@ -146,6 +146,7 @@ func appendCryptoOperations(frag *Fragment, ops []GraphFragmentCryptoOp) {
 		frag.CryptoOperations = append(frag.CryptoOperations, CryptoOperation{
 			Function:          op.FunctionKey,
 			FindingID:         op.FindingID,
+			OccurrenceKey:     op.OccurrenceKey,
 			RuleID:            op.RuleID,
 			Symbol:            op.Symbol,
 			FilePath:          op.FilePath,

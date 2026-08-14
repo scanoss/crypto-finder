@@ -454,6 +454,7 @@ func (p *RustParser) extractCalls(body *sitter.Node, src []byte, filePath string
 func (p *RustParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, calls *[]FunctionCall) {
 	if node.Type() == rustNodeCallExpression {
 		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, varTypes); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

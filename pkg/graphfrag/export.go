@@ -38,7 +38,7 @@ import (
 // 1.7 adds internal_edges_compact plus internal_edge_strings. It carries the
 // same internal edge fields as internal_edges, but indexes repeated strings and
 // function keys to keep large dependency fragments small.
-const SchemaVersion = "graph-fragment-1.8"
+const SchemaVersion = "graph-fragment-1.9"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -385,14 +385,15 @@ type GraphFragmentExternal struct {
 // GraphFragmentCryptoOp is one crypto finding annotation attached to a function
 // in the exported graph fragment.
 type GraphFragmentCryptoOp struct {
-	FunctionKey string `json:"function_key,omitempty"`
-	FindingID   string `json:"finding_id,omitempty"`
-	RuleID      string `json:"rule_id,omitempty"`
-	Symbol      string `json:"symbol,omitempty"`
-	Expression  string `json:"expression,omitempty"`
-	FilePath    string `json:"file_path,omitempty"`
-	StartLine   int    `json:"start_line,omitempty"`
-	EndLine     int    `json:"end_line,omitempty"`
+	FunctionKey   string `json:"function_key,omitempty"`
+	FindingID     string `json:"finding_id,omitempty"`
+	OccurrenceKey string `json:"occurrence_key,omitempty"`
+	RuleID        string `json:"rule_id,omitempty"`
+	Symbol        string `json:"symbol,omitempty"`
+	Expression    string `json:"expression,omitempty"`
+	FilePath      string `json:"file_path,omitempty"`
+	StartLine     int    `json:"start_line,omitempty"`
+	EndLine       int    `json:"end_line,omitempty"`
 	// CryptoCall carries the identity and argument data-flow of the matched
 	// crypto invocation (1.2+). Nil on fragments exported with schema < 1.2.
 	CryptoCall *GraphFragmentCryptoCall `json:"crypto_call,omitempty"`

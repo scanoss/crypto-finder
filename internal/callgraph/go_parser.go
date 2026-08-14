@@ -450,6 +450,7 @@ func (p *GoParser) walkForCalls(
 ) {
 	if node.Type() == "call_expression" {
 		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

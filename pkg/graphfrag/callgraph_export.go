@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.7"
+const CallgraphSchemaVersion = "6.8"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -62,6 +62,8 @@ type ExportScanMeta struct {
 type ExportFindingGraph struct {
 	// FindingID is the crypto finding identifier.
 	FindingID string `json:"finding_id"`
+	// OccurrenceKey is the optional AST-anchored structural finding identity.
+	OccurrenceKey string `json:"occurrence_key,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
 	MatchedOperation *ExportMatchedOperation `json:"matched_operation,omitempty"`
 	// SupportingCallIDs are the supporting_id values of this finding's
@@ -437,6 +439,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	type findingKey string
 	type chainGroup struct {
 		findingID         string
+		occurrenceKey     string
 		matchedOp         *ExportMatchedOperation
 		supportingCallIDs []string
 		callChains        [][]ExportChainNode
@@ -481,6 +484,9 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if len(grp.supportingCallIDs) == 0 {
 			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
+		if grp.occurrenceKey == "" {
+			grp.occurrenceKey = chainOccurrenceKey(fc)
+		}
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
@@ -494,6 +500,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		grp := groupMap[key]
 		fg := ExportFindingGraph{
 			FindingID:         grp.findingID,
+			OccurrenceKey:     grp.occurrenceKey,
 			MatchedOperation:  grp.matchedOp,
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
@@ -774,6 +781,13 @@ func ambiguityID(kind string, parts ...string) string {
 // the fragment's CryptoOperation for the terminal node, so the precise
 // finding->supporting ids persisted at annotate time ride straight through to the
 // finding_graph here. Returns nil for legacy fragments with no crypto op.
+func chainOccurrenceKey(fc *FindingChain) string {
+	if fc == nil || fc.CryptoOp == nil {
+		return ""
+	}
+	return fc.CryptoOp.OccurrenceKey
+}
+
 func chainSupportingCallIDs(fc *FindingChain) []string {
 	if fc == nil || fc.CryptoOp == nil || len(fc.CryptoOp.SupportingCallIDs) == 0 {
 		return nil

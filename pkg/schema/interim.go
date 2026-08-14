@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.4"
+const InterimFormatVersion = "1.5"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -148,6 +148,10 @@ type CryptographicAsset struct {
 	// FindingID is a stable, short hash identifier for cross-referencing this finding
 	// with the callgraph export. Generated as SHA-256(file_path:start_line:rule_id)[:8].
 	FindingID string `json:"finding_id,omitempty"`
+
+	// OccurrenceKey is an optional AST-anchored structural identity for this finding.
+	// It is omitted when no callgraph anchor is available.
+	OccurrenceKey string `json:"occurrence_key,omitempty"`
 
 	// Source indicates how this finding was discovered.
 	// Values: "direct" (found in user code), "dependency" (found in a dependency).
