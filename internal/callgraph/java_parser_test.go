@@ -1943,3 +1943,113 @@ class Probe {
 		t.Errorf("cast receiver: ReceiverVar = %q, want %q", got.ReceiverVar, "socket")
 	}
 }
+
+// TestJavaParser_AnnotatedDeclarationsKeepVisibilityAndLine pins that an
+// annotation does not hide a declaration's modifier. tree-sitter groups every
+// modifier under one `modifiers` node, so comparing that node's whole text only
+// matched when the declaration carried nothing else — `@Override public` equals
+// no keyword, and the method was reported package-private one line early.
+func TestJavaParser_AnnotatedDeclarationsKeepVisibilityAndLine(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+class Probe {
+    @Override
+    public String annotated() { return ""; }
+
+    public void plain() {}
+
+    @Deprecated
+    @SuppressWarnings("unchecked")
+    protected int twoAnnotations() { return 0; }
+
+    private void hidden() {}
+
+    @Deprecated
+    Probe() {}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Probe.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	got := map[string]*FunctionDecl{}
+	for i := range analyses[0].Functions {
+		fn := &analyses[0].Functions[i]
+		got[fn.ID.Name] = fn
+	}
+
+	cases := []struct {
+		method     string
+		visibility string
+		startLine  int
+	}{
+		{"annotated#0", VisibilityPublic, 5},
+		{"plain#0", VisibilityPublic, 7},
+		{"twoAnnotations#0", VisibilityProtected, 11},
+		{"hidden#0", VisibilityPrivate, 13},
+		{"<init>#0", VisibilityPackagePrivate, 16},
+	}
+	for _, tc := range cases {
+		fn, ok := got[tc.method]
+		if !ok {
+			t.Errorf("%s not parsed", tc.method)
+			continue
+		}
+		if fn.Visibility != tc.visibility {
+			t.Errorf("%s: visibility = %q, want %q", tc.method, fn.Visibility, tc.visibility)
+		}
+		// The declaration line, not the annotation above it — that is the line a
+		// reader jumps to and the one the bytecode index agrees with.
+		if fn.StartLine != tc.startLine {
+			t.Errorf("%s: StartLine = %d, want %d", tc.method, fn.StartLine, tc.startLine)
+		}
+	}
+}
+
+// TestJavaParser_ExpressionReceiverIsNotATypeName pins that a receiver which is
+// itself an expression yields no type anchor rather than a fabricated one. The
+// raw source text used to be adopted as the class name, producing callees such
+// as `java.util.(key(key)).add#1` that name no class in any graph.
+func TestJavaParser_ExpressionReceiverIsNotATypeName(t *testing.T) {
+	p := NewJavaParser()
+	dir := t.TempDir()
+
+	src := `package com.example;
+
+import java.util.List;
+
+class Probe {
+    void run(List<String> list, Exception e) {
+        list.add(key("k")).toString();
+        e.getClass().getSimpleName();
+    }
+
+    String key(String k) { return k; }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Probe.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analyses, err := p.ParseDirectory(dir, "fallback.pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+
+	for _, fn := range analyses[0].Functions {
+		for _, call := range fn.Calls {
+			if strings.ContainsAny(call.Callee.Type, "()") {
+				t.Errorf("callee %q adopted an expression as its type; an unresolved receiver must carry no type anchor",
+					call.Callee.String())
+			}
+		}
+	}
+}

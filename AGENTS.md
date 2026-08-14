@@ -59,7 +59,7 @@ anywhere errors become terminal (CLI exit code, JSON failure payload, retry deci
 
 When a new terminal failure mode is introduced:
 
-1. Add a new `Code` constant in `internal/failure/error.go`.
+1. Add a new `Code` constant in `pkg/failure/error.go` and re-export it through `internal/failure` for existing implementation imports.
 2. Add a corresponding `Stage` if the failure belongs to a new pipeline stage.
 3. **Never rename a `Code` that has shipped** — codes are stable identifiers consumed
    by external tooling and CI parsers.

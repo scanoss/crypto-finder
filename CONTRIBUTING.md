@@ -173,7 +173,7 @@ Fix any issues reported by the linter. Common rules include:
 - Check the coverage thresholds the CI enforces (requires `go-test-coverage`,
   configured in `.testcoverage.yml`):
   ```bash
-  go install github.com/vladopajic/go-test-coverage/v2@latest
+  go install github.com/vladopajic/go-test-coverage/v2@v2.19.0
   make coverage-check
   ```
 - Aim for at least 80% coverage for new code

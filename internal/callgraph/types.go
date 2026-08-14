@@ -506,6 +506,14 @@ func ParseFunctionID(s string) (FunctionID, error) {
 		return FunctionID{Package: pkg, Type: typ, Name: name}, nil
 	}
 
+	// Unanchored call: ".Name" — a method whose receiver never resolved to a type,
+	// which String renders with empty Package and Type. Parsing it back keeps the
+	// pair symmetric; rejecting it silently drops the method name from every edge
+	// built through recordEdgeResolution.
+	if strings.HasPrefix(s, ".") && len(s) > 1 && !strings.Contains(s[1:], ".") {
+		return FunctionID{Name: s[1:]}, nil
+	}
+
 	// Plain function: "package<sep>Name" — find the last separator-appropriate dot
 	lastDot := strings.LastIndex(s, ".")
 	if lastDot == -1 || lastDot == 0 || lastDot == len(s)-1 {

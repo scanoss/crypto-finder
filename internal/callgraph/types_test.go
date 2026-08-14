@@ -131,3 +131,34 @@ func TestFunctionDecl_InferredReturn_ZeroMarshal(t *testing.T) {
 		t.Errorf("ReturnSources len = %d, want 1", len(rt2.ReturnSources))
 	}
 }
+
+// TestParseFunctionID_RoundTripsUnanchoredCall pins that a callee whose receiver
+// never resolved survives String → Parse. Such an ID has no package and no type,
+// so String renders it ".name#0"; rejecting that on the way back leaves
+// recordEdgeResolution unable to recover the method name, and every edge built
+// from one of these loses its `method_name`.
+func TestParseFunctionID_RoundTripsUnanchoredCall(t *testing.T) {
+	id := FunctionID{Name: "getSimpleName#0"}
+
+	rendered := id.String()
+	if rendered != ".getSimpleName#0" {
+		t.Fatalf("String() = %q, want %q", rendered, ".getSimpleName#0")
+	}
+
+	parsed, err := ParseFunctionID(rendered)
+	if err != nil {
+		t.Fatalf("ParseFunctionID(%q) failed: %v — String and Parse must agree", rendered, err)
+	}
+	if parsed != id {
+		t.Errorf("round trip = %#v, want %#v", parsed, id)
+	}
+
+	// Genuinely malformed input stays rejected. (".pkg.name" is deliberately not
+	// asserted here: it already parsed as package ".pkg" before this change, and
+	// that pre-existing behavior is out of scope.)
+	for _, bad := range []string{".", ""} {
+		if _, err := ParseFunctionID(bad); err == nil {
+			t.Errorf("ParseFunctionID(%q) succeeded, want an error", bad)
+		}
+	}
+}

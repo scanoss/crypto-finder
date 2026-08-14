@@ -6,10 +6,14 @@
 # ============================================================================
 # Stage 1: Build Go binary
 # ============================================================================
-FROM golang:1.26-alpine3.23 AS builder
+FROM golang:1.26-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make gcc musl-dev
+RUN apk add --no-cache \
+    git=2.52.0-r0 \
+    make=4.4.1-r3 \
+    gcc=15.2.0-r2 \
+    musl-dev=1.2.5-r23
 
 # Set working directory
 WORKDIR /build
@@ -37,11 +41,11 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
 # ============================================================================
 # Stage 2: Final minimal image (just the binary)
 # ============================================================================
-FROM alpine:3.23
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
 # Install minimal runtime dependencies
 # - ca-certificates: For HTTPS requests
-RUN apk add --no-cache ca-certificates && rm -rf /var/cache/apk/*
+RUN apk add --no-cache ca-certificates=20260611-r0 && rm -rf /var/cache/apk/*
 
 # Copy the crypto-finder binary from builder
 COPY --from=builder /build/crypto-finder /usr/local/bin/crypto-finder

@@ -1,4 +1,4 @@
-package entities
+package schema
 
 import (
 	"encoding/json"
@@ -106,6 +106,27 @@ func TestCryptographicAsset_GetKey_AdditionalBranches(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCryptographicAsset_MetadataSuffixSortingAndExclusions(t *testing.T) {
+	asset := CryptographicAsset{
+		Metadata: map[string]string{
+			"assetType":       "algorithm",
+			"algorithmName":   "AES",
+			"filePath":        "x.go",
+			"startLine":       "1",
+			"endLine":         "2",
+			"zeta":            "z",
+			"alpha":           "a",
+			"empty":           "",
+			"algorithmFamily": "AES",
+		},
+	}
+
+	suffix := asset.getMetadataKeySuffix([]string{"algorithmName"})
+	if suffix != ":algorithmFamily=AES:alpha=a:zeta=z" {
+		t.Fatalf("unexpected suffix ordering/exclusions: %q", suffix)
 	}
 }
 

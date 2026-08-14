@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // JSONWriter implements the Writer interface for JSON output format.
@@ -50,11 +51,11 @@ func NewJSONWriter() *JSONWriter {
 //
 // Destination handling:
 //   - "" (empty) or "-": Write to stdout
-//   - file path: Write to file with permissions 0644 (rw-r--r--)
+//   - file path: Write atomically with permissions 0600 (rw-------)
 //
 // If writing to a file:
 //   - File will be overwritten if it exists
-//   - Parent directory must exist (returns error otherwise)
+//   - Parent directories are created as needed
 func (w *JSONWriter) Write(report *entities.InterimReport, destination string) error {
 	// Validate report
 	if report == nil {
@@ -79,26 +80,10 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 			return fmt.Errorf("output: failed to resolve destination path: %w", err)
 		}
 
-		// Check parent directory exists
-		parentDir := filepath.Dir(absPath)
-		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			return fmt.Errorf("output: parent directory does not exist: %s", parentDir)
-		}
-
-		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-		if err != nil {
-			return fmt.Errorf("output: failed to open JSON file: %w", err)
-		}
-		writeErr := w.writeJSON(report, file)
-		closeErr := file.Close()
-		if writeErr != nil {
-			if closeErr != nil {
-				return fmt.Errorf("output: failed to write JSON file: %w (close failed: %w)", writeErr, closeErr)
-			}
-			return fmt.Errorf("output: failed to write JSON file: %w", writeErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("output: failed to close JSON file: %w", closeErr)
+		if err := utils.WriteFileAtomic(absPath, 0o600, func(file *os.File) error {
+			return w.writeJSON(report, file)
+		}); err != nil {
+			return fmt.Errorf("output: failed to write JSON file: %w", err)
 		}
 	}
 

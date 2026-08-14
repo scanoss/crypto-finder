@@ -1,10 +1,14 @@
 # ============================================================================
 # Stage 1: Build Go binary
 # ============================================================================
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make gcc musl-dev
+RUN apk add --no-cache \
+    git=2.54.0-r0 \
+    make=4.4.1-r4 \
+    gcc=15.2.0-r5 \
+    musl-dev=1.2.6-r2
 
 # Set working directory
 WORKDIR /build
@@ -32,19 +36,30 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
 # ============================================================================
 # Stage 2: Install Scanners (Semgrep and OpenGrep)
 # ============================================================================
-FROM python:3.11-slim AS scanner-installer
+FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS scanner-installer
+
+ARG OPENGREP_VERSION=v1.12.1
+ARG OPENGREP_INSTALLER_SHA256=a74388d0aec282eddf15fc8d42884de6531e1fc5a7bdc3ac31863c854e974eee
+ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
+ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
+ARG TARGETARCH
 
 # Install system dependencies for OpenGrep installer
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
+    curl=8.14.1-2+deb13u4 \
+    ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Semgrep 1.145.0
 RUN pip install --no-cache-dir semgrep==1.145.0
 
-# Install OpenGrep (minimum version 1.12.1)
-RUN curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh | bash
+# Install OpenGrep after verifying the version-pinned installer.
+RUN curl -fsSL "https://raw.githubusercontent.com/opengrep/opengrep/${OPENGREP_VERSION}/install.sh" -o /tmp/opengrep-install.sh \
+    && echo "${OPENGREP_INSTALLER_SHA256}  /tmp/opengrep-install.sh" | sha256sum -c - \
+    && bash /tmp/opengrep-install.sh -v "${OPENGREP_VERSION}" \
+    && case "${TARGETARCH}" in amd64) hash="${OPENGREP_AMD64_SHA256}" ;; arm64) hash="${OPENGREP_ARM64_SHA256}" ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
+    && echo "${hash}  /root/.opengrep/cli/${OPENGREP_VERSION}/opengrep" | sha256sum -c - \
+    && rm -f /tmp/opengrep-install.sh
 
 # ============================================================================
 # Stage 3: Final image with Python runtime

@@ -67,8 +67,8 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `dependency` | Dependency resolvers: Go modules, Java (Maven/Gradle), Python (pip), Rust (Cargo). |
 | `engine` | Scan orchestration: language detection → rules → scanner → report; the dependency scanner and its findings cache (disk/postgres); finding-ID assignment; rule-driven entry-point synthesis. |
 | `enricher` | OID enrichment of findings (algorithm → Object Identifier). |
-| `entities` | Domain data structures: the interim report (format version `1.4`) and its assets. |
-| `failure` | Structured machine-readable terminal errors (`Code`, `Stage`, JSON payload). |
+| `entities` | Scanner input structures and compatibility aliases for the public interim report contract. |
+| `failure` | Compatibility aliases for the public structured terminal error contract. |
 | `javaruntime` | Java JDK selection (`--java-jdk-major` / `--java-jdk-home`) for platform-signature type enrichment. |
 | `language` | Automatic language detection (go-enry) honoring skip patterns. |
 | `output` | Output writers: interim JSON and CycloneDX, stdout or file, streaming for large reports. |
@@ -86,6 +86,8 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `graphfrag` | The graph-fragment model and wire schema (`graph-fragment-1.8`), fragment decode/encode, the tiered fail-closed **stitcher** that composes per-component fragments into transitive reachability, and the renderers (`ToCallgraphExport` — stamps callgraph schema `6.7` — and `ToFindingsEnvelope`). |
 | `graphfrag/equiv` | Semantic diff asserting a stitched callgraph equals a live one (the equivalence guarantee the renderers rely on). |
 | `paramcondition` | Parser for the crypto-rules `parameterCondition` grammar (`param[<selector>]<op><value>`) into structured predicates. |
+| `schema` | Interim report JSON contract (format version `1.4`) and compatibility unmarshalling. |
+| `failure` | Structured terminal error contract: stable `Code` and `Stage` enums plus JSON `Payload`. |
 
 ## Load-Bearing Invariants
 
@@ -131,7 +133,7 @@ Four independent version numbers ship in the outputs — do not conflate them:
 
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
-| Interim report format | `entities.InterimFormatVersion` | `1.4` | The findings.json envelope changes |
+| Interim report format | `schema.InterimFormatVersion` | `1.4` | The findings.json envelope changes |
 | Callgraph export schema | `graphfrag.CallgraphSchemaVersion` | `6.7` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.8` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-1` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
