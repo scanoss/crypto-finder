@@ -171,3 +171,39 @@ func TestDeriveObjectLifecycleCalls_KeepsReceiverSetupWhenOperationResultIsUsed(
 		t.Errorf("derived = %v, want %v", got, want)
 	}
 }
+
+// TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls pins that a
+// reassigned variable does not merge two objects into one lifecycle. It mirrors
+// how a Java client wraps a plain socket in TLS:
+//
+//	socket.setSoTimeout(t);                       // plain TCP socket
+//	factory = SSLSocketFactory.getDefault();      // terminal crypto call
+//	socket  = factory.createSocket(socket, ...);  // socket now holds the TLS one
+//	socket.setSSLParameters(p);
+//
+// Without an order constraint the pre-TLS setSoTimeout joins the TLS finding's
+// evidence, because it is a call on a variable that later holds the TLS socket.
+func TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls(t *testing.T) {
+	calls := []objectIdentity{
+		{ReceiverVar: "socket"},                         // 0: setSoTimeout, plain socket
+		{AssignedVar: "factory"},                        // 1: terminal getDefault()
+		{ReceiverVar: "factory", AssignedVar: "socket"}, // 2: createSocket, rebinds socket
+		{ReceiverVar: "socket"},                         // 3: setSSLParameters
+		{ReceiverVar: "socket"},                         // 4: getSession
+	}
+
+	got := lifecycleCallIndices(calls, 1)
+
+	selected := map[int]bool{}
+	for _, i := range got {
+		selected[i] = true
+	}
+	if selected[0] {
+		t.Errorf("index 0 selected: a call made before the receiver was rebound belongs to the previous object (got %v)", got)
+	}
+	for _, want := range []int{2, 3, 4} {
+		if !selected[want] {
+			t.Errorf("index %d missing from lifecycle %v", want, got)
+		}
+	}
+}

@@ -27,6 +27,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/converter"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // CycloneDXWriter implements the Writer interface for CycloneDX CBOM format.
@@ -61,11 +62,11 @@ func NewCycloneDXWriter() *CycloneDXWriter {
 //
 // Destination handling:
 //   - "" (empty) or "-": Write to stdout
-//   - file path: Write to file with permissions 0600 (rw-------)
+//   - file path: Write atomically with permissions 0600 (rw-------)
 //
 // If writing to a file:
 //   - File will be overwritten if it exists
-//   - Parent directory must exist (returns error otherwise)
+//   - Parent directories are created as needed
 func (w *CycloneDXWriter) Write(report *entities.InterimReport, destination string) error {
 	// Validate report
 	if report == nil {
@@ -115,15 +116,10 @@ func (w *CycloneDXWriter) Write(report *entities.InterimReport, destination stri
 			return fmt.Errorf("failed to resolve destination path: %w", err)
 		}
 
-		// Check parent directory exists
-		parentDir := filepath.Dir(absPath)
-		if _, err := os.Stat(parentDir); os.IsNotExist(err) {
-			return fmt.Errorf("parent directory does not exist: %s", parentDir)
-		}
-
-		// Write to file
-		// 0o600 = rw------- (owner can read/write only)
-		if err := os.WriteFile(absPath, data, 0o600); err != nil {
+		if err := utils.WriteFileAtomic(absPath, 0o600, func(file *os.File) error {
+			_, err := file.Write(data)
+			return err
+		}); err != nil {
 			return fmt.Errorf("failed to write CycloneDX file: %w", err)
 		}
 

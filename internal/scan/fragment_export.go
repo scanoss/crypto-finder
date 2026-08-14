@@ -13,6 +13,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -41,21 +42,14 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 }
 
 func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-
-	bw := bufio.NewWriterSize(file, 1<<20)
-	writer := graphFragmentJSONWriter{w: bw}
-	err = writer.writeResult(result)
-	if flushErr := bw.Flush(); err == nil {
-		err = flushErr
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	return err
+	return utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		bw := bufio.NewWriterSize(file, 1<<20)
+		writer := graphFragmentJSONWriter{w: bw}
+		if err := writer.writeResult(result); err != nil {
+			return err
+		}
+		return bw.Flush()
+	})
 }
 
 type graphFragmentJSONWriter struct {

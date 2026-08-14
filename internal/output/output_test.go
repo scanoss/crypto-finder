@@ -164,22 +164,18 @@ func TestJSONWriter_CompactFormat(t *testing.T) {
 	}
 }
 
-func TestJSONWriter_ParentDirNotExist(t *testing.T) {
+func TestJSONWriter_CreatesParentDir(t *testing.T) {
 	t.Parallel()
 
 	report := createTestReport()
-	// Use a path with non-existent parent directory
-	outputFile := "/nonexistent/directory/output.json"
+	outputFile := filepath.Join(t.TempDir(), "nested", "output.json")
 
 	writer := NewJSONWriter()
-	err := writer.Write(report, outputFile)
-
-	if err == nil {
-		t.Fatal("Expected error for non-existent parent directory")
+	if err := writer.Write(report, outputFile); err != nil {
+		t.Fatalf("Write() failed: %v", err)
 	}
-
-	if !os.IsNotExist(err) && err.Error() == "" {
-		t.Errorf("Expected error mentioning parent directory, got: %v", err)
+	if _, err := os.Stat(outputFile); err != nil {
+		t.Fatalf("output file was not created: %v", err)
 	}
 }
 
@@ -202,17 +198,18 @@ func TestJSONWriter_WriteFileError(t *testing.T) {
 	}
 }
 
-func TestCycloneDXWriter_ParentDirNotExist(t *testing.T) {
+func TestCycloneDXWriter_CreatesParentDir(t *testing.T) {
 	t.Parallel()
 
 	report := createTestReport()
-	outputFile := "/nonexistent/directory/output.cdx.json"
+	outputFile := filepath.Join(t.TempDir(), "nested", "output.cdx.json")
 
 	writer := NewCycloneDXWriter()
-	err := writer.Write(report, outputFile)
-
-	if err == nil {
-		t.Fatal("Expected error for non-existent parent directory")
+	if err := writer.Write(report, outputFile); err != nil {
+		t.Fatalf("Write() failed: %v", err)
+	}
+	if _, err := os.Stat(outputFile); err != nil {
+		t.Fatalf("output file was not created: %v", err)
 	}
 }
 

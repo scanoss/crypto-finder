@@ -43,9 +43,9 @@ func lifecycleCallIndices(calls []objectIdentity, terminalIdx int) []int {
 	selector.selectChain(terminal.ChainID)
 	switch {
 	case terminal.ReceiverVar == "":
-		selector.selectDescendants(terminal.AssignedVar)
+		selector.selectDescendants(terminal.AssignedVar, terminalIdx)
 	case terminal.AssignedVar != "" && selector.hasReceiver(terminal.AssignedVar):
-		selector.selectDescendants(terminal.AssignedVar)
+		selector.selectDescendants(terminal.AssignedVar, terminalIdx)
 		selector.selectReceiverCalls(terminal.ReceiverVar, terminal.AssignedVar)
 		selector.selectAncestors(terminal.ReceiverVar)
 	default:
@@ -82,19 +82,28 @@ func (s *lifecycleSelector) selectChain(chainID string) {
 	}
 }
 
-func (s *lifecycleSelector) selectDescendants(objectVar string) {
+// selectDescendants walks forward from an object into the objects it produces.
+//
+// since is the index of the call that bound objectVar to the object being
+// tracked; only calls after it are that object's. A name is not an identity: a
+// variable reassigned mid-method holds a different object before and after, and
+// ignoring that attributes the earlier object's calls to the later one. In a TLS
+// client the plain socket's `setSoTimeout` would join the encrypted socket's
+// lifecycle and be reported as evidence of TLS, though it runs before the
+// connection is wrapped.
+func (s *lifecycleSelector) selectDescendants(objectVar string, since int) {
 	if objectVar == "" || s.downVisited[objectVar] {
 		return
 	}
 	s.downVisited[objectVar] = true
 	for i := range s.calls {
-		if s.calls[i].ReceiverVar != objectVar {
+		if i < since || s.calls[i].ReceiverVar != objectVar {
 			continue
 		}
 		s.selected[i] = true
 		s.selectChain(s.calls[i].ChainID)
 		if s.calls[i].AssignedVar != objectVar {
-			s.selectDescendants(s.calls[i].AssignedVar)
+			s.selectDescendants(s.calls[i].AssignedVar, i)
 		}
 	}
 }
