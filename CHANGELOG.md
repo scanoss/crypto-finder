@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Replaced the generated DOCX/PDF Crypto Finder guide with a standalone interactive SCANOSS-branded HTML guide at `docs/user-guide/user-guide.html`.
+- Dependency-scanning container images now use digest-pinned base/tool images, exact package versions, and checksum-verified installer inputs; CI rejects unpinned tooling.
 - Report, callgraph, graph-fragment, and annotation file exports now create missing parent directories and replace existing files only after a complete, synced write.
 
 ### Added
