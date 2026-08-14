@@ -126,7 +126,10 @@ class Outer {
 			if c.Callee.Package == "com.example.crypto" && c.Callee.Type == "CryptoService" && c.Callee.Name == "encrypt#1" {
 				foundVarTypeCall = true
 			}
-			if c.Callee.Package == "java.util" && c.Callee.Type == "Map<String, String>" && c.Callee.Name == "put#2" {
+			// Generic arguments are erased from the callee type: declarations are
+			// indexed under the bare identifier, so "Map<String, String>" could
+			// never match the java.util.Map declaration it names.
+			if c.Callee.Package == "java.util" && c.Callee.Type == "Map" && c.Callee.Name == "put#2" {
 				foundScopedGenericVarTypeCall = true
 			}
 			if c.Callee.Package == "java.security" && c.Callee.Name == "getInstance#1" {

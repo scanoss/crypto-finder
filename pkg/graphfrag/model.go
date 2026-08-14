@@ -85,6 +85,10 @@ type Function struct {
 	DeclaringType string
 	// CanonicalSignature is the canonical function signature (1.2+).
 	CanonicalSignature string
+	// ErasedSignature is the canonical signature with generic arguments
+	// stripped and type variables replaced by their erased bounds (1.9+) —
+	// the normal form a bytecode-level consumer can reproduce for joining.
+	ErasedSignature string
 	// CompatibleCanonicalSignatures are hierarchy-proven inherited or override
 	// identities that resolve to this declaration.
 	CompatibleCanonicalSignatures []string
@@ -532,6 +536,19 @@ type Result struct {
 	// audit trail for fail-closed decisions and the data source for a future
 	// opt-in "show me the uncertain paths too" mode. It never affects Chains.
 	Suppressed []SuppressedEdge
+
+	// composedEntryPoints are root-component functions proven (via the stitched
+	// adjacency) to reach a dependency's mine-time entry points; served as
+	// additional crypto_entry_points for consumer-side canonical_signature joins.
+	composedEntryPoints []CryptoEntryPoint
+	// composedRoots marks composed entry points with in-degree zero.
+	composedRoots map[string]bool
+	// composedFindingDepths maps finding IDs proven reachable through composed
+	// entry points to their minimum composed chain depth.
+	composedFindingDepths map[string]int
+	// erasedByFunctionKey resolves served function keys to the erased join
+	// signature carried on fragment functions (1.9+; empty for older data).
+	erasedByFunctionKey map[string]string
 
 	// forwardClosures is the anchor-keyed memo of computed forward reachability
 	// graphs (see StitchOptions.ForwardClosure). nil unless the option is set;
