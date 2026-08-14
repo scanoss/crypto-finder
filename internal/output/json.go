@@ -91,12 +91,17 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 }
 
 func (w *JSONWriter) writeJSON(report *entities.InterimReport, dst io.Writer) error {
+	payload := *report
+	if payload.Findings == nil {
+		payload.Findings = []entities.Finding{}
+	}
+
 	enc := json.NewEncoder(dst)
 	enc.SetEscapeHTML(false)
 	if w.PrettyPrint {
 		enc.SetIndent("", w.Indent)
 	}
-	if err := enc.Encode(report); err != nil {
+	if err := enc.Encode(payload); err != nil {
 		return fmt.Errorf("output: failed to encode JSON: %w", err)
 	}
 	return nil
