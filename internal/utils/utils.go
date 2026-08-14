@@ -20,11 +20,69 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// WriteFileAtomic writes a file completely before replacing its destination.
+// The temporary file is created beside the destination so the rename is atomic.
+func WriteFileAtomic(path string, perm os.FileMode, write func(*os.File) error) (retErr error) {
+	if write == nil {
+		return fmt.Errorf("utils: atomic write callback is nil")
+	}
+
+	parentDir := filepath.Dir(path)
+	if err := os.MkdirAll(parentDir, 0o750); err != nil {
+		return fmt.Errorf("utils: failed to create parent directory: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(parentDir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("utils: failed to create temporary file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
+			if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				retErr = errors.Join(retErr, fmt.Errorf("utils: failed to clean temporary file: %w", removeErr))
+			}
+		}
+	}()
+
+	if err := tmpFile.Chmod(perm); err != nil {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return fmt.Errorf("utils: failed to set temporary file permissions: %w", errors.Join(err, closeErr))
+		}
+		return fmt.Errorf("utils: failed to set temporary file permissions: %w", err)
+	}
+	if err := write(tmpFile); err != nil {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return fmt.Errorf("utils: failed to write temporary file: %w", errors.Join(err, closeErr))
+		}
+		return fmt.Errorf("utils: failed to write temporary file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return fmt.Errorf("utils: failed to sync temporary file: %w", errors.Join(err, closeErr))
+		}
+		return fmt.Errorf("utils: failed to sync temporary file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("utils: failed to close temporary file: %w", err)
+	}
+	// #nosec G703 -- path is the explicit output destination and tmpPath is created beside it.
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("utils: failed to replace destination: %w", err)
+	}
+
+	removeTemp = false
+	return nil
+}
 
 // DeduplicateSliceOfStrings removes duplicate strings and empty strings from a slice.
 func DeduplicateSliceOfStrings(duplicates []string) []string {
