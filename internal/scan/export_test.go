@@ -592,10 +592,19 @@ func TestBestScoredCandidate(t *testing.T) {
 func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing.T) {
 	t.Parallel()
 
-	entry := callGraphChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
-	terminal := callGraphChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
+	entryID := callgraph.FunctionID{Package: "com.acme", Type: "Api", Name: "entry"}
+	terminalID := callgraph.FunctionID{Package: "com.acme", Type: "Service", Name: "hash"}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			entryID.String():    {ID: entryID, FilePath: "Api.java", StartLine: 1, EndLine: 5},
+			terminalID.String(): {ID: terminalID, FilePath: "Service.java", StartLine: 10, EndLine: 15},
+		},
+		Callers: map[string][]string{terminalID.String(): {entryID.String()}},
+	}
+	ctx := newExportBuildContext(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+
 	points := buildCryptoEntryPoints(
-		nil,
+		ctx,
 		[]callGraphExportFinding{{
 			FindingID: "finding-1",
 			MatchedOperation: &callGraphMatchedOperation{
@@ -604,18 +613,18 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 				Line:   42,
 			},
 			SupportingCallIDs: []string{"support-1"},
-			CallChains:        [][]callGraphChainNode{{entry, terminal}},
 		}},
 		[]callGraphSupportingCall{{
 			SupportingID: "support-1",
-			FunctionKey:  terminal.FunctionKey,
-			FunctionName: terminal.FunctionName,
+			FunctionKey:  terminalID.String(),
+			FunctionName: "com.acme.Service.hash",
 		}},
+		func(string) *callgraph.FunctionDecl { return graph.Functions[terminalID.String()] },
 	)
 
-	entryPoint := findCryptoEntryPointByFunctionKey(points, entry.FunctionKey)
+	entryPoint := findCryptoEntryPointByFunctionKey(points, entryID.String())
 	if entryPoint == nil {
-		t.Fatalf("missing entry point %q: %#v", entry.FunctionKey, points)
+		t.Fatalf("missing entry point %q: %#v", entryID.String(), points)
 	}
 	if len(entryPoint.ReachableSupportingCalls) != 1 {
 		t.Fatalf("entry reachable_supporting_calls = %#v, want support-1", entryPoint.ReachableSupportingCalls)
@@ -633,11 +642,6 @@ func TestBuildCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing
 func TestBuildCryptoEntryPointsPopulatesParameterRoles(t *testing.T) {
 	t.Parallel()
 
-	terminal := callGraphChainNode{
-		FunctionKey:    "org.bc.KeyParameter.<init>#1",
-		FunctionName:   "org.bc.KeyParameter.<init>",
-		ParameterTypes: []string{"byte[]"},
-	}
 	kb := &contracts.KnowledgeBase{
 		Contracts: map[string][]contracts.Contract{
 			"org.bc.KeyParameter.<init>#1": {{
@@ -656,19 +660,29 @@ func TestBuildCryptoEntryPointsPopulatesParameterRoles(t *testing.T) {
 			}},
 		},
 	}
+	termID := callgraph.FunctionID{Package: "org.bc", Type: "KeyParameter", Name: "<init>"}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		termID.String(): {
+			ID: termID, FilePath: "KeyParameter.java", StartLine: 1, EndLine: 3,
+			Parameters: []callgraph.FunctionParameter{{Type: "byte[]"}},
+		},
+	}}
+	ctx := newExportBuildContext(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	ctx.kb = kb
+
 	points := buildCryptoEntryPoints(
-		kb,
+		ctx,
 		[]callGraphExportFinding{{
 			FindingID:        "finding-1",
 			MatchedOperation: &callGraphMatchedOperation{Kind: matchedOperationCall, Symbol: "org.bc.KeyParameter.<init>", Line: 1},
-			CallChains:       [][]callGraphChainNode{{terminal}},
 		}},
 		nil,
+		func(string) *callgraph.FunctionDecl { return graph.Functions[termID.String()] },
 	)
 
-	entryPoint := findCryptoEntryPointByFunctionKey(points, terminal.FunctionKey)
+	entryPoint := findCryptoEntryPointByFunctionKey(points, termID.String())
 	if entryPoint == nil {
-		t.Fatalf("missing entry point %q: %#v", terminal.FunctionKey, points)
+		t.Fatalf("missing entry point %q: %#v", termID.String(), points)
 	}
 	if len(entryPoint.ParameterRoles) != 1 {
 		t.Fatalf("ParameterRoles = %#v, want 1 entry", entryPoint.ParameterRoles)

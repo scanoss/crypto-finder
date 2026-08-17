@@ -4,11 +4,15 @@
   "title": "SCANOSS Crypto-Finder Callgraph Export",
   "description": "Finding-centric reachability export written by --export-callgraph.",
   "type": "object",
-  "required": ["schema_version", "scan_metadata", "finding_graphs"],
+  "required": [
+    "schema_version",
+    "scan_metadata",
+    "finding_graphs"
+  ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.8",
+      "const": "6.10",
       "type": "string",
       "description": "Version of the customer-facing callgraph contract."
     },
@@ -31,9 +35,15 @@
     },
     "crypto_entry_points": {
       "type": "array",
-      "description": "Reachability index keyed by callable identity.",
+      "description": "Reverse-reachability index keyed by callable identity: every function from which a finding is reachable, deliberately broader than the exported call_chains. crypto_entry_points[].root marks the chain roots.",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "boolean",
+            "description": "True when this entry point is where a chain starts: the first root-module caller in dependency mode, or an in-degree-zero graph root in standalone mode."
+          }
+        }
       }
     }
   },
@@ -42,18 +52,44 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "ecosystem": {"type": "string"},
-        "root_module": {"type": "string"},
-        "tool_name": {"type": "string"},
-        "tool_version": {"type": "string"},
-        "exported_at": {"type": "string"},
-        "function_count": {"type": "integer", "minimum": 0},
-        "edge_count": {"type": "integer", "minimum": 0},
-        "java_requested_jdk_major": {"type": "string"},
-        "java_runtime_version": {"type": "string"},
-        "java_platform_signatures_used": {"type": "boolean"},
-        "java_platform_signature_source": {"type": "string"},
-        "java_platform_signature_unavailable_reason": {"type": "string"}
+        "ecosystem": {
+          "type": "string"
+        },
+        "root_module": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "exported_at": {
+          "type": "string"
+        },
+        "function_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "java_requested_jdk_major": {
+          "type": "string"
+        },
+        "java_runtime_version": {
+          "type": "string"
+        },
+        "java_platform_signatures_used": {
+          "type": "boolean"
+        },
+        "java_platform_signature_source": {
+          "type": "string"
+        },
+        "java_platform_signature_unavailable_reason": {
+          "type": "string"
+        }
       }
     }
   }

@@ -8,11 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
 - Dependency findings now include an optional canonical `purl` inside `dependency_info` for Java, Python, Go, and Rust dependencies, including versionless package URLs when dependency versions are unavailable. (#233)
 
 ### Changed
-- Interim reports use schema `1.5`, and callgraph exports use schema `6.8` to carry dependency package URLs without changing graph-fragment wire format. (#233)
+- Interim reports use schema `1.5`, and callgraph exports use schema `6.10` to carry dependency package URLs without changing graph-fragment wire format. (#233)
+
+
+## [0.21.0] - 2026-08-17
+### Added
+- CycloneDX 1.6 CBOM exports now include protocol assets with protocol type/version metadata and certificate assets with certificate format, serial number, and certificate type metadata. (#239)
+
+### Fixed
+- `crypto_entry_points` now lists every function that reaches a crypto finding, on the live `--export-callgraph`, the graph-fragment, and the stitched/served paths. The index was previously folded from the call chains that happened to be exported, so a function was omitted whenever its only route collapsed at a shared caller or fell outside the per-finding chain budget — even though the stored graph proved it reaches the crypto. On `redis.clients:jedis@5.1.0`, 71 of the 1,142 reaching functions were published, with `Jedis.set`, `Jedis.get` and `Jedis.auth` among those missing. Consumers filtering with an entry-point signature list were losing the findings reachable only through an omitted entry point. (#249)
+- Served call chains are enumerated over the same cycle-condensed graph the live exporter uses, so both report the same routes through a re-convergent graph instead of the stitched export reporting a subset. (#249)
+
+### Changed
+- Callgraph export schema is now `6.9`. `crypto_entry_points[]` answers reverse reachability rather than projecting the exported `call_chains`, so it contains more entries than before, and `chain_depth` is the true minimum frame distance — some depths are therefore smaller than the same export previously reported. No field was added or removed; `crypto_entry_points[].root` continues to mark the chain roots. Consumers that treated the index as an inventory of the exported chains should read it as a reachability answer. (#249)
+
+## [0.20.0] - 2026-08-14
+
+### Added
+- `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
+- Stitched exports now compose a dependency's mine-time entry points onto the root component's public surface. When the stitched adjacency shows a root-component function transitively calling one of them, it is served as a composed entry point carrying its `canonical_signature`, a per-finding composed depth (stitched hops plus mine-time chain depth), and the root flag; its findings are upgraded to reachable with `analysis.call_chains: partial`. This closes the consumer join for wrapper APIs — `KafkaTemplate.send` reaches crypto only through an interface with several implementations, so it could never serve as an entry point before.
+- Callgraph exports now carry explicit reachability state: `finding_graphs[].reachability` (`reachable` / `unreachable` / `unknown` / `not_applicable`), `finding_graphs[].analysis` completeness for call chains and parameters, and `crypto_entry_points[].root` for explicit chain-root classification. A fail-closed suppression or a trace cap downgrades a would-be `unreachable` to `unknown`, never to `reachable`. Live `--export-callgraph` and the stitched export both honor the contract. (#242)
+- Every graph-fragment function, entry point, and supporting call now carries `erased_signature` — generic arguments stripped and type variables replaced by their erased first bound — so a bytecode-level consumer can join on the normal form its own analysis produces instead of reconstructing declared generics.
+
+### Changed
+- Callgraph export schema is now `6.8` and the graph-fragment schema is `graph-fragment-1.9`; both bumps are additive and no existing field changed shape. The legacy `finding_graphs[].reachable` boolean keeps its semantics through 6.x but is deprecated in favor of `reachability`.
+- `graphfrag.GraphAlgoVersion` is now `graph-algo-2` (was `graph-algo-1`). The Java receiver-type fix below alters the structural call graph, so fragments produced by earlier versions are not interchangeable with new ones. Consumers that cache structural graphs keyed on `scan_metadata.graph_algo_version` must re-mine; the wire schema bump is additive (see above) and no consumer needs a parsing change. (#228)
+
+### Fixed
+- Java type hierarchies are now derived from source-declared `extends`/`implements`, not only from indexed jars. Bare-source scans (mining workspaces) index no bytecode, so the type hierarchy stayed empty and every exported fragment function carried an empty `compatible_canonical_signatures` — cross-fragment interface dispatch could never be stitched. On a standalone `kafka-clients 3.7.1` scan this goes from 0 to 3,987 functions with compatible signatures.
+- Java `this(...)` / `super(...)` constructor delegation and `super.method(...)` receivers now resolve to the declaring class instead of being dropped or emitted as a never-joinable caller-package `(super)` identity. These are the statically certain subclass-to-base links, and severing them cut every cross-library chain flowing through inheritance.
+- Stitch-time overload selection scores candidates by best parameter-type match instead of requiring every known parameter to match, so an imprecise caller-side argument type no longer collapses a resolvable call back to ambiguity. Ties still fail closed exactly as before.
+- The scan-progress schema now rejects skip reasons outside `skipped` events and dependency aggregate counts outside completed dependency phases; progress mode documents structured JSON errors for preflight and terminal failures.
+- Findings whose rule declares a `parameterCondition` no longer lose every entry in `call_chains` when the condition cannot be evaluated — e.g. the crypto call's argument comes from a field, a config lookup, or any value the analysis cannot resolve statically. The chain filter treated an unanswerable predicate as an unsatisfied one and dropped the chain, silently zeroing the finding's reachability in the callgraph export and making live crypto look like dead code. Filtering is now decided per finding: when no chain can answer the predicate the chains are kept, and only once at least one chain can answer it are the non-matching (and unanswerable) chains dropped — which preserves per-call-site selector materialization. Affects the ruleset entries that declare `parameterCondition`. (#229)
+- Java call resolution now erases a receiver's generic type arguments before resolving its declared type, so the callee identity matches the declaration it names (class declarations are indexed under the bare identifier). Previously a call on a variable declared `KafkaTemplate<String, String>` missed the `KafkaTemplate` import key and fell back to the *scanned file's* package, emitting `com.example.(KafkaTemplate<String, String>).send#3` — unjoinable against the declaring component's `org.springframework.kafka.core.(KafkaTemplate).send#3`, and different for every consumer. Three shapes were affected: imported generics (`java.util.Map<String, Object>` surfaced as `com.example.(Map<String, Object>)`), same-package generic classes (`com.example.(MyCache<String>)` never matched the `com.example.(MyCache)` declaration, losing the edge inside the scanned project), and fully-qualified generics whose own argument is qualified (`Map<String, java.util.List<byte[]>>` split its package on the dot *inside* the angle brackets). (#228)
+
+### Fixed
+- Java graph-fragment reachability now preserves concrete receiver provenance for interface-typed fields assigned once from a concrete constructor parameter or `new T(...)`, allowing stitch to select the matching implementation without may-reach fan-out. (#262)
 
 ## [0.19.0] - 2026-08-14
 
@@ -42,7 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python callgraph contracts now model the google-cloud-kms 3.x synchronous and asynchronous client construction, remote encryption, signing, MAC, KEM, random-bytes, and key-lifecycle operations. 
 
 ### Fixed
-- The scan-progress schema now rejects skip reasons outside `skipped` events and dependency aggregate counts outside completed dependency phases; progress mode documents structured JSON errors for preflight and terminal failures.
 - Dependency-enabled scans now propagate structured scanner cancellation instead of producing partial reports with a successful exit. (#235)
 - Active scans now stop cleanly on SIGINT or SIGTERM, terminate their scan subprocesses, and return the structured `scanner_canceled` error without changing timeout results. (#235)
 - Java declarations carrying annotations report their real visibility and their declaration line. Modifiers are grouped under one AST node, and the visibility scan compared that node's whole text, which only ever matched when a declaration carried nothing else: `@Override public` equals no keyword, so annotated methods were reported `package-private`, and their start line pointed at the annotation rather than the signature.
@@ -407,7 +440,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README.md with explicit GPL-2.0-only license information
 - Updated README.md Contributing section to reference CONTRIBUTING.md and CODE_OF_CONDUCT.md
 
-[0.1.0]: https://github.com/scanoss/crypto-finder/compare/v0.0.0...v0.1.0
+[0.1.0]: https://github.com/scanoss/crypto-finder/releases/tag/v0.1.0
 [0.1.1]: https://github.com/scanoss/crypto-finder/compare/v0.1.0...v0.1.1
 [0.1.2]: https://github.com/scanoss/crypto-finder/compare/v0.1.1...v0.1.2
 [0.1.3]: https://github.com/scanoss/crypto-finder/compare/v0.1.2...v0.1.3
@@ -441,4 +474,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.13.2]: https://github.com/scanoss/crypto-finder/compare/v0.13.1...v0.13.2
 [0.13.3]: https://github.com/scanoss/crypto-finder/compare/v0.13.2...v0.13.3
 [0.13.4]: https://github.com/scanoss/crypto-finder/compare/v0.13.3...v0.13.4
-[Unreleased]: https://github.com/scanoss/crypto-finder/compare/v0.13.4...HEAD
+[0.18.0]: https://github.com/scanoss/crypto-finder/compare/v0.17.0...v0.18.0
+[0.19.0]: https://github.com/scanoss/crypto-finder/compare/v0.18.0...v0.19.0
+[0.20.0]: https://github.com/scanoss/crypto-finder/compare/v0.19.0...v0.20.0
+[0.21.0]: https://github.com/scanoss/crypto-finder/compare/v0.20.0...v0.21.0

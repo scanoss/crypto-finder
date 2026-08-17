@@ -126,7 +126,10 @@ class Outer {
 			if c.Callee.Package == "com.example.crypto" && c.Callee.Type == "CryptoService" && c.Callee.Name == "encrypt#1" {
 				foundVarTypeCall = true
 			}
-			if c.Callee.Package == "java.util" && c.Callee.Type == "Map<String, String>" && c.Callee.Name == "put#2" {
+			// Generic arguments are erased from the callee type: declarations are
+			// indexed under the bare identifier, so "Map<String, String>" could
+			// never match the java.util.Map declaration it names.
+			if c.Callee.Package == "java.util" && c.Callee.Type == "Map" && c.Callee.Name == "put#2" {
 				foundScopedGenericVarTypeCall = true
 			}
 			if c.Callee.Package == "java.security" && c.Callee.Name == "getInstance#1" {
@@ -166,6 +169,202 @@ class Outer {
 	_, err = p.parseFile(filepath.Join(dir, "missing.java"), "pkg")
 	if err == nil {
 		t.Fatal("expected parseFile error for missing file")
+	}
+}
+
+func TestJavaParser_FieldReceiver_ConcreteConstructorType(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper(ClosureA operation) { this.operation = operation; }
+    void invoke() { operation.run(); }
+}
+`
+	graph := parseInlineJava(t, "Wrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "invoke")
+
+	for _, call := range fn.Calls {
+		if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+			if call.ResolvedReceiverType != "ClosureA" {
+				t.Fatalf("field receiver provenance = %q, want ClosureA", call.ResolvedReceiverType)
+			}
+			return
+		}
+	}
+	t.Fatalf("invoke() call on operation.run() not found: %+v", fn.Calls)
+}
+
+func TestJavaParser_FieldReceiver_SingleConstructorAssignment(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper() { this.operation = new ClosureA(); }
+    void invoke() { operation.run(); }
+}
+`
+	graph := parseInlineJava(t, "Wrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "invoke")
+
+	for _, call := range fn.Calls {
+		if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+			if call.ResolvedReceiverType != "ClosureA" {
+				t.Fatalf("field receiver provenance = %q, want ClosureA", call.ResolvedReceiverType)
+			}
+			return
+		}
+	}
+	t.Fatalf("invoke() call on operation.run() not found: %+v", fn.Calls)
+}
+
+func TestJavaParser_FieldReceiver_MultipleAssignmentsOmitProvenance(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper(boolean first) {
+        if (first) { this.operation = new ClosureA(); }
+        else { this.operation = new ClosureB(); }
+    }
+    void invoke() { operation.run(); }
+}
+`
+	graph := parseInlineJava(t, "Wrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "invoke")
+
+	for _, call := range fn.Calls {
+		if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+			if call.ResolvedReceiverType != "" {
+				t.Fatalf("ambiguous field receiver provenance = %q, want empty", call.ResolvedReceiverType)
+			}
+			return
+		}
+	}
+	t.Fatalf("invoke() call on operation.run() not found: %+v", fn.Calls)
+}
+
+func TestJavaParser_FieldReceiver_UnknownConstructorExpressionOmitProvenance(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		assignments string
+	}{
+		{name: "direct_new_then_unknown", assignments: "this.operation = new ClosureA(); this.operation = resolveOperation();"},
+		{name: "unknown_then_direct_new", assignments: "this.operation = resolveOperation(); this.operation = new ClosureA();"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper() {
+		` + tt.assignments + `
+    }
+    Operation resolveOperation() { return new ClosureA(); }
+    void invoke() { operation.run(); }
+}
+`
+			graph := parseInlineJava(t, "Wrapper", src)
+			fn := findFunctionBySimpleName(t, graph, "invoke")
+
+			for _, call := range fn.Calls {
+				if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+					if call.ResolvedReceiverType != "" {
+						t.Fatalf("field receiver provenance = %q, want empty after unknown constructor expression", call.ResolvedReceiverType)
+					}
+					return
+				}
+			}
+			t.Fatalf("invoke() call on operation.run() not found: %+v", fn.Calls)
+		})
+	}
+}
+
+func TestJavaParser_FieldReceiver_DeclaredTypeParameterOmitProvenance(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper(Operation operation) { this.operation = operation; }
+    void invoke() { operation.run(); }
+}
+`
+	graph := parseInlineJava(t, "Wrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "invoke")
+
+	for _, call := range fn.Calls {
+		if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+			if call.ResolvedReceiverType != "" {
+				t.Fatalf("declared field receiver provenance = %q, want empty", call.ResolvedReceiverType)
+			}
+			return
+		}
+	}
+	t.Fatalf("invoke() call on operation.run() not found: %+v", fn.Calls)
+}
+
+func TestJavaParser_FieldReceiver_PropagatesTypeToDispatchEdges(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper(ClosureA operation) { this.operation = operation; }
+    void invoke() { operation.run(); }
+}
+`
+	graph := parseInlineJava(t, "Wrapper", src)
+	fn := findFunctionBySimpleName(t, graph, "invoke")
+	var callLine int
+	for _, call := range fn.Calls {
+		if call.ReceiverVar == "operation" && BaseFunctionName(call.Callee.Name) == "run" {
+			callLine = call.Line
+			break
+		}
+	}
+	if callLine == 0 {
+		t.Fatal("invoke() call on operation.run() not found")
+	}
+	callerKey := fn.ID.String()
+	for _, targetType := range []string{"ClosureA", "ClosureB"} {
+		found := false
+		for _, resolution := range graph.EdgeResolutions {
+			if resolution.callerKey != callerKey || resolution.CallSite != callLine || resolution.MethodName != "run" {
+				continue
+			}
+			if !strings.Contains(resolution.calleeKey, ".("+targetType+").run#0") {
+				continue
+			}
+			found = true
+			if resolution.ResolvedReceiverType != "ClosureA" {
+				t.Errorf("%s edge provenance = %q, want ClosureA", targetType, resolution.ResolvedReceiverType)
+			}
+		}
+		if !found {
+			t.Errorf("missing dispatch edge to %s at call line %d", targetType, callLine)
+		}
 	}
 }
 

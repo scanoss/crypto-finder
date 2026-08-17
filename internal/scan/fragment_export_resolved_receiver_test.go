@@ -8,6 +8,8 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // TestBuildGraphFragmentExport_CarriesResolvedReceiverType proves that an
@@ -58,6 +60,69 @@ func TestBuildGraphFragmentExport_CarriesResolvedReceiverType(t *testing.T) {
 	}
 	if edge.ResolvedReceiverType != "PBKDF2Function" {
 		t.Fatalf("ResolvedReceiverType = %q, want %q", edge.ResolvedReceiverType, "PBKDF2Function")
+	}
+}
+
+func TestBuildGraphFragmentExport_DirectNewFieldReceiverStitchesOneImplementation(t *testing.T) {
+	t.Parallel()
+
+	src := `package com.example;
+interface Operation { void run(); }
+class ClosureA implements Operation { public void run() {} }
+class ClosureB implements Operation { public void run() {} }
+class Wrapper {
+    private Operation operation;
+    Wrapper() { this.operation = new ClosureA(); }
+    void invoke() { operation.run(); }
+}
+`
+	component := graphfrag.ComponentKey{Purl: "pkg:maven/com.example/direct-new", Version: "1.0.0"}
+	fragment := buildModuleFragment(t, component, "com.example", "Wrapper.java", src, &entities.InterimReport{
+		Findings: []entities.Finding{{
+			FilePath: "Wrapper.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				FindingID: "closure-a-run",
+				StartLine: 3,
+				EndLine:   3,
+				Match:     "run()",
+				Rules:     []entities.RuleInfo{{ID: "java.test.closure-a-run"}},
+			}},
+		}},
+	})
+	caller := "com.example.(Wrapper).invoke#0"
+	for _, target := range []string{
+		"com.example.(ClosureA).run#0",
+		"com.example.(ClosureB).run#0",
+	} {
+		var edge *graphfrag.InternalEdge
+		for i := range fragment.InternalEdges {
+			candidate := &fragment.InternalEdges[i]
+			if candidate.Caller == caller && candidate.Callee == target {
+				edge = candidate
+				break
+			}
+		}
+		if edge == nil {
+			t.Fatalf("internal edge %s -> %s not found", caller, target)
+		}
+		if edge.ResolvedReceiverType != "ClosureA" {
+			t.Fatalf("%s exported receiver provenance = %q, want ClosureA", target, edge.ResolvedReceiverType)
+		}
+	}
+
+	result, err := graphfrag.StitchWithOptions(component, graphfrag.DependencyGraph{component: nil}, map[graphfrag.ComponentKey]graphfrag.Fragment{component: fragment}, graphfrag.StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("StitchWithOptions: %v", err)
+	}
+	if len(result.Chains) != 1 {
+		t.Fatalf("chains = %#v, want one ClosureA survivor", result.Chains)
+	}
+	if result.Chains[0].FindingID != "closure-a-run" {
+		t.Fatalf("FindingID = %q, want closure-a-run", result.Chains[0].FindingID)
+	}
+	if len(result.Suppressed) != 0 {
+		t.Fatalf("suppressed = %#v, want no dispatch fan-out suppression", result.Suppressed)
 	}
 }
 

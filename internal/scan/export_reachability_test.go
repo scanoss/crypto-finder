@@ -381,18 +381,50 @@ func TestBuildCryptoEntryPoints_ExcludesUnreachableFindings(t *testing.T) {
 		}}
 	}
 
+	// The index is derived from the graph now, so these cases need a real one:
+	// user code -> service -> crypto, with the consumer package named so the
+	// walk can tell consumer code from a dependency.
+	entryID := callgraph.FunctionID{Package: "com.app", Type: "Main", Name: "run"}
+	serviceID := callgraph.FunctionID{Package: "com.app", Type: "Svc", Name: "call"}
+	cryptoID := callgraph.FunctionID{Package: "dep.lib", Type: "Cipher", Name: "init"}
+	orphanID := callgraph.FunctionID{Package: "dep.lib", Type: "Orphan", Name: "init"}
+
+	decl := func(id callgraph.FunctionID, line int) *callgraph.FunctionDecl {
+		return &callgraph.FunctionDecl{ID: id, FilePath: id.Type + ".java", StartLine: line, EndLine: line + 4}
+	}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			entryID.String():   decl(entryID, 10),
+			serviceID.String(): decl(serviceID, 20),
+			cryptoID.String():  decl(cryptoID, 30),
+			orphanID.String():  decl(orphanID, 40),
+		},
+		Callers: map[string][]string{
+			serviceID.String(): {entryID.String()},
+			cryptoID.String():  {serviceID.String()},
+			// orphan has no callers: nothing consumer-side reaches it.
+		},
+	}
+	ctx := newExportBuildContext(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	ctx.userPackages = map[string]bool{"com.app": true}
+
+	containing := func(id callgraph.FunctionID) func(string) *callgraph.FunctionDecl {
+		return func(string) *callgraph.FunctionDecl { return graph.Functions[id.String()] }
+	}
+
 	cases := []struct {
 		name      string
+		target    callgraph.FunctionID
 		reachable *bool
 		wantEntry bool
 	}{
-		{"reachable from user code", &reachable, true},
-		{"proven unreachable", &unreachable, false},
-		{"mine path, question does not apply", nil, true},
+		{"reachable from user code", cryptoID, &reachable, true},
+		{"proven unreachable", orphanID, &unreachable, false},
+		{"mine path, question does not apply", cryptoID, nil, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildCryptoEntryPoints(nil, graphs(tc.reachable), nil)
+			got := buildCryptoEntryPoints(ctx, graphs(tc.reachable), nil, containing(tc.target))
 			if gotEntry := len(got) > 0; gotEntry != tc.wantEntry {
 				t.Errorf("entry points = %d, want any = %v", len(got), tc.wantEntry)
 			}
@@ -409,10 +441,10 @@ func TestBuildCryptoEntryPoints_ExcludesUnreachableFindings(t *testing.T) {
 		fg[0].SupportingCallIDs = []string{"s1"}
 		supporting := []callGraphSupportingCall{{
 			SupportingID:       "s1",
-			FunctionName:       "redis.clients.jedis.util.Hashing$1.hash",
-			CanonicalSignature: "redis.clients.jedis.util.Hashing$1.hash(byte[]): long",
+			FunctionName:       "dep.lib.Orphan.init",
+			CanonicalSignature: "dep.lib.Orphan.init(): void",
 		}}
-		if got := buildCryptoEntryPoints(nil, fg, supporting); len(got) != 0 {
+		if got := buildCryptoEntryPoints(ctx, fg, supporting, containing(orphanID)); len(got) != 0 {
 			names := make([]string, 0, len(got))
 			for _, ep := range got {
 				names = append(names, ep.CanonicalSignature)
