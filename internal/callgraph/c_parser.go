@@ -249,6 +249,7 @@ func cDescendantByType(node *sitter.Node, nodeType string) *sitter.Node {
 func (p *CParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, calls *[]FunctionCall) {
 	if node.Type() == cNodeCallExpression {
 		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

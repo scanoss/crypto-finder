@@ -423,20 +423,33 @@ func multiSourceLabel(sources []skip.PatternSource, multi *skip.MultiSource) str
 	return strings.Join(names, ", ")
 }
 
-func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string) (*engine.DepScanResult, error) {
+func buildStandaloneCallGraphResult(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, withTypeResolution bool) (*engine.DepScanResult, error) {
+	ecosystem := ecosystemFromHints(target, languageHints)
+	if ecosystem == "" {
+		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
+	}
+	return buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, withTypeResolution)
+}
+
+func buildStandaloneCallGraphResultForEcosystem(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, withTypeResolution bool) (*engine.DepScanResult, error) {
 	targetDir, err := callGraphTargetDir(target)
 	if err != nil {
 		return nil, fmt.Errorf("resolve call graph target: %w", err)
 	}
 
-	ecosystem := ecosystemFromHints(target, languageHints)
-	if ecosystem == "" {
-		return nil, fmt.Errorf("could not determine a supported ecosystem for call graph export")
-	}
-
-	cgBuilder, err := newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
-	if err != nil {
-		return nil, err
+	var cgBuilder *callgraph.Builder
+	if withTypeResolution {
+		var err error
+		cgBuilder, err = newCallGraphBuilder(ecosystem, javaRuntime, includeTests)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(includeTests))
+		if cgParser == nil {
+			return nil, fmt.Errorf("call graph export is not supported for ecosystem %q", ecosystem)
+		}
+		cgBuilder = callgraph.NewBuilderForEcosystem(ecosystem, cgParser)
 	}
 
 	rootModule := scanutil.DetectRootModule(targetDir, ecosystem)
@@ -456,6 +469,106 @@ func buildStandaloneCallGraphResult(target string, report *entities.InterimRepor
 		Ecosystem:   ecosystem,
 		ProjectRoot: targetDir,
 	}, nil
+}
+
+// prepareReportOccurrenceKeys reuses source-only callgraphs for normal findings
+// output, without starting dependency scanning. Source anchors are optional, so
+// parser failures leave the existing report unchanged.
+func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, languageHints []string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) *engine.DepScanResult {
+	if scanutil.CountFindings(report) == 0 {
+		return result
+	}
+	for _, ecosystem := range reportOccurrenceKeyEcosystems(target, report, languageHints) {
+		result = addReportOccurrenceKeyAnchors(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, result)
+	}
+	if result != nil {
+		result.Report = report
+		scanutil.AssignOccurrenceKeys(result)
+	}
+	return result
+}
+
+func addReportOccurrenceKeyAnchors(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, result *engine.DepScanResult) *engine.DepScanResult {
+	if result != nil && result.CallGraph != nil && result.Ecosystem == ecosystem {
+		return result
+	}
+	anchors, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, false)
+	if err != nil {
+		log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build optional source anchors for occurrence keys")
+		return result
+	}
+	result = mergeOccurrenceKeyAnchors(result, anchors)
+	if result.OccurrenceAnchors == nil {
+		result.OccurrenceAnchors = make(map[string]*callgraph.FunctionDecl)
+	}
+	for id, function := range anchors.CallGraph.Functions {
+		result.OccurrenceAnchors[occurrenceAnchorKey(ecosystem, id)] = function
+	}
+	return result
+}
+
+func mergeOccurrenceKeyAnchors(result, anchors *engine.DepScanResult) *engine.DepScanResult {
+	if result == nil {
+		return anchors
+	}
+	if result.CallGraph != nil {
+		return result
+	}
+	result.CallGraph = anchors.CallGraph
+	if result.RootModule == "" {
+		result.RootModule = anchors.RootModule
+	}
+	if result.Ecosystem == "" {
+		result.Ecosystem = anchors.Ecosystem
+	}
+	if result.ProjectRoot == "" {
+		result.ProjectRoot = anchors.ProjectRoot
+	}
+	return result
+}
+
+func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport, languageHints []string) []string {
+	seen := make(map[string]bool)
+	ecosystems := make([]string, 0, len(languageHints))
+	addEcosystem := func(ecosystem string) {
+		if ecosystem != "" && !seen[ecosystem] {
+			seen[ecosystem] = true
+			ecosystems = append(ecosystems, ecosystem)
+		}
+	}
+	add := func(hint string) { addEcosystem(ecosystemFromHint(target, hint)) }
+	for _, finding := range report.Findings {
+		if finding.Language == "c" {
+			// A C-language detector can report both C and C++ sources. Build both
+			// source-only parsers so a C++ header never hides .c anchors.
+			addEcosystem("c")
+			if isCPPSource(finding.FilePath) || cppHeaderTarget(target) {
+				addEcosystem(ecosystemCPP)
+			}
+			continue
+		}
+		add(finding.Language)
+	}
+	for _, hint := range languageHints {
+		add(hint)
+	}
+	if len(ecosystems) == 0 {
+		add(ecosystemFromHints(target, languageHints))
+	}
+	return ecosystems
+}
+
+func occurrenceAnchorKey(ecosystem, functionID string) string {
+	return ecosystem + "\x00" + functionID
+}
+
+func isCPPSource(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cc", ".cp", ".cpp", ".cxx", ".c++", ".hh", ".hpp", ".hxx", ".h++":
+		return true
+	default:
+		return false
+	}
 }
 
 //nolint:gocognit,gocyclo,funlen // Main scan orchestration function handles validation, cache management, scanner execution, and output formatting - splitting would reduce clarity
@@ -902,7 +1015,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return progressWriteFailure(err)
 			}
 		}
-		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact)
+		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, true)
 		if err != nil {
 			if progress != nil {
 				var progressErr error
@@ -958,6 +1071,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			callGraphResult.Report = report
 		}
 	}
+
+	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, callGraphResult)
 
 	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
 		if err := startExport(); err != nil {

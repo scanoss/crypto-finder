@@ -89,12 +89,14 @@ type ExportScanMeta struct {
 	RootModule string `json:"root_module,omitempty"`
 }
 
-// ExportFindingGraph groups all surviving chains for one crypto finding.
+// ExportFindingGraph groups all surviving chains for one crypto finding occurrence.
 type ExportFindingGraph struct {
 	// FindingID is the crypto finding identifier.
 	FindingID string `json:"finding_id"`
 	// PURL is the optional package URL promoted from a direct rule finding.
 	PURL string `json:"purl,omitempty"`
+	// OccurrenceKey is the optional AST-anchored structural finding identity.
+	OccurrenceKey string `json:"occurrence_key,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
 	MatchedOperation *ExportMatchedOperation `json:"matched_operation,omitempty"`
 	// SupportingCallIDs are the supporting_id values of this finding's
@@ -491,10 +493,14 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		},
 	}
 
-	// Group chains by FindingID.
-	type findingKey string
+	// Group chains by finding ID and optional occurrence key.
+	type findingKey struct {
+		findingID     string
+		occurrenceKey string
+	}
 	type chainGroup struct {
 		findingID         string
+		occurrenceKey     string
 		purl              string
 		purlConflict      bool
 		matchedOp         *ExportMatchedOperation
@@ -519,11 +525,12 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if resolvedFindingID == "" {
 			resolvedFindingID = fc.FindingID
 		}
-		key := findingKey(resolvedFindingID)
+		key := findingKey{findingID: resolvedFindingID, occurrenceKey: chainOccurrenceKey(fc)}
 		grp, exists := groupMap[key]
 		if !exists {
 			grp = &chainGroup{
 				findingID:         resolvedFindingID,
+				occurrenceKey:     key.occurrenceKey,
 				matchedOp:         chainMatchedOp(fc),
 				supportingCallIDs: chainSupportingCallIDs(fc),
 				purl:              directFindingPURL(fc, root),
@@ -549,7 +556,10 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	}
 
 	sort.Slice(groupOrder, func(i, j int) bool {
-		return string(groupOrder[i]) < string(groupOrder[j])
+		if groupOrder[i].findingID != groupOrder[j].findingID {
+			return groupOrder[i].findingID < groupOrder[j].findingID
+		}
+		return groupOrder[i].occurrenceKey < groupOrder[j].occurrenceKey
 	})
 
 	// anchorByFinding maps each emitted finding to its crypto-op node. The
@@ -562,6 +572,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		fg := ExportFindingGraph{
 			FindingID:         grp.findingID,
 			PURL:              grp.purl,
+			OccurrenceKey:     grp.occurrenceKey,
 			MatchedOperation:  grp.matchedOp,
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
@@ -1042,6 +1053,14 @@ func completeAmbiguousCandidate(candidate *ExportAmbiguousForwardCandidate, arit
 func ambiguityID(kind string, parts ...string) string {
 	h := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return kind + "-" + hex.EncodeToString(h[:8])
+}
+
+// chainOccurrenceKey returns the terminal crypto operation's optional structural identity.
+func chainOccurrenceKey(fc *FindingChain) string {
+	if fc == nil || fc.CryptoOp == nil {
+		return ""
+	}
+	return fc.CryptoOp.OccurrenceKey
 }
 
 // chainSupportingCallIDs returns the terminal crypto operation's supporting-call

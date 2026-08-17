@@ -454,6 +454,7 @@ func (p *RustParser) extractCalls(body *sitter.Node, src []byte, filePath string
 func (p *RustParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentReceiverType string, varTypes map[string]string, calls *[]FunctionCall) {
 	if node.Type() == rustNodeCallExpression {
 		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, varTypes); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}
@@ -474,36 +475,41 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 	raw := funcNode.Content(src)
 	args := p.extractRustCallArguments(node, src)
 
+	var call *FunctionCall
 	switch funcNode.Type() {
 	case javaNodeScopedIdentifier:
 		// e.g., `ring::aead::Aead::new(...)` or `Aead::new(...)`
-		return p.parseScopedCall(funcNode, src, filePath, line, args, analysis)
+		call = p.parseScopedCall(funcNode, src, filePath, line, args, analysis)
 	case goNodeIdentifier:
 		// Simple call like `encrypt(...)`
 		name := funcNode.Content(src)
 		// Check if this identifier was imported
 		if pkg, ok := analysis.Imports[name]; ok {
-			return &FunctionCall{
+			call = &FunctionCall{
 				Callee:    FunctionID{Package: pkg, Name: name},
 				Raw:       raw,
 				FilePath:  filePath,
 				Line:      line,
 				Arguments: args,
 			}
-		}
-		return &FunctionCall{
-			Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
-			Raw:       raw,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
+		} else {
+			call = &FunctionCall{
+				Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
+				Raw:       raw,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
 		}
 	case fieldExpressionNode:
 		// Method call like `self.encrypt(...)` or `obj.method(...)`
-		return p.parseFieldCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, varTypes)
+		call = p.parseFieldCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, varTypes)
 	}
-
-	return nil
+	if call != nil {
+		call.StartCol = int(node.StartPoint().Column) + 1
+		call.EndCol = int(node.EndPoint().Column) + 1
+	}
+	return call
 }
 
 // parseScopedCall handles calls like `Type::method()` or `module::func()`.

@@ -149,6 +149,10 @@ type CryptographicAsset struct {
 	// with the callgraph export. Generated as SHA-256(file_path:start_line:rule_id)[:8].
 	FindingID string `json:"finding_id,omitempty"`
 
+	// OccurrenceKey is an optional AST-anchored structural identity for this finding.
+	// It is omitted when no callgraph anchor is available.
+	OccurrenceKey string `json:"occurrence_key,omitempty"`
+
 	// Source indicates how this finding was discovered.
 	// Values: "direct" (found in user code), "dependency" (found in a dependency).
 	Source string `json:"source,omitempty"`

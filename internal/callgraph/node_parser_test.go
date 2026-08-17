@@ -306,3 +306,33 @@ func nodeCallSpan(t *testing.T, src string, call *FunctionCall) string {
 	line := lines[call.Line-1]
 	return line[call.StartCol-1 : call.EndCol-1]
 }
+
+func TestNodeParser_ASTAnchorsCoverFunctionExpressionAndGenerator(t *testing.T) {
+	t.Parallel()
+
+	src := `import crypto from "node:crypto";
+export const expression = function () {
+  return crypto.createHash("sha256");
+};
+export function* generator() {
+  yield crypto.createHash("sha512");
+}
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "anchors.js")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := NewNodeParser().ParseFile(filePath, "example-app")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	for _, name := range []string{"expression", "generator"} {
+		t.Run(name, func(t *testing.T) {
+			call := nodeCall(t, nodeFunction(t, analysis, name), "node:crypto", "createHash", "crypto.createHash")
+			if call.ASTKind != nodeCallExpression || call.NamedASTPath == "" {
+				t.Fatalf("AST anchor = %q/%q, want call_expression with a named path", call.ASTKind, call.NamedASTPath)
+			}
+		})
+	}
+}

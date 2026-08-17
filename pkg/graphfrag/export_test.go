@@ -118,16 +118,17 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	rawMeta := json.RawMessage(`{"algorithmFamily":"AES","assetType":"algorithm"}`)
 
 	op := GraphFragmentCryptoOp{
-		FindingID:  "beaecdb7",
-		RuleID:     "java.crypto.cipher.getinstance",
-		Symbol:     "javax.crypto.Cipher.getInstance",
-		Expression: `Cipher.getInstance("AES")`,
-		FilePath:   "Service.java",
-		StartLine:  6,
-		EndLine:    6,
-		OID:        "2.16.840.1.101.3.4.1.2",
-		Metadata:   rawMeta,
-		Source:     "direct",
+		FindingID:     "beaecdb7",
+		OccurrenceKey: "v1:0123456789abcdef",
+		RuleID:        "java.crypto.cipher.getinstance",
+		Symbol:        "javax.crypto.Cipher.getInstance",
+		Expression:    `Cipher.getInstance("AES")`,
+		FilePath:      "Service.java",
+		StartLine:     6,
+		EndLine:       6,
+		OID:           "2.16.840.1.101.3.4.1.2",
+		Metadata:      rawMeta,
+		Source:        "direct",
 		CryptoCall: &GraphFragmentCryptoCall{
 			FunctionName:       "javax.crypto.Cipher.getInstance",
 			CanonicalSignature: "javax.crypto.Cipher.getInstance(String):Cipher",
@@ -158,6 +159,9 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	if decoded.FindingID != op.FindingID {
 		t.Errorf("FindingID = %q, want %q", decoded.FindingID, op.FindingID)
 	}
+	if decoded.OccurrenceKey != op.OccurrenceKey {
+		t.Errorf("OccurrenceKey = %q, want %q", decoded.OccurrenceKey, op.OccurrenceKey)
+	}
 	if decoded.OID != op.OID {
 		t.Errorf("OID = %q, want %q", decoded.OID, op.OID)
 	}
@@ -187,11 +191,12 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_9 verifies the schema version constant has been bumped.
-// 1.9 carries generic-erased join signatures and direct finding package URLs.
-func TestSchemaVersion_Is_1_9(t *testing.T) {
+// TestSchemaVersion_Is_1_10 verifies the schema version constant has been bumped.
+// 1.10 carries generic-erased signatures, direct purls, and occurrence_key
+// propagation for canonical crypto annotations.
+func TestSchemaVersion_Is_1_10(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.9" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.9", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.10" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.10", SchemaVersion)
 	}
 }

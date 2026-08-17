@@ -49,6 +49,7 @@ type FindingFile struct {
 // `cryptographic_assets[]` entry. Metadata is the verbatim camelCase block.
 type FindingAsset struct {
 	FindingID      string                `json:"finding_id"`
+	OccurrenceKey  string                `json:"occurrence_key,omitempty"`
 	OID            string                `json:"oid,omitempty"`
 	Match          string                `json:"match"`
 	Source         string                `json:"source"`
@@ -104,6 +105,7 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 
 			asset := FindingAsset{
 				FindingID:           computeFindingID(path, op.StartLine, op.RuleID),
+				OccurrenceKey:       op.OccurrenceKey,
 				OID:                 op.OID,
 				Match:               op.Match,
 				Source:              source,

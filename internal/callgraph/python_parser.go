@@ -441,6 +441,7 @@ func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[stri
 func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool, calls *[]FunctionCall) {
 	if node.Type() == pythonNodeCall {
 		if call := p.parseCallExpr(node, src, filePath, analysis, localVars); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-// EncodeFragment renders a Fragment back to graph-fragment-1.4 wire JSON — the
+// EncodeFragment renders a Fragment back to current graph-fragment wire JSON — the
 // inverse of DecodeFragment for the STRUCTURAL payload (scan_metadata, functions,
 // internal_edges, external_calls, including each edge's call-site object identity
 // receiver_var/assigned_var/chain_id and entry_call args).

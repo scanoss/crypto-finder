@@ -70,13 +70,17 @@ func NewDependencyScanner(
 // DepScanResult holds the aggregated result of the dependency scanning pipeline.
 // It surfaces the crypto-scoped call graph so callers can export or inspect it.
 type DepScanResult struct {
-	Report       *entities.InterimReport
-	CallGraph    *callgraph.CallGraph
-	RootModule   string
-	Ecosystem    string
-	ProjectRoot  string
-	Dependencies []dependency.Dependency
-	summary      dependencyScanSummary
+	Report    *entities.InterimReport
+	CallGraph *callgraph.CallGraph
+	// OccurrenceAnchors retains source-only declarations used to enrich finding
+	// occurrence keys without changing the exported dependency call graph.
+	// Keys are ecosystem-qualified FunctionID strings.
+	OccurrenceAnchors map[string]*callgraph.FunctionDecl
+	RootModule        string
+	Ecosystem         string
+	ProjectRoot       string
+	Dependencies      []dependency.Dependency
+	summary           dependencyScanSummary
 }
 
 // ProgressDetails returns the aggregate dependency counters for structured progress.

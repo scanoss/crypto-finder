@@ -6,7 +6,7 @@ Crypto Finder supports two output formats: an interim JSON format for detailed a
 
 The default output format containing detailed cryptographic asset information optimized for the SCANOSS ecosystem.
 
-The interim report is the primary findings artifact. It contains finding metadata such as `finding_id`, but it does not currently embed the finding-centric reachability slices produced by `--export-callgraph`.
+The interim report is the primary findings artifact. It contains finding metadata such as `finding_id` and optional structural `occurrence_key`, but it does not embed the finding-centric reachability slices produced by `--export-callgraph`.
 
 ### Format Specification
 
@@ -47,7 +47,8 @@ The interim report is the primary findings artifact. It contains finding metadat
             "version": "v0.17.0",
             "purl": "pkg:golang/golang.org/x/crypto@v0.17.0"
           },
-          "finding_id": "a1b2c3d4"
+          "finding_id": "a1b2c3d4",
+          "occurrence_key": "v1:0123456789abcdef"
         }
       ]
     }
@@ -55,7 +56,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 }
 ```
 
-> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source` and `dependency_info` for dependency scanning attribution. Version 1.3 adds `finding_id` for cross-referencing with the callgraph export. Dependency-backed `file_path` values are dependency-root-relative; the package identity stays in `dependency_info`. Reachability slices such as `call_chains` are emitted by the dedicated call graph export, not by the interim report. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
+> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source` and `dependency_info` for dependency scanning attribution. Version 1.3 adds `finding_id` for cross-referencing with the callgraph export. Version 1.5 adds optional `occurrence_key` for canonical findings, using AST call evidence when available and a deterministic file/module-level fallback for valid top-level calls. Dependency-backed `file_path` values are dependency-root-relative; the package identity stays in `dependency_info`. Reachability slices such as `call_chains` are emitted by the dedicated call graph export, not by the interim report. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
 
 ### Field Descriptions
 
@@ -86,6 +87,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `dependency_info` | Attribution for dependency findings: `module`, `version`, and optional `purl` (v1.5+) |
 | `purl` | Optional canonical package URL promoted from direct rule metadata; it stays versionless unless one unambiguous direct dependency version is available (v1.6+) |
 | `finding_id` | Stable short hash used to join the interim report to the call graph export (v1.3+) |
+| `occurrence_key` | Optional `v1:<16 lowercase hex>` structural identity. It excludes rules, source text, metadata, reachability, and severity; uses AST anchors when available and a deterministic file/module-level fallback for valid top-level calls (v1.5+). Legacy records or scans without source enrichment may omit it. |
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
@@ -93,7 +95,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 
 Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.6"`.
 
-The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `oid`, `finding_id`, `source`, `dependency_info`, and direct `purl` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
+The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `oid`, `finding_id`, `occurrence_key`, `source`, `dependency_info`, and direct `purl` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
 
 The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. Valid rule package URLs are promoted to top-level `purl` for direct findings. Dependency findings keep package identity in `dependency_info.purl`; unknown ecosystems omit it, and missing versions produce versionless package URLs. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
 
@@ -105,6 +107,7 @@ Schema note: call graph export version **`6.10`** is the current customer-facing
 
 - **`6.10`** carries an optional top-level `purl` for direct findings and an optional canonical `purl` inside dependency context. Live and stitched exports derive dependency URLs from the scan ecosystem and existing module/version fields, so cached graph fragments gain the field without a fragment schema change.
 
+- **`6.10`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. AST anchors are preferred, with a deterministic file/module-level fallback for valid top-level calls. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
 - **`6.9`** makes `crypto_entry_points[]` a reverse-reachability answer rather than a projection of the exported `call_chains`: every function that reaches a finding is listed, so an entry point no longer depends on which chains survived collapsing or the per-finding chain budget. `chain_depth` is consequently the true minimum frame distance, and some depths are smaller than the same export previously reported. No field was added or removed. Live and stitched paths agree on both the index and the enumerated routes.
 - **`6.8`** adds `finding_graphs[].reachability` (`reachable`/`unreachable`/`unknown`/`not_applicable`, where a self-chain fallback never counts and suppression or truncation downgrades to `unknown`), `finding_graphs[].analysis` (`call_chains`/`parameters` completeness), and `crypto_entry_points[].root` — the explicit chain-root classification, the index itself staying deliberately broader. The legacy `reachable` bool is unchanged.
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
@@ -116,7 +119,7 @@ Schema note: call graph export version **`6.10`** is the current customer-facing
 - **`6.0`** removed the legacy `entry_point_index` projection and made `crypto_entry_points[]` canonical.
 - **`4.3`** added Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
 
-- Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
+- Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
 - Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
@@ -298,7 +301,7 @@ artifact X?" The pure model and the stitcher that composes fragments live in the
 public package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream
 consumers can use one contract instead of reimplementing schema knowledge.
 
-Current schema version: **`graph-fragment-1.9`** (`pkg/graphfrag.SchemaVersion`).
+Current schema version: **`graph-fragment-1.10`** (`pkg/graphfrag.SchemaVersion`).
 
 Since `graph-fragment-1.3`, a fragment is **self-contained enough to reconstruct
 the two artifacts a live `--scan-dependencies` run would produce** — see
@@ -318,18 +321,19 @@ the missing fields empty and are handled fail-closed):
 | `1.7` | `internal_edges_compact` + `internal_edge_strings` — string/key-indexed compact edge encoding to keep large dependency fragments small. |
 | `1.8` | `role: operation` contract methods exported as categorized supporting calls, no longer as operation-only entry points (paired with callgraph schema `6.5`). |
 | `1.9` | Generic-erased function join signatures for Java source-type hierarchy stitching and optional direct-finding `purl` on crypto annotations, carried into rendered findings envelopes and finding graphs. |
+| `1.10` | Optional `occurrence_key` on canonical `crypto_annotations`, propagated to stitched callgraph and findings-envelope outputs. |
 
 ### Structure
 
 | Field | Description |
 |-------|-------------|
-| `schema_version` | Fragment schema version (currently `graph-fragment-1.9`). |
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.10`). |
 | `scan_metadata` | Ecosystem, root module, tool/rules versions, `graph_algo_version` (callgraph-construction algorithm version; cache key for annotate-only re-annotation), and per-array counts. |
 | `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
 | `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). Each edge may carry `entry_call` (1.2+, see below). |
 | `internal_edges_compact[]` / `internal_edge_strings[]` | Compact (1.7+) encoding of internal edges: same fields as `internal_edges`, with repeated strings and function keys indexed into `internal_edge_strings` to keep large dependency fragments small. |
 | `external_calls[]` | Calls whose target may live in **another** component; resolved at stitch time against the dependency tree. Each edge may carry `entry_call` (1.2+, see below). |
-| `crypto_annotations[]` | Terminal crypto findings attached to a function. Beyond `function_key`/`finding_id`/`rule_id`/`symbol`, a 1.2+ annotation carries the data-flow and metadata needed to reconstruct a findings entry (see *Crypto annotation fields (1.2+)* below). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
+| `crypto_annotations[]` | Terminal crypto findings attached to a function. Beyond `function_key`/`finding_id`/optional `occurrence_key`/`rule_id`/`symbol`, a 1.2+ annotation carries the data-flow and metadata needed to reconstruct a findings entry (see *Crypto annotation fields (1.2+)* below). A component with no crypto still emits a fragment (zero `crypto_annotations`) so it can serve as a bridge in transitive chains. |
 | `supporting_calls[]` | Non-finding config/lifecycle/context calls useful for explaining crypto behavior without increasing finding counts. |
 | `crypto_entry_points[]` | Canonical reachability index: API functions plus display aliases and links to reachable findings/supporting calls. |
 
@@ -372,7 +376,8 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
   findings.json v1.6 envelope (asset metadata, including direct `purl`). Its `finding_id`s are computed
   with the **same inputs** as `ToCallgraphExport`, so the two agree: consumers
-  join assets (envelope) to call chains (callgraph) by `finding_id`.
+  join assets (envelope) to call chains (callgraph) by `(finding_id, occurrence_key)` when the key is present,
+  or by `finding_id` for legacy records without `occurrence_key`.
 
 `pkg/graphfrag/equiv` is a semantic diff tool that asserts a stitched callgraph
 equals a live one minus the chains intentionally dropped by resolution
@@ -424,7 +429,7 @@ reported as reachable crypto.
 
 ```json
 {
-  "schema_version": "graph-fragment-1.9",
+  "schema_version": "graph-fragment-1.10",
   "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-2", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }

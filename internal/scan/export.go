@@ -131,6 +131,7 @@ type callGraphExportScanMeta struct {
 type callGraphExportFinding struct {
 	FindingID         string                     `json:"finding_id"`
 	PURL              string                     `json:"purl,omitempty"`
+	OccurrenceKey     string                     `json:"occurrence_key,omitempty"`
 	MatchedOperation  *callGraphMatchedOperation `json:"matched_operation,omitempty"`
 	FindingLocation   *callGraphFindingLocation  `json:"finding_location,omitempty"`
 	UnresolvedReason  string                     `json:"unresolved_reason,omitempty"`
@@ -387,6 +388,7 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 		return fmt.Errorf("unsupported call graph format %q (supported: json)", format)
 	}
 
+	AssignOccurrenceKeys(result)
 	exportStart := time.Now()
 	totalAssets := countExportFindingAssets(result.Report)
 	log.Info().
@@ -645,6 +647,7 @@ func writeIndentedJSONFile(path string, payload any) error {
 // --- Build pipeline ---
 
 func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
+	AssignOccurrenceKeys(result)
 	ctx := newExportBuildContext(result)
 	totalAssets := countExportFindingAssets(result.Report)
 
@@ -1362,6 +1365,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	fg := callGraphExportFinding{
 		FindingID:        asset.FindingID,
 		PURL:             asset.PURL,
+		OccurrenceKey:    asset.OccurrenceKey,
 		MatchedOperation: matchedOperation,
 	}
 	unresolvedReason := ""
