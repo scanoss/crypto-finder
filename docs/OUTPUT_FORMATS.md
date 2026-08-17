@@ -55,7 +55,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 }
 ```
 
-> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source` and `dependency_info` for dependency scanning attribution. Version 1.3 adds `finding_id` for cross-referencing with the callgraph export. Version 1.5 adds optional AST-anchored `occurrence_key` for canonical findings when structural callgraph evidence is available. Dependency-backed `file_path` values are dependency-root-relative; the package identity stays in `dependency_info`. Reachability slices such as `call_chains` are emitted by the dedicated call graph export, not by the interim report. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
+> **Note:** Version 1.1 introduced the `rules` array field (replacing single `rule` field) to support per-line deduplication. Version 1.2 added `source` and `dependency_info` for dependency scanning attribution. Version 1.3 adds `finding_id` for cross-referencing with the callgraph export. Version 1.5 adds optional `occurrence_key` for canonical findings, using AST call evidence when available and a deterministic file/module-level fallback for valid top-level calls. Dependency-backed `file_path` values are dependency-root-relative; the package identity stays in `dependency_info`. Reachability slices such as `call_chains` are emitted by the dedicated call graph export, not by the interim report. See [Dependency Scanning](DEPENDENCY_SCANNING.md) for details.
 
 ### Field Descriptions
 
@@ -85,7 +85,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
 | `dependency_info` | Attribution for dependency findings: `module`, `version` (v1.2+) |
 | `finding_id` | Stable short hash used to join the interim report to the call graph export (v1.3+) |
-| `occurrence_key` | Optional `v1:<16 lowercase hex>` structural identity. It excludes rules, source text, positions, metadata, reachability, and severity; omitted when no AST anchor is available (v1.5+). |
+| `occurrence_key` | Optional `v1:<16 lowercase hex>` structural identity. It excludes rules, source text, metadata, reachability, and severity; uses AST anchors when available and a deterministic file/module-level fallback for valid top-level calls (v1.5+). Legacy records or scans without source enrichment may omit it. |
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
@@ -103,7 +103,7 @@ When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate
 
 Schema note: call graph export version **`6.9`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
-- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
+- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. AST anchors are preferred, with a deterministic file/module-level fallback for valid top-level calls. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
 - **`6.8`** adds explicit reachability and analysis completeness, generic-erased join signatures, and root entry-point classification.
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.

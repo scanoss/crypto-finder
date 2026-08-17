@@ -101,6 +101,33 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 	}
 }
 
+func TestAssignOccurrenceKeys_TopLevelFallbackPropagatesToExports(t *testing.T) {
+	result := &engine.DepScanResult{
+		RootModule:  "com.example:app",
+		ProjectRoot: "/workspace",
+		Ecosystem:   "python",
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Report: &entities.InterimReport{Findings: []entities.Finding{{
+			FilePath: "/workspace/crypto.py",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				FindingID: "finding-1", StartLine: 2, EndLine: 2, StartCol: 1, EndCol: 20,
+				Match: "hashlib.sha256(data)",
+			}},
+		}}},
+	}
+
+	callgraphExport := buildCallGraphExportV2(result)
+	if got := callgraphExport.FindingGraphs[0].OccurrenceKey; got == "" {
+		t.Fatal("top-level callgraph finding omitted occurrence_key")
+	}
+	key := callgraphExport.FindingGraphs[0].OccurrenceKey
+
+	fragmentExport := BuildGraphFragmentExport(result)
+	if got := fragmentExport.CryptoAnnotations[0].OccurrenceKey; got != key {
+		t.Fatalf("graph-fragment occurrence_key = %q, want %q", got, key)
+	}
+}
+
 func TestOccurrenceKeyGroupLess_UsesIdentityAfterLocation(t *testing.T) {
 	left := &occurrenceKeyGroup{line: 10, col: 5, identity: "a"}
 	right := &occurrenceKeyGroup{line: 10, col: 5, identity: "b"}

@@ -29,8 +29,8 @@ type occurrenceKeyCandidate struct {
 	occurrence string
 }
 
-// AssignOccurrenceKeys attaches structural occurrence keys to canonical findings
-// when the callgraph retains the terminal call's AST anchor.
+// AssignOccurrenceKeys attaches structural occurrence keys to canonical findings,
+// using terminal call AST anchors when available and a file/module fallback otherwise.
 func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return
@@ -50,6 +50,10 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 			asset.OccurrenceKey = ""
 			containing := findOccurrenceContainingFunction(functions, finding.FilePath, asset.StartLine)
 			if containing == nil {
+				location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
+				hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, "", "", "")
+				occurrence := strings.Join([]string{location.FilePath, strconv.Itoa(asset.StartLine), strconv.Itoa(asset.StartCol), strconv.Itoa(asset.EndCol)}, "\n")
+				candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})
 				continue
 			}
 			terminal := findCryptoCallNode(ctx.graph, containing, *asset, asset.StartLine, asset.EndLine)

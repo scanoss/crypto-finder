@@ -111,6 +111,30 @@ func TestPrepareReportOccurrenceKeys_DegradesOnSourceAnchorFailure(t *testing.T)
 	}
 }
 
+func TestPrepareReportOccurrenceKeys_AssignsKeyToTopLevelCall(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "crypto.py")
+	if err := os.WriteFile(filePath, []byte("import hashlib\nhashlib.sha256(data)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	javaRuntime, err := javaruntime.NewConfig("auto", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: filePath, Language: "python",
+		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 1, EndCol: 20}},
+	}}}
+
+	result := prepareReportOccurrenceKeys(dir, report, []string{"python"}, javaRuntime, false, "", nil)
+	if result == nil || result.CallGraph == nil {
+		t.Fatal("report-only enrichment must build source anchors")
+	}
+	if got := report.Findings[0].CryptographicAssets[0].OccurrenceKey; got == "" {
+		t.Fatal("top-level report finding omitted occurrence_key")
+	}
+}
+
 func TestPrepareReportOccurrenceKeys_EnrichesEveryReportedLanguage(t *testing.T) {
 	dir := t.TempDir()
 	javaPath := filepath.Join(dir, "Crypto.java")
