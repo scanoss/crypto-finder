@@ -93,6 +93,13 @@ func TestConverter_Convert(t *testing.T) {
 			wantSkipped:    0,
 			wantErr:        false,
 		},
+		{
+			name:           "All CycloneDX crypto asset types",
+			fixtureFile:    "all_asset_types.json",
+			wantComponents: 4,
+			wantSkipped:    0,
+			wantErr:        false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -235,38 +242,43 @@ func TestConverter_ConvertAggregatedAsset_ErrorPaths(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "Protocol asset - not implemented",
+			name: "Protocol asset",
 			aggregated: &AggregatedAsset{
-				Name:      "TLS-1.3",
+				Name:      "tls-1.3",
 				AssetType: AssetTypeProtocol,
 				ReferenceAsset: &entities.CryptographicAsset{
 					Metadata: map[string]string{
-						"assetType": "protocol",
+						"assetType":       "protocol",
+						"protocolType":    "TLS",
+						"protocolVersion": "1.3",
 					},
 				},
 				ReferenceFinding: &entities.Finding{},
 				Occurrences:      []AssetOccurrence{},
 				Identities:       []AssetIdentity{},
 			},
-			wantErr:     true,
-			errContains: "protocol",
+			wantErr: false,
 		},
 		{
-			name: "Certificate asset - not implemented",
+			name: "Certificate asset",
 			aggregated: &AggregatedAsset{
-				Name:      "X.509-Cert",
+				Name:      "certificate:10:12",
 				AssetType: AssetTypeCertificate,
 				ReferenceAsset: &entities.CryptographicAsset{
 					Metadata: map[string]string{
-						"assetType": "certificate",
+						"assetType":               "certificate",
+						"certificateFormat":       "PEM",
+						"certificateSerialNumber": "01:02",
+						"certificateType":         "X.509",
 					},
+					StartLine: 10,
+					EndLine:   12,
 				},
 				ReferenceFinding: &entities.Finding{},
 				Occurrences:      []AssetOccurrence{},
 				Identities:       []AssetIdentity{},
 			},
-			wantErr:     true,
-			errContains: "certificate",
+			wantErr: false,
 		},
 		{
 			name: "Unknown asset type",
@@ -328,6 +340,189 @@ func TestConverter_ConvertAggregatedAsset_ErrorPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConverter_ConvertProtocolAndCertificateProperties(t *testing.T) {
+	converter := NewConverter()
+	bom, err := converter.Convert(loadFixture(t, "all_asset_types.json"))
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+	if bom.Components == nil || len(*bom.Components) != 4 {
+		t.Fatalf("expected 4 components, got %d", lenOrZero(bom.Components))
+	}
+
+	components := make(map[string]cdx.Component, len(*bom.Components))
+	for _, component := range *bom.Components {
+		components[component.Name] = component
+	}
+	if got := components["AES-256-GCM"].CryptoProperties.AssetType; got != cdx.CryptoAssetTypeAlgorithm {
+		t.Errorf("algorithm asset type = %q, want %q", got, cdx.CryptoAssetTypeAlgorithm)
+	}
+	if got := components["secret-key"].CryptoProperties.AssetType; got != cdx.CryptoAssetTypeRelatedCryptoMaterial {
+		t.Errorf("related material asset type = %q, want %q", got, cdx.CryptoAssetTypeRelatedCryptoMaterial)
+	}
+
+	protocol, ok := components["tls-1.3"]
+	if !ok {
+		t.Fatal("missing tls-1.3 component")
+	}
+	if protocol.CryptoProperties == nil || protocol.CryptoProperties.AssetType != cdx.CryptoAssetTypeProtocol {
+		t.Fatal("protocol component has incorrect crypto properties")
+	}
+	if protocol.CryptoProperties.ProtocolProperties == nil {
+		t.Fatal("protocol component missing ProtocolProperties")
+	}
+	if got := protocol.CryptoProperties.ProtocolProperties.Type; got != cdx.CryptoProtocolTypeTLS {
+		t.Errorf("protocol type = %q, want %q", got, cdx.CryptoProtocolTypeTLS)
+	}
+	if got := protocol.CryptoProperties.ProtocolProperties.Version; got != "1.3" {
+		t.Errorf("protocol version = %q, want %q", got, "1.3")
+	}
+
+	certificate, ok := components["01:02"]
+	if !ok {
+		t.Fatal("missing certificate component")
+	}
+	if certificate.CryptoProperties == nil || certificate.CryptoProperties.AssetType != cdx.CryptoAssetTypeCertificate {
+		t.Fatal("certificate component has incorrect crypto properties")
+	}
+	if certificate.CryptoProperties.CertificateProperties == nil {
+		t.Fatal("certificate component missing CertificateProperties")
+	}
+	if got := certificate.CryptoProperties.CertificateProperties.CertificateFormat; got != "PEM" {
+		t.Errorf("certificate format = %q, want %q", got, "PEM")
+	}
+	properties := propertyValues(certificate)
+	if properties["scanoss:certificateSerialNumber"] != "01:02" {
+		t.Errorf("certificate serial property = %q, want %q", properties["scanoss:certificateSerialNumber"], "01:02")
+	}
+	if properties["scanoss:certificateType"] != "X.509" {
+		t.Errorf("certificate type property = %q, want %q", properties["scanoss:certificateType"], "X.509")
+	}
+}
+
+func TestConverter_ConvertUnknownProtocolType(t *testing.T) {
+	tests := []struct {
+		name          string
+		protocolType  string
+		wantType      cdx.CryptoProtocolType
+		wantProperty  string
+		wantComponent string
+	}{
+		{
+			name:          "custom protocol uses source property",
+			protocolType:  "  custom-protocol  ",
+			wantProperty:  "  custom-protocol  ",
+			wantComponent: "custom-protocol-v1",
+		},
+		{
+			name:          "other is an official protocol type",
+			protocolType:  "OTHER",
+			wantType:      cdx.CryptoProtocolTypeOther,
+			wantComponent: "other-v1",
+		},
+		{
+			name:          "unknown is an official protocol type",
+			protocolType:  " UNKNOWN ",
+			wantType:      cdx.CryptoProtocolTypeUnknown,
+			wantComponent: "unknown-v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component, err := NewConverter().convertAggregatedAsset(&AggregatedAsset{
+				AssetType: AssetTypeProtocol,
+				ReferenceAsset: &entities.CryptographicAsset{Metadata: map[string]string{
+					"assetType":       AssetTypeProtocol,
+					"protocolType":    tt.protocolType,
+					"protocolVersion": "v1",
+				}},
+			})
+			if err != nil {
+				t.Fatalf("convertAggregatedAsset() unexpected error: %v", err)
+			}
+			if component.Name != tt.wantComponent {
+				t.Errorf("component name = %q, want %q", component.Name, tt.wantComponent)
+			}
+			if component.CryptoProperties == nil || component.CryptoProperties.ProtocolProperties == nil {
+				t.Fatal("protocol component missing ProtocolProperties")
+			}
+			if got := component.CryptoProperties.ProtocolProperties.Type; got != tt.wantType {
+				t.Errorf("protocol type = %q, want %q", got, tt.wantType)
+			}
+			properties := propertyValues(*component)
+			if tt.wantProperty == "" {
+				if _, ok := properties["scanoss:protocolType"]; ok {
+					t.Errorf("unexpected scanoss:protocolType property: %q", properties["scanoss:protocolType"])
+				}
+			} else if properties["scanoss:protocolType"] != tt.wantProperty {
+				t.Errorf("protocol type property = %q, want %q", properties["scanoss:protocolType"], tt.wantProperty)
+			}
+		})
+	}
+}
+
+func TestConverter_ConvertProtocolWithoutVersion(t *testing.T) {
+	component, err := NewConverter().convertAggregatedAsset(&AggregatedAsset{
+		AssetType: AssetTypeProtocol,
+		ReferenceAsset: &entities.CryptographicAsset{Metadata: map[string]string{
+			"assetType":    AssetTypeProtocol,
+			"protocolType": " SSH ",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("convertAggregatedAsset() unexpected error: %v", err)
+	}
+	if component.Name != "ssh" {
+		t.Errorf("component name = %q, want %q", component.Name, "ssh")
+	}
+	if got := component.CryptoProperties.ProtocolProperties.Type; got != cdx.CryptoProtocolTypeSSH {
+		t.Errorf("protocol type = %q, want %q", got, cdx.CryptoProtocolTypeSSH)
+	}
+	if got := component.CryptoProperties.ProtocolProperties.Version; got != "" {
+		t.Errorf("protocol version = %q, want empty", got)
+	}
+}
+
+func TestConverter_ConvertCertificateFallbackName(t *testing.T) {
+	component, err := NewConverter().convertAggregatedAsset(&AggregatedAsset{
+		AssetType: AssetTypeCertificate,
+		ReferenceAsset: &entities.CryptographicAsset{
+			StartLine: 10,
+			EndLine:   12,
+			Metadata: map[string]string{
+				"assetType":         AssetTypeCertificate,
+				"certificateType":   "X.509",
+				"certificateFormat": "PEM",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertAggregatedAsset() unexpected error: %v", err)
+	}
+	if component.Name != "certificate:10:12:X.509:PEM" {
+		t.Errorf("component name = %q, want location-based fallback", component.Name)
+	}
+}
+
+func lenOrZero(components *[]cdx.Component) int {
+	if components == nil {
+		return 0
+	}
+	return len(*components)
+}
+
+func propertyValues(component cdx.Component) map[string]string {
+	values := make(map[string]string)
+	if component.Properties == nil {
+		return values
+	}
+	for _, property := range *component.Properties {
+		values[property.Name] = property.Value
+	}
+	return values
 }
 
 func TestConverter_MultipleRulesOnSameLine(t *testing.T) {

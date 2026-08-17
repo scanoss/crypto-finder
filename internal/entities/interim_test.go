@@ -170,14 +170,21 @@ func TestCryptographicAsset_GetKey_RelatedCryptoMaterial(t *testing.T) {
 
 func TestCryptographicAsset_GetKey_Protocol(t *testing.T) {
 	tests := []struct {
-		name         string
-		protocolType string
-		expectedKey  string
+		name            string
+		protocolType    string
+		protocolVersion string
+		expectedKey     string
 	}{
 		{
 			name:         "TLS",
 			protocolType: "tls",
 			expectedKey:  "protocol:tls",
+		},
+		{
+			name:            "normalizes protocol type and version",
+			protocolType:    " TLS ",
+			protocolVersion: " 1.3 ",
+			expectedKey:     "protocol:tls:1.3",
 		},
 		{
 			name:         "SSH",
@@ -200,8 +207,9 @@ func TestCryptographicAsset_GetKey_Protocol(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			asset := CryptographicAsset{
 				Metadata: map[string]string{
-					"assetType":    "protocol",
-					"protocolType": tt.protocolType,
+					"assetType":       "protocol",
+					"protocolType":    tt.protocolType,
+					"protocolVersion": tt.protocolVersion,
 				},
 			}
 

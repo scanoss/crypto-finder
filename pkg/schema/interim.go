@@ -268,8 +268,8 @@ func (c *CryptographicAsset) getRelatedCryptoMaterialKey() string {
 // Format: "protocol:<type>:<version>:<metadata>" or "protocol:<type>:<metadata>".
 // If protocolType is missing, fall back to a location-based key to avoid merging unrelated assets.
 func (c *CryptographicAsset) getProtocolKey() string {
-	protocolType := c.Metadata["protocolType"]
-	protocolVersion := c.Metadata["protocolVersion"]
+	protocolType := strings.ToLower(strings.TrimSpace(c.Metadata["protocolType"]))
+	protocolVersion := strings.TrimSpace(c.Metadata["protocolVersion"])
 
 	// Exclude fields already used in the primary key
 	excludeKeys := []string{"protocolType", "protocolVersion"}

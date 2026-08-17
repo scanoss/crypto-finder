@@ -666,3 +666,37 @@ func TestAggregator_CryptoFunctions_DedupedForRepeatedOperation(t *testing.T) {
 		t.Fatalf("expected deduped CryptoFunctions = [encrypt], got %v", got)
 	}
 }
+
+func TestAggregator_CertificateFallbackScopedByFile(t *testing.T) {
+	aggregator := NewAggregator()
+
+	makeAsset := func() entities.CryptographicAsset {
+		return entities.CryptographicAsset{
+			StartLine: 10,
+			EndLine:   12,
+			Rules:     []entities.RuleInfo{{ID: "certificate", Severity: "INFO"}},
+			Metadata: map[string]string{
+				"assetType":         AssetTypeCertificate,
+				"certificateType":   "X.509",
+				"certificateFormat": "PEM",
+			},
+		}
+	}
+
+	report := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "test", Version: "1.0"},
+		Findings: []entities.Finding{
+			{FilePath: "a.pem", CryptographicAssets: []entities.CryptographicAsset{makeAsset()}},
+			{FilePath: "b.pem", CryptographicAssets: []entities.CryptographicAsset{makeAsset()}},
+		},
+	}
+
+	aggregated, err := aggregator.AggregateAssets(report)
+	if err != nil {
+		t.Fatalf("AggregateAssets() error = %v", err)
+	}
+	if len(aggregated) != 2 {
+		t.Fatalf("expected 2 certificate aggregates, got %d", len(aggregated))
+	}
+}

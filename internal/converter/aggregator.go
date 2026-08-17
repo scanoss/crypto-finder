@@ -19,6 +19,7 @@ package converter
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -131,13 +132,14 @@ func (a *Aggregator) AggregateAssets(report *entities.InterimReport) ([]Aggregat
 			}
 
 			// Generate the asset key (CDX component name) based on asset type
-			assetKey := a.getAssetKey(asset)
+			assetName := a.getAssetKey(asset)
+			assetKey := a.getAggregationKey(asset, finding.FilePath)
 
 			// Create or retrieve aggregated asset
 			aggregated, exists := assetMap[assetKey]
 			if !exists {
 				aggregated = &AggregatedAsset{
-					Name:             assetKey,
+					Name:             assetName,
 					AssetType:        assetType,
 					Occurrences:      []AssetOccurrence{},
 					Identities:       []AssetIdentity{},
@@ -181,6 +183,15 @@ func (a *Aggregator) AggregateAssets(report *entities.InterimReport) ([]Aggregat
 	return result, nil
 }
 
+// getAggregationKey scopes serial-less certificate identities to their source file.
+func (a *Aggregator) getAggregationKey(asset *entities.CryptographicAsset, filePath string) string {
+	key := a.getAssetKey(asset)
+	if asset.Metadata["assetType"] == AssetTypeCertificate && strings.TrimSpace(asset.Metadata["certificateSerialNumber"]) == "" {
+		return filePath + "\x00" + key
+	}
+	return key
+}
+
 // getAssetKey generates the unique key for grouping assets.
 // For algorithms, this is the CDX component name (e.g., "SHA-256", "AES-256-GCM").
 // For related-crypto-material, this is also based on the name pattern.
@@ -192,8 +203,10 @@ func (a *Aggregator) getAssetKey(asset *entities.CryptographicAsset) string {
 		return a.algorithmMapper.getAlgorithmName(asset)
 	case AssetTypeRelatedCryptoMaterial:
 		return a.relatedCryptoMapper.getMaterialName(asset)
+	case AssetTypeProtocol, AssetTypeCertificate:
+		return asset.GetKey()
 	default:
-		// For other types, we'll handle them later
+		// For other types, there is no supported aggregation key.
 		return ""
 	}
 }
