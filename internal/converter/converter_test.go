@@ -393,7 +393,7 @@ func TestConverter_ConvertProtocolAndCertificateProperties(t *testing.T) {
 	if got := certificate.CryptoProperties.CertificateProperties.CertificateFormat; got != "PEM" {
 		t.Errorf("certificate format = %q, want %q", got, "PEM")
 	}
-	properties := propertyValues(certificate)
+	properties := propertyValues(&certificate)
 	if properties["scanoss:certificateSerialNumber"] != "01:02" {
 		t.Errorf("certificate serial property = %q, want %q", properties["scanoss:certificateSerialNumber"], "01:02")
 	}
@@ -452,7 +452,7 @@ func TestConverter_ConvertUnknownProtocolType(t *testing.T) {
 			if got := component.CryptoProperties.ProtocolProperties.Type; got != tt.wantType {
 				t.Errorf("protocol type = %q, want %q", got, tt.wantType)
 			}
-			properties := propertyValues(*component)
+			properties := propertyValues(component)
 			if tt.wantProperty == "" {
 				if _, ok := properties["scanoss:protocolType"]; ok {
 					t.Errorf("unexpected scanoss:protocolType property: %q", properties["scanoss:protocolType"])
@@ -514,9 +514,9 @@ func lenOrZero(components *[]cdx.Component) int {
 	return len(*components)
 }
 
-func propertyValues(component cdx.Component) map[string]string {
+func propertyValues(component *cdx.Component) map[string]string {
 	values := make(map[string]string)
-	if component.Properties == nil {
+	if component == nil || component.Properties == nil {
 		return values
 	}
 	for _, property := range *component.Properties {
