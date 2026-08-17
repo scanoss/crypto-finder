@@ -1157,7 +1157,20 @@ func traceBackward(
 	// graphs each node appears on exactly one chain, so behavior is unchanged.
 	supportingSeen := make(map[graphNode]bool)
 
+	// backwardDistances walks a plain caller map; the chain walk needs the call
+	// sites too. Flatten once rather than per operation.
+	var plainReverse map[graphNode][]graphNode
+	if condensedEntryPointsEnabled() {
+		plainReverse = callersWithoutCallSites(reverse)
+	}
+
 	for _, opNode := range sortedNodes(opsByNode) {
+		if plainReverse != nil {
+			// Answer "which functions reach this crypto" from the graph, before
+			// any chain is emitted, so the published surface stops depending on
+			// which chains happened to survive (issue #249).
+			recordReachEntries(opNode, plainReverse, entrySet, fragments, functionsByNode, out)
+		}
 		chains := backwardBFS(opNode, reverse, entrySet)
 		if len(chains) == 0 {
 			// No backward chain reached an entry (the op node has no callers, or none

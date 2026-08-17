@@ -78,6 +78,50 @@ func buildJedisShapeGraph() (*CallGraph, FunctionID, map[string]bool) {
 	return graph, socket.ID, map[string]bool{"com.example": true}
 }
 
+// buildPostgresShapeGraph reproduces the second acceptance case: two library
+// functions that converge on the same caller, taken from the pgjdbc driver.
+//
+//	Driver.connect ──→ PgConnection.<init>     ──┐
+//	               └─→ PgConnection.setReadOnly ─┴──→ QueryExecutor.sendQueryCancel
+//	                                                        └──→ PGStream.getSocketFactory
+//
+// It matters because everything here sits FAR below both bounds — one chain
+// against a budget of 128, four frames against a depth cap of 32 — so a fix
+// that merely raised the cap cannot make this case pass. The loss is purely the
+// shared-caller collapse.
+func buildPostgresShapeGraph() (*CallGraph, FunctionID) {
+	mk := func(typ, name string, line int) *FunctionDecl {
+		id := FunctionID{Package: "org.postgresql", Type: typ, Name: name}
+		return &FunctionDecl{ID: id, FilePath: "/" + typ + ".java", StartLine: line, EndLine: line + 5}
+	}
+
+	connect := mk("Driver", "connect", 100)
+	ctor := mk("PgConnection", "<init>", 200)
+	readOnly := mk("PgConnection", "setReadOnly", 300)
+	cancel := mk("QueryExecutor", "sendQueryCancel", 400)
+	stream := mk("PGStream", "getSocketFactory", 500)
+
+	all := []*FunctionDecl{connect, ctor, readOnly, cancel, stream}
+	functions := make(map[string]*FunctionDecl, len(all))
+	for _, fn := range all {
+		functions[fn.ID.String()] = fn
+	}
+
+	connect.Calls = []FunctionCall{{Callee: ctor.ID, Line: 101}, {Callee: readOnly.ID, Line: 102}}
+	ctor.Calls = []FunctionCall{{Callee: cancel.ID, Line: 201}}
+	readOnly.Calls = []FunctionCall{{Callee: cancel.ID, Line: 301}}
+	cancel.Calls = []FunctionCall{{Callee: stream.ID, Line: 401}}
+
+	callers := map[string][]string{
+		ctor.ID.String():     {connect.ID.String()},
+		readOnly.ID.String(): {connect.ID.String()},
+		cancel.ID.String():   {ctor.ID.String(), readOnly.ID.String()},
+		stream.ID.String():   {cancel.ID.String()},
+	}
+
+	return &CallGraph{Functions: functions, Callers: callers}, stream.ID
+}
+
 func chainSignature(chain CallChain) string {
 	parts := make([]string, 0, len(chain.Steps))
 	for _, step := range chain.Steps {
@@ -336,6 +380,74 @@ func TestReachingFunctions_DepthIsTrueMinimum(t *testing.T) {
 	}
 	if !termNames["run"] || len(termNames) != 1 {
 		t.Errorf("terminals = %v, want only run", termNames)
+	}
+}
+
+// TestPostgresShape_LossIsNotTheChainCap is the guard that keeps this fix from
+// being mistaken for a cap raise: with one chain against a budget of 128 and
+// four frames against a depth cap of 32, RAISING THE CAP CHANGES NOTHING — and
+// the set still reports both converging functions.
+func TestPostgresShape_LossIsNotTheChainCap(t *testing.T) {
+	t.Parallel()
+	graph, target := buildPostgresShapeGraph()
+	tracer := NewTracer(graph, ".")
+
+	covered := func(chains []CallChain) map[string]bool {
+		out := map[string]bool{}
+		for _, chain := range chains {
+			for _, step := range chain.Steps {
+				out[step.Function.Type+"."+step.Function.Name] = true
+			}
+		}
+		return out
+	}
+
+	// Neither bound is anywhere near being hit...
+	chains, truncated := tracer.TraceBackLimited(target, nil, 32, 128)
+	if len(chains) != 1 || truncated {
+		t.Fatalf("chains=%d truncated=%v, want 1 chain and no truncation", len(chains), truncated)
+	}
+	if got := len(chains[0].Steps); got != 4 {
+		t.Fatalf("chain length = %d, want 4 (far below the depth cap of 32)", got)
+	}
+
+	// ...and raising the cap by three orders of magnitude recovers nothing.
+	raised, _ := tracer.TraceBackLimited(target, nil, 32, 100000)
+	if len(raised) != 1 {
+		t.Fatalf("chains at cap=100000 = %d, want still 1: the cap is not what loses the function", len(raised))
+	}
+	both := covered(raised)
+	if both["PgConnection.<init>"] && both["PgConnection.setReadOnly"] {
+		t.Fatal("both converging functions covered; the fixture no longer exercises the collapse")
+	}
+
+	// The set has both, at their true distances.
+	depths, terminals := tracer.ReachingFunctions(target, nil, 32)
+	byName := map[string]int{}
+	for key, d := range depths {
+		if id, err := ParseFunctionID(key); err == nil {
+			byName[id.Type+"."+id.Name] = d
+		}
+	}
+	for _, want := range []string{"PgConnection.<init>", "PgConnection.setReadOnly"} {
+		if _, ok := byName[want]; !ok {
+			t.Errorf("%s missing from the reaching set", want)
+		} else if byName[want] != 2 {
+			t.Errorf("depth of %s = %d, want 2", want, byName[want])
+		}
+	}
+
+	// And the condensed traceback emits a chain for each route.
+	condensed, total, _ := tracer.TraceBackCondensed(target, nil, 32, 128)
+	if total != 2 {
+		t.Fatalf("total condensed routes = %d, want 2", total)
+	}
+	got := covered(condensed)
+	if !got["PgConnection.<init>"] || !got["PgConnection.setReadOnly"] {
+		t.Errorf("condensed chains cover %v, want both converging functions", got)
+	}
+	if len(terminals) != 1 {
+		t.Errorf("terminals = %d, want only the graph root Driver.connect", len(terminals))
 	}
 }
 
