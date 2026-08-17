@@ -62,6 +62,7 @@ const (
 	javaNodeTypeIdentifier       = "type_identifier"
 	javaNodeLineComment          = "line_comment"
 	javaNodeBlockComment         = "block_comment"
+	javaRootType                 = "Object"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -423,7 +424,7 @@ func parseJavaTypeParamBounds(text string) map[string]string {
 			continue
 		}
 		name := fields[0]
-		bound := "Object"
+		bound := javaRootType
 		if len(fields) >= 3 && fields[1] == "extends" {
 			bound = strings.TrimSpace(stripGenericSuffix(fields[2]))
 			if amp := strings.Index(bound, "&"); amp > 0 {
@@ -687,10 +688,20 @@ func (p *JavaParser) collectClassFieldAssignments(
 			continue
 		}
 		for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
-			assignments[key] = value
+			mergeFieldAssignment(assignments, key, value)
 		}
 	}
 	return assignments
+}
+
+func mergeFieldAssignment(assignments map[string]fieldAssignment, fieldName string, assignment fieldAssignment) {
+	if previous, exists := assignments[fieldName]; exists {
+		previous.valid = false
+		previous.resolvedType = ""
+		assignments[fieldName] = previous
+		return
+	}
+	assignments[fieldName] = assignment
 }
 
 func findConstructorBody(node *sitter.Node) *sitter.Node {
@@ -1032,8 +1043,11 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	// Add field origins with constructor parameter tracing
 	for k, v := range fieldTypes {
 		origin := varOrigin{typeName: v, kind: "field", filePath: filePath, paramIndex: -1}
-		if fa, ok := fieldAssignments[k]; ok {
-			origin.constructorParam = &fa
+		if fa, ok := fieldAssignments[k]; ok && fa.valid {
+			origin.resolvedReceiverType = fa.resolvedType
+			if fa.paramName != "" {
+				origin.constructorParam = &fa
+			}
 		}
 		varOrigins[k] = origin
 	}
@@ -1045,28 +1059,31 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	return calls
 }
 
-// fieldAssignment records that a class field was assigned from a constructor parameter.
+// fieldAssignment records one constructor assignment to a class field.
 type fieldAssignment struct {
-	paramName  string // constructor parameter name
-	paramIndex int    // parameter index (0-based)
-	paramType  string // parameter type
-	line       int    // assignment line
-	filePath   string
+	paramName    string // constructor parameter name
+	paramIndex   int    // parameter index (0-based)
+	paramType    string // parameter type
+	line         int    // assignment line
+	filePath     string
+	resolvedType string // concrete assigned type, when known
+	valid        bool   // false when the field has multiple candidate assignments
 }
 
 // varOrigin tracks where a variable's value comes from.
 type varOrigin struct {
-	typeName         string // declared type (e.g., "Cipher")
-	kind             string // "parameter", "field", "local_variable"
-	initializer      string // raw initializer expression (e.g., "Cipher.getInstance(\"AES\")")
-	line             int    // declaration line
-	filePath         string
-	paramIndex       int              // for parameters: which param (0-based), -1 otherwise
-	constructorParam *fieldAssignment // for fields: which constructor param assigned this field
+	typeName             string // declared type (e.g., "Cipher")
+	kind                 string // "parameter", "field", "local_variable"
+	initializer          string // raw initializer expression (e.g., "Cipher.getInstance(\"AES\")")
+	line                 int    // declaration line
+	filePath             string
+	paramIndex           int              // for parameters: which param (0-based), -1 otherwise
+	constructorParam     *fieldAssignment // for fields: which constructor param assigned this field
+	resolvedReceiverType string           // concrete type assigned to a field, when unambiguous
 }
 
-// extractFieldAssignments scans a constructor body for `this.field = param` patterns
-// and returns a map of field name → constructor parameter source.
+// extractFieldAssignments scans a constructor body for field assignments from
+// constructor parameters or direct constructor expressions.
 func (p *JavaParser) extractFieldAssignments(
 	constructorNode *sitter.Node,
 	body *sitter.Node,
@@ -1095,10 +1112,6 @@ func (p *JavaParser) extractFieldAssignments(
 			}
 		}
 	}
-	if len(paramMap) == 0 {
-		return nil
-	}
-
 	result := make(map[string]fieldAssignment)
 	p.walkForFieldAssignments(body, src, filePath, fieldTypes, paramMap, paramTypes, result)
 	return result
@@ -1115,7 +1128,7 @@ func (p *JavaParser) walkForFieldAssignments(
 	result map[string]fieldAssignment,
 ) {
 	if assignment := parseFieldAssignmentNode(node, src, filePath, fieldTypes, paramMap, paramTypes); assignment != nil {
-		result[assignment.fieldName] = assignment.assignment
+		mergeFieldAssignment(result, assignment.fieldName, assignment.assignment)
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -1151,20 +1164,53 @@ func parseFieldAssignmentNode(
 	}
 	rightExpr := strings.TrimSpace(right.Content(src))
 	paramIdx, ok := paramMap[rightExpr]
-	if !ok {
-		return nil
+	if ok {
+		paramType := paramTypes[rightExpr]
+		return &parsedFieldAssignment{
+			fieldName: fieldName,
+			assignment: fieldAssignment{
+				paramName:    rightExpr,
+				paramIndex:   paramIdx,
+				paramType:    paramType,
+				line:         int(node.StartPoint().Row) + 1,
+				filePath:     filePath,
+				resolvedType: concreteFieldReceiverType(fieldTypes[fieldName], paramType),
+				valid:        true,
+			},
+		}
 	}
 
+	typeName, _, ok := parseJavaConstructorExpression(rightExpr)
+	if !ok {
+		return &parsedFieldAssignment{
+			fieldName: fieldName,
+			assignment: fieldAssignment{
+				line:     int(node.StartPoint().Row) + 1,
+				filePath: filePath,
+			},
+		}
+	}
 	return &parsedFieldAssignment{
 		fieldName: fieldName,
 		assignment: fieldAssignment{
-			paramName:  rightExpr,
-			paramIndex: paramIdx,
-			paramType:  paramTypes[rightExpr],
-			line:       int(node.StartPoint().Row) + 1,
-			filePath:   filePath,
+			line:         int(node.StartPoint().Row) + 1,
+			filePath:     filePath,
+			resolvedType: strings.TrimSpace(stripGenericSuffix(typeName)),
+			valid:        true,
 		},
 	}
+}
+
+func concreteFieldReceiverType(fieldType, assignedType string) string {
+	fieldType = strings.TrimSpace(stripGenericSuffix(fieldType))
+	assignedType = strings.TrimSpace(stripGenericSuffix(assignedType))
+	if assignedType == "" || simpleJavaTypeName(assignedType) == javaRootType {
+		return ""
+	}
+	if simpleJavaTypeName(fieldType) == simpleJavaTypeName(assignedType) {
+		return ""
+	}
+	return assignedType
 }
 
 func assignedFieldName(left *sitter.Node, src []byte, fieldTypes map[string]string) string {
@@ -1927,14 +1973,16 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	}
 
 	chainID, assignedVar := callChainContext(node, src)
+	receiverVar := receiverVarName(receiverText, varTypes, varOrigins)
 	return &FunctionCall{
-		Callee:      callee,
-		ReceiverVar: receiverVarName(receiverText, varTypes, varOrigins),
-		AssignedVar: assignedVar,
-		ChainID:     chainID,
-		Raw:         raw,
-		FilePath:    filePath,
-		Line:        line,
+		Callee:               callee,
+		ResolvedReceiverType: fieldResolvedReceiverType(receiverVar, varOrigins),
+		ReceiverVar:          receiverVar,
+		AssignedVar:          assignedVar,
+		ChainID:              chainID,
+		Raw:                  raw,
+		FilePath:             filePath,
+		Line:                 line,
 		// Convert tree-sitter 0-based byte columns to the internal 1-based
 		// convention. StartCol is inclusive; EndCol is exclusive (one past last
 		// byte of the call expression node on its start/end row).
@@ -1943,6 +1991,13 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
+}
+
+func fieldResolvedReceiverType(receiverVar string, varOrigins map[string]varOrigin) string {
+	if origin, ok := varOrigins[receiverVar]; ok && origin.kind == javaVarOriginKindField {
+		return origin.resolvedReceiverType
+	}
+	return ""
 }
 
 // receiverVarName returns the receiver as a local-variable name when the method
