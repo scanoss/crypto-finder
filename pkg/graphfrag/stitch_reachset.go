@@ -105,11 +105,47 @@ func recordReachEntries(
 	out.reachByAnchor[opNode] = entries
 }
 
+// recordRouteTotal files the exact route count for an operation so the served
+// entry points can state it. Truncation rides the same field the schema already
+// reads; the total adds what that cannot express — how much was left out.
+func recordRouteTotal(opNode graphNode, total int, truncated bool, out *Result) {
+	if out.routeTotals == nil {
+		out.routeTotals = make(map[graphNode]routeCount)
+	}
+	out.routeTotals[opNode] = routeCount{total: total, truncated: truncated}
+}
+
+// routeCount is how many distinct routes reach one crypto operation, and whether
+// the emitted chains cover all of them.
+type routeCount struct {
+	total     int
+	truncated bool
+}
+
+// recordEPFindingWithRoutes is recordEPFinding plus the route count, kept
+// separate so the chain-derived builder stays untouched.
+func recordEPFindingWithRoutes(ep *epData, fg *ExportFindingGraph, depth int, routes routeCount) {
+	if ep == nil || fg == nil || fg.MatchedOperation == nil {
+		return
+	}
+	existing, exists := ep.findings[fg.FindingID]
+	if exists && depth >= existing.depth {
+		return
+	}
+	ep.findings[fg.FindingID] = epFindingRef{
+		findingID: fg.FindingID,
+		matchedOp: fg.MatchedOperation,
+		depth:     depth,
+		routes:    routes,
+	}
+}
+
 // buildEntryPointsFromReach builds the served index from the reachability sets,
 // keeping the same entry shape and the same supporting-call attachment the
 // chain-derived builder produced.
 func buildEntryPointsFromReach(
 	reachByAnchor map[graphNode][]reachEntry,
+	routeTotals map[graphNode]routeCount,
 	anchorByFinding map[string]graphNode,
 	root ComponentKey,
 	findingGraphs []ExportFindingGraph,
@@ -128,10 +164,12 @@ func buildEntryPointsFromReach(
 
 	for i := range findingGraphs {
 		fg := &findingGraphs[i]
-		entries := reachByAnchor[anchorByFinding[fg.FindingID]]
+		anchor := anchorByFinding[fg.FindingID]
+		entries := reachByAnchor[anchor]
 		if len(entries) == 0 || fg.MatchedOperation == nil {
 			continue
 		}
+		routes := routeTotals[anchor]
 		for j := range entries {
 			entry := &entries[j]
 			node := buildExportNode(&entry.frame, root)
@@ -139,7 +177,7 @@ func buildEntryPointsFromReach(
 				continue
 			}
 			ep := ensureEPData(index, &node)
-			recordEPFinding(ep, fg, entry.depth)
+			recordEPFindingWithRoutes(ep, fg, entry.depth, routes)
 			if entry.root {
 				rootKeys[ep.functionKey] = true
 			}
