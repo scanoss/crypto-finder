@@ -43,6 +43,10 @@ const (
 
 	// AssetTypeRelatedCryptoMaterial represents keys, tokens, secrets, passwords, digests, IVs.
 	AssetTypeRelatedCryptoMaterial = "related-crypto-material"
+
+	scanossCertificateSerialNumberPropertyName = "scanoss:certificateSerialNumber"
+	scanossCertificateTypePropertyName         = "scanoss:certificateType"
+	scanossProtocolTypePropertyName            = "scanoss:protocolType"
 )
 
 // Converter transforms interim reports to CycloneDX BOM format.
@@ -141,6 +145,7 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Component, error) {
 	var baseComponent *cdx.Component
 	var err error
+	componentName := aggregated.Name
 
 	switch aggregated.AssetType {
 	case AssetTypeAlgorithm:
@@ -154,10 +159,66 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 		)
 
 	case AssetTypeProtocol:
-		return nil, fmt.Errorf("asset type 'protocol' is not yet implemented")
+		asset := aggregated.ReferenceAsset
+		rawProtocolType := asset.Metadata["protocolType"]
+		protocolType := strings.ToLower(strings.TrimSpace(rawProtocolType))
+		if protocolType == "" {
+			return nil, fmt.Errorf("converter: missing required field 'protocolType'")
+		}
+		protocolVersion := strings.TrimSpace(asset.Metadata["protocolVersion"])
+		protocolProperties := &cdx.CryptoProtocolProperties{Version: protocolVersion}
+
+		switch cdx.CryptoProtocolType(protocolType) {
+		case cdx.CryptoProtocolTypeTLS,
+			cdx.CryptoProtocolTypeSSH,
+			cdx.CryptoProtocolTypeIPSec,
+			cdx.CryptoProtocolTypeIKE,
+			cdx.CryptoProtocolTypeSSTP,
+			cdx.CryptoProtocolTypeWPA,
+			cdx.CryptoProtocolTypeOther,
+			cdx.CryptoProtocolTypeUnknown:
+			protocolProperties.Type = cdx.CryptoProtocolType(protocolType)
+		default:
+			// CycloneDX 1.6 has no enum value for this protocol, so preserve the
+			// source value as a SCANOSS property instead of inventing an enum.
+		}
+
+		baseComponent = &cdx.Component{
+			Type:   cdx.ComponentTypeCryptographicAsset,
+			BOMRef: generateBOMRef(),
+			CryptoProperties: &cdx.CryptoProperties{
+				AssetType:          cdx.CryptoAssetTypeProtocol,
+				ProtocolProperties: protocolProperties,
+			},
+		}
+		if protocolProperties.Type == "" {
+			addCustomProperty(baseComponent, scanossProtocolTypePropertyName, rawProtocolType)
+		}
+		componentName = protocolType
+		if protocolVersion != "" {
+			componentName += "-" + protocolVersion
+		}
 
 	case AssetTypeCertificate:
-		return nil, fmt.Errorf("asset type 'certificate' is not yet implemented")
+		asset := aggregated.ReferenceAsset
+		serialNumber := strings.TrimSpace(asset.Metadata["certificateSerialNumber"])
+		componentName = serialNumber
+		if componentName == "" {
+			componentName = asset.GetKey()
+		}
+
+		baseComponent = &cdx.Component{
+			Type:   cdx.ComponentTypeCryptographicAsset,
+			BOMRef: generateBOMRef(),
+			CryptoProperties: &cdx.CryptoProperties{
+				AssetType: cdx.CryptoAssetTypeCertificate,
+				CertificateProperties: &cdx.CertificateProperties{
+					CertificateFormat: asset.Metadata["certificateFormat"],
+				},
+			},
+		}
+		addCustomProperty(baseComponent, scanossCertificateSerialNumberPropertyName, asset.Metadata["certificateSerialNumber"])
+		addCustomProperty(baseComponent, scanossCertificateTypePropertyName, asset.Metadata["certificateType"])
 
 	default:
 		return nil, fmt.Errorf("unsupported asset type '%s'", aggregated.AssetType)
@@ -167,7 +228,7 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 		return nil, err
 	}
 
-	baseComponent.Name = aggregated.Name
+	baseComponent.Name = componentName
 	baseComponent.Evidence = c.buildEvidence(aggregated)
 
 	if aggregated.AssetType == AssetTypeAlgorithm {
