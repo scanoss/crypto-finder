@@ -572,12 +572,6 @@ type Result struct {
 	// this instead of from the chains that survived the stitch, so a capped or
 	// collapsed traversal can no longer silently shrink the published surface.
 	reachByAnchor map[graphNode][]reachEntry
-
-	// routeTotals is the exact number of distinct routes to each crypto
-	// operation, counted before any chain was built, plus whether the emitted
-	// chains cover all of them. Lets a truncated export state how much it left
-	// out instead of cutting silently (issue #249).
-	routeTotals map[graphNode]routeCount
 }
 
 // FindingChain is one root-to-crypto path.

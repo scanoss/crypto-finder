@@ -42,24 +42,6 @@
           "root": {
             "type": "boolean",
             "description": "True when this entry point is where a chain starts: the first root-module caller in dependency mode, or an in-degree-zero graph root in standalone mode."
-          },
-          "user_call_sites": {
-            "type": "array",
-            "description": "Calls in scanned code that reach the crypto, deduplicated per line and callee.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "file_path": {
-                  "type": "string"
-                },
-                "line": {
-                  "type": "integer"
-                },
-                "callee": {
-                  "type": "string"
-                }
-              }
-            }
           }
         }
       }

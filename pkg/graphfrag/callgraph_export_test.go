@@ -421,7 +421,6 @@ func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
 			{frame: CallFrame{Signature: terminalFn.Signature, Function: terminalFn}, depth: 1},
 			{frame: CallFrame{Signature: entryFn.Signature, Function: entryFn}, depth: 2, root: true},
 		}},
-		map[graphNode]routeCount{anchor: {total: 1}},
 		map[string]graphNode{"finding-1": anchor},
 		ComponentKey{},
 		[]ExportFindingGraph{{
@@ -453,8 +452,8 @@ func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
 	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
 		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
 	}
-	if got := entryPoint.ReachableFindings[0]; got.PathsTotal != 1 {
-		t.Fatalf("reachable_findings[0].paths_total = %d, want 1", got.PathsTotal)
+	if got := entryPoint.ReachableFindings[0]; got.ChainDepth != 2 {
+		t.Fatalf("reachable_findings[0].chain_depth = %d, want 2", got.ChainDepth)
 	}
 }
 

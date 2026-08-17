@@ -10,15 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
 - CycloneDX 1.6 CBOM exports now include protocol assets with protocol type/version metadata and certificate assets with certificate format, serial number, and certificate type metadata. (#239)
-- `crypto_entry_points[].user_call_sites` gives the file and line of the calls in scanned code that reach the crypto, deduplicated per line and callee so an over-approximated receiver does not publish the same source line more than once. Naming the API that triggers crypto without naming the line to change left a reader fixing one call and never learning about the next one. (#249)
-- `crypto_entry_points[].reachable_findings[].paths_total` and `paths_truncated` report the exact number of distinct routes to a finding, counted before any chain is emitted. A `call_chains` array cut by the per-finding budget now states how much it left out instead of cutting silently. (#249)
 
 ### Fixed
 - `crypto_entry_points` now lists every function that reaches a crypto finding, on the live `--export-callgraph`, the graph-fragment, and the stitched/served paths. The index was previously folded from the call chains that happened to be exported, so a function was omitted whenever its only route collapsed at a shared caller or fell outside the per-finding chain budget — even though the stored graph proved it reaches the crypto. On `redis.clients:jedis@5.1.0`, 71 of the 1,142 reaching functions were published, with `Jedis.set`, `Jedis.get` and `Jedis.auth` among those missing. Consumers filtering with an entry-point signature list were losing the findings reachable only through an omitted entry point. (#249)
 - Served call chains are enumerated over the same cycle-condensed graph the live exporter uses, so both report the same routes through a re-convergent graph instead of the stitched export reporting a subset. (#249)
 
 ### Changed
-- Callgraph export schema is now `6.9`. `crypto_entry_points[]` answers reverse reachability rather than projecting the exported chains, so it contains more entries than before, and `chain_depth` is the true minimum frame distance — some depths are therefore smaller than the same export previously reported. `crypto_entry_points[].root` continues to mark the chain roots. Consumers that treated the index as an inventory of the exported chains should read it as a reachability answer. (#249)
+- Callgraph export schema is now `6.9`. `crypto_entry_points[]` answers reverse reachability rather than projecting the exported `call_chains`, so it contains more entries than before, and `chain_depth` is the true minimum frame distance — some depths are therefore smaller than the same export previously reported. No field was added or removed; `crypto_entry_points[].root` continues to mark the chain roots. Consumers that treated the index as an inventory of the exported chains should read it as a reachability answer. (#249)
 
 ## [0.19.0] - 2026-08-14
 

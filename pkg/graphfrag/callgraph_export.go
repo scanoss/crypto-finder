@@ -438,12 +438,6 @@ type ExportReachableFinding struct {
 	ChainDepth int `json:"chain_depth"`
 	// FindingGraphRef is the finding_id cross-reference.
 	FindingGraphRef string `json:"finding_graph_ref"`
-	// PathsTotal is the exact number of distinct routes from this entry point's
-	// side of the graph to the finding, counted before any chain was built.
-	// PathsTruncated says whether call_chains carries all of them. Together they
-	// replace a silent cut with a stated one (issue #249).
-	PathsTotal     int  `json:"paths_total,omitempty"`
-	PathsTruncated bool `json:"paths_truncated,omitempty"`
 }
 
 // ExportReachableSupportingCall is one reachable supporting call entry inside
@@ -577,7 +571,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	// which of them are roots, so it needs neither a chain fold nor a chain-head
 	// root scan (issue #249).
 	out.CryptoEntryPoints = buildEntryPointsFromReach(
-		r.reachByAnchor, r.routeTotals, anchorByFinding, root, out.FindingGraphs, out.SupportingCalls)
+		r.reachByAnchor, anchorByFinding, root, out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
 	for i := range out.CryptoEntryPoints {
@@ -1316,9 +1310,6 @@ type epFindingRef struct {
 	findingID string
 	matchedOp *ExportMatchedOperation
 	depth     int
-	// routes is the exact route total for the finding and whether the emitted
-	// chains cover it; zero value means the count was not computed.
-	routes routeCount
 }
 
 type epData struct {
@@ -1448,8 +1439,6 @@ func flattenEPI(index map[string]*epData) []ExportCryptoEntryPoint {
 				MatchedOperation: ref.matchedOp,
 				ChainDepth:       ref.depth,
 				FindingGraphRef:  ref.findingID,
-				PathsTotal:       ref.routes.total,
-				PathsTruncated:   ref.routes.truncated,
 			})
 		}
 		sort.Slice(findings, func(i, j int) bool {
