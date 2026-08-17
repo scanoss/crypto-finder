@@ -40,8 +40,8 @@ func entryPointSignatures(t *testing.T, res *Result, root ComponentKey, module s
 	t.Helper()
 	export := res.ToCallgraphExport(root, ScanMeta{RootModule: module, Ecosystem: "java"})
 	out := make([]string, 0, len(export.CryptoEntryPoints))
-	for _, ep := range export.CryptoEntryPoints {
-		out = append(out, ep.CanonicalSignature)
+	for i := range export.CryptoEntryPoints {
+		out = append(out, export.CryptoEntryPoints[i].CanonicalSignature)
 	}
 	sort.Strings(out)
 	return out
