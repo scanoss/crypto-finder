@@ -1176,8 +1176,10 @@ func traceBackward(
 	for _, opNode := range sortedNodes(opsByNode) {
 		// Enumerate the routes over the collapsed graph, so the served chains
 		// report the same routes live does for the same map.
-		chains, total, truncated := condensedBackwardChains(opNode, reverse, entrySet)
-		recordRouteTotal(opNode, total, truncated, out)
+		// The route total is counted before enumerating (condensedBackwardChains
+		// returns it) but is not published: the served contract has no field for
+		// it, and this package stays free of a logger by design.
+		chains, _, _ := condensedBackwardChains(opNode, reverse, entrySet)
 		if len(chains) == 0 {
 			// No backward chain reached an entry (the op node has no callers, or none
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:

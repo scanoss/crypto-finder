@@ -95,47 +95,11 @@ func recordReachEntries(
 	out.reachByAnchor[opNode] = entries
 }
 
-// recordRouteTotal files the exact route count for an operation so the served
-// entry points can state it. Truncation rides the same field the schema already
-// reads; the total adds what that cannot express — how much was left out.
-func recordRouteTotal(opNode graphNode, total int, truncated bool, out *Result) {
-	if out.routeTotals == nil {
-		out.routeTotals = make(map[graphNode]routeCount)
-	}
-	out.routeTotals[opNode] = routeCount{total: total, truncated: truncated}
-}
-
-// routeCount is how many distinct routes reach one crypto operation, and whether
-// the emitted chains cover all of them.
-type routeCount struct {
-	total     int
-	truncated bool
-}
-
-// recordEPFindingWithRoutes is recordEPFinding plus the route count, kept
-// separate so the chain-derived builder stays untouched.
-func recordEPFindingWithRoutes(ep *epData, fg *ExportFindingGraph, depth int, routes routeCount) {
-	if ep == nil || fg == nil || fg.MatchedOperation == nil {
-		return
-	}
-	existing, exists := ep.findings[fg.FindingID]
-	if exists && depth >= existing.depth {
-		return
-	}
-	ep.findings[fg.FindingID] = epFindingRef{
-		findingID: fg.FindingID,
-		matchedOp: fg.MatchedOperation,
-		depth:     depth,
-		routes:    routes,
-	}
-}
-
 // buildEntryPointsFromReach builds the served index from the reachability sets,
 // keeping the same entry shape and the same supporting-call attachment the
 // chain-derived builder produced.
 func buildEntryPointsFromReach(
 	reachByAnchor map[graphNode][]reachEntry,
-	routeTotals map[graphNode]routeCount,
 	anchorByFinding map[string]graphNode,
 	root ComponentKey,
 	findingGraphs []ExportFindingGraph,
@@ -155,7 +119,7 @@ func buildEntryPointsFromReach(
 	for i := range findingGraphs {
 		fg := &findingGraphs[i]
 		anchor := anchorByFinding[fg.FindingID]
-		indexFindingReach(index, rootKeys, fg, reachByAnchor[anchor], routeTotals[anchor],
+		indexFindingReach(index, rootKeys, fg, reachByAnchor[anchor],
 			root, supportingByID, referencedSupporting)
 	}
 
@@ -183,7 +147,6 @@ func indexFindingReach(
 	rootKeys map[string]bool,
 	fg *ExportFindingGraph,
 	entries []reachEntry,
-	routes routeCount,
 	root ComponentKey,
 	supportingByID map[string]ExportSupportingCall,
 	referencedSupporting map[string]struct{},
@@ -198,7 +161,7 @@ func indexFindingReach(
 			continue
 		}
 		ep := ensureEPData(index, &node)
-		recordEPFindingWithRoutes(ep, fg, entry.depth, routes)
+		recordReachEPFinding(ep, fg, entry.depth)
 		if entry.root {
 			rootKeys[ep.functionKey] = true
 		}
@@ -238,5 +201,23 @@ func recordAllReachEntries(
 ) {
 	for _, opNode := range sortedNodes(opsByNode) {
 		recordReachEntries(opNode, reverse, entrySet, fragments, functionsByNode, out)
+	}
+}
+
+// recordReachEPFinding records the finding reference, keeping the shallowest
+// depth when the same finding is reachable from an entry point by more than one
+// distance.
+func recordReachEPFinding(ep *epData, fg *ExportFindingGraph, depth int) {
+	if ep == nil || fg == nil || fg.MatchedOperation == nil {
+		return
+	}
+	existing, exists := ep.findings[fg.FindingID]
+	if exists && depth >= existing.depth {
+		return
+	}
+	ep.findings[fg.FindingID] = epFindingRef{
+		findingID: fg.FindingID,
+		matchedOp: fg.MatchedOperation,
+		depth:     depth,
 	}
 }

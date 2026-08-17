@@ -1,10 +1,6 @@
 package scan
 
-import (
-	"fmt"
-
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-)
+import "github.com/scanoss/crypto-finder/internal/callgraph"
 
 // export_reachset.go builds crypto_entry_points from reverse reachability rather
 // than from the exported call chains (issue #249).
@@ -85,10 +81,6 @@ func addFindingGraphReachSetToEntryPointIndex(
 		return
 	}
 
-	cacheKey := containingFn.ID.String()
-	pathsTotal := ctx.condensedTotals[cacheKey]
-	pathsTruncated := ctx.callChainTruncated[cacheKey]
-
 	for functionKey, hops := range reach.depths {
 		decl := ctx.graph.Functions[functionKey]
 		if decl == nil {
@@ -102,7 +94,7 @@ func addFindingGraphReachSetToEntryPointIndex(
 
 		// chain_depth counted frames, so the containing function is 1 and each
 		// caller adds one. hops is 0 at the containing function.
-		recordEntryPointFindingWithPaths(ep, fg, hops+1, pathsTotal, pathsTruncated)
+		recordReachEntryPointFinding(ep, fg, hops+1)
 
 		for _, supportingID := range fg.SupportingCallIDs {
 			support, ok := supportingByID[supportingID]
@@ -111,10 +103,6 @@ func addFindingGraphReachSetToEntryPointIndex(
 			}
 			referencedSupporting[supportingID] = struct{}{}
 			recordEntryPointSupporting(ep, support, hops+1)
-		}
-
-		if isUserCodeFunction(ctx, decl) {
-			recordUserCallSites(ctx, ep, decl, reach.depths)
 		}
 	}
 }
@@ -137,14 +125,10 @@ func markReachSetRoots(ctx *exportBuildContext, roots map[string]bool, containin
 	}
 }
 
-// recordEntryPointFindingWithPaths records the finding reference and, on the
-// shallowest observation, the condensed route total for it.
-func recordEntryPointFindingWithPaths(
-	ep *entryPointData,
-	fg *callGraphExportFinding,
-	depth, pathsTotal int,
-	pathsTruncated bool,
-) {
+// recordReachEntryPointFinding records the finding reference, keeping the
+// shallowest depth when the same finding is reachable from an entry point by
+// more than one distance.
+func recordReachEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, depth int) {
 	if ep == nil || fg == nil || fg.MatchedOperation == nil {
 		return
 	}
@@ -153,53 +137,8 @@ func recordEntryPointFindingWithPaths(
 		return
 	}
 	ep.findings[fg.FindingID] = entryPointFindingRef{
-		findingID:      fg.FindingID,
-		matchedOp:      fg.MatchedOperation,
-		chainDepth:     depth,
-		pathsTotal:     pathsTotal,
-		pathsTruncated: pathsTruncated,
-	}
-}
-
-// isUserCodeFunction reports whether a declaration belongs to the scanned
-// project rather than a dependency. With no user packages known (the mine path)
-// nothing is user code: there the entry point IS the library's public API and
-// its call sites are not something a reader edits.
-func isUserCodeFunction(ctx *exportBuildContext, decl *callgraph.FunctionDecl) bool {
-	if ctx == nil || ctx.userPackages == nil || decl == nil {
-		return false
-	}
-	return callgraph.IsUserPackage(decl.ID.Package, ctx.userPackages, ctx.packageSeparator)
-}
-
-// recordUserCallSites attaches the call sites of a user function whose callee
-// also reaches the crypto — the lines a reader has to change.
-//
-// Dispatch fan-out is collapsed per (line, callee): one source line resolved to
-// several candidate receivers is one call site, not several.
-func recordUserCallSites(
-	ctx *exportBuildContext,
-	ep *entryPointData,
-	decl *callgraph.FunctionDecl,
-	reachable map[string]int,
-) {
-	for i := range decl.Calls {
-		call := &decl.Calls[i]
-		calleeKey := call.Callee.String()
-		if _, ok := reachable[calleeKey]; !ok {
-			continue
-		}
-		if call.Line <= 0 {
-			continue
-		}
-		site := callGraphUserCallSite{
-			FilePath: normalizeExportPath(ctx, decl.FilePath).FilePath,
-			Line:     call.Line,
-			Callee:   fullFunctionName(call.Callee),
-		}
-		if ep.userCallSites == nil {
-			ep.userCallSites = make(map[string]callGraphUserCallSite)
-		}
-		ep.userCallSites[fmt.Sprintf("%d|%s", site.Line, site.Callee)] = site
+		findingID:  fg.FindingID,
+		matchedOp:  fg.MatchedOperation,
+		chainDepth: depth,
 	}
 }
