@@ -1214,7 +1214,7 @@ func traceBackward(
 	}
 
 	// The index is built from entrySet (every entry, always); only the chain
-	// enumeration honours the caller's restriction. See ChainEntrySignatures.
+	// enumeration honors the caller's restriction. See ChainEntrySignatures.
 	chainEntrySet := entrySet
 	if chainEntries != nil {
 		chainEntrySet = chainEntries
