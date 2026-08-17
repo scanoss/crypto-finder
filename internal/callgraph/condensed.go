@@ -103,6 +103,36 @@ func (t *Tracer) TraceBackCondensed(
 	return chains, total, len(chains) < total
 }
 
+// ReachingFunctions returns every function that reaches target, keyed by
+// FunctionID.String(), with the minimum number of calls it takes to get there
+// (0 for the target itself). Terminals report whether a function is where a
+// chain ends — a user-package function, or a graph root on the mine path.
+//
+// This answers "which functions reach this crypto", which is a different
+// question from "how do you get there" and must not be derived from the second:
+// a set of reaching functions loses nothing to re-convergence or to a chain
+// budget, while a set of paths loses both (issue #249). Cost is O(V+E).
+func (t *Tracer) ReachingFunctions(
+	target FunctionID,
+	userPackages map[string]bool,
+	maxDepth int,
+) (depths map[string]int, terminals map[string]bool) {
+	if _, exists := t.graph.Functions[target.String()]; !exists {
+		return nil, nil
+	}
+	ct := &condensedTrace{tracer: t, targetKey: target.String()}
+	ct.reach(userPackages, maxDepth)
+	return ct.depth, ct.terminal
+}
+
+// IsUserPackage reports whether pkg belongs to user code, given the user
+// package set and the ecosystem's package separator. Exported so the export
+// layer can classify a reaching function without duplicating the sub-package
+// prefix rule.
+func IsUserPackage(pkg string, userPackages map[string]bool, sep string) bool {
+	return isUserPackage(pkg, userPackages, sep)
+}
+
 // reach walks callers breadth-first from the target, recording the minimum hop
 // distance of every function that reaches it and which of those are terminals.
 // Each function is visited once, so this is O(V+E) — the same bound

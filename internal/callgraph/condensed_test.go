@@ -254,6 +254,91 @@ func TestTraceBackCondensed_MinePathUsesGraphRoots(t *testing.T) {
 	}
 }
 
+// TestReachingFunctions_IncludesCycleMembersChainsSkip is the premise behind
+// deriving crypto_entry_points from the set rather than from the chains: a
+// condensed chain takes the shortest way through a cycle, so members the long
+// way visits appear in no chain — but they do reach the crypto and the set says
+// so. Measured on the IBM postgres-demo, three functions were lost this way.
+func TestReachingFunctions_IncludesCycleMembersChainsSkip(t *testing.T) {
+	t.Parallel()
+	graph, target, userPackages := buildJedisShapeGraph()
+	tracer := NewTracer(graph, ".")
+
+	chains, _, _ := tracer.TraceBackCondensed(target, userPackages, 32, 128)
+	inChains := map[string]bool{}
+	for _, chain := range chains {
+		for _, step := range chain.Steps {
+			inChains[step.Function.Name] = true
+		}
+	}
+
+	depths, _ := tracer.ReachingFunctions(target, userPackages, 32)
+	inSet := map[string]bool{}
+	for key := range depths {
+		if id, err := ParseFunctionID(key); err == nil {
+			inSet[id.Name] = true
+		}
+	}
+
+	// The retry cycle's other members are skipped by the shortest traversal...
+	for _, skipped := range []string{"handleConnectionProblem", "retry"} {
+		if inChains[skipped] {
+			t.Fatalf("%s unexpectedly present in a chain; the fixture no longer exercises the gap", skipped)
+		}
+		// ...and are still reported as reaching the crypto.
+		if !inSet[skipped] {
+			t.Errorf("%s missing from the reaching set", skipped)
+		}
+	}
+
+	for _, expected := range []string{"run", "set", "get", "executeCommand", "connect", "createSocket"} {
+		if !inSet[expected] {
+			t.Errorf("%s missing from the reaching set", expected)
+		}
+	}
+}
+
+// TestReachingFunctions_DepthIsTrueMinimum checks the hop counts the index
+// publishes as chain_depth: the target is 0 and every caller adds one, measured
+// on the graph rather than on whichever chain got exported.
+func TestReachingFunctions_DepthIsTrueMinimum(t *testing.T) {
+	t.Parallel()
+	graph, target, userPackages := buildJedisShapeGraph()
+
+	depths, terminals := NewTracer(graph, ".").ReachingFunctions(target, userPackages, 32)
+
+	byName := map[string]int{}
+	for key, d := range depths {
+		if id, err := ParseFunctionID(key); err == nil {
+			byName[id.Name] = d
+		}
+	}
+	want := map[string]int{
+		"createSocket":   0,
+		"connect":        1,
+		"executeCommand": 2,
+		"set":            3,
+		"get":            3,
+		"run":            4,
+	}
+	for name, expected := range want {
+		if got, ok := byName[name]; !ok || got != expected {
+			t.Errorf("depth of %s = %d (present=%v), want %d", name, got, ok, expected)
+		}
+	}
+
+	// Only the user function terminates a chain.
+	termNames := map[string]bool{}
+	for key := range terminals {
+		if id, err := ParseFunctionID(key); err == nil {
+			termNames[id.Name] = true
+		}
+	}
+	if !termNames["run"] || len(termNames) != 1 {
+		t.Errorf("terminals = %v, want only run", termNames)
+	}
+}
+
 // TestTraceBackCondensed_UnreachableFindingHasNoChains keeps the #244 behavior:
 // crypto no user code reaches contributes nothing.
 func TestTraceBackCondensed_UnreachableFindingHasNoChains(t *testing.T) {
