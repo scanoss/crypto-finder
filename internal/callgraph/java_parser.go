@@ -62,6 +62,7 @@ const (
 	javaNodeTypeIdentifier       = "type_identifier"
 	javaNodeLineComment          = "line_comment"
 	javaNodeBlockComment         = "block_comment"
+	javaRootType                 = "Object"
 )
 
 // NewJavaParser creates a new Java source parser backed by tree-sitter.
@@ -423,7 +424,7 @@ func parseJavaTypeParamBounds(text string) map[string]string {
 			continue
 		}
 		name := fields[0]
-		bound := "Object"
+		bound := javaRootType
 		if len(fields) >= 3 && fields[1] == "extends" {
 			bound = strings.TrimSpace(stripGenericSuffix(fields[2]))
 			if amp := strings.Index(bound, "&"); amp > 0 {
@@ -1203,7 +1204,7 @@ func parseFieldAssignmentNode(
 func concreteFieldReceiverType(fieldType, assignedType string) string {
 	fieldType = strings.TrimSpace(stripGenericSuffix(fieldType))
 	assignedType = strings.TrimSpace(stripGenericSuffix(assignedType))
-	if assignedType == "" || simpleJavaTypeName(assignedType) == "Object" {
+	if assignedType == "" || simpleJavaTypeName(assignedType) == javaRootType {
 		return ""
 	}
 	if simpleJavaTypeName(fieldType) == simpleJavaTypeName(assignedType) {
@@ -1973,13 +1974,9 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 
 	chainID, assignedVar := callChainContext(node, src)
 	receiverVar := receiverVarName(receiverText, varTypes, varOrigins)
-	resolvedReceiverType := ""
-	if origin, ok := varOrigins[receiverVar]; ok && origin.kind == javaVarOriginKindField {
-		resolvedReceiverType = origin.resolvedReceiverType
-	}
 	return &FunctionCall{
 		Callee:               callee,
-		ResolvedReceiverType: resolvedReceiverType,
+		ResolvedReceiverType: fieldResolvedReceiverType(receiverVar, varOrigins),
 		ReceiverVar:          receiverVar,
 		AssignedVar:          assignedVar,
 		ChainID:              chainID,
@@ -1994,6 +1991,13 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 		Arguments:       args,
 		ArgumentSources: p.resolveArgumentSources(args, analysis, currentClass, varTypes, varOrigins),
 	}
+}
+
+func fieldResolvedReceiverType(receiverVar string, varOrigins map[string]varOrigin) string {
+	if origin, ok := varOrigins[receiverVar]; ok && origin.kind == javaVarOriginKindField {
+		return origin.resolvedReceiverType
+	}
+	return ""
 }
 
 // receiverVarName returns the receiver as a local-variable name when the method
