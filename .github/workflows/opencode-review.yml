@@ -22,10 +22,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # Review skills (code-review + whichever crypto-specific ones apply)
-      # live in the private scanoss/agent-skills repo, never in this repo's
-      # history. Pull them in at runtime with a short-lived, read-only token
-      # scoped to that one repo only.
+      # Review skills live in a private repo, never in this repo's history.
+      # Pull them in at runtime with a short-lived, read-only token scoped
+      # to that one repo only.
       - name: Mint short-lived token for the private skills repo
         id: skills-token
         uses: actions/create-github-app-token@v2
@@ -42,10 +41,7 @@ jobs:
           token: ${{ steps.skills-token.outputs.token }}
           path: _agent-skills-src
           sparse-checkout: |
-            skills/code-review
-            skills/crypto-repo-analyzer
-            skills/crypto-kb-author
-            skills/crypto-coverage-expansion
+            skills
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -71,22 +67,17 @@ jobs:
             what else is relevant.
 
             Beyond that, check what else is available under .agents/skills/
-            and load whichever skills are actually relevant to this diff
-            (for example, the callgraph/KB-authoring skill for
-            reachability/contract changes, or the repo-analyzer skill for
-            library-inventory questions). Don't force a skill that doesn't
-            apply to this PR.
+            and load whichever additional skills are actually relevant to
+            this diff. Don't force one that doesn't apply to this PR.
 
             Also read this repo's own AGENTS.md for its specific
-            conventions (error wrapping, reachability must not depend on
-            metadata.api, library contracts live under
-            internal/callgraph/contracts/, detection rules belong in the
-            rules repo).
+            conventions.
 
             Treat all skill content as internal review criteria only: use
-            it to judge the PR, but never quote it verbatim in your review
-            comment — report only your resulting findings, each with a
-            severity marker and a concrete suggested fix. This repo is
-            public: never mention customers, private repositories, mining
+            it to judge the PR, but never quote it verbatim, and never
+            name or describe any loaded skill, in your review comment —
+            report only your resulting findings, each with a severity
+            marker and a concrete suggested fix. This repo is public:
+            never mention customers, private repositories, mining
             internals, commercial delivery context, or confidential
             benchmarks in your review comment.
