@@ -7,7 +7,6 @@
 FROM golang:1.25@sha256:dbeddb5e728ea4b5ba7920574413e311025ffa42d196793857e4d160e8dfe60d
 
 ARG OPENGREP_VERSION=v1.12.1
-ARG OPENGREP_INSTALLER_SHA256=a74388d0aec282eddf15fc8d42884de6531e1fc5a7bdc3ac31863c854e974eee
 ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
 ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
 ARG TARGETARCH
@@ -23,13 +22,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install semgrep (pinned version for reproducibility)
 RUN pip3 install --no-cache-dir semgrep==1.145.0 --break-system-packages
 
-# Install opengrep after verifying the version-pinned installer.
-RUN curl -fsSL "https://raw.githubusercontent.com/opengrep/opengrep/${OPENGREP_VERSION}/install.sh" -o /tmp/opengrep-install.sh \
-    && echo "${OPENGREP_INSTALLER_SHA256}  /tmp/opengrep-install.sh" | sha256sum -c - \
-    && bash /tmp/opengrep-install.sh -v "${OPENGREP_VERSION}" \
-    && case "${TARGETARCH}" in amd64) hash="${OPENGREP_AMD64_SHA256}" ;; arm64) hash="${OPENGREP_ARM64_SHA256}" ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
-    && echo "${hash}  /root/.opengrep/cli/${OPENGREP_VERSION}/opengrep" | sha256sum -c - \
-    && rm -f /tmp/opengrep-install.sh
+# Install the pinned opengrep release directly. This avoids the installer's
+# live releases API lookup while retaining binary integrity verification.
+RUN case "${TARGETARCH}" in \
+        amd64) asset="opengrep_manylinux_x86"; hash="${OPENGREP_AMD64_SHA256}" ;; \
+        arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && install_dir="/root/.opengrep/cli/${OPENGREP_VERSION}" \
+    && mkdir -p "${install_dir}" \
+    && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
+    && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
+    && chmod a+x "${install_dir}/opengrep" \
+    && ln -s "${install_dir}" /root/.opengrep/cli/latest
 
 # Add opengrep to PATH
 ENV PATH="/root/.opengrep/cli/latest:${PATH}"
