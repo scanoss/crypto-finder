@@ -1165,13 +1165,21 @@ func traceBackward(
 	}
 
 	for _, opNode := range sortedNodes(opsByNode) {
+		var chains []backwardChain
 		if plainReverse != nil {
 			// Answer "which functions reach this crypto" from the graph, before
 			// any chain is emitted, so the published surface stops depending on
 			// which chains happened to survive (issue #249).
 			recordReachEntries(opNode, plainReverse, entrySet, fragments, functionsByNode, out)
+			// And enumerate the routes over the collapsed graph, so the served
+			// chains report the same routes live does for the same map.
+			var total int
+			var truncated bool
+			chains, total, truncated = condensedBackwardChains(opNode, reverse, entrySet)
+			recordRouteTotal(opNode, total, truncated, out)
+		} else {
+			chains = backwardBFS(opNode, reverse, entrySet)
 		}
-		chains := backwardBFS(opNode, reverse, entrySet)
 		if len(chains) == 0 {
 			// No backward chain reached an entry (the op node has no callers, or none
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:
