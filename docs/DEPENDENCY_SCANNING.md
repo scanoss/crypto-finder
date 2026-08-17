@@ -2,7 +2,7 @@
 
 This document explains how crypto-finder discovers cryptographic usage in project dependencies and traces it back to user code through call graph analysis.
 
-Contract note: the current implementation keeps the interim report focused on findings metadata (`source`, `dependency_info`, `finding_id`). The finding-centric reachability slices such as `call_chains`, `entry_call`, and `crypto_call` are emitted by the dedicated `--export-callgraph` artifact rather than embedded in the interim report.
+Contract note: the current implementation keeps the interim report focused on findings metadata (`source`, `dependency_info`, `finding_id`, and optional `occurrence_key`). The finding-centric reachability slices such as `call_chains`, `entry_call`, and `crypto_call` are emitted by the dedicated `--export-callgraph` artifact rather than embedded in the interim report.
 
 ## Overview
 
@@ -30,7 +30,7 @@ flowchart TB
     UC --> S1
     DEP --> S1
 
-    S6 --> OUT[Final Report<br/><i>with source, finding_id,<br/>dependency_info</i>]
+    S6 --> OUT[Final Report<br/><i>with source, finding_id,<br/>optional occurrence_key, dependency_info</i>]
 ```
 
 ## The Six-Step Pipeline
@@ -594,7 +594,7 @@ The final interim report looks like this:
 
 ```json
 {
-  "version": "1.3",
+  "version": "1.5",
   "tool": {"name": "crypto-finder", "version": "dev"},
   "findings": [
     {
@@ -860,21 +860,22 @@ Key observations:
 
 ## Interim Report Contract (v1.5)
 
-Version 1.5 keeps the attribution fields needed to join findings to the separate reachability export. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module, version, and the optional canonical package URL.
+Version 1.5 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module, version, and the optional canonical package URL.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
 | `dependency_info` | `object` | Dependency findings only | `{module, version, purl?}` |
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
+| `occurrence_key` | `string` | When a terminal AST anchor is available | Rule-independent `v1:<16 lowercase hex>` structural identity for the canonical finding |
 
 ## Call Graph Export
 
 When `--export-callgraph` is enabled, Crypto Finder emits a finding-centric JSON export that uses the same relative-path convention as the main report.
 
-Schema note: call graph export version `6.8` is current and adds an optional canonical `purl` inside dependency context. Java runtime provenance remains available in `scan_metadata` for JDK-aware platform signature enrichment.
+Schema note: call graph export version `6.10` is current and adds an optional canonical `purl` inside dependency context. Java runtime provenance remains available in `scan_metadata` for JDK-aware platform signature enrichment.
 
-- Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report.
+- Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report. `occurrence_key`, when present, is a separate structural identity and does not replace that join.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
 - Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info`, and optional `entry_call`.
 - `entry_call` describes how execution entered the current function from the previous step. Its `file_path` and `line` are the call-site location in the previous node's source file.

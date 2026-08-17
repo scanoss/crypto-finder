@@ -288,6 +288,7 @@ func (p *CPPParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePa
 	}
 	if node.Type() == cNodeCallExpression {
 		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions, localTypes, variableTypes); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

@@ -231,3 +231,29 @@ func findGoFunction(t *testing.T, analysis *FileAnalysis, name string) *Function
 	t.Fatalf("missing function %q", name)
 	return nil
 }
+
+func TestGoParser_CallColumnsAreOneBasedExclusive(t *testing.T) {
+	dir := t.TempDir()
+	const source = "package p\nfunc run() { helper() }\nfunc helper() {}\n"
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := NewGoParser().ParseFile(path, "example.com/p")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	for _, fn := range analysis.Functions {
+		for _, call := range fn.Calls {
+			if call.Callee.Name != "helper" {
+				continue
+			}
+			if call.StartCol != 14 || call.EndCol != 22 {
+				t.Fatalf("helper() columns = %d:%d, want 14:22 (1-based, end-exclusive)", call.StartCol, call.EndCol)
+			}
+			return
+		}
+	}
+	t.Fatal("helper() call not found")
+}

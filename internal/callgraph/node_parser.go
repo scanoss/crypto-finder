@@ -543,6 +543,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 	}
 	if node.Type() == nodeCallExpression {
 		if call := p.parseNodeCall(node, src, filePath, packagePath, owner, imports, locals); call != nil {
+			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

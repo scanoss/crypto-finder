@@ -2252,3 +2252,35 @@ class Probe {
 		}
 	}
 }
+
+func TestJavaParser_ObjectCreationCarriesASTAnchor(t *testing.T) {
+	dir := t.TempDir()
+	src := `package com.example;
+class Crypto {
+    void run(byte[] key) {
+        new javax.crypto.spec.SecretKeySpec(key, "AES");
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "Crypto.java"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analyses, err := NewJavaParser().ParseDirectory(dir, "com.example")
+	if err != nil {
+		t.Fatalf("ParseDirectory: %v", err)
+	}
+	for _, fn := range analyses[0].Functions {
+		if fn.ID.Type != "Crypto" || fn.ID.Name != "run#1" {
+			continue
+		}
+		for _, call := range fn.Calls {
+			if BaseFunctionName(call.Callee.Name) == constructorMethodName {
+				if call.ASTKind != javaNodeObjectCreation || call.NamedASTPath == "" {
+					t.Fatalf("constructor AST anchor = %q/%q, want object_creation_expression with a named path", call.ASTKind, call.NamedASTPath)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("constructor call not found")
+}

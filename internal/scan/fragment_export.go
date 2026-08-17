@@ -36,6 +36,7 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
 	}
 
+	AssignOccurrenceKeys(result)
 	if err := writeGraphFragmentJSONFile(path, result); err != nil {
 		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
 	}
@@ -325,6 +326,7 @@ func (w *trailingNewlineTrimmer) Flush() error {
 // BuildGraphFragmentExport projects a dependency scan result onto the public
 // graph-fragment export schema.
 func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
+	AssignOccurrenceKeys(result)
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
 		ScanMetadata:  buildGraphFragmentScanMetadata(result),
@@ -1567,13 +1569,14 @@ func buildBaseGraphFragmentCryptoAnnotation(
 	matched *callGraphMatchedOperation,
 ) graphfrag.GraphFragmentCryptoOp {
 	op := graphfrag.GraphFragmentCryptoOp{
-		FindingID:  asset.FindingID,
-		Expression: asset.Match,
-		FilePath:   finding.FilePath,
-		StartLine:  asset.StartLine,
-		EndLine:    asset.EndLine,
-		OID:        asset.OID,
-		Source:     asset.Source,
+		FindingID:     asset.FindingID,
+		OccurrenceKey: asset.OccurrenceKey,
+		Expression:    asset.Match,
+		FilePath:      finding.FilePath,
+		StartLine:     asset.StartLine,
+		EndLine:       asset.EndLine,
+		OID:           asset.OID,
+		Source:        asset.Source,
 	}
 	if len(asset.Rules) > 0 {
 		op.RuleID = asset.Rules[0].ID

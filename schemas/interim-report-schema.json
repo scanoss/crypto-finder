@@ -186,6 +186,10 @@
         "finding_id": {
           "type": "string",
           "description": "Stable opaque identifier used to join this finding to the callgraph export."
+        },
+        "occurrence_key": {
+          "type": "string",
+          "description": "Optional AST-anchored structural identity for a canonical finding (v1.5+)."
         }
       },
       "oneOf": [

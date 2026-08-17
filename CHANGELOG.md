@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Interim report `1.5`, callgraph export `6.10`, and graph fragments `1.10` add optional `occurrence_key` to canonical findings. The self-versioned key is stable across formatting and rule/evidence changes when AST call evidence is available, with a deterministic file/module-level fallback for valid top-level calls; consumers join by `(finding_id, occurrence_key)` when the key is present and retain `finding_id`-only joins for legacy records. (#232)
 - Dependency findings now include an optional canonical `purl` inside `dependency_info` for Java, Python, Go, and Rust dependencies, including versionless package URLs when dependency versions are unavailable. (#233)
 
 ### Changed
