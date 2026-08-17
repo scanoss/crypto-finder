@@ -76,6 +76,15 @@ type exportBuildContext struct {
 	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
 	calleeSignatureKeys  map[string]string
 	chainIDsByCallerLine map[string]map[int]string
+	// reachSetCache memoizes the reverse-reachability answer per containing
+	// function (issue #249): function key → minimum hops, plus which of those
+	// are chain terminals. Findings sharing a containing function share one
+	// O(V+E) walk. condensedTotals/condensedTruncated record what the condensed
+	// traceback counted for that function, so crypto_entry_points can state the
+	// exact route total even when call_chains is capped.
+	reachSetCache      map[string]reachSetEntry
+	condensedTotals    map[string]int
+	condensedTruncated map[string]bool
 	// callsReverseIndex maps callee FunctionID.String() → caller keys, built once
 	// from Functions[].Calls (and merged with graph.Callers). Hand-built test
 	// graphs often omit Callers; production graphs have both.
@@ -324,6 +333,22 @@ type callGraphCryptoEntryPoint struct {
 	// Root marks a chain root (6.8+): the first root-module caller in
 	// dependency mode or an in-degree-zero graph root in standalone mode.
 	Root bool `json:"root,omitempty"`
+	// UserCallSites lists this entry point's own call sites that lead to the
+	// crypto (issue #249). It is what makes the entry point actionable: naming
+	// the API that triggers crypto without naming the line to change leaves a
+	// reader fixing one call and never learning about its neighbour.
+	// Only populated for user-package functions, since a library frame's call
+	// sites are not something the reader can edit.
+	UserCallSites []callGraphUserCallSite `json:"user_call_sites,omitempty"`
+}
+
+// callGraphUserCallSite is one call in user code whose callee reaches the
+// crypto. Dispatch candidates are collapsed per (line, callee) so an
+// over-approximated receiver does not publish the same source line three times.
+type callGraphUserCallSite struct {
+	FilePath string `json:"file_path"`
+	Line     int    `json:"line"`
+	Callee   string `json:"callee"`
 }
 
 type callGraphReachableFinding struct {
@@ -331,6 +356,12 @@ type callGraphReachableFinding struct {
 	MatchedOperation *callGraphMatchedOperation `json:"matched_operation"`
 	ChainDepth       int                        `json:"chain_depth"`
 	FindingGraphRef  string                     `json:"finding_graph_ref"`
+	// PathsTotal is the exact number of distinct SCC-condensed routes from this
+	// entry point's side of the graph to the finding, counted before any
+	// enumeration. PathsTruncated says whether call_chains carries all of them.
+	// Together they replace a silent cut with a stated one (issue #249).
+	PathsTotal     int  `json:"paths_total,omitempty"`
+	PathsTruncated bool `json:"paths_truncated,omitempty"`
 }
 
 type callGraphReachableSupportingCall struct {
@@ -512,8 +543,15 @@ func streamFindingGraphs(
 		// See buildCryptoEntryPoints for why an unreachable finding contributes
 		// no entry point, and why a nil Reachable (the mine path) is exempt.
 		if fg.Reachable == nil || *fg.Reachable {
-			addFindingGraphToEntryPointIndex(index, &fg)
-			addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+			if condensedChainsEnabled() {
+				// Derive the index from reverse reachability instead of from the
+				// chains that happened to be exported (issue #249).
+				containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
+				addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
+			} else {
+				addFindingGraphToEntryPointIndex(index, &fg)
+				addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
+			}
 		} else {
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
@@ -829,9 +867,11 @@ func splitFunctionName(fn string) (class, method string) {
 }
 
 type entryPointFindingRef struct {
-	findingID  string
-	matchedOp  *callGraphMatchedOperation
-	chainDepth int
+	findingID      string
+	matchedOp      *callGraphMatchedOperation
+	chainDepth     int
+	pathsTotal     int
+	pathsTruncated bool
 }
 
 type entryPointData struct {
@@ -850,6 +890,9 @@ type entryPointData struct {
 	aliases            []string
 	findings           map[string]entryPointFindingRef // findingID → ref (keep shallowest depth)
 	supporting         map[string]callGraphReachableSupportingCall
+	// userCallSites is keyed by "line|callee" so dispatch candidates for one
+	// source line collapse to a single published site.
+	userCallSites map[string]callGraphUserCallSite
 }
 
 func addFindingGraphToEntryPointIndex(index map[string]*entryPointData, fg *callGraphExportFinding) {
@@ -1074,6 +1117,7 @@ func flattenEntryPointIndex(kb *contracts.KnowledgeBase, index map[string]*entry
 			ReachableFindings:        flattenReachableFindings(ep.findings),
 			ReachableSupportingCalls: flattenReachableSupportingCalls(ep.supporting),
 			ParameterRoles:           parameterRolesFromKB(kb, ep.function, len(ep.parameterTypes)),
+			UserCallSites:            flattenUserCallSites(ep.userCallSites),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -1284,12 +1328,36 @@ func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGr
 			},
 			ChainDepth:      ref.chainDepth,
 			FindingGraphRef: ref.findingID,
+			PathsTotal:      ref.pathsTotal,
+			PathsTruncated:  ref.pathsTruncated,
 		})
 	}
 	sort.Slice(flattened, func(i, j int) bool {
 		return flattened[i].FindingID < flattened[j].FindingID
 	})
 	return flattened
+}
+
+// flattenUserCallSites emits the deduplicated user call sites in source order so
+// a reader walks their own file top to bottom.
+func flattenUserCallSites(sites map[string]callGraphUserCallSite) []callGraphUserCallSite {
+	if len(sites) == 0 {
+		return nil
+	}
+	out := make([]callGraphUserCallSite, 0, len(sites))
+	for _, site := range sites {
+		out = append(out, site)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].FilePath != out[j].FilePath {
+			return out[i].FilePath < out[j].FilePath
+		}
+		if out[i].Line != out[j].Line {
+			return out[i].Line < out[j].Line
+		}
+		return out[i].Callee < out[j].Callee
+	})
+	return out
 }
 
 func countExportFindingAssets(report *entities.InterimReport) int {
@@ -2872,6 +2940,12 @@ func structuralTracebackChains(
 			callGraphExportMaxDepth,
 			callGraphExportMaxChains,
 		)
+		if ctx.condensedTotals == nil {
+			ctx.condensedTotals = make(map[string]int)
+			ctx.condensedTruncated = make(map[string]bool)
+		}
+		ctx.condensedTotals[cacheKey] = total
+		ctx.condensedTruncated[cacheKey] = truncated
 		if truncated {
 			// The exact total is known before enumeration, so a truncated
 			// export can say how much it left out instead of dropping the
