@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Dependency findings now include an optional canonical `purl` inside `dependency_info` for Java, Python, Go, and Rust dependencies, including versionless package URLs when dependency versions are unavailable. (#233)
+
+### Changed
+- Interim reports use schema `1.5`, and callgraph exports use schema `6.10` to carry dependency package URLs without changing graph-fragment wire format. (#233)
+
 
 ## [0.21.0] - 2026-08-17
 ### Added
@@ -472,4 +478,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.19.0]: https://github.com/scanoss/crypto-finder/compare/v0.18.0...v0.19.0
 [0.20.0]: https://github.com/scanoss/crypto-finder/compare/v0.19.0...v0.20.0
 [0.21.0]: https://github.com/scanoss/crypto-finder/compare/v0.20.0...v0.21.0
-

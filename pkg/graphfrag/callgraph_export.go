@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // CallgraphSchemaVersion is the canonical schema_version of the callgraph
@@ -28,7 +30,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.9"
+const CallgraphSchemaVersion = "6.10"
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -227,6 +229,7 @@ type ExportMatchedOperation struct {
 type ExportDependencyInfo struct {
 	Module  string `json:"module"`
 	Version string `json:"version,omitempty"`
+	PURL    string `json:"purl,omitempty"`
 }
 
 // ExportEntryCall is the schema-6.0 entry_call shape on a chain node. It
@@ -503,7 +506,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 
 	for i := range r.Chains {
 		fc := &r.Chains[i]
-		nodes, resolvedFindingID := buildExportChain(fc, root)
+		nodes, resolvedFindingID := buildExportChain(fc, root, meta.Ecosystem)
 		// Use the resolved (potentially dep-prefixed) finding_id as the group key.
 		// For root-component ops the resolved ID equals the original; for dep ops it
 		// is recomputed with the "module@version/" prefix to match live --scan-dependencies.
@@ -558,7 +561,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		}
 		anchorByFinding[grp.findingID] = grp.anchorNode
 		if r.forwardClosures != nil {
-			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root)
+			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root, meta.Ecosystem)
 		}
 		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
 		fg.Analysis = stitchedFindingAnalysis(&fg)
@@ -571,7 +574,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	// which of them are roots, so it needs neither a chain fold nor a chain-head
 	// root scan (issue #249).
 	out.CryptoEntryPoints = buildEntryPointsFromReach(
-		r.reachByAnchor, anchorByFinding, root, out.FindingGraphs, out.SupportingCalls)
+		r.reachByAnchor, anchorByFinding, root, meta.Ecosystem,
+		out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
 	for i := range out.CryptoEntryPoints {
@@ -837,7 +841,7 @@ func exportParameterRoles(src []ParameterRole) []ExportParameterRole {
 // (from, to, line) — a projection-time ordering deliberately decoupled from
 // BFS traversal order so golden output stays stable across refactors.
 // Returns nil for a nil closure (finding whose anchor has no computed closure).
-func projectForwardClosure(fc *forwardClosure, root ComponentKey) *ExportForwardClosure {
+func projectForwardClosure(fc *forwardClosure, root ComponentKey, ecosystem string) *ExportForwardClosure {
 	if fc == nil {
 		return nil
 	}
@@ -871,10 +875,7 @@ func projectForwardClosure(fc *forwardClosure, root ComponentKey) *ExportForward
 			SupportingCategory: n.supportingCategory,
 		}
 		if n.frame.Component != root {
-			en.DependencyInfo = &ExportDependencyInfo{
-				Module:  moduleFromFrame(&n.frame),
-				Version: n.frame.Component.Version,
-			}
+			en.DependencyInfo = exportDependencyInfo(&n.frame, ecosystem)
 		}
 		nodes = append(nodes, en)
 	}
@@ -912,12 +913,12 @@ func projectForwardClosure(fc *forwardClosure, root ComponentKey) *ExportForward
 		return li < lj
 	})
 	out.Edges = edges
-	out.AmbiguousCalls = projectAmbiguousCalls(fc.ambiguous, root)
+	out.AmbiguousCalls = projectAmbiguousCalls(fc.ambiguous, root, ecosystem)
 
 	return out
 }
 
-func projectAmbiguousCalls(groups []SuppressedEdge, root ComponentKey) []ExportAmbiguousForwardCall {
+func projectAmbiguousCalls(groups []SuppressedEdge, root ComponentKey, ecosystem string) []ExportAmbiguousForwardCall {
 	out := make([]ExportAmbiguousForwardCall, 0, len(groups))
 	for i := range groups {
 		group := &groups[i]
@@ -965,7 +966,7 @@ func projectAmbiguousCalls(groups []SuppressedEdge, root ComponentKey) []ExportA
 				EntryCall:          exportEntryCall(frame.EntryCall, frame.Function),
 			}
 			if frame.Component != root {
-				candidate.DependencyInfo = &ExportDependencyInfo{Module: moduleFromFrame(frame), Version: frame.Component.Version}
+				candidate.DependencyInfo = exportDependencyInfo(frame, ecosystem)
 			}
 			exported.Candidates = append(exported.Candidates, candidate)
 		}
@@ -1053,13 +1054,13 @@ func chainMatchedOp(fc *FindingChain) *ExportMatchedOperation {
 // which is prefixed in the same way so the cross-reference between
 // finding_graphs[].finding_id and the emitted chain node's file path is
 // consistent with the live scanner output.
-func buildExportChain(fc *FindingChain, root ComponentKey) ([]ExportChainNode, string) {
+func buildExportChain(fc *FindingChain, root ComponentKey, ecosystem string) ([]ExportChainNode, string) {
 	nodes := make([]ExportChainNode, 0, len(fc.Frames))
 	resolvedFindingID := fc.FindingID // default: use the stored (isolated-scan) ID
 
 	for i := range fc.Frames {
 		frame := &fc.Frames[i]
-		node := buildExportNode(frame, root)
+		node := buildExportNode(frame, root, ecosystem)
 		if i == len(fc.Frames)-1 && fc.CryptoOp != nil {
 			resolvedFindingID = applyTerminalCryptoOp(&node, frame, fc.CryptoOp, root)
 		}
@@ -1117,7 +1118,7 @@ func computeFindingID(path string, startLine int, ruleID string) string {
 }
 
 // buildExportNode converts one CallFrame to an ExportChainNode.
-func buildExportNode(frame *CallFrame, root ComponentKey) ExportChainNode {
+func buildExportNode(frame *CallFrame, root ComponentKey, ecosystem string) ExportChainNode {
 	fn := frame.Function
 	node := ExportChainNode{
 		FunctionKey:        fn.Signature,
@@ -1137,12 +1138,22 @@ func buildExportNode(frame *CallFrame, root ComponentKey) ExportChainNode {
 	// from the CallFrame.Module (Fragment.Module, set at stitch time), falling
 	// back to the purl when absent.
 	if frame.Component != root {
-		node.DependencyInfo = &ExportDependencyInfo{
-			Module:  moduleFromFrame(frame),
-			Version: frame.Component.Version,
-		}
+		node.DependencyInfo = exportDependencyInfo(frame, ecosystem)
 	}
 	return node
+}
+
+func exportDependencyInfo(frame *CallFrame, ecosystem string) *ExportDependencyInfo {
+	module := moduleFromFrame(frame)
+	packageURL := purl.Dependency(ecosystem, frame.Module, frame.Component.Version)
+	if frame.Module == "" && strings.HasPrefix(frame.Component.Purl, "pkg:") {
+		packageURL = frame.Component.Purl
+	}
+	return &ExportDependencyInfo{
+		Module:  module,
+		Version: frame.Component.Version,
+		PURL:    packageURL,
+	}
 }
 
 // moduleFromFrame derives the dependency_info.module string for a frame. It

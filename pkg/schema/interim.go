@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.4"
+const InterimFormatVersion = "1.5"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -163,6 +163,8 @@ type DependencyInfo struct {
 	Module string `json:"module"`
 	// Version is the dependency version (e.g., "v0.17.0").
 	Version string `json:"version"`
+	// PURL is the canonical package URL when the dependency ecosystem is known.
+	PURL string `json:"purl,omitempty"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

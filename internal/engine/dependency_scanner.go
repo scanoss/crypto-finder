@@ -19,6 +19,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/internal/utils"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // maxWorkers caps the number of concurrent dependency scans to avoid
@@ -763,6 +764,10 @@ func (ds *DependencyScanner) attributeFindings(
 	_ *callgraph.Tracer,
 	_ map[string]bool,
 ) {
+	ecosystem := ""
+	if ds.resolver != nil {
+		ecosystem = ds.resolver.Ecosystem()
+	}
 	for i := range report.Findings {
 		finding := &report.Findings[i]
 
@@ -774,6 +779,7 @@ func (ds *DependencyScanner) attributeFindings(
 			asset.DependencyInfo = &entities.DependencyInfo{
 				Module:  dep.Module,
 				Version: dep.Version,
+				PURL:    purl.Dependency(ecosystem, dep.Module, dep.Version),
 			}
 		}
 	}

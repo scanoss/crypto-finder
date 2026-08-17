@@ -23,6 +23,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 const (
@@ -47,6 +48,7 @@ const (
 type exportBuildContext struct {
 	graph                   *callgraph.CallGraph
 	projectRoot             string
+	ecosystem               string
 	dependencies            []exportDependencyRoot
 	containingFunctionCache map[string]cachedContainingFunction
 	// callChainCache holds structural (non-expanded) chain nodes by containing
@@ -154,6 +156,7 @@ type callGraphExportFinding struct {
 type callGraphDependencyContext struct {
 	Module  string `json:"module"`
 	Version string `json:"version"`
+	PURL    string `json:"purl,omitempty"`
 }
 
 // callGraphRoleProvenance explains where a method_role/parameter contribution
@@ -1263,6 +1266,7 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 	ctx := &exportBuildContext{
 		graph:                   result.CallGraph,
 		projectRoot:             filepath.Clean(result.ProjectRoot),
+		ecosystem:               result.Ecosystem,
 		containingFunctionCache: make(map[string]cachedContainingFunction),
 		callChainCache:          make(map[string][][]callGraphChainNode),
 		callChainRawCache:       make(map[string][]callgraph.CallChain),
@@ -3994,10 +3998,10 @@ func buildFindingLocation(ctx *exportBuildContext, finding entities.Finding, ass
 }
 
 func normalizeFindingPath(ctx *exportBuildContext, findingPath string, depInfo *entities.DependencyInfo) normalizedExportLocation {
-	if depInfo != nil && depInfo.Module != "" && depInfo.Version != "" {
+	if depInfo != nil && depInfo.Module != "" {
 		return normalizedExportLocation{
 			FilePath:       filepath.ToSlash(findingPath),
-			DependencyInfo: dependencyContextFromEntity(depInfo),
+			DependencyInfo: dependencyContextFromEntity(depInfo, ctx.ecosystem),
 		}
 	}
 	return normalizeExportPath(ctx, findingPath)
@@ -4016,6 +4020,7 @@ func normalizeExportPath(ctx *exportBuildContext, actualPath string) normalizedE
 				DependencyInfo: &callGraphDependencyContext{
 					Module:  dep.Module,
 					Version: dep.Version,
+					PURL:    purl.Dependency(ctx.ecosystem, dep.Module, dep.Version),
 				},
 			}
 		}
@@ -4025,6 +4030,7 @@ func normalizeExportPath(ctx *exportBuildContext, actualPath string) normalizedE
 				DependencyInfo: &callGraphDependencyContext{
 					Module:  dep.Module,
 					Version: dep.Version,
+					PURL:    purl.Dependency(ctx.ecosystem, dep.Module, dep.Version),
 				},
 			}
 		}
@@ -4066,13 +4072,14 @@ func relativeToRoot(root, path string) (string, bool) {
 	return rel, true
 }
 
-func dependencyContextFromEntity(depInfo *entities.DependencyInfo) *callGraphDependencyContext {
-	if depInfo == nil || depInfo.Module == "" || depInfo.Version == "" {
+func dependencyContextFromEntity(depInfo *entities.DependencyInfo, ecosystem string) *callGraphDependencyContext {
+	if depInfo == nil || depInfo.Module == "" {
 		return nil
 	}
 	return &callGraphDependencyContext{
 		Module:  depInfo.Module,
 		Version: depInfo.Version,
+		PURL:    purl.Dependency(ecosystem, depInfo.Module, depInfo.Version),
 	}
 }
 

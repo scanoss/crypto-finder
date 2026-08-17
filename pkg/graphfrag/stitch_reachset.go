@@ -102,6 +102,7 @@ func buildEntryPointsFromReach(
 	reachByAnchor map[graphNode][]reachEntry,
 	anchorByFinding map[string]graphNode,
 	root ComponentKey,
+	ecosystem string,
 	findingGraphs []ExportFindingGraph,
 	supportingCalls []ExportSupportingCall,
 ) []ExportCryptoEntryPoint {
@@ -120,7 +121,7 @@ func buildEntryPointsFromReach(
 		fg := &findingGraphs[i]
 		anchor := anchorByFinding[fg.FindingID]
 		indexFindingReach(index, rootKeys, fg, reachByAnchor[anchor],
-			root, supportingByID, referencedSupporting)
+			root, ecosystem, supportingByID, referencedSupporting)
 	}
 
 	// Supporting calls no finding graph claimed still deserve an entry, exactly
@@ -148,6 +149,7 @@ func indexFindingReach(
 	fg *ExportFindingGraph,
 	entries []reachEntry,
 	root ComponentKey,
+	ecosystem string,
 	supportingByID map[string]ExportSupportingCall,
 	referencedSupporting map[string]struct{},
 ) {
@@ -156,7 +158,7 @@ func indexFindingReach(
 	}
 	for j := range entries {
 		entry := &entries[j]
-		node := buildExportNode(&entry.frame, root)
+		node := buildExportNode(&entry.frame, root, ecosystem)
 		if node.FunctionName == "" && node.FunctionKey == "" {
 			continue
 		}

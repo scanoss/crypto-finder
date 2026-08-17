@@ -187,6 +187,9 @@ func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 	if node1.DependencyInfo.Module != "net.crypto:lib" {
 		t.Errorf("node[1].DependencyInfo.Module = %q, want net.crypto:lib", node1.DependencyInfo.Module)
 	}
+	if node1.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0.0" {
+		t.Errorf("node[1].DependencyInfo.PURL = %q, want pkg:maven/net.crypto/lib@2.0.0", node1.DependencyInfo.PURL)
+	}
 }
 
 // TestToCallgraphExport_EntryCallOnFrame1 asserts that the entry_call on node[1]
@@ -423,6 +426,7 @@ func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
 		}},
 		map[string]graphNode{"finding-1": anchor},
 		ComponentKey{},
+		"java",
 		[]ExportFindingGraph{{
 			FindingID: "finding-1",
 			MatchedOperation: &ExportMatchedOperation{
@@ -601,17 +605,14 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is69 pins the canonical callgraph schema version
-// at 6.9 — the contract change that makes crypto_entry_points a
-// reverse-reachability answer instead of a projection of the exported chains,
-// and adds user_call_sites plus the paths_total/paths_truncated route count
-// (issue #249). The bump is unconditional: it advances regardless of whether any
-// given export actually emits the new fields (see package doc on
-// CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is69(t *testing.T) {
+// TestCallgraphSchemaVersion_Is610 pins the canonical callgraph schema version
+// at 6.10 — the current contract after the reachability index and dependency
+// package URL additions. The bump is unconditional: it advances regardless of
+// whether any given export emits the new fields.
+func TestCallgraphSchemaVersion_Is610(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.9" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.9")
+	if CallgraphSchemaVersion != "6.10" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.10")
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 func TestInterimReportPublicContract(t *testing.T) {
 	report := schema.InterimReport{
-		Version: "1.4",
+		Version: "1.5",
 		Tool:    schema.ToolInfo{Name: "crypto-finder", Version: "0.1.0"},
 		Findings: []schema.Finding{{
 			FilePath: "src/crypto.go",
@@ -41,7 +41,7 @@ func TestInterimReportPublicContract(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if got["version"] != "1.4" || got["tool"] == nil || got["rules"] == nil || got["findings"] == nil {
+	if got["version"] != "1.5" || got["tool"] == nil || got["rules"] == nil || got["findings"] == nil {
 		t.Fatalf("required report fields missing: %s", data)
 	}
 
@@ -58,8 +58,8 @@ func TestInterimReportPublicContract(t *testing.T) {
 		t.Errorf("internal field leaked in %s", data)
 	}
 
-	if schema.InterimFormatVersion != "1.4" {
-		t.Errorf("InterimFormatVersion = %q, want 1.4", schema.InterimFormatVersion)
+	if schema.InterimFormatVersion != "1.5" {
+		t.Errorf("InterimFormatVersion = %q, want 1.5", schema.InterimFormatVersion)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestCryptographicAssetLegacyRuleCompatibility(t *testing.T) {
 
 func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 	report := schema.InterimReport{
-		Version: "1.4",
+		Version: "1.5",
 		Tool:    schema.ToolInfo{Name: "crypto-finder", Version: "0.1.0"},
 		Rules:   schema.RulesInfo{Source: "remote", Name: "dca", Version: "v1", ChecksumSHA256: "abc"},
 		Findings: []schema.Finding{{
@@ -97,7 +97,7 @@ func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 				OID:                 "2.16.840.1.101.3.4.1.2",
 				FindingID:           "a1b2c3d4",
 				Source:              "dependency",
-				DependencyInfo:      &schema.DependencyInfo{Module: "golang.org/x/crypto", Version: "v0.1.0"},
+				DependencyInfo:      &schema.DependencyInfo{Module: "golang.org/x/crypto", Version: "v0.1.0", PURL: "pkg:golang/golang.org/x/crypto@v0.1.0"},
 			}},
 		}},
 	}
@@ -117,7 +117,7 @@ func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 	asset := finding["cryptographic_assets"].([]any)[0].(map[string]any)
 	assertJSONKeys(t, asset, "asset", "dependency_info", "end_col", "end_line", "finding_id", "match", "metadata", "oid", "parameter_conditions", "rules", "source", "start_col", "start_line", "status")
 	assertJSONKeys(t, asset["rules"].([]any)[0].(map[string]any), "rule", "id", "message", "severity", "version")
-	assertJSONKeys(t, asset["dependency_info"].(map[string]any), "dependency_info", "module", "version")
+	assertJSONKeys(t, asset["dependency_info"].(map[string]any), "dependency_info", "module", "purl", "version")
 }
 
 func assertJSONKeys(t *testing.T, object map[string]any, name string, want ...string) {
