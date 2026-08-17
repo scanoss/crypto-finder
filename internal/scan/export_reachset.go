@@ -87,7 +87,7 @@ func addFindingGraphReachSetToEntryPointIndex(
 
 	cacheKey := containingFn.ID.String()
 	pathsTotal := ctx.condensedTotals[cacheKey]
-	pathsTruncated := ctx.condensedTruncated[cacheKey]
+	pathsTruncated := ctx.callChainTruncated[cacheKey]
 
 	for functionKey, hops := range reach.depths {
 		decl := ctx.graph.Functions[functionKey]
@@ -116,6 +116,24 @@ func addFindingGraphReachSetToEntryPointIndex(
 		if isUserCodeFunction(ctx, decl) {
 			recordUserCallSites(ctx, ep, decl, reach.depths)
 		}
+	}
+}
+
+// markReachSetRoots records the walk's terminals as chain roots.
+//
+// A terminal is where a chain ends: the first root-module caller when user
+// packages are known, or an in-degree-zero graph root otherwise — which is the
+// `root` flag's definition verbatim (6.8+). Reading it off the walk instead of
+// off the exported chain heads keeps the flag correct when call_chains was
+// capped, and keeps the index itself deliberately broad: the set stays complete
+// and `root` is the classification on top of it, not a filter over it.
+func markReachSetRoots(ctx *exportBuildContext, roots map[string]bool, containingFn *callgraph.FunctionDecl) {
+	if roots == nil || containingFn == nil {
+		return
+	}
+	reach := reachSetForFunction(ctx, containingFn)
+	for key := range reach.terminals {
+		roots[key] = true
 	}
 }
 

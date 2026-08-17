@@ -543,6 +543,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		return string(groupOrder[i]) < string(groupOrder[j])
 	})
 
+	// anchorByFinding maps each emitted finding to its crypto-op node. The
+	// reachability sets are keyed by that node, not by finding_id, because
+	// dependency finding_ids are recomputed with a module prefix here.
+	anchorByFinding := make(map[string]graphNode, len(groupOrder))
+
 	for _, key := range groupOrder {
 		grp := groupMap[key]
 		fg := ExportFindingGraph{
@@ -551,6 +556,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
 		}
+		anchorByFinding[grp.findingID] = grp.anchorNode
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root)
 		}
@@ -561,10 +567,21 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
-	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	// The reachability-derived index already knows every reaching function and
+	// which of them are roots, so it needs neither the chain fold nor the
+	// chain-head root scan (issue #249).
+	reachDerived := len(r.reachByAnchor) > 0
+	if reachDerived {
+		out.CryptoEntryPoints = buildEntryPointsFromReach(
+			r.reachByAnchor, anchorByFinding, root, out.FindingGraphs, out.SupportingCalls)
+	} else {
+		out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	}
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
-	markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	if !reachDerived {
+		markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	}
 	for i := range out.CryptoEntryPoints {
 		out.CryptoEntryPoints[i].ErasedSignature = r.erasedByFunctionKey[out.CryptoEntryPoints[i].FunctionKey]
 	}

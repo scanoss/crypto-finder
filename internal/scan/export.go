@@ -79,12 +79,12 @@ type exportBuildContext struct {
 	// reachSetCache memoizes the reverse-reachability answer per containing
 	// function (issue #249): function key → minimum hops, plus which of those
 	// are chain terminals. Findings sharing a containing function share one
-	// O(V+E) walk. condensedTotals/condensedTruncated record what the condensed
+	// O(V+E) walk. condensedTotals records how many condensed routes the
 	// traceback counted for that function, so crypto_entry_points can state the
-	// exact route total even when call_chains is capped.
-	reachSetCache      map[string]reachSetEntry
-	condensedTotals    map[string]int
-	condensedTruncated map[string]bool
+	// exact total even when call_chains is capped; whether it WAS capped rides
+	// on callChainTruncated, the signal the 6.8 analysis block already reads.
+	reachSetCache   map[string]reachSetEntry
+	condensedTotals map[string]int
 	// callsReverseIndex maps callee FunctionID.String() → caller keys, built once
 	// from Functions[].Calls (and merged with graph.Callers). Hand-built test
 	// graphs often omit Callers; production graphs have both.
@@ -548,6 +548,11 @@ func streamFindingGraphs(
 				// chains that happened to be exported (issue #249).
 				containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
 				addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
+				// The walk's terminals ARE the 6.8 root definition — the first
+				// root-module caller, or an in-degree-zero graph root — and it
+				// knows all of them even when call_chains was capped, which the
+				// chain-head scan below cannot.
+				markReachSetRoots(ctx, chainRoots, containingFn)
 			} else {
 				addFindingGraphToEntryPointIndex(index, &fg)
 				addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
@@ -2942,14 +2947,14 @@ func structuralTracebackChains(
 		)
 		if ctx.condensedTotals == nil {
 			ctx.condensedTotals = make(map[string]int)
-			ctx.condensedTruncated = make(map[string]bool)
 		}
 		ctx.condensedTotals[cacheKey] = total
-		ctx.condensedTruncated[cacheKey] = truncated
+		// Feed the same signal the 6.8 contract reads (analysis.call_chains
+		// partial, reachability downgraded to unknown) rather than tracking
+		// truncation separately. paths_total then adds what that contract
+		// cannot express: how much was left out.
+		ctx.callChainTruncated[cacheKey] = truncated
 		if truncated {
-			// The exact total is known before enumeration, so a truncated
-			// export can say how much it left out instead of dropping the
-			// remainder silently (issue #249).
 			log.Warn().
 				Str("function", containingFn.ID.String()).
 				Int("emitted", len(chains)).

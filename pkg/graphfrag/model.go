@@ -564,6 +564,14 @@ type Result struct {
 	// crypto_entry_points by function_key — enriching an existing reachability
 	// entry, without appending operation-only catalog entries.
 	operationEntryPoints map[string][]CryptoEntryPoint
+
+	// reachByFinding carries, per finding, every function that reaches its
+	// crypto operation, with that function's minimum depth and whether it is a
+	// chain root (issue #249). Populated only when the reachability-derived
+	// index is enabled; ToCallgraphExport then builds crypto_entry_points from
+	// this instead of from the chains that survived the stitch, so a capped or
+	// collapsed traversal can no longer silently shrink the published surface.
+	reachByAnchor map[graphNode][]reachEntry
 }
 
 // FindingChain is one root-to-crypto path.
