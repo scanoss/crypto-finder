@@ -336,7 +336,7 @@ type callGraphCryptoEntryPoint struct {
 	// UserCallSites lists this entry point's own call sites that lead to the
 	// crypto (issue #249). It is what makes the entry point actionable: naming
 	// the API that triggers crypto without naming the line to change leaves a
-	// reader fixing one call and never learning about its neighbour.
+	// reader fixing one call and never learning about its neighbor.
 	// Only populated for user-package functions, since a library frame's call
 	// sites are not something the reader can edit.
 	UserCallSites []callGraphUserCallSite `json:"user_call_sites,omitempty"`
