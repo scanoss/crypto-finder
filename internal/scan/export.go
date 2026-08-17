@@ -543,20 +543,15 @@ func streamFindingGraphs(
 		// See buildCryptoEntryPoints for why an unreachable finding contributes
 		// no entry point, and why a nil Reachable (the mine path) is exempt.
 		if fg.Reachable == nil || *fg.Reachable {
-			if condensedChainsEnabled() {
-				// Derive the index from reverse reachability instead of from the
-				// chains that happened to be exported (issue #249).
-				containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
-				addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
-				// The walk's terminals ARE the 6.8 root definition — the first
-				// root-module caller, or an in-degree-zero graph root — and it
-				// knows all of them even when call_chains was capped, which the
-				// chain-head scan below cannot.
-				markReachSetRoots(ctx, chainRoots, containingFn)
-			} else {
-				addFindingGraphToEntryPointIndex(index, &fg)
-				addFindingGraphSupportingToEntryPointIndex(index, &fg, supportingByID, referencedSupporting)
-			}
+			// The index comes from reverse reachability, not from the chains that
+			// happened to be exported (issue #249).
+			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
+			addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
+			// The walk's terminals ARE the 6.8 root definition — the first
+			// root-module caller, or an in-degree-zero graph root — and it knows
+			// all of them even when call_chains was capped, which a scan of the
+			// exported chain heads cannot.
+			markReachSetRoots(ctx, chainRoots, containingFn)
 		} else {
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
@@ -701,11 +696,26 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 		out.ScanMetadata.JavaPlatformSignatureUnavailableReason = meta.UnavailableReason
 	}
 
+	// containingByFinding remembers where each finding sits so the entry-point
+	// pass below can resolve its containing function (cached in ctx) after
+	// supporting calls have been deduped.
+	type findingSite struct {
+		findingID string
+		filePath  string
+		startLine int
+	}
+	var sites []findingSite
+
 	processedAssets := 0
 	buildStart := time.Now()
 	for _, finding := range result.Report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
+			sites = append(sites, findingSite{
+				findingID: asset.FindingID,
+				filePath:  finding.FilePath,
+				startLine: asset.StartLine,
+			})
 			if log.Debug().Enabled() {
 				log.Debug().
 					Str("finding_id", asset.FindingID).
@@ -743,8 +753,14 @@ func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
 	sort.SliceStable(out.SupportingCalls, func(i, j int) bool {
 		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
 	})
-	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx.kb, out.FindingGraphs, out.SupportingCalls)
-	markLiveRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx, out.FindingGraphs, out.SupportingCalls, func(findingID string) *callgraph.FunctionDecl {
+		for i := range sites {
+			if sites[i].findingID == findingID {
+				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].startLine)
+			}
+		}
+		return nil
+	})
 	for i := range out.CryptoEntryPoints {
 		out.CryptoEntryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.CryptoEntryPoints[i].FunctionKey)
 	}
@@ -801,36 +817,21 @@ func liveFindingAnalysis(chains [][]callGraphChainNode, truncated bool) *graphfr
 	}
 }
 
-// markLiveRootEntryPoints flags entry points that are chain roots: the first
-// frame of any genuinely traced (multi-frame) chain. Self-chain fallbacks
-// contribute no root. Synthetic API entry points surface as their own finding
-// graphs and stay identifiable by their rule ID.
-func markLiveRootEntryPoints(entryPoints []callGraphCryptoEntryPoint, findingGraphs []callGraphExportFinding) {
-	roots := make(map[string]bool)
-	for i := range findingGraphs {
-		for _, chain := range findingGraphs[i].CallChains {
-			if len(chain) >= 2 && chain[0].FunctionKey != "" {
-				roots[chain[0].FunctionKey] = true
-			}
-		}
-	}
-	if len(roots) == 0 {
-		return
-	}
-	for i := range entryPoints {
-		if roots[entryPoints[i].FunctionKey] {
-			entryPoints[i].Root = true
-		}
-	}
-}
-
 // buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
-// crypto operations. Every function that appears in any call chain is a
-// potential entry point — external code might call any of them. kb is
-// consulted (issue-103 WU3) to populate parameter_roles on entries whose
-// function+arity matches a contract; nil kb simply skips that enrichment.
-func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGraphExportFinding, supportingCalls []callGraphSupportingCall) []callGraphCryptoEntryPoint {
+// crypto operations, derived from reverse reachability over the call graph
+// (issue #249). kb is consulted (issue-103 WU3) to populate parameter_roles on
+// entries whose function+arity matches a contract; nil kb skips that enrichment.
+//
+// containingFor resolves a finding's containing function; the two live builders
+// reach it differently, so they supply it rather than duplicating the lookup.
+func buildCryptoEntryPoints(
+	ctx *exportBuildContext,
+	findingGraphs []callGraphExportFinding,
+	supportingCalls []callGraphSupportingCall,
+	containingFor func(findingID string) *callgraph.FunctionDecl,
+) []callGraphCryptoEntryPoint {
 	index := make(map[string]*entryPointData)
+	roots := make(map[string]bool)
 	supportingByID := make(map[string]callGraphSupportingCall, len(supportingCalls))
 	for i := range supportingCalls {
 		if supportingCalls[i].SupportingID != "" {
@@ -849,8 +850,10 @@ func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGra
 			claimSupportingCalls(referencedSupporting, &findingGraphs[i])
 			continue
 		}
-		addFindingGraphToEntryPointIndex(index, &findingGraphs[i])
-		addFindingGraphSupportingToEntryPointIndex(index, &findingGraphs[i], supportingByID, referencedSupporting)
+		containingFn := containingFor(findingGraphs[i].FindingID)
+		addFindingGraphReachSetToEntryPointIndex(
+			ctx, index, &findingGraphs[i], containingFn, supportingByID, referencedSupporting)
+		markReachSetRoots(ctx, roots, containingFn)
 	}
 	for i := range supportingCalls {
 		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
@@ -858,7 +861,13 @@ func buildCryptoEntryPoints(kb *contracts.KnowledgeBase, findingGraphs []callGra
 		}
 		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
 	}
-	return flattenEntryPointIndex(kb, index)
+	out := flattenEntryPointIndex(ctx.kb, index)
+	for i := range out {
+		if roots[out[i].FunctionKey] {
+			out[i].Root = true
+		}
+	}
+	return out
 }
 
 // splitFunctionName extracts class and method from a fully qualified function name.
@@ -900,28 +909,6 @@ type entryPointData struct {
 	userCallSites map[string]callGraphUserCallSite
 }
 
-func addFindingGraphToEntryPointIndex(index map[string]*entryPointData, fg *callGraphExportFinding) {
-	if fg == nil || fg.MatchedOperation == nil {
-		return
-	}
-	for _, chain := range fg.CallChains {
-		addEntryPointChain(index, fg, chain)
-	}
-}
-
-func addEntryPointChain(index map[string]*entryPointData, fg *callGraphExportFinding, chain []callGraphChainNode) {
-	if len(chain) == 0 {
-		return
-	}
-	for pos := range chain {
-		node := &chain[pos]
-		if node.FunctionName == "" {
-			continue
-		}
-		recordEntryPointFinding(ensureEntryPointData(index, node), fg, len(chain)-pos)
-	}
-}
-
 // claimSupportingCalls marks a finding's supporting calls as accounted for
 // without indexing them.
 //
@@ -937,38 +924,6 @@ func claimSupportingCalls(referencedSupporting map[string]struct{}, fg *callGrap
 	}
 	for _, supportingID := range fg.SupportingCallIDs {
 		referencedSupporting[supportingID] = struct{}{}
-	}
-}
-
-func addFindingGraphSupportingToEntryPointIndex(
-	index map[string]*entryPointData,
-	fg *callGraphExportFinding,
-	supportingByID map[string]callGraphSupportingCall,
-	referencedSupporting map[string]struct{},
-) {
-	if fg == nil || len(fg.SupportingCallIDs) == 0 {
-		return
-	}
-	for _, chain := range fg.CallChains {
-		if len(chain) == 0 {
-			continue
-		}
-		for pos := range chain {
-			node := &chain[pos]
-			if node.FunctionName == "" {
-				continue
-			}
-			ep := ensureEntryPointData(index, node)
-			depth := len(chain) - pos
-			for _, supportingID := range fg.SupportingCallIDs {
-				support, ok := supportingByID[supportingID]
-				if !ok {
-					continue
-				}
-				referencedSupporting[supportingID] = struct{}{}
-				recordEntryPointSupporting(ep, support, depth)
-			}
-		}
 	}
 }
 
@@ -1037,23 +992,6 @@ func mergeEntryPointData(ep *entryPointData, node *callGraphChainNode) {
 	}
 	if len(ep.aliases) == 0 {
 		ep.aliases = cloneStringSlice(node.Aliases)
-	}
-}
-
-func recordEntryPointFinding(ep *entryPointData, fg *callGraphExportFinding, depth int) {
-	if ep == nil || fg == nil || fg.MatchedOperation == nil {
-		return
-	}
-
-	existing, exists := ep.findings[fg.FindingID]
-	if exists && depth >= existing.chainDepth {
-		return
-	}
-
-	ep.findings[fg.FindingID] = entryPointFindingRef{
-		findingID:  fg.FindingID,
-		matchedOp:  fg.MatchedOperation,
-		chainDepth: depth,
 	}
 }
 
@@ -2938,56 +2876,31 @@ func structuralTracebackChains(
 		return raw
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
-	if condensedChainsEnabled() {
-		chains, total, truncated := tracer.TraceBackCondensed(
-			containingFn.ID,
-			ctx.userPackages,
-			callGraphExportMaxDepth,
-			callGraphExportMaxChains,
-		)
-		if ctx.condensedTotals == nil {
-			ctx.condensedTotals = make(map[string]int)
-		}
-		ctx.condensedTotals[cacheKey] = total
-		// Feed the same signal the 6.8 contract reads (analysis.call_chains
-		// partial, reachability downgraded to unknown) rather than tracking
-		// truncation separately. paths_total then adds what that contract
-		// cannot express: how much was left out.
-		ctx.callChainTruncated[cacheKey] = truncated
-		if truncated {
-			log.Warn().
-				Str("function", containingFn.ID.String()).
-				Int("emitted", len(chains)).
-				Int("total_condensed_paths", total).
-				Int("max_chains", callGraphExportMaxChains).
-				Msg("Truncated condensed call chain export for finding function")
-		}
-		ctx.callChainRawCache[cacheKey] = chains
-		return chains
-	}
-	chains, truncated := tracer.TraceBackLimited(
+	chains, total, truncated := tracer.TraceBackCondensed(
 		containingFn.ID,
 		ctx.userPackages,
 		callGraphExportMaxDepth,
 		callGraphExportMaxChains,
 	)
+	if ctx.condensedTotals == nil {
+		ctx.condensedTotals = make(map[string]int)
+	}
+	ctx.condensedTotals[cacheKey] = total
+	// Feed the signal the 6.8 contract reads (analysis.call_chains partial,
+	// reachability downgraded to unknown) rather than tracking truncation
+	// separately. paths_total then adds what that contract cannot express: how
+	// much was left out.
+	ctx.callChainTruncated[cacheKey] = truncated
 	if truncated {
 		log.Warn().
 			Str("function", containingFn.ID.String()).
-			Int("max_depth", callGraphExportMaxDepth).
+			Int("emitted", len(chains)).
+			Int("total_condensed_paths", total).
 			Int("max_chains", callGraphExportMaxChains).
-			Msg("Truncated call chain export for finding function")
+			Msg("Truncated condensed call chain export for finding function")
 	}
-	ctx.callChainTruncated[cacheKey] = truncated
 	ctx.callChainRawCache[cacheKey] = chains
 	return chains
-}
-
-// condensedChainsEnabled gates the SCC-condensed traceback (issue #249) so a
-// single binary can be A/B'd against the current behavior. Experiment only —
-// the final change replaces TraceBackLimited outright on all three export paths.
-func condensedChainsEnabled() bool {
-	return os.Getenv("CRYPTO_FINDER_CONDENSED_CHAINS") == "1"
 }
 
 // materializeStructuralChainNodes builds function-identity chain nodes only.

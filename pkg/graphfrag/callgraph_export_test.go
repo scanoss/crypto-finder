@@ -411,10 +411,19 @@ func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	}
 }
 
-func TestBuildCallgraphCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing.T) {
-	entry := ExportChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
-	terminal := ExportChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
-	points := buildCallgraphCryptoEntryPoints(
+func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
+	anchor := graphNode{Function: "com.acme.Service.hash#1"}
+	entryFn := Function{Signature: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
+	terminalFn := Function{Signature: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
+
+	points := buildEntryPointsFromReach(
+		map[graphNode][]reachEntry{anchor: {
+			{frame: CallFrame{Signature: terminalFn.Signature, Function: terminalFn}, depth: 1},
+			{frame: CallFrame{Signature: entryFn.Signature, Function: entryFn}, depth: 2, root: true},
+		}},
+		map[graphNode]routeCount{anchor: {total: 1}},
+		map[string]graphNode{"finding-1": anchor},
+		ComponentKey{},
 		[]ExportFindingGraph{{
 			FindingID: "finding-1",
 			MatchedOperation: &ExportMatchedOperation{
@@ -423,24 +432,29 @@ func TestBuildCallgraphCryptoEntryPointsPropagatesSupportingCallsThroughChains(t
 				Line:   42,
 			},
 			SupportingCallIDs: []string{"support-1"},
-			CallChains:        [][]ExportChainNode{{entry, terminal}},
 		}},
 		[]ExportSupportingCall{{
 			SupportingID: "support-1",
-			FunctionKey:  terminal.FunctionKey,
-			FunctionName: terminal.FunctionName,
+			FunctionKey:  terminalFn.Signature,
+			FunctionName: terminalFn.FunctionName,
 		}},
 	)
 
-	entryPoint := findExportEntryPointByFunctionKey(points, entry.FunctionKey)
+	entryPoint := findExportEntryPointByFunctionKey(points, entryFn.Signature)
 	if entryPoint == nil {
-		t.Fatalf("missing entry point %q: %#v", entry.FunctionKey, points)
+		t.Fatalf("missing entry point %q: %#v", entryFn.Signature, points)
+	}
+	if !entryPoint.Root {
+		t.Error("the walk's terminal must be marked root")
 	}
 	if len(entryPoint.ReachableSupportingCalls) != 1 {
 		t.Fatalf("entry reachable_supporting_calls = %#v, want support-1", entryPoint.ReachableSupportingCalls)
 	}
 	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
 		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
+	}
+	if got := entryPoint.ReachableFindings[0]; got.PathsTotal != 1 {
+		t.Fatalf("reachable_findings[0].paths_total = %d, want 1", got.PathsTotal)
 	}
 }
 

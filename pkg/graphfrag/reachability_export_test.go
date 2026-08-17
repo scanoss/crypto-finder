@@ -60,22 +60,3 @@ func TestStitchedFindingAnalysis(t *testing.T) {
 		t.Errorf("unavailable case: got %+v", got)
 	}
 }
-
-func TestMarkRootEntryPoints(t *testing.T) {
-	rootKey := "com.app.(Main).run#0"
-	graphs := []ExportFindingGraph{
-		{CallChains: [][]ExportChainNode{genuineChain(rootKey)}},
-		{CallChains: [][]ExportChainNode{selfChain()}}, // self-chain contributes no root
-	}
-	eps := []ExportCryptoEntryPoint{
-		{FunctionKey: rootKey},
-		{FunctionKey: "com.lib.(Cipher).init#1"},
-	}
-	markRootEntryPoints(eps, graphs)
-	if !eps[0].Root {
-		t.Errorf("chain root %s not marked root", rootKey)
-	}
-	if eps[1].Root {
-		t.Errorf("non-root entry point marked root")
-	}
-}
