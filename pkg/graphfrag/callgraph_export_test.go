@@ -602,15 +602,17 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is68 pins the canonical callgraph schema version
-// at 6.8 — the contract change that adds explicit reachability state, analysis
-// completeness, and entry-point root classification (issue #242). The bump
-// is unconditional: it advances regardless of whether any given export
-// actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is68(t *testing.T) {
+// TestCallgraphSchemaVersion_Is69 pins the canonical callgraph schema version
+// at 6.9 — the contract change that makes crypto_entry_points a
+// reverse-reachability answer instead of a projection of the exported chains,
+// and adds user_call_sites plus the paths_total/paths_truncated route count
+// (issue #249). The bump is unconditional: it advances regardless of whether any
+// given export actually emits the new fields (see package doc on
+// CallgraphSchemaVersion).
+func TestCallgraphSchemaVersion_Is69(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.8" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.8")
+	if CallgraphSchemaVersion != "6.9" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.9")
 	}
 }
