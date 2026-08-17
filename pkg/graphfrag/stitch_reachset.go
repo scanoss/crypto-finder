@@ -3,10 +3,7 @@
 
 package graphfrag
 
-import (
-	"os"
-	"sort"
-)
+import "sort"
 
 // stitch_reachset.go derives the served crypto_entry_points from reverse
 // reachability instead of from the chains that survived the stitch (issue #249).
@@ -27,13 +24,6 @@ import (
 // The index stays deliberately broad, per the 6.8 contract: every function that
 // reaches the crypto is published, and `root` marks the chain roots on top of
 // it. No filtering — a narrower index is a different projection, not this one.
-
-// condensedEntryPointsEnabled gates the reachability-derived index while the
-// stitch and live paths are brought over together. Mirrors the live gate in
-// internal/scan so one binary answers both ways.
-func condensedEntryPointsEnabled() bool {
-	return os.Getenv("CRYPTO_FINDER_CONDENSED_CHAINS") == "1"
-}
 
 // callersWithoutCallSites drops the call-site payload from a reverse adjacency,
 // leaving the plain caller map backwardDistances walks.
@@ -208,4 +198,20 @@ func buildEntryPointsFromReach(
 		}
 	}
 	return out
+}
+
+// recordAllReachEntries answers "which functions reach this crypto" for every
+// operation in the closure. Both stitch paths call it: the index is a question
+// about the graph, so it must not depend on which traversal emitted the chains.
+func recordAllReachEntries(
+	reverse map[graphNode][]graphNode,
+	opsByNode map[graphNode][]CryptoOperation,
+	entrySet map[graphNode]bool,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
+	out *Result,
+) {
+	for _, opNode := range sortedNodes(opsByNode) {
+		recordReachEntries(opNode, reverse, entrySet, fragments, functionsByNode, out)
+	}
 }

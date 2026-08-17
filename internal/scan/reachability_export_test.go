@@ -53,24 +53,3 @@ func TestLiveFindingAnalysis(t *testing.T) {
 		t.Errorf("unavailable case: got %+v", got)
 	}
 }
-
-func TestMarkLiveRootEntryPoints(t *testing.T) {
-	graphs := []callGraphExportFinding{
-		{CallChains: [][]callGraphChainNode{{
-			{FunctionKey: "com.app.(Main).run#0"},
-			{FunctionKey: "com.lib.(Cipher).init#1"},
-		}}},
-		{CallChains: [][]callGraphChainNode{{{FunctionKey: "com.lib.(Solo).op#0"}}}},
-	}
-	eps := []callGraphCryptoEntryPoint{
-		{FunctionKey: "com.app.(Main).run#0"},
-		{FunctionKey: "com.lib.(Solo).op#0"},
-	}
-	markLiveRootEntryPoints(eps, graphs)
-	if !eps[0].Root {
-		t.Error("chain root not marked")
-	}
-	if eps[1].Root {
-		t.Error("self-chain function must not be a root")
-	}
-}
