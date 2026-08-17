@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Interim report 1.5, callgraph export 6.9, and graph fragments 1.10 add optional `occurrence_key` to canonical findings. The self-versioned key is stable across formatting and rule/evidence changes when AST call evidence is available, with a deterministic file/module-level fallback for valid top-level calls; consumers join by `(finding_id, occurrence_key)` when the key is present and retain `finding_id`-only joins for legacy records. (#232)
 - `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
+- CycloneDX 1.6 CBOM exports now include protocol assets with protocol type/version metadata and certificate assets with certificate format, serial number, and certificate type metadata. (#239)
 
 ## [0.19.0] - 2026-08-14
 
