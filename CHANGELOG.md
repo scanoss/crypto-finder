@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `StitchOptions.ChainEntrySignatures` restricts call-chain enumeration to routes reaching the named entry points, so a filtered request spends the per-operation chain budget where the caller asked instead of in traversal order. The entry-point index is unaffected, and the zero value leaves the default path unchanged. Schema stays `6.9`; no re-mining. (scanoss/scanoss.api#116)
 
 ### Added
 - Interim report `1.5`, callgraph export `6.10`, and graph fragments `1.10` add optional `occurrence_key` to canonical findings. The self-versioned key is stable across formatting and rule/evidence changes when AST call evidence is available, with a deterministic file/module-level fallback for valid top-level calls; consumers join by `(finding_id, occurrence_key)` when the key is present and retain `finding_id`-only joins for legacy records. (#232)
