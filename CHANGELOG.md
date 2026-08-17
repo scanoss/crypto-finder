@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
 
+### Fixed
+- Java graph-fragment reachability now preserves concrete receiver provenance for interface-typed fields assigned once from a concrete constructor parameter or `new T(...)`, allowing stitch to select the matching implementation without may-reach fan-out. (#262)
+
 ## [0.19.0] - 2026-08-14
 
 ### Changed

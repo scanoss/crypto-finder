@@ -530,36 +530,61 @@ func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, calle
 func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
 	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
-	recordEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
+	recordCallEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call)
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
 	for _, target := range overloadTargets {
 		idx.addCallerIndexed(graph.Callers, target, callerKey)
-		recordEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
+		recordCallEdgeResolution(graph, callerKey, target, EdgeKindExact, "", call)
 		resolvedTargets = append(resolvedTargets, target)
 	}
 
 	for _, target := range resolvedTargets {
 		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
+			recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call)
 		}
 		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-			recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
+			recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindPythonSubclassDispatch, alias.DeclaredType, call)
 		}
 	}
 
 	for _, alias := range idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph) {
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-		recordEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call.Line, call.StartCol, call.EndCol)
+		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
 		idx.addCallerIndexed(graph.Callers, alias, callerKey)
-		recordEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call.Line, call.StartCol, call.EndCol)
+		recordCallEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call)
+	}
+}
+
+func recordCallEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, call FunctionCall) {
+	recordEdgeResolution(graph, callerKey, calleeKey, kind, declaredType, call.Line, call.StartCol, call.EndCol)
+	if call.ResolvedReceiverType == "" {
+		return
+	}
+
+	method, arity := "", 0
+	if calleeID, err := ParseFunctionID(calleeKey); err == nil {
+		method = BaseFunctionName(calleeID.Name)
+		arity = functionArity(calleeID.Name)
+	}
+	key := EdgeResolutionKey(callerKey, calleeKey, EdgeResolution{
+		DeclaredType: declaredType,
+		MethodName:   method,
+		Arity:        arity,
+		CallSite:     call.Line,
+		StartCol:     call.StartCol,
+		EndCol:       call.EndCol,
+	})
+	if resolution, ok := graph.EdgeResolutions[key]; ok {
+		resolution.ResolvedReceiverType = call.ResolvedReceiverType
+		graph.EdgeResolutions[key] = resolution
 	}
 }
 
@@ -1194,7 +1219,7 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			// FunctionCall.Callee diverge and the exported edge carries a synthesized
 			// key with no object identity.
 			addCaller(graph.Callers, newKey, callerKey, oldKey)
-			recordEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", call.Line, call.StartCol, call.EndCol)
+			recordCallEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", *call)
 			resolved++
 		}
 		currentType = unconditionalContractReturn(ctrs)
