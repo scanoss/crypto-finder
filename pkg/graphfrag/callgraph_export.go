@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.9"
+const CallgraphSchemaVersion = "6.10"
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -553,6 +553,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		return groupOrder[i].occurrenceKey < groupOrder[j].occurrenceKey
 	})
 
+	// anchorByFinding maps each emitted finding to its crypto-op node. The
+	// reachability sets are keyed by that node, not by finding_id, because
+	// dependency finding_ids are recomputed with a module prefix here.
+	anchorByFinding := make(map[string]graphNode, len(groupOrder))
+
 	for _, key := range groupOrder {
 		grp := groupMap[key]
 		fg := ExportFindingGraph{
@@ -562,6 +567,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
 		}
+		anchorByFinding[grp.findingID] = grp.anchorNode
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root)
 		}
@@ -572,10 +578,13 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
-	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
+	// The reachability-derived index already knows every reaching function and
+	// which of them are roots, so it needs neither a chain fold nor a chain-head
+	// root scan (issue #249).
+	out.CryptoEntryPoints = buildEntryPointsFromReach(
+		r.reachByAnchor, anchorByFinding, root, out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
-	markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
 	for i := range out.CryptoEntryPoints {
 		out.CryptoEntryPoints[i].ErasedSignature = r.erasedByFunctionKey[out.CryptoEntryPoints[i].FunctionKey]
 	}
@@ -746,28 +755,6 @@ func ParameterCompleteness(resolved, total int) string {
 		return AnalysisComplete
 	default:
 		return AnalysisPartial
-	}
-}
-
-// markRootEntryPoints flags entry points that are chain roots: the first frame
-// of any genuinely traced (multi-frame) chain. Self-chain fallbacks contribute
-// no root.
-func markRootEntryPoints(entryPoints []ExportCryptoEntryPoint, findingGraphs []ExportFindingGraph) {
-	roots := make(map[string]bool)
-	for i := range findingGraphs {
-		for _, chain := range findingGraphs[i].CallChains {
-			if len(chain) >= 2 && chain[0].FunctionKey != "" {
-				roots[chain[0].FunctionKey] = true
-			}
-		}
-	}
-	if len(roots) == 0 {
-		return
-	}
-	for i := range entryPoints {
-		if roots[entryPoints[i].FunctionKey] {
-			entryPoints[i].Root = true
-		}
 	}
 }
 
@@ -1360,86 +1347,6 @@ type epData struct {
 	supporting         map[string]ExportReachableSupportingCall
 }
 
-// buildCallgraphCryptoEntryPoints folds all surviving chains into an entry-point
-// index keyed by canonical_signature (or function_name when canonical is
-// empty). It replaces the legacy entry_point_index projection.
-func buildCallgraphCryptoEntryPoints(findingGraphs []ExportFindingGraph, supportingCalls []ExportSupportingCall) []ExportCryptoEntryPoint {
-	index := make(map[string]*epData)
-	supportingByID := make(map[string]ExportSupportingCall, len(supportingCalls))
-	for i := range supportingCalls {
-		if supportingCalls[i].SupportingID != "" {
-			supportingByID[supportingCalls[i].SupportingID] = supportingCalls[i]
-		}
-	}
-	referencedSupporting := make(map[string]struct{}, len(supportingByID))
-	for i := range findingGraphs {
-		addFindingGraphToEPI(index, &findingGraphs[i])
-		addFindingGraphSupportingToEPI(index, &findingGraphs[i], supportingByID, referencedSupporting)
-	}
-	for i := range supportingCalls {
-		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
-			continue
-		}
-		addSupportingCallToEPI(index, supportingCalls[i])
-	}
-	return flattenEPI(index)
-}
-
-func addFindingGraphToEPI(index map[string]*epData, fg *ExportFindingGraph) {
-	if fg == nil || fg.MatchedOperation == nil {
-		return
-	}
-	for _, chain := range fg.CallChains {
-		addChainToEPI(index, fg, chain)
-	}
-}
-
-func addChainToEPI(index map[string]*epData, fg *ExportFindingGraph, chain []ExportChainNode) {
-	if len(chain) == 0 {
-		return
-	}
-	for pos := range chain {
-		node := &chain[pos]
-		if node.FunctionName == "" {
-			continue
-		}
-		ep := ensureEPData(index, node)
-		recordEPFinding(ep, fg, len(chain)-pos)
-	}
-}
-
-func addFindingGraphSupportingToEPI(
-	index map[string]*epData,
-	fg *ExportFindingGraph,
-	supportingByID map[string]ExportSupportingCall,
-	referencedSupporting map[string]struct{},
-) {
-	if fg == nil || len(fg.SupportingCallIDs) == 0 {
-		return
-	}
-	for _, chain := range fg.CallChains {
-		if len(chain) == 0 {
-			continue
-		}
-		for pos := range chain {
-			node := &chain[pos]
-			if node.FunctionName == "" {
-				continue
-			}
-			ep := ensureEPData(index, node)
-			depth := len(chain) - pos
-			for _, supportingID := range fg.SupportingCallIDs {
-				support, ok := supportingByID[supportingID]
-				if !ok {
-					continue
-				}
-				referencedSupporting[supportingID] = struct{}{}
-				recordEPSupporting(ep, support, depth)
-			}
-		}
-	}
-}
-
 func ensureEPData(index map[string]*epData, node *ExportChainNode) *epData {
 	key := node.FunctionKey
 	if key == "" {
@@ -1493,21 +1400,6 @@ func mergeEPData(ep *epData, node *ExportChainNode) {
 	}
 	if len(ep.aliases) == 0 {
 		ep.aliases = append([]string(nil), node.Aliases...)
-	}
-}
-
-func recordEPFinding(ep *epData, fg *ExportFindingGraph, depth int) {
-	if ep == nil || fg == nil || fg.MatchedOperation == nil {
-		return
-	}
-	existing, exists := ep.findings[fg.FindingID]
-	if exists && depth >= existing.depth {
-		return
-	}
-	ep.findings[fg.FindingID] = epFindingRef{
-		findingID: fg.FindingID,
-		matchedOp: fg.MatchedOperation,
-		depth:     depth,
 	}
 }
 

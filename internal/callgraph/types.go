@@ -226,6 +226,10 @@ type FunctionParameter struct {
 type FunctionCall struct {
 	// Callee is the resolved target function
 	Callee FunctionID
+	// ResolvedReceiverType is the concrete type inferred for a field receiver
+	// when its declaring class has one unambiguous constructor assignment.
+	// Empty means the receiver type is declared, unknown, or ambiguous.
+	ResolvedReceiverType string
 	// ReceiverVar preserves the original receiver variable name for selector calls
 	// like `cipher.Encrypt()` when static type information is incomplete.
 	ReceiverVar string

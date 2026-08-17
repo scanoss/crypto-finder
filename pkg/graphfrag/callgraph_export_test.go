@@ -411,10 +411,18 @@ func TestToCallgraphExport_NilEntryCallEmitsNoField(t *testing.T) {
 	}
 }
 
-func TestBuildCallgraphCryptoEntryPointsPropagatesSupportingCallsThroughChains(t *testing.T) {
-	entry := ExportChainNode{FunctionKey: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
-	terminal := ExportChainNode{FunctionKey: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
-	points := buildCallgraphCryptoEntryPoints(
+func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
+	anchor := graphNode{Function: "com.acme.Service.hash#1"}
+	entryFn := Function{Signature: "com.acme.Api.entry#0", FunctionName: "com.acme.Api.entry"}
+	terminalFn := Function{Signature: "com.acme.Service.hash#1", FunctionName: "com.acme.Service.hash"}
+
+	points := buildEntryPointsFromReach(
+		map[graphNode][]reachEntry{anchor: {
+			{frame: CallFrame{Signature: terminalFn.Signature, Function: terminalFn}, depth: 1},
+			{frame: CallFrame{Signature: entryFn.Signature, Function: entryFn}, depth: 2, root: true},
+		}},
+		map[string]graphNode{"finding-1": anchor},
+		ComponentKey{},
 		[]ExportFindingGraph{{
 			FindingID: "finding-1",
 			MatchedOperation: &ExportMatchedOperation{
@@ -423,24 +431,29 @@ func TestBuildCallgraphCryptoEntryPointsPropagatesSupportingCallsThroughChains(t
 				Line:   42,
 			},
 			SupportingCallIDs: []string{"support-1"},
-			CallChains:        [][]ExportChainNode{{entry, terminal}},
 		}},
 		[]ExportSupportingCall{{
 			SupportingID: "support-1",
-			FunctionKey:  terminal.FunctionKey,
-			FunctionName: terminal.FunctionName,
+			FunctionKey:  terminalFn.Signature,
+			FunctionName: terminalFn.FunctionName,
 		}},
 	)
 
-	entryPoint := findExportEntryPointByFunctionKey(points, entry.FunctionKey)
+	entryPoint := findExportEntryPointByFunctionKey(points, entryFn.Signature)
 	if entryPoint == nil {
-		t.Fatalf("missing entry point %q: %#v", entry.FunctionKey, points)
+		t.Fatalf("missing entry point %q: %#v", entryFn.Signature, points)
+	}
+	if !entryPoint.Root {
+		t.Error("the walk's terminal must be marked root")
 	}
 	if len(entryPoint.ReachableSupportingCalls) != 1 {
 		t.Fatalf("entry reachable_supporting_calls = %#v, want support-1", entryPoint.ReachableSupportingCalls)
 	}
 	if got := entryPoint.ReachableSupportingCalls[0]; got.SupportingID != "support-1" || got.ChainDepth != 2 {
 		t.Fatalf("entry reachable_supporting_calls[0] = %#v, want support-1 at depth 2", got)
+	}
+	if got := entryPoint.ReachableFindings[0]; got.ChainDepth != 2 {
+		t.Fatalf("reachable_findings[0].chain_depth = %d, want 2", got.ChainDepth)
 	}
 }
 
@@ -609,18 +622,16 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 		t.Fatalf("finding IDs = %q and %q, want the same truncated ID", out.FindingGraphs[0].FindingID, out.FindingGraphs[1].FindingID)
 	}
 	if out.FindingGraphs[0].OccurrenceKey == out.FindingGraphs[1].OccurrenceKey {
-		t.Fatalf("occurrence keys = %q and %q, want distinct graphs", out.FindingGraphs[0].OccurrenceKey, out.FindingGraphs[1].OccurrenceKey)
+		t.Fatalf("occurrence keys = %q, want distinct graphs", out.FindingGraphs[0].OccurrenceKey)
 	}
 }
 
-// TestCallgraphSchemaVersion_Is69 pins the canonical callgraph schema version
-// at 6.9 — the contract change that adds optional occurrence_key alongside the 6.8 reachability contract. The bump
-// is unconditional: it advances regardless of whether any given export
-// actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is69(t *testing.T) {
+// TestCallgraphSchemaVersion_Is610 pins the canonical callgraph schema version
+// at 6.10 — occurrence keys layered on the current reachability contract.
+func TestCallgraphSchemaVersion_Is610(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.9" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.9")
+	if CallgraphSchemaVersion != "6.10" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.10")
 	}
 }

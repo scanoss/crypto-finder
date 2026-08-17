@@ -159,6 +159,17 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	// each op. This is the documented zero-value behavior pinned by the resolution
 	// fail-closed and parallel-edge tests; it is NOT under the live parity contract
 	// (that contract is the serving path above) and keeps its exact prior output.
+	// The chains below keep their exact historical shape; the entry-point index,
+	// however, is a question about the graph and is answered the same way on both
+	// stitch paths (issue #249).
+	historicalEntries := make(map[graphNode]bool, len(roots))
+	for _, r := range roots {
+		historicalEntries[r] = true
+	}
+	recordAllReachEntries(
+		callersWithoutCallSites(reverseAdjacency(adjacency)),
+		opsByNode, historicalEntries, fragments, functionsByNode, &out)
+
 	for _, start := range roots {
 		trace(start, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, nil, nil, map[graphNode]bool{}, &out)
 	}
@@ -1157,8 +1168,18 @@ func traceBackward(
 	// graphs each node appears on exactly one chain, so behavior is unchanged.
 	supportingSeen := make(map[graphNode]bool)
 
+	// backwardDistances walks a plain caller map; the chain walk needs the call
+	// sites too. Flatten once rather than per operation.
+	plainReverse := callersWithoutCallSites(reverse)
+	recordAllReachEntries(plainReverse, opsByNode, entrySet, fragments, functionsByNode, out)
+
 	for _, opNode := range sortedNodes(opsByNode) {
-		chains := backwardBFS(opNode, reverse, entrySet)
+		// Enumerate the routes over the collapsed graph, so the served chains
+		// report the same routes live does for the same map.
+		// The route total is counted before enumerating (condensedBackwardChains
+		// returns it) but is not published: the served contract has no field for
+		// it, and this package stays free of a logger by design.
+		chains, _, _ := condensedBackwardChains(opNode, reverse, entrySet)
 		if len(chains) == 0 {
 			// No backward chain reached an entry (the op node has no callers, or none
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:
@@ -1194,72 +1215,6 @@ func reverseAdjacency(adjacency map[graphNode][]adjacencyEdge) map[graphNode][]r
 		})
 	}
 	return reverse
-}
-
-// backwardBFS walks callers from opNode using a graph-global frontier set
-// (enqueued) so each function is added at most once. A chain is complete when its
-// head (backward-most node) is an entry; mirroring live, a chain is only collected
-// when its length is > 1.
-func backwardBFS(opNode graphNode, reverse map[graphNode][]reverseEdge, entrySet map[graphNode]bool) []backwardChain {
-	var results []backwardChain
-
-	enqueued := map[graphNode]bool{opNode: true}
-	queue := []backwardChain{{nodes: []graphNode{opNode}, entryCalls: []*CallSite{nil}}}
-
-	for len(queue) > 0 {
-		if len(queue) >= stitchMaxFrontier {
-			return results
-		}
-
-		current := queue[0]
-		queue = queue[1:]
-
-		// Depth cap mirroring live (maxDepth=32): neither collect nor expand a chain
-		// longer than the bound — live drops it silently.
-		if len(current.nodes) > stitchMaxDepth {
-			continue
-		}
-
-		head := current.nodes[0]
-		callers := reverse[head]
-
-		// Collect when the head is an entry and the chain is non-trivial, mirroring
-		// classifyTraceItem/rootChainIsComplete (len(chain) > 1).
-		if entrySet[head] && len(current.nodes) > 1 {
-			results = append(results, current)
-			// Chain cap mirroring live (maxChains=128): stop once the op has enough
-			// chains; live truncates here too.
-			if len(results) >= stitchMaxChainsPerOp {
-				return results
-			}
-			// An entry has no further callers to expand toward, just like live's
-			// user-boundary stop. Even if it had callers we stop at the entry.
-			continue
-		}
-
-		for _, edge := range callers {
-			if enqueued[edge.caller] {
-				continue
-			}
-			enqueued[edge.caller] = true
-
-			// Prepend the caller. The entryCall of this reverse edge is the forward
-			// edge (caller -> head), so it belongs to the OLD head frame, exactly as
-			// the forward DFS stamped EntryCall on the node the edge arrived at.
-			nodes := make([]graphNode, 0, len(current.nodes)+1)
-			nodes = append(nodes, edge.caller)
-			nodes = append(nodes, current.nodes...)
-
-			entryCalls := make([]*CallSite, 0, len(current.entryCalls)+1)
-			entryCalls = append(entryCalls, nil) // caller is the new head: no inbound edge yet
-			entryCalls = append(entryCalls, current.entryCalls...)
-			entryCalls[1] = edge.entryCall // stamp the (caller -> old head) call site on old head
-
-			queue = append(queue, backwardChain{nodes: nodes, entryCalls: entryCalls})
-		}
-	}
-
-	return results
 }
 
 // emitChain materializes one completed backward chain into a FindingChain and

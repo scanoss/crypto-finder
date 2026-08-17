@@ -101,10 +101,11 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.9`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.10`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
-- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. AST anchors are preferred, with a deterministic file/module-level fallback for valid top-level calls. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
-- **`6.8`** adds explicit reachability and analysis completeness, generic-erased join signatures, and root entry-point classification.
+- **`6.10`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. AST anchors are preferred, with a deterministic file/module-level fallback for valid top-level calls. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
+- **`6.9`** makes `crypto_entry_points[]` a reverse-reachability answer rather than a projection of the exported `call_chains`: every function that reaches a finding is listed, so an entry point no longer depends on which chains survived collapsing or the per-finding chain budget. `chain_depth` is consequently the true minimum frame distance, and some depths are smaller than the same export previously reported. No field was added or removed. Live and stitched paths agree on both the index and the enumerated routes.
+- **`6.8`** adds `finding_graphs[].reachability` (`reachable`/`unreachable`/`unknown`/`not_applicable`, where a self-chain fallback never counts and suppression or truncation downgrades to `unknown`), `finding_graphs[].analysis` (`call_chains`/`parameters` completeness), and `crypto_entry_points[].root` — the explicit chain-root classification, the index itself staying deliberately broader. The legacy `reachable` bool is unchanged.
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.
 - **`6.5`** makes `role: operation` contract methods **supporting-call-only**: they are exported as categorized `supporting_calls` referenced by `supporting_call_ids` (including interface-authored contracts resolved to concrete implementations) and are no longer synthesized as operation-only `crypto_entry_points` in live, fragment, or stitched exports.
@@ -365,7 +366,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.9`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.10`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the

@@ -18,8 +18,10 @@
 //   - Chains in B not in A → ExtraInB (false synthesis).
 //   - For chains present in both A and B, node fields are compared. Differences
 //     in ignored fields go to KnownDivergences; others to NodeFieldMismatches.
-//   - B's crypto_entry_points are validated against B's surviving chain set
-//     and top-level supporting_calls.
+//   - B's crypto_entry_points are validated for referential integrity — every
+//     finding and supporting call they name must exist. They are NOT required to
+//     appear in B's surviving chains: the index is a reachability answer, not a
+//     projection of the chain export (issue #249).
 //
 // forward_calls (schema 6.3+) is intentionally OUTSIDE the parity surface: it
 // is a stitch/serving-only projection (StitchOptions.ForwardClosure) that the
@@ -545,16 +547,23 @@ func joinStrings(ss []string) string {
 // Entry point index consistency
 // ---------------------------------------------------------------------------
 
-// validateCryptoEntryPoints checks that every entry in B's crypto_entry_points has
-// at least one corresponding chain in B's finding graphs. Entry points that
-// reference findings not present in any B chain are flagged as divergences.
+// validateCryptoEntryPoints checks that every reference in B's
+// crypto_entry_points resolves: the finding it names must exist, and so must the
+// supporting call.
+//
+// It deliberately does NOT require the entry function to appear in one of B's
+// chains. That requirement was the defect of issue #249 written as a rule: it
+// only holds while the index is a projection of the emitted chains, and it
+// rejects exactly the entries a reachability-derived index is supposed to add —
+// functions that reach the crypto through a route no exported chain covers,
+// because the chain budget cut it or a shared caller was claimed by another
+// branch. The index is broad by contract (6.8); `root` is the classification on
+// top of it, and neither is bounded by what the chain export happened to emit.
 func validateCryptoEntryPoints(
 	b CallgraphExportJSON,
 	bChainsByFinding map[string]map[ChainKey][]ExportChainNodeJSON,
 	report *DiffReport,
 ) {
-	// Build the set of entry function identities from B's chains.
-	bEntryFunctions := collectEntryFunctions(bChainsByFinding)
 	supportingIDs := collectSupportingIDs(b.SupportingCalls)
 
 	for _, ep := range b.CryptoEntryPoints {
@@ -573,13 +582,6 @@ func validateCryptoEntryPoints(
 						epID, rf.FindingID))
 				continue
 			}
-			// Check: the entry function must appear as a reachable node in at
-			// least one chain for this finding.
-			if !entryFunctionMatches(bEntryFunctions[rf.FindingID], ep) {
-				report.EntryPointDivergences = append(report.EntryPointDivergences,
-					fmt.Sprintf("crypto_entry_points entry %q for finding %q: function not found as entry in any B chain",
-						epID, rf.FindingID))
-			}
 		}
 		for _, rs := range ep.ReachableSupporting {
 			if !supportingIDs[rs.SupportingID] {
@@ -597,64 +599,6 @@ func collectSupportingIDs(calls []ExportSupportingCallJSON) map[string]bool {
 		if call.SupportingID != "" {
 			out[call.SupportingID] = true
 		}
-	}
-	return out
-}
-
-func entryFunctionMatches(entries map[string]bool, ep ExportCryptoEntryPointJSON) bool {
-	if entries == nil {
-		return false
-	}
-	candidates := []string{ep.FunctionKey, ep.CanonicalSignature, ep.FunctionName}
-	for _, candidate := range candidates {
-		if candidate != "" && entries[candidate] {
-			return true
-		}
-	}
-	return false
-}
-
-// collectEntryFunctions builds a map: findingID → set of entry function identities.
-//
-// crypto_entry_points indexes EVERY node on a surviving chain, not just the head:
-// an entry point is "any function from which the finding is reachable", so an
-// intermediate node (e.g. a shared ancestor on a collapsed diamond) is a valid
-// entry point even though it is never chain[0]. The consistency check must
-// therefore accept any chain node, otherwise it spuriously flags every non-head
-// entry point — which both the live and stitched exporters legitimately emit (see
-// addEntryPointChain / addChainToEPI: both iterate the full chain).
-func collectEntryFunctions(bChainsByFinding map[string]map[ChainKey][]ExportChainNodeJSON) map[string]map[string]bool {
-	out := make(map[string]map[string]bool)
-	for fid, chains := range bChainsByFinding {
-		if out[fid] == nil {
-			out[fid] = make(map[string]bool)
-		}
-		for _, ch := range chains {
-			for i := range ch {
-				for _, key := range nodeIdentityCandidates(ch[i]) {
-					out[fid][key] = true
-				}
-			}
-		}
-	}
-	return out
-}
-
-func nodeIdentityCandidates(node ExportChainNodeJSON) []string {
-	candidates := []string{
-		nodeIdentity(node),
-		node.FunctionKey,
-		node.CanonicalSignature,
-		node.FunctionName,
-	}
-	out := make([]string, 0, len(candidates))
-	seen := make(map[string]bool, len(candidates))
-	for _, candidate := range candidates {
-		if candidate == "" || seen[candidate] {
-			continue
-		}
-		seen[candidate] = true
-		out = append(out, candidate)
 	}
 	return out
 }
