@@ -103,7 +103,7 @@ When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate
 
 Schema note: call graph export version **`6.9`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
-- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments without changing `finding_id` joins.
+- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
 - **`6.8`** adds explicit reachability and analysis completeness, generic-erased join signatures, and root entry-point classification.
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.
@@ -114,7 +114,7 @@ Schema note: call graph export version **`6.9`** is the current customer-facing 
 - **`6.0`** removed the legacy `entry_point_index` projection and made `crypto_entry_points[]` canonical.
 - **`4.3`** added Java runtime provenance in `scan_metadata` for JDK-aware platform signature enrichment.
 
-- Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report. `occurrence_key`, when present, is a separate rule-independent structural identity, not a replacement join key.
+- Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
 - Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info`, and optional `entry_call`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
@@ -371,7 +371,8 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
   findings.json v1.5 envelope (asset metadata). Its `finding_id`s are computed
   with the **same inputs** as `ToCallgraphExport`, so the two agree: consumers
-  join assets (envelope) to call chains (callgraph) by `finding_id`.
+  join assets (envelope) to call chains (callgraph) by `(finding_id, occurrence_key)` when the key is present,
+  or by `finding_id` for legacy records without `occurrence_key`.
 
 `pkg/graphfrag/equiv` is a semantic diff tool that asserts a stitched callgraph
 equals a live one minus the chains intentionally dropped by resolution

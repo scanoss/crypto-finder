@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional `occurrence_key` enrichment now preserves ordinary report output when source anchoring is unavailable, assigns one key to all rules matching the same call, and covers every supported source language in interim, callgraph, and graph-fragment exports. Mixed C/C++ source trees retain anchors for both languages. (#232)
 
 ### Added
-- Interim report 1.5, callgraph export 6.9, and graph fragments 1.10 add optional `occurrence_key` to canonical findings. The self-versioned structural key is stable across formatting and rule/evidence changes when AST call evidence is available; existing `finding_id` joins are unchanged. (#232)
+- Interim report 1.5, callgraph export 6.9, and graph fragments 1.10 add optional `occurrence_key` to canonical findings. The self-versioned structural key is stable across formatting and rule/evidence changes when AST call evidence is available; consumers join by `(finding_id, occurrence_key)` when the key is present and retain `finding_id`-only joins for legacy records. (#232)
 - `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
 
 ## [0.19.0] - 2026-08-14
