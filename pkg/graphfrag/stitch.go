@@ -38,6 +38,30 @@ type StitchOptions struct {
 	// MaxForwardEdgesPerAnchor caps the number of forward edges retained per
 	// anchor. Zero resolves to defaultMaxForwardEdgesPerAnchor.
 	MaxForwardEdgesPerAnchor int
+
+	// ChainEntrySignatures restricts CALL-CHAIN enumeration to routes that
+	// terminate at one of the named entry points, matched on
+	// Function.CanonicalSignature — the spelling crypto_entry_points publishes,
+	// so a consumer can feed a published entry point straight back in. It
+	// carries the served request's `entry_point_signatures`.
+	//
+	// It does NOT touch the entry-point index, which stays complete. The two
+	// answer different questions: the index says which functions reach the
+	// crypto, this says which routes are worth spending the chain budget on.
+	// Restricting the index instead would reintroduce the bug #249 fixed.
+	//
+	// Why it is needed: chains are capped at stitchMaxChainsPerOp per operation
+	// and the enumeration spends that budget in traversal order — several routes
+	// from one entry before any route from another. On a dense library the
+	// emitted chains therefore start at a small fraction of the published
+	// entries, and the entry a caller asked about is usually not among them.
+	// Naming it here spends the whole budget on routes that reach it.
+	//
+	// Zero value (nil) enumerates from every entry, so the default serving path
+	// is unchanged. A signature naming no entry contributes nothing rather than
+	// becoming a synthetic entry, and a function carrying no canonical signature
+	// cannot be named.
+	ChainEntrySignatures []string
 }
 
 // Defaults applied by forwardCapsFrom when the corresponding StitchOptions
@@ -145,7 +169,8 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// callgraph matches live byte-for-byte (the parity contract) and stays
 		// bounded on high-fan-in libraries (BouncyCastle, 18k functions) where the
 		// old all-simple-paths forward DFS hangs.
-		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots, &out)
+		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
+			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures), &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
 		if opts.ForwardClosure {
@@ -1148,6 +1173,30 @@ type backwardChain struct {
 // entries are preserved (one chain per entry). This replaces the old forward DFS
 // that enumerated all simple paths (O(paths)) and emitted the extra re-convergent
 // chains live never produces.
+// chainEntryNodes resolves StitchOptions.ChainEntrySignatures to the subset of
+// roots they name. It returns nil when no signature was supplied — the signal to
+// enumerate from every entry, keeping the default path unchanged — and an empty
+// (non-nil) set when signatures were supplied but none names a root, which
+// correctly yields no chains rather than falling back to all of them.
+func chainEntryNodes(roots []graphNode, functionsByNode map[graphNode]Function, signatures []string) map[graphNode]bool {
+	if len(signatures) == 0 {
+		return nil
+	}
+	wanted := make(map[string]bool, len(signatures))
+	for _, sig := range signatures {
+		if sig != "" {
+			wanted[sig] = true
+		}
+	}
+	out := make(map[graphNode]bool, len(wanted))
+	for _, r := range roots {
+		if sig := functionsByNode[r].CanonicalSignature; sig != "" && wanted[sig] {
+			out[r] = true
+		}
+	}
+	return out
+}
+
 func traceBackward(
 	adjacency map[graphNode][]adjacencyEdge,
 	opsByNode map[graphNode][]CryptoOperation,
@@ -1155,12 +1204,20 @@ func traceBackward(
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
 	roots []graphNode,
+	chainEntries map[graphNode]bool,
 	out *Result,
 ) {
 	reverse := reverseAdjacency(adjacency)
 	entrySet := make(map[graphNode]bool, len(roots))
 	for _, r := range roots {
 		entrySet[r] = true
+	}
+
+	// The index is built from entrySet (every entry, always); only the chain
+	// enumeration honours the caller's restriction. See ChainEntrySignatures.
+	chainEntrySet := entrySet
+	if chainEntries != nil {
+		chainEntrySet = chainEntries
 	}
 
 	// supportingSeen dedupes supporting-call emission across surviving chains so a
@@ -1179,8 +1236,15 @@ func traceBackward(
 		// The route total is counted before enumerating (condensedBackwardChains
 		// returns it) but is not published: the served contract has no field for
 		// it, and this package stays free of a logger by design.
-		chains, _, _ := condensedBackwardChains(opNode, reverse, entrySet)
+		chains, _, _ := condensedBackwardChains(opNode, reverse, chainEntrySet)
 		if len(chains) == 0 {
+			if chainEntries != nil && !chainEntries[opNode] {
+				// Restricted enumeration and no requested entry reaches this
+				// operation. The self-chain fallback below exists for a crypto call
+				// nothing calls at all; synthesizing it here would assert the
+				// operation is reachable from an entry that does not reach it.
+				continue
+			}
 			// No backward chain reached an entry (the op node has no callers, or none
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:
 			// emit a single-node chain so a self-contained crypto call is still
