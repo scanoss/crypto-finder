@@ -46,7 +46,7 @@ const SchemaVersion = "graph-fragment-1.9"
 // in a way that alters the structural graph. Consumers key their cached
 // structural graphs on this so a routine binary release does not invalidate the
 // cache — only a graph-affecting change does. Stamped into scan_metadata.
-const GraphAlgoVersion = "graph-algo-1"
+const GraphAlgoVersion = "graph-algo-2"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
@@ -174,6 +174,7 @@ type GraphFragmentFunction struct {
 	Key                           string          `json:"key"`
 	FunctionName                  string          `json:"function_name"`
 	CanonicalSignature            string          `json:"canonical_signature,omitempty"`
+	ErasedSignature               string          `json:"erased_signature,omitempty"`
 	CompatibleCanonicalSignatures []string        `json:"compatible_canonical_signatures,omitempty"`
 	Package                       string          `json:"package,omitempty"`
 	Type                          string          `json:"type,omitempty"`

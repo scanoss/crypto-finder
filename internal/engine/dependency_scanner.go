@@ -890,15 +890,27 @@ func directDependencyRefs(resolved *dependency.ResolveResult, parent string) []d
 	if parent == "" {
 		return nil
 	}
+	if refs := versionedDirectDependencyRefs(resolved, parent); len(refs) > 0 {
+		return refs
+	}
+	if refs := graphDirectDependencyRefs(resolved, parent); len(refs) > 0 {
+		return refs
+	}
+	return mavenRootAliasRefs(resolved, parent)
+}
+
+func versionedDirectDependencyRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
 	var refs []dependency.Ref
 	for key, children := range resolved.VersionedGraph {
 		if key == parent || strings.HasPrefix(key, parent+"@") {
 			refs = append(refs, children...)
 		}
 	}
-	if len(refs) > 0 {
-		return refs
-	}
+	return refs
+}
+
+func graphDirectDependencyRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
+	var refs []dependency.Ref
 	for _, child := range resolved.Graph[parent] {
 		for _, dep := range resolved.Dependencies {
 			if dep.Module == child {
@@ -906,10 +918,10 @@ func directDependencyRefs(resolved *dependency.ResolveResult, parent string) []d
 			}
 		}
 	}
-	if len(refs) > 0 {
-		return refs
-	}
+	return refs
+}
 
+func mavenRootAliasRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
 	// Maven exposes RootModule as groupId while its versioned graph keys use
 	// groupId:artifactId@version. Recover that single root alias without
 	// treating every same-group dependency node as a direct project edge.

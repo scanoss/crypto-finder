@@ -77,7 +77,7 @@ const (
 //nolint:gochecknoglobals // package-level set is intentional for O(1) lookup
 var inferenceTriggerTypes = map[string]struct{}{
 	"":                  {},
-	"Object":            {},
+	javaRootType:        {},
 	"java.lang.Object":  {},
 	"byte[]":            {},
 	"Object[]":          {},
@@ -294,7 +294,7 @@ func minConfidence(a, b string) string {
 // adds no useful information (Object, java.lang.Object, empty, or any).
 func isTrivialLUB(typ string) bool {
 	switch typ {
-	case "", "Object", "java.lang.Object", "Any", "any":
+	case "", javaRootType, "java.lang.Object", "Any", "any":
 		return true
 	}
 	return false

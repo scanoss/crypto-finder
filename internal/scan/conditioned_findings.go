@@ -226,8 +226,63 @@ type parameterConditionMatch struct {
 	conditions []paramcondition.Condition
 }
 
-func matchParameterConditions(conditions []paramcondition.Condition, params []callGraphParameter) (parameterConditionMatch, bool) {
-	return matchParameterConditionsWithCaptureNames(conditions, params, nil)
+// conditionVerdict is the three-valued answer to "does this asset's
+// parameterCondition hold for this call?". matchParameterConditionsWithCaptureNames
+// collapses refuted and unknown into a single false, which is right for SELECTING
+// a conditioned variant but wrong for FILTERING reachability: an unanswerable
+// predicate must not remove a finding's only evidence, while a refuted one must.
+type conditionVerdict int
+
+const (
+	// conditionUnknown: no condition could be answered — every selected argument
+	// is missing or its value did not resolve.
+	conditionUnknown conditionVerdict = iota
+	// conditionMatched: every condition was answered and all held.
+	conditionMatched
+	// conditionRefuted: at least one condition was answered and did NOT hold.
+	// Positive evidence that this asset does not describe this call.
+	conditionRefuted
+)
+
+// evaluateParameterConditions answers conditions against one call's resolved
+// arguments.
+//
+// A condition whose argument resolved is ANSWERED, and a single answered-and-
+// failing condition refutes the whole predicate regardless of how many others
+// stayed unknown — that is real evidence, not absence of evidence. Only when
+// nothing at all could be answered is the verdict unknown. When some conditions
+// were answered and held but others stayed unknown the predicate is not fully
+// established, so it reports unknown rather than matched: the caller treats
+// unknown as "keep unless better evidence exists", never as "select this
+// variant" (matchParameterConditionsWithCaptureNames remains the authority for
+// selection).
+func evaluateParameterConditions(
+	conditions []paramcondition.Condition,
+	params []callGraphParameter,
+) conditionVerdict {
+	answered := 0
+	for _, condition := range conditions {
+		index := conditionParameterIndex(condition, params)
+		if index < 0 || index >= len(params) {
+			continue
+		}
+		actual := params[index].ResolvedValue
+		if condition.Match == paramcondition.MatchType {
+			actual = params[index].Type
+		}
+		actual = normalizeSelectorValue(actual)
+		if actual == "" {
+			continue
+		}
+		answered++
+		if !matchParameterCondition(condition, actual, map[string]string{}, nil) {
+			return conditionRefuted
+		}
+	}
+	if answered == len(conditions) && answered > 0 {
+		return conditionMatched
+	}
+	return conditionUnknown
 }
 
 func matchParameterConditionsWithCaptureNames(

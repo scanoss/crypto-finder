@@ -128,7 +128,6 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 		OID:        "2.16.840.1.101.3.4.1.2",
 		Metadata:   rawMeta,
 		Source:     "direct",
-		PURL:       "pkg:maven/com.acme/crypto-api",
 		CryptoCall: &GraphFragmentCryptoCall{
 			FunctionName:       "javax.crypto.Cipher.getInstance",
 			CanonicalSignature: "javax.crypto.Cipher.getInstance(String):Cipher",
@@ -165,9 +164,6 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	if decoded.Source != op.Source {
 		t.Errorf("Source = %q, want %q", decoded.Source, op.Source)
 	}
-	if decoded.PURL != op.PURL {
-		t.Errorf("PURL = %q, want %q", decoded.PURL, op.PURL)
-	}
 	if string(decoded.Metadata) != string(op.Metadata) {
 		t.Errorf("Metadata = %s, want %s", decoded.Metadata, op.Metadata)
 	}
@@ -192,7 +188,7 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 }
 
 // TestSchemaVersion_Is_1_9 verifies the schema version constant has been bumped.
-// 1.9 carries promoted direct-finding package URLs on crypto annotations.
+// 1.9 carries generic-erased join signatures and direct finding package URLs.
 func TestSchemaVersion_Is_1_9(t *testing.T) {
 	t.Parallel()
 	if SchemaVersion != "graph-fragment-1.9" {
