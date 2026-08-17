@@ -2,10 +2,9 @@ name: opencode-review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: write
   issues: read
@@ -16,6 +15,10 @@ concurrency:
 
 jobs:
   review:
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      vars.CODE_REVIEW_MODEL != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -31,13 +34,13 @@ jobs:
         with:
           app-id: ${{ secrets.AGENT_SKILLS_APP_ID }}
           private-key: ${{ secrets.AGENT_SKILLS_APP_PRIVATE_KEY }}
-          owner: scanoss
-          repositories: agent-skills
+          owner: ${{ vars.AGENT_SKILLS_OWNER }}
+          repositories: ${{ vars.AGENT_SKILLS_REPO }}
 
       - name: Fetch review skills
         uses: actions/checkout@v6
         with:
-          repository: scanoss/agent-skills
+          repository: ${{ vars.AGENT_SKILLS_OWNER }}/${{ vars.AGENT_SKILLS_REPO }}
           token: ${{ steps.skills-token.outputs.token }}
           path: _agent-skills-src
           sparse-checkout: |
@@ -51,7 +54,7 @@ jobs:
           cp -r _agent-skills-src/skills/. .agents/skills/
           rm -rf _agent-skills-src
 
-      - uses: anomalyco/opencode/github@latest
+      - uses: anomalyco/opencode/github@v1.18.18
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,14 +65,13 @@ jobs:
           prompt: |
             Review this pull request.
 
-            Always apply the code-review skill (installed at
-            .agents/skills/code-review) — its Standards + Spec two-axis
-            approach applies to every change in this repo, regardless of
-            what else is relevant.
+            Always apply the code-review skill — its Standards + Spec
+            two-axis approach applies to every change in this repo,
+            regardless of what else is relevant.
 
-            Beyond that, check what else is available under .agents/skills/
-            and load whichever additional skills are actually relevant to
-            this diff. Don't force one that doesn't apply to this PR.
+            Beyond that, check what else is available as a skill and load
+            whichever additional ones are actually relevant to this diff.
+            Don't force one that doesn't apply to this PR.
 
             Also read this repo's own AGENTS.md for its specific
             conventions.
