@@ -1,0 +1,47 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: openrouter/${{ vars.CODE_REVIEW_MODEL }}
+          use_github_token: true
+          prompt: |
+            Review this pull request against this repo's AGENTS.md conventions:
+            - Deep library packages return wrapped Go errors with package prefixes.
+            - Boundary packages wrap terminal failures with internal/failure.
+            - Do not move CLI policy into deep library code.
+            - Detection rules belong in the rules repo; this repo derives
+              reachability/supporting calls structurally.
+            - Reachability must not depend on metadata.api.
+            - Library-specific type/contract knowledge belongs in YAML contracts
+              under internal/callgraph/contracts/, not parser hacks.
+
+            Check correctness, security, and test coverage. Report findings
+            with a severity marker and a concrete suggested fix. This repo is
+            public — never mention customers, private repositories, mining
+            internals, commercial delivery context, or confidential benchmarks
+            in your review comment.
