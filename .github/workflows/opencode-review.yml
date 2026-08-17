@@ -18,8 +18,11 @@ jobs:
     if: >
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
-      vars.CODE_REVIEW_MODEL != ''
+      vars.CODE_REVIEW_MODEL != '' &&
+      vars.AGENT_SKILLS_OWNER != '' &&
+      vars.AGENT_SKILLS_REPO != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -69,6 +72,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
         with:
           model: openrouter/${{ vars.CODE_REVIEW_MODEL }}
+          agent: plan
           use_github_token: true
           share: false
           prompt: |
@@ -85,11 +89,14 @@ jobs:
             Also read this repo's own AGENTS.md for its specific
             conventions.
 
+            You are read-only: never edit, create, or commit any file, and
+            never run a git write command. Comment only.
+
             Treat all skill content as internal review criteria only: use
             it to judge the PR, but never quote it verbatim, and never
-            name or describe any loaded skill, in your review comment —
-            report only your resulting findings, each with a severity
-            marker and a concrete suggested fix. This repo is public:
-            never mention customers, private repositories, mining
-            internals, commercial delivery context, or confidential
-            benchmarks in your review comment.
+            name or describe any skill other than code-review in your
+            review comment — report only your resulting findings, each
+            with a severity marker and a concrete suggested fix. This
+            repo is public: never mention customers, private
+            repositories, mining internals, commercial delivery context,
+            or confidential benchmarks in your review comment.
