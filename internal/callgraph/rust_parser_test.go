@@ -215,3 +215,29 @@ func TestRustParser_SkipTestFiles(t *testing.T) {
 		t.Errorf("expected 1 analysis (only lib.rs), got %d", len(analyses))
 	}
 }
+
+func TestRustParser_CallColumnsAreOneBasedExclusive(t *testing.T) {
+	dir := t.TempDir()
+	const source = "fn run() { helper(); }\nfn helper() {}\n"
+	path := filepath.Join(dir, "lib.rs")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := NewRustParser().parseFile(path, "crate")
+	if err != nil {
+		t.Fatalf("parseFile: %v", err)
+	}
+	for _, fn := range analysis.Functions {
+		for _, call := range fn.Calls {
+			if call.Callee.Name != "helper" {
+				continue
+			}
+			if call.StartCol != 12 || call.EndCol != 20 {
+				t.Fatalf("helper() columns = %d:%d, want 12:20 (1-based, end-exclusive)", call.StartCol, call.EndCol)
+			}
+			return
+		}
+	}
+	t.Fatal("helper() call not found")
+}

@@ -28,7 +28,36 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.8"
+const CallgraphSchemaVersion = "6.9"
+
+// Reachability states stamped on finding_graphs[].reachability (6.8+, issue
+// #242). The legacy `reachable *bool` keeps its semantics through 6.x;
+// consumers should prefer this field.
+const (
+	// ReachabilityReachable — at least one genuinely traced call chain from
+	// user code reaches the finding. The one-node self-chain fallback does
+	// NOT count.
+	ReachabilityReachable = "reachable"
+	// ReachabilityUnreachable — the containing function resolved and the
+	// user-package universe is known, but no chain was traced and no known
+	// limitation (suppression, truncation) applies.
+	ReachabilityUnreachable = "unreachable"
+	// ReachabilityUnknown — analysis could not decide: resolution was
+	// suppressed or the chain search hit a cap.
+	ReachabilityUnknown = "unknown"
+	// ReachabilityNotApplicable — the question does not apply: no containing
+	// function, or no user-package universe (mine/fragment-only path).
+	ReachabilityNotApplicable = "not_applicable"
+)
+
+// Completeness states used by ExportFindingAnalysis (6.8+), reusing the
+// existing complete/partial vocabulary from the ambiguity taxonomy plus
+// unavailable for absent analysis.
+const (
+	AnalysisComplete    = "complete"
+	AnalysisPartial     = "partial"
+	AnalysisUnavailable = "unavailable"
+)
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -58,7 +87,7 @@ type ExportScanMeta struct {
 	RootModule string `json:"root_module,omitempty"`
 }
 
-// ExportFindingGraph groups all surviving chains for one crypto finding.
+// ExportFindingGraph groups all surviving chains for one crypto finding occurrence.
 type ExportFindingGraph struct {
 	// FindingID is the crypto finding identifier.
 	FindingID string `json:"finding_id"`
@@ -79,6 +108,21 @@ type ExportFindingGraph struct {
 	// Present only when the stitch ran with StitchOptions.ForwardClosure; findings
 	// sharing an anchor inline the same projected content (per-anchor memo).
 	ForwardCalls *ExportForwardClosure `json:"forward_calls,omitempty"`
+	// Reachability is the explicit reachability state (6.8+): one of the
+	// Reachability* constants. Supersedes the implicit chain-presence signal.
+	Reachability string `json:"reachability,omitempty"`
+	// Analysis reports call-chain and parameter completeness (6.8+).
+	Analysis *ExportFindingAnalysis `json:"analysis,omitempty"`
+}
+
+// ExportFindingAnalysis reports how complete the analysis behind one finding
+// graph is (6.8+). CallChains is partial when any search cap was hit or when
+// ambiguous forward calls with partial completeness exist. Parameters is
+// complete when every exported parameter resolves, partial when only some do,
+// unavailable when none do.
+type ExportFindingAnalysis struct {
+	CallChains string `json:"call_chains,omitempty"`
+	Parameters string `json:"parameters,omitempty"`
 }
 
 // ExportForwardClosure is the projected forward call graph from one finding
@@ -342,6 +386,9 @@ type ExportCryptoEntryPoint struct {
 	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the canonical function signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
+	// ErasedSignature is the generics-erased join form (6.8+): generic
+	// arguments stripped, type variables replaced by their erased bounds.
+	ErasedSignature string `json:"erased_signature,omitempty"`
 	// Class is the enclosing class name.
 	Class string `json:"class,omitempty"`
 	// Method is the simple method name.
@@ -370,6 +417,11 @@ type ExportCryptoEntryPoint struct {
 	MethodRole     string                `json:"method_role,omitempty"`
 	RoleProvenance *ExportRoleProvenance `json:"role_provenance,omitempty"`
 	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
+	// Root marks a chain root (6.8+): the first root-module caller in
+	// dependency mode or an in-degree-zero graph root in standalone mode. The
+	// entry-point index is deliberately broader (every function on any chain);
+	// this flag is the explicit root classification.
+	Root bool `json:"root,omitempty"`
 }
 
 // ExportEntryPoint is kept as a Go-level compatibility alias for callers that
@@ -404,6 +456,7 @@ type ExportSupportingCall struct {
 	FunctionKey        string                  `json:"function_key,omitempty"`
 	FunctionName       string                  `json:"function_name,omitempty"`
 	CanonicalSignature string                  `json:"canonical_signature,omitempty"`
+	ErasedSignature    string                  `json:"erased_signature,omitempty"`
 	DisplaySymbol      string                  `json:"display_symbol,omitempty"`
 	Aliases            []string                `json:"aliases,omitempty"`
 	Category           string                  `json:"category,omitempty"`
@@ -435,8 +488,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		},
 	}
 
-	// Group chains by FindingID.
-	type findingKey string
+	// Group chains by finding ID and optional occurrence key.
+	type findingKey struct {
+		findingID     string
+		occurrenceKey string
+	}
 	type chainGroup struct {
 		findingID         string
 		occurrenceKey     string
@@ -462,11 +518,12 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if resolvedFindingID == "" {
 			resolvedFindingID = fc.FindingID
 		}
-		key := findingKey(resolvedFindingID)
+		key := findingKey{findingID: resolvedFindingID, occurrenceKey: chainOccurrenceKey(fc)}
 		grp, exists := groupMap[key]
 		if !exists {
 			grp = &chainGroup{
 				findingID:         resolvedFindingID,
+				occurrenceKey:     key.occurrenceKey,
 				matchedOp:         chainMatchedOp(fc),
 				supportingCallIDs: chainSupportingCallIDs(fc),
 			}
@@ -484,16 +541,16 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if len(grp.supportingCallIDs) == 0 {
 			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
-		if grp.occurrenceKey == "" {
-			grp.occurrenceKey = chainOccurrenceKey(fc)
-		}
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
 	}
 
 	sort.Slice(groupOrder, func(i, j int) bool {
-		return string(groupOrder[i]) < string(groupOrder[j])
+		if groupOrder[i].findingID != groupOrder[j].findingID {
+			return groupOrder[i].findingID < groupOrder[j].findingID
+		}
+		return groupOrder[i].occurrenceKey < groupOrder[j].occurrenceKey
 	})
 
 	for _, key := range groupOrder {
@@ -508,13 +565,210 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root)
 		}
+		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
+		fg.Analysis = stitchedFindingAnalysis(&fg)
+		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
 	out.SupportingCalls = exportSupportingCalls(r.SupportingCalls)
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
+	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
+	markRootEntryPoints(out.CryptoEntryPoints, out.FindingGraphs)
+	for i := range out.CryptoEntryPoints {
+		out.CryptoEntryPoints[i].ErasedSignature = r.erasedByFunctionKey[out.CryptoEntryPoints[i].FunctionKey]
+	}
+	for i := range out.SupportingCalls {
+		out.SupportingCalls[i].ErasedSignature = r.erasedByFunctionKey[out.SupportingCalls[i].FunctionKey]
+	}
 	return out
+}
+
+// upgradeComposedReachability marks a finding proven through a composed
+// dependency entry point as reachable. The chain itself is summarized (depth
+// only), not materialized frame by frame, so call-chain analysis is partial.
+func (r *Result) upgradeComposedReachability(fg *ExportFindingGraph) {
+	if fg.Reachability == ReachabilityReachable {
+		return
+	}
+	if _, ok := r.composedFindingDepths[composedFindingKey(fg.FindingID)]; !ok {
+		return
+	}
+	fg.Reachability = ReachabilityReachable
+	if fg.Analysis != nil {
+		fg.Analysis.CallChains = AnalysisPartial
+	}
+}
+
+// composedFindingKey strips a "module@version/" dependency prefix so composed
+// depth lookups match the dependency-local finding IDs carried by fragment
+// entry points.
+func composedFindingKey(findingID string) string {
+	if slash := strings.LastIndex(findingID, "/"); slash >= 0 {
+		return findingID[slash+1:]
+	}
+	return findingID
+}
+
+// appendComposedEntryPoints folds the composed root-component entry points into
+// the served index. An already-present function_key keeps its traced entry (the
+// stitched trace is more precise); new keys are appended and the index is
+// re-sorted for deterministic output.
+func appendComposedEntryPoints(built []ExportCryptoEntryPoint, composed []CryptoEntryPoint, roots map[string]bool) []ExportCryptoEntryPoint {
+	if len(composed) == 0 {
+		return built
+	}
+	present := make(map[string]bool, len(built))
+	for i := range built {
+		present[built[i].FunctionKey] = true
+	}
+	for i := range composed {
+		ep := &composed[i]
+		if present[ep.FunctionKey] {
+			continue
+		}
+		exported := ExportCryptoEntryPoint{
+			FunctionKey:        ep.FunctionKey,
+			FunctionName:       ep.FunctionName,
+			CanonicalSignature: ep.CanonicalSignature,
+			Class:              ownerFromFunctionName(ep.FunctionName),
+			Method:             simpleMethodName(ep.FunctionName),
+			ReturnType:         ep.ReturnType,
+			ParameterTypes:     append([]string(nil), ep.ParameterTypes...),
+			Visibility:         ep.Visibility,
+			OwnerVisibility:    ep.OwnerVisibility,
+			DisplaySymbol:      ep.DisplaySymbol,
+			Aliases:            append([]string(nil), ep.Aliases...),
+			Root:               roots[ep.FunctionKey],
+		}
+		for _, rf := range ep.ReachableFindings {
+			exported.ReachableFindings = append(exported.ReachableFindings, ExportReachableFinding{
+				FindingID:       rf.FindingID,
+				ChainDepth:      rf.ChainDepth,
+				FindingGraphRef: rf.FindingGraphRef,
+			})
+		}
+		for _, sc := range ep.ReachableSupportingCalls {
+			exported.ReachableSupportingCalls = append(exported.ReachableSupportingCalls, ExportReachableSupportingCall(sc))
+		}
+		built = append(built, exported)
+	}
+	sort.Slice(built, func(i, j int) bool { return built[i].FunctionKey < built[j].FunctionKey })
+	return built
+}
+
+// ownerFromFunctionName returns everything before the final ".segment" of a
+// fully qualified function name, mirroring the class field of traced entries.
+func ownerFromFunctionName(functionName string) string {
+	if dot := strings.LastIndex(functionName, "."); dot > 0 {
+		return functionName[:dot]
+	}
+	return ""
+}
+
+func simpleMethodName(functionName string) string {
+	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
+		return functionName[dot+1:]
+	}
+	return functionName
+}
+
+// stitchedReachability classifies one finding graph's reachability state.
+// A genuinely traced chain has at least two frames; the one-node self-chain
+// fallback does not count. When nothing genuine was traced, any fail-closed
+// suppression in the stitch means the negative cannot be proven — unknown —
+// while a suppression-free stitch proves unreachable.
+func stitchedReachability(chains [][]ExportChainNode, anySuppressed bool) string {
+	for _, chain := range chains {
+		if len(chain) >= 2 {
+			return ReachabilityReachable
+		}
+	}
+	if anySuppressed {
+		return ReachabilityUnknown
+	}
+	return ReachabilityUnreachable
+}
+
+// stitchedFindingAnalysis reports completeness for one finding graph.
+func stitchedFindingAnalysis(fg *ExportFindingGraph) *ExportFindingAnalysis {
+	resolved, total := countStitchedParameters(fg.CallChains)
+	return &ExportFindingAnalysis{
+		CallChains: forwardClosureCompleteness(fg.ForwardCalls),
+		Parameters: ParameterCompleteness(resolved, total),
+	}
+}
+
+// forwardClosureCompleteness is partial when the forward walk hit a cap or any
+// ambiguous dispatch group carries partial evidence; complete otherwise.
+func forwardClosureCompleteness(fc *ExportForwardClosure) string {
+	if fc == nil {
+		return AnalysisComplete
+	}
+	if fc.Truncated {
+		return AnalysisPartial
+	}
+	for i := range fc.AmbiguousCalls {
+		if fc.AmbiguousCalls[i].Completeness == AmbiguityPartial {
+			return AnalysisPartial
+		}
+	}
+	return AnalysisComplete
+}
+
+func countStitchedParameters(chains [][]ExportChainNode) (resolved, total int) {
+	for _, chain := range chains {
+		for i := range chain {
+			if chain[i].EntryCall == nil {
+				continue
+			}
+			for j := range chain[i].EntryCall.Parameters {
+				p := &chain[i].EntryCall.Parameters[j]
+				total++
+				if p.ResolvedValue != "" || len(p.SourceNodes) > 0 {
+					resolved++
+				}
+			}
+		}
+	}
+	return resolved, total
+}
+
+// ParameterCompleteness maps a resolved/total parameter count onto the 6.8
+// analysis vocabulary: unavailable when nothing resolved, complete when
+// everything did, partial in between. Shared by the live and stitched exports.
+func ParameterCompleteness(resolved, total int) string {
+	switch {
+	case total == 0 || resolved == 0:
+		return AnalysisUnavailable
+	case resolved == total:
+		return AnalysisComplete
+	default:
+		return AnalysisPartial
+	}
+}
+
+// markRootEntryPoints flags entry points that are chain roots: the first frame
+// of any genuinely traced (multi-frame) chain. Self-chain fallbacks contribute
+// no root.
+func markRootEntryPoints(entryPoints []ExportCryptoEntryPoint, findingGraphs []ExportFindingGraph) {
+	roots := make(map[string]bool)
+	for i := range findingGraphs {
+		for _, chain := range findingGraphs[i].CallChains {
+			if len(chain) >= 2 && chain[0].FunctionKey != "" {
+				roots[chain[0].FunctionKey] = true
+			}
+		}
+	}
+	if len(roots) == 0 {
+		return
+	}
+	for i := range entryPoints {
+		if roots[entryPoints[i].FunctionKey] {
+			entryPoints[i].Root = true
+		}
+	}
 }
 
 // mergeOperationEntryPoints folds role-bearing fragment crypto_entry_points into
@@ -776,11 +1030,7 @@ func ambiguityID(kind string, parts ...string) string {
 	return kind + "-" + hex.EncodeToString(h[:8])
 }
 
-// chainSupportingCallIDs returns the terminal crypto operation's supporting-call
-// foreign key (6.1+), cloned. The stitcher populates FindingChain.CryptoOp from
-// the fragment's CryptoOperation for the terminal node, so the precise
-// finding->supporting ids persisted at annotate time ride straight through to the
-// finding_graph here. Returns nil for legacy fragments with no crypto op.
+// chainOccurrenceKey returns the terminal crypto operation's optional structural identity.
 func chainOccurrenceKey(fc *FindingChain) string {
 	if fc == nil || fc.CryptoOp == nil {
 		return ""
@@ -788,6 +1038,11 @@ func chainOccurrenceKey(fc *FindingChain) string {
 	return fc.CryptoOp.OccurrenceKey
 }
 
+// chainSupportingCallIDs returns the terminal crypto operation's supporting-call
+// foreign key (6.1+), cloned. The stitcher populates FindingChain.CryptoOp from
+// the fragment's CryptoOperation for the terminal node, so the precise
+// finding->supporting ids persisted at annotate time ride straight through to the
+// finding_graph here. Returns nil for legacy fragments with no crypto op.
 func chainSupportingCallIDs(fc *FindingChain) []string {
 	if fc == nil || fc.CryptoOp == nil || len(fc.CryptoOp.SupportingCallIDs) == 0 {
 		return nil

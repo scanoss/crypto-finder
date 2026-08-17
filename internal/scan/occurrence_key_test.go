@@ -108,3 +108,24 @@ func TestOccurrenceKeyGroupLess_UsesIdentityAfterLocation(t *testing.T) {
 		t.Fatal("tied locations must be ordered by occurrence identity")
 	}
 }
+
+func TestFindOccurrenceContainingFunction_MatchesPathSegments(t *testing.T) {
+	fn := &callgraph.FunctionDecl{FilePath: "/workspace/src/Crypto.java", StartLine: 1, EndLine: 10}
+	functions := map[string]*callgraph.FunctionDecl{"crypto": fn}
+	for _, tt := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "exact basename", path: "Crypto.java", want: true},
+		{name: "directory suffix", path: "src/Crypto.java", want: true},
+		{name: "partial basename", path: "NotCrypto.java", want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findOccurrenceContainingFunction(functions, tt.path, 5)
+			if (got != nil) != tt.want {
+				t.Fatalf("findOccurrenceContainingFunction(%q) = %v, want found=%t", tt.path, got != nil, tt.want)
+			}
+		})
+	}
+}

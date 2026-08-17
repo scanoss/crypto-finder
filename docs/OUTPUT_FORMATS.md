@@ -101,9 +101,10 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.8`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.9`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
-- **`6.8`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments without changing `finding_id` joins.
+- **`6.9`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments without changing `finding_id` joins.
+- **`6.8`** adds explicit reachability and analysis completeness, generic-erased join signatures, and root entry-point classification.
 - **`6.7`** adds `reachable` to each finding graph when dependency scanning makes user-code reachability applicable; it is omitted for a standalone library scan.
 - **`6.6`** adds deterministic `forward_calls.ambiguous_calls` groups for fail-closed interface dispatch: completeness state, stable group/candidate IDs, complete callable identities, and preserved call-site argument provenance — without promoting ambiguous candidates to resolved edges.
 - **`6.5`** makes `role: operation` contract methods **supporting-call-only**: they are exported as categorized `supporting_calls` referenced by `supporting_call_ids` (including interface-authored contracts resolved to concrete implementations) and are no longer synthesized as operation-only `crypto_entry_points` in live, fragment, or stitched exports.
@@ -295,7 +296,7 @@ artifact X?" The pure model and the stitcher that composes fragments live in the
 public package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream
 consumers can use one contract instead of reimplementing schema knowledge.
 
-Current schema version: **`graph-fragment-1.9`** (`pkg/graphfrag.SchemaVersion`).
+Current schema version: **`graph-fragment-1.10`** (`pkg/graphfrag.SchemaVersion`).
 
 Since `graph-fragment-1.3`, a fragment is **self-contained enough to reconstruct
 the two artifacts a live `--scan-dependencies` run would produce** — see
@@ -314,13 +315,14 @@ the missing fields empty and are handled fail-closed):
 | `1.6` | Optional `resolved_receiver_type` on internal edges and external calls — lets the stitcher disambiguate interface-dispatch groups with more than one candidate in closure. |
 | `1.7` | `internal_edges_compact` + `internal_edge_strings` — string/key-indexed compact edge encoding to keep large dependency fragments small. |
 | `1.8` | `role: operation` contract methods exported as categorized supporting calls, no longer as operation-only entry points (paired with callgraph schema `6.5`). |
-| `1.9` | Optional `occurrence_key` on canonical `crypto_annotations`, propagated to stitched callgraph and findings-envelope outputs. |
+| `1.9` | Generic-erased function join signatures for Java source-type hierarchy stitching. |
+| `1.10` | Optional `occurrence_key` on canonical `crypto_annotations`, propagated to stitched callgraph and findings-envelope outputs. |
 
 ### Structure
 
 | Field | Description |
 |-------|-------------|
-| `schema_version` | Fragment schema version (currently `graph-fragment-1.9`). |
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.10`). |
 | `scan_metadata` | Ecosystem, root module, tool/rules versions, `graph_algo_version` (callgraph-construction algorithm version; cache key for annotate-only re-annotation), and per-array counts. |
 | `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
 | `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). Each edge may carry `entry_call` (1.2+, see below). |
@@ -363,7 +365,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.8`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.9`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
@@ -421,8 +423,8 @@ reported as reachable crypto.
 
 ```json
 {
-  "schema_version": "graph-fragment-1.9",
-  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-1", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
+  "schema_version": "graph-fragment-1.10",
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-2", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
   ],

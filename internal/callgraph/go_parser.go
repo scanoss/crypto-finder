@@ -477,13 +477,14 @@ func (p *GoParser) parseCallExpr(
 	line := int(node.StartPoint().Row) + 1
 	args := p.extractCallArguments(node, src)
 
+	var call *FunctionCall
 	switch funcNode.Type() {
 	case "selector_expression":
-		return p.parseSelectorCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes)
+		call = p.parseSelectorCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes)
 	case goNodeIdentifier:
 		// Simple call like `doSomething()`
 		name := funcNode.Content(src)
-		return &FunctionCall{
+		call = &FunctionCall{
 			Callee: FunctionID{
 				Package: analysis.PackagePath,
 				Name:    name,
@@ -494,8 +495,11 @@ func (p *GoParser) parseCallExpr(
 			Arguments: args,
 		}
 	}
-
-	return nil
+	if call != nil {
+		call.StartCol = int(node.StartPoint().Column) + 1
+		call.EndCol = int(node.EndPoint().Column) + 1
+	}
+	return call
 }
 
 func (p *GoParser) parseSelectorCall(

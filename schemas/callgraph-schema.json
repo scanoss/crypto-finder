@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.8",
+      "const": "6.9",
       "type": "string",
       "description": "Version of the customer-facing callgraph contract."
     },

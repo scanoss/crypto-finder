@@ -39,6 +39,19 @@ func decodeEquiv(t *testing.T, v any) equiv.CallgraphExportJSON {
 // sides relativize identically), crypto_entry_points inconsistency, or a dangling
 // supporting_call_ids foreign key. KnownDivergences (inferred_return, confidence —
 // documented v1 limitations) are allowed.
+func cloneInterimReport(t *testing.T, report *entities.InterimReport) *entities.InterimReport {
+	t.Helper()
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	clone := new(entities.InterimReport)
+	if err := json.Unmarshal(raw, clone); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+	return clone
+}
+
 func assertEquivClean(t *testing.T, rep *equiv.DiffReport) {
 	t.Helper()
 	if len(rep.MissingInB) != 0 {
@@ -95,13 +108,15 @@ func TestEquivalence_SingleComponent_StitchMatchesLive(t *testing.T) {
 	t.Parallel()
 	key := graphfrag.ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0"}
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
+	liveReport := cloneInterimReport(t, report)
+	stitchedReport := cloneInterimReport(t, report)
 
 	// A — live export of the component scanned directly.
-	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, report)
+	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, liveReport)
 
-	// B — stitched export from the component's cached fragment (no live callgraph
+	// B — stitched export from an independent report copy (no live callgraph
 	// at stitch time; the structure comes from the decoded fragment).
-	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, report)
+	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, stitchedReport)
 	res, err := graphfrag.Stitch(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag})
 	if err != nil {
 		t.Fatalf("Stitch: %v", err)
@@ -116,10 +131,10 @@ func TestEquivalence_SingleComponent_StitchMatchesLive(t *testing.T) {
 	if len(stitched.SupportingCalls) == 0 {
 		t.Fatal("fixture produced no supporting_calls; cannot validate the supporting_call_ids FK")
 	}
-	if got := report.Findings[0].CryptographicAssets[0].OccurrenceKey; got == "" {
+	if got := liveReport.Findings[0].CryptographicAssets[0].OccurrenceKey; got == "" {
 		t.Fatal("live export did not assign occurrence_key")
 	}
-	if got, want := live.FindingGraphs[0].OccurrenceKey, report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != want {
+	if got, want := live.FindingGraphs[0].OccurrenceKey, liveReport.Findings[0].CryptographicAssets[0].OccurrenceKey; got != want {
 		t.Fatalf("live occurrence_key = %q, want report key %q", got, want)
 	}
 	if got, want := stitched.FindingGraphs[0].OccurrenceKey, live.FindingGraphs[0].OccurrenceKey; got != want {
@@ -151,8 +166,8 @@ func TestEquivalence_StitchedChainPaths_AreComponentRelative(t *testing.T) {
 	// The TempDir is the absolute "workspace" the mine runs in. liveCallgraphExport
 	// and buildModuleFragment each create their own TempDir; we capture the live
 	// one to confirm its absolute prefix never appears in stitched output.
-	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, report)
-	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, report)
+	live := liveCallgraphExport(t, "Svc.java", supportingFixtureSrc, cloneInterimReport(t, report))
+	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", supportingFixtureSrc, cloneInterimReport(t, report))
 	res, err := graphfrag.Stitch(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag})
 	if err != nil {
 		t.Fatalf("Stitch: %v", err)

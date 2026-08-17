@@ -594,7 +594,7 @@ The final interim report looks like this:
 
 ```json
 {
-  "version": "1.3",
+  "version": "1.5",
   "tool": {"name": "crypto-finder", "version": "dev"},
   "findings": [
     {

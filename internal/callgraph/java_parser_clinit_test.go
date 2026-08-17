@@ -86,6 +86,16 @@ class Sample {
 		t.Error("<clinit> Calls wrongly include method-body call Cipher.getInstance()")
 	}
 
+	for _, method := range []string{"register", "lookup"} {
+		call := findCallByMethod(clinit, method, "")
+		if call == nil {
+			t.Fatalf("<clinit> Calls missing %s", method)
+		}
+		if call.NamedASTPath == "" {
+			t.Errorf("%s in class initializer has no AST anchor", method)
+		}
+	}
+
 	// <clinit> is an entry point: nothing in source calls it, so no FunctionDecl
 	// in this analysis has an outgoing edge whose callee is <clinit>.
 	for i := range fns {

@@ -132,7 +132,7 @@ func findOccurrenceContainingFunction(functions map[string]*callgraph.FunctionDe
 
 	var best *callgraph.FunctionDecl
 	for _, fn := range functions {
-		if !strings.HasSuffix(filepath.ToSlash(fn.FilePath), normalized) || line < fn.StartLine || line > fn.EndLine {
+		if !hasPathSegmentSuffix(fn.FilePath, normalized) || line < fn.StartLine || line > fn.EndLine {
 			continue
 		}
 		if best == nil || tighterSpan(fn, best) {
@@ -140,6 +140,12 @@ func findOccurrenceContainingFunction(functions map[string]*callgraph.FunctionDe
 		}
 	}
 	return best
+}
+
+func hasPathSegmentSuffix(path, suffix string) bool {
+	path = strings.Trim(filepath.ToSlash(path), "/")
+	suffix = strings.Trim(filepath.ToSlash(suffix), "/")
+	return path == suffix || strings.HasSuffix(path, "/"+suffix)
 }
 
 func occurrenceSourceSubject(result *engine.DepScanResult, asset *entities.CryptographicAsset) string {

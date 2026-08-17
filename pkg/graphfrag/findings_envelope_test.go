@@ -30,7 +30,7 @@ func buildEnvelopeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fra
 				Resolution: ResolutionExact,
 			}},
 			CryptoOperations: []CryptoOperation{{
-				Function: "com.acme.App.entry#0", RuleID: "rule.app", OccurrenceKey: "v1:1111111111111111",
+				Function: "com.acme.App.entry#0", RuleID: "rule.app", OccurrenceKey: "v1:0a1b2c3d4e5f6789",
 				FilePath: "App.java", StartLine: 5, EndLine: 5,
 				Match: "DigestUtils.md5(data)", OID: "1.2.840.113549.2.5",
 				Source: "direct", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"MD5"}`),
@@ -44,7 +44,7 @@ func buildEnvelopeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fra
 				CanonicalSignature: "net.crypto.Lib.encrypt(): void", FilePath: "Lib.java", StartLine: 25,
 			}},
 			CryptoOperations: []CryptoOperation{{
-				Function: "net.crypto.Lib.encrypt#0", RuleID: "rule.lib", OccurrenceKey: "v1:2222222222222222",
+				Function: "net.crypto.Lib.encrypt#0", RuleID: "rule.lib", OccurrenceKey: "v1:f0e1d2c3b4a59687",
 				FilePath: "Lib.java", StartLine: 25, EndLine: 27,
 				Match: `Cipher.getInstance("AES")`, OID: "2.16.840.1.101.3.4.1.2",
 				Source: "direct", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"AES"}`),
@@ -88,7 +88,7 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if root.Source != "direct" {
 		t.Errorf("root source = %q, want direct", root.Source)
 	}
-	if root.OccurrenceKey != "v1:1111111111111111" {
+	if root.OccurrenceKey != "v1:0a1b2c3d4e5f6789" {
 		t.Errorf("root occurrence_key = %q", root.OccurrenceKey)
 	}
 	if root.Match != "DigestUtils.md5(data)" || root.EndLine != 5 || root.OID != "1.2.840.113549.2.5" {
@@ -104,7 +104,7 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if dep.Source != "indirect" {
 		t.Errorf("dep source = %q, want indirect", dep.Source)
 	}
-	if dep.OccurrenceKey != "v1:2222222222222222" {
+	if dep.OccurrenceKey != "v1:f0e1d2c3b4a59687" {
 		t.Errorf("dep occurrence_key = %q", dep.OccurrenceKey)
 	}
 	if dep.Match != `Cipher.getInstance("AES")` || dep.EndLine != 27 {

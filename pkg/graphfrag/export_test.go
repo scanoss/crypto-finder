@@ -191,11 +191,11 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_9 verifies the schema version constant has been bumped.
-// 1.9 adds optional occurrence_key propagation for canonical crypto annotations.
-func TestSchemaVersion_Is_1_9(t *testing.T) {
+// TestSchemaVersion_Is_1_10 verifies the schema version constant has been bumped.
+// 1.10 adds optional occurrence_key propagation for canonical crypto annotations.
+func TestSchemaVersion_Is_1_10(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.9" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.9", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.10" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.10", SchemaVersion)
 	}
 }

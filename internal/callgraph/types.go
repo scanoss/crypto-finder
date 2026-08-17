@@ -193,6 +193,10 @@ type FunctionDecl struct {
 	ReturnTypeRef   TypeRef
 	Visibility      string
 	OwnerVisibility string
+	// TypeParamBounds maps the declaring class's generic type-parameter names
+	// to their erased first bound ("Object" when unbounded). Used to build the
+	// erased signature consumers join on (Java only).
+	TypeParamBounds map[string]string
 	Parameters      []FunctionParameter
 	Calls           []FunctionCall
 	// ReturnSources traces where return values originate when the parser supports it.
@@ -316,7 +320,11 @@ type FileAnalysis struct {
 	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
 	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
 	DeclaredTypes         map[string]bool   // source-declared fully qualified types (C++ only)
-	Functions             []FunctionDecl
+	// ClassBases maps each source-declared (possibly nested, dotted) type name
+	// to its extends/implements clause as erased simple names (Java only).
+	// Presence of a key also marks the type as declared in this file.
+	ClassBases map[string][]string
+	Functions  []FunctionDecl
 }
 
 // CallGraph is the complete call graph across all analyzed packages.

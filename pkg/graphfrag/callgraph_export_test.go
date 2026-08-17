@@ -588,14 +588,39 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 }
 
-// TestCallgraphSchemaVersion_Is68 pins the canonical callgraph schema version
-// at 6.8 — the contract change that serializes ambiguous forward dispatch. The bump
+func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing.T) {
+	frags := buildPhase6FragmentsWithFilePath()
+	dep := frags[phase6Dep1]
+	dep.CryptoOperations[0].OccurrenceKey = "v1:0a1b2c3d4e5f6789"
+	other := dep.CryptoOperations[0]
+	other.OccurrenceKey = "v1:f0e1d2c3b4a59687"
+	dep.CryptoOperations = append(dep.CryptoOperations, other)
+	frags[phase6Dep1] = dep
+
+	res, err := Stitch(phase6Root, DependencyGraph{phase6Root: {phase6Dep1}}, frags)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	out := res.ToCallgraphExport(phase6Root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java"})
+	if len(out.FindingGraphs) != 2 {
+		t.Fatalf("FindingGraphs len = %d, want 2 for distinct occurrence keys", len(out.FindingGraphs))
+	}
+	if out.FindingGraphs[0].FindingID != out.FindingGraphs[1].FindingID {
+		t.Fatalf("finding IDs = %q and %q, want the same truncated ID", out.FindingGraphs[0].FindingID, out.FindingGraphs[1].FindingID)
+	}
+	if out.FindingGraphs[0].OccurrenceKey == out.FindingGraphs[1].OccurrenceKey {
+		t.Fatalf("occurrence keys = %q and %q, want distinct graphs", out.FindingGraphs[0].OccurrenceKey, out.FindingGraphs[1].OccurrenceKey)
+	}
+}
+
+// TestCallgraphSchemaVersion_Is69 pins the canonical callgraph schema version
+// at 6.9 — the contract change that adds optional occurrence_key alongside the 6.8 reachability contract. The bump
 // is unconditional: it advances regardless of whether any given export
 // actually emits the new fields (see package doc on CallgraphSchemaVersion).
-func TestCallgraphSchemaVersion_Is68(t *testing.T) {
+func TestCallgraphSchemaVersion_Is69(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.8" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.8")
+	if CallgraphSchemaVersion != "6.9" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.9")
 	}
 }
