@@ -2865,6 +2865,27 @@ func structuralTracebackChains(
 		return raw
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
+	if condensedChainsEnabled() {
+		chains, total, truncated := tracer.TraceBackCondensed(
+			containingFn.ID,
+			ctx.userPackages,
+			callGraphExportMaxDepth,
+			callGraphExportMaxChains,
+		)
+		if truncated {
+			// The exact total is known before enumeration, so a truncated
+			// export can say how much it left out instead of dropping the
+			// remainder silently (issue #249).
+			log.Warn().
+				Str("function", containingFn.ID.String()).
+				Int("emitted", len(chains)).
+				Int("total_condensed_paths", total).
+				Int("max_chains", callGraphExportMaxChains).
+				Msg("Truncated condensed call chain export for finding function")
+		}
+		ctx.callChainRawCache[cacheKey] = chains
+		return chains
+	}
 	chains, truncated := tracer.TraceBackLimited(
 		containingFn.ID,
 		ctx.userPackages,
@@ -2881,6 +2902,13 @@ func structuralTracebackChains(
 	ctx.callChainTruncated[cacheKey] = truncated
 	ctx.callChainRawCache[cacheKey] = chains
 	return chains
+}
+
+// condensedChainsEnabled gates the SCC-condensed traceback (issue #249) so a
+// single binary can be A/B'd against the current behavior. Experiment only —
+// the final change replaces TraceBackLimited outright on all three export paths.
+func condensedChainsEnabled() bool {
+	return os.Getenv("CRYPTO_FINDER_CONDENSED_CHAINS") == "1"
 }
 
 // materializeStructuralChainNodes builds function-identity chain nodes only.
