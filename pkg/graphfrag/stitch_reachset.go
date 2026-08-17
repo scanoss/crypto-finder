@@ -155,31 +155,8 @@ func buildEntryPointsFromReach(
 	for i := range findingGraphs {
 		fg := &findingGraphs[i]
 		anchor := anchorByFinding[fg.FindingID]
-		entries := reachByAnchor[anchor]
-		if len(entries) == 0 || fg.MatchedOperation == nil {
-			continue
-		}
-		routes := routeTotals[anchor]
-		for j := range entries {
-			entry := &entries[j]
-			node := buildExportNode(&entry.frame, root)
-			if node.FunctionName == "" && node.FunctionKey == "" {
-				continue
-			}
-			ep := ensureEPData(index, &node)
-			recordEPFindingWithRoutes(ep, fg, entry.depth, routes)
-			if entry.root {
-				rootKeys[ep.functionKey] = true
-			}
-			for _, supportingID := range fg.SupportingCallIDs {
-				support, ok := supportingByID[supportingID]
-				if !ok {
-					continue
-				}
-				referencedSupporting[supportingID] = struct{}{}
-				recordEPSupporting(ep, support, entry.depth)
-			}
-		}
+		indexFindingReach(index, rootKeys, fg, reachByAnchor[anchor], routeTotals[anchor],
+			root, supportingByID, referencedSupporting)
 	}
 
 	// Supporting calls no finding graph claimed still deserve an entry, exactly
@@ -198,6 +175,54 @@ func buildEntryPointsFromReach(
 		}
 	}
 	return out
+}
+
+// indexFindingReach files one finding against every function that reaches it.
+func indexFindingReach(
+	index map[string]*epData,
+	rootKeys map[string]bool,
+	fg *ExportFindingGraph,
+	entries []reachEntry,
+	routes routeCount,
+	root ComponentKey,
+	supportingByID map[string]ExportSupportingCall,
+	referencedSupporting map[string]struct{},
+) {
+	if len(entries) == 0 || fg.MatchedOperation == nil {
+		return
+	}
+	for j := range entries {
+		entry := &entries[j]
+		node := buildExportNode(&entry.frame, root)
+		if node.FunctionName == "" && node.FunctionKey == "" {
+			continue
+		}
+		ep := ensureEPData(index, &node)
+		recordEPFindingWithRoutes(ep, fg, entry.depth, routes)
+		if entry.root {
+			rootKeys[ep.functionKey] = true
+		}
+		attachFindingSupporting(ep, fg, entry.depth, supportingByID, referencedSupporting)
+	}
+}
+
+// attachFindingSupporting hangs the finding's supporting calls off one entry point
+// at that entry's depth.
+func attachFindingSupporting(
+	ep *epData,
+	fg *ExportFindingGraph,
+	depth int,
+	supportingByID map[string]ExportSupportingCall,
+	referencedSupporting map[string]struct{},
+) {
+	for _, supportingID := range fg.SupportingCallIDs {
+		support, ok := supportingByID[supportingID]
+		if !ok {
+			continue
+		}
+		referencedSupporting[supportingID] = struct{}{}
+		recordEPSupporting(ep, support, depth)
+	}
 }
 
 // recordAllReachEntries answers "which functions reach this crypto" for every

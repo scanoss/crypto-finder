@@ -94,51 +94,69 @@ func Reach[T comparable](target T, opts Options[T]) Reachable[T] {
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		depth := out.Depth[current]
-
-		if current != target && opts.IsBoundary != nil && opts.IsBoundary(current) {
-			out.Terminal[current] = true
-			continue
-		}
-
-		callers := opts.Callers(current)
-		if len(callers) == 0 {
-			if opts.RootIsTerminal && current != target {
-				out.Terminal[current] = true
-			}
-			continue
-		}
-
-		// depth counts calls; a route's frame count is depth+1. Do not grow past
-		// MaxDepth frames.
-		if opts.MaxDepth > 0 && depth+2 > opts.MaxDepth {
-			continue
-		}
-
-		sorted := append([]T(nil), callers...)
-		sortNodes(sorted, opts.Less)
-		for _, caller := range sorted {
-			out.Callers[current] = append(out.Callers[current], caller)
-			if _, seen := out.Depth[caller]; seen {
-				continue
-			}
-			out.Depth[caller] = depth + 1
-			queue = append(queue, caller)
-		}
+		queue = out.visit(current, target, queue, opts)
 	}
 
-	// Drop edges to nodes the walk never admitted, so Callers is exactly the
-	// adjacency induced on Depth.
-	for node, callers := range out.Callers {
+	out.pruneToVisited()
+	return out
+}
+
+// visit classifies one dequeued node and returns the queue with any newly
+// discovered callers appended.
+func (r *Reachable[T]) visit(current, target T, queue []T, opts Options[T]) []T {
+	if current != target && opts.IsBoundary != nil && opts.IsBoundary(current) {
+		r.Terminal[current] = true
+		return queue
+	}
+
+	callers := opts.Callers(current)
+	if len(callers) == 0 {
+		// A node with no callers. On the mine path that is the library's public
+		// API and so a terminal; with consumer code known it means nothing
+		// consumer-side reaches the target, and the branch is simply dropped.
+		if opts.RootIsTerminal && current != target {
+			r.Terminal[current] = true
+		}
+		return queue
+	}
+
+	depth := r.Depth[current]
+	// depth counts calls; a route's frame count is depth+1. Do not grow past
+	// MaxDepth frames.
+	if opts.MaxDepth > 0 && depth+2 > opts.MaxDepth {
+		return queue
+	}
+	return r.enqueueCallers(current, callers, depth, queue, opts.Less)
+}
+
+// enqueueCallers records the induced edges out of current and queues the callers
+// it had not seen before.
+func (r *Reachable[T]) enqueueCallers(current T, callers []T, depth int, queue []T, less func(a, b T) bool) []T {
+	sorted := append([]T(nil), callers...)
+	sortNodes(sorted, less)
+	for _, caller := range sorted {
+		r.Callers[current] = append(r.Callers[current], caller)
+		if _, seen := r.Depth[caller]; seen {
+			continue
+		}
+		r.Depth[caller] = depth + 1
+		queue = append(queue, caller)
+	}
+	return queue
+}
+
+// pruneToVisited drops edges to nodes the walk never admitted (depth-capped), so
+// Callers is exactly the adjacency induced on Depth.
+func (r *Reachable[T]) pruneToVisited() {
+	for node, callers := range r.Callers {
 		kept := callers[:0]
 		for _, caller := range callers {
-			if _, ok := out.Depth[caller]; ok {
+			if _, ok := r.Depth[caller]; ok {
 				kept = append(kept, caller)
 			}
 		}
-		out.Callers[node] = kept
+		r.Callers[node] = kept
 	}
-	return out
 }
 
 // Condensed is the reachable subgraph with every cycle collapsed to one node.
@@ -213,84 +231,117 @@ func Condense[T comparable](r Reachable[T], less func(a, b T) bool) Condensed[T]
 // the first-discovered member of its component and everything stacked on top of
 // it belongs there too.
 func tarjan[T comparable](nodes []T, callers map[T][]T, less func(a, b T) bool, out *Condensed[T]) {
-	index := make(map[T]int, len(nodes))
-	low := make(map[T]int, len(nodes))
-	onStack := make(map[T]bool, len(nodes))
-
-	var stack []T
-	counter := 0
-
-	type frame struct {
-		node T
-		next int
+	st := &tarjanState[T]{
+		index:   make(map[T]int, len(nodes)),
+		low:     make(map[T]int, len(nodes)),
+		onStack: make(map[T]bool, len(nodes)),
+		callers: callers,
+		less:    less,
+		out:     out,
 	}
-
 	for _, root := range nodes {
-		if _, visited := index[root]; visited {
+		if _, visited := st.index[root]; visited {
 			continue
 		}
-		index[root] = counter
-		low[root] = counter
-		counter++
-		stack = append(stack, root)
-		onStack[root] = true
+		st.run(root)
+	}
+}
 
-		work := []frame{{node: root}}
-		for len(work) > 0 {
-			top := &work[len(work)-1]
-			v := top.node
-			adj := callers[v]
+// tarjanState is one traversal's bookkeeping.
+type tarjanState[T comparable] struct {
+	index   map[T]int
+	low     map[T]int
+	onStack map[T]bool
+	stack   []T
+	counter int
+	callers map[T][]T
+	less    func(a, b T) bool
+	out     *Condensed[T]
+}
 
-			descended := false
-			for top.next < len(adj) {
-				w := adj[top.next]
-				top.next++
-				if _, visited := index[w]; !visited {
-					index[w] = counter
-					low[w] = counter
-					counter++
-					stack = append(stack, w)
-					onStack[w] = true
-					work = append(work, frame{node: w})
-					descended = true
-					break
-				}
-				// Only a node still on the stack is part of an open cycle. One
-				// already assigned to a component must be ignored, or v would be
-				// folded into a component it merely points at.
-				if onStack[w] && index[w] < low[v] {
-					low[v] = index[w]
-				}
-			}
-			if descended {
-				continue
-			}
+// tarjanFrame is one entry of the explicit DFS stack: the node being expanded and
+// how far through its callers the expansion got.
+type tarjanFrame[T comparable] struct {
+	node T
+	next int
+}
 
-			if low[v] == index[v] {
-				id := len(out.Members)
-				var group []T
-				for {
-					w := stack[len(stack)-1]
-					stack = stack[:len(stack)-1]
-					onStack[w] = false
-					out.Comp[w] = id
-					group = append(group, w)
-					if w == v {
-						break
-					}
-				}
-				sortNodes(group, less)
-				out.Members = append(out.Members, group)
-			}
-
-			work = work[:len(work)-1]
-			if len(work) > 0 {
-				parent := work[len(work)-1].node
-				if low[v] < low[parent] {
-					low[parent] = low[v]
-				}
-			}
+// run expands one DFS tree, rooted at root.
+func (s *tarjanState[T]) run(root T) {
+	s.discover(root)
+	work := []tarjanFrame[T]{{node: root}}
+	for len(work) > 0 {
+		if s.descend(&work) {
+			continue
 		}
+		v := work[len(work)-1].node
+		if s.low[v] == s.index[v] {
+			s.popComponent(v)
+		}
+		work = work[:len(work)-1]
+		if len(work) > 0 {
+			s.liftParent(work[len(work)-1].node, v)
+		}
+	}
+}
+
+// discover numbers a node and pushes it on the component stack.
+func (s *tarjanState[T]) discover(node T) {
+	s.index[node] = s.counter
+	s.low[node] = s.counter
+	s.counter++
+	s.stack = append(s.stack, node)
+	s.onStack[node] = true
+}
+
+// descend advances the top frame through its callers. It reports true when it
+// stepped into an undiscovered caller, meaning the caller must be expanded before
+// the current node can be finished.
+func (s *tarjanState[T]) descend(work *[]tarjanFrame[T]) bool {
+	top := &(*work)[len(*work)-1]
+	v := top.node
+	adj := s.callers[v]
+	for top.next < len(adj) {
+		w := adj[top.next]
+		top.next++
+		if _, visited := s.index[w]; !visited {
+			s.discover(w)
+			*work = append(*work, tarjanFrame[T]{node: w})
+			return true
+		}
+		// Only a node still on the stack is part of an open cycle. One already
+		// assigned to a component must be ignored, or v would be folded into a
+		// component it merely points at.
+		if s.onStack[w] && s.index[w] < s.low[v] {
+			s.low[v] = s.index[w]
+		}
+	}
+	return false
+}
+
+// popComponent closes the component rooted at v: v plus everything stacked above.
+func (s *tarjanState[T]) popComponent(v T) {
+	id := len(s.out.Members)
+	var group []T
+	for {
+		w := s.stack[len(s.stack)-1]
+		s.stack = s.stack[:len(s.stack)-1]
+		s.onStack[w] = false
+		s.out.Comp[w] = id
+		group = append(group, w)
+		if w == v {
+			break
+		}
+	}
+	sortNodes(group, s.less)
+	s.out.Members = append(s.out.Members, group)
+}
+
+// liftParent propagates a finished child's reach up to its parent: whatever the
+// child can climb back to, the parent can too.
+func (s *tarjanState[T]) liftParent(parent, child T) {
+	if s.low[child] < s.low[parent] {
+		s.low[parent] = s.low[child]
 	}
 }
 
@@ -318,14 +369,14 @@ func Count[T comparable](r Reachable[T], c Condensed[T]) int {
 	return routes[c.Comp[r.Target]]
 }
 
-// Routes builds up to max concrete routes, each ordered from the target outward
-// to a terminal. A max of 0 means unbounded.
+// Routes builds up to budget concrete routes, each ordered from the target
+// outward to a terminal. A budget of 0 means unbounded.
 //
 // Inside a component the shortest hop sequence is used: a component is a cycle,
 // so every internal order describes the same trip through it, and the shortest is
 // the readable representative. Condensed.Members keeps the full membership for a
 // caller that wants to show what was collapsed.
-func Routes[T comparable](r Reachable[T], c Condensed[T], max int) [][]T {
+func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 	var out [][]T
 	start := c.Comp[r.Target]
 
@@ -339,7 +390,7 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], max int) [][]T {
 			}
 			if concrete, ok := expandRoute(r, c, route, member); ok {
 				out = append(out, concrete)
-				if max > 0 && len(out) >= max {
+				if budget > 0 && len(out) >= budget {
 					return false
 				}
 			}

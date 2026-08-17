@@ -120,7 +120,7 @@ func countEquivChains(e equiv.CallgraphExportJSON) int {
 	return n
 }
 
-// decodeEquivRaw decodes an already-marshalled export into the comparison shape.
+// decodeEquivRaw decodes an already-marshaled export into the comparison shape.
 func decodeEquivRaw(t *testing.T, raw []byte) equiv.CallgraphExportJSON {
 	t.Helper()
 	var out equiv.CallgraphExportJSON
