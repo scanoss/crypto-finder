@@ -14,8 +14,10 @@ package graphfrag
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // FindingsSchemaVersion is the findings.json envelope version emitted by
@@ -46,14 +48,15 @@ type FindingFile struct {
 // FindingAsset is one cryptographic asset, mirroring a findings.json
 // `cryptographic_assets[]` entry. Metadata is the verbatim camelCase block.
 type FindingAsset struct {
-	FindingID     string          `json:"finding_id"`
-	OccurrenceKey string          `json:"occurrence_key,omitempty"`
-	OID           string          `json:"oid,omitempty"`
-	Match         string          `json:"match"`
-	Source        string          `json:"source"`
-	StartLine     int             `json:"start_line"`
-	EndLine       int             `json:"end_line"`
-	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	FindingID      string                `json:"finding_id"`
+	OccurrenceKey  string                `json:"occurrence_key,omitempty"`
+	OID            string                `json:"oid,omitempty"`
+	Match          string                `json:"match"`
+	Source         string                `json:"source"`
+	StartLine      int                   `json:"start_line"`
+	EndLine        int                   `json:"end_line"`
+	Metadata       json.RawMessage       `json:"metadata,omitempty"`
+	DependencyInfo *ExportDependencyInfo `json:"dependency_info,omitempty"`
 
 	// ParameterConditions holds the structured predicates re-parsed from
 	// Metadata's verbatim "parameterCondition" string, if present. Nil when
@@ -106,6 +109,17 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 				EndLine:             op.EndLine,
 				Metadata:            op.Metadata,
 				ParameterConditions: parseParameterConditions(op.Metadata),
+			}
+			if !isRoot {
+				packageURL := purl.Dependency(meta.Ecosystem, frag.Module, key.Version)
+				if frag.Module == "" && strings.HasPrefix(key.Purl, "pkg:") {
+					packageURL = key.Purl
+				}
+				asset.DependencyInfo = &ExportDependencyInfo{
+					Module:  frag.Module,
+					Version: key.Version,
+					PURL:    packageURL,
+				}
 			}
 			if _, ok := byPath[path]; !ok {
 				order = append(order, path)

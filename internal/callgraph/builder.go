@@ -460,7 +460,7 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 
 	for callerKey, fn := range graph.Functions {
 		for i := range fn.Calls {
-			b.indexCallDispatch(graph, callerKey, fn.Calls[i], idx)
+			b.indexCallDispatch(graph, callerKey, &fn.Calls[i], idx)
 		}
 	}
 }
@@ -527,7 +527,7 @@ func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, calle
 // synthesized dispatch alias (overloads, interface/abstract virtual dispatch,
 // Python subclass dispatch, fluent fallback), each with its own edge
 // classification.
-func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call FunctionCall, idx dispatchIndexes) {
+func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
 	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
 	recordCallEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call)
@@ -563,7 +563,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call Fun
 	}
 }
 
-func recordCallEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, call FunctionCall) {
+func recordCallEdgeResolution(graph *CallGraph, callerKey, calleeKey string, kind EdgeKind, declaredType string, call *FunctionCall) {
 	recordEdgeResolution(graph, callerKey, calleeKey, kind, declaredType, call.Line, call.StartCol, call.EndCol)
 	if call.ResolvedReceiverType == "" {
 		return
@@ -934,7 +934,7 @@ func (b *Builder) expandAbstractClassDispatch(
 // expandFluentFallback links unresolved fluent-chain calls (foo().bar().baz()) to
 // candidate methods by deriving namespace root from the chain's root static call.
 func (b *Builder) expandFluentFallback(
-	call FunctionCall,
+	call *FunctionCall,
 	graph *CallGraph,
 	methodsByName map[string][]*FunctionDecl,
 ) []string {
@@ -963,7 +963,7 @@ func (b *Builder) expandFluentFallback(
 }
 
 func (b *Builder) fluentFallbackContext(
-	call FunctionCall,
+	call *FunctionCall,
 	graph *CallGraph,
 	methodsByName map[string][]*FunctionDecl,
 ) (string, []*FunctionDecl) {
@@ -993,7 +993,7 @@ type scoredFluentTarget struct {
 	score int
 }
 
-func scoreFluentFallbackTargets(call FunctionCall, rootPkg string, targets []*FunctionDecl) []scoredFluentTarget {
+func scoreFluentFallbackTargets(call *FunctionCall, rootPkg string, targets []*FunctionDecl) []scoredFluentTarget {
 	rootNS := namespaceRoot(rootPkg)
 	scoredTargets := make([]scoredFluentTarget, 0, len(targets))
 	for _, candidate := range targets {
@@ -1008,14 +1008,14 @@ func scoreFluentFallbackTargets(call FunctionCall, rootPkg string, targets []*Fu
 	return scoredTargets
 }
 
-func matchesFluentFallbackCandidate(call FunctionCall, rootNS string, candidate *FunctionDecl) bool {
+func matchesFluentFallbackCandidate(call *FunctionCall, rootNS string, candidate *FunctionDecl) bool {
 	if len(call.Arguments) > 0 && len(candidate.Parameters) != len(call.Arguments) {
 		return false
 	}
 	return namespaceRoot(candidate.ID.Package) == rootNS
 }
 
-func fluentFallbackScore(call FunctionCall, rootPkg string, candidate *FunctionDecl) int {
+func fluentFallbackScore(call *FunctionCall, rootPkg string, candidate *FunctionDecl) int {
 	score := 1
 	if candidate.ID.Package == rootPkg {
 		score += 2
@@ -1219,7 +1219,7 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			// FunctionCall.Callee diverge and the exported edge carries a synthesized
 			// key with no object identity.
 			addCaller(graph.Callers, newKey, callerKey, oldKey)
-			recordCallEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", *call)
+			recordCallEdgeResolution(graph, callerKey, newKey, EdgeKindExact, "", call)
 			resolved++
 		}
 		currentType = unconditionalContractReturn(ctrs)
@@ -1490,7 +1490,7 @@ func qualifyPassthroughGroups(graph *CallGraph) []qualifiedPassthroughGroup {
 		if !ok {
 			continue
 		}
-		candidateOwners := resolveOverloadPerOwner(graph, ambiguousCall, candidateOwnersByType(groups[gk]))
+		candidateOwners := resolveOverloadPerOwner(graph, &ambiguousCall, candidateOwnersByType(groups[gk]))
 		if len(candidateOwners) == 0 {
 			continue
 		}
@@ -1732,7 +1732,7 @@ func sortedAmbiguousGroupKeys(groups map[dispatchAmbiguousGroupKey][]edgeResolut
 // scoreOverloadCandidate, the same scoring inferJavaArgumentType-based overload
 // resolution uses elsewhere in this file. An owner whose best score is 0 (no
 // argument matched any parameter) is dropped rather than guessed.
-func resolveOverloadPerOwner(graph *CallGraph, call FunctionCall, ownerCandidates map[string][]string) map[string]string {
+func resolveOverloadPerOwner(graph *CallGraph, call *FunctionCall, ownerCandidates map[string][]string) map[string]string {
 	resolved := make(map[string]string, len(ownerCandidates))
 	for owner, keys := range ownerCandidates {
 		if len(keys) == 1 {
@@ -1745,7 +1745,7 @@ func resolveOverloadPerOwner(graph *CallGraph, call FunctionCall, ownerCandidate
 			if fn == nil {
 				continue
 			}
-			if score := scoreOverloadCandidate(fn, &call); score > bestScore {
+			if score := scoreOverloadCandidate(fn, call); score > bestScore {
 				best, bestScore = key, score
 			}
 		}

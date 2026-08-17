@@ -98,7 +98,7 @@ func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 				FindingID:           "a1b2c3d4",
 				OccurrenceKey:       "v1:1234567890abcdef",
 				Source:              "dependency",
-				DependencyInfo:      &schema.DependencyInfo{Module: "golang.org/x/crypto", Version: "v0.1.0"},
+				DependencyInfo:      &schema.DependencyInfo{Module: "golang.org/x/crypto", Version: "v0.1.0", PURL: "pkg:golang/golang.org/x/crypto@v0.1.0"},
 			}},
 		}},
 	}
@@ -118,7 +118,7 @@ func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 	asset := finding["cryptographic_assets"].([]any)[0].(map[string]any)
 	assertJSONKeys(t, asset, "asset", "dependency_info", "end_col", "end_line", "finding_id", "match", "occurrence_key", "metadata", "oid", "parameter_conditions", "rules", "source", "start_col", "start_line", "status")
 	assertJSONKeys(t, asset["rules"].([]any)[0].(map[string]any), "rule", "id", "message", "severity", "version")
-	assertJSONKeys(t, asset["dependency_info"].(map[string]any), "dependency_info", "module", "version")
+	assertJSONKeys(t, asset["dependency_info"].(map[string]any), "dependency_info", "module", "purl", "version")
 }
 
 func assertJSONKeys(t *testing.T, object map[string]any, name string, want ...string) {

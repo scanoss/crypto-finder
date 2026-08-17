@@ -110,6 +110,9 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if dep.Match != `Cipher.getInstance("AES")` || dep.EndLine != 27 {
 		t.Errorf("dep asset match/end_line not carried through: %+v", dep)
 	}
+	if dep.DependencyInfo == nil || dep.DependencyInfo.Module != "net.crypto:lib" || dep.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0" {
+		t.Errorf("dep asset dependency_info = %+v, want module and purl", dep.DependencyInfo)
+	}
 }
 
 // TestToFindingsEnvelope_FindingIDMatchesCallgraphExport is the load-bearing

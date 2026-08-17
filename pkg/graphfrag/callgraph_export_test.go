@@ -187,6 +187,9 @@ func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 	if node1.DependencyInfo.Module != "net.crypto:lib" {
 		t.Errorf("node[1].DependencyInfo.Module = %q, want net.crypto:lib", node1.DependencyInfo.Module)
 	}
+	if node1.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0.0" {
+		t.Errorf("node[1].DependencyInfo.PURL = %q, want pkg:maven/net.crypto/lib@2.0.0", node1.DependencyInfo.PURL)
+	}
 }
 
 // TestToCallgraphExport_EntryCallOnFrame1 asserts that the entry_call on node[1]
@@ -423,6 +426,7 @@ func TestBuildEntryPointsFromReachPropagatesSupportingCalls(t *testing.T) {
 		}},
 		map[string]graphNode{"finding-1": anchor},
 		ComponentKey{},
+		"java",
 		[]ExportFindingGraph{{
 			FindingID: "finding-1",
 			MatchedOperation: &ExportMatchedOperation{
@@ -627,7 +631,9 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 }
 
 // TestCallgraphSchemaVersion_Is610 pins the canonical callgraph schema version
-// at 6.10 — occurrence keys layered on the current reachability contract.
+// at 6.10 — the current reachability contract with occurrence keys and
+// dependency package URLs. The bump is unconditional: it advances regardless
+// of whether any given export emits the new fields.
 func TestCallgraphSchemaVersion_Is610(t *testing.T) {
 	t.Parallel()
 

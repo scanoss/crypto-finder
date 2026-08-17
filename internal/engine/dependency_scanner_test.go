@@ -298,7 +298,7 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	}
 	tracer := callgraph.NewTracer(graph, "/")
 
-	ds := &DependencyScanner{}
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
 	dep := &dependency.Dependency{Module: "dep/mod", Version: "v1.0.0", Dir: depDir}
 	depReport := &entities.InterimReport{Findings: []entities.Finding{{
 		FilePath:            "lib.go",
@@ -312,6 +312,9 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	}
 	if asset.DependencyInfo == nil || asset.DependencyInfo.Module != "dep/mod" || asset.DependencyInfo.Version != "v1.0.0" {
 		t.Fatalf("unexpected dependency info: %#v", asset.DependencyInfo)
+	}
+	if asset.DependencyInfo.PURL != "pkg:golang/dep/mod@v1.0.0" {
+		t.Errorf("dependency purl = %q, want pkg:golang/dep/mod@v1.0.0", asset.DependencyInfo.PURL)
 	}
 	if depReport.Findings[0].FilePath != "lib.go" {
 		t.Fatalf("unexpected dependency file path: %s", depReport.Findings[0].FilePath)

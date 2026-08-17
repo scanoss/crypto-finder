@@ -167,6 +167,8 @@ type DependencyInfo struct {
 	Module string `json:"module"`
 	// Version is the dependency version (e.g., "v0.17.0").
 	Version string `json:"version"`
+	// PURL is the canonical package URL when the dependency ecosystem is known.
+	PURL string `json:"purl,omitempty"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

@@ -44,7 +44,8 @@ The interim report is the primary findings artifact. It contains finding metadat
           "source": "direct|dependency",
           "dependency_info": {
             "module": "golang.org/x/crypto",
-            "version": "v0.17.0"
+            "version": "v0.17.0",
+            "purl": "pkg:golang/golang.org/x/crypto@v0.17.0"
           },
           "finding_id": "a1b2c3d4",
           "occurrence_key": "v1:0123456789abcdef"
@@ -83,7 +84,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `metadata.algorithmMode` | Mode of operation (for block ciphers) |
 | `metadata.algorithmPadding` | Padding scheme used |
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
-| `dependency_info` | Attribution for dependency findings: `module`, `version` (v1.2+) |
+| `dependency_info` | Attribution for dependency findings: `module`, `version`, and optional `purl` (v1.5+) |
 | `finding_id` | Stable short hash used to join the interim report to the call graph export (v1.3+) |
 | `occurrence_key` | Optional `v1:<16 lowercase hex>` structural identity. It excludes rules, source text, metadata, reachability, and severity; uses AST anchors when available and a deterministic file/module-level fallback for valid top-level calls (v1.5+). Legacy records or scans without source enrichment may omit it. |
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
@@ -95,13 +96,15 @@ Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or
 
 The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `oid`, `finding_id`, `occurrence_key`, `source`, and `dependency_info` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
 
-The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
+The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `ERROR`; `status` is `pending`, `identified`, `dismissed`, or `reviewed`; and `source` is `direct` or `dependency`. Known dependency ecosystems add a canonical `purl`; unknown ecosystems omit it, and missing versions produce versionless package URLs. `CryptographicAsset` accepts the legacy singular `rule` input and migrates it to `rules` only when `rules` is absent or empty. When both are supplied, `rules` takes precedence. Internal terminal-column fields never serialize.
 
 ### Call Graph Export
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
 Schema note: call graph export version **`6.10`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+
+- **`6.10`** adds an optional canonical `purl` inside dependency context. Live and stitched exports derive it from the scan ecosystem and existing module/version fields, so cached graph fragments gain the field without a fragment schema change.
 
 - **`6.10`** adds optional `occurrence_key` to canonical finding graphs; it is propagated from the interim report and graph fragments. AST anchors are preferred, with a deterministic file/module-level fallback for valid top-level calls. When present, `(finding_id, occurrence_key)` identifies the structural occurrence; legacy records without `occurrence_key` continue using `finding_id` alone.
 - **`6.9`** makes `crypto_entry_points[]` a reverse-reachability answer rather than a projection of the exported `call_chains`: every function that reaches a finding is listed, so an entry point no longer depends on which chains survived collapsing or the per-finding chain budget. `chain_depth` is consequently the true minimum frame distance, and some depths are smaller than the same export previously reported. No field was added or removed. Live and stitched paths agree on both the index and the enumerated routes.
@@ -117,7 +120,7 @@ Schema note: call graph export version **`6.10`** is the current customer-facing
 
 - Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
-- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info`, and optional `entry_call`.
+- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.

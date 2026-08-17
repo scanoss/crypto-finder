@@ -221,6 +221,10 @@
         "version": {
           "type": "string",
           "description": "Dependency version (e.g., \"v0.17.0\")"
+        },
+        "purl": {
+          "type": "string",
+          "description": "Canonical package URL when the dependency ecosystem is known"
         }
       },
       "additionalProperties": false
