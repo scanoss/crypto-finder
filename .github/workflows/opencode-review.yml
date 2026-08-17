@@ -52,10 +52,21 @@ jobs:
           cp -r _agent-skills-src/skills/. .agents/skills/
           rm -rf _agent-skills-src
 
+      # Post the review as our own bot identity instead of the generic
+      # github-actions[bot]. Scoped to this repo only, short-lived.
+      - name: Mint token for posting the review
+        id: review-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_SKILLS_APP_ID }}
+          private-key: ${{ secrets.AGENT_SKILLS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
       - uses: anomalyco/opencode/github@v1.18.18
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token }}
         with:
           model: openrouter/${{ vars.CODE_REVIEW_MODEL }}
           use_github_token: true
