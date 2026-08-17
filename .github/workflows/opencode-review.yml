@@ -22,8 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
 
       # Review skills live in a private repo, never in this repo's history.
       # Pull them in at runtime with a short-lived, read-only token scoped
