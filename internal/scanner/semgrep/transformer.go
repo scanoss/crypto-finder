@@ -33,6 +33,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/deduplicator"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.
@@ -121,6 +122,7 @@ func transformToCryptographicAsset(result *entities.SemgrepResult, rulePaths []s
 		Rules:    []entities.RuleInfo{ruleInfo}, // Now an array to support multiple rules
 		Metadata: make(map[string]string),
 		Status:   "pending", // TODO: Implement status logic
+		PURL:     purl.Rule(result.Extra.Metadata.PURL),
 	}
 
 	// Extract cryptographic details from rule metadata

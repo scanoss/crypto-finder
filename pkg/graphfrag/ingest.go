@@ -156,6 +156,7 @@ func appendCryptoOperations(frag *Fragment, ops []GraphFragmentCryptoOp) {
 			OID:               op.OID,
 			Metadata:          op.Metadata,
 			Source:            op.Source,
+			PURL:              op.PURL,
 			MatchedOperation:  toMatchedOp(op.MatchedOperation),
 			SupportingCallIDs: append([]string(nil), op.SupportingCallIDs...),
 		})

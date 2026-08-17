@@ -118,8 +118,8 @@ from semantic `return.type`, which may intentionally model only one inferred val
 
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schema is independent (currently
-`6.7` for the callgraph export — `pkg/graphfrag.CallgraphSchemaVersion` — and
-`graph-fragment-1.8` for the fragment export — `pkg/graphfrag.SchemaVersion`).
+`6.9` for the callgraph export — `pkg/graphfrag.CallgraphSchemaVersion` — and
+`graph-fragment-1.9` for the fragment export — `pkg/graphfrag.SchemaVersion`).
 
 To add a library:
 1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.

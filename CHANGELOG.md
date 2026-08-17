@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `scan --progress` now emits opt-in JSONL lifecycle events to stderr while keeping findings on stdout or `--output`; dependency aggregates, optional-phase skips, and terminal structured failures are machine-readable. (#237)
 - Dependency findings now include an optional canonical `purl` inside `dependency_info` for Java, Python, Go, and Rust dependencies, including versionless package URLs when dependency versions are unavailable. (#233)
+- Direct findings now promote valid rule `metadata.purl` values to a top-level `purl`, with exact direct-dependency version enrichment when the resolver provides one unambiguous match. (#264)
 
 ### Changed
-- Interim reports use schema `1.5`, and callgraph exports use schema `6.8` to carry dependency package URLs without changing graph-fragment wire format. (#233)
+- Interim reports use schema `1.6`, findings envelopes use schema `1.6`, callgraph exports use schema `6.9`, and graph fragments use schema `graph-fragment-1.9` to carry direct finding package URLs. (#264)
 
 ## [0.19.0] - 2026-08-14
 

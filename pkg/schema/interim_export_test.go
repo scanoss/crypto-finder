@@ -13,7 +13,7 @@ import (
 
 func TestInterimReportPublicContract(t *testing.T) {
 	report := schema.InterimReport{
-		Version: "1.5",
+		Version: "1.6",
 		Tool:    schema.ToolInfo{Name: "crypto-finder", Version: "0.1.0"},
 		Findings: []schema.Finding{{
 			FilePath: "src/crypto.go",
@@ -28,6 +28,7 @@ func TestInterimReportPublicContract(t *testing.T) {
 				Status:   "pending",
 				Metadata: map[string]string{"assetType": "algorithm"},
 				Source:   "direct",
+				PURL:     "pkg:golang/example.com/crypto",
 			}},
 		}},
 	}
@@ -41,7 +42,7 @@ func TestInterimReportPublicContract(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if got["version"] != "1.5" || got["tool"] == nil || got["rules"] == nil || got["findings"] == nil {
+	if got["version"] != "1.6" || got["tool"] == nil || got["rules"] == nil || got["findings"] == nil {
 		t.Fatalf("required report fields missing: %s", data)
 	}
 
@@ -54,12 +55,15 @@ func TestInterimReportPublicContract(t *testing.T) {
 	if asset["source"] != "direct" {
 		t.Errorf("source = %v, want direct", asset["source"])
 	}
+	if asset["purl"] != "pkg:golang/example.com/crypto" {
+		t.Errorf("purl = %v, want direct package URL", asset["purl"])
+	}
 	if _, ok := asset["terminal_start_col"]; ok {
 		t.Errorf("internal field leaked in %s", data)
 	}
 
-	if schema.InterimFormatVersion != "1.5" {
-		t.Errorf("InterimFormatVersion = %q, want 1.5", schema.InterimFormatVersion)
+	if schema.InterimFormatVersion != "1.6" {
+		t.Errorf("InterimFormatVersion = %q, want 1.6", schema.InterimFormatVersion)
 	}
 }
 
@@ -83,7 +87,7 @@ func TestCryptographicAssetLegacyRuleCompatibility(t *testing.T) {
 
 func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 	report := schema.InterimReport{
-		Version: "1.5",
+		Version: "1.6",
 		Tool:    schema.ToolInfo{Name: "crypto-finder", Version: "0.1.0"},
 		Rules:   schema.RulesInfo{Source: "remote", Name: "dca", Version: "v1", ChecksumSHA256: "abc"},
 		Findings: []schema.Finding{{

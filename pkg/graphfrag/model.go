@@ -435,6 +435,8 @@ type CryptoOperation struct {
 	Metadata json.RawMessage
 	// Source indicates how the finding was discovered: "direct" or "indirect" (1.2+).
 	Source string
+	// PURL is the optional package URL promoted from direct rule metadata.
+	PURL string
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
 	// operation (1.2+).
 	MatchedOperation *MatchedOp

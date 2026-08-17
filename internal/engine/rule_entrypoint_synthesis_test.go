@@ -650,6 +650,7 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
 		"operation":          "encrypt",
 		"parameterCondition": "param[0]==true",
 		"assetType":          "algorithm",
+		RulePURLMetadataKey:  "pkg:maven/org.bouncycastle/bcprov-jdk18on",
 	}
 	fn := &callgraph.FunctionDecl{StartLine: 42, EndLine: 55}
 
@@ -664,6 +665,12 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
 	}
 	if asset.Metadata["parameterCondition"] != "param[0]==true" {
 		t.Errorf("Metadata[parameterCondition] = %q, want verbatim passthrough", asset.Metadata["parameterCondition"])
+	}
+	if asset.PURL != "pkg:maven/org.bouncycastle/bcprov-jdk18on" {
+		t.Errorf("PURL = %q, want promoted rule PURL", asset.PURL)
+	}
+	if _, leaked := asset.Metadata[RulePURLMetadataKey]; leaked {
+		t.Fatal("rule PURL sentinel leaked into generic metadata")
 	}
 }
 

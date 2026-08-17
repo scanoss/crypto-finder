@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.5"
+const InterimFormatVersion = "1.6"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -155,6 +155,9 @@ type CryptographicAsset struct {
 
 	// DependencyInfo contains attribution data when the finding originates from a dependency.
 	DependencyInfo *DependencyInfo `json:"dependency_info,omitempty"`
+
+	// PURL is the optional package URL promoted from a direct finding's rule metadata.
+	PURL string `json:"purl,omitempty"`
 }
 
 // DependencyInfo contains attribution metadata for findings originating from dependencies.

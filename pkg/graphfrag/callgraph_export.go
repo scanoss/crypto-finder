@@ -30,7 +30,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.8"
+const CallgraphSchemaVersion = "6.9"
 
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
@@ -64,6 +64,8 @@ type ExportScanMeta struct {
 type ExportFindingGraph struct {
 	// FindingID is the crypto finding identifier.
 	FindingID string `json:"finding_id"`
+	// PURL is the optional package URL promoted from a direct rule finding.
+	PURL string `json:"purl,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
 	MatchedOperation *ExportMatchedOperation `json:"matched_operation,omitempty"`
 	// SupportingCallIDs are the supporting_id values of this finding's
@@ -440,6 +442,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	type findingKey string
 	type chainGroup struct {
 		findingID         string
+		purl              string
+		purlConflict      bool
 		matchedOp         *ExportMatchedOperation
 		supportingCallIDs []string
 		callChains        [][]ExportChainNode
@@ -469,6 +473,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 				findingID:         resolvedFindingID,
 				matchedOp:         chainMatchedOp(fc),
 				supportingCallIDs: chainSupportingCallIDs(fc),
+				purl:              directFindingPURL(fc, root),
 			}
 			if last := len(fc.Frames) - 1; last >= 0 {
 				grp.anchorNode = graphNode{
@@ -484,6 +489,14 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if len(grp.supportingCallIDs) == 0 {
 			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
+		if purl := directFindingPURL(fc, root); purl != "" {
+			if grp.purl != "" && grp.purl != purl {
+				grp.purl = ""
+				grp.purlConflict = true
+			} else if grp.purl == "" && !grp.purlConflict {
+				grp.purl = purl
+			}
+		}
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
@@ -497,6 +510,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		grp := groupMap[key]
 		fg := ExportFindingGraph{
 			FindingID:         grp.findingID,
+			PURL:              grp.purl,
 			MatchedOperation:  grp.matchedOp,
 			SupportingCallIDs: grp.supportingCallIDs,
 			CallChains:        grp.callChains,
@@ -511,6 +525,20 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	out.CryptoEntryPoints = buildCallgraphCryptoEntryPoints(out.FindingGraphs, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	return out
+}
+
+// directFindingPURL keeps package URLs out of dependency-origin projections.
+// A fragment may be mined standalone and later stitched as a dependency; only
+// the root component's direct findings may expose the top-level field.
+func directFindingPURL(fc *FindingChain, root ComponentKey) string {
+	if fc == nil || fc.CryptoOp == nil || len(fc.Frames) == 0 {
+		return ""
+	}
+	last := fc.Frames[len(fc.Frames)-1]
+	if last.Component != root {
+		return ""
+	}
+	return fc.CryptoOp.PURL
 }
 
 // mergeOperationEntryPoints folds role-bearing fragment crypto_entry_points into

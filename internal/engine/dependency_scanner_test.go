@@ -302,7 +302,7 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	dep := &dependency.Dependency{Module: "dep/mod", Version: "v1.0.0", Dir: depDir}
 	depReport := &entities.InterimReport{Findings: []entities.Finding{{
 		FilePath:            "lib.go",
-		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 10}},
+		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 10, PURL: "pkg:golang/dep/mod"}},
 	}}}
 
 	ds.attributeFindings(depReport, dep, userTarget, tracer, map[string]bool{"app": true})
@@ -316,8 +316,113 @@ func TestDependencyScanner_AttributeAndEnrich(t *testing.T) {
 	if asset.DependencyInfo.PURL != "pkg:golang/dep/mod@v1.0.0" {
 		t.Errorf("dependency purl = %q, want pkg:golang/dep/mod@v1.0.0", asset.DependencyInfo.PURL)
 	}
+	if asset.PURL != "" {
+		t.Errorf("top-level dependency PURL = %q, want empty", asset.PURL)
+	}
 	if depReport.Findings[0].FilePath != "lib.go" {
 		t.Fatalf("unexpected dependency file path: %s", depReport.Findings[0].FilePath)
+	}
+}
+
+func TestEnrichDirectFindingPURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		filePath  string
+		ecosystem string
+		rulePURL  string
+		resolved  *dependency.ResolveResult
+		want      string
+	}{
+		{
+			name:     "direct dependency",
+			filePath: "main.go",
+			resolved: &dependency.ResolveResult{
+				RootModule: "example.com/app",
+				VersionedGraph: map[string][]dependency.Ref{
+					"example.com/app": {{Module: "github.com/acme/lib", Version: "v1.2.3"}},
+				},
+			},
+			want: "pkg:golang/github.com/acme/lib@v1.2.3",
+		},
+		{
+			name:      "maven group root resolves artifact graph",
+			filePath:  "Main.java",
+			ecosystem: "java",
+			rulePURL:  "pkg:maven/org.example/lib",
+			resolved: &dependency.ResolveResult{
+				RootModule: "com.acme",
+				VersionedGraph: map[string][]dependency.Ref{
+					"com.acme:app@1.0.0":    {{Module: "org.example:lib", Version: "2.0.0"}},
+					"org.example:lib@2.0.0": {{Module: "org.example:transitive", Version: "3.0.0"}},
+				},
+			},
+			want: "pkg:maven/org.example/lib@2.0.0",
+		},
+		{
+			name:     "transitive dependency stays versionless",
+			filePath: "main.go",
+			resolved: &dependency.ResolveResult{
+				RootModule: "example.com/app",
+				VersionedGraph: map[string][]dependency.Ref{
+					"example.com/app": {{Module: "github.com/acme/wrapper", Version: "v1.0.0"}},
+				},
+			},
+			want: "pkg:golang/github.com/acme/lib",
+		},
+		{
+			name:     "ambiguous versions stay versionless",
+			filePath: "main.go",
+			resolved: &dependency.ResolveResult{
+				RootModule: "example.com/app",
+				VersionedGraph: map[string][]dependency.Ref{
+					"example.com/app": {
+						{Module: "github.com/acme/lib", Version: "v1.2.3"},
+						{Module: "github.com/acme/lib", Version: "v1.2.4"},
+					},
+				},
+			},
+			want: "pkg:golang/github.com/acme/lib",
+		},
+		{
+			name:     "workspace member uses its direct graph",
+			filePath: "service/main.go",
+			resolved: &dependency.ResolveResult{
+				RootModule:       "example.com/root",
+				WorkspaceMembers: []dependency.WorkspaceMember{{Name: "service", Dir: "/workspace/service"}},
+				VersionedGraph: map[string][]dependency.Ref{
+					"service": {{Module: "github.com/acme/lib", Version: "v2.0.0"}},
+				},
+			},
+			want: "pkg:golang/github.com/acme/lib@v2.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rulePURL := tt.rulePURL
+			if rulePURL == "" {
+				rulePURL = "pkg:golang/github.com/acme/lib"
+			}
+			report := &entities.InterimReport{Findings: []entities.Finding{{
+				FilePath: tt.filePath,
+				CryptographicAssets: []entities.CryptographicAsset{{
+					PURL: rulePURL,
+				}},
+			}}}
+			target := "/workspace"
+			// The workspace case intentionally exercises owningModule; single-project
+			// cases ignore target and use RootModule directly.
+			ecosystem := tt.ecosystem
+			if ecosystem == "" {
+				ecosystem = "go"
+			}
+			enrichDirectFindingPURLs(report, target, tt.resolved, ecosystem)
+			if got := report.Findings[0].CryptographicAssets[0].PURL; got != tt.want {
+				t.Fatalf("PURL = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
