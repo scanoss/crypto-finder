@@ -28,7 +28,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.8"
+const CallgraphSchemaVersion = "6.9"
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
