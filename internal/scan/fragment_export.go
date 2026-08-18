@@ -1643,7 +1643,8 @@ func buildGraphFragmentCryptoCall(called *callGraphCalledFunction) *graphfrag.Gr
 		// issue-103 WU3: carries the supporting-call declaration's KB-derived
 		// parameter_roles (populated in buildDerivedSupportingCall) into the
 		// fragment, so it survives to the served path unchanged.
-		ParameterRoles: toGraphFragmentParameterRoles(called.ParameterRoles),
+		ParameterRoles:    toGraphFragmentParameterRoles(called.ParameterRoles),
+		ResolvedKeyLength: called.ResolvedKeyLength,
 	}
 	for _, p := range called.Parameters {
 		cc.Parameters = append(cc.Parameters, convertCallGraphParameterToFragment(p))

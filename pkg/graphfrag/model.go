@@ -193,6 +193,40 @@ type CryptoCall struct {
 	// ParameterRoles is the issue-103 (WU3) contracts-KB-derived per-parameter
 	// role/contribution list, index-aligned with ParameterTypes.
 	ParameterRoles []ParameterRole
+	// ResolvedKeyLength is contract-scoped raw key-length evidence when a
+	// call-site argument can be resolved. Unknown values retain their call-site
+	// reference without inventing a bit length.
+	ResolvedKeyLength *ResolvedKeyLength
+}
+
+// SourceCallRef identifies the call-site argument that produced derived
+// callgraph evidence. ParameterIndex is zero-based.
+type SourceCallRef struct {
+	FunctionName   string `json:"function_name"`
+	Line           int    `json:"line"`
+	ParameterIndex int    `json:"parameter_index"`
+}
+
+// ResolvedKeyLength is raw key-size evidence derived from a contract-marked
+// integer parameter. Bits is absent when the value is unresolved.
+type ResolvedKeyLength struct {
+	Bits       *int          `json:"bits,omitempty"`
+	Provenance string        `json:"provenance"`
+	SourceCall SourceCallRef `json:"source_call"`
+}
+
+// cloneResolvedKeyLength copies optional key-length evidence across internal
+// graph-fragment models without sharing the Bits pointer.
+func cloneResolvedKeyLength(src *ResolvedKeyLength) *ResolvedKeyLength {
+	if src == nil {
+		return nil
+	}
+	dst := *src
+	if src.Bits != nil {
+		bits := *src.Bits
+		dst.Bits = &bits
+	}
+	return &dst
 }
 
 // RoleProvenance explains where a method_role came from: a direct contract

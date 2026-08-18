@@ -5,7 +5,7 @@ library:
   name: jdk-crypto
   description: "JDK Java Cryptography Architecture (JCA) and Java Cryptography Extension (JCE) standard library contracts"
 
-# JCA/JCE Knowledge Base — 44 contract entries + 31 hierarchy edges
+# JCA/JCE Knowledge Base — 45 contract entries + 31 hierarchy edges
 # Hand-curated for the callgraph-inferred-types v1 inference engine.
 # Schema version 2 — library block required.
 
@@ -22,6 +22,20 @@ contracts:
     return:
       type: javax.crypto.SecretKey
       confidence: high
+
+  - method: javax.crypto.KeyGenerator.init
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
 
   # --- KeyPairGenerator ---
   - method: java.security.KeyPairGenerator.getInstance

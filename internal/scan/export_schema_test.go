@@ -89,6 +89,81 @@ func TestGeneratedExportsMatchSchemas(t *testing.T) {
 	}
 }
 
+func TestCallgraphSchema_ResolvedKeyLengthTypes(t *testing.T) {
+	t.Parallel()
+
+	schemaPath := filepath.Join("..", "..", "schemas", "callgraph-schema.json")
+	tests := []struct {
+		name  string
+		valid bool
+		doc   map[string]any
+	}{
+		{
+			name:  "constant with integer bits",
+			valid: true,
+			doc:   callgraphResolvedKeyLengthDocument("constant", 256),
+		},
+		{
+			name:  "invalid provenance",
+			valid: false,
+			doc:   callgraphResolvedKeyLengthDocument("derived", 256),
+		},
+		{
+			name:  "invalid bits type",
+			valid: false,
+			doc:   callgraphResolvedKeyLengthDocument("constant", "256"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.doc)
+			if err != nil {
+				t.Fatalf("marshal document: %v", err)
+			}
+			result, err := gojsonschema.Validate(
+				gojsonschema.NewReferenceLoader("file://"+schemaPath),
+				gojsonschema.NewBytesLoader(data),
+			)
+			if err != nil {
+				t.Fatalf("validate document: %v", err)
+			}
+			if result.Valid() != tc.valid {
+				t.Fatalf("schema validity = %v, want %v: %v", result.Valid(), tc.valid, result.Errors())
+			}
+		})
+	}
+}
+
+func callgraphResolvedKeyLengthDocument(provenance string, bits any) map[string]any {
+	resolved := map[string]any{
+		"provenance": provenance,
+		"source_call": map[string]any{
+			"function_name":   "javax.crypto.KeyGenerator.init",
+			"line":            9,
+			"parameter_index": 0,
+		},
+	}
+	if bits != nil {
+		resolved["bits"] = bits
+	}
+	return map[string]any{
+		"schema_version": "6.11",
+		"scan_metadata":  map[string]any{},
+		"finding_graphs": []any{map[string]any{
+			"finding_id": "keygen-init",
+			"call_chains": []any{[]any{map[string]any{
+				"function_name": "example.KeyFlow.configure",
+				"file_path":     "KeyFlow.java",
+				"crypto_call": map[string]any{
+					"function_name":       "javax.crypto.KeyGenerator.init",
+					"line":                9,
+					"resolved_key_length": resolved,
+				},
+			}}},
+		}},
+	}
+}
+
 func populatedExportReport(t *testing.T) *entities.InterimReport {
 	t.Helper()
 
