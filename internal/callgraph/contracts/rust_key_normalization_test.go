@@ -51,7 +51,7 @@ func TestContractsFor_RustCallSiteKeyShapes(t *testing.T) {
 			want:   "ring::aead::UnboundKey",
 		},
 		{
-			name:   "free function keeps the module separator",
+			name:   "dot-joined free function key",
 			method: "ring.digest.digest",
 			arity:  2,
 			want:   "ring::digest::Digest",

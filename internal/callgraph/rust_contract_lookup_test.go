@@ -11,9 +11,14 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
-// Both the imported (`use ring::aead::UnboundKey;`) and the fully qualified
-// call form resolve to the same callee, so both must reach the same Rust
-// contract through the lookup key the inference path builds.
+// Both the type-import form (`use ring::aead::UnboundKey;`) and the fully
+// qualified call form resolve to the same callee, so both must reach the same
+// Rust contract through the lookup key the inference path builds.
+//
+// The module-import form (`use ring::digest;` then `digest::Context::new(..)`)
+// is deliberately absent: the parser folds the receiver type into the package
+// path there, so the callee carries no Type and no lookup key can match. That
+// is a separate parser defect tracked in #280, upstream of this key shape.
 func TestRustCallSiteContractLookup_ImportedAndFullyQualifiedForms(t *testing.T) {
 	src := `use ring::aead::UnboundKey;
 use ring::digest;

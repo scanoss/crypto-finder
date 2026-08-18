@@ -223,9 +223,10 @@ func (kb *KnowledgeBase) rustContractsFor(method string, arity int) []Contract {
 // rustAuthoredKey rewrites the module/type separator of a dot-joined
 // call-site FQN back into Rust's "::" form: "ring::aead.UnboundKey.new"
 // becomes "ring::aead::UnboundKey.new". Only the separator in front of the
-// receiver type moves; the method separator stays a ".". Keys with fewer than
-// two "." segments are returned unchanged — free functions such as
-// "ring::digest.digest" already match the authored key.
+// receiver type moves; the method separator stays a ".". Callers build at most
+// "package.Type.method", so one rewrite always suffices. Keys carrying fewer
+// than two "." segments have no module/type separator to move and are returned
+// unchanged.
 func rustAuthoredKey(method string) string {
 	last := strings.LastIndex(method, ".")
 	if last <= 0 {
