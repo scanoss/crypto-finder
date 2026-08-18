@@ -64,7 +64,7 @@ func TestResolvedKeyLengthFromContract(t *testing.T) {
 				ResolvedValue:      tt.resolvedValue,
 			}}
 			matches := contractMatchesForCall(ctx, call, len(call.Arguments))
-			got := resolvedKeyLengthFromContract(matches, call, parameters, []string{tt.parameterType})
+			got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, []string{tt.parameterType})
 			if tt.wantAbsent {
 				if got != nil {
 					t.Fatalf("resolved key length = %#v, want nil for non-int overload", got)
