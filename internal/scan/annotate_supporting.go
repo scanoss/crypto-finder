@@ -110,28 +110,27 @@ func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment grap
 	seen := make(map[string]bool)
 	for i := range report.Findings {
 		finding := &report.Findings[i]
-		calls := annotateSupportingCallsForFinding(fragment, edgesByCaller, *finding)
-		for j := range calls {
-			if keyLength, ok := keyLengthsByID[calls[j].SupportingID]; ok {
-				calls[j].SupportingCall.ResolvedKeyLength = keyLength
+		for a := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[a]
+			calls := annotateSupportingForAsset(fragment, edgesByCaller, *finding, asset)
+			// The cached bits are structural and survive a rules refresh, but the
+			// rule-vs-callgraph conflict marker is rule-derived: clone the cached
+			// evidence per asset and recompute the marker against the fresh rule
+			// metadata, so annotate never republishes a stale conflict.
+			declared := ruleDeclaredKeyLength(asset)
+			for j := range calls {
+				keyLength, ok := keyLengthsByID[calls[j].SupportingID]
+				if !ok || calls[j].SupportingCall == nil {
+					continue
+				}
+				resolved := keyLength.Clone()
+				applyRuleKeyLengthConflict(resolved, declared)
+				calls[j].SupportingCall.ResolvedKeyLength = resolved
 			}
+			appendUniqueAnnotateSupporting(&out, seen, calls)
 		}
-		appendUniqueAnnotateSupporting(&out, seen, calls)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].SupportingID < out[j].SupportingID })
-	return out
-}
-
-func annotateSupportingCallsForFinding(
-	fragment graphfrag.Fragment,
-	edgesByCaller map[string][]fragEdge,
-	finding entities.Finding,
-) []graphfrag.GraphFragmentSupporting {
-	out := make([]graphfrag.GraphFragmentSupporting, 0, len(finding.CryptographicAssets))
-	for i := range finding.CryptographicAssets {
-		calls := annotateSupportingForAsset(fragment, edgesByCaller, finding, finding.CryptographicAssets[i])
-		out = append(out, calls...)
-	}
 	return out
 }
 

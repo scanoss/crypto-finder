@@ -42,11 +42,11 @@ target source tree
    ▼
 6. Enrichment + export    OID enrichment (internal/enricher); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-                            internal/scan,         --export-callgraph emits the schema-6.11 reachability export;
-                            pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.11 fragment
+                            internal/scan,         --export-callgraph emits the schema-6.12 reachability export;
+                            pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.12 fragment
 ```
 
-The schema-6.11 key-length tracer bullet follows this boundary: contract-derived
+The schema-6.12 key-length tracer bullet follows this boundary: contract-derived
 `javax.crypto.KeyGenerator.init(int)` evidence is emitted at
 `supporting_calls[].supporting_call.resolved_key_length`, while the terminal
 `crypto_call` remains the rule-selected operation.
@@ -88,7 +88,7 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 
 | Package | Responsibility |
 |---------|----------------|
-| `graphfrag` | The graph-fragment model and wire schema (`graph-fragment-1.11`), fragment decode/encode, the tiered fail-closed **stitcher** that composes per-component fragments into transitive reachability, and the renderers (`ToCallgraphExport` — stamps callgraph schema `6.11` — and `ToFindingsEnvelope`). |
+| `graphfrag` | The graph-fragment model and wire schema (`graph-fragment-1.12`), fragment decode/encode, the tiered fail-closed **stitcher** that composes per-component fragments into transitive reachability, and the renderers (`ToCallgraphExport` — stamps callgraph schema `6.12` — and `ToFindingsEnvelope`). |
 | `graphfrag/equiv` | Semantic diff asserting a stitched callgraph equals a live one (the equivalence guarantee the renderers rely on). |
 | `paramcondition` | Parser for the crypto-rules `parameterCondition` grammar (`param[<selector>]<op><value>`) into structured predicates. |
 | `schema` | Interim report JSON contract (format version `1.6`) and compatibility unmarshalling. |
@@ -118,7 +118,7 @@ The type-inference engine consumes YAML knowledge bases under `internal/callgrap
 | Hierarchy `child → [A]` vs `[B]` (no subset) | **Hard error** naming both libraries |
 | Hierarchy `child → [A]` vs `[A, B]` | Union (subset accepted) |
 
-KB YAML schema version is `"2"` (internal to the loader). It is **independent** of the partner-facing export schemas (callgraph `6.11`, `graph-fragment-1.11`). See [AGENTS.md](../AGENTS.md#knowledge-base-layout-callgraph-inferred-types) for the authoring recipe.
+KB YAML schema version is `"2"` (internal to the loader). It is **independent** of the partner-facing export schemas (callgraph `6.12`, `graph-fragment-1.12`). See [AGENTS.md](../AGENTS.md#knowledge-base-layout-callgraph-inferred-types) for the authoring recipe.
 
 ### 3. Detection vs reachability
 
@@ -139,8 +139,8 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
-| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` | `6.11` | The partner-facing reachability contract changes |
-| Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.11` | The fragment wire format changes |
+| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` | `6.12` | The partner-facing reachability contract changes |
+| Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.12` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-2` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
 Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).

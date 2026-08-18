@@ -152,7 +152,7 @@ func callgraphResolvedKeyLengthDocument(provenance string, bits any) map[string]
 		resolved["bits"] = bits
 	}
 	return map[string]any{
-		"schema_version": "6.11",
+		"schema_version": "6.12",
 		"scan_metadata":  map[string]any{},
 		"finding_graphs": []any{map[string]any{
 			"finding_id":          "keygen-init",

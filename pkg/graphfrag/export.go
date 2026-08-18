@@ -42,7 +42,8 @@ import (
 // 1.9 adds generic-erased function join signatures for Java source-type
 // hierarchy stitching. 1.10 adds optional occurrence_key propagation for
 // canonical crypto annotations. 1.11 adds resolved key-length call evidence.
-const SchemaVersion = "graph-fragment-1.11"
+// 1.12 adds the rule-vs-callgraph key-length conflict marker on that evidence.
+const SchemaVersion = "graph-fragment-1.12"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema

@@ -1483,11 +1483,62 @@ func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []par
 	return filtered
 }
 
-// deriveSupportingCallsForFinding recovers a finding's supporting calls from the
-// call graph rather than from rule metadata. It locates the finding's terminal
-// crypto call, enumerates the lifecycle calls of the crypto object it identifies
-// (see deriveObjectLifecycleCalls), and renders each as a supporting-call entry.
+// deriveSupportingCallsForFinding derives this finding's supporting calls and
+// then reconciles their contract-resolved key length against the key length the
+// detection rule declared statically. The reconciliation happens here because
+// this is the only point holding both sides: the rule metadata on the asset and
+// the resolution on the supporting call. Downstream consumers therefore receive
+// the conflict marker precomputed and never re-derive it.
 func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
+	calls := deriveRawSupportingCallsForFinding(ctx, finding, asset)
+	declared := ruleDeclaredKeyLength(asset)
+	for i := range calls {
+		if calls[i].SupportingCall == nil {
+			continue
+		}
+		applyRuleKeyLengthConflict(calls[i].SupportingCall.ResolvedKeyLength, declared)
+	}
+	return calls
+}
+
+// ruleDeclaredKeyLength reads the rule's static crypto.keyLength metadata and
+// returns 0 when the rule declared nothing to reconcile. A missing, non-numeric
+// or non-positive value is not an error for the export: rules may legitimately
+// omit the field, or declare a caller-captured key length instead.
+func ruleDeclaredKeyLength(asset entities.CryptographicAsset) int {
+	bits, err := strconv.Atoi(strings.TrimSpace(asset.Metadata["keyLength"]))
+	if err != nil || bits <= 0 {
+		return 0
+	}
+	return bits
+}
+
+// applyRuleKeyLengthConflict keeps the callgraph-resolved bits primary and
+// retains the rule-declared bits alongside a conflict marker when the two
+// disagree. A declaredBits of 0 means the rule declared nothing. The function is
+// idempotent and always clears first, so a marker carried over from an earlier
+// evaluation is recomputed against the rule metadata handed in here. An
+// unresolved key length (no bits) is not a disagreement.
+func applyRuleKeyLengthConflict(resolved *graphfrag.ResolvedKeyLength, declaredBits int) {
+	if resolved == nil {
+		return
+	}
+	resolved.RuleDeclaredBits = nil
+	resolved.RuleConflict = false
+	if declaredBits <= 0 || resolved.Bits == nil || *resolved.Bits == declaredBits {
+		return
+	}
+	declared := declaredBits
+	resolved.RuleDeclaredBits = &declared
+	resolved.RuleConflict = true
+}
+
+// deriveRawSupportingCallsForFinding recovers a finding's supporting calls from
+// the call graph rather than from rule metadata. It locates the finding's
+// terminal crypto call, enumerates the lifecycle calls of the crypto object it
+// identifies (see deriveObjectLifecycleCalls), and renders each as a
+// supporting-call entry.
+func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
 	// Synthesized terminal entry points (library API boundary, no in-source call
 	// chain) get their fluent lifecycle methods from the contract KB by type
 	// lineage, since there are no chain siblings to derive structurally.
