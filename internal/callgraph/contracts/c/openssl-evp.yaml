@@ -4,11 +4,13 @@ library:
   name: openssl-evp
   coordinates:
     - openssl:libcrypto
-  description: "OpenSSL EVP high-level cryptographic APIs"
+  description: "OpenSSL EVP high-level cryptographic APIs and the low-level RSA/DSA key-generation entry points"
 
 # Inventory sources: OpenSSL 3.6.2 public headers and crypto_rules commit
 # 39597ad26c0a968aa927592ca8ac29698018dea1. The list is limited to callable
-# OpenSSL EVP APIs selected by the current C detection rules.
+# libcrypto APIs selected by the current C detection rules: the EVP high-level
+# surface plus the deprecated low-level RSA/DSA key-generation entry points
+# those rules still match.
 contracts:
 
   # Cipher algorithm factories.
@@ -687,6 +689,66 @@ contracts:
     arity: 2
     return: {type: "int", confidence: high}
     role: operation
+
+  # Key-size call sites. The bit count is supplied by the caller at the call
+  # site, so the argument carries it as keySize evidence. RSA_generate_key and
+  # RSA_generate_key_ex are the deprecated low-level entry points the C rules
+  # still match alongside their EVP replacements.
+  - method: EVP_RSA_gen
+    arity: 1
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_rsa_keygen_bits
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_dsa_paramgen_bits
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: nbits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: RSA_generate_key_ex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: RSA_generate_key
+    arity: 4
+    return: {type: "RSA*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: num
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: DSA_generate_parameters_ex
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
   - method: EVP_PKEY_sign_init
     arity: 1
     return: {type: "int", confidence: high}

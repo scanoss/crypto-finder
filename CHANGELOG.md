@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Callgraph contracts now model the C key-generation call sites that carry a caller-supplied key size: OpenSSL `EVP_RSA_gen`, `EVP_PKEY_CTX_set_rsa_keygen_bits`, `EVP_PKEY_CTX_set_dsa_paramgen_bits`, `RSA_generate_key`, `RSA_generate_key_ex`, `DSA_generate_parameters_ex`, and Mbed TLS `mbedtls_rsa_gen_key`. The size argument is declared as a `keySize` parameter role, so the call graph carries the same evidence point the detection rules capture. (scanoss/crypto_rules#206)
 
 ## [0.22.0] - 2026-08-17
 ### Added
