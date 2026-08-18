@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Callgraph export schema `6.11` and graph-fragment schema `1.11` add optional `supporting_calls[].supporting_call.resolved_key_length` evidence for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls. A resolved literal or simple propagated constant emits raw `bits`, `provenance: "constant"`, and a `source_call` parameter reference; unresolved or ambiguous values emit `provenance: "unknown"` without a fabricated bit length. Terminal findings remain attached to the detected operation, while the field is preserved by live, graph-fragment, and stitched callgraph exports. CBOM output is unchanged. (#272)
 
+### Fixed
+- Rust knowledge base contracts now resolve at call sites that carry a receiver type. Rust contract keys keep Rust's `::` module separator while call-site symbols join every segment with `.`, and Rust callees carry no encoded arity, so every Rust contract missed and no Rust call received `call_target_inferred_return` decoration or `parameter_roles` (`keySize`, `nonceSize`, `algorithm` evidence). Rust lookups now normalize the module/type separator and resolve by name when the arity is unknown. Calls written through a module import (`use ring::digest;` then `digest::Context::new(..)`) still resolve no contract, tracked separately in #280. Go, Java, Python, C, C++, and Node lookups are unchanged. (#277)
+
 ## [0.22.0] - 2026-08-17
 ### Added
 - `StitchOptions.ChainEntrySignatures` restricts call-chain enumeration to routes reaching the named entry points, so a filtered request spends the per-operation chain budget where the caller asked instead of in traversal order. The entry-point index is unaffected, and the zero value leaves the default path unchanged. Schema stays `6.9`; no re-mining. (scanoss/scanoss.api#116)

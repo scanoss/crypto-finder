@@ -174,11 +174,69 @@ type ContractReturn struct {
 }
 
 // ContractsFor returns all contracts for the given method FQN and arity.
-// Performs an exact-arity match. For Python's arity-tolerant variant, see
+// Performs an exact-arity match, plus the Rust key normalization described on
+// rustContractsFor. For Python's arity-tolerant variant, see
 // ContractsForTolerant.
 func (kb *KnowledgeBase) ContractsFor(method string, arity int) []Contract {
-	key := fmt.Sprintf("%s#%d", method, arity)
-	return kb.Contracts[key]
+	if ctrs := kb.Contracts[contractKey(method, arity)]; len(ctrs) > 0 {
+		return ctrs
+	}
+	if kb.Ecosystem != ecosystemRust {
+		return nil
+	}
+	return kb.rustContractsFor(method, arity)
+}
+
+func contractKey(method string, arity int) string {
+	return fmt.Sprintf("%s#%d", method, arity)
+}
+
+// rustContractsFor retries a Rust lookup against the key shape the Rust KBs are
+// authored in. Two call-site properties make the raw key miss:
+//
+//   - Call-site FQNs join every FunctionID segment with "." (producing
+//     "ring::aead.UnboundKey.new"), while the KBs keep Rust's own module/type
+//     separator ("ring::aead::UnboundKey.new"); rustAuthoredKey restores it.
+//   - Rust callees carry no encoded arity, so callers that derive arity from the
+//     callee name pass -1 ("unknown"). An exact match is impossible for those, so
+//     they resolve by name alone. Rust has no method overloading, so one
+//     method name on one type maps to a single contract.
+func (kb *KnowledgeBase) rustContractsFor(method string, arity int) []Contract {
+	normalized := rustAuthoredKey(method)
+	if normalized != method {
+		if ctrs := kb.Contracts[contractKey(normalized, arity)]; len(ctrs) > 0 {
+			return ctrs
+		}
+	}
+	if arity >= 0 {
+		return nil
+	}
+	if ctrs := kb.lowestArityByName(method); len(ctrs) > 0 {
+		return ctrs
+	}
+	if normalized != method {
+		return kb.lowestArityByName(normalized)
+	}
+	return nil
+}
+
+// rustAuthoredKey rewrites the module/type separator of a dot-joined
+// call-site FQN back into Rust's "::" form: "ring::aead.UnboundKey.new"
+// becomes "ring::aead::UnboundKey.new". Only the separator in front of the
+// receiver type moves; the method separator stays a ".". Callers build at most
+// "package.Type.method", so one rewrite always suffices. Keys carrying fewer
+// than two "." segments have no module/type separator to move and are returned
+// unchanged.
+func rustAuthoredKey(method string) string {
+	last := strings.LastIndex(method, ".")
+	if last <= 0 {
+		return method
+	}
+	prev := strings.LastIndex(method[:last], ".")
+	if prev <= 0 {
+		return method
+	}
+	return method[:prev] + "::" + method[prev+1:]
 }
 
 // ContractsForTolerant returns contracts for the given method FQN and arity with
@@ -205,6 +263,13 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 	}
 
 	// Python name-only fallback: scan for any key with "method#<anyArity>" prefix.
+	return kb.lowestArityByName(method)
+}
+
+// lowestArityByName returns the contracts registered under method for any
+// arity, preferring the lowest arity as a deterministic tiebreak. Returns nil
+// when the method name is unknown.
+func (kb *KnowledgeBase) lowestArityByName(method string) []Contract {
 	prefix := method + "#"
 	type candidate struct {
 		arity    int
@@ -233,7 +298,6 @@ func (kb *KnowledgeBase) ContractsForTolerant(method string, arity int) []Contra
 	if len(candidates) == 0 {
 		return nil
 	}
-	// Deterministic tiebreak: return the candidate with the lowest arity.
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].arity < candidates[j].arity
 	})
