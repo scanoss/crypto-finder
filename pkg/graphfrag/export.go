@@ -410,6 +410,8 @@ type GraphFragmentCryptoOp struct {
 	Metadata json.RawMessage `json:"metadata,omitempty"`
 	// Source indicates how the finding was discovered: "direct" or "indirect" (1.2+).
 	Source string `json:"source,omitempty"`
+	// PURL is the optional package URL promoted from direct rule metadata.
+	PURL string `json:"purl,omitempty"`
 	// MatchedOperation records the kind/symbol/expression of the matched crypto
 	// operation (1.2+). Mirrors the schema-6.0 matched_operation shape.
 	MatchedOperation *GraphFragmentMatchedOp `json:"matched_operation,omitempty"`

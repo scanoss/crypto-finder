@@ -863,3 +863,32 @@ func TestAssetGroupKey_String(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, actual)
 	}
 }
+
+func TestDeduplicateInterimReport_PURLMergePolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		first, second, want string
+	}{
+		{name: "known beats missing", second: "pkg:pypi/example", want: "pkg:pypi/example"},
+		{name: "same value", first: "pkg:pypi/example", second: "pkg:pypi/example", want: "pkg:pypi/example"},
+		{name: "conflict omits", first: "pkg:pypi/example", second: "pkg:pypi/other", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &entities.InterimReport{Findings: []entities.Finding{{
+				FilePath: "main.py",
+				CryptographicAssets: []entities.CryptographicAsset{
+					{StartLine: 1, EndLine: 1, Match: "hash(x)", PURL: tt.first},
+					{StartLine: 1, EndLine: 1, Match: "hash(x)", PURL: tt.second},
+				},
+			}}}
+			got := DeduplicateInterimReport(report).Findings[0].CryptographicAssets[0].PURL
+			if got != tt.want {
+				t.Fatalf("merged PURL = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

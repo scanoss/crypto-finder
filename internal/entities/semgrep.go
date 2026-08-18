@@ -51,6 +51,7 @@ type SemgrepExtra struct {
 
 // SemgrepMetadata contains metadata from Semgrep rules.
 type SemgrepMetadata struct {
+	PURL           string         `json:"purl,omitempty"`
 	Category       string         `json:"category,omitempty"`
 	Subcategory    string         `json:"subcategory,omitempty"`
 	Confidence     string         `json:"confidence,omitempty"`

@@ -30,6 +30,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // SyntheticEntryPointRuleID labels findings produced by surfacing a library's
@@ -39,6 +40,9 @@ import (
 // these synthetic terminals.
 const (
 	SyntheticEntryPointRuleID = "crypto-finder.api-entry-point"
+	// RulePURLMetadataKey carries top-level rule metadata through the internal
+	// conditioned-rule index without leaking it into generic finding metadata.
+	RulePURLMetadataKey = "__crypto_finder_rule_purl"
 
 	extYAML         = ".yaml"
 	extYML          = ".yml"
@@ -346,6 +350,8 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 	for k, v := range meta {
 		md[k] = v
 	}
+	rulePURL := purl.Rule(md[RulePURLMetadataKey])
+	delete(md, RulePURLMetadataKey)
 	md["api"] = api
 	if md["assetType"] == "" {
 		md["assetType"] = "algorithm"
@@ -381,6 +387,7 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 		}},
 		Status:              "pending",
 		Metadata:            md,
+		PURL:                rulePURL,
 		ParameterConditions: conditions,
 		Source:              "direct",
 	}
@@ -435,6 +442,7 @@ type ruleCryptoYAML struct {
 	PatternSources []rulePatternSourceYAML `yaml:"pattern-sources"`
 	PatternSinks   []rulePatternSourceYAML `yaml:"pattern-sinks"`
 	Metadata       struct {
+		PURL   string         `yaml:"purl"`
 		Crypto map[string]any `yaml:"crypto"`
 	} `yaml:"metadata"`
 }
@@ -494,6 +502,7 @@ func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCry
 		return
 	}
 	metadata := stringifyCryptoBlock(rule.Metadata.Crypto)
+	metadata[RulePURLMetadataKey] = purl.Rule(rule.Metadata.PURL)
 	conditions, err := paramcondition.ParseAll(metadata["parameterCondition"])
 	if err != nil || len(conditions) == 0 {
 		return
@@ -633,16 +642,17 @@ func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem strin
 	}
 
 	for i := range rf.Rules {
-		addRuleCrypto(out, rf.Rules[i].Metadata.Crypto, ecosystem)
+		addRuleCrypto(out, rf.Rules[i].Metadata.Crypto, rf.Rules[i].Metadata.PURL, ecosystem)
 	}
 }
 
-func addRuleCrypto(out map[string][]map[string]string, crypto map[string]any, ecosystem string) {
+func addRuleCrypto(out map[string][]map[string]string, crypto map[string]any, rulePURL, ecosystem string) {
 	api, ok := cryptoAPI(crypto, ecosystem)
 	if !ok {
 		return
 	}
 	meta := stringifyCryptoBlock(crypto)
+	meta[RulePURLMetadataKey] = purl.Rule(rulePURL)
 	removeUnresolvedMetadataVariables(meta)
 	for _, existing := range out[api] {
 		if maps.Equal(existing, meta) {

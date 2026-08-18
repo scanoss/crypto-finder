@@ -5,10 +5,60 @@
 package purl
 
 import (
+	"fmt"
 	"strings"
 
 	packageurl "github.com/package-url/packageurl-go"
 )
+
+// Rule returns a canonical versionless package URL from rule metadata.
+// Versioned rule PURLs are rejected because rules identify libraries, while
+// resolver output owns the optional version enrichment.
+func Rule(raw string) string {
+	p, ok := parse(raw)
+	if !ok || p.Version != "" {
+		return ""
+	}
+	return p.ToString()
+}
+
+// Identity returns the normalized type, namespace, and name of a package URL.
+// Those are the identity fields used when matching a rule PURL to a resolved
+// dependency; qualifiers, subpaths, and versions do not select a package.
+func Identity(raw string) (string, bool) {
+	p, ok := parse(raw)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%s\x00%s\x00%s", p.Type, p.Namespace, p.Name), true
+}
+
+// WithVersion adds a resolved version to a valid versionless rule PURL.
+func WithVersion(raw, version string) string {
+	p, ok := parse(raw)
+	if !ok || p.Version != "" || strings.TrimSpace(version) == "" {
+		return ""
+	}
+	p.Version = strings.TrimSpace(version)
+	if err := p.Normalize(); err != nil {
+		return ""
+	}
+	return p.ToString()
+}
+
+func parse(raw string) (packageurl.PackageURL, bool) {
+	p, err := packageurl.FromString(strings.TrimSpace(raw))
+	if err != nil || p.Type == "" || p.Name == "" {
+		return packageurl.PackageURL{}, false
+	}
+	if p.Type == packageurl.TypePyPi {
+		p.Name = normalizePyPIName(p.Name)
+	}
+	if err := p.Normalize(); err != nil {
+		return packageurl.PackageURL{}, false
+	}
+	return p, true
+}
 
 // Dependency returns the canonical package URL for a supported resolver
 // ecosystem. It returns an empty string when the ecosystem or module is not

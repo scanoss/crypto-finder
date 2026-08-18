@@ -16,6 +16,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // MaterializeConditionedFindings specializes generic rule anchors after the
@@ -381,6 +382,8 @@ func cloneConditionedAsset(anchor entities.CryptographicAsset, rule engine.RuleC
 	asset.OID = ""
 	asset.Rules = []entities.RuleInfo{rule.Rule}
 	asset.Metadata = maps.Clone(rule.Metadata)
+	asset.PURL = purl.Rule(asset.Metadata[engine.RulePURLMetadataKey])
+	delete(asset.Metadata, engine.RulePURLMetadataKey)
 	for key, value := range asset.Metadata {
 		for name, capture := range match.captures {
 			value = strings.ReplaceAll(value, "$"+name, capture)

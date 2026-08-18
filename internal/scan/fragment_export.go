@@ -1577,6 +1577,7 @@ func buildBaseGraphFragmentCryptoAnnotation(
 		EndLine:       asset.EndLine,
 		OID:           asset.OID,
 		Source:        asset.Source,
+		PURL:          asset.PURL,
 	}
 	if len(asset.Rules) > 0 {
 		op.RuleID = asset.Rules[0].ID

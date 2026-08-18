@@ -122,6 +122,7 @@ func mergeAssets(assets []entities.CryptographicAsset) entities.CryptographicAss
 
 	// Track unique rule IDs to avoid duplicates
 	seenRules := make(map[string]bool)
+	purlConflict := false
 	for _, rule := range merged.Rules {
 		seenRules[rule.ID] = true
 	}
@@ -129,6 +130,14 @@ func mergeAssets(assets []entities.CryptographicAsset) entities.CryptographicAss
 	// Merge metadata and rules from all assets
 	for i := 1; i < len(assets); i++ {
 		asset := assets[i]
+		if merged.PURL != "" && asset.PURL != "" && merged.PURL != asset.PURL {
+			// Conflicting rule identities must fail closed instead of selecting
+			// whichever rule happened to be visited first.
+			merged.PURL = ""
+			purlConflict = true
+		} else if merged.PURL == "" && !purlConflict {
+			merged.PURL = asset.PURL
+		}
 
 		// Merge unique metadata values (keep first value on conflicts)
 		for key, value := range asset.Metadata {

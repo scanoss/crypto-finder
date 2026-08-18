@@ -93,6 +93,8 @@ type ExportScanMeta struct {
 type ExportFindingGraph struct {
 	// FindingID is the crypto finding identifier.
 	FindingID string `json:"finding_id"`
+	// PURL is the optional package URL promoted from a direct rule finding.
+	PURL string `json:"purl,omitempty"`
 	// OccurrenceKey is the optional AST-anchored structural finding identity.
 	OccurrenceKey string `json:"occurrence_key,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
@@ -499,6 +501,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	type chainGroup struct {
 		findingID         string
 		occurrenceKey     string
+		purl              string
+		purlConflict      bool
 		matchedOp         *ExportMatchedOperation
 		supportingCallIDs []string
 		callChains        [][]ExportChainNode
@@ -529,6 +533,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 				occurrenceKey:     key.occurrenceKey,
 				matchedOp:         chainMatchedOp(fc),
 				supportingCallIDs: chainSupportingCallIDs(fc),
+				purl:              directFindingPURL(fc, root),
 			}
 			if last := len(fc.Frames) - 1; last >= 0 {
 				grp.anchorNode = graphNode{
@@ -544,6 +549,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if len(grp.supportingCallIDs) == 0 {
 			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
+		mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
@@ -565,6 +571,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		grp := groupMap[key]
 		fg := ExportFindingGraph{
 			FindingID:         grp.findingID,
+			PURL:              grp.purl,
 			OccurrenceKey:     grp.occurrenceKey,
 			MatchedOperation:  grp.matchedOp,
 			SupportingCallIDs: grp.supportingCallIDs,
@@ -596,6 +603,36 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		out.SupportingCalls[i].ErasedSignature = r.erasedByFunctionKey[out.SupportingCalls[i].FunctionKey]
 	}
 	return out
+}
+
+// directFindingPURL keeps package URLs out of dependency-origin projections.
+// A fragment may be mined standalone and later stitched as a dependency; only
+// the root component's direct findings may expose the top-level field.
+func directFindingPURL(fc *FindingChain, root ComponentKey) string {
+	if fc == nil || fc.CryptoOp == nil || len(fc.Frames) == 0 {
+		return ""
+	}
+	last := fc.Frames[len(fc.Frames)-1]
+	if last.Component != root {
+		return ""
+	}
+	return fc.CryptoOp.PURL
+}
+
+func mergeDirectFindingPURL(current *string, conflict *bool, purlValue string) {
+	if purlValue == "" {
+		return
+	}
+	if *current == "" {
+		if !*conflict {
+			*current = purlValue
+		}
+		return
+	}
+	if *current != purlValue {
+		*current = ""
+		*conflict = true
+	}
 }
 
 // upgradeComposedReachability marks a finding proven through a composed

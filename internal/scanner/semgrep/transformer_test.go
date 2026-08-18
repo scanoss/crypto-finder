@@ -916,6 +916,38 @@ func TestTransformToCryptographicAsset(t *testing.T) {
 	}
 }
 
+func TestTransformToCryptographicAsset_PURLPromotion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		purl string
+		want string
+	}{
+		{name: "valid", purl: "pkg:pypi/My_Package.Name", want: "pkg:pypi/my-package-name"},
+		{name: "invalid", purl: "not-a-purl", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &entities.SemgrepResult{
+				CheckID: "python.crypto.hash",
+				Start:   entities.SemgrepLocation{Line: 1, Col: 1},
+				Extra: entities.SemgrepExtra{
+					Metadata: entities.SemgrepMetadata{PURL: tt.purl},
+				},
+			}
+			asset := transformToCryptographicAsset(result, nil, "")
+			if asset.PURL != tt.want {
+				t.Fatalf("PURL = %q, want %q", asset.PURL, tt.want)
+			}
+			if _, leaked := asset.Metadata["purl"]; leaked {
+				t.Fatal("rule purl leaked into generic asset metadata")
+			}
+		})
+	}
+}
+
 func TestTransformToCryptographicAsset_NoMetadata(t *testing.T) {
 	t.Parallel()
 

@@ -631,9 +631,9 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 }
 
 // TestCallgraphSchemaVersion_Is610 pins the canonical callgraph schema version
-// at 6.10 — the current reachability contract with occurrence keys and
-// dependency package URLs. The bump is unconditional: it advances regardless
-// of whether any given export emits the new fields.
+// at 6.10 — the current reachability contract with direct finding PURLs,
+// occurrence keys, and dependency package URLs. The bump is unconditional: it
+// advances regardless of whether any given export emits the new fields.
 func TestCallgraphSchemaVersion_Is610(t *testing.T) {
 	t.Parallel()
 

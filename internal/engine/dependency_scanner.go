@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,6 +136,11 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 	defer cleanupRulePaths()
+	ecosystem := ""
+	if ds.resolver != nil {
+		ecosystem = ds.resolver.Ecosystem()
+	}
+	enrichDirectFindingPURLs(userReport, opts.ScanOptions.Target, resolved, ecosystem)
 	if len(resolved.Dependencies) == 0 {
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
@@ -780,6 +787,7 @@ func (ds *DependencyScanner) attributeFindings(
 
 			// Add dependency attribution as structured fields
 			asset.Source = findingSourceDependency
+			asset.PURL = ""
 			asset.DependencyInfo = &entities.DependencyInfo{
 				Module:  dep.Module,
 				Version: dep.Version,
@@ -837,6 +845,148 @@ func EnsureFindingSources(report *entities.InterimReport) {
 			}
 		}
 	}
+}
+
+// enrichDirectFindingPURLs adds a resolved version only when the rule PURL
+// matches exactly one version of a direct dependency of the owning module.
+// Missing graph/version evidence deliberately leaves the versionless rule URL.
+func enrichDirectFindingPURLs(report *entities.InterimReport, target string, resolved *dependency.ResolveResult, ecosystem string) {
+	if report == nil || resolved == nil {
+		return
+	}
+	for i := range report.Findings {
+		finding := &report.Findings[i]
+		parent := owningModule(target, finding.FilePath, resolved)
+		refs := directDependencyRefs(resolved, parent)
+		for j := range finding.CryptographicAssets {
+			asset := &finding.CryptographicAssets[j]
+			if asset.Source == findingSourceDependency || asset.PURL == "" {
+				continue
+			}
+			asset.PURL = enrichRulePURL(asset.PURL, refs, ecosystem)
+		}
+	}
+}
+
+func owningModule(target, filePath string, resolved *dependency.ResolveResult) string {
+	if len(resolved.WorkspaceMembers) == 0 {
+		return resolved.RootModule
+	}
+	fullPath := filepath.Clean(filePath)
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(target, fullPath)
+	}
+	owner := resolved.RootModule
+	longest := -1
+	for _, member := range resolved.WorkspaceMembers {
+		if member.Name == "" || member.Dir == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(filepath.Clean(member.Dir), fullPath); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && len(member.Dir) > longest {
+			owner = member.Name
+			longest = len(member.Dir)
+		}
+	}
+	return owner
+}
+
+func directDependencyRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
+	if parent == "" {
+		return nil
+	}
+	if refs := versionedDirectDependencyRefs(resolved, parent); len(refs) > 0 {
+		return refs
+	}
+	if refs := graphDirectDependencyRefs(resolved, parent); len(refs) > 0 {
+		return refs
+	}
+	return mavenRootAliasRefs(resolved, parent)
+}
+
+func versionedDirectDependencyRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
+	var refs []dependency.Ref
+	for key, children := range resolved.VersionedGraph {
+		if key == parent || strings.HasPrefix(key, parent+"@") {
+			refs = append(refs, children...)
+		}
+	}
+	return refs
+}
+
+func graphDirectDependencyRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
+	var refs []dependency.Ref
+	for _, child := range resolved.Graph[parent] {
+		for _, dep := range resolved.Dependencies {
+			if dep.Module == child {
+				refs = append(refs, dependency.Ref{Module: dep.Module, Version: dep.Version})
+			}
+		}
+	}
+	return refs
+}
+
+func mavenRootAliasRefs(resolved *dependency.ResolveResult, parent string) []dependency.Ref {
+	// Maven exposes RootModule as groupId while its versioned graph keys use
+	// groupId:artifactId@version. Recover that single root alias without
+	// treating every same-group dependency node as a direct project edge.
+	candidates := make(map[string][]dependency.Ref)
+	incoming := make(map[string]bool)
+	for key, children := range resolved.VersionedGraph {
+		module := key
+		if at := strings.LastIndexByte(module, '@'); at > 0 {
+			module = module[:at]
+		}
+		if strings.HasPrefix(module, parent+":") {
+			candidates[key] = children
+		}
+	}
+	for _, children := range resolved.VersionedGraph {
+		for _, child := range children {
+			if _, ok := candidates[child.Key()]; ok {
+				incoming[child.Key()] = true
+			}
+		}
+	}
+	var rootRefs []dependency.Ref
+	for key, children := range candidates {
+		if !incoming[key] {
+			if rootRefs != nil {
+				return nil
+			}
+			rootRefs = children
+		}
+	}
+	return rootRefs
+}
+
+func enrichRulePURL(ruleURL string, refs []dependency.Ref, ecosystem string) string {
+	want, ok := purl.Identity(ruleURL)
+	if !ok {
+		return ""
+	}
+	versions := make(map[string]struct{})
+	for _, ref := range refs {
+		if ref.Version == "" {
+			continue
+		}
+		candidate := purl.Dependency(ecosystem, ref.Module, ref.Version)
+		if candidate == "" {
+			continue
+		}
+		identity, ok := purl.Identity(candidate)
+		if ok && identity == want {
+			versions[ref.Version] = struct{}{}
+		}
+	}
+	if len(versions) != 1 {
+		return ruleURL
+	}
+	for version := range versions {
+		if enriched := purl.WithVersion(ruleURL, version); enriched != "" {
+			return enriched
+		}
+	}
+	return ruleURL
 }
 
 // AssignFindingIDs ensures every finding asset in the report has a stable short hash

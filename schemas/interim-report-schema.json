@@ -11,10 +11,11 @@
   ],
   "properties": {
     "version": {
-      "const": "1.5",
+      "const": "1.6",
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.5\")",
+      "description": "Version of the interim report schema (e.g., \"1.6\")",
       "examples": [
+        "1.6",
         "1.5",
         "1.3",
         "1.2",
@@ -161,6 +162,10 @@
         "dependency_info": {
           "$ref": "#/definitions/DependencyInfo",
           "description": "Attribution data when the finding originates from a dependency (v1.2+)"
+        },
+        "purl": {
+          "type": "string",
+          "description": "Canonical versionless or version-enriched package URL promoted from direct rule metadata (v1.6+)"
         },
         "parameter_conditions": {
           "type": "array",

@@ -28,3 +28,31 @@ func TestDependency(t *testing.T) {
 		})
 	}
 }
+
+func TestRule(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, raw, want string
+	}{
+		{name: "normalizes", raw: "pkg:pypi/My_Package.Name", want: "pkg:pypi/my-package-name"},
+		{name: "rejects version", raw: "pkg:maven/org.example/lib@1.2.3"},
+		{name: "rejects invalid", raw: "not-a-purl"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Rule(tt.raw); got != tt.want {
+				t.Fatalf("Rule(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWithVersion(t *testing.T) {
+	if got := WithVersion("pkg:maven/org.example/lib", "1.2.3"); got != "pkg:maven/org.example/lib@1.2.3" {
+		t.Fatalf("WithVersion() = %q", got)
+	}
+	if got := WithVersion("pkg:maven/org.example/lib@1.2.3", "2.0.0"); got != "" {
+		t.Fatalf("WithVersion(versioned) = %q, want empty", got)
+	}
+}

@@ -130,6 +130,7 @@ type callGraphExportScanMeta struct {
 
 type callGraphExportFinding struct {
 	FindingID         string                     `json:"finding_id"`
+	PURL              string                     `json:"purl,omitempty"`
 	OccurrenceKey     string                     `json:"occurrence_key,omitempty"`
 	MatchedOperation  *callGraphMatchedOperation `json:"matched_operation,omitempty"`
 	FindingLocation   *callGraphFindingLocation  `json:"finding_location,omitempty"`
@@ -1363,6 +1364,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	fg := callGraphExportFinding{
 		FindingID:        asset.FindingID,
+		PURL:             asset.PURL,
 		OccurrenceKey:    asset.OccurrenceKey,
 		MatchedOperation: matchedOperation,
 	}

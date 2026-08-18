@@ -858,14 +858,15 @@ Key observations:
 
 ---
 
-## Interim Report Contract (v1.5)
+## Interim Report Contract (v1.6)
 
-Version 1.5 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for module, version, and the optional canonical package URL.
+Version 1.6 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for dependency module, version, and package URL. Direct findings may additionally expose a valid rule package URL at the asset-level `purl`; it is version-enriched only when one unambiguous direct dependency match exists.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
 | `source` | `string` | Always (when dependency scanning) | `"direct"` or `"dependency"` |
 | `dependency_info` | `object` | Dependency findings only | `{module, version, purl?}` |
+| `purl` | `string` | Direct findings with valid rule metadata | Canonical package identity, optionally enriched from the direct dependency graph |
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
 | `occurrence_key` | `string` | When a terminal AST anchor is available | Rule-independent `v1:<16 lowercase hex>` structural identity for the canonical finding |
 
@@ -873,7 +874,7 @@ Version 1.5 keeps the attribution fields needed to join findings to the separate
 
 When `--export-callgraph` is enabled, Crypto Finder emits a finding-centric JSON export that uses the same relative-path convention as the main report.
 
-Schema note: call graph export version `6.10` is current and adds an optional canonical `purl` inside dependency context. Java runtime provenance remains available in `scan_metadata` for JDK-aware platform signature enrichment.
+Schema note: call graph export version `6.10` is current and carries optional direct finding `purl` values at the finding level, optional `occurrence_key` structural identities, and canonical dependency package URLs inside `dependency_info.purl`. Java runtime provenance remains available in `scan_metadata` for JDK-aware platform signature enrichment.
 
 - Each top-level record stays keyed by `finding_id`, which is the join key back to the interim report. `occurrence_key`, when present, is a separate structural identity and does not replace that join.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.

@@ -33,7 +33,7 @@ func buildEnvelopeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fra
 				Function: "com.acme.App.entry#0", RuleID: "rule.app", OccurrenceKey: "v1:0a1b2c3d4e5f6789",
 				FilePath: "App.java", StartLine: 5, EndLine: 5,
 				Match: "DigestUtils.md5(data)", OID: "1.2.840.113549.2.5",
-				Source: "direct", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"MD5"}`),
+				Source: "direct", PURL: "pkg:maven/com.acme/crypto-api", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"MD5"}`),
 			}},
 		},
 		lib: {
@@ -47,7 +47,7 @@ func buildEnvelopeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fra
 				Function: "net.crypto.Lib.encrypt#0", RuleID: "rule.lib", OccurrenceKey: "v1:f0e1d2c3b4a59687",
 				FilePath: "Lib.java", StartLine: 25, EndLine: 27,
 				Match: `Cipher.getInstance("AES")`, OID: "2.16.840.1.101.3.4.1.2",
-				Source: "direct", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"AES"}`),
+				Source: "direct", PURL: "pkg:maven/net.crypto/lib", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"AES"}`),
 			}},
 		},
 	}
@@ -94,6 +94,9 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if root.Match != "DigestUtils.md5(data)" || root.EndLine != 5 || root.OID != "1.2.840.113549.2.5" {
 		t.Errorf("root asset fields not carried through: %+v", root)
 	}
+	if root.PURL != "pkg:maven/com.acme/crypto-api" {
+		t.Errorf("root PURL = %q, want pkg:maven/com.acme/crypto-api", root.PURL)
+	}
 
 	// Dep asset: file_path prefixed with module@version, source=indirect.
 	const depPath = "net.crypto:lib@2.0/Lib.java"
@@ -113,6 +116,9 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	if dep.DependencyInfo == nil || dep.DependencyInfo.Module != "net.crypto:lib" || dep.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0" {
 		t.Errorf("dep asset dependency_info = %+v, want module and purl", dep.DependencyInfo)
 	}
+	if dep.PURL != "" {
+		t.Errorf("dependency top-level PURL = %q, want empty", dep.PURL)
+	}
 }
 
 // TestToFindingsEnvelope_FindingIDMatchesCallgraphExport is the load-bearing
@@ -130,10 +136,18 @@ func TestToFindingsEnvelope_FindingIDMatchesCallgraphExport(t *testing.T) {
 	export := res.ToCallgraphExport(app, meta)
 	env := ToFindingsEnvelope(app, deps, fragments, meta)
 
-	// Collect finding_ids from each side.
+	// Collect finding_ids from each side and verify direct PURL promotion on the
+	// callgraph projection.
 	exportIDs := map[string]bool{}
+	foundPURL := false
 	for _, fg := range export.FindingGraphs {
 		exportIDs[fg.FindingID] = true
+		if fg.PURL == "pkg:maven/com.acme/crypto-api" {
+			foundPURL = true
+		}
+	}
+	if !foundPURL {
+		t.Fatal("callgraph export did not carry the direct finding PURL")
 	}
 	envIDs := map[string]bool{}
 	for _, f := range env.Findings {
@@ -182,11 +196,11 @@ func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
 
 	env := ToFindingsEnvelope(app, DependencyGraph{}, fragments, meta)
 
-	if env.Version != "1.5" {
-		t.Errorf("envelope Version = %q, want %q", env.Version, "1.5")
+	if env.Version != "1.6" {
+		t.Errorf("envelope Version = %q, want %q", env.Version, "1.6")
 	}
-	if FindingsSchemaVersion != "1.5" {
-		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.5")
+	if FindingsSchemaVersion != "1.6" {
+		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.6")
 	}
 
 	if len(env.Findings) != 1 || len(env.Findings[0].CryptographicAssets) != 2 {
