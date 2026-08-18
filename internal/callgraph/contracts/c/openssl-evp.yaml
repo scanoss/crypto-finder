@@ -6,11 +6,11 @@ library:
     - openssl:libcrypto
   description: "OpenSSL EVP high-level cryptographic APIs and the low-level RSA/DSA key-generation entry points"
 
-# Inventory sources: OpenSSL 3.6.2 public headers and crypto_rules commit
-# 39597ad26c0a968aa927592ca8ac29698018dea1. The list is limited to callable
-# libcrypto APIs selected by the current C detection rules: the EVP high-level
-# surface plus the deprecated low-level RSA/DSA key-generation entry points
-# those rules still match.
+# Inventory sources: OpenSSL 3.6.2 public headers, crypto_rules commit
+# 39597ad26c0a968aa927592ca8ac29698018dea1, and the key-generation rules added
+# by crypto_rules#206. The list is limited to callable libcrypto APIs selected
+# by those detection rules: the EVP high-level surface plus the deprecated
+# low-level RSA/DSA key-generation entry points the rules still match.
 contracts:
 
   # Cipher algorithm factories.
@@ -736,7 +736,7 @@ contracts:
     role: factory
     parameters:
       - index: 0
-        name: num
+        name: bits
         role: metadata-contributing
         contributes: {property: keySize, derivation: argument_value}
   - method: DSA_generate_parameters_ex
