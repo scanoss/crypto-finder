@@ -535,15 +535,15 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 		}
 	}
 
-	// Case 2: prefix contains "::" — it's a qualified path (e.g., `ring::aead::new`)
-	// Try resolving the first segment
+	// Case 2: prefix contains "::" — it's a path rooted at an imported segment
+	// (e.g. `use ring::digest;` then `digest::Context::new`). Imports map a leaf
+	// to its parent path, so the aliased segment stays in the expanded path.
 	firstSep := strings.Index(prefix, "::")
 	if firstSep > 0 {
 		firstSegment := prefix[:firstSep]
 		if pkg, ok := analysis.Imports[firstSegment]; ok {
-			fullPath := pkg + "::" + prefix[firstSep+2:]
 			return &FunctionCall{
-				Callee:    FunctionID{Package: fullPath, Name: name},
+				Callee:    splitRustScopedCallee(pkg+"::"+prefix, name),
 				Raw:       content,
 				FilePath:  filePath,
 				Line:      line,
@@ -552,40 +552,29 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 		}
 	}
 
-	// Fallback: treat the full prefix as the package path
-	if lastTypeSep := strings.LastIndex(prefix, "::"); lastTypeSep > 0 {
-		typeName := prefix[lastTypeSep+2:]
-		if looksLikeRustTypeName(typeName) {
-			return &FunctionCall{
-				Callee: FunctionID{
-					Package: prefix[:lastTypeSep],
-					Type:    typeName,
-					Name:    name,
-				},
-				Raw:       content,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
-			}
-		}
-
-		return &FunctionCall{
-			Callee:    FunctionID{Package: prefix, Name: name},
-			Raw:       content,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
-		}
-	}
-
-	// Fallback: treat the full prefix as the package path
+	// Fallback: treat the prefix as an unaliased path.
 	return &FunctionCall{
-		Callee:    FunctionID{Package: prefix, Name: name},
+		Callee:    splitRustScopedCallee(prefix, name),
 		Raw:       content,
 		FilePath:  filePath,
 		Line:      line,
 		Arguments: args,
 	}
+}
+
+// splitRustScopedCallee turns a resolved `<module path>::<maybe Type>` prefix
+// into a callee. Rust modules are snake_case by convention, so an upper-cased
+// last segment is the receiver type of an associated function
+// (`ring::digest::Context::new`) rather than another module segment. Anything
+// else stays wholly in the package path (`ring::digest::digest`).
+func splitRustScopedCallee(prefix, name string) FunctionID {
+	if lastTypeSep := strings.LastIndex(prefix, "::"); lastTypeSep > 0 {
+		if typeName := prefix[lastTypeSep+2:]; looksLikeRustTypeName(typeName) {
+			return FunctionID{Package: prefix[:lastTypeSep], Type: typeName, Name: name}
+		}
+	}
+
+	return FunctionID{Package: prefix, Name: name}
 }
 
 func looksLikeRustTypeName(name string) bool {
