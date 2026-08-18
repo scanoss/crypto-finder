@@ -107,7 +107,7 @@ func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment grap
 	}
 
 	var out []graphfrag.GraphFragmentSupporting
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 	for i := range report.Findings {
 		finding := &report.Findings[i]
 		for a := range finding.CryptographicAssets {
@@ -173,19 +173,35 @@ func annotateLifecycleSiblings(
 	return out
 }
 
+// appendUniqueAnnotateSupporting keeps the first entry per supporting_id and
+// folds each later claimant's rule-declared key-length conflict into it, so a
+// supporting call shared by several findings never loses one of their conflicts.
 func appendUniqueAnnotateSupporting(
 	out *[]graphfrag.GraphFragmentSupporting,
-	seen map[string]bool,
+	seen map[string]int,
 	calls []graphfrag.GraphFragmentSupporting,
 ) {
 	for i := range calls {
 		id := calls[i].SupportingID
-		if id == "" || seen[id] {
+		if id == "" {
 			continue
 		}
-		seen[id] = true
+		if kept, exists := seen[id]; exists {
+			mergeRuleKeyLengthConflict(annotateSupportingKeyLength(&(*out)[kept]), annotateSupportingKeyLength(&calls[i]))
+			continue
+		}
+		seen[id] = len(*out)
 		*out = append(*out, calls[i])
 	}
+}
+
+// annotateSupportingKeyLength returns the key-length evidence carried by a
+// graph-fragment supporting-call entry, or nil when it carries none.
+func annotateSupportingKeyLength(call *graphfrag.GraphFragmentSupporting) *graphfrag.ResolvedKeyLength {
+	if call == nil || call.SupportingCall == nil {
+		return nil
+	}
+	return call.SupportingCall.ResolvedKeyLength
 }
 
 // supportingIDsFromAnnotate returns the sorted, de-duplicated supporting_id

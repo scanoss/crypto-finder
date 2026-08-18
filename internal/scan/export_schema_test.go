@@ -118,6 +118,21 @@ func TestCallgraphSchema_ResolvedKeyLengthTypes(t *testing.T) {
 			valid: false,
 			doc:   callgraphResolvedKeyLengthInTerminalDocument(),
 		},
+		{
+			name:  "conflict marker with integer rule bits",
+			valid: true,
+			doc:   callgraphResolvedKeyLengthConflictDocument(128, true),
+		},
+		{
+			name:  "invalid rule declared bits type",
+			valid: false,
+			doc:   callgraphResolvedKeyLengthConflictDocument("128", true),
+		},
+		{
+			name:  "invalid rule conflict type",
+			valid: false,
+			doc:   callgraphResolvedKeyLengthConflictDocument(128, "true"),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,6 +152,21 @@ func TestCallgraphSchema_ResolvedKeyLengthTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// callgraphResolvedKeyLengthConflictDocument builds a resolved-key-length
+// document carrying the rule-vs-callgraph conflict marker. ResolvedKeyLength is
+// additionalProperties:false, so this keeps the Go json tags and the published
+// schema from drifting apart unnoticed.
+func callgraphResolvedKeyLengthConflictDocument(ruleDeclaredBits, ruleConflict any) map[string]any {
+	doc := callgraphResolvedKeyLengthDocument("constant", 256)
+	supportingCalls, _ := doc["supporting_calls"].([]any)
+	supporting, _ := supportingCalls[0].(map[string]any)
+	declaration, _ := supporting["supporting_call"].(map[string]any)
+	resolved, _ := declaration["resolved_key_length"].(map[string]any)
+	resolved["rule_declared_bits"] = ruleDeclaredBits
+	resolved["rule_conflict"] = ruleConflict
+	return doc
 }
 
 func callgraphResolvedKeyLengthDocument(provenance string, bits any) map[string]any {

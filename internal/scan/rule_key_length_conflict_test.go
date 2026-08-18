@@ -5,7 +5,9 @@ package scan
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -176,4 +178,168 @@ func assertConflictMarker(t *testing.T, exportName string, export any, findingID
 	case wantDeclaredBits != nil && (supporting.RuleDeclaredBits == nil || *supporting.RuleDeclaredBits != *wantDeclaredBits):
 		t.Fatalf("%s export: finding %s rule_declared_bits = %#v, want %d", exportName, findingID, supporting.RuleDeclaredBits, *wantDeclaredBits)
 	}
+}
+
+// TestRuleKeyLengthConflict_AnnotateRecomputesAgainstRefreshedRules is the case
+// the annotate path exists for: a cached fragment carries a marker computed with
+// one ruleset, and annotate re-runs a DIFFERENT ruleset over it. The marker must
+// follow the fresh rules, and the cached fragment must not be mutated.
+func TestRuleKeyLengthConflict_AnnotateRecomputesAgainstRefreshedRules(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// cached is the keyLength the rules declared when the fragment was built.
+		cached string
+		// refreshed is the keyLength the rules declare now.
+		refreshed        string
+		wantConflict     bool
+		wantDeclaredBits *int
+	}{
+		{name: "stale conflict is cleared", cached: "128", refreshed: "256"},
+		{name: "fresh conflict is discovered", cached: "256", refreshed: "128", wantConflict: true, wantDeclaredBits: intPointer(128)},
+		{name: "stale conflict is replaced", cached: "128", refreshed: "512", wantConflict: true, wantDeclaredBits: intPointer(512)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cachedReport, graph, fixtureDir := ruleKeyLengthConflictFixture(t, tc.cached)
+			fragmentExport := BuildGraphFragmentExport(&engine.DepScanResult{
+				Report: cachedReport, CallGraph: graph, Ecosystem: "java", ProjectRoot: fixtureDir,
+			})
+			fragmentBytes, err := json.Marshal(fragmentExport)
+			if err != nil {
+				t.Fatalf("json.Marshal fragment: %v", err)
+			}
+			component := graphfrag.ComponentKey{Purl: "pkg:maven/issue274/key-app", Version: "1.0.0"}
+			fragment, err := graphfrag.DecodeFragment(component, fragmentBytes)
+			if err != nil {
+				t.Fatalf("DecodeFragment: %v", err)
+			}
+			cachedEvidence := fragmentKeyLengthByID(fragment)
+
+			refreshedReport, _, _ := ruleKeyLengthConflictFixture(t, tc.refreshed)
+			annotated := BuildAnnotateExport(refreshedReport, fragment)
+
+			resolvedID := findingIDForLine(t, refreshedReport, 10)
+			assertConflictMarker(t, "annotate", annotated, resolvedID, intPointer(256), tc.wantConflict, tc.wantDeclaredBits)
+
+			// The cached fragment is shared state; recomputation must not write
+			// back into it.
+			for id, before := range cachedEvidence {
+				after := fragmentKeyLengthForID(fragment, id)
+				if !reflect.DeepEqual(before, after) {
+					t.Fatalf("cached fragment evidence for %s mutated: before=%#v after=%#v", id, before, after)
+				}
+			}
+		})
+	}
+}
+
+// TestRuleKeyLengthConflict_SharedSupportingCallKeepsEveryConflict covers the
+// supporting call reached by more than one finding. The emitted supporting_calls
+// array is deduplicated by supporting_id, so a first-wins marker would drop one
+// finding's conflict and let rule ordering decide the answer.
+func TestRuleKeyLengthConflict_SharedSupportingCallKeepsEveryConflict(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		declared []string
+	}{
+		{name: "agreeing rule first", declared: []string{"256", "128"}},
+		{name: "disagreeing rule first", declared: []string{"128", "256"}},
+		{name: "two disagreeing rules", declared: []string{"512", "128"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report, graph, fixtureDir := sharedSupportingCallFixture(t, tc.declared)
+			result := &engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java", ProjectRoot: fixtureDir}
+
+			live := buildCallGraphExportV2(result)
+			fragmentExport := BuildGraphFragmentExport(result)
+			fragmentBytes, err := json.Marshal(fragmentExport)
+			if err != nil {
+				t.Fatalf("json.Marshal fragment: %v", err)
+			}
+			component := graphfrag.ComponentKey{Purl: "pkg:maven/issue274/key-app", Version: "1.0.0"}
+			fragment, err := graphfrag.DecodeFragment(component, fragmentBytes)
+			if err != nil {
+				t.Fatalf("DecodeFragment: %v", err)
+			}
+			annotated := BuildAnnotateExport(report, fragment)
+
+			// Both assets share one supporting call, so both finding IDs must
+			// resolve to the same evidence: a conflict, reporting the smallest
+			// disagreeing rule value whatever order the rules were evaluated in.
+			for i := range report.Findings[0].CryptographicAssets {
+				findingID := report.Findings[0].CryptographicAssets[i].FindingID
+				for _, export := range []struct {
+					name  string
+					value any
+				}{
+					{name: "live", value: live},
+					{name: "annotate", value: annotated},
+				} {
+					assertConflictMarker(t, export.name, export.value, findingID, intPointer(256), true, intPointer(128))
+				}
+			}
+		})
+	}
+}
+
+// sharedSupportingCallFixture puts every asset on the same terminal call, so all
+// of them derive the one KeyGenerator.init(256) supporting call. Each asset
+// carries its own rule-declared keyLength.
+func sharedSupportingCallFixture(t *testing.T, declared []string) (*entities.InterimReport, *callgraph.CallGraph, string) {
+	t.Helper()
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	fixtureDir := filepath.Join(filepath.Dir(testFile), "testdata", "resolved_key_length")
+
+	builder := callgraph.NewBuilderForEcosystem("java", callgraph.NewJavaParser())
+	graph, err := builder.BuildFromDirectories([]callgraph.PackageDir{{Dir: fixtureDir, ImportPath: "issue272"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	assets := make([]entities.CryptographicAsset, 0, len(declared))
+	for i, bits := range declared {
+		assets = append(assets, entities.CryptographicAsset{
+			StartLine: 10,
+			EndLine:   10,
+			Match:     "generator.generateKey()",
+			Rules:     []entities.RuleInfo{{ID: fmt.Sprintf("java.jca.keygenerator.rule-%d", i)}},
+			Metadata:  map[string]string{"api": "javax.crypto.KeyGenerator.generateKey", "keyLength": bits},
+		})
+	}
+	report := &entities.InterimReport{
+		Tool: entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath:            "KeyGeneratorUsage.java",
+			Language:            "java",
+			CryptographicAssets: assets,
+		}},
+	}
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	return report, graph, fixtureDir
+}
+
+func fragmentKeyLengthByID(fragment graphfrag.Fragment) map[string]*graphfrag.ResolvedKeyLength {
+	out := make(map[string]*graphfrag.ResolvedKeyLength, len(fragment.SupportingCalls))
+	for i := range fragment.SupportingCalls {
+		supporting := &fragment.SupportingCalls[i]
+		if supporting.SupportingCall == nil || supporting.SupportingCall.ResolvedKeyLength == nil {
+			continue
+		}
+		out[supporting.SupportingID] = supporting.SupportingCall.ResolvedKeyLength.Clone()
+	}
+	return out
+}
+
+func fragmentKeyLengthForID(fragment graphfrag.Fragment, supportingID string) *graphfrag.ResolvedKeyLength {
+	for i := range fragment.SupportingCalls {
+		supporting := &fragment.SupportingCalls[i]
+		if supporting.SupportingID != supportingID || supporting.SupportingCall == nil {
+			continue
+		}
+		return supporting.SupportingCall.ResolvedKeyLength
+	}
+	return nil
 }

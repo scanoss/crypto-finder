@@ -203,7 +203,7 @@ crypto-finder scan --rules-dir ./custom-rules /path/to/code
 
 Small rule fixtures used by this repo's tests live under `testdata/rules/`. Rules detect **terminal crypto operations only** and carry standard CycloneDX metadata; supporting/lifecycle calls are derived structurally from the call graph, never tagged by rules — see [Architecture](docs/ARCHITECTURE.md#load-bearing-invariants).
 
-Callgraph schema `6.11` places contract-derived Java `KeyGenerator.init(int)` key-length evidence on `supporting_calls[].supporting_call.resolved_key_length`; terminal `crypto_call` records remain the detected operations.
+Callgraph schema `6.12` places contract-derived Java `KeyGenerator.init(int)` key-length evidence on `supporting_calls[].supporting_call.resolved_key_length`, marking it `rule_conflict` when a rule-declared key length disagrees with the resolved one; terminal `crypto_call` records remain the detected operations.
 
 ## Configuration
 
@@ -233,7 +233,7 @@ See [Configuration](docs/CONFIGURATION.md) for the full guide.
 | Document | Contents |
 |----------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline overview, package map, load-bearing invariants |
-| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.11`), graph fragment (`graph-fragment-1.11`), CycloneDX CBOM |
+| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.12`), graph fragment (`graph-fragment-1.12`), CycloneDX CBOM |
 | [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Stable failure code/stage taxonomy emitted by `--error-format json` |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration options and skip patterns |
 | [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) | Dependency scanning, call chain tracing, attribution |
