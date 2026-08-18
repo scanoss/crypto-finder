@@ -113,6 +113,11 @@ func TestCallgraphSchema_ResolvedKeyLengthTypes(t *testing.T) {
 			valid: false,
 			doc:   callgraphResolvedKeyLengthDocument("constant", "256"),
 		},
+		{
+			name:  "terminal crypto call location is invalid",
+			valid: false,
+			doc:   callgraphResolvedKeyLengthInTerminalDocument(),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,18 +155,45 @@ func callgraphResolvedKeyLengthDocument(provenance string, bits any) map[string]
 		"schema_version": "6.11",
 		"scan_metadata":  map[string]any{},
 		"finding_graphs": []any{map[string]any{
-			"finding_id": "keygen-init",
+			"finding_id":          "keygen-init",
+			"supporting_call_ids": []any{"support-init"},
 			"call_chains": []any{[]any{map[string]any{
 				"function_name": "example.KeyFlow.configure",
 				"file_path":     "KeyFlow.java",
 				"crypto_call": map[string]any{
-					"function_name":       "javax.crypto.KeyGenerator.init",
-					"line":                9,
-					"resolved_key_length": resolved,
+					"function_name": "javax.crypto.KeyGenerator.generateKey",
+					"line":          10,
 				},
 			}}},
 		}},
+		"supporting_calls": []any{map[string]any{
+			"supporting_id": "support-init",
+			"supporting_call": map[string]any{
+				"function_name":       "javax.crypto.KeyGenerator.init",
+				"line":                9,
+				"resolved_key_length": resolved,
+			},
+		}},
 	}
+}
+
+func callgraphResolvedKeyLengthInTerminalDocument() map[string]any {
+	doc := callgraphResolvedKeyLengthDocument("constant", 256)
+	findingGraphs := doc["finding_graphs"].([]any)
+	finding := findingGraphs[0].(map[string]any)
+	chains := finding["call_chains"].([]any)
+	chain := chains[0].([]any)
+	node := chain[0].(map[string]any)
+	cryptoCall := node["crypto_call"].(map[string]any)
+	cryptoCall["resolved_key_length"] = map[string]any{
+		"provenance": "constant",
+		"source_call": map[string]any{
+			"function_name":   "javax.crypto.KeyGenerator.init",
+			"line":            9,
+			"parameter_index": 0,
+		},
+	}
+	return doc
 }
 
 func populatedExportReport(t *testing.T) *entities.InterimReport {

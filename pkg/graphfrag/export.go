@@ -277,7 +277,8 @@ type GraphFragmentCryptoCall struct {
 	// role/contribution list, index-aligned with ParameterTypes.
 	ParameterRoles []GraphFragmentParameterRole `json:"parameter_roles,omitempty"`
 	// ResolvedKeyLength is contract-scoped raw key-length evidence preserved for
-	// stitch rendering. Bits is omitted when the source value is unresolved.
+	// stitch rendering on supporting_call declarations. Terminal crypto
+	// annotations omit it. Bits is omitted when the source value is unresolved.
 	ResolvedKeyLength *ResolvedKeyLength `json:"resolved_key_length,omitempty"`
 }
 

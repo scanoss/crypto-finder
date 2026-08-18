@@ -42,9 +42,14 @@ target source tree
    ▼
 6. Enrichment + export    OID enrichment (internal/enricher); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-    internal/scan,         --export-callgraph emits the schema-6.11 reachability export;
-    pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.11 fragment
+                            internal/scan,         --export-callgraph emits the schema-6.11 reachability export;
+                            pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.11 fragment
 ```
+
+The schema-6.11 key-length tracer bullet follows this boundary: contract-derived
+`javax.crypto.KeyGenerator.init(int)` evidence is emitted at
+`supporting_calls[].supporting_call.resolved_key_length`, while the terminal
+`crypto_call` remains the rule-selected operation.
 
 The `annotate` command is a shortcut through this pipeline: it runs stage 2 only and maps the fresh findings onto a cached stage-3 fragment (`graphfrag.Fragment.ContainingFunction`), skipping the expensive graph rebuild. `convert` runs stage 6's CBOM conversion standalone.
 

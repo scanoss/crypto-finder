@@ -1369,6 +1369,13 @@ func fragmentEntryPointChains(
 // fragmentSupportingFromInternal maps an internal call-graph supporting-call
 // entry to its graph-fragment representation.
 func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.GraphFragmentSupporting {
+	supportingCall := buildGraphFragmentCryptoCall(internal.SupportingCall)
+	if supportingCall != nil {
+		// Resolved key-length evidence is valid only on the supporting-call
+		// declaration. Terminal crypto annotations use the same shared model but
+		// are deliberately emitted without this field.
+		supportingCall.ResolvedKeyLength = internal.SupportingCall.ResolvedKeyLength
+	}
 	return graphfrag.GraphFragmentSupporting{
 		SupportingID:       internal.SupportingID,
 		FunctionKey:        internal.FunctionKey,
@@ -1381,7 +1388,7 @@ func fragmentSupportingFromInternal(internal callGraphSupportingCall) graphfrag.
 		StartLine:          internal.StartLine,
 		EndLine:            internal.EndLine,
 		MatchedOperation:   fragmentMatchedOperation(internal.MatchedOperation),
-		SupportingCall:     buildGraphFragmentCryptoCall(internal.SupportingCall),
+		SupportingCall:     supportingCall,
 	}
 }
 
@@ -1643,8 +1650,7 @@ func buildGraphFragmentCryptoCall(called *callGraphCalledFunction) *graphfrag.Gr
 		// issue-103 WU3: carries the supporting-call declaration's KB-derived
 		// parameter_roles (populated in buildDerivedSupportingCall) into the
 		// fragment, so it survives to the served path unchanged.
-		ParameterRoles:    toGraphFragmentParameterRoles(called.ParameterRoles),
-		ResolvedKeyLength: called.ResolvedKeyLength,
+		ParameterRoles: toGraphFragmentParameterRoles(called.ParameterRoles),
 	}
 	for _, p := range called.Parameters {
 		cc.Parameters = append(cc.Parameters, convertCallGraphParameterToFragment(p))

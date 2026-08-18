@@ -105,7 +105,7 @@ When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate
 
 Schema note: call graph export version **`6.11`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
-- **`6.11`** adds optional `finding_graphs[].call_chains[].crypto_call.resolved_key_length` for directly matched Java `javax.crypto.KeyGenerator.init(int)` calls. It contains raw integer `bits` only when static analysis resolves a literal or simple propagated constant, `provenance` (`constant` or `unknown`), and required `source_call` (`function_name`, `line`, `parameter_index`) for the contributing argument. It is preserved by live, graph-fragment, and stitched callgraph exports; it does not populate CBOM properties or express a security threshold.
+- **`6.11`** adds optional `supporting_calls[].supporting_call.resolved_key_length` for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls referenced by `finding_graphs[].supporting_call_ids`. It contains raw integer `bits` only when static analysis resolves a literal or simple propagated constant, `provenance` (`constant` or `unknown`), and required `source_call` (`function_name`, `line`, `parameter_index`) for the contributing argument. It is preserved by live, graph-fragment, and stitched callgraph exports; terminal `crypto_call` records do not carry it, and it does not populate CBOM properties or express a security threshold.
 
 - **`6.10`** carries an optional top-level `purl` for direct findings and an optional canonical `purl` inside dependency context. Live and stitched exports derive dependency URLs from the scan ecosystem and existing module/version fields, so cached graph fragments gain the field without a fragment schema change.
 
@@ -127,7 +127,7 @@ Schema note: call graph export version **`6.11`** is the current customer-facing
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
-- `crypto_call.resolved_key_length` is optional evidence scoped to `javax.crypto.KeyGenerator.init(int)`. It reports raw key bits when known and otherwise retains `provenance: "unknown"` plus `source_call`; consumers must not infer a key-size threshold from it.
+- `supporting_calls[].supporting_call.resolved_key_length` is optional evidence scoped to structurally derived `javax.crypto.KeyGenerator.init(int)` configuration calls. Join the supporting declaration to a finding through `finding_graphs[].supporting_call_ids`. It reports raw key bits when known and otherwise retains `provenance: "unknown"` plus `source_call`; consumers must not infer a key-size threshold from it. The terminal `crypto_call` remains the detected operation and does not carry this field.
 - For Java scans, `scan_metadata` may also include `java_requested_jdk_major`, `java_runtime_version`, `java_platform_signatures_used`, `java_platform_signature_source`, and `java_platform_signature_unavailable_reason` to show which JDK major was requested and whether JDK platform signatures contributed to type enrichment.
 - `source_nodes` can span multiple wrapper hops. A local `PARAMETER` node may contain nested upstream provenance such as `PARAMETER -> PARAMETER -> VALUE`, and propagated nested nodes keep `location.file_path` plus `location.line` when known.
 - Method-call provenance is preserved as `CALL_RESULT` nodes. When the parser can resolve the invoked method, the node also exports `call_target`, and any traceable receiver value is nested under that `CALL_RESULT` via `source_nodes` (for example `CALL_RESULT -> PARAMETER alg -> VALUE SignatureAlgorithm.HS256`).
@@ -325,7 +325,7 @@ the missing fields empty and are handled fail-closed):
 | `1.8` | `role: operation` contract methods exported as categorized supporting calls, no longer as operation-only entry points (paired with callgraph schema `6.5`). |
 | `1.9` | Generic-erased function join signatures for Java source-type hierarchy stitching and optional direct-finding `purl` on crypto annotations, carried into rendered findings envelopes and finding graphs. |
 | `1.10` | Optional `occurrence_key` on canonical `crypto_annotations`, propagated to stitched callgraph and findings-envelope outputs. |
-| `1.11` | Optional `crypto_call.resolved_key_length` raw key-bit evidence, including provenance and a source-call parameter reference, preserved to stitched callgraph output. |
+| `1.11` | Optional `supporting_calls[].supporting_call.resolved_key_length` raw key-bit evidence for structurally derived configuration calls, including provenance and a source-call parameter reference, preserved to stitched callgraph output. |
 
 ### Structure
 

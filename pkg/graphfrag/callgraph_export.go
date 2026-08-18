@@ -281,8 +281,9 @@ type ExportCryptoCall struct {
 	// through from the supporting-call declaration on the fragment side (WU1
 	// path populates it natively); never present on call-site ExportParameter.
 	ParameterRoles []ExportParameterRole `json:"parameter_roles,omitempty"`
-	// ResolvedKeyLength is contract-scoped raw key-length evidence. Bits is
-	// omitted when analysis could not resolve the source argument.
+	// ResolvedKeyLength is contract-scoped raw key-length evidence on a
+	// supporting_call declaration. Terminal crypto_call records omit it. Bits
+	// is omitted when analysis could not resolve the source argument.
 	ResolvedKeyLength *ResolvedKeyLength `json:"resolved_key_length,omitempty"`
 }
 

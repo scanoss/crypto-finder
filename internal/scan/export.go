@@ -211,7 +211,9 @@ type callGraphCalledFunction struct {
 	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
 	// ParameterRoles is populated from the contracts KB (issue-103 WU3) on the
 	// supporting-call declaration; index-aligned with ParameterTypes.
-	ParameterRoles    []callGraphParameterRole     `json:"parameter_roles,omitempty"`
+	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
+	// ResolvedKeyLength is emitted only when this declaration is nested under a
+	// structurally derived supporting call. Terminal crypto calls never carry it.
 	ResolvedKeyLength *graphfrag.ResolvedKeyLength `json:"resolved_key_length,omitempty"`
 }
 
@@ -1792,6 +1794,10 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		// deriveSupportingCallsForFinding.
 		sc.ParameterRoles = parameterRolesFromContracts(matches)
 	}
+	// Resolved key-length evidence belongs to the structurally derived
+	// supporting call. The terminal finding call must remain a rule-selected
+	// operation, not a configuration-call finding.
+	sc.ResolvedKeyLength = resolvedKeyLengthFromContract(matches, call, sc.Parameters, sc.ParameterTypes)
 	return support
 }
 
@@ -2131,7 +2137,6 @@ func buildCryptoCall(
 	}
 	meta, _ := buildCallExportFunctionMetadata(ctx, bestCall, callee)
 	applyExportFunctionMetadataToCalledFunction(result, meta)
-	result.ResolvedKeyLength = resolvedKeyLengthFromContract(ctx, bestCall, result.Parameters, result.ParameterTypes)
 
 	return result
 }
@@ -2141,57 +2146,72 @@ func buildCryptoCall(
 // policy interpretation, and retains unknown provenance without fabricating a
 // value.
 func resolvedKeyLengthFromContract(
-	ctx *exportBuildContext,
+	matches []contracts.Contract,
 	call *callgraph.FunctionCall,
 	parameters []callGraphParameter,
 	parameterTypes []string,
 ) *graphfrag.ResolvedKeyLength {
+	if call == nil {
+		return nil
+	}
 	const keyGeneratorInit = "javax.crypto.KeyGenerator.init"
 
-	for _, contract := range contractMatchesForCall(ctx, call, len(call.Arguments)) {
+	for i := range matches {
+		contract := &matches[i]
 		if contract.Method != keyGeneratorInit || !contractParameterTypesMatch(contract, parameters, parameterTypes) {
 			continue
 		}
-		for _, role := range contract.Parameters {
+		for i := range contract.Parameters {
+			role := &contract.Parameters[i]
 			if role.Index == nil || role.Contributes == nil {
 				continue
 			}
-
-			resolved := &graphfrag.ResolvedKeyLength{
-				Provenance: "unknown",
-				SourceCall: graphfrag.SourceCallRef{
-					FunctionName:   keyGeneratorInit,
-					Line:           call.Line,
-					ParameterIndex: *role.Index,
-				},
-			}
-			for _, parameter := range parameters {
-				if parameter.ParameterIndex != *role.Index {
-					continue
-				}
-				if bits, ok := resolveContractArgumentBitLength(parameter.ResolvedValue, role.Contributes.Derivation); ok {
-					resolved.Bits = &bits
-					resolved.Provenance = "constant"
-				}
-				break
-			}
-			return resolved
+			return resolvedKeyLengthForRole(keyGeneratorInit, call.Line, parameters, role)
 		}
 	}
 	return nil
+}
+
+func resolvedKeyLengthForRole(
+	functionName string,
+	line int,
+	parameters []callGraphParameter,
+	role *contracts.ParameterContract,
+) *graphfrag.ResolvedKeyLength {
+	resolved := &graphfrag.ResolvedKeyLength{
+		Provenance: "unknown",
+		SourceCall: graphfrag.SourceCallRef{
+			FunctionName:   functionName,
+			Line:           line,
+			ParameterIndex: *role.Index,
+		},
+	}
+	for i := range parameters {
+		parameter := &parameters[i]
+		if parameter.ParameterIndex != *role.Index {
+			continue
+		}
+		if bits, ok := resolveContractKeyBits(parameter.ResolvedValue, role.Contributes.Derivation); ok {
+			resolved.Bits = &bits
+			resolved.Provenance = "constant"
+		}
+		break
+	}
+	return resolved
 }
 
 // contractParameterTypesMatch selects the contract overload using call-site
 // provenance before falling back to resolver metadata. Resolver metadata can
 // collapse same-arity platform overloads; a declared source parameter type (or
 // a literal whose type is established by the contract) is more precise here.
-func contractParameterTypesMatch(contract contracts.Contract, parameters []callGraphParameter, parameterTypes []string) bool {
+func contractParameterTypesMatch(contract *contracts.Contract, parameters []callGraphParameter, parameterTypes []string) bool {
 	if len(contract.ParameterTypes) != len(parameters) {
 		return false
 	}
 	for index, expected := range contract.ParameterTypes {
-		parameter := parameters[index]
-		for _, source := range parameter.SourceNodes {
+		parameter := &parameters[index]
+		for sourceIndex := range parameter.SourceNodes {
+			source := &parameter.SourceNodes[sourceIndex]
 			if declared := strings.TrimSpace(source.DeclaredType); declared != "" {
 				if declared != expected {
 					return false
@@ -2210,12 +2230,13 @@ func contractParameterTypesMatch(contract contracts.Contract, parameters []callG
 	return true
 }
 
-// resolveContractArgumentBitLength applies the derivation declared by the
-// matched contract contribution. For the KeyGenerator.init(int) tracer bullet,
-// the integer argument is already expressed in raw bits; unresolved values
-// fail closed rather than being interpreted or fabricated.
-func resolveContractArgumentBitLength(value, derivation string) (int, bool) {
-	if derivation != "argument_bit_length" {
+// resolveContractKeyBits applies the derivation declared by the matched
+// contract contribution. For the KeyGenerator.init(int) tracer bullet, the
+// integer argument is already expressed in raw bits, so only argument_value is
+// honored; unresolved values fail closed rather than being interpreted or
+// fabricated.
+func resolveContractKeyBits(value, derivation string) (int, bool) {
+	if derivation != string(contracts.DerivationArgumentValue) {
 		return 0, false
 	}
 	bits, err := strconv.Atoi(strings.TrimSpace(value))

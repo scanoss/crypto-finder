@@ -35,7 +35,10 @@ contracts:
       - index: 0
         name: keyBits
         role: metadata-contributing
-        contributes: { property: keySize, derivation: argument_bit_length }
+        # The JCA keysize argument is already expressed in bits, so the value
+        # itself is the evidence (argument_bit_length is for key material whose
+        # length yields the bits, e.g. a byte array).
+        contributes: { property: keySize, derivation: argument_value }
 
   # --- KeyPairGenerator ---
   - method: java.security.KeyPairGenerator.getInstance

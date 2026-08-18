@@ -86,7 +86,7 @@
           "type": "string"
         },
         "crypto_call": {
-          "$ref": "#/definitions/CryptoCall"
+          "$ref": "#/definitions/TerminalCryptoCall"
         }
       },
       "additionalProperties": true
@@ -123,12 +123,23 @@
             "type": "object",
             "additionalProperties": true
           }
-        },
-        "resolved_key_length": {
-          "$ref": "#/definitions/ResolvedKeyLength"
         }
       },
       "additionalProperties": true
+    },
+    "TerminalCryptoCall": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "not": {
+            "required": [
+              "resolved_key_length"
+            ]
+          }
+        }
+      ]
     },
     "ResolvedKeyLength": {
       "type": "object",
@@ -183,10 +194,25 @@
           "type": "string"
         },
         "supporting_call": {
-          "$ref": "#/definitions/CryptoCall"
+          "$ref": "#/definitions/SupportingCallDeclaration"
         }
       },
       "additionalProperties": true
+    },
+    "SupportingCallDeclaration": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "resolved_key_length": {
+              "$ref": "#/definitions/ResolvedKeyLength"
+            }
+          }
+        }
+      ]
     },
     "ScanMetadata": {
       "type": "object",
