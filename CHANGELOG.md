@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for RSA key generation in the `openssl` and `rsa` crates: `Rsa::generate`, `Rsa::generate_with_e`, and `RsaPrivateKey::new` are modelled as factories whose caller-supplied bit-size argument is marked as `keySize` evidence. Follow-up to the merged detection rules that publish those sizes as `keyLengthCapture` without resolving them.
 
 ## [0.22.0] - 2026-08-17
 ### Added
