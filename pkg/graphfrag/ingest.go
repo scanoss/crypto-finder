@@ -363,6 +363,7 @@ func toCryptoCall(src *GraphFragmentCryptoCall) *CryptoCall {
 		Aliases:            append([]string(nil), src.Aliases...),
 		Line:               src.Line,
 		ParameterRoles:     toParameterRoles(src.ParameterRoles),
+		ResolvedKeyLength:  cloneResolvedKeyLength(src.ResolvedKeyLength),
 	}
 	for i := range src.Parameters {
 		cc.Parameters = append(cc.Parameters, toParameter(src.Parameters[i]))

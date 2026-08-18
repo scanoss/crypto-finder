@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Callgraph export schema `6.11` and graph-fragment schema `1.11` add optional `supporting_calls[].supporting_call.resolved_key_length` evidence for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls. A resolved literal or simple propagated constant emits raw `bits`, `provenance: "constant"`, and a `source_call` parameter reference; unresolved or ambiguous values emit `provenance: "unknown"` without a fabricated bit length. Terminal findings remain attached to the detected operation, while the field is preserved by live, graph-fragment, and stitched callgraph exports. CBOM output is unchanged. (#272)
+
 ## [0.22.0] - 2026-08-17
 ### Added
 - `StitchOptions.ChainEntrySignatures` restricts call-chain enumeration to routes reaching the named entry points, so a filtered request spends the per-operation chain budget where the caller asked instead of in traversal order. The entry-point index is unaffected, and the zero value leaves the default path unchanged. Schema stays `6.9`; no re-mining. (scanoss/scanoss.api#116)
