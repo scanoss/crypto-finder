@@ -135,6 +135,11 @@ const (
 	DerivationArgumentValue     Derivation = "argument_value"
 	DerivationArgumentBitLength Derivation = "argument_bit_length"
 	DerivationArgumentType      Derivation = "argument_type"
+	// DerivationArgumentCurveBits reads a standard elliptic-curve name (for
+	// example "secp256r1") and yields that curve's field size in bits. The
+	// argument names a curve rather than carrying the size itself, so neither
+	// argument_value nor argument_bit_length models it.
+	DerivationArgumentCurveBits Derivation = "argument_curve_bits"
 )
 
 // ParameterContract describes a single parameter's role in a contract
@@ -400,6 +405,7 @@ var validDerivation = map[string]struct{}{
 	string(DerivationArgumentValue):     {},
 	string(DerivationArgumentBitLength): {},
 	string(DerivationArgumentType):      {},
+	string(DerivationArgumentCurveBits): {},
 }
 
 // Load parses and validates a YAML knowledge base payload.
@@ -538,7 +544,7 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 			}
 			if _, ok := validDerivation[p.Contributes.Derivation]; !ok {
 				return nil, fmt.Errorf(
-					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type}",
+					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type, argument_curve_bits}",
 					i, c.Method, j, p.Contributes.Derivation,
 				)
 			}

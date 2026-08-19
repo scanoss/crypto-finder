@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa
+  coordinates:
+    - rsa
+  version_range: ">=0.9.0,<0.10.0"
+  description: "RustCrypto pure-Rust RSA implementation"
+
+contracts:
+  # RsaPrivateKey::new(rng, bit_size) — the modulus size is the caller-supplied
+  # second argument, so it is argument_value evidence.
+  - method: rsa::RsaPrivateKey.new
+    arity: 2
+    return: { type: rsa::RsaPrivateKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+hierarchy: {}

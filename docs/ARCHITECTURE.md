@@ -46,10 +46,17 @@ target source tree
                             pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.12 fragment
 ```
 
-The schema-6.12 key-length tracer bullet follows this boundary: contract-derived
-`javax.crypto.KeyGenerator.init(int)` evidence is emitted at
-`supporting_calls[].supporting_call.resolved_key_length`, while the terminal
-`crypto_call` remains the rule-selected operation.
+Schema-6.12 key-length evidence follows this boundary: contract-derived key
+sizes are emitted at `supporting_calls[].supporting_call.resolved_key_length`,
+while the terminal `crypto_call` remains the rule-selected operation. Which
+calls carry a key size is contract data, not code: a contract marks the
+contributing parameter with `contributes: {property: keySize, derivation: ...}`,
+and the evaluator reads it either from the supporting call's own argument or
+from the parameter-spec constructor whose result was passed into it. When a
+detection rule declares a static key length that disagrees with the resolved
+one, the resolved value stays primary and the rule value is preserved as
+`rule_declared_bits` behind a `rule_conflict` marker, so the boundary still
+never lets rule metadata overwrite structural evidence.
 
 The `annotate` command is a shortcut through this pipeline: it runs stage 2 only and maps the fresh findings onto a cached stage-3 fragment (`graphfrag.Fragment.ContainingFunction`), skipping the expensive graph rebuild. `convert` runs stage 6's CBOM conversion standalone.
 

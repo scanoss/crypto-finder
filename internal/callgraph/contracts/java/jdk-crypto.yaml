@@ -5,7 +5,7 @@ library:
   name: jdk-crypto
   description: "JDK Java Cryptography Architecture (JCA) and Java Cryptography Extension (JCE) standard library contracts"
 
-# JCA/JCE Knowledge Base — 45 contract entries + 31 hierarchy edges
+# JCA/JCE Knowledge Base — 50 contract entries + 33 hierarchy edges
 # Hand-curated for the callgraph-inferred-types v1 inference engine.
 # Schema version 2 — library block required.
 
@@ -52,6 +52,37 @@ contracts:
     return:
       type: java.security.KeyPair
       confidence: high
+
+  # initialize(int) and initialize(int, SecureRandom). The AlgorithmParameterSpec
+  # overloads share these arities but carry no key size of their own; their size
+  # lives on the spec constructor below, so only the int form is contracted here.
+  - method: java.security.KeyPairGenerator.initialize
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.KeyPairGenerator.initialize
+    arity: 2
+    parameter_types: [int, java.security.SecureRandom]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
 
   # --- SecretKeyFactory ---
   - method: javax.crypto.SecretKeyFactory.getInstance
@@ -286,15 +317,85 @@ contracts:
   # SecretKeySpec constructors: (byte[], String) and (byte[], int, int, String)
   - method: javax.crypto.spec.SecretKeySpec.<init>
     arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: javax.crypto.spec.SecretKeySpec
     return:
       type: javax.crypto.SecretKey
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        # The whole array is the key here, so its length in bits is the key size.
+        contributes: { property: keySize, derivation: argument_bit_length }
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
 
   - method: javax.crypto.spec.SecretKeySpec.<init>
     arity: 4
+    parameter_types: ["byte[]", int, int, java.lang.String]
+    canonical_return_type: javax.crypto.spec.SecretKeySpec
     return:
       type: javax.crypto.SecretKey
       confidence: high
+    role: factory
+    parameters:
+      # This overload keys on the `len` byte count, not on the array's own
+      # length, and no derivation models a byte count. Reporting the array
+      # length would overstate the key size, so no keySize role is declared —
+      # the size stays unresolved rather than wrong.
+      - index: 3
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # Key-generation parameter specs. The key size lives on the spec constructor,
+  # then reaches KeyPairGenerator.initialize(spec) through the argument sources.
+  - method: java.security.spec.RSAKeyGenParameterSpec.<init>
+    arity: 2
+    parameter_types: [int, java.math.BigInteger]
+    canonical_return_type: java.security.spec.RSAKeyGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keysize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.spec.RSAKeyGenParameterSpec.<init>
+    arity: 3
+    parameter_types: [int, java.math.BigInteger, java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: java.security.spec.RSAKeyGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keysize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.spec.ECGenParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.spec.ECGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: stdName
+        role: metadata-contributing
+        # A standard curve name, not a size: the field size comes from the curve.
+        contributes: { property: keySize, derivation: argument_curve_bits }
 
   # IvParameterSpec constructor: (byte[])
   - method: javax.crypto.spec.IvParameterSpec.<init>
@@ -376,6 +477,10 @@ hierarchy:
   javax.crypto.spec.GCMParameterSpec:
     - java.security.spec.AlgorithmParameterSpec
   javax.crypto.spec.PBEParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.security.spec.RSAKeyGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.security.spec.ECGenParameterSpec:
     - java.security.spec.AlgorithmParameterSpec
 
   # Certificate family
