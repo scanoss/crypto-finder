@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Rust callgraph contracts for RSA key generation in the `openssl` and `rsa` crates: `Rsa::generate`, `Rsa::generate_with_e`, and `RsaPrivateKey::new` are modelled as factories whose caller-supplied bit-size argument is marked as `keySize` evidence. Follow-up to the merged detection rules that publish those sizes as `keyLengthCapture` without resolving them.
+- Callgraph contracts now model the C key-generation call sites that carry a caller-supplied key size: OpenSSL `EVP_RSA_gen`, `EVP_PKEY_CTX_set_rsa_keygen_bits`, `EVP_PKEY_CTX_set_dsa_paramgen_bits`, `RSA_generate_key`, `RSA_generate_key_ex`, `DSA_generate_parameters_ex`, and Mbed TLS `mbedtls_rsa_gen_key`. The size argument is declared as a `keySize` parameter role, so the call graph carries the same evidence point the detection rules capture. (scanoss/crypto_rules#206)
+
+### Added
+- Callgraph export schema `6.11` and graph-fragment schema `1.11` add optional `supporting_calls[].supporting_call.resolved_key_length` evidence for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls. A resolved literal or simple propagated constant emits raw `bits`, `provenance: "constant"`, and a `source_call` parameter reference; unresolved or ambiguous values emit `provenance: "unknown"` without a fabricated bit length. Terminal findings remain attached to the detected operation, while the field is preserved by live, graph-fragment, and stitched callgraph exports. CBOM output is unchanged. (#272)
+
+### Fixed
+- Rust knowledge base contracts now resolve at call sites that carry a receiver type. Rust contract keys keep Rust's `::` module separator while call-site symbols join every segment with `.`, and Rust callees carry no encoded arity, so every Rust contract missed and no Rust call received `call_target_inferred_return` decoration or `parameter_roles` (`keySize`, `nonceSize`, `algorithm` evidence). Rust lookups now normalize the module/type separator and resolve by name when the arity is unknown. Calls written through a module import (`use ring::digest;` then `digest::Context::new(..)`) still resolve no contract, tracked separately in #280. Go, Java, Python, C, C++, and Node lookups are unchanged. (#277)
 
 ## [0.22.0] - 2026-08-17
 ### Added

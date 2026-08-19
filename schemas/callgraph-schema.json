@@ -12,7 +12,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.10",
+      "const": "6.11",
       "type": "string",
       "description": "Version of the customer-facing callgraph contract."
     },
@@ -23,14 +23,14 @@
       "type": "array",
       "description": "One reachability record per interim-report finding.",
       "items": {
-        "type": "object"
+        "$ref": "#/definitions/FindingGraph"
       }
     },
     "supporting_calls": {
       "type": "array",
       "description": "Lifecycle and context calls associated with findings.",
       "items": {
-        "type": "object"
+        "$ref": "#/definitions/SupportingCall"
       }
     },
     "crypto_entry_points": {
@@ -48,6 +48,172 @@
     }
   },
   "definitions": {
+    "FindingGraph": {
+      "type": "object",
+      "required": [
+        "finding_id"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "call_chains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CallChain"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CallChain": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CallChainNode"
+      }
+    },
+    "CallChainNode": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "file_path"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "crypto_call": {
+          "$ref": "#/definitions/TerminalCryptoCall"
+        }
+      },
+      "additionalProperties": true
+    },
+    "CryptoCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "parameter_roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "TerminalCryptoCall": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "not": {
+            "required": [
+              "resolved_key_length"
+            ]
+          }
+        }
+      ]
+    },
+    "ResolvedKeyLength": {
+      "type": "object",
+      "required": [
+        "provenance",
+        "source_call"
+      ],
+      "properties": {
+        "bits": {
+          "type": "integer"
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "constant",
+            "unknown"
+          ]
+        },
+        "source_call": {
+          "$ref": "#/definitions/SourceCall"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line",
+        "parameter_index"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_index": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SupportingCall": {
+      "type": "object",
+      "required": [
+        "supporting_id"
+      ],
+      "properties": {
+        "supporting_id": {
+          "type": "string"
+        },
+        "supporting_call": {
+          "$ref": "#/definitions/SupportingCallDeclaration"
+        }
+      },
+      "additionalProperties": true
+    },
+    "SupportingCallDeclaration": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "resolved_key_length": {
+              "$ref": "#/definitions/ResolvedKeyLength"
+            }
+          }
+        }
+      ]
+    },
     "ScanMetadata": {
       "type": "object",
       "additionalProperties": false,

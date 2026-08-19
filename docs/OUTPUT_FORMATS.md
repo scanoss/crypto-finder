@@ -103,7 +103,9 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.10`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.11`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+
+- **`6.11`** adds optional `supporting_calls[].supporting_call.resolved_key_length` for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls referenced by `finding_graphs[].supporting_call_ids`. It contains raw integer `bits` only when static analysis resolves a literal or simple propagated constant, `provenance` (`constant` or `unknown`), and required `source_call` (`function_name`, `line`, `parameter_index`) for the contributing argument. It is preserved by live, graph-fragment, and stitched callgraph exports; terminal `crypto_call` records do not carry it, and it does not populate CBOM properties or express a security threshold.
 
 - **`6.10`** carries an optional top-level `purl` for direct findings and an optional canonical `purl` inside dependency context. Live and stitched exports derive dependency URLs from the scan ecosystem and existing module/version fields, so cached graph fragments gain the field without a fragment schema change.
 
@@ -125,6 +127,7 @@ Schema note: call graph export version **`6.10`** is the current customer-facing
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
+- `supporting_calls[].supporting_call.resolved_key_length` is optional evidence scoped to structurally derived `javax.crypto.KeyGenerator.init(int)` configuration calls. Join the supporting declaration to a finding through `finding_graphs[].supporting_call_ids`. It reports raw key bits when known and otherwise retains `provenance: "unknown"` plus `source_call`; consumers must not infer a key-size threshold from it. The terminal `crypto_call` remains the detected operation and does not carry this field.
 - For Java scans, `scan_metadata` may also include `java_requested_jdk_major`, `java_runtime_version`, `java_platform_signatures_used`, `java_platform_signature_source`, and `java_platform_signature_unavailable_reason` to show which JDK major was requested and whether JDK platform signatures contributed to type enrichment.
 - `source_nodes` can span multiple wrapper hops. A local `PARAMETER` node may contain nested upstream provenance such as `PARAMETER -> PARAMETER -> VALUE`, and propagated nested nodes keep `location.file_path` plus `location.line` when known.
 - Method-call provenance is preserved as `CALL_RESULT` nodes. When the parser can resolve the invoked method, the node also exports `call_target`, and any traceable receiver value is nested under that `CALL_RESULT` via `source_nodes` (for example `CALL_RESULT -> PARAMETER alg -> VALUE SignatureAlgorithm.HS256`).
@@ -301,7 +304,7 @@ artifact X?" The pure model and the stitcher that composes fragments live in the
 public package `github.com/scanoss/crypto-finder/pkg/graphfrag`, so downstream
 consumers can use one contract instead of reimplementing schema knowledge.
 
-Current schema version: **`graph-fragment-1.10`** (`pkg/graphfrag.SchemaVersion`).
+Current schema version: **`graph-fragment-1.11`** (`pkg/graphfrag.SchemaVersion`).
 
 Since `graph-fragment-1.3`, a fragment is **self-contained enough to reconstruct
 the two artifacts a live `--scan-dependencies` run would produce** — see
@@ -322,12 +325,13 @@ the missing fields empty and are handled fail-closed):
 | `1.8` | `role: operation` contract methods exported as categorized supporting calls, no longer as operation-only entry points (paired with callgraph schema `6.5`). |
 | `1.9` | Generic-erased function join signatures for Java source-type hierarchy stitching and optional direct-finding `purl` on crypto annotations, carried into rendered findings envelopes and finding graphs. |
 | `1.10` | Optional `occurrence_key` on canonical `crypto_annotations`, propagated to stitched callgraph and findings-envelope outputs. |
+| `1.11` | Optional `supporting_calls[].supporting_call.resolved_key_length` raw key-bit evidence for structurally derived configuration calls, including provenance and a source-call parameter reference, preserved to stitched callgraph output. |
 
 ### Structure
 
 | Field | Description |
 |-------|-------------|
-| `schema_version` | Fragment schema version (currently `graph-fragment-1.10`). |
+| `schema_version` | Fragment schema version (currently `graph-fragment-1.11`). |
 | `scan_metadata` | Ecosystem, root module, tool/rules versions, `graph_algo_version` (callgraph-construction algorithm version; cache key for annotate-only re-annotation), and per-array counts. |
 | `functions[]` | Callable nodes. `key` is the stable function identity (`pkg.(Type).name#arity`); also carries `file_path`, `package`, `type`, `name`, signature, etc. |
 | `internal_edges[]` | Caller→callee edges **within** the component (both functions are in this fragment). Each edge may carry `entry_call` (1.2+, see below). |
@@ -370,7 +374,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.10`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.11`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
@@ -429,7 +433,7 @@ reported as reachable crypto.
 
 ```json
 {
-  "schema_version": "graph-fragment-1.10",
+  "schema_version": "graph-fragment-1.11",
   "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-2", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }

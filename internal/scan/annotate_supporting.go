@@ -97,27 +97,42 @@ func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment grap
 		return nil
 	}
 	edgesByCaller := fragmentEdgesByCaller(fragment)
+	keyLengthsByID := make(map[string]*graphfrag.ResolvedKeyLength, len(fragment.SupportingCalls))
+	for i := range fragment.SupportingCalls {
+		supporting := &fragment.SupportingCalls[i]
+		if supporting.SupportingCall == nil || supporting.SupportingCall.ResolvedKeyLength == nil {
+			continue
+		}
+		keyLengthsByID[supporting.SupportingID] = supporting.SupportingCall.ResolvedKeyLength
+	}
 
 	var out []graphfrag.GraphFragmentSupporting
 	seen := make(map[string]bool)
 	for i := range report.Findings {
-		appendAnnotateSupportingForFinding(&out, seen, fragment, edgesByCaller, report.Findings[i])
+		finding := &report.Findings[i]
+		calls := annotateSupportingCallsForFinding(fragment, edgesByCaller, *finding)
+		for j := range calls {
+			if keyLength, ok := keyLengthsByID[calls[j].SupportingID]; ok {
+				calls[j].SupportingCall.ResolvedKeyLength = keyLength
+			}
+		}
+		appendUniqueAnnotateSupporting(&out, seen, calls)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].SupportingID < out[j].SupportingID })
 	return out
 }
 
-func appendAnnotateSupportingForFinding(
-	out *[]graphfrag.GraphFragmentSupporting,
-	seen map[string]bool,
+func annotateSupportingCallsForFinding(
 	fragment graphfrag.Fragment,
 	edgesByCaller map[string][]fragEdge,
 	finding entities.Finding,
-) {
+) []graphfrag.GraphFragmentSupporting {
+	out := make([]graphfrag.GraphFragmentSupporting, 0, len(finding.CryptographicAssets))
 	for i := range finding.CryptographicAssets {
 		calls := annotateSupportingForAsset(fragment, edgesByCaller, finding, finding.CryptographicAssets[i])
-		appendUniqueAnnotateSupporting(out, seen, calls)
+		out = append(out, calls...)
 	}
+	return out
 }
 
 func annotateSupportingForAsset(
