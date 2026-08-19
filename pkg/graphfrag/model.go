@@ -214,6 +214,21 @@ type ResolvedKeyLength struct {
 	Bits       *int          `json:"bits,omitempty"`
 	Provenance string        `json:"provenance"`
 	SourceCall SourceCallRef `json:"source_call"`
+
+	// RuleDeclaredBits is the static keyLength the detection rule declared for
+	// the finding this evidence is joined to. It is retained only when it
+	// disagrees with Bits, so the rule value is never silently overwritten.
+	RuleDeclaredBits *int `json:"rule_declared_bits,omitempty"`
+
+	// RuleConflict marks that disagreement. Bits stays the primary value; the
+	// marker is computed by the evaluator so consumers never re-derive it.
+	RuleConflict bool `json:"rule_conflict,omitempty"`
+}
+
+// Clone returns a deep copy so per-finding conflict annotation never mutates
+// key-length evidence shared across findings.
+func (r *ResolvedKeyLength) Clone() *ResolvedKeyLength {
+	return cloneResolvedKeyLength(r)
 }
 
 // cloneResolvedKeyLength copies optional key-length evidence across internal
@@ -226,6 +241,10 @@ func cloneResolvedKeyLength(src *ResolvedKeyLength) *ResolvedKeyLength {
 	if src.Bits != nil {
 		bits := *src.Bits
 		dst.Bits = &bits
+	}
+	if src.RuleDeclaredBits != nil {
+		declared := *src.RuleDeclaredBits
+		dst.RuleDeclaredBits = &declared
 	}
 	return &dst
 }

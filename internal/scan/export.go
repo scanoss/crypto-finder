@@ -560,9 +560,14 @@ func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []c
 		if support.SupportingID == "" {
 			continue
 		}
-		if _, exists := dst[support.SupportingID]; !exists {
+		kept, exists := dst[support.SupportingID]
+		if !exists {
 			dst[support.SupportingID] = support
+			continue
 		}
+		// The entry is shared with an earlier finding; its rule-declared
+		// key-length conflict must survive this one, and vice versa.
+		mergeRuleKeyLengthConflict(supportingCallKeyLength(&kept), supportingCallKeyLength(&support))
 	}
 }
 
@@ -1483,11 +1488,92 @@ func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []par
 	return filtered
 }
 
-// deriveSupportingCallsForFinding recovers a finding's supporting calls from the
-// call graph rather than from rule metadata. It locates the finding's terminal
-// crypto call, enumerates the lifecycle calls of the crypto object it identifies
-// (see deriveObjectLifecycleCalls), and renders each as a supporting-call entry.
+// deriveSupportingCallsForFinding derives this finding's supporting calls and
+// then reconciles their contract-resolved key length against the key length the
+// detection rule declared statically. The reconciliation happens here because
+// this is the only point holding both sides: the rule metadata on the asset and
+// the resolution on the supporting call. Downstream consumers therefore receive
+// the conflict marker precomputed and never re-derive it.
 func deriveSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
+	calls := deriveRawSupportingCallsForFinding(ctx, finding, asset)
+	declared := ruleDeclaredKeyLength(asset)
+	for i := range calls {
+		if calls[i].SupportingCall == nil {
+			continue
+		}
+		applyRuleKeyLengthConflict(calls[i].SupportingCall.ResolvedKeyLength, declared)
+	}
+	return calls
+}
+
+// ruleDeclaredKeyLength reads the rule's static crypto.keyLength metadata and
+// returns 0 when the rule declared nothing to reconcile. A missing, non-numeric
+// or non-positive value is not an error for the export: rules may legitimately
+// omit the field, or declare a caller-captured key length instead.
+func ruleDeclaredKeyLength(asset entities.CryptographicAsset) int {
+	bits, err := strconv.Atoi(strings.TrimSpace(asset.Metadata["keyLength"]))
+	if err != nil || bits <= 0 {
+		return 0
+	}
+	return bits
+}
+
+// applyRuleKeyLengthConflict keeps the callgraph-resolved bits primary and
+// retains the rule-declared bits alongside a conflict marker when the two
+// disagree. A declaredBits of 0 means the rule declared nothing. The function is
+// idempotent and always clears first, so a marker carried over from an earlier
+// evaluation is recomputed against the rule metadata handed in here. An
+// unresolved key length (no bits) is not a disagreement.
+func applyRuleKeyLengthConflict(resolved *graphfrag.ResolvedKeyLength, declaredBits int) {
+	if resolved == nil {
+		return
+	}
+	resolved.RuleDeclaredBits = nil
+	resolved.RuleConflict = false
+	if declaredBits <= 0 || resolved.Bits == nil || *resolved.Bits == declaredBits {
+		return
+	}
+	declared := declaredBits
+	resolved.RuleDeclaredBits = &declared
+	resolved.RuleConflict = true
+}
+
+// deriveRawSupportingCallsForFinding recovers a finding's supporting calls from
+// the call graph rather than from rule metadata. It locates the finding's
+// terminal crypto call, enumerates the lifecycle calls of the crypto object it
+// identifies (see deriveObjectLifecycleCalls), and renders each as a
+// supporting-call entry.
+// mergeRuleKeyLengthConflict folds a later claimant's conflict marker into the
+// evidence already kept for one supporting call. A supporting call is shared by
+// every finding that reaches the same crypto object, so its marker can only
+// state that AT LEAST ONE of those findings declared a different key length —
+// never which one. Folding instead of first-wins is what keeps that statement
+// true: without it a second finding's conflict is silently dropped, and the
+// answer flips with rule ordering. Ties keep the smallest disagreeing value so
+// the output is stable however the findings are ordered.
+func mergeRuleKeyLengthConflict(kept, incoming *graphfrag.ResolvedKeyLength) {
+	if kept == nil || incoming == nil || !incoming.RuleConflict || incoming.RuleDeclaredBits == nil {
+		return
+	}
+	if kept.RuleDeclaredBits != nil && *kept.RuleDeclaredBits <= *incoming.RuleDeclaredBits {
+		kept.RuleConflict = true
+		return
+	}
+	bits := *incoming.RuleDeclaredBits
+	kept.RuleDeclaredBits = &bits
+	kept.RuleConflict = true
+}
+
+// supportingCallKeyLength returns the key-length evidence carried by a
+// supporting-call entry, or nil when it carries none.
+func supportingCallKeyLength(call *callGraphSupportingCall) *graphfrag.ResolvedKeyLength {
+	if call == nil || call.SupportingCall == nil {
+		return nil
+	}
+	return call.SupportingCall.ResolvedKeyLength
+}
+
+func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
 	// Synthesized terminal entry points (library API boundary, no in-source call
 	// chain) get their fluent lifecycle methods from the contract KB by type
 	// lineage, since there are no chain siblings to derive structurally.
@@ -1841,19 +1927,21 @@ func supportingIDFromParts(sourcePath string, line int, calleeKey string) string
 
 // dedupSupportingCalls removes duplicate supporting-call entries by SupportingID.
 // The same lifecycle call can be derived from multiple findings that share a
-// crypto object; we keep the first occurrence.
+// crypto object; we keep the first occurrence, folding each later claimant's
+// rule-declared key-length conflict into it so no conflict is lost.
 func dedupSupportingCalls(calls []callGraphSupportingCall) []callGraphSupportingCall {
 	if len(calls) <= 1 {
 		return calls
 	}
-	seen := make(map[string]bool, len(calls))
+	seen := make(map[string]int, len(calls))
 	out := make([]callGraphSupportingCall, 0, len(calls))
 	for i := range calls {
 		c := &calls[i]
-		if seen[c.SupportingID] {
+		if kept, exists := seen[c.SupportingID]; exists {
+			mergeRuleKeyLengthConflict(supportingCallKeyLength(&out[kept]), supportingCallKeyLength(c))
 			continue
 		}
-		seen[c.SupportingID] = true
+		seen[c.SupportingID] = len(out)
 		out = append(out, *c)
 	}
 	return out

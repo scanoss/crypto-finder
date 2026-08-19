@@ -12,7 +12,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.11",
+      "const": "6.12",
       "type": "string",
       "description": "Version of the customer-facing callgraph contract."
     },
@@ -160,6 +160,12 @@
         },
         "source_call": {
           "$ref": "#/definitions/SourceCall"
+        },
+        "rule_declared_bits": {
+          "type": "integer"
+        },
+        "rule_conflict": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

@@ -107,31 +107,30 @@ func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment grap
 	}
 
 	var out []graphfrag.GraphFragmentSupporting
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 	for i := range report.Findings {
 		finding := &report.Findings[i]
-		calls := annotateSupportingCallsForFinding(fragment, edgesByCaller, *finding)
-		for j := range calls {
-			if keyLength, ok := keyLengthsByID[calls[j].SupportingID]; ok {
-				calls[j].SupportingCall.ResolvedKeyLength = keyLength
+		for a := range finding.CryptographicAssets {
+			asset := finding.CryptographicAssets[a]
+			calls := annotateSupportingForAsset(fragment, edgesByCaller, *finding, asset)
+			// The cached bits are structural and survive a rules refresh, but the
+			// rule-vs-callgraph conflict marker is rule-derived: clone the cached
+			// evidence per asset and recompute the marker against the fresh rule
+			// metadata, so annotate never republishes a stale conflict.
+			declared := ruleDeclaredKeyLength(asset)
+			for j := range calls {
+				keyLength, ok := keyLengthsByID[calls[j].SupportingID]
+				if !ok || calls[j].SupportingCall == nil {
+					continue
+				}
+				resolved := keyLength.Clone()
+				applyRuleKeyLengthConflict(resolved, declared)
+				calls[j].SupportingCall.ResolvedKeyLength = resolved
 			}
+			appendUniqueAnnotateSupporting(&out, seen, calls)
 		}
-		appendUniqueAnnotateSupporting(&out, seen, calls)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].SupportingID < out[j].SupportingID })
-	return out
-}
-
-func annotateSupportingCallsForFinding(
-	fragment graphfrag.Fragment,
-	edgesByCaller map[string][]fragEdge,
-	finding entities.Finding,
-) []graphfrag.GraphFragmentSupporting {
-	out := make([]graphfrag.GraphFragmentSupporting, 0, len(finding.CryptographicAssets))
-	for i := range finding.CryptographicAssets {
-		calls := annotateSupportingForAsset(fragment, edgesByCaller, finding, finding.CryptographicAssets[i])
-		out = append(out, calls...)
-	}
 	return out
 }
 
@@ -174,19 +173,35 @@ func annotateLifecycleSiblings(
 	return out
 }
 
+// appendUniqueAnnotateSupporting keeps the first entry per supporting_id and
+// folds each later claimant's rule-declared key-length conflict into it, so a
+// supporting call shared by several findings never loses one of their conflicts.
 func appendUniqueAnnotateSupporting(
 	out *[]graphfrag.GraphFragmentSupporting,
-	seen map[string]bool,
+	seen map[string]int,
 	calls []graphfrag.GraphFragmentSupporting,
 ) {
 	for i := range calls {
 		id := calls[i].SupportingID
-		if id == "" || seen[id] {
+		if id == "" {
 			continue
 		}
-		seen[id] = true
+		if kept, exists := seen[id]; exists {
+			mergeRuleKeyLengthConflict(annotateSupportingKeyLength(&(*out)[kept]), annotateSupportingKeyLength(&calls[i]))
+			continue
+		}
+		seen[id] = len(*out)
 		*out = append(*out, calls[i])
 	}
+}
+
+// annotateSupportingKeyLength returns the key-length evidence carried by a
+// graph-fragment supporting-call entry, or nil when it carries none.
+func annotateSupportingKeyLength(call *graphfrag.GraphFragmentSupporting) *graphfrag.ResolvedKeyLength {
+	if call == nil || call.SupportingCall == nil {
+		return nil
+	}
+	return call.SupportingCall.ResolvedKeyLength
 }
 
 // supportingIDsFromAnnotate returns the sorted, de-duplicated supporting_id
