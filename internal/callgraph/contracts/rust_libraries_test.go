@@ -197,6 +197,72 @@ func TestRingContractParameterRoles(t *testing.T) {
 	}
 }
 
+type argon2ParameterExpectation struct {
+	index      int
+	role       string
+	property   string
+	derivation string
+}
+
+func TestLoadEmbeddedRustIncludesArgon2Contracts(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(rust): %v", err)
+	}
+
+	tests := []struct {
+		method     string
+		arity      int
+		role       string
+		ret        string
+		parameters []argon2ParameterExpectation
+	}{
+		{"argon2::Argon2.default", 0, "factory", "argon2::Argon2", nil},
+		{"argon2::Argon2.new", 3, "factory", "argon2::Argon2", []argon2ParameterExpectation{{0, "operation-determining", "algorithm", "argument_value"}, {1, "metadata-contributing", "version", "argument_type"}, {2, "metadata-contributing", "params", "argument_type"}}},
+		{"argon2::Argon2.new_with_secret", 4, "factory", "argon2::Argon2", []argon2ParameterExpectation{{0, "metadata-contributing", "secret", "argument_value"}, {1, "operation-determining", "algorithm", "argument_value"}, {2, "metadata-contributing", "version", "argument_type"}, {3, "metadata-contributing", "params", "argument_type"}}},
+		{"argon2::Argon2.from", 1, "factory", "argon2::Argon2", []argon2ParameterExpectation{{0, "metadata-contributing", "params", "argument_type"}}},
+		{"argon2::Argon2.hash_password", 2, "operation", "password_hash::PasswordHash", []argon2ParameterExpectation{{0, "metadata-contributing", "password", "argument_value"}, {1, "metadata-contributing", "salt", "argument_type"}}},
+		{"argon2::Argon2.hash_password_customized", 5, "operation", "password_hash::PasswordHash", []argon2ParameterExpectation{{0, "metadata-contributing", "password", "argument_value"}, {1, "operation-determining", "algorithm", "argument_value"}, {2, "metadata-contributing", "version", "argument_type"}, {3, "metadata-contributing", "params", "argument_type"}, {4, "metadata-contributing", "salt", "argument_type"}}},
+		{"argon2::Argon2.verify_password", 2, "operation", "()", []argon2ParameterExpectation{{0, "metadata-contributing", "password", "argument_value"}, {1, "metadata-contributing", "hash", "argument_type"}}},
+		{"argon2::Argon2.hash_password_into", 3, "operation", "()", []argon2ParameterExpectation{{0, "metadata-contributing", "password", "argument_value"}, {1, "metadata-contributing", "salt", "argument_value"}, {2, "metadata-contributing", "output", "argument_value"}}},
+		{"argon2::Argon2.hash_password_into_with_memory", 4, "operation", "()", []argon2ParameterExpectation{{0, "metadata-contributing", "password", "argument_value"}, {1, "metadata-contributing", "salt", "argument_value"}, {2, "metadata-contributing", "output", "argument_value"}, {3, "metadata-contributing", "memory", "argument_type"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if got[0].SourceLibrary != "argon2" || got[0].Role != tt.role || got[0].Return.Type != tt.ret {
+				t.Fatalf("%s#%d = %#v, want argon2 %s returning %s", tt.method, tt.arity, got[0], tt.role, tt.ret)
+			}
+			assertArgon2ParameterRoles(t, tt.method, got[0].Parameters, tt.parameters)
+		})
+	}
+
+	if got := kb.ContractsFor("argon2::Argon2.fill_memory", 3); len(got) != 0 {
+		t.Fatalf("fill_memory contracts = %#v, want none", got)
+	}
+}
+
+func assertArgon2ParameterRoles(t *testing.T, method string, got []contracts.ParameterContract, want []argon2ParameterExpectation) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("%s parameters = %#v, want %d metadata contributions", method, got, len(want))
+	}
+	for i, expected := range want {
+		parameter := got[i]
+		if parameter.Index == nil || *parameter.Index != expected.index || parameter.Role != expected.role || parameter.Contributes == nil ||
+			parameter.Contributes.Property != expected.property || parameter.Contributes.Derivation != expected.derivation {
+			t.Fatalf("%s parameters[%d] = %#v, want %s/%s", method, i, parameter, expected.property, expected.derivation)
+		}
+	}
+}
+
 func TestLoadEmbeddedRustIncludesRSAKeygenContracts(t *testing.T) {
 	t.Parallel()
 
