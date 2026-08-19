@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Callgraph contracts now model the C key-generation call sites that carry a caller-supplied key size: OpenSSL `EVP_RSA_gen`, `EVP_PKEY_CTX_set_rsa_keygen_bits`, `EVP_PKEY_CTX_set_dsa_paramgen_bits`, `RSA_generate_key`, `RSA_generate_key_ex`, `DSA_generate_parameters_ex`, and Mbed TLS `mbedtls_rsa_gen_key`. The size argument is declared as a `keySize` parameter role, so the call graph carries the same evidence point the detection rules capture. (scanoss/crypto_rules#206)
 
 ### Added
 - Callgraph export schema `6.11` and graph-fragment schema `1.11` add optional `supporting_calls[].supporting_call.resolved_key_length` evidence for structurally derived Java `javax.crypto.KeyGenerator.init(int)` configuration calls. A resolved literal or simple propagated constant emits raw `bits`, `provenance: "constant"`, and a `source_call` parameter reference; unresolved or ambiguous values emit `provenance: "unknown"` without a fabricated bit length. Terminal findings remain attached to the detected operation, while the field is preserved by live, graph-fragment, and stitched callgraph exports. CBOM output is unchanged. (#272)

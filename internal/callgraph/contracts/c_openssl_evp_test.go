@@ -30,6 +30,12 @@ func TestLoadEmbeddedCIncludesOpenSSLEVPContracts(t *testing.T) {
 		{"EVP_PKEY_CTX_new_from_name", "EVP_PKEY_CTX*", "factory", "algorithm", 3},
 		{"EVP_PKEY_Q_keygen", "EVP_PKEY*", "factory", "algorithm", 4},
 		{"EVP_PKEY_CTX_set_rsa_pss_saltlen", "int", "config", "saltLength", 2},
+		{"EVP_RSA_gen", "EVP_PKEY*", "factory", "keySize", 1},
+		{"EVP_PKEY_CTX_set_rsa_keygen_bits", "int", "config", "keySize", 2},
+		{"EVP_PKEY_CTX_set_dsa_paramgen_bits", "int", "config", "keySize", 2},
+		{"RSA_generate_key_ex", "int", "operation", "keySize", 4},
+		{"RSA_generate_key", "RSA*", "factory", "keySize", 4},
+		{"DSA_generate_parameters_ex", "int", "operation", "keySize", 7},
 		{"EVP_PBE_scrypt", "int", "operation", "iterations", 10},
 		{"EVP_DigestFinal_ex", "int", "operation", "", 3},
 		{"EVP_PKEY_get_raw_public_key", "int", "output", "", 3},
@@ -77,6 +83,12 @@ func TestOpenSSLEVPParameterRoles(t *testing.T) {
 		{"EVP_PKEY_Q_keygen", "operation-determining", "algorithm", "argument_value", 4, 2},
 		{"EVP_PKEY_Q_keygen", "metadata-contributing", "parameterSet", "argument_value", 4, 3},
 		{"EVP_PBE_scrypt", "metadata-contributing", "iterations", "argument_value", 10, 4},
+		{"EVP_RSA_gen", "metadata-contributing", "keySize", "argument_value", 1, 0},
+		{"EVP_PKEY_CTX_set_rsa_keygen_bits", "metadata-contributing", "keySize", "argument_value", 2, 1},
+		{"EVP_PKEY_CTX_set_dsa_paramgen_bits", "metadata-contributing", "keySize", "argument_value", 2, 1},
+		{"RSA_generate_key_ex", "metadata-contributing", "keySize", "argument_value", 4, 1},
+		{"RSA_generate_key", "metadata-contributing", "keySize", "argument_value", 4, 0},
+		{"DSA_generate_parameters_ex", "metadata-contributing", "keySize", "argument_value", 7, 1},
 	}
 
 	for _, tt := range tests {
