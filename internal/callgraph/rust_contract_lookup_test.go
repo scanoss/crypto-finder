@@ -11,22 +11,24 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
-// Both the type-import form (`use ring::aead::UnboundKey;`) and the fully
-// qualified call form resolve to the same callee, so both must reach the same
-// Rust contract through the lookup key the inference path builds.
-//
-// The module-import form (`use ring::digest;` then `digest::Context::new(..)`)
-// is deliberately absent: the parser folds the receiver type into the package
-// path there, so the callee carries no Type and no lookup key can match. That
-// is a separate parser defect tracked in #280, upstream of this key shape.
+// The type-import form (`use ring::aead::UnboundKey;`), the fully qualified
+// call form, and the module-import form (`use ring::digest;` then
+// `digest::Context::new(..)`) are three spellings of the same call, so all
+// three must reach the same Rust contract through the lookup key the inference
+// path builds.
 func TestRustCallSiteContractLookup_ImportedAndFullyQualifiedForms(t *testing.T) {
 	src := `use ring::aead::UnboundKey;
+use ring::aead;
 use ring::digest;
+use ring::hmac;
 
 fn seal(key: &[u8], data: &[u8]) {
     let imported = UnboundKey::new(&ring::aead::AES_256_GCM, key);
     let qualified = ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, key);
     let mut ctx = ring::digest::Context::new(&digest::SHA256);
+    let module_ctx = digest::Context::new(&digest::SHA256);
+    let module_key = hmac::Key::new(hmac::HMAC_SHA256, key);
+    let module_aead = aead::LessSafeKey::new(UnboundKey::new(&ring::aead::AES_256_GCM, key));
     ctx.update(data);
     let free = digest::digest(&digest::SHA256, data);
 }
@@ -45,7 +47,7 @@ fn seal(key: &[u8], data: &[u8]) {
 	}
 
 	// method name -> number of call sites that must resolve a contract.
-	wantSites := map[string]int{"new": 3, "update": 1, "digest": 1}
+	wantSites := map[string]int{"new": 7, "update": 1, "digest": 1}
 	gotSites := map[string]int{}
 	for _, analysis := range analyses {
 		for i := range analysis.Functions {
