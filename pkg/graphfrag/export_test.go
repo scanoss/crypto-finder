@@ -191,11 +191,12 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSchemaVersion_Is_1_11 verifies the schema version constant has been bumped.
-// 1.11 carries resolved key-length call evidence for crypto annotations.
-func TestSchemaVersion_Is_1_11(t *testing.T) {
+// TestSchemaVersion_Is_1_12 verifies the schema version constant has been bumped.
+// 1.12 adds the rule-vs-callgraph conflict marker to resolved key-length
+// call evidence.
+func TestSchemaVersion_Is_1_12(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.11" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.11", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.12" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.12", SchemaVersion)
 	}
 }
