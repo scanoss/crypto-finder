@@ -7,9 +7,10 @@ library:
   version_range: ">=3.6.7,<4.0.0"
   description: "Mbed TLS 3.6 LTS public cryptographic APIs"
 
-# Inventory sources: Mbed TLS 3.6.7 public headers and crypto_rules mbedtls.yaml
-# blob 077e379cb77b02ce182623b54660796aa24efb8f. All 28 mbedtls_* symbols
-# selected by the current C rules are contracted. PSA-only symbols are outside this
+# Inventory sources: Mbed TLS 3.6.7 public headers, crypto_rules mbedtls.yaml
+# blob 077e379cb77b02ce182623b54660796aa24efb8f, and mbedtls_rsa_gen_key from
+# the key-generation rule added by crypto_rules#206. All 29 mbedtls_* symbols
+# selected by those rules are contracted. PSA-only symbols are outside this
 # ticket's mbedtls_* scope. covered-existing/skipped-unsupported/needs-follow-up:
 # none. Protocol and certificate lifecycle calls are included where rules exist.
 contracts:
@@ -115,6 +116,17 @@ contracts:
         name: sig_len
         role: metadata-contributing
         contributes: {property: signatureLength, derivation: argument_value}
+
+  # RSA key generation.
+  - method: mbedtls_rsa_gen_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: nbits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
 
   # PKCS#7 signed data.
   - method: mbedtls_pkcs7_init

@@ -262,3 +262,48 @@ func assertArgon2ParameterRoles(t *testing.T, method string, got []contracts.Par
 		}
 	}
 }
+
+func TestLoadEmbeddedRustIncludesRSAKeygenContracts(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(rust): %v", err)
+	}
+
+	tests := []struct {
+		method   string
+		arity    int
+		library  string
+		ret      string
+		keyIndex int
+	}{
+		{"openssl::rsa::Rsa.generate", 1, "openssl", "openssl::rsa::Rsa", 0},
+		{"openssl::rsa::Rsa.generate_with_e", 2, "openssl", "openssl::rsa::Rsa", 0},
+		{"rsa::RsaPrivateKey.new", 2, "rsa", "rsa::RsaPrivateKey", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			contract := got[0]
+			if contract.SourceLibrary != tt.library || contract.Role != "factory" || contract.Return.Type != tt.ret {
+				t.Fatalf("%s#%d = %#v, want factory from %s returning %s", tt.method, tt.arity, contract, tt.library, tt.ret)
+			}
+			if len(contract.Parameters) != 1 {
+				t.Fatalf("%s#%d parameters = %#v, want exactly the key-size parameter", tt.method, tt.arity, contract.Parameters)
+			}
+			parameter := contract.Parameters[0]
+			if parameter.Index == nil || *parameter.Index != tt.keyIndex {
+				t.Fatalf("%s#%d key-size parameter index = %#v, want %d", tt.method, tt.arity, parameter.Index, tt.keyIndex)
+			}
+			if parameter.Role != "metadata-contributing" || parameter.Contributes == nil ||
+				parameter.Contributes.Property != "keySize" || parameter.Contributes.Derivation != "argument_value" {
+				t.Fatalf("%s#%d key-size parameter = %#v, want metadata-contributing keySize/argument_value", tt.method, tt.arity, parameter)
+			}
+		})
+	}
+}

@@ -203,7 +203,7 @@ crypto-finder scan --rules-dir ./custom-rules /path/to/code
 
 Small rule fixtures used by this repo's tests live under `testdata/rules/`. Rules detect **terminal crypto operations only** and carry standard CycloneDX metadata; supporting/lifecycle calls are derived structurally from the call graph, never tagged by rules — see [Architecture](docs/ARCHITECTURE.md#load-bearing-invariants).
 
-Callgraph schema `6.11` places contract-derived Java `KeyGenerator.init(int)` key-length evidence on `supporting_calls[].supporting_call.resolved_key_length`; terminal `crypto_call` records remain the detected operations.
+Callgraph schema `6.11` places contract-derived Java key-generation key-length evidence on `supporting_calls[].supporting_call.resolved_key_length`; terminal `crypto_call` records remain the detected operations.
 
 ## Configuration
 
