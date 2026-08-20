@@ -557,7 +557,7 @@ type ReachableFinding struct {
 	// Route is one minimum-length route from the entry point to the function
 	// holding the finding, as function keys, entry-point-first and inclusive of
 	// both ends. Empty when the fragment carried none, which leaves ChainDepth
-	// as the only statement about distance — the pre-1.13 behaviour.
+	// as the only statement about distance — the pre-1.13 behavior.
 	Route           []string
 	FindingGraphRef string
 }

@@ -82,7 +82,7 @@ func TestComposedRouteSpansTheBoundary(t *testing.T) {
 		"org.example.client.(Ssl).init#0",
 	}
 	if len(chain) != len(want) {
-		var got []string
+		got := make([]string, 0, len(chain))
 		for _, n := range chain {
 			got = append(got, n.FunctionKey)
 		}
@@ -154,8 +154,7 @@ func TestComposedRouteRejectsAMismatchedJoin(t *testing.T) {
 	depFragment := fragments[dep]
 	route := depFragment.CryptoEntryPoints[0].ReachableFindings[0].Route
 	// Head no longer the entry point the stitched leg arrives at.
-	depFragment.CryptoEntryPoints[0].ReachableFindings[0].Route =
-		append([]string{"org.example.client.(Client).handshake#0"}, route[1:]...)
+	depFragment.CryptoEntryPoints[0].ReachableFindings[0].Route = append([]string{"org.example.client.(Client).handshake#0"}, route[1:]...)
 	fragments[dep] = depFragment
 
 	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{
