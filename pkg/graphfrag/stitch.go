@@ -1381,7 +1381,7 @@ func composedRouteInbounds(
 		// The ambiguous candidates are searched too, and deliberately: an edge
 		// lands there because its dispatch could not be narrowed, so those are
 		// the least certain hops of all. Leaving exactly those unlabelled would
-		// invert the point of labelling.
+		// invert the point of labeling.
 		out[i] = lookupInbound(route[i-1], route[i], adjacency, ambiguousCandidates)
 	}
 	return out
@@ -1937,7 +1937,7 @@ const publicVisibility = "public"
 // index is may-reach by design, so a consumer-facing entry point may be
 // discovered THROUGH an ambiguous call, while finding-level reachability only
 // ever upgrades on proven paths.
-func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandidates map[graphNode][]adjacencyEdge) (map[graphNode][]graphNode, map[graphNode][]graphNode) {
+func composeReverseMaps(adjacency, ambiguousCandidates map[graphNode][]adjacencyEdge) (map[graphNode][]graphNode, map[graphNode][]graphNode) {
 	reverse := make(map[graphNode][]graphNode)
 	for caller, edges := range adjacency {
 		for _, edge := range edges {
