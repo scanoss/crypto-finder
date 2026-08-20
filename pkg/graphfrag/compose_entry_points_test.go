@@ -71,6 +71,72 @@ func composeFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fragment)
 	return root, DependencyGraph{root: {dep}}, fragments
 }
 
+// TestComposeDependencyEntryPoints_FilteredByComposedEntry is the consumer join
+// this whole mechanism exists for: the caller filters by the composed entry
+// point we published. It is not a graph root — its findings are proven through
+// the dependency's mine-time index, which records a depth and not a route — so
+// the restricted enumeration matches nothing, and the verdict must survive that
+// anyway. Serving the finding without its reachability is strictly worse than
+// serving it unfiltered.
+func TestComposeDependencyEntryPoints_FilteredByComposedEntry(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := composeFixture()
+	meta := ScanMeta{Ecosystem: "java", RootModule: "org.example.wrapper"}
+
+	unfiltered, err := StitchWithOptions(root, deps, fragments, StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("stitch (unfiltered): %v", err)
+	}
+	baseline := unfiltered.ToCallgraphExport(root, meta)
+	if len(baseline.FindingGraphs) != 1 {
+		t.Fatalf("unfiltered finding graphs = %d, want 1", len(baseline.FindingGraphs))
+	}
+
+	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{
+		EntryRootedOnly:      true,
+		ChainEntrySignatures: []string{"org.example.wrapper.Factory.create(): Client"},
+	})
+	if err != nil {
+		t.Fatalf("stitch (filtered): %v", err)
+	}
+	cg := res.ToCallgraphExport(root, meta)
+	if len(cg.FindingGraphs) != 1 {
+		t.Fatalf("filtered finding graphs = %d, want 1", len(cg.FindingGraphs))
+	}
+	fg := cg.FindingGraphs[0]
+	if fg.FindingID != baseline.FindingGraphs[0].FindingID {
+		t.Errorf("finding id = %q, want %q", fg.FindingID, baseline.FindingGraphs[0].FindingID)
+	}
+	if fg.Reachability != ReachabilityReachable {
+		t.Errorf("reachability = %q, want %q", fg.Reachability, ReachabilityReachable)
+	}
+	// Partial, not complete: the composed proof carries a depth, not frames.
+	if fg.Analysis == nil || fg.Analysis.CallChains != AnalysisPartial {
+		t.Errorf("analysis = %+v, want call_chains %q", fg.Analysis, AnalysisPartial)
+	}
+}
+
+// TestComposeDependencyEntryPoints_FilteredByAbsentEntry keeps the other half of
+// the contract: a signature naming nothing still yields nothing. Composition
+// must not become a back door that reports every finding for any input.
+func TestComposeDependencyEntryPoints_FilteredByAbsentEntry(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := composeFixture()
+	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{
+		EntryRootedOnly:      true,
+		ChainEntrySignatures: []string{"org.example.wrapper.Factory.absent(): Client"},
+	})
+	if err != nil {
+		t.Fatalf("stitch: %v", err)
+	}
+	cg := res.ToCallgraphExport(root, ScanMeta{Ecosystem: "java", RootModule: "org.example.wrapper"})
+	if len(cg.FindingGraphs) != 0 {
+		t.Errorf("finding graphs = %d, want none: the signature names nothing", len(cg.FindingGraphs))
+	}
+}
+
 func TestComposeDependencyEntryPoints(t *testing.T) {
 	root, deps, fragments := composeFixture()
 	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{EntryRootedOnly: true})

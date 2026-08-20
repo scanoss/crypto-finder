@@ -169,10 +169,15 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// callgraph matches live byte-for-byte (the parity contract) and stays
 		// bounded on high-fan-in libraries (BouncyCastle, 18k functions) where the
 		// old all-simple-paths forward DFS hangs.
-		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
-			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures), &out)
-		attachAnnotationSupportingCalls(closure, fragments, &out)
+		// Composition runs before the enumeration so a restricted request can tell
+		// a signature naming nothing from one naming a composed entry point: the
+		// latter proves reachability through a dependency's mine-time index, which
+		// records a depth and no route, so no enumeration can confirm it.
 		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
+		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
+			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures),
+			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures), &out)
+		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
 		}
@@ -1205,6 +1210,7 @@ func traceBackward(
 	functionsByNode map[graphNode]Function,
 	roots []graphNode,
 	chainEntries map[graphNode]bool,
+	composedFindings map[string]bool,
 	out *Result,
 ) {
 	reverse := reverseAdjacency(adjacency)
@@ -1238,7 +1244,8 @@ func traceBackward(
 		// it, and this package stays free of a logger by design.
 		chains, _, _ := condensedBackwardChains(opNode, reverse, chainEntrySet)
 		if len(chains) == 0 {
-			if chainEntries != nil && !chainEntries[opNode] {
+			if chainEntries != nil && !chainEntries[opNode] &&
+				!composedReaches(composedFindings, opsByNode[opNode]) {
 				// Restricted enumeration and no requested entry reaches this
 				// operation. The self-chain fallback below exists for a crypto call
 				// nothing calls at all; synthesizing it here would assert the
@@ -1255,6 +1262,57 @@ func traceBackward(
 			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, out)
 		}
 	}
+}
+
+// composedChainEntryFindings resolves the caller's entry-point signatures against
+// the composed entry points and returns the mine-time finding IDs they reach.
+// Nil when no signature was supplied or none names a composed entry point, which
+// keeps a signature naming nothing yielding nothing.
+func composedChainEntryFindings(
+	root ComponentKey,
+	out *Result,
+	functionsByNode map[graphNode]Function,
+	signatures []string,
+) map[string]bool {
+	if len(signatures) == 0 || len(out.composedEntryPoints) == 0 {
+		return nil
+	}
+	wanted := make(map[string]bool, len(signatures))
+	for _, sig := range signatures {
+		if sig != "" {
+			wanted[sig] = true
+		}
+	}
+	findings := make(map[string]bool)
+	for i := range out.composedEntryPoints {
+		ep := &out.composedEntryPoints[i]
+		sig := ep.CanonicalSignature
+		if sig == "" {
+			sig = functionsByNode[graphNode{Component: root, Function: ep.FunctionKey}].CanonicalSignature
+		}
+		if sig == "" || !wanted[sig] {
+			continue
+		}
+		for id := range out.composedRawFindings[ep.FunctionKey] {
+			findings[id] = true
+		}
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+	return findings
+}
+
+// composedReaches reports whether a requested composed entry point proves it
+// reaches an operation at this node. The route cannot be enumerated, so the
+// self-chain below carries the finding graph its verdict attaches to.
+func composedReaches(composedFindings map[string]bool, ops []CryptoOperation) bool {
+	for i := range ops {
+		if composedFindings[ops[i].FindingID] {
+			return true
+		}
+	}
+	return false
 }
 
 // reverseAdjacency inverts the forward adjacency: target node -> list of callers,
@@ -1751,6 +1809,7 @@ func composeDependencyEntryPoints(
 	sort.Strings(keys)
 
 	out.composedFindingDepths = make(map[string]int)
+	out.composedRawFindings = make(map[string]map[string]bool)
 	for _, key := range keys {
 		appendComposedResult(root, rootFunctions[key], composed[key], hasIncoming, out)
 	}
@@ -1805,6 +1864,9 @@ type composedEntry struct {
 	// provenIDs marks findings reached without crossing an ambiguous dispatch
 	// group; only these feed the finding-level reachability upgrade.
 	provenIDs map[string]bool
+	// rawIDs are the untranslated mine-time finding IDs, kept so a restricted
+	// enumeration can recognize the operations this entry point reaches.
+	rawIDs map[string]bool
 }
 
 // projectEntryPoint records, for every root-component function that reaches
@@ -1837,6 +1899,7 @@ func projectEntryPoint(
 				findings:   make(map[string]ReachableFinding),
 				supporting: make(map[string]ReachableSupportingCall),
 				provenIDs:  make(map[string]bool),
+				rawIDs:     make(map[string]bool),
 			}
 			composed[node.Function] = entry
 		}
@@ -1876,6 +1939,7 @@ func translateFindingID(translate map[string]string, findingID string) string {
 func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string, distance int, proven bool) {
 	for _, rf := range ep.ReachableFindings {
 		findingID := translateFindingID(translate, rf.FindingID)
+		c.rawIDs[rf.FindingID] = true
 		depth := distance + rf.ChainDepth
 		if existing, seen := c.findings[findingID]; !seen || depth < existing.ChainDepth {
 			c.findings[findingID] = ReachableFinding{
@@ -1933,6 +1997,9 @@ func appendComposedResult(root ComponentKey, fn Function, entry *composedEntry, 
 		ep.ReachableSupportingCalls = append(ep.ReachableSupportingCalls, entry.supporting[id])
 	}
 	out.composedEntryPoints = append(out.composedEntryPoints, ep)
+	if len(entry.rawIDs) > 0 {
+		out.composedRawFindings[fn.Signature] = entry.rawIDs
+	}
 	if !hasIncoming[graphNode{Component: root, Function: fn.Signature}] {
 		if out.composedRoots == nil {
 			out.composedRoots = make(map[string]bool)

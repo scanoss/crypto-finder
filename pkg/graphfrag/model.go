@@ -603,6 +603,11 @@ type Result struct {
 	// composedFindingDepths maps finding IDs proven reachable through composed
 	// entry points to their minimum composed chain depth.
 	composedFindingDepths map[string]int
+	// composedRawFindings maps a composed entry point's function key to the
+	// mine-time finding IDs it reaches. Raw (pre-translation) on purpose: a
+	// restricted chain enumeration compares against CryptoOperation identities,
+	// which are not yet in served form.
+	composedRawFindings map[string]map[string]bool
 	// erasedByFunctionKey resolves served function keys to the erased join
 	// signature carried on fragment functions (1.9+; empty for older data).
 	erasedByFunctionKey map[string]string
