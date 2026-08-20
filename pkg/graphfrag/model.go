@@ -552,8 +552,13 @@ type CryptoEntryPoint struct {
 
 // ReachableFinding links an entrypoint to a reachable terminal finding.
 type ReachableFinding struct {
-	FindingID       string
-	ChainDepth      int
+	FindingID  string
+	ChainDepth int
+	// Route is one minimum-length route from the entry point to the function
+	// holding the finding, as function keys, entry-point-first and inclusive of
+	// both ends. Empty when the fragment carried none, which leaves ChainDepth
+	// as the only statement about distance — the pre-1.13 behaviour.
+	Route           []string
 	FindingGraphRef string
 }
 
@@ -608,6 +613,16 @@ type Result struct {
 	// restricted chain enumeration compares against CryptoOperation identities,
 	// which are not yet in served form.
 	composedRawFindings map[string]map[string]bool
+	// composedRoutes maps a composed entry point's function key to the whole
+	// route it takes to each finding it reaches, keyed by mine-time finding id.
+	// Empty for a finding whose dependency leg the fragment did not name.
+	composedRoutes map[string]map[string][]graphNode
+	// composedRouteChains are the operation nodes whose emitted chain came from a
+	// composed route rather than an enumerated one. Keyed by node, not finding
+	// id: the ids are translated to served form on the way out and would not
+	// match. Their evidence inherits the dependency's mine-time chain cap, so the
+	// served analysis must stay partial however whole the route looks.
+	composedRouteChains map[graphNode]bool
 	// erasedByFunctionKey resolves served function keys to the erased join
 	// signature carried on fragment functions (1.9+; empty for older data).
 	erasedByFunctionKey map[string]string
@@ -690,6 +705,12 @@ type CallFrame struct {
 	Function Function
 	// EntryCall is the call-site data-flow for the edge that led to this frame (1.2+).
 	EntryCall *CallSite
+	// EntryResolution is how the edge that led to this frame was established,
+	// and EntryDeclaredType the static type it was written against when that
+	// edge is a dispatch. Empty on the first frame of a chain, which no edge
+	// leads to.
+	EntryResolution   ResolutionKind
+	EntryDeclaredType string
 	// Module is the fragment's root module string (e.g. "net.crypto:lib"), used
 	// to stamp dependency_info.module at projection time.
 	Module string

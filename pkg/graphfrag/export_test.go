@@ -196,7 +196,7 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 // call evidence.
 func TestSchemaVersion_Is_1_12(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.12" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.12", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.13" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.13", SchemaVersion)
 	}
 }

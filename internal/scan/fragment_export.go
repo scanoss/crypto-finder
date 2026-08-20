@@ -80,7 +80,7 @@ func (w *graphFragmentJSONWriter) writeResult(result *engine.DepScanResult) erro
 		return err
 	}
 
-	cryptoAnnotations, supportingCalls, entryPoints := materializeGraphFragmentCrypto(ctx, result)
+	cryptoAnnotations, supportingCalls, entryPoints := materializeGraphFragmentCrypto(ctx, result, functionIndex)
 	meta.CryptoOps = len(cryptoAnnotations)
 	if err := writeGraphFragmentArrayField(w, "crypto_annotations", cryptoAnnotations, true); err != nil {
 		return err
@@ -343,13 +343,18 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	}
 	sort.Strings(functionKeys)
 
+	// Same numbering the streaming writer assigns, and built here rather than
+	// re-derived later: a route resolved against a different order would name
+	// the wrong functions and still look well-formed.
+	functionIndex := make(map[string]int, len(functionKeys))
 	for _, key := range functionKeys {
 		decl := result.CallGraph.Functions[key]
+		functionIndex[key] = len(out.Functions)
 		out.Functions = append(out.Functions, buildGraphFragmentFunction(ctx, decl.ID, decl))
 	}
 	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
 
-	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCrypto(ctx, result)
+	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCrypto(ctx, result, functionIndex)
 	out.ScanMetadata.FunctionCount = len(out.Functions)
 	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
 	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
@@ -1274,6 +1279,7 @@ func compatibleParentSignatures(ctx *exportBuildContext, parents []string, metho
 func materializeGraphFragmentCrypto(
 	ctx *exportBuildContext,
 	result *engine.DepScanResult,
+	functionIndex map[string]int,
 ) (
 	[]graphfrag.GraphFragmentCryptoOp,
 	[]graphfrag.GraphFragmentSupporting,
@@ -1328,7 +1334,7 @@ func materializeGraphFragmentCrypto(
 	sort.SliceStable(supportingOut, func(i, j int) bool {
 		return supportingOut[i].SupportingID < supportingOut[j].SupportingID
 	})
-	return annotations, supportingOut, flattenGraphFragmentEntryPoints(ctx.kb, entries)
+	return annotations, supportingOut, flattenGraphFragmentEntryPoints(ctx.kb, entries, functionIndex)
 }
 
 // fragmentEntryPointChains returns reverse-reachability chains for fragment
@@ -1404,6 +1410,10 @@ type graphFragmentEntryPointData struct {
 	ownerVisibility    string
 	findings           map[string]graphfrag.GraphFragmentReachableFinding
 	supporting         map[string]graphfrag.GraphFragmentReachableSupportingCall
+	// routes holds, per finding id, the function keys of the minimum-depth route
+	// this entry point takes to it. Keys here and indexes on the wire: the
+	// numbering of functions[] is only known when the fragment is flattened.
+	routes map[string][]string
 }
 
 func addGraphFragmentFindingReachability(
@@ -1427,6 +1437,10 @@ func addGraphFragmentFindingReachability(
 				ChainDepth:      depth,
 				FindingGraphRef: findingID,
 			}
+			// chain[pos:] is that depth spelled out: the frames from this entry
+			// point to the function holding the crypto. Recording it is what lets
+			// a consumer name the route the depth only measures.
+			entry.routes[findingID] = chainNodeKeys(chain[pos:])
 		}
 	}
 }
@@ -1456,6 +1470,21 @@ func addGraphFragmentSupportingReachability(
 	}
 }
 
+// chainNodeKeys is the function key of each node, in chain order. An empty key
+// discards the whole route: a route missing a frame would assert a call that is
+// not in the graph, and the depth still answers how far the crypto is.
+func chainNodeKeys(nodes []callGraphChainNode) []string {
+	keys := make([]string, 0, len(nodes))
+	for i := range nodes {
+		key := nodes[i].FunctionKey
+		if key == "" {
+			return nil
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func ensureGraphFragmentEntryPoint(entries map[string]*graphFragmentEntryPointData, node *callGraphChainNode) *graphFragmentEntryPointData {
 	key := node.FunctionKey
 	if key == "" {
@@ -1479,12 +1508,17 @@ func ensureGraphFragmentEntryPoint(entries map[string]*graphFragmentEntryPointDa
 		ownerVisibility:    node.OwnerVisibility,
 		findings:           make(map[string]graphfrag.GraphFragmentReachableFinding),
 		supporting:         make(map[string]graphfrag.GraphFragmentReachableSupportingCall),
+		routes:             make(map[string][]string),
 	}
 	entries[key] = entry
 	return entry
 }
 
-func flattenGraphFragmentEntryPoints(kb *contracts.KnowledgeBase, entries map[string]*graphFragmentEntryPointData) []graphfrag.GraphFragmentCryptoEntryPoint {
+func flattenGraphFragmentEntryPoints(
+	kb *contracts.KnowledgeBase,
+	entries map[string]*graphFragmentEntryPointData,
+	functionIndex map[string]int,
+) []graphfrag.GraphFragmentCryptoEntryPoint {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -1502,7 +1536,7 @@ func flattenGraphFragmentEntryPoints(kb *contracts.KnowledgeBase, entries map[st
 			ParameterTypes:           cloneStringSlice(entry.parameterTypes),
 			Visibility:               entry.visibility,
 			OwnerVisibility:          entry.ownerVisibility,
-			ReachableFindings:        flattenGraphFragmentReachableFindings(entry.findings),
+			ReachableFindings:        flattenGraphFragmentReachableFindings(entry.findings, entry.routes, functionIndex),
 			ReachableSupportingCalls: flattenGraphFragmentReachableSupporting(entry.supporting),
 			// issue-103 WU3: parameter_roles carried on the fragment so the
 			// stitch/served path can pick them up via the by-function_key
@@ -1514,16 +1548,40 @@ func flattenGraphFragmentEntryPoints(kb *contracts.KnowledgeBase, entries map[st
 	return out
 }
 
-func flattenGraphFragmentReachableFindings(values map[string]graphfrag.GraphFragmentReachableFinding) []graphfrag.GraphFragmentReachableFinding {
+func flattenGraphFragmentReachableFindings(
+	values map[string]graphfrag.GraphFragmentReachableFinding,
+	routes map[string][]string,
+	functionIndex map[string]int,
+) []graphfrag.GraphFragmentReachableFinding {
 	if len(values) == 0 {
 		return nil
 	}
 	keys := sortedKeys(values)
 	out := make([]graphfrag.GraphFragmentReachableFinding, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, values[key])
+		finding := values[key]
+		finding.Route = routeIndexes(routes[key], functionIndex)
+		out = append(out, finding)
 	}
 	return out
+}
+
+// routeIndexes resolves function keys to their position in the exported
+// functions array. A key the array does not hold drops the whole route, for the
+// same reason chainNodeKeys does.
+func routeIndexes(route []string, functionIndex map[string]int) []int {
+	if len(route) == 0 || functionIndex == nil {
+		return nil
+	}
+	indexes := make([]int, 0, len(route))
+	for _, key := range route {
+		idx, ok := functionIndex[key]
+		if !ok {
+			return nil
+		}
+		indexes = append(indexes, idx)
+	}
+	return indexes
 }
 
 func flattenGraphFragmentReachableSupporting(values map[string]graphfrag.GraphFragmentReachableSupportingCall) []graphfrag.GraphFragmentReachableSupportingCall {

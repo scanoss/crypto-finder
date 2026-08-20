@@ -635,10 +635,10 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 // carrying the rule-vs-callgraph conflict marker.
 // The bump is unconditional: it
 // advances regardless of whether any given export emits the new fields.
-func TestCallgraphSchemaVersion_Is612(t *testing.T) {
+func TestCallgraphSchemaVersion_Is613(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.12" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.12")
+	if CallgraphSchemaVersion != "6.13" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.13")
 	}
 }

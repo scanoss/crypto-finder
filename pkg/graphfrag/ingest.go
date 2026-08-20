@@ -33,7 +33,7 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 	appendExternalCalls(&frag, e.ExternalCalls)
 	appendCryptoOperations(&frag, e.CryptoAnnotations)
 	appendSupportingCalls(&frag, e.SupportingCalls)
-	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints)
+	frag.CryptoEntryPoints = appendCryptoEntryPoints(frag.CryptoEntryPoints, e.CryptoEntryPoints, functionKeys)
 	return frag
 }
 
@@ -200,7 +200,11 @@ func stringAt(values []string, idx int) string {
 	return values[idx]
 }
 
-func appendCryptoEntryPoints(dst []CryptoEntryPoint, src []GraphFragmentCryptoEntryPoint) []CryptoEntryPoint {
+func appendCryptoEntryPoints(
+	dst []CryptoEntryPoint,
+	src []GraphFragmentCryptoEntryPoint,
+	functionKeys []string,
+) []CryptoEntryPoint {
 	for i := range src {
 		ep := &src[i]
 		dst = append(dst, CryptoEntryPoint{
@@ -213,7 +217,7 @@ func appendCryptoEntryPoints(dst []CryptoEntryPoint, src []GraphFragmentCryptoEn
 			ParameterTypes:           append([]string(nil), ep.ParameterTypes...),
 			Visibility:               ep.Visibility,
 			OwnerVisibility:          ep.OwnerVisibility,
-			ReachableFindings:        toReachableFindings(ep.ReachableFindings),
+			ReachableFindings:        toReachableFindings(ep.ReachableFindings, functionKeys),
 			ReachableSupportingCalls: toReachableSupportingCalls(ep.ReachableSupportingCalls),
 			MethodRole:               ep.MethodRole,
 			RoleProvenance:           toRoleProvenance(ep.RoleProvenance),
@@ -268,7 +272,7 @@ func toParameterRoles(src []GraphFragmentParameterRole) []ParameterRole {
 	return out
 }
 
-func toReachableFindings(src []GraphFragmentReachableFinding) []ReachableFinding {
+func toReachableFindings(src []GraphFragmentReachableFinding, functionKeys []string) []ReachableFinding {
 	if len(src) == 0 {
 		return nil
 	}
@@ -277,10 +281,30 @@ func toReachableFindings(src []GraphFragmentReachableFinding) []ReachableFinding
 		out[i] = ReachableFinding{
 			FindingID:       src[i].FindingID,
 			ChainDepth:      src[i].ChainDepth,
+			Route:           toRoute(src[i].Route, functionKeys),
 			FindingGraphRef: src[i].FindingGraphRef,
 		}
 	}
 	return out
+}
+
+// toRoute resolves route indexes to function keys. An index the fragment cannot
+// resolve drops the whole route rather than a frame: a route with a hole would
+// claim a call that is not there, and the depth still answers how far the crypto
+// is.
+func toRoute(indexes []int, functionKeys []string) []string {
+	if len(indexes) == 0 {
+		return nil
+	}
+	route := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		key := functionKeyAt(functionKeys, idx)
+		if key == "" {
+			return nil
+		}
+		route = append(route, key)
+	}
+	return route
 }
 
 func toReachableSupportingCalls(src []GraphFragmentReachableSupportingCall) []ReachableSupportingCall {

@@ -72,6 +72,32 @@ type Reachable[T comparable] struct {
 	// Callers is the adjacency induced on Depth's keys. Terminals carry no
 	// entry: a chain stops there.
 	Callers map[T][]T
+	// Step is the next node on one minimum-length route from a node to the
+	// target: the callee it calls. The target carries no entry. Following Step
+	// names ONE route of Depth length — the walk still admits each node once, so
+	// this is not the route set and cannot be used to enumerate it. Naming the
+	// route the recorded Depth already measures is the whole purpose.
+	Step map[T]T
+}
+
+// Route returns one minimum-length route from `from` to the target, in
+// caller-to-callee order and inclusive of both ends. It is nil when `from` did
+// not reach the target, and its length is always Depth[from]+1.
+func (r Reachable[T]) Route(from T) []T {
+	if _, ok := r.Depth[from]; !ok {
+		return nil
+	}
+	route := []T{from}
+	current := from
+	for current != r.Target {
+		step, ok := r.Step[current]
+		if !ok {
+			return nil
+		}
+		current = step
+		route = append(route, current)
+	}
+	return route
 }
 
 // Reach walks callers breadth-first from target and records every node that
@@ -82,12 +108,17 @@ type Reachable[T comparable] struct {
 // that collected paths under the same rule would lose the second branch into any
 // shared caller — which is exactly the defect this package exists to avoid
 // repeating.
+//
+// Reachable.Step therefore names one route per node and never the route set: the
+// branch a shared caller loses is a route this walk was never entitled to report.
+// Callers that need the route set condense first and go through Routes.
 func Reach[T comparable](target T, opts Options[T]) Reachable[T] {
 	out := Reachable[T]{
 		Target:   target,
 		Depth:    map[T]int{target: 0},
 		Terminal: map[T]bool{},
 		Callers:  map[T][]T{},
+		Step:     map[T]T{},
 	}
 
 	queue := []T{target}
@@ -140,6 +171,7 @@ func (r *Reachable[T]) enqueueCallers(current T, callers []T, depth int, queue [
 			continue
 		}
 		r.Depth[caller] = depth + 1
+		r.Step[caller] = current
 		queue = append(queue, caller)
 	}
 	return queue
