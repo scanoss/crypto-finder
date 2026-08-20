@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Graph fragments record one minimum-length route per reachable finding, and the stitched export serves a call chain that spans the component boundary instead of the single frame holding the crypto. A finding reached through a dependency now names every call from the consumer's own method down to the crypto. The entry-point index already stated the distance; the route it measures was computed and discarded. `analysis.call_chains` stays `partial`, because the dependency's leg was recorded under that dependency's own chain cap. A component keeps serving what it serves today until it is re-mined, and a closure mixing re-mined and older members reports each accordingly. (#289)
+- Callgraph export schema `6.13` and graph-fragment schema `1.13` add `call_chains[].entry_resolution` and `entry_declared_type`, reporting how the call arriving at each frame was established and, for a dispatch, the static type that could not be narrowed. Both absent on a chain's first frame. A route is chosen by minimum length, so a dispatch edge that happens to be spurious is exactly the kind of hop a route prefers; naming it lets a consumer keep the certain part of a route and read the rest as indicative. Graph fragments add `crypto_entry_points[].reachable_findings[].route` as indexes into `functions[]`, absent on fragments exported earlier. On the largest component measured the route costs 1.89 MB on a 506 MB fragment. (#289)
+
 
 ## [0.23.0] - 2026-08-20
 ### Added

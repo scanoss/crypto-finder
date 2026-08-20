@@ -47,12 +47,12 @@ func condensedBackwardChains(
 	entrySet map[graphNode]bool,
 ) (chains []backwardChain, total int, truncated bool) {
 	callers := make(map[graphNode][]graphNode, len(reverse))
-	callSites := make(map[callSiteKey]*CallSite, len(reverse))
+	inbounds := make(map[callSiteKey]inbound, len(reverse))
 	for target, edges := range reverse {
 		list := make([]graphNode, 0, len(edges))
 		for _, edge := range edges {
 			list = append(list, edge.caller)
-			callSites[callSiteKey{caller: edge.caller, target: target}] = edge.entryCall
+			inbounds[callSiteKey{caller: edge.caller, target: target}] = edge.inbound
 		}
 		callers[target] = list
 	}
@@ -74,7 +74,7 @@ func condensedBackwardChains(
 	condensed := graphwalk.Condense(reach, nodeLess)
 	total = graphwalk.Count(reach, condensed)
 	for _, route := range graphwalk.Routes(reach, condensed, stitchMaxChainsPerOp) {
-		chains = append(chains, materializeBackwardChain(route, callSites))
+		chains = append(chains, materializeBackwardChain(route, inbounds))
 	}
 	return chains, total, len(chains) < total
 }
@@ -83,15 +83,15 @@ func condensedBackwardChains(
 // entry->op order emitChain expects, stamping each frame with the call site of the
 // edge that arrives at it. The head frame has no inbound edge, so its entry call
 // is nil, exactly as the incremental walk left it.
-func materializeBackwardChain(route []graphNode, callSites map[callSiteKey]*CallSite) backwardChain {
+func materializeBackwardChain(route []graphNode, inbounds map[callSiteKey]inbound) backwardChain {
 	nodes := make([]graphNode, 0, len(route))
 	for i := len(route) - 1; i >= 0; i-- {
 		nodes = append(nodes, route[i])
 	}
 
-	entryCalls := make([]*CallSite, len(nodes))
+	stamped := make([]inbound, len(nodes))
 	for i := 1; i < len(nodes); i++ {
-		entryCalls[i] = callSites[callSiteKey{caller: nodes[i-1], target: nodes[i]}]
+		stamped[i] = inbounds[callSiteKey{caller: nodes[i-1], target: nodes[i]}]
 	}
-	return backwardChain{nodes: nodes, entryCalls: entryCalls}
+	return backwardChain{nodes: nodes, inbounds: stamped}
 }

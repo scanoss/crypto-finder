@@ -43,7 +43,7 @@ import (
 // hierarchy stitching. 1.10 adds optional occurrence_key propagation for
 // canonical crypto annotations. 1.11 adds resolved key-length call evidence.
 // 1.12 adds the rule-vs-callgraph key-length conflict marker on that evidence.
-const SchemaVersion = "graph-fragment-1.12"
+const SchemaVersion = "graph-fragment-1.13"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -474,8 +474,17 @@ type GraphFragmentCryptoEntryPoint struct {
 
 // GraphFragmentReachableFinding is a finding reachable from an entrypoint.
 type GraphFragmentReachableFinding struct {
-	FindingID       string `json:"finding_id"`
-	ChainDepth      int    `json:"chain_depth"`
+	FindingID  string `json:"finding_id"`
+	ChainDepth int    `json:"chain_depth"`
+	// Route names one minimum-length route from the entry point to the function
+	// holding the finding, as indexes into Functions, entry-point-first and
+	// inclusive of both ends — so its length equals ChainDepth. Indexes rather
+	// than keys for the same reason the compact edges use them: on a dense
+	// component the keys cost an order of magnitude more than the graph they
+	// describe. Absent on fragments exported before graph-fragment-1.13, and on
+	// any entry point whose route the producer could not name; ChainDepth stays
+	// the answer either way.
+	Route           []int  `json:"route,omitempty"`
 	FindingGraphRef string `json:"finding_graph_ref,omitempty"`
 }
 

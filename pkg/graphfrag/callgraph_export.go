@@ -30,7 +30,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.12"
+const CallgraphSchemaVersion = "6.13"
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -380,6 +380,18 @@ type ExportChainNode struct {
 	StartLine int `json:"start_line,omitempty"`
 	// DependencyInfo is stamped for non-root frames. Nil for root-component frames.
 	DependencyInfo *ExportDependencyInfo `json:"dependency_info,omitempty"`
+	// EntryResolution reports how the call that arrives at this frame was
+	// established (6.13+): `exact` where the callee is certain, or a dispatch
+	// kind where the analysis could not narrow the receiver and considered every
+	// compatible implementation. EntryDeclaredType names the static type in that
+	// case. Both absent on the first frame of a chain, which no call arrives at.
+	//
+	// A route is chosen by minimum length, and a dispatch edge that happens to be
+	// spurious is always a shortcut, so it is exactly the kind of hop a route
+	// prefers. Reading them lets a consumer keep the certain part of a route and
+	// treat the rest as indicative.
+	EntryResolution   string `json:"entry_resolution,omitempty"`
+	EntryDeclaredType string `json:"entry_declared_type,omitempty"`
 	// EntryCall is the call-site data-flow for the edge that led to this frame.
 	// Nil on the root frame and on frames derived from legacy 1.0/1.1 fragments.
 	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
@@ -587,6 +599,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		}
 		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
 		fg.Analysis = stitchedFindingAnalysis(&fg)
+		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
@@ -637,6 +650,18 @@ func mergeDirectFindingPURL(current *string, conflict *bool, purlValue string) {
 		*current = ""
 		*conflict = true
 	}
+}
+
+// markComposedRouteAnalysis keeps the analysis partial for a finding whose chain
+// came from a composed route. The route spans the component boundary and names
+// every frame, but its dependency leg was recorded under that dependency's
+// mine-time chain cap, so the search behind it was bounded — which is what this
+// field reports.
+func (r *Result) markComposedRouteAnalysis(fg *ExportFindingGraph, anchor graphNode) {
+	if fg == nil || fg.Analysis == nil || !r.composedRouteChains[anchor] {
+		return
+	}
+	fg.Analysis.CallChains = AnalysisPartial
 }
 
 // upgradeComposedReachability marks a finding proven through a composed
@@ -1193,6 +1218,8 @@ func buildExportNode(frame *CallFrame, root ComponentKey, ecosystem string) Expo
 		FilePath:           fn.FilePath,
 		StartLine:          fn.StartLine,
 		EntryCall:          exportEntryCall(frame.EntryCall, fn),
+		EntryResolution:    string(frame.EntryResolution),
+		EntryDeclaredType:  frame.EntryDeclaredType,
 	}
 	// Stamp dependency_info on non-root frames (ADR-4). The module string comes
 	// from the CallFrame.Module (Fragment.Module, set at stitch time), falling

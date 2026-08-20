@@ -6,6 +6,8 @@ package graphfrag
 import (
 	"sort"
 	"strings"
+
+	"github.com/scanoss/crypto-finder/pkg/graphwalk"
 )
 
 // StitchOptions tunes which root-fragment functions a stitch traces from. The
@@ -174,9 +176,11 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// latter proves reachability through a dependency's mine-time index, which
 		// records a depth and no route, so no enumeration can confirm it.
 		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
+		composedRoutes := make(map[string][]graphNode)
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
 			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures),
-			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures), &out)
+			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures, composedRoutes),
+			composedRoutes, ambiguousCandidates, &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
@@ -201,7 +205,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		opsByNode, historicalEntries, fragments, functionsByNode, &out)
 
 	for _, start := range roots {
-		trace(start, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, nil, nil, map[graphNode]bool{}, &out)
+		trace(start, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, inbound{}, nil, map[graphNode]bool{}, &out)
 	}
 	attachAnnotationSupportingCalls(closure, fragments, &out)
 	if opts.ForwardClosure {
@@ -337,6 +341,13 @@ type graphNode struct {
 type adjacencyEdge struct {
 	target    graphNode
 	entryCall *CallSite
+	// resolution and declaredType describe how this edge was established. They
+	// travel to the served frame because a route is only evidence if a reader
+	// can tell a certain hop from an inferred one: a dispatch edge expands to
+	// every compatible implementation, and a shortest route prefers whichever
+	// of them is the shortcut.
+	resolution   ResolutionKind
+	declaredType string
 }
 
 func dependencyClosure(root ComponentKey, deps DependencyGraph) []ComponentKey {
@@ -472,6 +483,10 @@ type callEdge struct {
 	internal                 bool
 	entryCall                *CallSite
 	resolvedReceiverType     string
+	// declaredType is the static type the call was written against. On a
+	// dispatch edge it names what the walk could not narrow, which is the whole
+	// reason a consumer would want to see it.
+	declaredType string
 }
 
 // buildAdjacency composes the traversable call graph from the fragment closure
@@ -495,9 +510,9 @@ func buildAdjacency(
 	functionsByNode map[graphNode]Function,
 	dispatchSurfaces map[graphNode][]graphNode,
 	aliasByKey map[string][]graphNode,
-) (map[graphNode][]adjacencyEdge, map[graphNode][]graphNode, []SuppressedEdge) {
+) (map[graphNode][]adjacencyEdge, map[graphNode][]adjacencyEdge, []SuppressedEdge) {
 	out := make(map[graphNode][]adjacencyEdge)
-	ambiguous := make(map[graphNode][]graphNode)
+	ambiguous := make(map[graphNode][]adjacencyEdge)
 	var suppressed []SuppressedEdge
 	ownerTypes := indexOwnerTypes(closure, fragments)
 
@@ -573,7 +588,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		edges = append(edges, callEdge{
 			caller: e.Caller, target: e.Callee, resolution: e.Resolution,
 			method: e.MethodName, arity: e.Arity, callSite: e.CallSite, startCol: e.StartCol, endCol: e.EndCol, internal: true, entryCall: e.EntryCall,
-			resolvedReceiverType: e.ResolvedReceiverType,
+			resolvedReceiverType: e.ResolvedReceiverType, declaredType: e.DeclaredType,
 		})
 	}
 	for i := range fragment.ExternalCalls {
@@ -581,7 +596,7 @@ func collectCallEdges(fragment Fragment) []callEdge {
 		edges = append(edges, callEdge{
 			caller: c.Caller, target: c.TargetSignature, targetCanonicalSignature: c.TargetCanonicalSignature, resolution: c.Resolution,
 			method: c.MethodName, arity: c.Arity, callSite: c.CallSite, startCol: c.StartCol, endCol: c.EndCol, internal: false, entryCall: c.EntryCall,
-			resolvedReceiverType: c.ResolvedReceiverType,
+			resolvedReceiverType: c.ResolvedReceiverType, declaredType: c.DeclaredType,
 		})
 	}
 	return edges
@@ -798,7 +813,7 @@ func applyImmediateEdgePolicy(
 	ownerTypes map[graphNode]string,
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
-	ambiguous map[graphNode][]graphNode,
+	ambiguous map[graphNode][]adjacencyEdge,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
@@ -815,7 +830,7 @@ func applyImmediateEdgePolicy(
 				dispatchGroups[gk] = append(dispatchGroups[gk], *e)
 				continue
 			}
-			appendAdjacencyEdges(adjacency, caller, targets.nodes, e.entryCall)
+			appendAdjacencyEdges(adjacency, caller, targets.nodes, e)
 			expandDispatchSurfaces(key, e, caller, targets.nodes, dispatchSurfaces, ownerTypes, fragments, functionsByNode, adjacency, suppressed, ambiguous)
 		case ResolutionInterfaceDispatch:
 			gk := dispatchKey(key, *e)
@@ -848,7 +863,7 @@ func expandDispatchSurfaces(
 	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
-	ambiguous map[graphNode][]graphNode,
+	ambiguous map[graphNode][]adjacencyEdge,
 ) {
 	for _, target := range targets {
 		impls := dispatchSurfaces[target]
@@ -856,18 +871,18 @@ func expandDispatchSurfaces(
 			continue
 		}
 		if len(impls) == 1 {
-			appendAdjacencyEdges(adjacency, caller, impls, e.entryCall)
+			appendAdjacencyEdges(adjacency, caller, impls, e)
 			continue
 		}
 		implEdges := make([]adjacencyEdge, 0, len(impls))
 		for _, impl := range impls {
-			implEdges = append(implEdges, adjacencyEdge{target: impl, entryCall: e.entryCall})
+			implEdges = append(implEdges, adjacencyEdge{target: impl, entryCall: e.entryCall, resolution: e.resolution, declaredType: e.declaredType})
 		}
 		if resolved, ok := disambiguateByReceiverType([]callEdge{*e}, implEdges, ownerTypes); ok {
 			adjacency[caller] = append(adjacency[caller], resolved)
 			continue
 		}
-		ambiguous[caller] = append(ambiguous[caller], impls...)
+		ambiguous[caller] = append(ambiguous[caller], implEdges...)
 		*suppressed = append(*suppressed, ambiguousDispatchEdge(key, dispatchKey(key, *e), implEdges, fragments, functionsByNode))
 	}
 }
@@ -893,7 +908,7 @@ func applyDispatchGroups(
 	functionsByNode map[graphNode]Function,
 	adjacency map[graphNode][]adjacencyEdge,
 	suppressed *[]SuppressedEdge,
-	ambiguous map[graphNode][]graphNode,
+	ambiguous map[graphNode][]adjacencyEdge,
 ) {
 	for _, gk := range sortedDispatchKeys(groups) {
 		group := groups[gk]
@@ -907,9 +922,7 @@ func applyDispatchGroups(
 				adjacency[caller] = append(adjacency[caller], resolved)
 				continue
 			}
-			for _, t := range targets {
-				ambiguous[caller] = append(ambiguous[caller], t.target)
-			}
+			ambiguous[caller] = append(ambiguous[caller], targets...)
 			*suppressed = append(*suppressed, ambiguousDispatchEdge(key, gk, targets, fragments, functionsByNode))
 			// len(targets) == 0: no implementation in closure -> unreachable,
 			// nothing to traverse and nothing to record.
@@ -985,10 +998,15 @@ func appendAdjacencyEdges(
 	adjacency map[graphNode][]adjacencyEdge,
 	caller graphNode,
 	targets []graphNode,
-	entryCall *CallSite,
+	edge *callEdge,
 ) {
 	for _, target := range targets {
-		adjacency[caller] = append(adjacency[caller], adjacencyEdge{target: target, entryCall: entryCall})
+		adjacency[caller] = append(adjacency[caller], adjacencyEdge{
+			target:       target,
+			entryCall:    edge.entryCall,
+			resolution:   edge.resolution,
+			declaredType: edge.declaredType,
+		})
 	}
 }
 
@@ -1002,7 +1020,7 @@ func distinctTargetEdges(edges []callEdge, resolve edgeResolver) []adjacencyEdge
 				continue
 			}
 			distinct[t] = true
-			targets = append(targets, adjacencyEdge{target: t, entryCall: e.entryCall})
+			targets = append(targets, adjacencyEdge{target: t, entryCall: e.entryCall, resolution: e.resolution, declaredType: e.declaredType})
 		}
 	}
 	return targets
@@ -1018,10 +1036,14 @@ func ambiguousDispatchEdge(
 	targets = sortedAdjacencyEdges(targets)
 	frames := make([]CallFrame, 0, len(targets))
 	for _, target := range targets {
-		frames = append(frames, buildFrame(target.target, target.entryCall, fragments, functionsByNode))
+		frames = append(frames, buildFrame(target.target, inbound{
+			entryCall:    target.entryCall,
+			resolution:   target.resolution,
+			declaredType: target.declaredType,
+		}, fragments, functionsByNode))
 	}
 	return SuppressedEdge{
-		Caller:          buildFrame(graphNode{Component: key, Function: gk.Caller}, nil, fragments, functionsByNode),
+		Caller:          buildFrame(graphNode{Component: key, Function: gk.Caller}, inbound{}, fragments, functionsByNode),
 		MethodName:      gk.MethodName,
 		Arity:           gk.Arity,
 		CallSite:        gk.CallSite,
@@ -1158,17 +1180,26 @@ const (
 // the entryCall of the FORWARD edge (caller -> node) so frame EntryCall stamping
 // stays byte-identical to the old forward DFS.
 type reverseEdge struct {
-	caller    graphNode
-	entryCall *CallSite
+	caller graphNode
+	inbound
+}
+
+// inbound describes the edge that arrives at a frame: its call site, how it was
+// established, and the static type it was written against. Grouped because the
+// three always travel together, from the adjacency to the served frame.
+type inbound struct {
+	entryCall    *CallSite
+	resolution   ResolutionKind
+	declaredType string
 }
 
 // backwardChain is the chain being grown by the BFS, in entry->...->op order.
-// entryCalls[i] is the EntryCall to stamp on nodes[i] — i.e. the call site of the
-// forward edge that ARRIVES at nodes[i] from nodes[i-1] (nil on the head/root
-// frame), exactly as the previous forward DFS stamped CallFrame.EntryCall.
+// inbounds[i] describes the edge that ARRIVES at nodes[i] from nodes[i-1]: its
+// call site, how it was established, and the type it was written against. The
+// head frame has no inbound edge and carries the zero value.
 type backwardChain struct {
-	nodes      []graphNode
-	entryCalls []*CallSite
+	nodes    []graphNode
+	inbounds []inbound
 }
 
 // traceBackward mirrors internal/callgraph.Tracer.TraceBackLimited: for each
@@ -1211,6 +1242,8 @@ func traceBackward(
 	roots []graphNode,
 	chainEntries map[graphNode]bool,
 	composedFindings map[string]bool,
+	composedRoutes map[string][]graphNode,
+	ambiguousCandidates map[graphNode][]adjacencyEdge,
 	out *Result,
 ) {
 	reverse := reverseAdjacency(adjacency)
@@ -1256,7 +1289,7 @@ func traceBackward(
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:
 			// emit a single-node chain so a self-contained crypto call is still
 			// reported. The op node IS its own entry in this case.
-			chains = []backwardChain{{nodes: []graphNode{opNode}, entryCalls: []*CallSite{nil}}}
+			chains = []backwardChain{composedRouteChain(opNode, opsByNode[opNode], composedRoutes, adjacency, ambiguousCandidates, out)}
 		}
 		for _, chain := range chains {
 			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, out)
@@ -1273,6 +1306,7 @@ func composedChainEntryFindings(
 	out *Result,
 	functionsByNode map[graphNode]Function,
 	signatures []string,
+	routes map[string][]graphNode,
 ) map[string]bool {
 	if len(signatures) == 0 || len(out.composedEntryPoints) == 0 {
 		return nil
@@ -1296,11 +1330,79 @@ func composedChainEntryFindings(
 		for id := range out.composedRawFindings[ep.FunctionKey] {
 			findings[id] = true
 		}
+		for id, route := range out.composedRoutes[ep.FunctionKey] {
+			if existing, seen := routes[id]; !seen || len(route) < len(existing) {
+				routes[id] = route
+			}
+		}
 	}
 	if len(findings) == 0 {
 		return nil
 	}
 	return findings
+}
+
+// composedRouteChain is the chain emitted when no route could be enumerated.
+// A requested composed entry point that named its whole route to one of this
+// node's operations supplies its frames; otherwise the chain degrades to the
+// single node, which is what a crypto call nothing calls reports.
+func composedRouteChain(
+	opNode graphNode,
+	ops []CryptoOperation,
+	composedRoutes map[string][]graphNode,
+	adjacency, ambiguousCandidates map[graphNode][]adjacencyEdge,
+	out *Result,
+) backwardChain {
+	for i := range ops {
+		route := composedRoutes[ops[i].FindingID]
+		if len(route) < 2 || route[len(route)-1] != opNode {
+			continue
+		}
+		if out.composedRouteChains == nil {
+			out.composedRouteChains = make(map[graphNode]bool)
+		}
+		out.composedRouteChains[opNode] = true
+		return backwardChain{nodes: route, inbounds: composedRouteInbounds(route, adjacency, ambiguousCandidates)}
+	}
+	return backwardChain{nodes: []graphNode{opNode}, inbounds: []inbound{{}}}
+}
+
+// composedRouteInbounds resolves, for each hop of a composed route, the edge
+// that arrives at it. The stitched leg is in the adjacency; the leg the
+// dependency's fragment recorded is not, and its hops report no resolution
+// rather than borrowing one they were not given.
+func composedRouteInbounds(
+	route []graphNode,
+	adjacency map[graphNode][]adjacencyEdge,
+	ambiguousCandidates map[graphNode][]adjacencyEdge,
+) []inbound {
+	out := make([]inbound, len(route))
+	for i := 1; i < len(route); i++ {
+		// The ambiguous candidates are searched too, and deliberately: an edge
+		// lands there because its dispatch could not be narrowed, so those are
+		// the least certain hops of all. Leaving exactly those unlabelled would
+		// invert the point of labelling.
+		out[i] = lookupInbound(route[i-1], route[i], adjacency, ambiguousCandidates)
+	}
+	return out
+}
+
+func lookupInbound(
+	caller, callee graphNode,
+	adjacency, ambiguousCandidates map[graphNode][]adjacencyEdge,
+) inbound {
+	for _, group := range [2][]adjacencyEdge{adjacency[caller], ambiguousCandidates[caller]} {
+		for _, edge := range group {
+			if edge.target == callee {
+				return inbound{
+					entryCall:    edge.entryCall,
+					resolution:   edge.resolution,
+					declaredType: edge.declaredType,
+				}
+			}
+		}
+	}
+	return inbound{}
 }
 
 // composedReaches reports whether a requested composed entry point proves it
@@ -1324,7 +1426,14 @@ func reverseAdjacency(adjacency map[graphNode][]adjacencyEdge) map[graphNode][]r
 	reverse := make(map[graphNode][]reverseEdge)
 	for caller, edges := range adjacency {
 		for _, edge := range edges {
-			reverse[edge.target] = append(reverse[edge.target], reverseEdge{caller: caller, entryCall: edge.entryCall})
+			reverse[edge.target] = append(reverse[edge.target], reverseEdge{
+				caller: caller,
+				inbound: inbound{
+					entryCall:    edge.entryCall,
+					resolution:   edge.resolution,
+					declaredType: edge.declaredType,
+				},
+			})
 		}
 	}
 	for target := range reverse {
@@ -1356,7 +1465,7 @@ func emitChain(
 ) {
 	frames := make([]CallFrame, len(chain.nodes))
 	for i, node := range chain.nodes {
-		frames[i] = buildFrame(node, chain.entryCalls[i], fragments, functionsByNode)
+		frames[i] = buildFrame(node, chain.inbounds[i], fragments, functionsByNode)
 	}
 
 	// Flush supporting calls in entry->op order so output ordering matches the old
@@ -1390,14 +1499,16 @@ func emitChain(
 // identity from the fragment and the EntryCall of the edge that led to this frame.
 func buildFrame(
 	node graphNode,
-	entryCall *CallSite,
+	in inbound,
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
 ) CallFrame {
 	frame := CallFrame{
-		Component: node.Component,
-		Signature: node.Function,
-		EntryCall: entryCall,
+		Component:         node.Component,
+		Signature:         node.Function,
+		EntryCall:         in.entryCall,
+		EntryResolution:   in.resolution,
+		EntryDeclaredType: in.declaredType,
 	}
 	if frag, ok := fragments[node.Component]; ok {
 		frame.Module = frag.Module
@@ -1442,7 +1553,7 @@ func trace(
 	supportingByNode map[graphNode][]SupportingCall,
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
-	traversedEdgeEntryCall *CallSite,
+	traversedEdge inbound,
 	path []CallFrame,
 	visiting map[graphNode]bool,
 	out *Result,
@@ -1453,7 +1564,7 @@ func trace(
 	visiting[current] = true
 	defer delete(visiting, current)
 
-	frame := buildFrame(current, traversedEdgeEntryCall, fragments, functionsByNode)
+	frame := buildFrame(current, traversedEdge, fragments, functionsByNode)
 
 	path = append(path, frame)
 	flushSupportingCalls(current, &frame, supportingByNode, out)
@@ -1473,8 +1584,10 @@ func trace(
 		out.Chains = append(out.Chains, chain)
 	}
 	for _, edge := range adjacency[current] {
-		// Carry the EntryCall from this edge to the next frame.
-		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, functionsByNode, edge.entryCall, path, visiting, out)
+		// Carry this edge's call site and resolution to the next frame.
+		trace(edge.target, adjacency, opsByNode, supportingByNode, fragments, functionsByNode,
+			inbound{entryCall: edge.entryCall, resolution: edge.resolution, declaredType: edge.declaredType},
+			path, visiting, out)
 	}
 }
 
@@ -1593,7 +1706,7 @@ func forwardBFS(
 	caps forwardCaps,
 ) *forwardClosure {
 	fc := &forwardClosure{
-		anchor:   buildFrame(anchor, nil, fragments, functionsByNode),
+		anchor:   buildFrame(anchor, inbound{}, fragments, functionsByNode),
 		maxDepth: caps.maxDepth,
 	}
 
@@ -1713,7 +1826,7 @@ func buildForwardNode(
 	category := firstSupportingCategory(supportingByNode[node])
 	return forwardNode{
 		node:               node,
-		frame:              buildFrame(node, nil, fragments, functionsByNode),
+		frame:              buildFrame(node, inbound{}, fragments, functionsByNode),
 		depth:              depth,
 		cryptoRelevant:     len(opsByNode[node]) > 0 || category != "",
 		supportingCategory: category,
@@ -1763,7 +1876,7 @@ func composeDependencyEntryPoints(
 	closure []ComponentKey,
 	fragments map[ComponentKey]Fragment,
 	adjacency map[graphNode][]adjacencyEdge,
-	ambiguousCandidates map[graphNode][]graphNode,
+	ambiguousCandidates map[graphNode][]adjacencyEdge,
 	out *Result,
 ) {
 	reverse, reverseAll := composeReverseMaps(adjacency, ambiguousCandidates)
@@ -1789,13 +1902,13 @@ func composeDependencyEntryPoints(
 				continue
 			}
 			seed := graphNode{Component: dep, Function: ep.FunctionKey}
-			proven := backwardDistances(seed, reverse)
-			projectEntryPoint(root, ep, translate, proven, true, rootFunctions, hasIncoming, composed)
-			mayReach := backwardDistances(seed, reverseAll)
-			for node := range proven {
-				delete(mayReach, node)
+			proven := reachFrom(seed, reverse)
+			projectEntryPoint(root, dep, ep, translate, proven, true, rootFunctions, hasIncoming, composed)
+			mayReach := reachFrom(seed, reverseAll)
+			for node := range proven.Depth {
+				delete(mayReach.Depth, node)
 			}
-			projectEntryPoint(root, ep, translate, mayReach, false, rootFunctions, hasIncoming, composed)
+			projectEntryPoint(root, dep, ep, translate, mayReach, false, rootFunctions, hasIncoming, composed)
 		}
 	}
 	if len(composed) == 0 {
@@ -1810,6 +1923,7 @@ func composeDependencyEntryPoints(
 
 	out.composedFindingDepths = make(map[string]int)
 	out.composedRawFindings = make(map[string]map[string]bool)
+	out.composedRoutes = make(map[string]map[string][]graphNode)
 	for _, key := range keys {
 		appendComposedResult(root, rootFunctions[key], composed[key], hasIncoming, out)
 	}
@@ -1823,7 +1937,7 @@ const publicVisibility = "public"
 // index is may-reach by design, so a consumer-facing entry point may be
 // discovered THROUGH an ambiguous call, while finding-level reachability only
 // ever upgrades on proven paths.
-func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandidates map[graphNode][]graphNode) (map[graphNode][]graphNode, map[graphNode][]graphNode) {
+func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandidates map[graphNode][]adjacencyEdge) (map[graphNode][]graphNode, map[graphNode][]graphNode) {
 	reverse := make(map[graphNode][]graphNode)
 	for caller, edges := range adjacency {
 		for _, edge := range edges {
@@ -1836,7 +1950,7 @@ func composeReverseMaps(adjacency map[graphNode][]adjacencyEdge, ambiguousCandid
 	}
 	for caller, candidates := range ambiguousCandidates {
 		for _, candidate := range candidates {
-			reverseAll[candidate] = append(reverseAll[candidate], caller)
+			reverseAll[candidate.target] = append(reverseAll[candidate.target], caller)
 		}
 	}
 	return reverse, reverseAll
@@ -1867,21 +1981,26 @@ type composedEntry struct {
 	// rawIDs are the untranslated mine-time finding IDs, kept so a restricted
 	// enumeration can recognize the operations this entry point reaches.
 	rawIDs map[string]bool
+	// routes are the whole route to each finding, per untranslated finding id:
+	// the stitched frames to the dependency entry point followed by the frames
+	// the dependency's fragment recorded from there to the crypto. Absent for a
+	// finding whose dependency leg the fragment did not name.
+	routes map[string][]graphNode
 }
 
 // projectEntryPoint records, for every root-component function that reaches
 // one dependency entry point, the composed (hops + mine-time depth) records.
 func projectEntryPoint(
-	root ComponentKey,
+	root, dep ComponentKey,
 	ep *CryptoEntryPoint,
 	translate map[string]string,
-	distances map[graphNode]int,
+	reach graphwalk.Reachable[graphNode],
 	proven bool,
 	rootFunctions map[string]Function,
 	hasIncoming map[graphNode]bool,
 	composed map[string]*composedEntry,
 ) {
-	for node, distance := range distances {
+	for node, distance := range reach.Depth {
 		if node.Component != root {
 			continue
 		}
@@ -1900,11 +2019,37 @@ func projectEntryPoint(
 				supporting: make(map[string]ReachableSupportingCall),
 				provenIDs:  make(map[string]bool),
 				rawIDs:     make(map[string]bool),
+				routes:     make(map[string][]graphNode),
 			}
 			composed[node.Function] = entry
 		}
-		entry.merge(ep, translate, distance, proven)
+		entry.merge(dep, ep, translate, distance, proven, reach.Route(node))
 	}
+}
+
+// joinComposedRoute splices the two legs of a cross-component route: the
+// stitched frames from the consumer function to the dependency's entry point,
+// then the frames the dependency's fragment recorded from that entry point to
+// the crypto. Both legs name that entry point, so one copy is dropped.
+//
+// Nil when either leg is missing. Half a route is not a shorter route — it
+// would place the crypto somewhere it is not — and the depth still reports the
+// distance.
+func joinComposedRoute(dep ComponentKey, stitched []graphNode, mined []string) []graphNode {
+	if len(stitched) == 0 || len(mined) == 0 {
+		return nil
+	}
+	// The shared frame must actually be shared, or the legs describe different
+	// routes and splicing them invents a call.
+	if stitched[len(stitched)-1].Function != mined[0] {
+		return nil
+	}
+	route := make([]graphNode, 0, len(stitched)+len(mined)-1)
+	route = append(route, stitched...)
+	for _, key := range mined[1:] {
+		route = append(route, graphNode{Component: dep, Function: key})
+	}
+	return route
 }
 
 // servedFindingIDs maps a dependency's mine-time (annotation-local) finding
@@ -1936,7 +2081,14 @@ func translateFindingID(translate map[string]string, findingID string) string {
 
 // merge folds one entry point's reachable records into the composed entry,
 // keeping the minimum depth per finding/supporting id.
-func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string, distance int, proven bool) {
+func (c *composedEntry) merge(
+	dep ComponentKey,
+	ep *CryptoEntryPoint,
+	translate map[string]string,
+	distance int,
+	proven bool,
+	stitched []graphNode,
+) {
 	for _, rf := range ep.ReachableFindings {
 		findingID := translateFindingID(translate, rf.FindingID)
 		c.rawIDs[rf.FindingID] = true
@@ -1946,6 +2098,11 @@ func (c *composedEntry) merge(ep *CryptoEntryPoint, translate map[string]string,
 				FindingID:       findingID,
 				ChainDepth:      depth,
 				FindingGraphRef: translateFindingID(translate, rf.FindingGraphRef),
+			}
+			if route := joinComposedRoute(dep, stitched, rf.Route); route != nil {
+				c.routes[rf.FindingID] = route
+			} else {
+				delete(c.routes, rf.FindingID)
 			}
 		}
 		if proven {
@@ -2000,6 +2157,9 @@ func appendComposedResult(root ComponentKey, fn Function, entry *composedEntry, 
 	if len(entry.rawIDs) > 0 {
 		out.composedRawFindings[fn.Signature] = entry.rawIDs
 	}
+	if len(entry.routes) > 0 {
+		out.composedRoutes[fn.Signature] = entry.routes
+	}
 	if !hasIncoming[graphNode{Component: root, Function: fn.Signature}] {
 		if out.composedRoots == nil {
 			out.composedRoots = make(map[string]bool)
@@ -2017,20 +2177,12 @@ func sortedComposedIDs(findings map[string]ReachableFinding) []string {
 	return ids
 }
 
-// backwardDistances runs a BFS over the reversed adjacency from seed and
-// returns the minimum hop count to every node that can reach it.
-func backwardDistances(seed graphNode, reverse map[graphNode][]graphNode) map[graphNode]int {
-	distances := map[graphNode]int{seed: 0}
-	queue := []graphNode{seed}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for _, caller := range reverse[current] {
-			if _, seen := distances[caller]; !seen {
-				distances[caller] = distances[current] + 1
-				queue = append(queue, caller)
-			}
-		}
-	}
-	return distances
+// reachFrom walks callers backward from seed over a plain caller map. It is the
+// shared walker rather than a local BFS so the route it names is the one the
+// depth it reports measures — the two cannot drift apart.
+func reachFrom(seed graphNode, reverse map[graphNode][]graphNode) graphwalk.Reachable[graphNode] {
+	return graphwalk.Reach(seed, graphwalk.Options[graphNode]{
+		Callers: func(n graphNode) []graphNode { return reverse[n] },
+		Less:    nodeLess,
+	})
 }

@@ -64,7 +64,7 @@ func recordReachEntries(
 	functionsByNode map[graphNode]Function,
 	out *Result,
 ) {
-	distances := backwardDistances(opNode, reverse)
+	distances := reachFrom(opNode, reverse).Depth
 	if len(distances) == 0 {
 		return
 	}
@@ -83,7 +83,7 @@ func recordReachEntries(
 	entries := make([]reachEntry, 0, len(nodes))
 	for _, node := range nodes {
 		entries = append(entries, reachEntry{
-			frame: buildFrame(node, nil, fragments, functionsByNode),
+			frame: buildFrame(node, inbound{}, fragments, functionsByNode),
 			depth: distances[node] + 1,
 			root:  entrySet[node],
 		})

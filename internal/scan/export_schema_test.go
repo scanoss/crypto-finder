@@ -28,6 +28,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/output"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestGeneratedExportsMatchSchemas(t *testing.T) {
@@ -182,7 +183,7 @@ func callgraphResolvedKeyLengthDocument(provenance string, bits any) map[string]
 		resolved["bits"] = bits
 	}
 	return map[string]any{
-		"schema_version": "6.12",
+		"schema_version": graphfrag.CallgraphSchemaVersion,
 		"scan_metadata":  map[string]any{},
 		"finding_graphs": []any{map[string]any{
 			"finding_id":          "keygen-init",

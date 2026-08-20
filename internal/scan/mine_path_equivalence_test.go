@@ -131,7 +131,13 @@ func oracleMinePathFragmentCrypto(
 	sort.SliceStable(supportingOut, func(i, j int) bool {
 		return supportingOut[i].SupportingID < supportingOut[j].SupportingID
 	})
-	return annotations, supportingOut, flattenGraphFragmentEntryPoints(ctx.kb, entries)
+	// Same numbering the exporter assigns, so a route the oracle resolves is
+	// comparable to the one the real path resolves.
+	functionIndex := make(map[string]int, len(ctx.graph.Functions))
+	for i, key := range sortedKeys(ctx.graph.Functions) {
+		functionIndex[key] = i
+	}
+	return annotations, supportingOut, flattenGraphFragmentEntryPoints(ctx.kb, entries, functionIndex)
 }
 
 // oracleFragmentEntryPointChains mirrors fragmentEntryPointChains without calling it.

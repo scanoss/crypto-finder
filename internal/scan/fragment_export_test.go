@@ -1016,7 +1016,7 @@ func TestFlattenGraphFragmentEntryPoints_PopulatesParameterRoles(t *testing.T) {
 		},
 	}
 
-	out := flattenGraphFragmentEntryPoints(kb, entries)
+	out := flattenGraphFragmentEntryPoints(kb, entries, nil)
 	if len(out) != 1 {
 		t.Fatalf("flattenGraphFragmentEntryPoints = %#v, want 1 entry", out)
 	}
