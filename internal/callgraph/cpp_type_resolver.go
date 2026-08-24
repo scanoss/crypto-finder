@@ -15,8 +15,7 @@ func NewCPPContractTypeResolver(kb *contracts.KnowledgeBase) *CPPContractTypeRes
 	return &CPPContractTypeResolver{kb: kb}
 }
 
-// NewCPPContractTypeResolverFromEmbedded loads the embedded C++ KB. Until the
-// first C++ contracts land, the empty KB makes this a no-op resolver.
+// NewCPPContractTypeResolverFromEmbedded loads the embedded C++ KB.
 func NewCPPContractTypeResolverFromEmbedded() *CPPContractTypeResolver {
 	kb, err := contracts.LoadEmbedded("cpp")
 	if err != nil {
