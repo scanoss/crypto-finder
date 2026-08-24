@@ -178,7 +178,7 @@ Detection (rules-based scanning) covers whatever languages the ruleset covers. C
 | Ecosystem | Call graph parser | Contract knowledge bases (`internal/callgraph/contracts/`) |
 |-----------|-------------------|-------------------------------------------------------------|
 | C | yes | OpenSSL EVP, libsodium, Mbed TLS, wolfSSL/wolfCrypt |
-| C++ | yes | none yet (bootstrap placeholder) |
+| C++ | yes | Crypto++ (SHA-256 hash lifecycle) |
 | Go | yes | stdlib `crypto/*`, `golang.org/x/crypto`, golang-fips/openssl |
 | Java | yes | JDK JCA/JCE, BouncyCastle (+ OpenPGP), Tink, jjwt, Nimbus JOSE+JWT, Apache Santuario, Apache SSHD, Password4j, Spring Security Crypto |
 | JavaScript / TypeScript (Node) | yes | none yet (bootstrap placeholder) |
