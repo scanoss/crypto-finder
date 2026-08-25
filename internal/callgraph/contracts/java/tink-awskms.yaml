@@ -8,7 +8,7 @@ library:
   version_range: ">=1.7.0"
   description: "Tink AWS KMS client: construction, credential config, and remote AEAD retrieval"
 
-# Inventory sources: tink-awskms 1.13.0 public class
+# Inventory sources: tink-awskms 1.11.0 public class
 # com.google.crypto.tink.integration.awskms.AwsKmsClient, paired with
 # scanoss/crypto_rules java.tink-kms.related-crypto-material.key.aws.
 #
