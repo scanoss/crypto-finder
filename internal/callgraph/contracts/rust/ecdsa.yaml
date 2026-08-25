@@ -1,0 +1,30 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ecdsa
+  coordinates:
+    - ecdsa
+  version_range: ">=0.16.0,<0.17.0"
+  description: "RustCrypto ECDSA signatures, generic over prime-order curves"
+
+# Inventory sources: ecdsa 0.16 crate documentation and the APIs selected by the
+# scanoss/crypto_rules ecdsa rule. The curve is a type parameter supplied by the
+# concrete curve crate, so it is not resolvable here and no curve metadata is
+# claimed.
+#
+# skipped-non-crypto: Signature encoding and byte conversions.
+contracts:
+  - method: ecdsa::SigningKey.generate
+    arity: 1
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+
+hierarchy: {}

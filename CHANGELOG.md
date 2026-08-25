@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Rust callgraph contracts for the RustCrypto signature crates `dsa`, `ecdsa` and `ed25519`: key construction for each, and the Ed25519 signature type the crate exposes in place of an implementation. Signing and verification reach these crates through shared traits, so the contracts anchor on the stable key identities. (#336)
+### Added
 - Rust callgraph contracts for the RustCrypto universal hashes, GHASH and Poly1305: construction, the streaming update lifecycle and tag output. Both expose their key size as a parameter role. (#337)
 ### Added
 - Rust callgraph contracts for sodiumoxide: XSalsa20-Poly1305 authenticated encryption, Ed25519 signatures, HMAC-SHA-512-256 authentication, scrypt password hashing, and the SHA-256/SHA-512 hashes. Supporting calls for these carry a lifecycle category, and password derivation exposes its two cost limits as parameter roles. (#338)

@@ -1,0 +1,30 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: dsa
+  coordinates:
+    - dsa
+  version_range: ">=0.6.0,<0.7.0"
+  description: "RustCrypto DSA signatures per FIPS 186-4"
+
+# Inventory sources: dsa 0.6 crate documentation and the APIs selected by the
+# scanoss/crypto_rules dsa rule. Signing and verification reach the crate through
+# the shared signature::Signer and Verifier traits, so the stable identities here
+# are the key constructors.
+#
+# skipped-non-crypto: Components accessors and the PKCS#8 encoding helpers.
+contracts:
+  - method: dsa::SigningKey.generate
+    arity: 2
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::SigningKey.from_components
+    arity: 2
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::VerifyingKey.from_components
+    arity: 2
+    return: {type: dsa::VerifyingKey, confidence: high}
+    role: factory
+
+hierarchy: {}
