@@ -1,0 +1,74 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: tink-gcpkms
+  coordinates:
+    - "com.google.crypto.tink:tink-gcpkms"
+  version_range: ">=1.7.0"
+  description: "Tink GCP KMS client: construction, credential config, and remote AEAD retrieval"
+
+# Inventory sources: tink-gcpkms 1.13.0 public class
+# com.google.crypto.tink.integration.gcpkms.GcpKmsClient, paired with
+# scanoss/crypto_rules java.tink-kms.related-crypto-material.key.gcp.
+#
+# contracted: constructors, register, withCredentials, withDefaultCredentials, getAead.
+# skipped-non-crypto: doesSupport.
+# skipped-unsupported: withCredentials taking GoogleCredentials (GCP SDK type).
+# needs-follow-up: KmsClients.get in tink core.
+
+contracts:
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.<init>
+    arity: 0
+    canonical_return_type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+    return:
+      type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+      confidence: high
+    role: factory
+
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+    return:
+      type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+      confidence: high
+    role: factory
+
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.register
+    arity: 2
+    parameter_types: [java.util.Optional, java.util.Optional]
+    return:
+      type: void
+      confidence: high
+    role: factory
+
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.withCredentials
+    arity: 1
+    parameter_types: [java.lang.String]
+    return:
+      type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+      confidence: high
+    role: config
+
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.withDefaultCredentials
+    arity: 0
+    return:
+      type: com.google.crypto.tink.integration.gcpkms.GcpKmsClient
+      confidence: high
+    role: config
+
+  - method: com.google.crypto.tink.integration.gcpkms.GcpKmsClient.getAead
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.google.crypto.tink.Aead
+    return:
+      type: com.google.crypto.tink.Aead
+      confidence: high
+    role: factory
+
+hierarchy:
+  com.google.crypto.tink.integration.gcpkms.GcpKmsClient:
+    - com.google.crypto.tink.KmsClient
+  com.google.crypto.tink.KmsClient:
+    - java.lang.Object

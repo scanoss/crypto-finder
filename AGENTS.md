@@ -80,9 +80,10 @@ The callgraph inference engine consumes language-agnostic YAML knowledge bases u
 internal/callgraph/contracts/
 ├── contracts.go           # loader, types, validation
 ├── c/                     # openssl-evp, libsodium, mbedtls, wolfssl-wolfcrypt
-├── cpp/                   # cryptopp
+├── cpp/                   # cryptopp, tink
 ├── go/                    # stdlib-crypto, golang-x-crypto, golang-fips-openssl-v2
-├── java/                  # jdk-crypto, bouncycastle (+ openpgp), tink-1.13.0, jjwt,
+├── java/                  # jdk-crypto, bouncycastle (+ openpgp), tink-1.13.0, tink-awskms,
+│                          #   tink-gcpkms, jjwt,
 │                          #   nimbus-jose-jwt, apache-santuario-xmlsec, apache-sshd,
 │                          #   password4j, spring-security-crypto
 ├── node/                  # bootstrap placeholder (no library KBs yet)
