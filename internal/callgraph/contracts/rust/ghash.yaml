@@ -1,0 +1,42 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ghash
+  coordinates:
+    - ghash
+  version_range: ">=0.5.0,<0.6.0"
+  description: "RustCrypto GHASH universal hash over GF(2^128)"
+
+# Inventory sources: ghash 0.5 crate documentation and the APIs selected by the
+# scanoss/crypto_rules ghash rule. The crate exposes one type implementing the
+# universal_hash trait, so the surface is its construction plus that lifecycle.
+#
+# skipped-non-crypto: the Block, Key and Tag type aliases and their conversions.
+contracts:
+  - method: ghash::GHash.new
+    arity: 1
+    return: {type: ghash::GHash, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: ghash::GHash.new_with_init_block
+    arity: 2
+    return: {type: ghash::GHash, confidence: high}
+    role: factory
+  - method: ghash::GHash.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ghash::GHash.update_padded
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ghash::GHash.finalize
+    arity: 0
+    return: {type: ghash::Tag, confidence: high}
+    role: output
+
+hierarchy: {}
