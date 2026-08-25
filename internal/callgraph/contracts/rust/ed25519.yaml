@@ -1,0 +1,27 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ed25519
+  coordinates:
+    - ed25519
+  version_range: ">=2.0.0,<3.0.0"
+  description: "RustCrypto Ed25519 signature type and traits"
+
+# Inventory sources: ed25519 2.x crate documentation and the APIs selected by the
+# scanoss/crypto_rules ed25519 rule. The crate carries no implementation: it
+# provides the Signature type other crates sign and verify with, so the surface
+# is construction and decoding rather than a crypto lifecycle.
+#
+# skipped-non-crypto: SignatureEncoding and AssociatedAlgorithmIdentifier trait
+#   methods, and the byte accessors.
+contracts:
+  - method: ed25519::Signature.from_bytes
+    arity: 1
+    return: {type: ed25519::Signature, confidence: high}
+    role: factory
+  - method: ed25519::Signature.from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+
+hierarchy: {}
