@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for sodiumoxide: XSalsa20-Poly1305 authenticated encryption, Ed25519 signatures, HMAC-SHA-512-256 authentication, scrypt password hashing, and the SHA-256/SHA-512 hashes. Supporting calls for these carry a lifecycle category, and password derivation exposes its two cost limits as parameter roles. (#338)
 ### Fixed
 - C++ types declared inside a namespace opened by a macro (`NAMESPACE_BEGIN(X)`) now resolve to their qualified identity instead of a bare one. Mining such a library previously attributed none of its crypto to the library's own types, because a rule or contract anchored on the qualified name could not match its sources. Crypto++ 8.9.0 goes from 0 to 9 library-attributed entry points. (#96)
 ### Added
