@@ -102,9 +102,101 @@ func (p *CPPParser) walkFile(node *sitter.Node, src []byte, filePath, packagePat
 		return
 	}
 	scope = cppNestedScope(node, src, scope)
+	childScope := scope
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkFile(node.Child(i), src, filePath, packagePath, scope, staticFunctions, localTypes, analysis)
+		child := node.Child(i)
+		if next, handled := cppMacroScope(child, src, childScope, scope); handled {
+			childScope = next
+			continue
+		}
+		p.walkFile(child, src, filePath, packagePath, childScope, staticFunctions, localTypes, analysis)
 	}
+}
+
+// cppMacroScope tracks namespaces opened by a macro instead of a `namespace`
+// block. The macro leaves the declarations as siblings, not children, so the
+// scope has to carry forward across them rather than nest. Crypto++'s
+// NAMESPACE_BEGIN(CryptoPP) is the case this exists for; without it every type
+// in such a library resolves unqualified and no contract or rule anchored on the
+// qualified name can match the library's own sources.
+func cppMacroScope(node *sitter.Node, src []byte, current, outer string) (string, bool) {
+	name, kind := cppNamespaceMacro(node, src)
+	switch kind {
+	case cppMacroOpen:
+		if current == "" {
+			return name, true
+		}
+		return current + "::" + name, true
+	case cppMacroClose:
+		if idx := strings.LastIndex(current, "::"); idx >= 0 {
+			return current[:idx], true
+		}
+		return outer, true
+	}
+	return current, false
+}
+
+const (
+	cppMacroNone = iota
+	cppMacroOpen
+	cppMacroClose
+)
+
+// cppNamespaceMacro recognizes the BEGIN/END namespace macro idiom by shape:
+// a bare identifier or a single-identifier-argument call whose name reads as a
+// namespace delimiter. Matching on shape rather than a fixed list keeps the
+// common spellings (NAMESPACE_BEGIN, BEGIN_NAMESPACE, QT_BEGIN_NAMESPACE)
+// working without enumerating every library.
+func cppNamespaceMacro(node *sitter.Node, src []byte) (string, int) {
+	if node.Type() != rustNodeExpressionStatement || node.ChildCount() == 0 {
+		return "", cppMacroNone
+	}
+	inner := node.Child(0)
+	switch inner.Type() {
+	case cNodeIdentifier:
+		if kind := cppNamespaceMacroKind(inner.Content(src)); kind == cppMacroClose {
+			return "", kind
+		}
+	case "call_expression":
+		callee := inner.ChildByFieldName("function")
+		args := inner.ChildByFieldName("arguments")
+		if callee == nil || callee.Type() != cNodeIdentifier || args == nil {
+			return "", cppMacroNone
+		}
+		kind := cppNamespaceMacroKind(callee.Content(src))
+		if kind == cppMacroNone {
+			return "", cppMacroNone
+		}
+		var names []string
+		for i := 0; i < int(args.NamedChildCount()); i++ {
+			arg := args.NamedChild(i)
+			if arg.Type() != cNodeIdentifier {
+				return "", cppMacroNone
+			}
+			names = append(names, arg.Content(src))
+		}
+		if kind == cppMacroClose {
+			return "", kind
+		}
+		if len(names) != 1 {
+			return "", cppMacroNone
+		}
+		return names[0], cppMacroOpen
+	}
+	return "", cppMacroNone
+}
+
+func cppNamespaceMacroKind(name string) int {
+	if !strings.Contains(name, "NAMESPACE") {
+		return cppMacroNone
+	}
+	switch {
+	case strings.Contains(name, "BEGIN"):
+		return cppMacroOpen
+	case strings.Contains(name, "END"):
+		return cppMacroClose
+	}
+	return cppMacroNone
 }
 
 func collectCPPDeclaredTypes(node *sitter.Node, src []byte, scope string, result map[string]bool) {
@@ -112,8 +204,14 @@ func collectCPPDeclaredTypes(node *sitter.Node, src []byte, scope string, result
 	if nextScope != scope && (node.Type() == "class_specifier" || node.Type() == "struct_specifier") {
 		result[nextScope] = true
 	}
+	childScope := nextScope
 	for i := 0; i < int(node.ChildCount()); i++ {
-		collectCPPDeclaredTypes(node.Child(i), src, nextScope, result)
+		child := node.Child(i)
+		if next, handled := cppMacroScope(child, src, childScope, nextScope); handled {
+			childScope = next
+			continue
+		}
+		collectCPPDeclaredTypes(child, src, childScope, result)
 	}
 }
 
@@ -162,8 +260,14 @@ func (p *CPPParser) extractInclude(node *sitter.Node, src []byte, analysis *File
 func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packagePath, scope string, staticFunctions, localTypes map[string]bool) *FunctionDecl {
 	declarator := node.ChildByFieldName("declarator")
 	name, typeName := cppDeclaratorIdentity(declarator, src)
-	if typeName == "" {
+	// An out-of-line definition names its type relative to the enclosing scope
+	// ("void SHA256::InitState" inside namespace CryptoPP), so the scope has to
+	// be prepended for the identity to match a caller's qualified receiver.
+	switch {
+	case typeName == "":
 		typeName = scope
+	case scope != "" && typeName != scope && !strings.HasPrefix(typeName, scope+"::"):
+		typeName = scope + "::" + typeName
 	}
 	body := node.ChildByFieldName("body")
 	if name == "" || body == nil {
