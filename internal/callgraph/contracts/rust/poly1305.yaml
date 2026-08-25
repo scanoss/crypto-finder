@@ -1,0 +1,42 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: poly1305
+  coordinates:
+    - poly1305
+  version_range: ">=0.8.0,<0.9.0"
+  description: "RustCrypto Poly1305 universal hash"
+
+# Inventory sources: poly1305 0.8 crate documentation and the APIs selected by
+# the scanoss/crypto_rules poly1305 rule. One type implementing the
+# universal_hash trait, plus the crate's one-shot helper.
+#
+# skipped-non-crypto: the Block, Key and Tag type aliases and their conversions.
+contracts:
+  - method: poly1305::Poly1305.new
+    arity: 1
+    return: {type: poly1305::Poly1305, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: poly1305::Poly1305.compute_unpadded
+    arity: 1
+    return: {type: poly1305::Tag, confidence: high}
+    role: operation
+  - method: poly1305::Poly1305.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: poly1305::Poly1305.update_padded
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: poly1305::Poly1305.finalize
+    arity: 0
+    return: {type: poly1305::Tag, confidence: high}
+    role: output
+
+hierarchy: {}
