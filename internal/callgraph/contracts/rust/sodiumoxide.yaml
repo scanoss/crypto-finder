@@ -1,0 +1,103 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sodiumoxide
+  coordinates:
+    - sodiumoxide
+  version_range: ">=0.2.7,<0.3.0"
+  description: "sodiumoxide safe Rust bindings for libsodium"
+
+# Inventory sources: sodiumoxide 0.2.7 crate documentation and the APIs selected
+# by the scanoss/crypto_rules sodiumoxide rules. Each module re-exports one
+# concrete primitive: secretbox is xsalsa20poly1305, auth is hmacsha512256, sign
+# is ed25519, pwhash is scryptsalsa208sha256. Scope is those four plus the two
+# hash submodules, matching the rules that exist.
+#
+# skipped-non-crypto: Digest, Tag, Key and Nonce accessors, and the constant-time
+#   verify helpers.
+# needs-follow-up: box_, sealedbox, kx, scalarmult, aead, generichash, kdf,
+#   onetimeauth, secretstream and stream, which land with their rules. shorthash
+#   is SipHash and is out of scope as a non-cryptographic hash.
+contracts:
+
+  # Authenticated encryption: XSalsa20-Poly1305.
+  - method: sodiumoxide::crypto::secretbox.gen_key
+    arity: 0
+    return: {type: sodiumoxide::crypto::secretbox::Key, confidence: high}
+    role: factory
+  - method: sodiumoxide::crypto::secretbox.gen_nonce
+    arity: 0
+    return: {type: sodiumoxide::crypto::secretbox::Nonce, confidence: high}
+    role: factory
+  - method: sodiumoxide::crypto::secretbox.seal
+    arity: 3
+    return: {type: alloc::vec::Vec, confidence: high}
+    role: operation
+  - method: sodiumoxide::crypto::secretbox.open
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+
+  # Signatures: Ed25519.
+  - method: sodiumoxide::crypto::sign.gen_keypair
+    arity: 0
+    return: {type: sodiumoxide::crypto::sign::SecretKey, confidence: high}
+    role: factory
+  - method: sodiumoxide::crypto::sign.sign
+    arity: 2
+    return: {type: alloc::vec::Vec, confidence: high}
+    role: operation
+  - method: sodiumoxide::crypto::sign.sign_detached
+    arity: 2
+    return: {type: sodiumoxide::crypto::sign::Signature, confidence: high}
+    role: operation
+  - method: sodiumoxide::crypto::sign.verify_detached
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+
+  # Secret-key authentication: HMAC-SHA-512-256.
+  - method: sodiumoxide::crypto::auth.gen_key
+    arity: 0
+    return: {type: sodiumoxide::crypto::auth::Key, confidence: high}
+    role: factory
+  - method: sodiumoxide::crypto::auth.authenticate
+    arity: 2
+    return: {type: sodiumoxide::crypto::auth::Tag, confidence: high}
+    role: operation
+  - method: sodiumoxide::crypto::auth.verify
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+
+  # Password hashing: scryptsalsa208sha256. The cost parameters are the two
+  # limits, not a single work factor, so each is recorded on its own.
+  - method: sodiumoxide::crypto::pwhash.gen_salt
+    arity: 0
+    return: {type: sodiumoxide::crypto::pwhash::Salt, confidence: high}
+    role: factory
+  - method: sodiumoxide::crypto::pwhash.derive_key
+    arity: 5
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: opslimit
+        role: metadata-contributing
+        contributes: {property: opsLimit, derivation: argument_value}
+      - index: 4
+        name: memlimit
+        role: metadata-contributing
+        contributes: {property: memLimitBytes, derivation: argument_value}
+
+  # Hashing.
+  - method: sodiumoxide::crypto::hash::sha256.hash
+    arity: 1
+    return: {type: sodiumoxide::crypto::hash::sha256::Digest, confidence: high}
+    role: operation
+  - method: sodiumoxide::crypto::hash::sha512.hash
+    arity: 1
+    return: {type: sodiumoxide::crypto::hash::sha512::Digest, confidence: high}
+    role: operation
+
+hierarchy: {}
