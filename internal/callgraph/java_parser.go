@@ -3230,7 +3230,7 @@ func (p *JavaParser) traceSwitchExpressionNode(
 		}
 		label := rule.NamedChild(0)
 		valueNode := rule.NamedChild(1)
-		if valueNode != nil && valueNode.Type() == "expression_statement" && valueNode.NamedChildCount() > 0 {
+		if valueNode != nil && valueNode.Type() == rustNodeExpressionStatement && valueNode.NamedChildCount() > 0 {
 			valueNode = valueNode.NamedChild(0)
 		}
 		values := p.traceExpressionNode(valueNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)
