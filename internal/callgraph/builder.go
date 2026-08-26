@@ -332,7 +332,17 @@ func (b *Builder) applyEcosystemAnalysisHooks(graph *CallGraph, analysis *FileAn
 			clearCPPDependencyLocalLinkage(analysis)
 		}
 	}
-	if b.ecosystem == ecosystemPython && len(analysis.PythonReExports) > 0 {
+	// Re-export accumulation is restricted to project-local analyses only.
+	// The design's stated goal is stitching sibling files WITHIN the same
+	// project package; a non-project-local (versioned dependency) package's
+	// __init__.py re-exports must never be recorded, because contract KB
+	// YAMLs key their methods on a dependency's PUBLIC re-export FQN (e.g.
+	// "authlib.jose.(JsonWebSignature).<init>"). Recording and later
+	// rewriting that FQN to the dependency's internal sub-package path would
+	// silently break KB matching for every consumer of that dependency when
+	// the dependency's own source is present in the graph (dependency scan /
+	// mining). See TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency.
+	if b.ecosystem == ecosystemPython && projectLocal && len(analysis.PythonReExports) > 0 {
 		b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
 	}
 }

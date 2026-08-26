@@ -101,6 +101,67 @@ func TestBuilder_InitPyReexport_NoInferredType(t *testing.T) {
 	}
 }
 
+// TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency proves re-export
+// stitching is restricted to project-local analyses and never rewrites a
+// callee that lands inside a versioned (non-project-local) dependency
+// package, even when that dependency's own `__init__.py` re-exports across a
+// sub-package boundary. This mirrors a real authlib-shaped layout:
+//
+//	authlib/jose/__init__.py           -> from .rfc7515 import JsonWebSignature
+//	authlib/jose/rfc7515/__init__.py   -> class JsonWebSignature: def __init__(self): ...
+//	myapp/user.py (project-local)      -> from authlib.jose import JsonWebSignature; JsonWebSignature()
+//
+// Contract KB YAMLs key on the PUBLIC re-export path
+// (`authlib.jose.(JsonWebSignature).<init>`, mirroring
+// internal/callgraph/contracts/python/authlib.yaml), not the internal
+// sub-package path. If re-export accumulation were not gated on
+// projectLocal, this rewrite would silently move the callee to
+// `authlib.jose.rfc7515.(JsonWebSignature).<init>`, breaking KB matching for
+// every consumer of a dependency scanned alongside its own source (dependency
+// scan / mining). The callee MUST stay at the original, KB-keyed FQN.
+func TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency(t *testing.T) {
+	root := t.TempDir()
+	depDir := filepath.Join(root, "dep")
+	consumerDir := filepath.Join(root, "consumer")
+	authlibDir := filepath.Join(depDir, "jose")
+	rfc7515Dir := filepath.Join(authlibDir, "rfc7515")
+	if err := os.MkdirAll(rfc7515Dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.MkdirAll(consumerDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	writePythonReexportFixture(t, authlibDir, "__init__.py", "from .rfc7515 import JsonWebSignature\n")
+	writePythonReexportFixture(t, rfc7515Dir, "__init__.py",
+		"class JsonWebSignature:\n    def __init__(self):\n        pass\n")
+	writePythonReexportFixture(t, consumerDir, "user.py",
+		"from authlib.jose import JsonWebSignature\n\n\ndef run():\n    JsonWebSignature()\n")
+
+	graph, err := NewBuilderForEcosystem("python", NewPythonParser()).
+		BuildFromDirectories([]PackageDir{
+			{Dir: depDir, ImportPath: "authlib", Version: "1.6.0"},
+			{Dir: consumerDir, ImportPath: "myapp"},
+		}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	run, ok := graph.Functions[(FunctionID{Package: "myapp", Name: "run"}).String()]
+	if !ok {
+		t.Fatalf("expected a declared FunctionDecl for myapp.run, got none (keys: %v)", keysOf(graph.Functions))
+	}
+
+	ctor := findPythonCallByMethod(run, constructorMethodName)
+	if ctor == nil {
+		t.Fatalf("JsonWebSignature constructor call not found in run()'s calls")
+	}
+	want := FunctionID{Package: "authlib.jose", Type: "JsonWebSignature", Name: constructorMethodName}
+	if ctor.Callee != want {
+		t.Errorf("JsonWebSignature() constructor callee = %+v, want %+v (re-export stitching must not rewrite a non-project-local dependency's KB-keyed FQN)", ctor.Callee, want)
+	}
+}
+
 func writePythonReexportFixture(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
