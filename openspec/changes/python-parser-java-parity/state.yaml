@@ -35,8 +35,13 @@ phases:
     artifact: apply-progress.md
     engram_topic: sdd/python-parser-java-parity/apply-progress
     tasks_complete: 41/41
-    last_commit: 27eb966
-    known_risk: "T7 perf guard not met — measured ~64% parse-time overhead vs 10% design target, see tasks.md 7.3"
+    last_commit: a1dca1d
+    known_risk: "F2 perf remediation: ~14.0% parse-time overhead vs c6ee180 baseline (8x benchtime=2s reps), down from ~97-106%. Within the <=20% hard requirement, close to but not fully at the <=10% design target. See apply-progress.md 'Remediation batch' section."
+    remediation:
+      pr: 310
+      findings_fixed: [F1, F2, F3, F4, F5, F6, F7, F8, F9]
+      status: done
+      commits: [5d49e19, 94c16d7, 5a947eb, c8a0e93, c4e003e, b7b39e9, 494302c, 825d733, a1dca1d]
   verify:
     status: done
     artifact: verify-report.md
