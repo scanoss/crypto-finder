@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for the RustCrypto block ciphers `aes` 0.1.x-0.9.x, `blowfish` 0.1.x-0.10.x and `des` 0.0.x-0.9.x: concrete cipher construction and the single-block and multi-block encrypt and decrypt operations, the encrypt-only and decrypt-only AES types, and the free-function API of the unrelated project that held the `des` name at 0.0.x. Both slice-constructor spellings are inventoried, `new_varkey` for the older trait crates and `new_from_slice` from cipher 0.3 onwards, so an older pinned release is not a silent gap. Construction reports the supplied key as a `keySize` parameter role rather than a declared size, which is the only correct answer for Blowfish: it accepts any key from 4 to 56 bytes. (scanoss/crypto-mining-service#329)
 ### Fixed
 - The ghash and poly1305 contracts now target the versions the coverage matrix lists, 0.6.x and 0.9.x. Both previously declared ranges ending immediately below them. The ghash `new_with_init_block` contract is removed: that constructor no longer exists in 0.6.0. (#337)
 ### Fixed

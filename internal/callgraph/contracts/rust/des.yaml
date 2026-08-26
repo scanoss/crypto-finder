@@ -1,0 +1,399 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: des
+  coordinates:
+    - des
+  version_range: ">=0.0.1,<0.10.0"
+  description: "DES and Triple DES raw block ciphers"
+
+# This crate name spans two unrelated upstream projects, and both are in the
+# Tier 0 range, so both are inventoried here. That means one `library.name` and
+# one `version_range` cover two projects, so `SourceLibrary` cannot tell them
+# apart in diagnostics; the `api` keys can, and do.
+#
+#   * 0.0.1-0.0.4 — antoyo/des-rs. A standalone DES implementation with a
+#     free-function API, read from the 0.0.4 source: `des::encrypt(message,
+#     &key)`, `des::decrypt(cipher, &key)`, `des::Key = [u8; 8]`. Those are the
+#     `des.encrypt` / `des.decrypt` contracts below. `des` is a single-segment
+#     crate, so a free function's call-site key has one dot and
+#     contracts.rustAuthoredKey leaves it alone: author the dot form.
+#   * 0.1.0-0.9.0 — RustCrypto/block-ciphers, the typed-receiver API. Read from
+#     the 0.9.0 source (src/lib.rs, src/des.rs, src/tdes.rs) and cross-checked
+#     against 0.8.1 and 0.1.0; exported types and key sizes are unchanged
+#     across that range.
+#
+# The second KeyInit constructor was renamed across the range this file spans,
+# # and both spellings are live in the committed Tier 0 version list:
+# #
+# #   new_varkey      block-cipher-trait 0.6, block-cipher 0.8, cipher 0.2
+# #   new_from_slice  cipher 0.3 and later, crypto-common 0.1 and later
+# #
+# # Both are inventoried, so the older half of the range is not a silent gap.
+#
+# Key sizes are the crate's own KeySizeUser::KeySize associated types
+# (Des = U8, TdesEde3/TdesEee3 = U24, TdesEde2/TdesEee2 = U16), so they are
+# fixed per type; the key argument is still marked metadata-contributing so a
+# call site that passes a shorter slice is not silently reported as compliant.
+#
+# skipped-non-crypto: weak_key_test / WeakKeyError (a key-hygiene predicate
+# added in 0.9.0, not a cipher operation).
+contracts:
+  - method: des::Des.new
+    arity: 1
+    return: {type: des::Des, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::Des.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::Des.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::Des.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::Des.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::Des.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::Des.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEde3.new
+    arity: 1
+    return: {type: des::TdesEde3, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde3.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde3.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde3.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEde3.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEde3.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEde3.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEee3.new
+    arity: 1
+    return: {type: des::TdesEee3, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee3.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee3.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee3.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEee3.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEee3.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEee3.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEde2.new
+    arity: 1
+    return: {type: des::TdesEde2, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde2.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde2.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEde2.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEde2.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEde2.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEde2.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEee2.new
+    arity: 1
+    return: {type: des::TdesEee2, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee2.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee2.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des::TdesEee2.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEee2.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: des::TdesEee2.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: des::TdesEee2.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  # 0.0.1-0.0.4 free-function API (antoyo/des-rs). Not RustCrypto: whole-message
+  # ECB calls, so these carry no receiver and take the key as a second argument.
+  - method: des.encrypt
+    arity: 2
+    return: {type: alloc::vec::Vec, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: des.decrypt
+    arity: 2
+    return: {type: alloc::vec::Vec, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+
+hierarchy:
+  des::Des:
+    - core::any::Any
+  des::TdesEde3:
+    - core::any::Any
+  des::TdesEee3:
+    - core::any::Any
+  des::TdesEde2:
+    - core::any::Any
+  des::TdesEee2:
+    - core::any::Any
+  alloc::vec::Vec:
+    - core::any::Any
+  core::any::Any: []
