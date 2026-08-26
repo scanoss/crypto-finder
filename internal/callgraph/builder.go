@@ -315,29 +315,44 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLo
 
 func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
 	for _, analysis := range analyses {
-		if b.ecosystem == ecosystemCPP {
-			if projectLocal {
-				addCPPProjectDeclarations(graph, analysis)
-			} else {
-				clearCPPDependencyLocalLinkage(analysis)
+		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
+		b.mergeAnalysisFunctions(graph, analysis)
+	}
+}
+
+// applyEcosystemAnalysisHooks runs the per-analysis, ecosystem-specific
+// bookkeeping that must happen before an analysis's declarations are merged
+// into the graph: C++ project-local linkage tracking and Python re-export
+// accumulation.
+func (b *Builder) applyEcosystemAnalysisHooks(graph *CallGraph, analysis *FileAnalysis, projectLocal bool) {
+	if b.ecosystem == ecosystemCPP {
+		if projectLocal {
+			addCPPProjectDeclarations(graph, analysis)
+		} else {
+			clearCPPDependencyLocalLinkage(analysis)
+		}
+	}
+	if b.ecosystem == ecosystemPython && len(analysis.PythonReExports) > 0 {
+		b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
+	}
+}
+
+// mergeAnalysisFunctions merges one analysis's declarations into the graph,
+// applying the stub-preference and Python sibling-module-collision rules on
+// a key collision.
+func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysis) {
+	for i := range analysis.Functions {
+		fn := &analysis.Functions[i]
+		key := fn.ID.String()
+		if existing, ok := graph.Functions[key]; ok {
+			if keepExistingDecl(existing, fn) {
+				continue
+			}
+			if b.preservePythonModuleCollision(graph, existing, fn) {
+				continue
 			}
 		}
-		if b.ecosystem == ecosystemPython && len(analysis.PythonReExports) > 0 {
-			b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
-		}
-		for i := range analysis.Functions {
-			fn := &analysis.Functions[i]
-			key := fn.ID.String()
-			if existing, ok := graph.Functions[key]; ok {
-				if keepExistingDecl(existing, fn) {
-					continue
-				}
-				if b.preservePythonModuleCollision(graph, existing, fn) {
-					continue
-				}
-			}
-			graph.Functions[key] = fn
-		}
+		graph.Functions[key] = fn
 	}
 }
 

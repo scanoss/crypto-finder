@@ -280,7 +280,7 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 			t.Fatal("import_from_statement not found")
 		}
 		moduleName := stmt.ChildByFieldName("module_name")
-		if moduleName == nil || moduleName.Type() != "relative_import" {
+		if moduleName == nil || moduleName.Type() != pythonNodeRelativeImport {
 			t.Fatalf("module_name field = %v, want relative_import", moduleName)
 		}
 		if firstNodeOfType(moduleName, "import_prefix") == nil {
@@ -299,7 +299,7 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 			t.Fatal("import_from_statement not found")
 		}
 		moduleName := stmt.ChildByFieldName("module_name")
-		if moduleName == nil || moduleName.Type() != "relative_import" {
+		if moduleName == nil || moduleName.Type() != pythonNodeRelativeImport {
 			t.Fatalf("module_name field = %v, want relative_import", moduleName)
 		}
 		dotted := firstNodeOfType(moduleName, pythonNodeDottedName)

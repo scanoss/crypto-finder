@@ -95,10 +95,14 @@ Chain strategy: size-exception
 
 ## Phase 9: Final gates
 
-- [ ] 9.1 `go test -race ./...` — full suite green.
-- [ ] 9.2 `make lint` (golangci-lint v2.10.1) — clean.
-- [ ] 9.3 `make coverage-check` — total coverage ≥ 80%.
-- [ ] 9.4 `git diff --check` — no whitespace errors.
-- [ ] 9.5 Confirm zero diff: `git diff --stat pkg/graphfrag/ internal/scan/supporting_calls.go internal/callgraph/contracts/` must be empty.
-- [ ] 9.6 Add `CHANGELOG.md` `[Unreleased]` → `Fixed` entry: Python reachability/supporting-call precision now matches Java (parameters, non-assignment bindings, `self`/`cls` attributes, module/class-body synthetic entry points, robust/relative imports, `__init__.py` re-export resolution).
-- [ ] 9.7 If any user-visible wording in `docs/user-guide/user-guide.html` describes Python reachability coverage, update it per `docs/user-guide/AGENTS.md`; otherwise mark N/A (this change is structural precision, not a new flag/command).
+- [x] 9.1 `go test -race ./...` — full suite green. **Confirmed: `go test -v -race -coverprofile=coverage.out ./...` exit 0, 0 `--- FAIL` lines across the entire module (all packages `ok`).**
+- [x] 9.2 `make lint` (golangci-lint v2.10.1) — clean. **First run surfaced 2 real issues introduced by this batch: `gocognit` on `(*Builder).addAnalyses` (complexity 23 > 20) and `goconst` on the `"relative_import"` string literal (4 occurrences across `python_parser.go`/`python_grammar_facts_test.go`). Fixed: extracted `pythonNodeRelativeImport` constant; split `addAnalyses` into `applyEcosystemAnalysisHooks` + `mergeAnalysisFunctions`. Re-ran full `internal/callgraph`/`internal/scan` suites green after the refactor. Second run: `0 issues.`**
+- [x] 9.3 `make coverage-check` — total coverage ≥ 80%. **`go-test-coverage` was not pre-installed in this environment; installed via `go install github.com/vladopajic/go-test-coverage/v2@v2.19.0`. Result: `Total coverage threshold (80%) satisfied: PASS` — `Total test coverage: 81.9% (13975/17067)`.**
+- [x] 9.4 `git diff --check` — no whitespace errors. **Clean (both working-tree and staged).**
+- [x] 9.5 Confirm zero diff: `git diff --stat pkg/graphfrag/ internal/scan/supporting_calls.go internal/callgraph/contracts/` must be empty. **Confirmed empty against the branch's merge-base with `main` (`c6ee180`).**
+- [x] 9.6 Add `CHANGELOG.md` `[Unreleased]` → `Fixed` entry: Python reachability/supporting-call precision now matches Java (parameters, non-assignment bindings, `self`/`cls` attributes, module/class-body synthetic entry points, robust/relative imports, `__init__.py` re-export resolution). **Added.**
+- [x] 9.7 If any user-visible wording in `docs/user-guide/user-guide.html` describes Python reachability coverage, update it per `docs/user-guide/AGENTS.md`; otherwise mark N/A (this change is structural precision, not a new flag/command). **N/A — reviewed the guide's Python-related wording (source-fixture tab, supported-ecosystems list, "Language-specific resolution has limits" — Python dynamic-dispatch/missing-source caveat). None of it makes a claim this change contradicts; the dynamic-dispatch limitation is unaffected (this change is structural binding precision, not dynamic-dispatch resolution). File unchanged, `git diff --check` clean, HTML re-parses successfully.**
+
+### Known risk carried forward (not blocking)
+
+T7 (7.3) measured a real ~64% parse-time overhead against the design's 10% guard. This is a genuine deviation from design intent, not a test failure — no assigned task authorized an optimization pass, and none was attempted. See 7.3 for the measurement methodology and plausible root cause.

@@ -41,6 +41,9 @@ const (
 	// this basename is the only place `__init__.py` re-export collection
 	// (collectPythonReExports) runs.
 	pythonInitPyFileName = "__init__.py"
+	// pythonNodeRelativeImport is the tree-sitter node type for a relative
+	// `from` import's dot-prefixed module reference (e.g. `.mod`, `..pkg`).
+	pythonNodeRelativeImport = "relative_import"
 )
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
@@ -173,7 +176,7 @@ func (p *PythonParser) collectPythonReExports(node *sitter.Node, src []byte, ana
 
 func (p *PythonParser) recordPythonReExportsFromStatement(node *sitter.Node, src []byte, analysis *FileAnalysis) {
 	moduleNameNode := node.ChildByFieldName("module_name")
-	if moduleNameNode == nil || moduleNameNode.Type() != "relative_import" {
+	if moduleNameNode == nil || moduleNameNode.Type() != pythonNodeRelativeImport {
 		// Only an explicit relative import re-exports; absolute imports in
 		// __init__.py are left alone (design: gated on in-graph evidence,
 		// not inferred).
@@ -319,7 +322,7 @@ func pythonImportFromModulePath(moduleNameNode *sitter.Node, src []byte, package
 	switch moduleNameNode.Type() {
 	case pythonNodeDottedName:
 		return moduleNameNode.Content(src), true
-	case "relative_import":
+	case pythonNodeRelativeImport:
 		var prefix, dotted string
 		for i := 0; i < int(moduleNameNode.ChildCount()); i++ {
 			switch c := moduleNameNode.Child(i); c.Type() {
