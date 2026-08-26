@@ -31,7 +31,12 @@ phases:
     artifact: tasks.md
     engram_topic: sdd/python-parser-java-parity/tasks
   apply:
-    status: pending
+    status: done
+    artifact: apply-progress.md
+    engram_topic: sdd/python-parser-java-parity/apply-progress
+    tasks_complete: 41/41
+    last_commit: 27eb966
+    known_risk: "T7 perf guard not met — measured ~64% parse-time overhead vs 10% design target, see tasks.md 7.3"
   verify:
     status: pending
   archive:
