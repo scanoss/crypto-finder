@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for the RustCrypto formats crates `der`, `pkcs1`, `pkcs8`, `sec1`, and `spki`. These model SecretDocument and PKCS#1 / PKCS#8 / SEC1 / SPKI key-document codecs, including encrypted PKCS#8 decrypt/encrypt. Generic DER `Document` / `Decode::from_der` is not contracted.
 ### Fixed
 - The ghash and poly1305 contracts now target the versions the coverage matrix lists, 0.6.x and 0.9.x. Both previously declared ranges ending immediately below them. The ghash `new_with_init_block` contract is removed: that constructor no longer exists in 0.6.0. (#337)
 ### Fixed

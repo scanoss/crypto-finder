@@ -1,0 +1,34 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: der
+  coordinates:
+    - der
+  version_range: ">=0.7.0,<0.9.0"
+  description: "RustCrypto ASN.1 DER encoding; SecretDocument holds key material"
+
+# Inventory sources: der 0.8 docs (https://docs.rs/der/latest/der/struct.SecretDocument.html)
+# and the scanoss/crypto_rules der SecretDocument rules.
+#
+# contracted: SecretDocument PEM/DER load, encode_msg, and PEM serialize.
+# skipped-non-crypto: Document, Decode/Encode on built-in ASN.1 types, Header,
+# Tag, Length, OID parse, and generic from_der on non-secret documents.
+contracts:
+  - method: der::SecretDocument.from_pem
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: der::SecretDocument.read_der_file
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: der::SecretDocument.encode_msg
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: der::SecretDocument.to_pem
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: output
+
+hierarchy: {}

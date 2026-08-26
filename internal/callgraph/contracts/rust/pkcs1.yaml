@@ -1,0 +1,44 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pkcs1
+  coordinates:
+    - pkcs1
+  version_range: ">=0.7.0,<0.8.0"
+  description: "RustCrypto PKCS#1 RSA private and public key encoding"
+
+# Inventory sources: pkcs1 0.7 docs (https://docs.rs/pkcs1/latest/pkcs1/)
+# and the scanoss/crypto_rules pkcs1 key rules.
+#
+# contracted: Decode/Encode RSA private and public key DER entry points.
+# skipped-non-crypto: OtherPrimeInfo, UintRef, ObjectIdentifier.
+# skipped-informative-return: RsaOaepParams / RsaPssParams are algorithm
+# parameter structs owned by the rsa crate's encrypt/sign path, not key
+# document codecs.
+contracts:
+  - method: pkcs1::DecodeRsaPrivateKey.from_pkcs1_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs1::RsaPrivateKey.from_pkcs1_pem
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs1::EncodeRsaPrivateKey.to_pkcs1_der
+    arity: 0
+    return: {type: core::result::Result, confidence: high}
+    role: output
+  - method: pkcs1::DecodeRsaPublicKey.from_pkcs1_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs1::RsaPublicKey.from_pkcs1_pem
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs1::EncodeRsaPublicKey.to_pkcs1_der
+    arity: 0
+    return: {type: core::result::Result, confidence: high}
+    role: output
+
+hierarchy: {}

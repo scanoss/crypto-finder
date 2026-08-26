@@ -91,7 +91,7 @@ internal/callgraph/contracts/
 │                          #   bcrypt, argon2-cffi, pynacl, pyopenssl, m2crypto,
 │                          #   pyjwt, flask-jwt-extended, pyotp, werkzeug, boto3,
 │                          #   azure-keyvault-keys, azure-keyvault-secrets
-└── rust/                  # ring, chacha20poly1305 (+ bootstrap)
+└── rust/                  # ring, chacha20poly1305, der, pkcs1, pkcs8, sec1, spki (+ bootstrap)
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
