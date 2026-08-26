@@ -1,0 +1,101 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: k256
+  coordinates:
+    - k256
+  version_range: ">=0.13.0,<0.15.0"
+  description: "RustCrypto secp256k1: ECDSA, ECDH, BIP340 Schnorr, and public-key recovery"
+
+# Inventory sources: k256 0.13–0.14 docs (https://docs.rs/k256/0.14.0/k256/)
+# and the scanoss/crypto_rules k256 rules. 0.13 constructors take an RNG
+# (`random`, arity 1); 0.14 uses elliptic_curve::Generate (`generate`, arity 0).
+#
+# contracted: SecretKey and ECDSA/Schnorr key construction; ECDH ephemeral
+# generate plus diffie_hellman; ECDSA/Schnorr sign and verify; ECDSA recovery.
+# skipped-non-crypto: PKCS#8/PEM encode-decode, SEC1 point codecs, field and
+# group arithmetic, Signature byte conversions.
+# needs-follow-up: sign_digest / verify_digest and hazmat SignPrimitive.
+contracts:
+  - method: k256::SecretKey.random
+    arity: 1
+    return: {type: k256::SecretKey, confidence: high}
+    role: factory
+  - method: k256::SecretKey.generate
+    arity: 0
+    return: {type: k256::SecretKey, confidence: high}
+    role: factory
+  - method: k256::PublicKey.from_sec1_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::ecdh::EphemeralSecret.random
+    arity: 1
+    return: {type: k256::ecdh::EphemeralSecret, confidence: high}
+    role: factory
+  - method: k256::ecdh::EphemeralSecret.generate
+    arity: 0
+    return: {type: k256::ecdh::EphemeralSecret, confidence: high}
+    role: factory
+  - method: k256::ecdh::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: {type: k256::ecdh::SharedSecret, confidence: high}
+    role: operation
+  - method: k256::ecdh.diffie_hellman
+    arity: 2
+    return: {type: k256::ecdh::SharedSecret, confidence: high}
+    role: operation
+  - method: k256::ecdsa::SigningKey.random
+    arity: 1
+    return: {type: k256::ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: k256::ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: k256::ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: k256::ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::ecdsa::SigningKey.sign
+    arity: 1
+    return: {type: k256::ecdsa::Signature, confidence: high}
+    role: operation
+  - method: k256::ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::ecdsa::VerifyingKey.verify
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+  - method: k256::ecdsa::VerifyingKey.recover_from_digest
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::ecdsa::VerifyingKey.recover_from_msg
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::schnorr::SigningKey.random
+    arity: 1
+    return: {type: k256::schnorr::SigningKey, confidence: high}
+    role: factory
+  - method: k256::schnorr::SigningKey.generate
+    arity: 0
+    return: {type: k256::schnorr::SigningKey, confidence: high}
+    role: factory
+  - method: k256::schnorr::SigningKey.sign
+    arity: 1
+    return: {type: k256::schnorr::Signature, confidence: high}
+    role: operation
+  - method: k256::schnorr::VerifyingKey.from_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: k256::schnorr::VerifyingKey.verify
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+
+hierarchy: {}

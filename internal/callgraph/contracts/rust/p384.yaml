@@ -1,0 +1,73 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: p384
+  coordinates:
+    - p384
+  version_range: ">=0.13.0,<0.15.0"
+  description: "RustCrypto NIST P-384: ECDSA and ECDH"
+
+# Inventory sources: p384 0.13–0.14 docs (https://docs.rs/p384/0.14.0/p384/)
+# and the scanoss/crypto_rules p384 rules. 0.13 constructors take an RNG
+# (`random`, arity 1); 0.14 uses elliptic_curve::Generate (`generate`, arity 0).
+#
+# contracted: SecretKey and ECDSA key construction; ECDH ephemeral generate
+# plus diffie_hellman; ECDSA sign and verify.
+# skipped-non-crypto: PKCS#8/PEM encode-decode, SEC1 point codecs, field and
+# group arithmetic, Signature byte conversions.
+# needs-follow-up: sign_digest / verify_digest.
+contracts:
+  - method: p384::SecretKey.random
+    arity: 1
+    return: {type: p384::SecretKey, confidence: high}
+    role: factory
+  - method: p384::SecretKey.generate
+    arity: 0
+    return: {type: p384::SecretKey, confidence: high}
+    role: factory
+  - method: p384::PublicKey.from_sec1_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: p384::ecdh::EphemeralSecret.random
+    arity: 1
+    return: {type: p384::ecdh::EphemeralSecret, confidence: high}
+    role: factory
+  - method: p384::ecdh::EphemeralSecret.generate
+    arity: 0
+    return: {type: p384::ecdh::EphemeralSecret, confidence: high}
+    role: factory
+  - method: p384::ecdh::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: {type: p384::ecdh::SharedSecret, confidence: high}
+    role: operation
+  - method: p384::ecdh.diffie_hellman
+    arity: 2
+    return: {type: p384::ecdh::SharedSecret, confidence: high}
+    role: operation
+  - method: p384::ecdsa::SigningKey.random
+    arity: 1
+    return: {type: p384::ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: p384::ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: p384::ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: p384::ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: p384::ecdsa::SigningKey.sign
+    arity: 1
+    return: {type: p384::ecdsa::Signature, confidence: high}
+    role: operation
+  - method: p384::ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: p384::ecdsa::VerifyingKey.verify
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+
+hierarchy: {}
