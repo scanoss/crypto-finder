@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- The ghash and poly1305 contracts now target the versions the coverage matrix lists, 0.6.x and 0.9.x. Both previously declared ranges ending immediately below them. The ghash `new_with_init_block` contract is removed: that constructor no longer exists in 0.6.0. (#337)
+### Fixed
 - The ed25519 contract now targets the 3.x line and covers `Signature::from_components`. It previously declared a range ending before 3.0.0, which excluded the version the coverage matrix lists. (#336)
 ### Added
 - Rust callgraph contracts for the RustCrypto signature crates `dsa`, `ecdsa` and `ed25519`: key construction for each, and the Ed25519 signature type the crate exposes in place of an implementation. Signing and verification reach these crates through shared traits, so the contracts anchor on the stable key identities. (#336)
