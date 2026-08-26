@@ -556,6 +556,124 @@ func TestPythonParser_ReceiverVar_ComprehensionTarget(t *testing.T) {
 	}
 }
 
+// TestPythonParser_SelfAttr_CrossMethodProvenance verifies that a
+// `self.attr = ...` assignment in one method and a `self.attr.method()` call
+// in a sibling method resolve to the same stable receiver identity.
+func TestPythonParser_SelfAttr_CrossMethodProvenance(t *testing.T) {
+	src := `from crypto import Cipher
+
+class Worker:
+    def __init__(self):
+        self.cipher = Cipher()
+
+    def run(self, data):
+        self.cipher.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+
+	initFn := findPythonFuncByName(fns, constructorMethodName)
+	if initFn == nil {
+		t.Fatal("<init> method not found")
+	}
+	ctorCall := findPythonCallByMethod(initFn, constructorMethodName)
+	if ctorCall == nil {
+		t.Fatal("Cipher constructor call not found in <init>")
+	}
+	if ctorCall.AssignedVar != "self.cipher" {
+		t.Errorf("Cipher() AssignedVar = %q, want %q", ctorCall.AssignedVar, "self.cipher")
+	}
+
+	runFn := findPythonFuncByName(fns, "run")
+	if runFn == nil {
+		t.Fatal("run method not found")
+	}
+	encryptCall := findPythonCallByMethod(runFn, "encrypt")
+	if encryptCall == nil {
+		t.Fatal("encrypt call not found in run")
+	}
+	if encryptCall.ReceiverVar != "self.cipher" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q (must share identity with <init>'s assignment)", encryptCall.ReceiverVar, "self.cipher")
+	}
+}
+
+// TestPythonParser_ClsAttr_ClassmethodProvenance verifies that a
+// `cls.attr = ...` assignment made in a classmethod resolves using the SAME
+// class-scoped identity as a `self.attr` binding would (cls canonicalizes to
+// self).
+func TestPythonParser_ClsAttr_ClassmethodProvenance(t *testing.T) {
+	src := `from crypto import Cipher
+
+class Worker:
+    @classmethod
+    def setup(cls):
+        cls.cipher = Cipher()
+
+    def run(self, data):
+        self.cipher.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+
+	setupFn := findPythonFuncByName(fns, "setup")
+	if setupFn == nil {
+		t.Fatal("setup classmethod not found")
+	}
+	ctorCall := findPythonCallByMethod(setupFn, constructorMethodName)
+	if ctorCall == nil {
+		t.Fatal("Cipher constructor call not found in setup")
+	}
+	if ctorCall.AssignedVar != "self.cipher" {
+		t.Errorf("Cipher() AssignedVar = %q, want %q (cls.cipher canonicalizes to self.cipher)", ctorCall.AssignedVar, "self.cipher")
+	}
+
+	runFn := findPythonFuncByName(fns, "run")
+	if runFn == nil {
+		t.Fatal("run method not found")
+	}
+	encryptCall := findPythonCallByMethod(runFn, "encrypt")
+	if encryptCall == nil {
+		t.Fatal("encrypt call not found in run")
+	}
+	if encryptCall.ReceiverVar != "self.cipher" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q (must share identity with setup's cls.cipher assignment)", encryptCall.ReceiverVar, "self.cipher")
+	}
+}
+
+// TestPythonParser_SelfAttr_NoInheritance verifies that a subclass method
+// referencing `self.attr` does NOT resolve to a base class's assignment of
+// that attribute — inheritance is not followed (only the literal class body
+// being parsed is scanned for attribute assignments).
+func TestPythonParser_SelfAttr_NoInheritance(t *testing.T) {
+	src := `from crypto import Cipher
+
+class Base:
+    def __init__(self):
+        self.cipher = Cipher()
+
+class Sub(Base):
+    def run(self, data):
+        self.cipher.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+
+	var runFn *FunctionDecl
+	for i := range fns {
+		if fns[i].ID.Name == "run" && fns[i].ID.Type == "Sub" {
+			runFn = &fns[i]
+			break
+		}
+	}
+	if runFn == nil {
+		t.Fatal("Sub.run method not found")
+	}
+	encryptCall := findPythonCallByMethod(runFn, "encrypt")
+	if encryptCall == nil {
+		t.Fatal("encrypt call not found in Sub.run")
+	}
+	if encryptCall.ReceiverVar == "self.cipher" {
+		t.Errorf("encrypt ReceiverVar = %q; must NOT resolve to the base class's self.cipher assignment (inheritance is not followed)", encryptCall.ReceiverVar)
+	}
+}
+
 func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
 	dir := t.TempDir()
 	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...

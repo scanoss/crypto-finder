@@ -192,6 +192,83 @@ func TestDeriveObjectLifecycleCalls_ParameterReceiver(t *testing.T) {
 	}
 }
 
+// TestDeriveObjectLifecycleCalls_SelfAttrRebinding covers Python's
+// `self.attr` reassignment: within one method, `self.cipher = AES()` +
+// `self.cipher.encrypt(a)` followed by `self.cipher = RSA()` +
+// `self.cipher.encrypt(b)`. It pins that the canonical "self.<attr>" string
+// identity Python now emits participates in the SAME positional
+// selectDescendants protection already proven for Java field rebinding
+// (TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls):
+// ordering protection anchors on the index of the call that PRODUCES the
+// object (an AssignedVar-only call, i.e. the terminal finding is the
+// constructor), which walks forward and correctly excludes calls made
+// before the rebinding constructor.
+//
+// Design-deviation note (discovered during apply, not assumed): the ordering
+// protection is anchored on the PRODUCING call's index, not on the
+// receiver-variable name alone. When the terminal finding is instead a pure
+// ReceiverVar-only OPERATION call (e.g. the encrypt() call itself, with no
+// AssignedVar), deriveObjectLifecycleCalls falls into the unordered
+// selectReceiverCalls/selectAncestors branches, which have no "since"
+// boundary and would merge both bindings' supporting calls. This is a
+// pre-existing, language-agnostic property of the frozen selector algorithm
+// in supporting_calls.go (unrelated to how Python vs. Java produces
+// ReceiverVar/AssignedVar strings) — confirmed here, not fixed, since
+// supporting_calls.go MUST remain byte-for-byte unchanged per spec.
+func TestDeriveObjectLifecycleCalls_SelfAttrRebinding(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "self.cipher", Name: "<init>"}, AssignedVar: "self.cipher", Line: 2}, // AES()
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "self.cipher", Line: 3},                     // encrypt(a)
+			{Callee: callgraph.FunctionID{Type: "self.cipher", Name: "<init>"}, AssignedVar: "self.cipher", Line: 4}, // RSA()
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "self.cipher", Line: 5},                     // encrypt(b)
+		},
+	}
+
+	// The finding is the SECOND constructor (RSA()) — an AssignedVar-only
+	// producer, which is the shape deriveObjectLifecycleCalls can order-protect.
+	secondCtor := &fn.Calls[2]
+	got := indexOf(fn.Calls, secondCtor)
+	derived := lifecycleCallIndices(toIdentities(fn.Calls), got)
+
+	if selected(derived, 1) {
+		t.Errorf("second self.cipher constructor derived = %v; must NOT include encrypt(a), bound to the FIRST assignment", derived)
+	}
+	if !selected(derived, 3) {
+		t.Errorf("second self.cipher constructor derived = %v; must include encrypt(b), bound to this assignment", derived)
+	}
+}
+
+// toIdentities projects FunctionCall fixtures into the objectIdentity shape
+// lifecycleCallIndices operates on.
+func toIdentities(calls []callgraph.FunctionCall) []objectIdentity {
+	out := make([]objectIdentity, len(calls))
+	for i := range calls {
+		out[i] = objectIdentity{ReceiverVar: calls[i].ReceiverVar, AssignedVar: calls[i].AssignedVar, ChainID: calls[i].ChainID}
+	}
+	return out
+}
+
+// indexOf returns the index of target within calls by pointer identity.
+func indexOf(calls []callgraph.FunctionCall, target *callgraph.FunctionCall) int {
+	for i := range calls {
+		if &calls[i] == target {
+			return i
+		}
+	}
+	return -1
+}
+
+// selected reports whether idx is present in got.
+func selected(got []int, idx int) bool {
+	for _, i := range got {
+		if i == idx {
+			return true
+		}
+	}
+	return false
+}
+
 // TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls pins that a
 // reassigned variable does not merge two objects into one lifecycle. It mirrors
 // how a Java client wraps a plain socket in TLS:

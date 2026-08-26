@@ -228,7 +228,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 		child := root.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
@@ -242,7 +242,8 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 }
 
 // parseFunctionDef parses a function_definition node into a FunctionDecl.
-func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis) *FunctionDecl {
+// attrs is the enclosing class's attribute set (nil outside a class).
+func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool) *FunctionDecl {
 	var name string
 	var body *sitter.Node
 	var paramNode *sitter.Node
@@ -303,7 +304,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, paramNode, src, filePath, analysis, nil)
+		decl.Calls = p.extractCalls(body, paramNode, src, filePath, analysis, attrs)
 	}
 
 	return decl
@@ -332,8 +333,13 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 		return
 	}
 
+	// Collect self/cls attribute assignments ONCE for the whole class body
+	// (no base-class walk — inheritance is not followed), shared by every
+	// method below.
+	attrs := collectPythonClassAttrs(body, src)
+
 	// Walk class body for method definitions.
-	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis)
+	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs)
 }
 
 // extractPythonBaseClassNames returns the simple identifier names from a
@@ -356,31 +362,33 @@ func extractPythonBaseClassNames(argListNode *sitter.Node, src []byte) []string 
 }
 
 // extractClassMethods extracts method declarations from a class body node.
-func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis) {
+// attrs is the class's shared self/cls attribute set, collected once by processClass.
+func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool) {
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, className, analysis)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, className, analysis, attrs)
 			if decl != nil {
 				decl.OwnerBases = bases
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case "decorated_definition":
-			p.extractDecoratedMethod(child, src, filePath, packagePath, className, bases, analysis)
+			p.extractDecoratedMethod(child, src, filePath, packagePath, className, bases, analysis, attrs)
 		}
 	}
 }
 
 // extractDecoratedMethod extracts a method from a decorated_definition within a class.
 // bases are the direct superclass names of className, propagated from processClass.
-func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis) {
+// attrs is the class's shared self/cls attribute set.
+func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool) {
 	for j := 0; j < int(node.ChildCount()); j++ {
 		inner := node.Child(j)
 		if inner.Type() != pythonNodeFunctionDefinition {
 			continue
 		}
-		decl := p.parseFunctionDef(inner, src, filePath, packagePath, className, analysis)
+		decl := p.parseFunctionDef(inner, src, filePath, packagePath, className, analysis, attrs)
 		if decl != nil {
 			decl.OwnerBases = bases
 			analysis.Functions = append(analysis.Functions, *decl)
@@ -394,13 +402,57 @@ func (p *PythonParser) processDecorated(node *sitter.Node, src []byte, filePath,
 		child := node.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case "class_definition":
 			p.processClass(child, src, filePath, packagePath, analysis)
 		}
+	}
+}
+
+// collectPythonClassAttrs scans the literal class body (across ALL methods,
+// no base-class walk — inheritance is not followed) for `self.attr = ...` /
+// `cls.attr = ...` assignments, and returns the canonical (bare, unprefixed)
+// attribute names assigned anywhere in the class.
+func collectPythonClassAttrs(classBody *sitter.Node, src []byte) map[string]bool {
+	attrs := make(map[string]bool)
+	collectPythonClassAttrsInNode(classBody, src, attrs)
+	return attrs
+}
+
+func collectPythonClassAttrsInNode(node *sitter.Node, src []byte, attrs map[string]bool) {
+	if node == nil {
+		return
+	}
+	if node.Type() == pythonNodeAssignment {
+		if attr, ok := pythonSelfOrClsAttrTarget(node.ChildByFieldName("left"), src); ok {
+			attrs[attr] = true
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectPythonClassAttrsInNode(node.Child(i), src, attrs)
+	}
+}
+
+// pythonSelfOrClsAttrTarget reports the attribute name when target is a
+// `self.attr` or `cls.attr` attribute node, i.e. an assignment left-hand
+// side of the shape `attribute { object: identifier(self|cls), attribute: identifier }`.
+func pythonSelfOrClsAttrTarget(target *sitter.Node, src []byte) (attr string, ok bool) {
+	if target == nil || target.Type() != pythonNodeAttribute {
+		return "", false
+	}
+	object := target.ChildByFieldName("object")
+	attrNode := target.ChildByFieldName("attribute")
+	if object == nil || attrNode == nil {
+		return "", false
+	}
+	switch object.Content(src) {
+	case pythonSelfObjectName, pythonClsObjectName:
+		return attrNode.Content(src), true
+	default:
+		return "", false
 	}
 }
 
@@ -1016,7 +1068,9 @@ func isPythonAttributeCallNode(node *sitter.Node) bool {
 // Returns "" for unassigned calls. Mirrors Java's assignedVarFromParent.
 //
 // Handles:
-//   - `cipher = Cipher(a, m)` — expression_statement → assignment
+//   - `cipher = Cipher(a, m)` — expression_statement → assignment, plain identifier target
+//   - `self.cipher = Cipher(a, m)` / `cls.cipher = Cipher(a, m)` — attribute target,
+//     canonicalized to "self.cipher" (see pythonAssignmentTargetIdentity)
 //   - direct assignment in a block
 func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	parent := node.Parent()
@@ -1024,21 +1078,33 @@ func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 		return ""
 	}
 	if parent.Type() == pythonNodeAssignment {
-		left := parent.ChildByFieldName("left")
-		if left != nil && left.Type() == goNodeIdentifier {
-			return left.Content(src)
-		}
-		return ""
+		return pythonAssignmentTargetIdentity(parent.ChildByFieldName("left"), src)
 	}
 	// expression_statement wrapping an assignment
 	if parent.Type() == "expression_statement" {
 		gp := parent.Parent()
 		if gp != nil && gp.Type() == pythonNodeAssignment {
-			left := gp.ChildByFieldName("left")
-			if left != nil && left.Type() == goNodeIdentifier {
-				return left.Content(src)
-			}
+			return pythonAssignmentTargetIdentity(gp.ChildByFieldName("left"), src)
 		}
+	}
+	return ""
+}
+
+// pythonAssignmentTargetIdentity returns the receiver identity text bound by
+// an assignment's left-hand target: a plain identifier verbatim, or a
+// self/cls-attribute canonicalized to "self.<attr>" (cls.<attr> maps to the
+// same self.<attr> token — see the "self.attr identity" design decision).
+// Any other target shape (tuple/star unpacking, etc.) returns "" —
+// AssignedVar is only meaningful for a single-name/single-attribute binding.
+func pythonAssignmentTargetIdentity(left *sitter.Node, src []byte) string {
+	if left == nil {
+		return ""
+	}
+	if left.Type() == goNodeIdentifier {
+		return left.Content(src)
+	}
+	if attr, ok := pythonSelfOrClsAttrTarget(left, src); ok {
+		return pythonSelfObjectName + "." + attr
 	}
 	return ""
 }
