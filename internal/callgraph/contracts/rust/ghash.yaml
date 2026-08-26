@@ -4,14 +4,15 @@ library:
   name: ghash
   coordinates:
     - ghash
-  version_range: ">=0.5.0,<0.6.0"
+  version_range: ">=0.6.0,<0.7.0"
   description: "RustCrypto GHASH universal hash over GF(2^128)"
 
-# Inventory sources: ghash 0.5 crate documentation and the APIs selected by the
+# Inventory sources: ghash 0.6.0 crate documentation and the APIs selected by the
 # scanoss/crypto_rules ghash rule. The crate exposes one type implementing the
 # universal_hash trait, so the surface is its construction plus that lifecycle.
 #
 # skipped-non-crypto: the Block, Key and Tag type aliases and their conversions.
+# new_with_init_block existed in 0.5.x and is gone in 0.6.0; it is not contracted.
 contracts:
   - method: ghash::GHash.new
     arity: 1
@@ -22,10 +23,6 @@ contracts:
         name: key
         role: metadata-contributing
         contributes: {property: keySize, derivation: argument_bit_length}
-  - method: ghash::GHash.new_with_init_block
-    arity: 2
-    return: {type: ghash::GHash, confidence: high}
-    role: factory
   - method: ghash::GHash.update
     arity: 1
     return: {type: void, confidence: high}
