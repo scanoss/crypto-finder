@@ -1027,3 +1027,32 @@ def run():
 		t.Errorf("a.d.bar() callee = %+v, want %+v", barCall.Callee, want)
 	}
 }
+
+// TestPythonModuleDottedPath pins pythonModuleDottedPath's behavior across
+// two edge cases: (1) a root-level module (empty packagePath) must yield its
+// bare stem, not a leading-dot-prefixed path; (2) a .pyi type-stub module
+// must get its own distinct stem, not collapse to the bare package path
+// (which would collide with a sibling __init__.py's <module> key).
+func TestPythonModuleDottedPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		filePath    string
+		packagePath string
+		want        string
+	}{
+		{"regular module with package", "pkg/a.py", "pkg", "pkg.a"},
+		{"__init__.py yields bare package path", "pkg/__init__.py", "pkg", "pkg"},
+		{"root-level module, empty package path", "a.py", "", "a"},
+		{"root-level __init__.py, empty package path", "__init__.py", "", ""},
+		{"pyi stub gets a distinct stem from __init__.py", "pkg/foo.pyi", "pkg", "pkg.foo"},
+		{"__init__.pyi yields bare package path", "pkg/__init__.pyi", "pkg", "pkg"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pythonModuleDottedPath(tt.filePath, tt.packagePath)
+			if got != tt.want {
+				t.Errorf("pythonModuleDottedPath(%q, %q) = %q, want %q", tt.filePath, tt.packagePath, got, tt.want)
+			}
+		})
+	}
+}

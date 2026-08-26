@@ -450,16 +450,42 @@ func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePa
 }
 
 // pythonModuleDottedPath returns the module's own dotted path: packagePath
-// + "." + the file's stem (e.g. "pkg.a" for "pkg/a.py"), or bare packagePath
-// for "__init__.py" (whose module name IS the package). Reuses the same
-// file-stem convention as addPythonModuleAlias (builder.go) so the two stay
-// consistent.
+// + "." + the file's stem (e.g. "pkg.a" for "pkg/a.py"), bare packagePath
+// for "__init__.py"/"__init__.pyi" (whose module name IS the package), or
+// the bare stem when packagePath is empty (a root-level module has no
+// package prefix to join with — joining would otherwise produce a
+// leading-dot path like ".a").
 func pythonModuleDottedPath(filePath, packagePath string) string {
-	stem := pythonModuleFileStem(filePath)
-	if stem == "" {
+	stem := pythonModuleDottedPathStem(filePath)
+	switch {
+	case stem == "":
 		return packagePath
+	case packagePath == "":
+		return stem
+	default:
+		return packagePath + "." + stem
 	}
-	return packagePath + "." + stem
+}
+
+// pythonModuleDottedPathStem returns filePath's module stem for
+// pythonModuleDottedPath. Unlike pythonModuleFileStem (builder.go — used to
+// gate stub-vs-source collision handling and intentionally returns "" for
+// any non-".py" extension), this handles BOTH ".py" and ".pyi": a type-stub
+// module still needs its own distinct stem so its synthetic <module> decl
+// does not collapse onto the bare package path and collide with an
+// unrelated __init__.py's <module> decl in the same package. "" is returned
+// only for __init__.py/__init__.pyi (whose module name IS the bare package
+// path).
+func pythonModuleDottedPathStem(filePath string) string {
+	ext := filepath.Ext(filePath)
+	if ext != ".py" && ext != ".pyi" {
+		return ""
+	}
+	stem := strings.TrimSuffix(filepath.Base(filePath), ext)
+	if stem == "" || stem == "__init__" {
+		return ""
+	}
+	return stem
 }
 
 // parseFunctionDef parses a function_definition node into a FunctionDecl.
