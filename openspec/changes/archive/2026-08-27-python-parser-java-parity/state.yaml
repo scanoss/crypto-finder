@@ -64,7 +64,12 @@ phases:
       verified_on: 2026-08-27
       note: "Re-verification of PR #310 remediation batch (F1-F9). All fixes confirmed with genuine negative-path tests. Perf overhead now ~19.9% combined 10-rep (was ~97-106%), within the <=20% hard cap but close to it. New finding: Engram spec artifact (id 984) is stale vs on-disk spec.md after F5's scenario additions."
   archive:
-    status: pending
+    status: done
+    artifact: archive-report.md
+    engram_topic: sdd/python-parser-java-parity/archive-report
+    engram_id: 992
+    archived_on: 2026-08-27
+    archive_location: openspec/changes/archive/2026-08-27-python-parser-java-parity/
 baseline:
   tests_run: 2026-08-26
   callgraph_python: pass
