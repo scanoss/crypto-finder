@@ -144,18 +144,25 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	return analysis, nil
 }
 
-// extractImports processes import statements from the module root.
+// extractImports recurses into the WHOLE file tree discovering import
+// statements — not only direct file-root children. `try`/`except`, `if`
+// (e.g. `TYPE_CHECKING` guards), and function bodies are all in scope, since
+// Python permits imports anywhere a statement is valid.
 func (p *PythonParser) extractImports(root *sitter.Node, src []byte, analysis *FileAnalysis) {
-	for i := 0; i < int(root.ChildCount()); i++ {
-		child := root.Child(i)
-		switch child.Type() {
-		case "import_statement":
-			// `import hashlib` → imports["hashlib"] = "hashlib"
-			p.processImportStatement(child, src, analysis)
-		case "import_from_statement":
-			// `from cryptography.hazmat.primitives import Cipher` → imports["Cipher"] = "cryptography.hazmat.primitives"
-			p.processImportFromStatement(child, src, analysis)
-		}
+	p.extractImportsInNode(root, src, analysis)
+}
+
+func (p *PythonParser) extractImportsInNode(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	switch node.Type() {
+	case "import_statement":
+		// `import hashlib` → imports["hashlib"] = "hashlib"
+		p.processImportStatement(node, src, analysis)
+	case "import_from_statement":
+		// `from cryptography.hazmat.primitives import Cipher` → imports["Cipher"] = "cryptography.hazmat.primitives"
+		p.processImportFromStatement(node, src, analysis)
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.extractImportsInNode(node.Child(i), src, analysis)
 	}
 }
 
@@ -169,7 +176,7 @@ func (p *PythonParser) processImportStatement(node *sitter.Node, src []byte, ana
 			name := child.Content(src)
 			// Use the first component as the alias
 			parts := strings.Split(name, ".")
-			analysis.Imports[parts[0]] = name
+			recordPythonImportOnce(analysis, parts[0], name)
 		case pythonNodeAliasedImport:
 			// `import hashlib as hl`
 			var module, alias string
@@ -183,45 +190,128 @@ func (p *PythonParser) processImportStatement(node *sitter.Node, src []byte, ana
 				}
 			}
 			if alias != "" && module != "" {
-				analysis.Imports[alias] = module
+				recordPythonImportOnce(analysis, alias, module)
 			}
 		}
 	}
 }
 
-// processImportFromStatement handles `from X import Y` and `from X import *`.
+// processImportFromStatement handles `from X import Y`, `from X import *`,
+// `from X import Y as Z`, and relative forms (`from . import x`,
+// `from ..pkg import y`). Reads the "module_name" field directly — its
+// child is either a dotted_name (absolute import) or a relative_import
+// (wrapping import_prefix + an optional dotted_name) — rather than
+// scanning direct children for the first dotted_name, which mis-binds
+// `from .foo import Bar` (the first dotted_name met that way is "Bar", not
+// "foo", since "foo" is nested inside relative_import). See T0 finding 3.
 func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte, analysis *FileAnalysis) {
-	var modulePath string
+	modulePath, ok := pythonImportFromModulePath(node.ChildByFieldName("module_name"), src, analysis.PackagePath)
+	if !ok {
+		return
+	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
+		if node.FieldNameForChild(i) != "name" {
+			continue
+		}
 		child := node.Child(i)
 		switch child.Type() {
 		case pythonNodeDottedName:
-			if modulePath == "" {
-				modulePath = child.Content(src)
-			} else {
-				// This is a name being imported: `from X import name`
-				recordImportedPythonSymbol(analysis, child.Content(src), modulePath)
+			// `from X import name`
+			recordImportedPythonSymbol(analysis, child.Content(src), modulePath)
+		case pythonNodeAliasedImport:
+			// `from X import name as alias`
+			nameNode := child.ChildByFieldName("name")
+			aliasNode := child.ChildByFieldName("alias")
+			if nameNode != nil && aliasNode != nil {
+				recordImportedPythonSymbol(analysis, aliasNode.Content(src), modulePath)
 			}
-		case goNodeIdentifier:
-			// Single name import: `from X import name`
-			name := child.Content(src)
-			if name != "import" && name != "from" && modulePath != "" {
-				recordImportedPythonSymbol(analysis, name, modulePath)
-			}
-		case "wildcard_import":
-			// `from X import *`
-			if modulePath != "" {
-				analysis.WildcardImports = append(analysis.WildcardImports, modulePath)
-			}
-		case "import_prefix":
-			// Relative import dots — skip these
-			continue
+		}
+	}
+
+	// `from X import *` — wildcard_import carries no "name" field, so it is
+	// handled separately from the loop above.
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if node.Child(i).Type() == "wildcard_import" {
+			analysis.WildcardImports = append(analysis.WildcardImports, modulePath)
 		}
 	}
 }
 
+// pythonImportFromModulePath resolves an import_from_statement's
+// "module_name" field to a module path: verbatim for an absolute
+// dotted_name, or via pythonRelativeModulePath for a relative_import.
+// Returns ok=false when the module_name field is nil or the relative import
+// walks above the current package root (nothing sensible to resolve to).
+func pythonImportFromModulePath(moduleNameNode *sitter.Node, src []byte, packagePath string) (string, bool) {
+	if moduleNameNode == nil {
+		return "", false
+	}
+	switch moduleNameNode.Type() {
+	case pythonNodeDottedName:
+		return moduleNameNode.Content(src), true
+	case "relative_import":
+		var prefix, dotted string
+		for i := 0; i < int(moduleNameNode.ChildCount()); i++ {
+			switch c := moduleNameNode.Child(i); c.Type() {
+			case "import_prefix":
+				prefix = c.Content(src)
+			case pythonNodeDottedName:
+				dotted = c.Content(src)
+			}
+		}
+		return pythonRelativeModulePath(packagePath, prefix, dotted)
+	default:
+		return "", false
+	}
+}
+
+// pythonRelativeModulePath resolves a relative import's dot-prefix against
+// the current file's packagePath. A single dot (prefix ".") means the
+// CURRENT package (0 levels up); each additional dot means one more level
+// up. dotted is the dotted module name after the dots, or "" for a bare
+// `from . import x` / `from .. import x` form.
+func pythonRelativeModulePath(packagePath, prefix, dotted string) (string, bool) {
+	levelsUp := len(prefix) - 1
+	if levelsUp < 0 {
+		levelsUp = 0
+	}
+	var segments []string
+	if packagePath != "" {
+		segments = strings.Split(packagePath, ".")
+	}
+	if levelsUp > len(segments) {
+		return "", false
+	}
+	base := strings.Join(segments[:len(segments)-levelsUp], ".")
+	switch {
+	case base == "" && dotted == "":
+		return "", false
+	case base == "":
+		return dotted, true
+	case dotted == "":
+		return base, true
+	default:
+		return base + "." + dotted, true
+	}
+}
+
+// recordPythonImportOnce records a plain `import X [as Y]` binding, but only
+// when the name is not already bound — first binding in document order
+// wins (e.g. `try: import fastcrypto as crypto / except ImportError: import
+// crypto` keeps the primary `crypto -> fastcrypto` binding).
+func recordPythonImportOnce(analysis *FileAnalysis, name, modulePath string) {
+	if _, exists := analysis.Imports[name]; exists {
+		return
+	}
+	analysis.Imports[name] = modulePath
+}
+
 func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string) {
+	if _, exists := analysis.Imports[name]; exists {
+		// First binding in document order wins — see recordPythonImportOnce.
+		return
+	}
 	analysis.Imports[name] = modulePath
 	analysis.FromImports[name] = true
 	if looksLikePythonTypeName(name) {

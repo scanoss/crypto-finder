@@ -759,6 +759,135 @@ class Foo:
 	}
 }
 
+// TestPythonParser_Import_TryExcept verifies that an `import` statement
+// nested inside a `try`/`except ImportError` block is discovered (the parser
+// recurses into nested blocks, not only direct file-root children), and that
+// when both branches bind the same name, the FIRST binding in document order
+// wins — the later `import crypto` must not overwrite the earlier
+// `import fastcrypto as crypto`.
+func TestPythonParser_Import_TryExcept(t *testing.T) {
+	src := `try:
+    import fastcrypto as crypto
+except ImportError:
+    import crypto
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "mypkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+	if got := analyses[0].Imports["crypto"]; got != "fastcrypto" {
+		t.Errorf(`Imports["crypto"] = %q, want %q (first binding in document order wins)`, got, "fastcrypto")
+	}
+}
+
+// TestPythonParser_Import_TypeChecking verifies that an import nested inside
+// an `if TYPE_CHECKING:` block is discovered.
+func TestPythonParser_Import_TypeChecking(t *testing.T) {
+	src := `if TYPE_CHECKING:
+    from mypkg import Cipher
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "consumer")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+	if got := analyses[0].Imports["Cipher"]; got != "mypkg" {
+		t.Errorf(`Imports["Cipher"] = %q, want %q`, got, "mypkg")
+	}
+}
+
+// TestPythonParser_Import_FunctionLocal verifies that an import nested inside
+// a function body is discovered.
+func TestPythonParser_Import_FunctionLocal(t *testing.T) {
+	src := `def f():
+    import hashlib
+    hashlib.sha256()
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "mypkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+	if got := analyses[0].Imports["hashlib"]; got != "hashlib" {
+		t.Errorf(`Imports["hashlib"] = %q, want %q`, got, "hashlib")
+	}
+}
+
+// TestPythonParser_Import_RelativeSingleDot verifies that `from . import x`
+// in a file at pkg/mod.py resolves x's module path to "pkg" (the current
+// package), not an empty/absolute path.
+func TestPythonParser_Import_RelativeSingleDot(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "from . import helper\n"
+	if err := os.WriteFile(filepath.Join(pkgDir, "mod.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(pkgDir, "pkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+	if got := analyses[0].Imports["helper"]; got != "pkg" {
+		t.Errorf(`Imports["helper"] = %q, want %q (relative to current package)`, got, "pkg")
+	}
+}
+
+// TestPythonParser_Import_RelativeDoubleDot verifies that
+// `from ..other import Bar` in a file at pkg/sub/mod.py resolves Bar's module
+// path to "pkg.other" (one level above pkg.sub), not "other" as an absolute
+// top-level module.
+func TestPythonParser_Import_RelativeDoubleDot(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "pkg", "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "from ..other import Bar\n"
+	if err := os.WriteFile(filepath.Join(subDir, "mod.py"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(subDir, "pkg.sub")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+	if got := analyses[0].Imports["Bar"]; got != "pkg.other" {
+		t.Errorf(`Imports["Bar"] = %q, want %q (one level above pkg.sub)`, got, "pkg.other")
+	}
+}
+
 func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
 	dir := t.TempDir()
 	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...
