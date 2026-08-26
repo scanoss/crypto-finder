@@ -53,6 +53,16 @@ phases:
     critical_findings: 0
     warnings: 2
     verified_on: 2026-08-26
+    reverify:
+      status: done
+      verdict: pass_with_warnings
+      requirements: 7/7
+      scenarios: 29/29
+      critical_findings: 0
+      warnings: 3
+      head_commit: 6d7ba35
+      verified_on: 2026-08-27
+      note: "Re-verification of PR #310 remediation batch (F1-F9). All fixes confirmed with genuine negative-path tests. Perf overhead now ~19.9% combined 10-rep (was ~97-106%), within the <=20% hard cap but close to it. New finding: Engram spec artifact (id 984) is stale vs on-disk spec.md after F5's scenario additions."
   archive:
     status: pending
 baseline:

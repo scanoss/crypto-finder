@@ -174,3 +174,103 @@ Focused runs (real pass counts, not estimates):
 ### Verdict
 **PASS WITH WARNINGS**
 All 41/41 tasks complete, all 27/27 spec scenarios compliant with real passing tests, all design invariants (zero-diff guards, schema constants, resolver isolation, T6 gate, first-binding-wins imports, `<clinit>` rename) confirmed by source inspection and test execution, and all final gates (`go test -race ./...`, `make lint`, `make coverage-check`, `git diff --check`) pass clean. Two WARNINGs — the T7 performance ceiling miss (worse than previously reported, root-caused here) and a TDD-evidence-table format gap covered by strong alternate evidence — are real but non-blocking; neither breaks a spec requirement or leaves a task incomplete.
+
+---
+
+## Re-verification (post-remediation, F1-F9)
+
+```yaml
+schema: gentle-ai.verify-result/v1
+evidence_revision: sha256:3b8b1a97687346283241a2d06a2d483008ef1d4449f908a3933c3f082fe30269
+verdict: pass_with_warnings
+blockers: 0
+critical_findings: 0
+requirements: 7/7
+scenarios: 29/29
+test_command: go test -race ./...
+test_exit_code: 0
+test_output_hash: sha256:be6ebf227bf34525873890dc2dee50e9e77a5c55a4411a3230557015a00d06ed
+build_command: go build ./...
+build_exit_code: 0
+build_output_hash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+head_commit: 6d7ba35f0d2c04c9eb77457c3786b2b435022916
+```
+
+**Change**: python-parser-java-parity
+**Scope**: PR #310 fresh-context review found F1-F9 (see PR #310 comments); remediation batch `5d49e19..6d7ba35` (9 commits) fixes all nine, plus one incidental flaky-lint fix. This section re-verifies that batch against the original spec + the F5-updated spec text, independently of the original PASS-WITH-WARNINGS verify (above).
+
+### F1-F9 fix verification
+
+| # | Sev | Finding | Fix commit | Named test | Verified |
+|---|---|---|---|---|---|
+| F1 | HIGH | Re-export rewrite could clobber a dependency's KB-keyed public FQN when its source was scanned alongside consumer code | `5d49e19` | `TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency` | PASS. Spot-read confirms `recordPythonReExports` is called only under `if b.ecosystem == ecosystemPython && projectLocal && ...` (builder.go:345), and `projectLocal := pkg.Version == ""` (builder.go:223) — the negative test's `depDir` package carries `Version: "1.6.0"` so its re-export is never recorded, leaving the KB-keyed FQN untouched. Genuine negative-path coverage, not a smoke test. |
+| F2 | HIGH | Parse overhead ~80-106% vs 10% design ceiling (redundant unpruned walks) | `c4e003e`, `b7b39e9` | `BenchmarkPythonParseDirectory_Bindings` | See dedicated perf section below — real, substantial improvement but not fully at target. |
+| F3 | MED | `<module>`/`<clinit>` receiver table leaked names bound only in a nested scope | `c4e003e` | `TestPythonParser_SyntheticEntryPoint_NoNestedScopeLeak` | PASS. Spot-read confirms `collectPythonFilePrepass` recurses with `moduleDirect && !pruned` / `classDirect && !pruned` (python_parser.go:385), pruned via `isPythonPrunedDefinitionSymbol` at function/class/decorated/lambda boundaries — structurally cannot leak. Test passes both module-level and class-body subtests. |
+| F4 | MED | UPPER_CASE locals never resolved as receivers (CapitalCase heuristic ran before locals check) | `94c16d7` | `TestPythonParser_ReceiverVar_UpperCaseLocal(+_InFunction)` | PASS. Spot-read of `receiverIdentity` (python_parser.go:985) confirms `looksLikePythonTypeName` was fully removed from this function — only `b.locals[object]` gates the final branch. Both module-level and in-function pinning tests pass. |
+| F5 | LOW | Spec/test drift on `__init__.py` re-export scenario layout | `c8a0e93` | `TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved` | PASS. On-disk `spec.md` now documents both the flat (already-resolved, no rewrite) and sub-package (rewrite) layouts explicitly, plus the F1 project-local restriction, adding 2 new scenarios (4 total under this requirement, was 2). |
+| F6 | LOW | `import a.b.c` bound `Imports["a"]="a.b.c"`, double-appending the suffix on later chained calls | `94c16d7` | `TestPythonParser_Import_DottedPlainImport(+_MultipleTopLevelSiblings)` | PASS. |
+| F7 | LOW | Empty `packagePath` produced a leading-dot path; `.pyi` stem collided with `__init__.py`'s `<module>` key | `5a947eb` | `TestPythonModuleDottedPath` (6-case table) | PASS, all 6 subtests. |
+| F8 | LOW | Duplicate-risk CHANGELOG heading / one giant paragraph; user guide not updated | `825d733` | N/A (docs) | PASS. CHANGELOG's Python `### Fixed` section is exactly one heading with 7 per-behavior bullets (not duplicated — the file's other `### Fixed`/`### Added` repeats are pre-existing, unrelated entries for other features, matching this CHANGELOG's existing convention). User guide's reachability section carries a Python `<module>`/`<clinit>` + binding-forms note; passes HTML-parse, prohibited-term grep, and `git diff --check`. |
+| F9 | LOW | Missing tests: param shadowing import, `*args/**kwargs`/defaults, `self.a.b` chain, `self`-named free-function parameter | `494302c` | `TestPythonParser_ReceiverVar_ParameterShadowsImport`, `_SplatAndDefaultParameters`, `_SelfAttributeChain`, `TestPythonParser_SelfNamedReceiver_FreeFunction` | PASS, all 4 (+3 subtests). |
+| bonus | — | Flaky `goconst` lint finding (file-scan-order-dependent) | `a1dca1d` | N/A (mechanical) | PASS. Diff is a single literal→existing-constant swap (`"expression_statement"` → `rustNodeExpressionStatement`) in `java_parser.go`; confirmed via `git show a1dca1d` — 1 file, 1 line changed. |
+
+### Full test re-execution (this phase, independent)
+
+- `go test ./internal/callgraph/ -run Python -count=1 -v`: **67 PASS, 0 FAIL**.
+- `go test ./internal/callgraph/ -run TestBuilder_InitPyReexport -count=1 -v`: **4/4 PASS** (grew from 2 to 4 — `_FlatLayoutAlreadyResolved` and `_DoesNotRewriteKBKeyedDependency` added this batch), not matched by `-run Python`.
+- `go test ./internal/scan/ -count=1 -v`: **178 PASS, 0 FAIL**.
+- `go test ./internal/callgraph/ -run TestJava -count=1`: **ok**, confirming `functionTypeClassInit` rename (java_parser_clinit_test.go now references the shared constant, not the deleted `javaFunctionTypeClassInit`) did not regress.
+- `go test -race ./...`: **31/31 packages ok, exit 0, zero FAIL lines**.
+- `make lint`: **0 issues**.
+- `make coverage-check`: **82.0% (14019/17106), PASS** (≥80% threshold).
+- `git diff --check` (worktree and `c6ee180..HEAD`): **clean, exit 0**.
+
+### Invariants re-confirmed independently
+
+- `git diff --stat c6ee180..HEAD -- pkg/graphfrag/ internal/scan/supporting_calls.go internal/callgraph/contracts/`: **empty** — zero diff.
+- `pkg/graphfrag.CallgraphSchemaVersion == "6.13"`, `pkg/graphfrag.SchemaVersion == "graph-fragment-1.13"`: **unchanged**, confirmed in source.
+- `grep -rn "internal/failure" internal/callgraph/*.go`: **no matches**.
+- `java_parser_clinit_test.go` (`TestJava*`): **green**.
+- `a1dca1d` (`java_parser.go`): **confirmed constant-reuse only**, 1 line changed.
+
+### Spec re-mapping (F5-updated spec: 7 requirements, 29 scenarios — was 27)
+
+All 29 scenarios in the current on-disk `specs/python-callgraph-binding-resolution/spec.md` map to an existing, passing test, including the 2 new scenarios F5 added under `__init__.py` re-export propagation (flat-layout no-rewrite case, and F1's non-project-local-dependency case). No UNTESTED or FAILING scenario found.
+
+### Performance re-measurement (T7 / F2)
+
+Regenerated the 200-module corpus at HEAD (`go run internal/callgraph/testdata/python_perf/generate_fixture.go`) and ran `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run '^$' -count=5 -benchmem` twice (10 reps total) at HEAD. Measured an independent baseline the same way: `git worktree add --detach <tmp> c6ee180`, copied `python_perf_test.go` and `testdata/python_perf/generate_fixture.go` into that worktree (absent at `c6ee180` — this benchmark harness postdates the baseline commit), regenerated the identical corpus there (byte-for-byte diff confirmed empty against HEAD's corpus), then ran the same `-count=5` command twice.
+
+| | Round 1 avg | Round 2 avg | Combined 10-rep avg | allocs/op | B/op |
+|---|---|---|---|---|---|
+| `c6ee180` baseline | 67.70 ms | 69.38 ms | **68.54 ms** | 313,966 | 19.28 MB |
+| HEAD (`6d7ba35`) | 86.30 ms | 78.04 ms | **82.17 ms** | 284,667 | 25.99 MB |
+| Overhead | +27.5% | +12.5% | **+19.9%** | −9.3% | +34.8% |
+
+**Classification: WARNING** (≤20% band, per the ≤10% PASS / ≤20% WARNING / >20% FAIL rule given for this re-verification). This is a real and substantial improvement from the pre-remediation ~97-106% overhead this change's earlier verify measured, and is directionally consistent with the remediation batch's own reported figures (allocs down ~9.3%, bytes/op up ~34.8% both match closely; ns/op is noisier). However:
+- The combined 10-rep mean (19.9%) sits within roughly 0.1 percentage points of the 20% hard-fail line — not a comfortable margin.
+- Individual 5-rep rounds ranged from +12.5% to +27.5% — one of the two rounds run in this phase, taken alone, would have crossed the 20% FAIL threshold. The remediation batch's own PR comment independently notes "measurement noise across rounds was material (14-36%)" on this same shared dev machine.
+- The design's own target ceiling was ≤10%, not ≤20% — the ≤20% is described as a hard cap, not the goal. At ~14-20% (depending on which round is trusted), this remains above the design target the F2 finding itself set.
+
+This is not classified CRITICAL/FAIL because no single trustworthy aggregate measurement in this phase exceeded 20%, and the design's own hard cap is explicitly 20% — but it should not be read as a closed, comfortably-resolved item either. See WARNING 1 below.
+
+### Hybrid artifact-store desync (new finding, this phase)
+
+`state.yaml` declares `artifact_store: hybrid`, which per SDD convention requires the openspec file and its Engram counterpart to stay in sync. Commit `c8a0e93` rewrote the on-disk `specs/python-callgraph-binding-resolution/spec.md` (F5: added the flat-layout and non-project-local-dependency scenarios, restructured the re-export requirement's prose) but the Engram artifact `sdd/python-parser-java-parity/spec` (id 984) was never re-saved — it still holds the pre-remediation 27-scenario version. A reader who trusts the Engram copy as authoritative (rather than reading the openspec file directly, as this phase did) would verify against a stale spec and miss F5's two new scenarios entirely. See WARNING 3 below.
+
+### Issues Found (this phase)
+
+**CRITICAL**: None.
+
+**WARNING**:
+1. **Perf overhead (F2) improved substantially but remains close to the hard cap and above the design target.** Combined 10-rep-per-side measurement: **+19.9%** (baseline 68.54ms/op → HEAD 82.17ms/op), down from the ~97-106% this change's original verify measured, and broadly consistent with the remediation batch's own reported ~14.0%. Individual rounds in this phase ranged 12.5%-27.5%, confirming the batch's own noted machine-noise problem; treat 19.9% as directionally correct but not a tight bound. Recommend either a follow-up perf pass to get comfortably under 10%, or re-measuring on a quieter/dedicated machine before treating this line item as closed.
+2. **Strict TDD evidence table still not in the required format.** Unchanged from the original verify's WARNING 2 — `apply-progress` (Engram #989) remains narrative for both the original 41 tasks and this remediation batch, not the RED/GREEN/TRIANGULATE/SAFETY-NET/REFACTOR table `strict-tdd-verify.md` prescribes. Same mitigating evidence applies: every fix's RED step is independently named and this phase re-confirmed all named tests pass.
+3. **Hybrid artifact-store desync: Engram `sdd/python-parser-java-parity/spec` (id 984) is stale.** It reflects the pre-F5 spec (27 scenarios, no project-local restriction language, no flat-layout scenario), while the on-disk `spec.md` was correctly updated by commit `c8a0e93` (29 scenarios). `artifact_store: hybrid` requires both to be kept current. Recommend re-saving the spec artifact to Engram from the current on-disk file before archive.
+
+**SUGGESTION**:
+1. Carry forward from the original verify: add the formal TDD Cycle Evidence table to future `apply-progress` saves even when `tasks.md` already encodes RED/GREEN steps per task.
+2. When the perf follow-up lands, measure with a larger `-count` (e.g. 10-15) in one continuous run rather than two separate 5-rep rounds, given the documented noise on this shared machine — a single larger sample will be more defensible than the average of two smaller, disagreeing ones.
+
+### Verdict
+
+**PASS WITH WARNINGS**. All F1-F9 fixes confirmed present, correctly gated, and passing with genuine negative-path test coverage (spot-read confirmed for F1/F3/F4). All 29/29 spec scenarios (7/7 requirements) compliant with real passing tests. All final gates green (`go test -race ./...` exit 0, `make lint` 0 issues, `make coverage-check` 82.0% ≥ 80%, `git diff --check` clean). All design invariants re-confirmed independently (zero-diff guards, schema constants, no `internal/failure` import, Java `<clinit>` regression-free, `a1dca1d` constant-reuse-only). Zero CRITICAL findings. Three WARNINGs — perf still close to the hard cap and above the design target, the persistent TDD-evidence-table format gap, and a newly-found hybrid-store spec desync — are real but non-blocking: none breaks a spec requirement, fails a gate, or leaves a task incomplete. Commit hygiene on `5d49e19..HEAD` (9 commits) is clean: conventional-commit format throughout, single author, no AI attribution strings found.
