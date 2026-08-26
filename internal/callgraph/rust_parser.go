@@ -1021,6 +1021,9 @@ func resolveRustAliasPrefix(analysis *FileAnalysis, prefix string) (string, bool
 		return "", false
 	}
 	if realPath, ok := analysis.ImportAliases[prefix]; ok {
+		if qualified, ok := qualifyRustBareType(analysis, realPath); ok {
+			return qualified, true
+		}
 		return realPath, true
 	}
 	firstSep := strings.Index(prefix, "::")
@@ -1031,6 +1034,35 @@ func resolveRustAliasPrefix(analysis *FileAnalysis, prefix string) (string, bool
 		return realPath + prefix[firstSep:], true
 	}
 	return "", false
+}
+
+// qualifyRustBareType resolves a bare type name to the path it was imported
+// from. A local `type Aes256Ccm = Ccm<Aes256, U10, U13>;` records `Ccm` as its
+// target because that is the spelling ccm's own documentation uses, and a bare
+// name carries no package: left unqualified it becomes the callee's package
+// with no type at all (`Ccm.new`), which matches no contract. Resolution
+// happens here rather than when the alias is recorded so it does not depend on
+// `use` statements being parsed before the alias. A target naming a type this
+// crate declares is not in the import map and is returned unchanged, which is
+// what such an alias means.
+//
+// The alias map also holds renaming imports, whose target is already a real
+// path: `use aes as blk;` records `blk -> aes`. Qualifying that would rewrite
+// a crate root into whatever an import happens to map the same name to, so the
+// target must look like a type before it is touched. Crate and module names are
+// snake_case, type names are not, which is the distinction this leans on.
+func qualifyRustBareType(analysis *FileAnalysis, name string) (string, bool) {
+	if analysis == nil || name == "" || strings.Contains(name, "::") {
+		return "", false
+	}
+	if !looksLikeRustTypeName(name) {
+		return "", false
+	}
+	pkg, ok := analysis.Imports[name]
+	if !ok || pkg == "" {
+		return "", false
+	}
+	return pkg + "::" + name, true
 }
 
 // resolveRustReceiverType turns a receiver variable's recorded type into the
@@ -1047,6 +1079,9 @@ func resolveRustReceiverType(analysis *FileAnalysis, inferredType string) (pkg, 
 		return importedPkg, inferredType
 	}
 	if realPath, ok := analysis.ImportAliases[inferredType]; ok {
+		if qualified, ok := qualifyRustBareType(analysis, realPath); ok {
+			realPath = qualified
+		}
 		if aliasPkg, aliasType, ok := splitQualifiedRustType(realPath); ok {
 			return aliasPkg, aliasType
 		}
