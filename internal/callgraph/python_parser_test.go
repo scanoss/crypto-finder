@@ -1112,3 +1112,138 @@ func TestPythonModuleDottedPath(t *testing.T) {
 		})
 	}
 }
+
+// TestPythonParser_ReceiverVar_ParameterShadowsImport pins current
+// precedence (F9): a parameter that shares its name with an imported symbol
+// does NOT resolve as a receiver. receiverIdentity checks Imports before
+// locals (see TestPythonParser_ModuleCall_NoReceiverVar for the module-level
+// case), so the import wins even when the SAME name is ALSO a declared
+// parameter — the call still resolves through the import (Callee reflects
+// "x.cipher", not a plain same-package call), and ReceiverVar stays empty.
+func TestPythonParser_ReceiverVar_ParameterShadowsImport(t *testing.T) {
+	src := `from x import cipher
+
+def f(cipher):
+    cipher.update(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "f")
+	if fn == nil {
+		t.Fatal("f function not found")
+	}
+	call := findPythonCallByMethod(fn, "update")
+	if call == nil {
+		t.Fatal("update call not found")
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("cipher.update ReceiverVar = %q, want empty (import must outrank the same-named parameter)", call.ReceiverVar)
+	}
+	want := FunctionID{Package: "x.cipher", Name: "update"}
+	if call.Callee != want {
+		t.Errorf("cipher.update callee = %+v, want %+v (resolved through the import, not treated as a local receiver call)", call.Callee, want)
+	}
+}
+
+// TestPythonParser_ReceiverVar_SplatAndDefaultParameters verifies that
+// *args/**kwargs splat parameters and a default-valued parameter all
+// register as receivers, matching pythonParameterNames' documented coverage
+// (F9).
+func TestPythonParser_ReceiverVar_SplatAndDefaultParameters(t *testing.T) {
+	src := `def f(cipher=None, *args, **kwargs):
+    cipher.update(a)
+    args.update(b)
+    kwargs.update(c)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "f")
+	if fn == nil {
+		t.Fatal("f function not found")
+	}
+
+	byReceiver := make(map[string]bool, len(fn.Calls))
+	for i := range fn.Calls {
+		if fn.Calls[i].Callee.Name == "update" {
+			byReceiver[fn.Calls[i].ReceiverVar] = true
+		}
+	}
+
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"cipher (default-valued parameter)", "cipher"},
+		{"args (*args splat)", "args"},
+		{"kwargs (**kwargs splat)", "kwargs"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !byReceiver[tt.want] {
+				t.Fatalf("no update call found with ReceiverVar %q; saw %v", tt.want, byReceiver)
+			}
+		})
+	}
+}
+
+// TestPythonParser_ReceiverVar_SelfAttributeChain pins current behavior
+// (F9) for a MULTI-LEVEL self attribute chain (`self.a.b.encrypt(...)`,
+// as opposed to the single-level `self.attr` this parser resolves via
+// pythonSelfOrClsAttr). pythonSelfOrClsAttr explicitly rejects any object
+// text containing a further "." after the self/cls prefix, so ReceiverVar
+// stays empty for a chain this deep — no receiver identity is fabricated
+// for it, and the callee falls back to Type="self.a.b" (the raw object
+// text), Package=analysis.PackagePath.
+func TestPythonParser_ReceiverVar_SelfAttributeChain(t *testing.T) {
+	src := `class Foo:
+    def run(self):
+        self.a.b.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("self.a.b.encrypt ReceiverVar = %q, want empty (multi-level self chains are not resolved as a receiver identity)", call.ReceiverVar)
+	}
+	want := FunctionID{Package: "mypkg", Type: "self.a.b", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("self.a.b.encrypt callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_SelfNamedReceiver_FreeFunction verifies that a
+// FREE-function parameter literally named "self" (unusual, but syntactically
+// valid Python outside a class) is NOT treated as an instance attribute
+// access. `object == pythonSelfObjectName` is checked unconditionally in
+// parseAttributeCall (not gated on "are we inside a class"), so
+// `self.encrypt(data)` here resolves as a bare same-module call
+// (Type == "", Package == analysis.PackagePath) — exactly like a real
+// method's `self.foo()` call — never as a class-scoped attribute access or
+// a receiver-var call on the "self" parameter (F9).
+func TestPythonParser_SelfNamedReceiver_FreeFunction(t *testing.T) {
+	src := `def process(self):
+    self.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "process")
+	if fn == nil {
+		t.Fatal("process function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("self.encrypt ReceiverVar = %q, want empty (self is never a receiver identity, even as a free-function parameter)", call.ReceiverVar)
+	}
+	if call.Callee.Type != "" {
+		t.Errorf("self.encrypt callee.Type = %q, want empty (must not be treated as an instance attribute access)", call.Callee.Type)
+	}
+	want := FunctionID{Package: "mypkg", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("self.encrypt callee = %+v, want %+v", call.Callee, want)
+	}
+}
