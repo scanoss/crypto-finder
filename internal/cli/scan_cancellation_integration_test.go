@@ -196,21 +196,22 @@ func writeFile(t *testing.T, path, content string) {
 func waitForChildPID(t *testing.T, path string) int {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
+	var last string
 	for time.Now().Before(deadline) {
 		contents, err := os.ReadFile(path)
 		if err == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(contents)))
-			if parseErr != nil {
-				t.Fatalf("parse child pid %q: %v", contents, parseErr)
+			// The file appears before the writer has finished, so an empty or
+			// partial read means "not ready yet", not "malformed".
+			last = strings.TrimSpace(string(contents))
+			if pid, parseErr := strconv.Atoi(last); parseErr == nil {
+				return pid
 			}
-			return pid
-		}
-		if !errors.Is(err, os.ErrNotExist) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("read child pid: %v", err)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("scanner did not start its child process")
+	t.Fatalf("scanner did not start its child process (last pid file contents %q)", last)
 	return 0
 }
 

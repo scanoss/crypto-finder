@@ -8,9 +8,20 @@ library:
   description: "RustCrypto ChaCha20-Poly1305 authenticated encryption"
 
 contracts:
-  # Key/nonce generation through Generate is generic (e.g.
-  # Key::<ChaCha20Poly1305>::generate()) and does not have a stable Rust parser
-  # identity yet. Keep the stable slice constructors instead.
+  # Key/nonce generation through Generate carries a turbofish; the parser strips
+  # type arguments from the callee identity, so these resolve on the type alone.
+  - method: chacha20poly1305::Key.generate
+    arity: 1
+    return: {type: chacha20poly1305::Key, confidence: high}
+    role: factory
+  - method: chacha20poly1305::Nonce.generate
+    arity: 1
+    return: {type: chacha20poly1305::Nonce, confidence: high}
+    role: factory
+  - method: chacha20poly1305::XNonce.generate
+    arity: 1
+    return: {type: chacha20poly1305::XNonce, confidence: high}
+    role: factory
   - method: chacha20poly1305::Key.from_slice
     arity: 1
     return: { type: chacha20poly1305::Key, confidence: high }

@@ -1,0 +1,70 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: scrypt
+  coordinates:
+    - scrypt
+  version_range: ">=0.12.0,<0.13.0"
+  description: "RustCrypto scrypt password-based key derivation"
+
+# Inventory sources: the scrypt 0.12.0 crate source (src/params.rs, src/lib.rs)
+# and the APIs selected by the scanoss/crypto_rules scrypt rules. Params::default
+# delegates to Params::RECOMMENDED, whose OWASP-aligned values are log_n 17,
+# r 8, p 1.
+#
+# Params::new takes three arguments in this range; the four-argument form is
+# new_with_output_len. The 0.11 line spelled the four-argument version `new`,
+# so an arity taken from that release matches nothing here.
+#
+# skipped-non-crypto: the Params accessors and the PHC/MCF string helpers.
+contracts:
+  - method: scrypt::Params.new
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: config
+    parameters:
+      # log_n is the base-2 logarithm of the cost, not the cost itself: the
+      # detection rules publish cost 131072 while this argument reads 17. The
+      # property is named for the argument so the two are not conflated.
+      - index: 0
+        name: log_n
+        role: metadata-contributing
+        contributes: {property: logN, derivation: argument_value}
+      - index: 1
+        name: r
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 2
+        name: p
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+  - method: scrypt::Params.new_with_output_len
+    arity: 4
+    return: {type: core::result::Result, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: log_n
+        role: metadata-contributing
+        contributes: {property: logN, derivation: argument_value}
+      - index: 1
+        name: r
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 2
+        name: p
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+  - method: scrypt::Scrypt.default
+    arity: 0
+    return: {type: scrypt::Scrypt, confidence: high}
+    role: factory
+  # Free function in a single-segment crate: the call site emits "scrypt.scrypt"
+  # and the "::" bridge only rewrites package.Type.method keys, so author the
+  # dot form here.
+  - method: scrypt.scrypt
+    arity: 4
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+
+hierarchy: {}
