@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- A Rust local type alias naming an imported type by its bare name now resolves calls made through it to that type's crate: `type Aes256Ccm = Ccm<Aes256, U10, U13>;` then `Aes256Ccm::new(&key)` produced `Ccm.new` with no type segment and no contract match, and now produces `ccm.Ccm.new`. This is the spelling the `ccm` and `aes-gcm` documentation teaches, so that idiom previously carried a detection with no reachability behind it. A renaming import, whose recorded target is already a real path, is unaffected.
 ### Added
 - Rust callgraph contracts for the RustCrypto block ciphers `aes` 0.1.x-0.9.x, `blowfish` 0.1.x-0.10.x and `des` 0.0.x-0.9.x: concrete cipher construction and the single-block and multi-block encrypt and decrypt operations, the encrypt-only and decrypt-only AES types, and the free-function API of the unrelated project that held the `des` name at 0.0.x. Both slice-constructor spellings are inventoried, `new_varkey` for the older trait crates and `new_from_slice` from cipher 0.3 onwards, so an older pinned release is not a silent gap. Construction reports the supplied key as a `keySize` parameter role rather than a declared size, which is the only correct answer for Blowfish: it accepts any key from 4 to 56 bytes.
 ### Fixed
