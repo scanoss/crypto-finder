@@ -241,24 +241,56 @@ top-level module.
 
 When a package's `__init__.py` contains `from .mod import Name`, the builder
 MUST propagate that re-export so a sibling file in the same package that
-does `from pkg import Name` resolves `Name` to `pkg.mod.Name`. This
-propagation is limited to direct re-exports (`from .submodule import X`
-statements present verbatim in `__init__.py`); it MUST NOT perform inferred
-type resolution or follow indirection beyond one `__init__.py` hop.
+does `from pkg import Name` resolves `Name` to its true declaring module's
+dotted path. This propagation is limited to direct re-exports
+(`from .submodule import X` statements present verbatim in `__init__.py`);
+it MUST NOT perform inferred type resolution or follow indirection beyond
+one `__init__.py` hop. Because `FunctionID.Package` is keyed at directory
+granularity (one directory = one package path, not one file = one package
+path), a re-export whose target lives in a FLAT sibling file (e.g.
+`pkg/mod.py`, sharing the same directory as `pkg/__init__.py`) is already
+resolved before any rewrite runs: `pkg/mod.py`'s declarations are already
+keyed under the same `pkg` package path that `from pkg import Name` resolves
+to directly, so the rewrite gate correctly finds the ORIGINAL FQN already
+present in the graph and leaves it untouched (see the "no rewrite needed"
+scenario below). The rewrite has observable effect only for a SUB-PACKAGE
+layout, where the re-exported symbol's true declaring module lives in a
+subdirectory (e.g. `pkg/mod/__init__.py`, package path `pkg.mod`) distinct
+from `pkg/__init__.py`'s own package path (`pkg`). This propagation MUST
+also apply ONLY to project-local packages (an empty `PackageDir.Version`):
+a versioned dependency's own `__init__.py` re-exports MUST NOT be recorded
+or applied, because contract KB YAMLs key their methods on a dependency's
+PUBLIC re-export FQN, and rewriting it to an internal sub-package path would
+break KB matching for every consumer of that dependency when its source is
+present in the graph (dependency scan / mining).
 
-#### Scenario: Sibling file resolves a name through `__init__.py` re-export
+#### Scenario: Sibling file resolves a name through a sub-package `__init__.py` re-export
 
-- GIVEN `pkg/__init__.py` containing `from .mod import Cipher` and `pkg/mod.py` defining `Cipher`, and a sibling file `pkg/user.py` containing `from pkg import Cipher` and `Cipher().encrypt(data)`
-- WHEN the builder stitches package analyses for `pkg`
+- GIVEN `pkg/__init__.py` containing `from .mod import Cipher`, `pkg/mod/__init__.py` (a sub-package directory, package path `pkg.mod`) defining `Cipher`, and a sibling file `pkg/user.py` containing `from pkg import Cipher` and `Cipher().encrypt(data)`
+- WHEN the builder stitches package analyses for `pkg` (a project-local package, empty `Version`)
 - THEN the `Cipher` call site in `pkg/user.py` MUST resolve its FQN to `pkg.mod.Cipher`
-- Pinned by: `TestBuilder_InitPyReexport_SiblingResolution` in `internal/callgraph` builder test (package-style layout, mirroring pip-resolved dependency structure)
+- Pinned by: `TestBuilder_InitPyReexport_SiblingResolution` in `internal/callgraph/python_parser_reexport_test.go`
+
+#### Scenario: Flat-layout re-export needs no rewrite (already resolved)
+
+- GIVEN `pkg/__init__.py` containing `from .mod import Cipher` and a FLAT sibling file `pkg/mod.py` (same directory, package path `pkg`) defining `Cipher`, and a sibling file `pkg/user.py` containing `from pkg import Cipher` and `Cipher().encrypt(data)`
+- WHEN the builder stitches package analyses for `pkg`
+- THEN the `Cipher` call site in `pkg/user.py` MUST resolve its FQN to `pkg.Cipher` (unchanged — directory-keyed packaging already places `pkg/mod.py`'s declarations under `pkg`, so the rewrite gate's "original FQN not yet in graph" condition never holds and no rewrite occurs)
+- Pinned by: `TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved` in `internal/callgraph/python_parser_reexport_test.go`
 
 #### Scenario: Re-export propagation does not infer beyond the re-export statement
 
-- GIVEN `pkg/__init__.py` containing `from .mod import Cipher` and `pkg/mod.py` internally aliasing `Cipher = SomeOtherThing`
+- GIVEN `pkg/__init__.py` containing `from .mod import Cipher` and `pkg/mod/__init__.py` internally aliasing `Cipher = SomeOtherThing`
 - WHEN the builder stitches package analyses for `pkg`
 - THEN the re-export MUST resolve only the name binding (`pkg.Cipher` → `pkg.mod.Cipher`), and MUST NOT attempt to resolve `SomeOtherThing`'s own type
-- Pinned by: `TestBuilder_InitPyReexport_NoInferredType` in `internal/callgraph` builder test
+- Pinned by: `TestBuilder_InitPyReexport_NoInferredType` in `internal/callgraph/python_parser_reexport_test.go`
+
+#### Scenario: A non-project-local dependency's re-export is never applied
+
+- GIVEN a versioned dependency package `authlib` (non-empty `PackageDir.Version`) whose `authlib/jose/__init__.py` re-exports `JsonWebSignature` from a `.rfc7515` sub-package, and a project-local consumer file containing `from authlib.jose import JsonWebSignature` and `JsonWebSignature()`
+- WHEN the builder stitches package analyses across both the dependency and the project-local consumer
+- THEN the `JsonWebSignature` constructor callee MUST remain at its original, KB-keyed FQN (`authlib.jose.(JsonWebSignature).<init>`), never rewritten to the dependency's internal sub-package path
+- Pinned by: `TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency` in `internal/callgraph/python_parser_reexport_test.go`
 
 ### Requirement: Export schema and downstream semantics unchanged
 

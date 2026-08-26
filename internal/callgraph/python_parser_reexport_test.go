@@ -60,6 +60,47 @@ func TestBuilder_InitPyReexport_SiblingResolution(t *testing.T) {
 	}
 }
 
+// TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved proves that a FLAT
+// re-export target (a sibling file in the SAME directory as `__init__.py`,
+// not a sub-package) needs no rewrite at all: `FunctionID.Package` is keyed
+// at directory granularity, so `pkg/mod.py`'s declarations are already
+// filed under the same "pkg" package path that `from pkg import Cipher`
+// resolves to directly. This is a pinning test (no production code change),
+// documenting the gate's "no rewrite needed" branch and the spec/test drift
+// this fixture layout previously caused (the spec's own re-export scenario
+// text described a flat layout, but the only test exercising a real rewrite
+// used a sub-package layout — see the "Flat-layout re-export needs no
+// rewrite" spec scenario).
+func TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved(t *testing.T) {
+	root := t.TempDir()
+
+	writePythonReexportFixture(t, root, "__init__.py", "from .mod import Cipher\n")
+	writePythonReexportFixture(t, root, "mod.py",
+		"class Cipher:\n    def __init__(self):\n        pass\n\n    def encrypt(self, data):\n        pass\n")
+	writePythonReexportFixture(t, root, "user.py",
+		"from pkg import Cipher\n\n\ndef run(data):\n    Cipher().encrypt(data)\n")
+
+	graph, err := NewBuilderForEcosystem("python", NewPythonParser()).
+		BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "pkg"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	run, ok := graph.Functions[(FunctionID{Package: "pkg", Name: "run"}).String()]
+	if !ok {
+		t.Fatalf("expected a declared FunctionDecl for pkg.run, got none (keys: %v)", keysOf(graph.Functions))
+	}
+
+	ctor := findPythonCallByMethod(run, constructorMethodName)
+	if ctor == nil {
+		t.Fatalf("Cipher constructor call not found in run()'s calls")
+	}
+	want := FunctionID{Package: "pkg", Type: "Cipher", Name: constructorMethodName}
+	if ctor.Callee != want {
+		t.Errorf("Cipher() constructor callee = %+v, want %+v (flat-layout target is already under \"pkg\" — no rewrite should occur)", ctor.Callee, want)
+	}
+}
+
 // TestBuilder_InitPyReexport_NoInferredType proves re-export propagation
 // resolves only the NAME BINDING recorded verbatim in `__init__.py` — it
 // never chases the re-exported symbol's own internal aliasing inside the
