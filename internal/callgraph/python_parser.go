@@ -543,20 +543,78 @@ func firstIdentifierChild(node *sitter.Node) *sitter.Node {
 	return nil
 }
 
+// pythonComprehensionNodeTypes are the tree-sitter node types that introduce
+// their own binding scope for a `for ... in ...` clause: the comprehension's
+// loop target is visible only inside the comprehension, never in the
+// enclosing function scope (unlike an ordinary for_statement, whose target
+// leaks to the rest of the function per real Python semantics).
+var pythonComprehensionNodeTypes = map[string]bool{
+	"list_comprehension":       true,
+	"set_comprehension":        true,
+	"dictionary_comprehension": true,
+	"generator_expression":     true,
+}
+
+// collectPythonLocalVarsInNode walks a function body collecting every
+// syntactic binder EXCEPT comprehension `for_in_clause` targets, which are
+// intentionally excluded here (comprehension-local scoping is applied
+// separately, only for calls made inside the comprehension — see
+// pythonBindings.withComprehensionTargets).
 func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[string]bool) {
 	if node == nil {
 		return
 	}
-	if node.Type() == pythonNodeAssignment {
-		left := node.ChildByFieldName("left")
-		if left != nil && left.Type() == goNodeIdentifier {
-			locals[left.Content(src)] = true
+	switch node.Type() {
+	case pythonNodeAssignment, "augmented_assignment":
+		collectPythonAssignmentTargets(node.ChildByFieldName("left"), src, locals)
+	case "as_pattern":
+		// Covers both `with ... as X` and `except ... as X` — the alias
+		// target lives under the "alias" field as an as_pattern_target
+		// wrapping an identifier.
+		if aliasTarget := node.ChildByFieldName("alias"); aliasTarget != nil {
+			if ident := firstIdentifierChild(aliasTarget); ident != nil {
+				locals[ident.Content(src)] = true
+			}
 		}
-		// Also handle augmented assignments (+=, etc.)
+	case "for_statement":
+		// An ordinary for loop's target leaks into the enclosing function
+		// scope (unlike a comprehension's for_in_clause, handled separately).
+		collectPythonAssignmentTargets(node.ChildByFieldName("left"), src, locals)
+	case "named_expression":
+		// Walrus (`x := ...`) — its target also leaks to the enclosing
+		// scope in real Python semantics, even inside a comprehension.
+		if name := node.ChildByFieldName("name"); name != nil && name.Type() == goNodeIdentifier {
+			locals[name.Content(src)] = true
+		}
 	}
-	// Walk all children to catch assignments in nested blocks.
+	// Walk all children to catch binders in nested blocks.
 	for i := 0; i < int(node.ChildCount()); i++ {
 		collectPythonLocalVarsInNode(node.Child(i), src, locals)
+	}
+}
+
+// collectPythonAssignmentTargets records every identifier bound by an
+// assignment-style target: a plain identifier, or a pattern_list/
+// tuple_pattern/list_pattern of nested targets (arbitrarily deep, e.g.
+// `a, (b, *rest) = ...`), or a list_splat_pattern/dictionary_splat_pattern
+// (`*rest`, `**extra`). An attribute target (`self.attr = ...`) is
+// deliberately NOT recorded here — it is a class-scoped attribute binding,
+// handled separately by collectPythonClassAttrs.
+func collectPythonAssignmentTargets(target *sitter.Node, src []byte, locals map[string]bool) {
+	if target == nil {
+		return
+	}
+	switch target.Type() {
+	case goNodeIdentifier:
+		locals[target.Content(src)] = true
+	case "pattern_list", "tuple_pattern", "list_pattern":
+		for i := 0; i < int(target.ChildCount()); i++ {
+			collectPythonAssignmentTargets(target.Child(i), src, locals)
+		}
+	case "list_splat_pattern", "dictionary_splat_pattern":
+		if ident := firstIdentifierChild(target); ident != nil {
+			locals[ident.Content(src)] = true
+		}
 	}
 }
 
@@ -568,8 +626,46 @@ func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath stri
 		}
 	}
 
+	scoped := bindings
+	if pythonComprehensionNodeTypes[node.Type()] {
+		scoped = bindings.withComprehensionTargets(node, src)
+	}
+
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, bindings, calls)
+		p.walkForCalls(node.Child(i), src, filePath, analysis, scoped, calls)
+	}
+}
+
+// withComprehensionTargets returns a copy of b whose locals additionally
+// include every `for_in_clause` target declared directly in comprehension
+// (not inside a NESTED comprehension, which scopes itself independently when
+// the walker visits that nested node). The returned bindings must only be
+// used for the recursive walk INTO comprehension's subtree — the original b
+// is unchanged, so a same-named call outside the comprehension never sees
+// this binding.
+func (b pythonBindings) withComprehensionTargets(comprehension *sitter.Node, src []byte) pythonBindings {
+	scopedLocals := make(map[string]bool, len(b.locals))
+	for k, v := range b.locals {
+		scopedLocals[k] = v
+	}
+	collectPythonComprehensionTargets(comprehension, src, scopedLocals)
+	return pythonBindings{locals: scopedLocals, attrs: b.attrs}
+}
+
+// collectPythonComprehensionTargets records the for_in_clause target(s) that
+// belong directly to one comprehension node, stopping at any nested
+// comprehension boundary (a nested comprehension's own targets are scoped to
+// itself, applied when the walker visits that nested node instead).
+func collectPythonComprehensionTargets(node *sitter.Node, src []byte, locals map[string]bool) {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if pythonComprehensionNodeTypes[child.Type()] {
+			continue
+		}
+		if child.Type() == "for_in_clause" {
+			collectPythonAssignmentTargets(child.ChildByFieldName("left"), src, locals)
+		}
+		collectPythonComprehensionTargets(child, src, locals)
 	}
 }
 

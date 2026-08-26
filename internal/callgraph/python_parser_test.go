@@ -370,6 +370,192 @@ func TestPythonParser_ReceiverVar_Parameter(t *testing.T) {
 	}
 }
 
+// TestPythonParser_ReceiverVar_WithAs verifies that a `with ... as X` alias
+// binds X as a receiver identity.
+func TestPythonParser_ReceiverVar_WithAs(t *testing.T) {
+	src := `def use_cipher():
+    with Cipher() as c:
+        c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "use_cipher")
+	if fn == nil {
+		t.Fatal("use_cipher function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "c" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q", call.ReceiverVar, "c")
+	}
+}
+
+// TestPythonParser_ReceiverVar_AsyncWithAs verifies that `async with ... as X`
+// binds X exactly like the synchronous form (async is not a distinct grammar
+// node in this tree-sitter grammar).
+func TestPythonParser_ReceiverVar_AsyncWithAs(t *testing.T) {
+	src := `async def use_cipher():
+    async with AsyncCipher() as c:
+        await c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "use_cipher")
+	if fn == nil {
+		t.Fatal("use_cipher function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "c" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q", call.ReceiverVar, "c")
+	}
+}
+
+// TestPythonParser_ReceiverVar_ForIn verifies that `for X in ...:` binds X as
+// a receiver identity for calls made through it in the loop body.
+func TestPythonParser_ReceiverVar_ForIn(t *testing.T) {
+	src := `def derive_all(keys):
+    for k in keys:
+        k.derive(salt)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "derive_all")
+	if fn == nil {
+		t.Fatal("derive_all function not found")
+	}
+	call := findPythonCallByMethod(fn, "derive")
+	if call == nil {
+		t.Fatal("derive call not found")
+	}
+	if call.ReceiverVar != "k" {
+		t.Errorf("derive ReceiverVar = %q, want %q", call.ReceiverVar, "k")
+	}
+}
+
+// TestPythonParser_ReceiverVar_AsyncForIn verifies that `async for X in ...:`
+// binds X exactly like the synchronous form.
+func TestPythonParser_ReceiverVar_AsyncForIn(t *testing.T) {
+	src := `async def derive_all(akeys):
+    async for k in akeys:
+        await k.derive(salt)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "derive_all")
+	if fn == nil {
+		t.Fatal("derive_all function not found")
+	}
+	call := findPythonCallByMethod(fn, "derive")
+	if call == nil {
+		t.Fatal("derive call not found")
+	}
+	if call.ReceiverVar != "k" {
+		t.Errorf("derive ReceiverVar = %q, want %q", call.ReceiverVar, "k")
+	}
+}
+
+// TestPythonParser_ReceiverVar_ExceptAs verifies that `except ... as X` binds
+// X as a receiver identity for calls made through it in the handler body,
+// mirroring the with...as binder (both use the same as_pattern grammar node).
+func TestPythonParser_ReceiverVar_ExceptAs(t *testing.T) {
+	src := `def handle():
+    try:
+        risky()
+    except CryptoError as e:
+        e.close()
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "handle")
+	if fn == nil {
+		t.Fatal("handle function not found")
+	}
+	call := findPythonCallByMethod(fn, "close")
+	if call == nil {
+		t.Fatal("close call not found")
+	}
+	if call.ReceiverVar != "e" {
+		t.Errorf("close ReceiverVar = %q, want %q (except...as must resolve as a known local)", call.ReceiverVar, "e")
+	}
+}
+
+// TestPythonParser_ReceiverVar_Walrus verifies that a walrus (`:=`) binding
+// resolves as a receiver identity for calls made in the enclosing scope.
+func TestPythonParser_ReceiverVar_Walrus(t *testing.T) {
+	src := `def maybe_encrypt(data):
+    if (c := Cipher()) is not None:
+        c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "maybe_encrypt")
+	if fn == nil {
+		t.Fatal("maybe_encrypt function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "c" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q", call.ReceiverVar, "c")
+	}
+}
+
+// TestPythonParser_ReceiverVar_TupleUnpacking verifies that every target of a
+// tuple/star-unpacking assignment (`a, *rest = ...`) is registered as a known
+// local, so a call made through any of them resolves ReceiverVar.
+func TestPythonParser_ReceiverVar_TupleUnpacking(t *testing.T) {
+	src := `def make_first(rest_count):
+    a, *rest = make_ciphers()
+    a.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "make_first")
+	if fn == nil {
+		t.Fatal("make_first function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "a" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q", call.ReceiverVar, "a")
+	}
+}
+
+// TestPythonParser_ReceiverVar_ComprehensionTarget verifies that a
+// comprehension's `for X in ...` target resolves as a receiver identity for
+// calls made INSIDE the comprehension body, but does NOT leak outside the
+// comprehension's scope: a same-named bare call elsewhere in the function
+// (with no other binder for that name) must not be attributed to it.
+func TestPythonParser_ReceiverVar_ComprehensionTarget(t *testing.T) {
+	src := `def encrypt_all(ciphers):
+    results = [c.encrypt(x) for c in ciphers]
+    c.unrelated()
+    return results
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "encrypt_all")
+	if fn == nil {
+		t.Fatal("encrypt_all function not found")
+	}
+
+	inside := findPythonCallByMethod(fn, "encrypt")
+	if inside == nil {
+		t.Fatal("encrypt call (inside comprehension) not found")
+	}
+	if inside.ReceiverVar != "c" {
+		t.Errorf("encrypt ReceiverVar = %q, want %q (comprehension target must resolve inside its own scope)", inside.ReceiverVar, "c")
+	}
+
+	outside := findPythonCallByMethod(fn, "unrelated")
+	if outside == nil {
+		t.Fatal("unrelated call (outside comprehension) not found")
+	}
+	if outside.ReceiverVar != "" {
+		t.Errorf("unrelated ReceiverVar = %q, want empty (comprehension target must not leak outside its scope)", outside.ReceiverVar)
+	}
+}
+
 func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
 	dir := t.TempDir()
 	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...
