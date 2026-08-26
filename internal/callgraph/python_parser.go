@@ -29,6 +29,7 @@ const (
 	pythonNodeClassDefinition    = "class_definition"
 	pythonNodeListSplatPattern   = "list_splat_pattern"
 	pythonNodeDictSplatPattern   = "dictionary_splat_pattern"
+	pythonNodeParameters         = "parameters"
 	// pythonOwnerTypeModule is both the FunctionDecl.OwnerType value for a
 	// module-scoped function AND (not coincidentally — CPython's grammar
 	// names its root node the same way) the tree-sitter root node's own
@@ -223,7 +224,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	// collectPythonFilePrepass's doc comment for the scope-stack contract.
 	isInitPy := filepath.Base(filePath) == pythonInitPyFileName
 	prepass := &pythonFilePrepass{moduleLocals: make(map[string]bool)}
-	p.collectPythonFilePrepass(root, src, analysis, prepass, isInitPy, true, nil, false)
+	p.collectPythonFilePrepass(root, src, analysis, prepass, isInitPy, true, nil, false, nil)
 
 	// Extract function and class declarations, consuming the prepass tables.
 	p.extractDeclarations(root, src, filePath, packagePath, analysis, prepass)
@@ -287,19 +288,22 @@ type pythonClassScope struct {
 
 // pythonFilePrepass is the accumulated output of collectPythonFilePrepass's
 // single traversal: the module-level synthetic <module> entry point's
-// direct-scope locals table, plus one pythonClassScope per class_definition
-// node encountered, keyed by that node's StartByte (a cheap,
-// collision-free-within-one-parse-tree node identity — two distinct nodes
-// never start at the same byte offset). analysis.Imports/FromImports/
+// direct-scope locals table, one pythonClassScope per class_definition node
+// encountered, and one locals map per OUTERMOST function_definition node
+// encountered (a top-level function or a method — see
+// collectPythonFilePrepassFunc), each keyed by that node's StartByte (a
+// cheap, collision-free-within-one-parse-tree node identity — two distinct
+// nodes never start at the same byte offset). analysis.Imports/FromImports/
 // ImportedTypes/WildcardImports/PythonReExports are populated as a side
 // effect of the same traversal, not returned here.
 type pythonFilePrepass struct {
 	moduleLocals map[string]bool
 	classScopes  map[uint32]*pythonClassScope
+	funcLocals   map[uint32]map[string]bool
 }
 
 // collectPythonFilePrepass performs ONE full-file traversal, visiting every
-// node exactly once, that replaces what were previously four separate
+// node exactly once, that replaces what were previously several separate
 // tree walks: import/from-import discovery (recursing into the WHOLE file —
 // `try`/`except`, `if` TYPE_CHECKING guards, and function bodies are all in
 // scope, since Python permits imports anywhere a statement is valid),
@@ -307,10 +311,14 @@ type pythonFilePrepass struct {
 // entry point's direct-scope locals table (previously computed via an
 // UNPRUNED collectPythonBindings(root) call that walked into every nested
 // function/class body — the F3 nested-scope-leak bug, and the single
-// costliest redundant traversal in the pre-remediation profile), and every
+// costliest redundant traversal in the pre-remediation profile), every
 // class's self/cls attribute set (previously its own separate full-depth
 // walk per class, ALSO re-walking every method body a second time on top of
-// that method's own bindings/calls walks).
+// that method's own bindings/calls walks), AND every top-level
+// function's/method's own locals table (previously a THIRD full walk of
+// that SAME body via collectPythonBindings, run again later by
+// parseFunctionDef/extractCalls on nodes this same traversal had already
+// visited moments earlier for import-discovery purposes).
 //
 // Import/re-export discovery is intentionally UNPRUNED — the descent always
 // continues into every child regardless of scope. moduleDirect and each
@@ -330,27 +338,51 @@ type pythonFilePrepass struct {
 // recursively for one either way, so the nested scope's own entry is simply
 // unused — only the enclosing class's own (correctly unaffected) attrs are
 // ever consumed.
-func (p *PythonParser) collectPythonFilePrepass(node *sitter.Node, src []byte, analysis *FileAnalysis, prepass *pythonFilePrepass, isInitPy, moduleDirect bool, activeClass *pythonClassScope, classDirect bool) {
-	switch node.Symbol() {
-	case pythonSyms.importStatement:
+//
+// activeFunc mirrors activeClass but for function scope: entering a
+// function_definition while activeFunc is nil starts a BRAND NEW locals
+// bucket for it (see collectPythonFilePrepassFunc); entering one while
+// activeFunc is ALREADY non-nil (a closure nested inside another function)
+// does NOT start a new bucket — its binders keep flowing into the SAME
+// enclosing bucket, matching parseFunctionDef's existing unpruned
+// per-FunctionDecl scope (a nested closure's locals remain visible to calls
+// anywhere in the same enclosing FunctionDecl, and vice versa). Unlike
+// classDirect, function-scope locals collection is NEVER pruned within an
+// active function (matches walkForCalls's own fully-unpruned call
+// collection for a real FunctionDecl's body).
+func (p *PythonParser) collectPythonFilePrepass(node *sitter.Node, src []byte, analysis *FileAnalysis, prepass *pythonFilePrepass, isInitPy, moduleDirect bool, activeClass *pythonClassScope, classDirect bool, activeFunc map[string]bool) {
+	// node.Symbol() is a cgo call: read it ONCE per node (sym) rather than
+	// re-invoking it once per switch case — visited-node count dominates
+	// this walk's cost (every node in the file goes through this
+	// dispatch), so a repeated per-case cgo call here would multiply that
+	// cost several-fold across the whole traversal.
+	sym := node.Symbol()
+	switch {
+	case sym == pythonSyms.importStatement:
 		p.processImportStatement(node, src, analysis)
-	case pythonSyms.importFromStatement:
+	case sym == pythonSyms.importFromStatement:
 		p.processImportFromStatement(node, src, analysis)
 		if isInitPy {
 			p.recordPythonReExportsFromStatement(node, src, analysis)
 		}
-	case pythonSyms.classDefinition:
-		p.collectPythonFilePrepassClass(node, src, analysis, prepass, isInitPy)
+	case sym == pythonSyms.classDefinition:
+		p.collectPythonFilePrepassClass(node, src, analysis, prepass, isInitPy, activeFunc)
 		return
+	case sym == pythonSyms.functionDefinition && activeFunc == nil:
+		activeFunc = p.collectPythonFilePrepassFunc(node, src, prepass)
 	default:
-		recordPythonFilePrepassBinders(node, src, prepass, moduleDirect, activeClass, classDirect)
+		recordPythonFilePrepassBinders(node, sym, src, prepass, moduleDirect, activeClass, classDirect, activeFunc)
 	}
 
-	for i := 0; i < int(node.ChildCount()); i++ {
+	// ChildCount() is also a cgo call: cache it once per node rather than
+	// re-invoking it on every loop condition check (`i < node.ChildCount()`
+	// would otherwise call it N+1 times for N children).
+	childCount := int(node.ChildCount())
+	for i := 0; i < childCount; i++ {
 		child := node.Child(i)
 		pruned := isPythonPrunedDefinitionSymbol(child.Symbol())
 		p.collectPythonFilePrepass(child, src, analysis, prepass, isInitPy,
-			moduleDirect && !pruned, activeClass, classDirect && !pruned)
+			moduleDirect && !pruned, activeClass, classDirect && !pruned, activeFunc)
 	}
 }
 
@@ -359,38 +391,73 @@ func (p *PythonParser) collectPythonFilePrepass(node *sitter.Node, src []byte, a
 // (keyed by StartByte) and recurse into its children with that fresh scope
 // active. A class boundary always prunes the enclosing module's direct
 // scope, regardless of the moduleDirect/classDirect values node itself
-// inherited.
-func (p *PythonParser) collectPythonFilePrepassClass(node *sitter.Node, src []byte, analysis *FileAnalysis, prepass *pythonFilePrepass, isInitPy bool) {
+// inherited. activeFunc is threaded through unchanged: a class defined
+// INSIDE a function body (rare) has its methods' calls/locals swept into
+// the SAME enclosing function's bucket, matching walkForCalls's existing
+// fully-unpruned treatment of that case (processClass is never invoked for
+// such a class, so its own methods are never separately extracted either).
+func (p *PythonParser) collectPythonFilePrepassClass(node *sitter.Node, src []byte, analysis *FileAnalysis, prepass *pythonFilePrepass, isInitPy bool, activeFunc map[string]bool) {
 	scope := &pythonClassScope{attrs: make(map[string]bool), directLocals: make(map[string]bool)}
 	if prepass.classScopes == nil {
 		prepass.classScopes = make(map[uint32]*pythonClassScope)
 	}
 	prepass.classScopes[node.StartByte()] = scope
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.collectPythonFilePrepass(node.Child(i), src, analysis, prepass, isInitPy, false, scope, true)
+		p.collectPythonFilePrepass(node.Child(i), src, analysis, prepass, isInitPy, false, scope, true, activeFunc)
 	}
+}
+
+// collectPythonFilePrepassFunc handles the collectPythonFilePrepass
+// function_definition case for the OUTERMOST active function scope: register
+// a brand new locals bucket for node (keyed by StartByte), pre-populate it
+// with node's own declared parameter names (mirroring the removed
+// collectPythonBindings' param handling), and return it so the caller's
+// recursive descent threads it through as the active function scope.
+func (p *PythonParser) collectPythonFilePrepassFunc(node *sitter.Node, src []byte, prepass *pythonFilePrepass) map[string]bool {
+	locals := make(map[string]bool)
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == pythonNodeParameters {
+			for _, name := range pythonParameterNames(child, src) {
+				locals[name] = true
+			}
+			break
+		}
+	}
+	if prepass.funcLocals == nil {
+		prepass.funcLocals = make(map[uint32]map[string]bool)
+	}
+	prepass.funcLocals[node.StartByte()] = locals
+	return locals
 }
 
 // recordPythonFilePrepassBinders applies collectPythonFilePrepass's binder
 // detection for one non-import, non-class-definition node: module-direct
 // locals (moduleDirect-gated), the active class's self/cls attribute set
-// (always active within the class, at any depth), and the active class's own
-// direct-body locals (classDirect-gated). See collectPythonFilePrepass's doc
-// comment for the full scope-stack contract.
-func recordPythonFilePrepassBinders(node *sitter.Node, src []byte, prepass *pythonFilePrepass, moduleDirect bool, activeClass *pythonClassScope, classDirect bool) {
+// (always active within the class, at any depth), the active class's own
+// direct-body locals (classDirect-gated), and the active function's own
+// locals (always active within a function, at any depth — see
+// collectPythonFilePrepass's activeFunc doc). See collectPythonFilePrepass's
+// doc comment for the full scope-stack contract. sym is node.Symbol(),
+// precomputed once by the caller's switch dispatch and threaded through
+// here (and into every recordPythonBinderNode call below) so this node's
+// symbol is never re-fetched via another cgo call.
+func recordPythonFilePrepassBinders(node *sitter.Node, sym sitter.Symbol, src []byte, prepass *pythonFilePrepass, moduleDirect bool, activeClass *pythonClassScope, classDirect bool, activeFunc map[string]bool) {
 	if moduleDirect {
-		recordPythonBinderNode(node, src, prepass.moduleLocals)
+		recordPythonBinderNode(node, sym, src, prepass.moduleLocals)
+	}
+	if activeFunc != nil {
+		recordPythonBinderNode(node, sym, src, activeFunc)
 	}
 	if activeClass == nil {
 		return
 	}
-	if node.Symbol() == pythonSyms.assignment {
+	if sym == pythonSyms.assignment {
 		if attr, ok := pythonSelfOrClsAttrTarget(node.ChildByFieldName("left"), src); ok {
 			activeClass.attrs[attr] = true
 		}
 	}
 	if classDirect {
-		recordPythonBinderNode(node, src, activeClass.directLocals)
+		recordPythonBinderNode(node, sym, src, activeClass.directLocals)
 	}
 }
 
@@ -566,7 +633,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 		child := root.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil, prepass)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
@@ -652,7 +719,13 @@ func pythonModuleDottedPathStem(filePath string) string {
 
 // parseFunctionDef parses a function_definition node into a FunctionDecl.
 // attrs is the enclosing class's attribute set (nil outside a class).
-func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool) *FunctionDecl {
+// prepass is the whole-file pre-pass output; node's own locals (parameters
+// plus every binder found anywhere in its body, including nested closures —
+// see collectPythonFilePrepassFunc) were already computed by
+// collectPythonFilePrepass in the SAME earlier traversal that also found
+// this node, and are looked up here by node identity (StartByte), not
+// recomputed.
+func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool, prepass *pythonFilePrepass) *FunctionDecl {
 	var name string
 	var body *sitter.Node
 	var paramNode *sitter.Node
@@ -662,7 +735,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		switch child.Type() {
 		case goNodeIdentifier:
 			name = child.Content(src)
-		case "parameters":
+		case pythonNodeParameters:
 			paramNode = child
 		case goNodeBlock:
 			body = child
@@ -713,7 +786,8 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, paramNode, src, filePath, analysis, attrs)
+		bindings := pythonBindings{locals: prepass.funcLocals[node.StartByte()], attrs: attrs}
+		decl.Calls = p.extractCalls(body, src, filePath, analysis, bindings)
 	}
 
 	return decl
@@ -758,7 +832,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	}
 
 	// Walk class body for method definitions.
-	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs)
+	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, prepass)
 
 	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, directLocals); clinit != nil {
 		analysis.Functions = append(analysis.Functions, *clinit)
@@ -814,18 +888,18 @@ func extractPythonBaseClassNames(argListNode *sitter.Node, src []byte) []string 
 
 // extractClassMethods extracts method declarations from a class body node.
 // attrs is the class's shared self/cls attribute set, collected once by processClass.
-func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool) {
+func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool, prepass *pythonFilePrepass) {
 	for i := 0; i < int(body.ChildCount()); i++ {
 		child := body.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, className, analysis, attrs)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, className, analysis, attrs, prepass)
 			if decl != nil {
 				decl.OwnerBases = bases
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case "decorated_definition":
-			p.extractDecoratedMethod(child, src, filePath, packagePath, className, bases, analysis, attrs)
+			p.extractDecoratedMethod(child, src, filePath, packagePath, className, bases, analysis, attrs, prepass)
 		}
 	}
 }
@@ -833,13 +907,13 @@ func (p *PythonParser) extractClassMethods(body *sitter.Node, src []byte, filePa
 // extractDecoratedMethod extracts a method from a decorated_definition within a class.
 // bases are the direct superclass names of className, propagated from processClass.
 // attrs is the class's shared self/cls attribute set.
-func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool) {
+func (p *PythonParser) extractDecoratedMethod(node *sitter.Node, src []byte, filePath, packagePath, className string, bases []string, analysis *FileAnalysis, attrs map[string]bool, prepass *pythonFilePrepass) {
 	for j := 0; j < int(node.ChildCount()); j++ {
 		inner := node.Child(j)
 		if inner.Type() != pythonNodeFunctionDefinition {
 			continue
 		}
-		decl := p.parseFunctionDef(inner, src, filePath, packagePath, className, analysis, attrs)
+		decl := p.parseFunctionDef(inner, src, filePath, packagePath, className, analysis, attrs, prepass)
 		if decl != nil {
 			decl.OwnerBases = bases
 			analysis.Functions = append(analysis.Functions, *decl)
@@ -853,7 +927,7 @@ func (p *PythonParser) processDecorated(node *sitter.Node, src []byte, filePath,
 		child := node.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil)
+			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil, prepass)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
@@ -950,38 +1024,14 @@ func pythonSelfOrClsAttr(object string) (attr string, ok bool) {
 	return "", false
 }
 
-// collectPythonBindings builds the per-scope binding table for one function
-// body: local variable names from every syntactic binder plus declared
-// parameters. attrs is the enclosing class's attribute set (nil outside a
-// class, or for module-level/free functions).
-func collectPythonBindings(body, params *sitter.Node, src []byte, attrs map[string]bool) pythonBindings {
-	locals := collectPythonLocalVars(body, src)
-	for _, name := range pythonParameterNames(params, src) {
-		locals[name] = true
-	}
-	return pythonBindings{locals: locals, attrs: attrs}
-}
-
-// extractCalls walks a function body to find all call expressions, collecting
-// local variable assignments and parameter names first so ReceiverVar can be
-// attributed correctly. paramNode is the function's "parameters" node (nil
-// for calls made outside any function, e.g. module/class-body synthetic decls).
-// attrs is the enclosing class's attribute set (nil outside a class).
-func (p *PythonParser) extractCalls(body, paramNode *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, attrs map[string]bool) []FunctionCall {
-	bindings := collectPythonBindings(body, paramNode, src, attrs)
-
+// extractCalls walks a function body to find all call expressions. bindings
+// (locals + attrs) is precomputed once per function/method by
+// collectPythonFilePrepass/collectPythonFilePrepassFunc — see
+// parseFunctionDef, which is this function's only caller.
+func (p *PythonParser) extractCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings) []FunctionCall {
 	var calls []FunctionCall
 	p.walkForCalls(body, src, filePath, analysis, bindings, &calls)
 	return calls
-}
-
-// collectPythonLocalVars scans a function body for assignment targets to
-// populate the set of known local variable names. This is used to distinguish
-// receiver variables from module or type names.
-func collectPythonLocalVars(body *sitter.Node, src []byte) map[string]bool {
-	locals := make(map[string]bool)
-	collectPythonLocalVarsInNode(body, src, locals)
-	return locals
 }
 
 // pythonParameterNames returns every bound parameter name declared in a
@@ -1063,8 +1113,8 @@ func isPythonComprehensionSymbol(sym sitter.Symbol) bool {
 // per-function UNPRUNED walk) and collectPythonFilePrepass (the file-wide
 // PRUNED module/class-direct-scope walk) so both use the SAME
 // symbol-dispatched binder detection.
-func recordPythonBinderNode(node *sitter.Node, src []byte, locals map[string]bool) {
-	switch node.Symbol() {
+func recordPythonBinderNode(node *sitter.Node, sym sitter.Symbol, src []byte, locals map[string]bool) {
+	switch sym {
 	case pythonSyms.assignment, pythonSyms.augmentedAssignment:
 		collectPythonAssignmentTargets(node.ChildByFieldName("left"), src, locals)
 	case pythonSyms.asPattern:
@@ -1079,26 +1129,6 @@ func recordPythonBinderNode(node *sitter.Node, src []byte, locals map[string]boo
 		if name := node.ChildByFieldName("name"); name != nil && name.Symbol() == pythonSyms.identifier {
 			locals[name.Content(src)] = true
 		}
-	}
-}
-
-// collectPythonLocalVarsInNode walks a function body collecting every
-// syntactic binder EXCEPT comprehension `for_in_clause` targets, which are
-// intentionally excluded here (comprehension-local scoping is applied
-// separately, only for calls made inside the comprehension — see
-// pythonBindings.withComprehensionTargets). UNPRUNED: recurses into every
-// nested block, including a nested function/class body, matching this
-// function's existing per-FunctionDecl scope (a nested closure's locals
-// remain visible to calls made anywhere in the same enclosing FunctionDecl —
-// unlike the module/class-body-direct scopes, which prune at these same
-// boundaries; see collectPythonFilePrepass and F3).
-func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[string]bool) {
-	if node == nil {
-		return
-	}
-	recordPythonBinderNode(node, src, locals)
-	for i := 0; i < int(node.ChildCount()); i++ {
-		collectPythonLocalVarsInNode(node.Child(i), src, locals)
 	}
 }
 
@@ -1141,7 +1171,8 @@ func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath stri
 		scoped = bindings.withComprehensionTargets(node, src)
 	}
 
-	for i := 0; i < int(node.ChildCount()); i++ {
+	childCount := int(node.ChildCount())
+	for i := 0; i < childCount; i++ {
 		p.walkForCalls(node.Child(i), src, filePath, analysis, scoped, calls)
 	}
 }
@@ -1189,7 +1220,8 @@ func (p *PythonParser) walkPrunedForCalls(node *sitter.Node, src []byte, filePat
 		scoped = bindings.withComprehensionTargets(node, src)
 	}
 
-	for i := 0; i < int(node.ChildCount()); i++ {
+	childCount := int(node.ChildCount())
+	for i := 0; i < childCount; i++ {
 		child := node.Child(i)
 		if isPythonPrunedDefinitionSymbol(child.Symbol()) {
 			continue
