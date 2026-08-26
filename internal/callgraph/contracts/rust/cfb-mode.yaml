@@ -1,0 +1,140 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: cfb-mode
+  coordinates:
+    - cfb-mode
+  version_range: ">=0.8.0,<0.10.0"
+  description: "RustCrypto Cipher Feedback (CFB) block cipher mode with full block feedback"
+
+# API read at cfb-mode 0.8.2 and re-checked at 0.9.1: src/lib.rs:66-67 exports
+# `Decryptor`/`BufDecryptor` and `Encryptor`/`BufEncryptor`. Like `cbc`, the
+# crate defines the mode types but takes its methods from the re-exported
+# `cipher` crate, so the declared signatures come from there:
+#   * `KeyIvInit::new`/`new_from_slices` (crypto-common 0.1.6 src/lib.rs:149-155).
+#   * `AsyncStreamCipher::encrypt`/`decrypt`/`encrypt_b2b`/`decrypt_b2b`
+#     (cipher 0.4.4 src/stream.rs:45,53,61,69).
+#
+# The version_range stops at 0.8.0 deliberately. cfb-mode 0.7.1 and earlier
+# expose one `Cfb<C>` type instead (verified at 0.1.0, 0.6.0, 0.7.0 and 0.7.1),
+# so those releases are a different API and are not covered by these keys; the
+# detection rules carry that older spelling separately.
+#
+# IV width is not stated as a constant: `type IvSize = C::BlockSize`
+# (cfb-mode 0.8.2 src/encrypt.rs:120), so it is the inner cipher's block size and
+# is derived from the argument. The concrete cipher is a generic type argument
+# that the parser strips from the callee identity, so it never reaches this key.
+
+contracts:
+  - method: cfb_mode::Encryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cfb_mode::Encryptor>", "&cipher::Iv<cfb_mode::Encryptor>"]
+    canonical_return_type: cfb_mode::Encryptor
+    return: {type: cfb_mode::Encryptor, confidence: high}
+    role: factory
+    parameters: &key_iv
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+  - method: cfb_mode::Decryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cfb_mode::Decryptor>", "&cipher::Iv<cfb_mode::Decryptor>"]
+    canonical_return_type: cfb_mode::Decryptor
+    return: {type: cfb_mode::Decryptor, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: cfb_mode::BufEncryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cfb_mode::BufEncryptor>", "&cipher::Iv<cfb_mode::BufEncryptor>"]
+    canonical_return_type: cfb_mode::BufEncryptor
+    return: {type: cfb_mode::BufEncryptor, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: cfb_mode::BufDecryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cfb_mode::BufDecryptor>", "&cipher::Iv<cfb_mode::BufDecryptor>"]
+    canonical_return_type: cfb_mode::BufDecryptor
+    return: {type: cfb_mode::BufDecryptor, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: cfb_mode::Encryptor.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<cfb_mode::Encryptor, cipher::InvalidLength>"
+    return: {type: cfb_mode::Encryptor, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: cfb_mode::Decryptor.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<cfb_mode::Decryptor, cipher::InvalidLength>"
+    return: {type: cfb_mode::Decryptor, confidence: high}
+    role: factory
+    parameters: *key_iv
+
+  - method: cfb_mode::Encryptor.encrypt
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: cfb_mode::Decryptor.decrypt
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: cfb_mode::Encryptor.encrypt_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::inout::NotEqualError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: in_buf
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: out_buf
+        role: none
+  - method: cfb_mode::Decryptor.decrypt_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::inout::NotEqualError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: in_buf
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+      - index: 1
+        name: out_buf
+        role: none
+
+hierarchy:
+  cfb_mode::Encryptor:
+    - core::any::Any
+  cfb_mode::Decryptor:
+    - core::any::Any
+  cfb_mode::BufEncryptor:
+    - core::any::Any
+  cfb_mode::BufDecryptor:
+    - core::any::Any
+  core::any::Any: []

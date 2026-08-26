@@ -1,0 +1,150 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: cbc
+  coordinates:
+    - cbc
+  version_range: ">=0.1.0,<0.3.0"
+  description: "RustCrypto Cipher Block Chaining (CBC) block cipher mode"
+
+# API read at cbc 0.1.2 and re-checked at 0.2.1: src/lib.rs exports only
+# `Decryptor` and `Encryptor`, and the crate defines no inherent methods. Every
+# method a consumer calls is a trait impl from the re-exported `cipher` crate,
+# so the declared signatures below come from that crate:
+#   * `KeyIvInit::new(key: &Key<Self>, iv: &Iv<Self>) -> Self` and
+#     `new_from_slices(key: &[u8], iv: &[u8]) -> Result<Self, InvalidLength>`
+#     (crypto-common 0.1.6 src/lib.rs:149-155, re-exported by cipher 0.4).
+#   * The padded block operations (cipher 0.4.4 src/block.rs:400,415,521,536).
+#
+# The parser strips turbofish type arguments from the callee identity, so
+# `cbc::Encryptor::<Aes128>::new(..)` and the imported `Encryptor::<Aes128>::new(..)`
+# both resolve to `cbc::Encryptor.new`; the concrete cipher is a generic type
+# argument and never reaches this key. IV width is therefore not stated here as
+# a constant: `impl IvSizeUser for Encryptor<C>` sets `type IvSize = C::BlockSize`
+# (cbc 0.1.2 src/encrypt.rs:49-53), so it is the inner cipher's block size and is
+# derived from the argument instead.
+# cbc 0.0.0 is a name-reservation release with an empty lib.rs and no API.
+
+contracts:
+  - method: cbc::Encryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cbc::Encryptor>", "&cipher::Iv<cbc::Encryptor>"]
+    canonical_return_type: cbc::Encryptor
+    return: {type: cbc::Encryptor, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+  - method: cbc::Encryptor.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<cbc::Encryptor, cipher::InvalidLength>"
+    return: {type: cbc::Encryptor, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+  - method: cbc::Decryptor.new
+    arity: 2
+    parameter_types: ["&cipher::Key<cbc::Decryptor>", "&cipher::Iv<cbc::Decryptor>"]
+    canonical_return_type: cbc::Decryptor
+    return: {type: cbc::Decryptor, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+  - method: cbc::Decryptor.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<cbc::Decryptor, cipher::InvalidLength>"
+    return: {type: cbc::Decryptor, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+
+  - method: cbc::Encryptor.encrypt_padded_mut
+    arity: 2
+    parameter_types: ["&mut [u8]", "usize"]
+    canonical_return_type: "core::result::Result<&[u8], cipher::block_padding::PadError>"
+    return: {type: "&[u8]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: msg_len
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: cbc::Encryptor.encrypt_padded_b2b_mut
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    canonical_return_type: "core::result::Result<&[u8], cipher::block_padding::PadError>"
+    return: {type: "&[u8]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: out_buf
+        role: none
+  - method: cbc::Decryptor.decrypt_padded_mut
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<&[u8], cipher::block_padding::UnpadError>"
+    return: {type: "&[u8]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: cbc::Decryptor.decrypt_padded_b2b_mut
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    canonical_return_type: "core::result::Result<&[u8], cipher::block_padding::UnpadError>"
+    return: {type: "&[u8]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: in_buf
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+      - index: 1
+        name: out_buf
+        role: none
+
+hierarchy:
+  cbc::Encryptor:
+    - core::any::Any
+  cbc::Decryptor:
+    - core::any::Any
+  core::any::Any: []
