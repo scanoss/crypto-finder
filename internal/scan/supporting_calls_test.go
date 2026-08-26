@@ -172,6 +172,26 @@ func TestDeriveObjectLifecycleCalls_KeepsReceiverSetupWhenOperationResultIsUsed(
 	}
 }
 
+// TestDeriveObjectLifecycleCalls_ParameterReceiver covers a Python parameter
+// object: the terminal call and a prior setup call are both invoked on the
+// same function parameter (ReceiverVar), so the setup call must be grouped
+// as a supporting call for the terminal.
+func TestDeriveObjectLifecycleCalls_ParameterReceiver(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Name: "set_key"}, ReceiverVar: "cipher", Line: 2},
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "cipher", Line: 3},
+		},
+	}
+	terminal := &fn.Calls[1] // encrypt
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, terminal))
+	want := []string{"set_key"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
 // TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls pins that a
 // reassigned variable does not merge two objects into one lifecycle. It mirrors
 // how a Java client wraps a plain socket in TLS:

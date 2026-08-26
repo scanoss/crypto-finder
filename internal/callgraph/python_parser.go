@@ -25,7 +25,10 @@ const (
 	pythonNodeAssignment         = "assignment"
 	pythonNodeCall               = "call"
 	pythonNodeArgumentList       = "argument_list"
+	pythonNodeAliasedImport      = "aliased_import"
+	pythonOwnerTypeModule        = "module"
 	pythonSelfObjectName         = "self"
+	pythonClsObjectName          = "cls"
 	pythonInitMethodName         = "__init__"
 )
 
@@ -160,7 +163,7 @@ func (p *PythonParser) processImportStatement(node *sitter.Node, src []byte, ana
 			// Use the first component as the alias
 			parts := strings.Split(name, ".")
 			analysis.Imports[parts[0]] = name
-		case "aliased_import":
+		case pythonNodeAliasedImport:
 			// `import hashlib as hl`
 			var module, alias string
 			for j := 0; j < int(child.ChildCount()); j++ {
@@ -251,7 +254,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 			name = child.Content(src)
 		case "parameters":
 			paramNode = child
-		case "block":
+		case goNodeBlock:
 			body = child
 		}
 	}
@@ -271,7 +274,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		funcName = constructorMethodName
 	}
 
-	ownerType := "module"
+	ownerType := pythonOwnerTypeModule
 	ownerName := packagePath
 	functionType := "function"
 	if className != "" {
@@ -300,7 +303,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	}
 
 	if body != nil {
-		decl.Calls = p.extractCalls(body, src, filePath, analysis)
+		decl.Calls = p.extractCalls(body, paramNode, src, filePath, analysis, nil)
 	}
 
 	return decl
@@ -320,7 +323,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 		case pythonNodeArgumentList:
 			// class Foo(Base1, Base2): the argument_list holds the superclass names.
 			bases = extractPythonBaseClassNames(child, src)
-		case "block":
+		case goNodeBlock:
 			body = child
 		}
 	}
@@ -401,14 +404,86 @@ func (p *PythonParser) processDecorated(node *sitter.Node, src []byte, filePath,
 	}
 }
 
+// pythonBindings is the per-scope answer to "can this receiver text be an
+// object identity?". It combines every syntactic binder in the current
+// function body (locals: parameters, assignment targets, with/for/except-as
+// targets, walrus, unpacking, comprehension targets) with the enclosing
+// class's attribute set (attrs: literal `self.<attr>`/`cls.<attr>` names
+// assigned anywhere in the class body), so receiverIdentity can answer for
+// both plain-name and self/cls-attribute receivers.
+type pythonBindings struct {
+	locals map[string]bool // parameters + all binder forms in this body
+	attrs  map[string]bool // class-scoped attribute names (canonical, no prefix)
+}
+
+// receiverIdentity resolves the receiver text of an attribute call to a
+// stable object identity, or "" when it is not an object (a module, a type
+// constructor, or a call-expression result). Check order is load-bearing:
+// objectIsCall -> import -> self/cls bare -> CapitalCase type name ->
+// attribute set -> locals. Imports must stay ahead of locals so an
+// import-name receiver is never masked by a same-named parameter
+// (TestPythonParser_ModuleCall_NoReceiverVar).
+func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analysis *FileAnalysis) string {
+	if objectIsCall || object == "" {
+		return ""
+	}
+	if _, isImport := analysis.Imports[object]; isImport {
+		return ""
+	}
+	if object == pythonSelfObjectName || object == pythonClsObjectName {
+		// A bare self/cls receiver names the enclosing instance/class itself,
+		// never a crypto object.
+		return ""
+	}
+	if looksLikePythonTypeName(object) {
+		return ""
+	}
+	if attr, ok := pythonSelfOrClsAttr(object); ok && b.attrs[attr] {
+		return pythonSelfObjectName + "." + attr
+	}
+	if b.locals[object] {
+		return object
+	}
+	return ""
+}
+
+// pythonSelfOrClsAttr splits a receiver text of the shape "self.attr" or
+// "cls.attr" into its attribute name. Returns ok=false for any other shape
+// (bare names, multi-level chains, module-qualified paths).
+func pythonSelfOrClsAttr(object string) (attr string, ok bool) {
+	for _, prefix := range [...]string{pythonSelfObjectName + ".", pythonClsObjectName + "."} {
+		if strings.HasPrefix(object, prefix) {
+			rest := object[len(prefix):]
+			if rest != "" && !strings.Contains(rest, ".") {
+				return rest, true
+			}
+		}
+	}
+	return "", false
+}
+
+// collectPythonBindings builds the per-scope binding table for one function
+// body: local variable names from every syntactic binder plus declared
+// parameters. attrs is the enclosing class's attribute set (nil outside a
+// class, or for module-level/free functions).
+func collectPythonBindings(body, params *sitter.Node, src []byte, attrs map[string]bool) pythonBindings {
+	locals := collectPythonLocalVars(body, src)
+	for _, name := range pythonParameterNames(params, src) {
+		locals[name] = true
+	}
+	return pythonBindings{locals: locals, attrs: attrs}
+}
+
 // extractCalls walks a function body to find all call expressions, collecting
-// local variable assignments first so ReceiverVar can be attributed correctly.
-func (p *PythonParser) extractCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) []FunctionCall {
-	// Build the set of local variable names from assignment statements in this body.
-	localVars := collectPythonLocalVars(body, src)
+// local variable assignments and parameter names first so ReceiverVar can be
+// attributed correctly. paramNode is the function's "parameters" node (nil
+// for calls made outside any function, e.g. module/class-body synthetic decls).
+// attrs is the enclosing class's attribute set (nil outside a class).
+func (p *PythonParser) extractCalls(body, paramNode *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, attrs map[string]bool) []FunctionCall {
+	bindings := collectPythonBindings(body, paramNode, src, attrs)
 
 	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, localVars, &calls)
+	p.walkForCalls(body, src, filePath, analysis, bindings, &calls)
 	return calls
 }
 
@@ -419,6 +494,53 @@ func collectPythonLocalVars(body *sitter.Node, src []byte) map[string]bool {
 	locals := make(map[string]bool)
 	collectPythonLocalVarsInNode(body, src, locals)
 	return locals
+}
+
+// pythonParameterNames returns every bound parameter name declared in a
+// function/method "parameters" node: plain identifiers, typed parameters
+// (`b: int`), default parameters (`c=1`), typed-default parameters
+// (`d: int = 2`), and star/kwarg splat parameters (`*args`, `**kwargs`). The
+// bare `/` and `*` positional/keyword-only separators carry no identifier and
+// are skipped. self/cls ARE recorded here (they are still legitimate local
+// names): pythonBindings.receiverIdentity is what refuses to ever return them
+// as a receiver identity, via its self/cls bare-name check.
+func pythonParameterNames(params *sitter.Node, src []byte) []string {
+	if params == nil {
+		return nil
+	}
+	var names []string
+	for i := 0; i < int(params.ChildCount()); i++ {
+		child := params.Child(i)
+		var identNode *sitter.Node
+		switch child.Type() {
+		case goNodeIdentifier:
+			identNode = child
+		case "typed_parameter", "default_parameter", "typed_default_parameter",
+			"list_splat_pattern", "dictionary_splat_pattern":
+			identNode = firstIdentifierChild(child)
+		default:
+			// "/" and "*" separator tokens, punctuation — no identifier to bind.
+			continue
+		}
+		if identNode == nil {
+			continue
+		}
+		names = append(names, identNode.Content(src))
+	}
+	return names
+}
+
+// firstIdentifierChild returns the first direct child of node whose type is
+// "identifier". Splat parameters (*args, **kwargs) carry their star token(s)
+// as an earlier anonymous child, so this looks past them rather than
+// assuming index 0.
+func firstIdentifierChild(node *sitter.Node) *sitter.Node {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == goNodeIdentifier {
+			return child
+		}
+	}
+	return nil
 }
 
 func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[string]bool) {
@@ -438,21 +560,21 @@ func collectPythonLocalVarsInNode(node *sitter.Node, src []byte, locals map[stri
 	}
 }
 
-func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool, calls *[]FunctionCall) {
+func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, calls *[]FunctionCall) {
 	if node.Type() == pythonNodeCall {
-		if call := p.parseCallExpr(node, src, filePath, analysis, localVars); call != nil {
+		if call := p.parseCallExpr(node, src, filePath, analysis, bindings); call != nil {
 			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, localVars, calls)
+		p.walkForCalls(node.Child(i), src, filePath, analysis, bindings, calls)
 	}
 }
 
 // parseCallExpr parses a call expression into a FunctionCall.
-func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, localVars map[string]bool) *FunctionCall {
+func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings) *FunctionCall {
 	if node.ChildCount() == 0 {
 		return nil
 	}
@@ -514,7 +636,7 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		}
 	case pythonNodeAttribute:
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
-		return p.parseAttributeCall(funcNode, src, filePath, line, startCol, endCol, args, analysis, localVars, chainID, assignedVar)
+		return p.parseAttributeCall(funcNode, src, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
 	}
 
 	return nil
@@ -533,7 +655,7 @@ func looksLikePythonTypeName(name string) bool {
 // or chained calls like `Cipher(a,b).encryptor().update(data)`.
 // startCol and endCol are the 1-based column span of the FULL call expression node
 // (not just the attribute node), matching the Java parser's convention.
-func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, localVars map[string]bool, chainID, assignedVar string) *FunctionCall {
+func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, bindings pythonBindings, chainID, assignedVar string) *FunctionCall {
 	var object, method string
 	objectIsCall := false
 
@@ -579,9 +701,10 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		}
 	}
 
-	// Determine ReceiverVar: only when object is a simple local variable (not a
-	// module import, not a type name, and not itself a call expression result).
-	receiverVar := pythonReceiverVarName(object, objectIsCall, analysis, localVars)
+	// Determine ReceiverVar: only when object resolves to a known object
+	// identity (a local/parameter, or a self/cls-attribute), never a module
+	// import, a type name, or a call expression result.
+	receiverVar := bindings.receiverIdentity(object, objectIsCall, analysis)
 
 	// Try to resolve through imports when the object is not itself a call result.
 	if !objectIsCall {
@@ -658,28 +781,6 @@ func resolveImportedCall(object, method, raw, filePath string, line, startCol, e
 	}
 
 	return nil
-}
-
-// pythonReceiverVarName returns the receiver variable name when the object of a
-// method call is a known local variable. Returns "" for module imports, type
-// names (CapitalCase), or call expression results.
-func pythonReceiverVarName(object string, objectIsCall bool, analysis *FileAnalysis, localVars map[string]bool) string {
-	if objectIsCall || object == "" || object == pythonSelfObjectName {
-		return ""
-	}
-	// Module import — not a receiver variable.
-	if _, isImport := analysis.Imports[object]; isImport {
-		return ""
-	}
-	// Type name (CapitalCase) — not a receiver variable.
-	if looksLikePythonTypeName(object) {
-		return ""
-	}
-	// Must be a known local variable.
-	if localVars[object] {
-		return object
-	}
-	return ""
 }
 
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {

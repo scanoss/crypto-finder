@@ -1,0 +1,42 @@
+change: python-parser-java-parity
+created: 2026-08-26
+artifact_store: hybrid
+execution_mode: auto
+delivery_strategy: exception-ok
+review_budget_lines: unlimited
+strict_tdd: true
+phases:
+  explore:
+    status: done
+    artifact: explore.md
+    engram_topic: sdd/python-parser-java-parity/explore
+    engram_id: 981
+  proposal:
+    status: done
+    artifact: proposal.md
+    engram_topic: sdd/python-parser-java-parity/proposal
+  spec:
+    status: done
+    artifact: specs/python-callgraph-binding-resolution/spec.md
+    engram_topic: sdd/python-parser-java-parity/spec
+    reconciled_with_design: true
+  design:
+    status: done
+    artifact: design.md
+    engram_topic: sdd/python-parser-java-parity/design
+    validated: true
+    validated_on: 2026-08-26
+  tasks:
+    status: done
+    artifact: tasks.md
+    engram_topic: sdd/python-parser-java-parity/tasks
+  apply:
+    status: pending
+  verify:
+    status: pending
+  archive:
+    status: pending
+baseline:
+  tests_run: 2026-08-26
+  callgraph_python: pass
+  scan: pass

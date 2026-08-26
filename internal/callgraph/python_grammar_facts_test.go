@@ -315,7 +315,7 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 			t.Fatal("import_from_statement not found")
 		}
 		nameField := stmt.ChildByFieldName("name")
-		if nameField == nil || nameField.Type() != "aliased_import" {
+		if nameField == nil || nameField.Type() != pythonNodeAliasedImport {
 			t.Fatalf("import_from_statement name field = %v, want aliased_import", nameField)
 		}
 		dotted := nameField.ChildByFieldName("name")
@@ -335,7 +335,7 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 			t.Fatal("import_statement not found")
 		}
 		nameField := stmt.ChildByFieldName("name")
-		if nameField == nil || nameField.Type() != "aliased_import" {
+		if nameField == nil || nameField.Type() != pythonNodeAliasedImport {
 			t.Fatalf("import_statement name field = %v, want aliased_import", nameField)
 		}
 		alias := nameField.ChildByFieldName("alias")

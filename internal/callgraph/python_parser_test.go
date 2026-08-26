@@ -348,6 +348,28 @@ def encrypt(key, data):
 	}
 }
 
+// TestPythonParser_ReceiverVar_Parameter verifies that a function/method
+// parameter name resolves as ReceiverVar on a call made through it, mirroring
+// Java's collectParameterTypes/collectParameterOrigins coverage.
+func TestPythonParser_ReceiverVar_Parameter(t *testing.T) {
+	src := `def encrypt(cipher):
+    cipher.update(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "encrypt")
+	if fn == nil {
+		t.Fatal("encrypt function not found")
+	}
+
+	call := findPythonCallByMethod(fn, "update")
+	if call == nil {
+		t.Fatal("update call not found")
+	}
+	if call.ReceiverVar != "cipher" {
+		t.Errorf("update ReceiverVar = %q, want %q", call.ReceiverVar, "cipher")
+	}
+}
+
 func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
 	dir := t.TempDir()
 	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...
