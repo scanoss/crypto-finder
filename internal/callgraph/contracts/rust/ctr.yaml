@@ -1,0 +1,233 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ctr
+  coordinates:
+    - ctr
+  version_range: ">=0.7.0,<0.11.0"
+  description: "RustCrypto Counter (CTR) block cipher mode"
+
+# API read at ctr 0.9.2 and re-checked at 0.10.1: src/lib.rs:80-90 publishes the
+# six modes as type aliases, e.g.
+#   pub type Ctr128BE<B> = StreamCipherCoreWrapper<CtrCore<B, flavors::Ctr128BE>>;
+# The version_range starts at 0.7.0 because ctr 0.7.0 and 0.8.0 publish the same
+# six names over `Ctr<B, F>` rather than the wrapper; verified in ctr 0.7.0
+# src/lib.rs:63-73 and ctr 0.8.0 src/lib.rs:58-68, each exporting all six.
+#
+# The contract keys use the alias names rather than the underlying
+# StreamCipherCoreWrapper/CtrCore types on purpose: the alias is what a consumer
+# writes, and the parser builds the callee identity from the written path, so
+# `ctr::Ctr128BE::<Aes128>::new(..)` resolves to `ctr::Ctr128BE.new`. Keying the
+# wrapper type would produce a contract that never matches a real call site.
+#
+# The counter width and endianness live in the alias name, which is why each
+# flavor is listed separately instead of collapsing to one `Ctr` entry: the
+# parameter set is only recoverable from the type the consumer named.
+#
+# ctr 0.6.0 and earlier expose `Ctr128<C>` (and `Ctr32BE`/`Ctr32LE` at 0.6.0)
+# instead, verified at ctr 0.1.0 and 0.6.0, so those releases are a different
+# API and are deliberately outside this version_range.
+#
+# Declared signatures come from the re-exported `cipher` crate:
+#   * `KeyIvInit::new`/`new_from_slices` (crypto-common 0.1.6 src/lib.rs:149-155)
+#   * `StreamCipher::apply_keystream`/`try_apply_keystream`
+#     (cipher 0.4.4 src/stream.rs:119,93)
+# The concrete block cipher is a generic type argument the parser strips from
+# the identity, so no key size is asserted here; it is derived from the argument.
+
+contracts:
+  - method: ctr::Ctr128BE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr128BE>", "&cipher::Iv<ctr::Ctr128BE>"]
+    canonical_return_type: ctr::Ctr128BE
+    return: {type: ctr::Ctr128BE, confidence: high}
+    role: factory
+    parameters: &key_iv
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: iv
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_bit_length}
+  - method: ctr::Ctr128BE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr128BE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr128BE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr128BE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: &buf
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: ctr::Ctr128BE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr128LE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr128LE>", "&cipher::Iv<ctr::Ctr128LE>"]
+    canonical_return_type: ctr::Ctr128LE
+    return: {type: ctr::Ctr128LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr128LE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr128LE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr128LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr128LE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr128LE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr64BE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr64BE>", "&cipher::Iv<ctr::Ctr64BE>"]
+    canonical_return_type: ctr::Ctr64BE
+    return: {type: ctr::Ctr64BE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr64BE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr64BE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr64BE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr64BE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr64BE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr64LE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr64LE>", "&cipher::Iv<ctr::Ctr64LE>"]
+    canonical_return_type: ctr::Ctr64LE
+    return: {type: ctr::Ctr64LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr64LE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr64LE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr64LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr64LE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr64LE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr32BE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr32BE>", "&cipher::Iv<ctr::Ctr32BE>"]
+    canonical_return_type: ctr::Ctr32BE
+    return: {type: ctr::Ctr32BE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr32BE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr32BE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr32BE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr32BE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr32BE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr32LE.new
+    arity: 2
+    parameter_types: ["&cipher::Key<ctr::Ctr32LE>", "&cipher::Iv<ctr::Ctr32LE>"]
+    canonical_return_type: ctr::Ctr32LE
+    return: {type: ctr::Ctr32LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr32LE.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<ctr::Ctr32LE, cipher::InvalidLength>"
+    return: {type: ctr::Ctr32LE, confidence: high}
+    role: factory
+    parameters: *key_iv
+  - method: ctr::Ctr32LE.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+  - method: ctr::Ctr32LE.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result<(), cipher::StreamCipherError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters: *buf
+
+hierarchy:
+  ctr::Ctr128BE:
+    - core::any::Any
+  ctr::Ctr128LE:
+    - core::any::Any
+  ctr::Ctr64BE:
+    - core::any::Any
+  ctr::Ctr64LE:
+    - core::any::Any
+  ctr::Ctr32BE:
+    - core::any::Any
+  ctr::Ctr32LE:
+    - core::any::Any
+  core::any::Any: []
