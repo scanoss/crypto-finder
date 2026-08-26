@@ -38,7 +38,16 @@ phases:
     last_commit: 27eb966
     known_risk: "T7 perf guard not met — measured ~64% parse-time overhead vs 10% design target, see tasks.md 7.3"
   verify:
-    status: pending
+    status: done
+    artifact: verify-report.md
+    engram_topic: sdd/python-parser-java-parity/verify-report
+    engram_id: 990
+    verdict: pass_with_warnings
+    requirements: 7/7
+    scenarios: 27/27
+    critical_findings: 0
+    warnings: 2
+    verified_on: 2026-08-26
   archive:
     status: pending
 baseline:
