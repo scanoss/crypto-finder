@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Rust calls on a value produced by a turbofish constructor now resolve the receiver type. `Blowfish::<LE>::new_from_slice(key)` left the bound variable typed `Blowfish::`, a name no import resolves, so every later call on it was emitted under the local package as `app.Blowfish::.encrypt_block` instead of `blowfish.Blowfish.encrypt_block`. The call was still produced, so nothing read as a dropped shape; it simply matched no knowledge-base contract and carried no `parameter_roles`. The same applied to a nested-module spelling such as `digest::Context::<u8>::new(..)`, which now resolves to `ring::digest` / `Context`. The non-turbofish spelling, the fully qualified spelling, and a turbofish carrying a generic argument (`Key::<Aes256>::from_slice`) are unchanged. One further shape changes: a generic free function bound with `let` (`let x = compute::<u8>(a); x.finish();`) previously reported the function name as the receiver type; it now agrees with the plain `compute(a)` spelling, which resolved no receiver type. No shipped contract could match the previous form. (scanoss/crypto-mining-service#329)
+### Fixed
 - The ghash and poly1305 contracts now target the versions the coverage matrix lists, 0.6.x and 0.9.x. Both previously declared ranges ending immediately below them. The ghash `new_with_init_block` contract is removed: that constructor no longer exists in 0.6.0. (#337)
 ### Fixed
 - The ed25519 contract now targets the 3.x line and covers `Signature::from_components`. It previously declared a range ending before 3.0.0, which excluded the version the coverage matrix lists. (#336)

@@ -842,6 +842,13 @@ func inferRustTypeFromExpr(expr string) string {
 	if idx := strings.Index(expr, "("); idx >= 0 {
 		expr = strings.TrimSpace(expr[:idx])
 	}
+	// A turbofish on the constructor belongs to the type, not to the variable's
+	// identity: "Blowfish::<LE>::new_from_slice" must yield "Blowfish", the same
+	// as the non-turbofish spelling. Without this the trailing "::<LE>" survives
+	// the split below and normalizeRustTypeText truncates it to "Blowfish::",
+	// which no import resolves, so the receiver falls back to the local package
+	// and every later call on that variable gets a wrong callee identity.
+	expr = stripRustTypeArguments(expr)
 	lastSep := strings.LastIndex(expr, "::")
 	if lastSep <= 0 {
 		return ""
@@ -863,6 +870,10 @@ func normalizeRustTypeText(typeText string) string {
 	if idx := strings.Index(typeText, "<"); idx >= 0 {
 		typeText = strings.TrimSpace(typeText[:idx])
 	}
+	// Truncating at "<" can leave the "::" that introduced a turbofish. A type
+	// name ending in "::" resolves against no import, so trim it rather than
+	// emitting a mangled receiver type.
+	typeText = strings.TrimSuffix(strings.TrimSpace(typeText), "::")
 	return strings.TrimSpace(typeText)
 }
 
