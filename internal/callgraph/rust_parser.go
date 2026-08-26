@@ -17,6 +17,7 @@ const (
 	rustNodeExpressionStatement = "expression_statement"
 	rustNodeFieldExpression     = "field_expression"
 	rustNodeFunctionItem        = "function_item"
+	rustNodeGenericFunction     = "generic_function"
 )
 
 // RustParser extracts function declarations, calls, and imports from Rust source files
@@ -475,6 +476,13 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 	raw := funcNode.Content(src)
 	args := p.extractRustCallArguments(node, src)
 
+	// A turbofish wraps the callee in a generic_function whose first child is
+	// the plain callee node; unwrap it so the cases below see the same shapes
+	// they would without the type arguments.
+	if funcNode.Type() == rustNodeGenericFunction && funcNode.ChildCount() > 0 {
+		funcNode = funcNode.Child(0)
+	}
+
 	var call *FunctionCall
 	switch funcNode.Type() {
 	case javaNodeScopedIdentifier:
@@ -514,7 +522,7 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, src []byte, filePath strin
 
 // parseScopedCall handles calls like `Type::method()` or `module::func()`.
 func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis) *FunctionCall {
-	content := node.Content(src)
+	content := stripRustTypeArguments(node.Content(src))
 	lastSep := strings.LastIndex(content, "::")
 	if lastSep <= 0 {
 		return nil
@@ -560,6 +568,46 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 		Line:      line,
 		Arguments: args,
 	}
+}
+
+// stripRustTypeArguments removes turbofish type arguments from a scoped path so
+// the callee identity does not vary with them: "Key::<ChaCha20Poly1305>::generate"
+// becomes "Key::generate". Nested arguments are skipped by depth. A ">" that
+// closes a return arrow is not a closer, and an unbalanced path is returned
+// unchanged rather than truncated: a mangled path becomes a wrong callee
+// identity, which is worse than leaving the turbofish in place.
+func stripRustTypeArguments(path string) string {
+	if !strings.Contains(path, "::<") {
+		return path
+	}
+	var b strings.Builder
+	depth := 0
+	for i := 0; i < len(path); i++ {
+		if depth == 0 && strings.HasPrefix(path[i:], "::<") {
+			depth = 1
+			i += 2
+			continue
+		}
+		if depth > 0 {
+			switch path[i] {
+			case '<':
+				depth++
+			case '>':
+				// The ">" of a "->" closes nothing; it belongs to a fn-pointer
+				// or closure return type inside the argument list.
+				if i > 0 && path[i-1] == '-' {
+					continue
+				}
+				depth--
+			}
+			continue
+		}
+		b.WriteByte(path[i])
+	}
+	if depth != 0 {
+		return path
+	}
+	return b.String()
 }
 
 // splitRustScopedCallee turns a resolved `<module path>::<maybe Type>` prefix
