@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - C++ types declared inside a namespace opened by a macro (`NAMESPACE_BEGIN(X)`) now resolve to their qualified identity instead of a bare one. Mining such a library previously attributed none of its crypto to the library's own types, because a rule or contract anchored on the qualified name could not match its sources. Crypto++ 8.9.0 goes from 0 to 9 library-attributed entry points. (#96)
 ### Added
+- C++ Tink callgraph contracts for `pkg:github/google/tink` v1.7.0 AEAD/MAC/signature key templates, `KeysetHandle::GenerateNew`, and Aead/Mac/sign/verify terminals. Java Tink AWS KMS and GCP KMS adapter contracts cover client construction, credential config, and `getAead`.
 - Crypto++ callgraph contracts for the SHA-256 hash lifecycle, the first C++ library knowledge base. Supporting calls for Crypto++ now carry a lifecycle `category` and the truncated-digest length as a parameter role; previously the C++ KB was an empty placeholder and those calls were exported uncategorized. (#96)
 
 ## [0.24.0] - 2026-08-20
