@@ -18,6 +18,9 @@ const (
 	rustNodeFieldExpression     = "field_expression"
 	rustNodeFunctionItem        = "function_item"
 	rustNodeGenericFunction     = "generic_function"
+	rustNodeUseAsClause         = "use_as_clause"
+	rustNodeTypeItem            = "type_item"
+	rustNodeSelf                = "self"
 )
 
 // RustParser extracts function declarations, calls, and imports from Rust source files
@@ -116,9 +119,10 @@ func (p *RustParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	root := tree.RootNode()
 
 	analysis := &FileAnalysis{
-		FilePath:    filePath,
-		PackagePath: packagePath,
-		Imports:     make(map[string]string),
+		FilePath:      filePath,
+		PackagePath:   packagePath,
+		Imports:       make(map[string]string),
+		ImportAliases: make(map[string]string),
 	}
 
 	// Extract use declarations (imports)
@@ -136,8 +140,11 @@ func (p *RustParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 func (p *RustParser) extractImports(root *sitter.Node, src []byte, analysis *FileAnalysis) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
-		if child.Type() == "use_declaration" {
+		switch child.Type() {
+		case "use_declaration":
 			p.processUseDecl(child, src, analysis, "")
+		case rustNodeTypeItem:
+			p.recordRustTypeAlias(child, src, analysis)
 		}
 	}
 }
@@ -170,6 +177,9 @@ func (p *RustParser) processUseDecl(node *sitter.Node, src []byte, analysis *Fil
 			if prefix != "" {
 				analysis.WildcardImports = append(analysis.WildcardImports, prefix)
 			}
+		case rustNodeUseAsClause:
+			// e.g., `use cbc::Encryptor as CbcEnc;` or `use cfb_mode as cfb;`
+			p.recordRustAliasImport(child, src, analysis, prefix)
 		}
 	}
 }
@@ -214,7 +224,57 @@ func (p *RustParser) processRustUseListItem(item *sitter.Node, src []byte, analy
 		p.recordRustScopedImport(item.Content(src), analysis, combinedPrefix)
 	case "scoped_use_list":
 		p.processScopedUseList(item, src, analysis, combinedPrefix)
+	case rustNodeUseAsClause:
+		// e.g., `use cbc::{Encryptor as CbcEnc, Decryptor};`
+		p.recordRustAliasImport(item, src, analysis, combinedPrefix)
 	}
+}
+
+// recordRustAliasImport records a renaming import so a call written through the
+// local name still resolves to the real path. `use cbc::Encryptor as CbcEnc;`
+// makes `CbcEnc::new(..)` the same call as `cbc::Encryptor::new(..)`, and the
+// block-mode crates force that spelling on real consumers: cbc, cfb-mode and
+// ctr all export `Encryptor`/`Decryptor`, so a file using two of them cannot
+// import both under their own names. Before this, the alias was dropped and the
+// call kept the unqualified `CbcEnc.new` identity, which matches no contract.
+func (p *RustParser) recordRustAliasImport(node *sitter.Node, src []byte, analysis *FileAnalysis, prefix string) {
+	var realPath, alias string
+	selfRename := false
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case javaNodeScopedIdentifier:
+			realPath = child.Content(src)
+		case rustNodeSelf:
+			// `use cbc::{self as c};` renames the module itself, so the real
+			// path is the enclosing prefix rather than a named item.
+			selfRename = true
+		case goNodeIdentifier:
+			// The first identifier is the imported path, the second the alias.
+			if realPath == "" && !selfRename {
+				realPath = child.Content(src)
+			} else {
+				alias = child.Content(src)
+			}
+		}
+	}
+	if alias == "" {
+		return
+	}
+	if selfRename {
+		if prefix == "" {
+			return
+		}
+		analysis.ImportAliases[alias] = prefix
+		return
+	}
+	if realPath == "" {
+		return
+	}
+	if prefix != "" {
+		realPath = prefix + "::" + realPath
+	}
+	analysis.ImportAliases[alias] = realPath
 }
 
 func (p *RustParser) recordRustScopedImport(fullPath string, analysis *FileAnalysis, combinedPrefix string) {
@@ -531,6 +591,19 @@ func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath str
 	prefix := content[:lastSep]
 	name := content[lastSep+2:]
 
+	// Renaming imports are substituted before anything else: the local name
+	// carries no information about the real path, and the import maps below
+	// expand by concatenation, which would keep the alias in the result.
+	if resolved, ok := resolveRustAliasPrefix(analysis, prefix); ok {
+		return &FunctionCall{
+			Callee:    splitRustScopedCallee(resolved, name),
+			Raw:       content,
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
+		}
+	}
+
 	// Try to resolve through imports
 	// Case 1: prefix is a single identifier that was imported (e.g., `Aead::new`)
 	if pkg, ok := analysis.Imports[prefix]; ok {
@@ -671,27 +744,9 @@ func (p *RustParser) parseFieldCall(node *sitter.Node, src []byte, filePath stri
 	}
 
 	if inferredType, ok := varTypes[object]; ok && inferredType != "" {
-		if pkg, typ, ok := splitQualifiedRustType(inferredType); ok {
-			pkg = resolveRustTypePackage(pkg, analysis)
-			return &FunctionCall{
-				Callee:    FunctionID{Package: pkg, Type: typ, Name: field},
-				Raw:       raw,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
-			}
-		}
-		if pkg, ok := analysis.Imports[inferredType]; ok {
-			return &FunctionCall{
-				Callee:    FunctionID{Package: pkg, Type: inferredType, Name: field},
-				Raw:       raw,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
-			}
-		}
+		pkg, typ := resolveRustReceiverType(analysis, inferredType)
 		return &FunctionCall{
-			Callee:    FunctionID{Package: analysis.PackagePath, Type: inferredType, Name: field},
+			Callee:    FunctionID{Package: pkg, Type: typ, Name: field},
 			Raw:       raw,
 			FilePath:  filePath,
 			Line:      line,
@@ -890,6 +945,14 @@ func resolveRustTypePackage(pkg string, analysis *FileAnalysis) string {
 	if pkg == "" {
 		return pkg
 	}
+	// A renamed import has to be substituted here as well as on the callee path.
+	// Without this, `use cfb_mode as cfb;` resolved the constructor to
+	// `cfb_mode::Encryptor.new` but every later call on the receiver to
+	// `cfb.Encryptor.<method>`, leaving the alias in the package segment and
+	// matching no contract.
+	if resolved, ok := resolveRustAliasPrefix(analysis, pkg); ok {
+		return resolved
+	}
 	if importedPkg, ok := analysis.Imports[pkg]; ok {
 		if strings.Contains(importedPkg, "::") {
 			return importedPkg
@@ -945,4 +1008,86 @@ func parseRustReturnType(funcContent string) string {
 		return strings.TrimSpace(header[idx+2:])
 	}
 	return ""
+}
+
+// resolveRustAliasPrefix substitutes a renaming import out of a call prefix.
+// The alias may be the whole prefix (`CbcEnc::new` after
+// `use cbc::Encryptor as CbcEnc;`) or only its first segment (`cfb::Encryptor::new`
+// after `use cfb_mode as cfb;`); in both cases the alias is replaced by the path
+// it denotes rather than prefixed onto it. Returns false when no alias applies,
+// so the caller falls through to the ordinary import handling unchanged.
+func resolveRustAliasPrefix(analysis *FileAnalysis, prefix string) (string, bool) {
+	if analysis == nil || len(analysis.ImportAliases) == 0 || prefix == "" {
+		return "", false
+	}
+	if realPath, ok := analysis.ImportAliases[prefix]; ok {
+		return realPath, true
+	}
+	firstSep := strings.Index(prefix, "::")
+	if firstSep <= 0 {
+		return "", false
+	}
+	if realPath, ok := analysis.ImportAliases[prefix[:firstSep]]; ok {
+		return realPath + prefix[firstSep:], true
+	}
+	return "", false
+}
+
+// resolveRustReceiverType turns a receiver variable's recorded type into the
+// package and type of its callee identity. The recorded text may already be
+// qualified, may be a plain imported name, or may be a renaming import that
+// names no real path on its own. When none of those apply the type stays local
+// to the crate being analyzed, which is the correct answer for a type declared
+// in this source.
+func resolveRustReceiverType(analysis *FileAnalysis, inferredType string) (pkg, typ string) {
+	if qualifiedPkg, qualifiedType, ok := splitQualifiedRustType(inferredType); ok {
+		return resolveRustTypePackage(qualifiedPkg, analysis), qualifiedType
+	}
+	if importedPkg, ok := analysis.Imports[inferredType]; ok {
+		return importedPkg, inferredType
+	}
+	if realPath, ok := analysis.ImportAliases[inferredType]; ok {
+		if aliasPkg, aliasType, ok := splitQualifiedRustType(realPath); ok {
+			return aliasPkg, aliasType
+		}
+	}
+	return analysis.PackagePath, inferredType
+}
+
+// recordRustTypeAlias records a local `type X = a::b::C<..>;` so a call written
+// through X resolves to what X actually names. This is the form the block-mode
+// crates' own documentation teaches:
+//
+//	type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
+//	let enc = Aes128CbcEnc::new(&key.into(), &iv.into());
+//
+// Without it, `Aes128CbcEnc::new` kept the local name as its identity and
+// matched no contract, so the documented idiom produced a detection with no
+// reachability behind it. Type arguments are dropped: the alias's identity is
+// the path, and the concrete cipher is a generic argument the callee identity
+// does not carry. Aliases naming a bare local type are recorded too and simply
+// resolve to that local name, which is what they mean.
+func (p *RustParser) recordRustTypeAlias(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	var alias, target string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case "type_identifier":
+			if alias == "" {
+				alias = child.Content(src)
+			}
+		case "generic_type", "scoped_type_identifier":
+			if target == "" {
+				target = normalizeRustTypeText(stripRustTypeArguments(child.Content(src)))
+			}
+		}
+	}
+	if alias == "" || target == "" || alias == target {
+		return
+	}
+	// A renaming import already in scope wins: it was written explicitly.
+	if _, exists := analysis.ImportAliases[alias]; exists {
+		return
+	}
+	analysis.ImportAliases[alias] = target
 }

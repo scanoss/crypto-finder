@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Rust callgraph contracts for the RustCrypto block modes `cbc`, `cfb-mode` and `ctr`, covering mode construction, the padded block and CFB stream operations, and CTR keystream application. The IV parameter carries `ivSize` evidence derived from the argument rather than a fixed width.
 ### Fixed
+- Rust calls written through a renaming import now resolve to the real library identity, on both the callee and the receiver path. `use cbc::Encryptor as CbcEnc;`, the same clause inside a use list, `use cfb_mode as cfb;` and `use cbc::{self as c};` were all dropped before, leaving the local name in the callee identity so no contract matched.
+### Fixed
+- A Rust local type alias (`type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;`) now resolves calls made through it to the aliased path, so a detection made through that spelling carries reachability instead of none.
+### Fixed
 - The ghash and poly1305 contracts now target the versions the coverage matrix lists, 0.6.x and 0.9.x. Both previously declared ranges ending immediately below them. The ghash `new_with_init_block` contract is removed: that constructor no longer exists in 0.6.0. (#337)
 ### Fixed
 - The ed25519 contract now targets the 3.x line and covers `Signature::from_components`. It previously declared a range ending before 3.0.0, which excluded the version the coverage matrix lists. (#336)

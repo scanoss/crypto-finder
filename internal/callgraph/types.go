@@ -324,6 +324,13 @@ type FileAnalysis struct {
 	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
 	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
 	DeclaredTypes         map[string]bool   // source-declared fully qualified types (C++ only)
+	// ImportAliases maps a local name that STANDS FOR a real path to that path:
+	// a renaming import (Rust `use a::b::C as D;` -> "D" -> "a::b::C") or a
+	// local type alias (`type D = a::b::C<T>;` -> "D" -> "a::b::C"). It is kept
+	// separate from Imports because Imports maps a leaf to its PARENT path and
+	// is expanded by concatenation, which cannot express either: the local name
+	// has to be substituted away, not prefixed.
+	ImportAliases map[string]string
 	// ClassBases maps each source-declared (possibly nested, dotted) type name
 	// to its extends/implements clause as erased simple names (Java only).
 	// Presence of a key also marks the type as declared in this file.
