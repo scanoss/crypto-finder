@@ -4,22 +4,29 @@ library:
   name: chacha20poly1305
   coordinates:
     - chacha20poly1305
-  version_range: ">=0.11.0,<0.12.0"
+  version_range: ">=0.4.0,<0.12.0"
   description: "RustCrypto ChaCha20-Poly1305 authenticated encryption"
+
+# API read at 0.11.0, 0.8.2 and 0.4.0. The range starts at 0.4.0 because that is
+# where `ChaCha20Poly1305` stopped being a struct and became an alias of the
+# generic `ChaChaPoly1305<C>`, gaining the reduced-round `ChaCha8Poly1305` and
+# `ChaCha12Poly1305` siblings (0.4.0 src/lib.rs:147,151,155,163). The X-nonce
+# reduced-round pair arrived in 0.8.2 (src/lib.rs:224,234), and methods a given
+# version does not have simply never match.
 
 contracts:
   # Key/nonce generation through Generate carries a turbofish; the parser strips
   # type arguments from the callee identity, so these resolve on the type alone.
   - method: chacha20poly1305::Key.generate
-    arity: 1
+    arity: 0
     return: {type: chacha20poly1305::Key, confidence: high}
     role: factory
   - method: chacha20poly1305::Nonce.generate
-    arity: 1
+    arity: 0
     return: {type: chacha20poly1305::Nonce, confidence: high}
     role: factory
   - method: chacha20poly1305::XNonce.generate
-    arity: 1
+    arity: 0
     return: {type: chacha20poly1305::XNonce, confidence: high}
     role: factory
   - method: chacha20poly1305::Key.from_slice
@@ -264,10 +271,764 @@ contracts:
     role: operation
     parameters: *aead_in_place_detached_decrypt
 
+  # The reduced-round flavors. They are feature-gated but published API, and
+  # `new_from_slice` / `generate_key` are contracted for the 20-round pair here
+  # too: `generate_key` is the aead 0.5 spelling that 0.10.x code still uses.
+  - method: chacha20poly1305::ChaCha8Poly1305.new
+    arity: 1
+    return: { type: chacha20poly1305::ChaCha8Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::ChaCha8Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::ChaCha8Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::ChaCha8Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::ChaCha8Poly1305.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.encrypt_in_place_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.encrypt_inout_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha8Poly1305.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.new
+    arity: 1
+    return: { type: chacha20poly1305::ChaCha12Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::ChaCha12Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::ChaCha12Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::ChaCha12Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::ChaCha12Poly1305.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.encrypt_in_place_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.encrypt_inout_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha12Poly1305.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.new
+    arity: 1
+    return: { type: chacha20poly1305::XChaCha8Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::XChaCha8Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::XChaCha8Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::XChaCha8Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::XChaCha8Poly1305.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.encrypt_in_place_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.encrypt_inout_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha8Poly1305.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.new
+    arity: 1
+    return: { type: chacha20poly1305::XChaCha12Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::XChaCha12Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::XChaCha12Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::XChaCha12Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::XChaCha12Poly1305.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.encrypt_in_place_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.encrypt_inout_detached
+    arity: 3
+    return: { type: chacha20poly1305::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: chacha20poly1305::XChaCha12Poly1305.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: chacha20poly1305::ChaCha20Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::ChaCha20Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::ChaCha20Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::XChaCha20Poly1305.new_from_slice
+    arity: 1
+    return: { type: chacha20poly1305::XChaCha20Poly1305, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::XChaCha20Poly1305.generate_key
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+
+  # These crates all re-export the `aead` crate, and their own documentation
+  # imports the key and nonce types through it
+  # (`use chacha20poly1305::{aead::{Generate, Key}, ...}`). The callee identity keeps the
+  # path the import gave, so that spelling arrives as `chacha20poly1305::aead::Key` and is
+  # a different key from the `chacha20poly1305::Key` re-export. Both are contracted; only
+  # covering one leaves the documented idiom unresolved.
+  - method: chacha20poly1305::aead::Key.generate
+    arity: 0
+    return: { type: chacha20poly1305::aead::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::Key.from_slice
+    arity: 1
+    return: { type: chacha20poly1305::aead::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: chacha20poly1305::aead::Nonce.generate
+    arity: 0
+    return: { type: chacha20poly1305::aead::Nonce, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::Nonce.from_slice
+    arity: 1
+    return: { type: chacha20poly1305::aead::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: chacha20poly1305::aead::XNonce.generate
+    arity: 0
+    return: { type: chacha20poly1305::aead::XNonce, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::XNonce.from_slice
+    arity: 1
+    return: { type: chacha20poly1305::aead::XNonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # `Generate::generate()` takes no arguments (crypto-common 0.2.0
+  # src/generate.rs:43); the rng-taking spelling is `generate_from_rng(rng)`
+  # (src/generate.rs:17), and `KeyInit::generate_key(rng)` takes one
+  # (src/lib.rs:200). Arity has to be exact: the export path looks a Rust
+  # contract up by the call site's real argument count, so a zero-argument
+  # `Key::<T>::generate()` declared at arity 1 matches nothing there even
+  # though the arity-unknown lookup would still find it.
+  - method: chacha20poly1305::Key.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::Nonce.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::Nonce, confidence: high }
+    role: factory
+  - method: chacha20poly1305::XNonce.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::XNonce, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::Key.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::aead::Key, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::Nonce.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::aead::Nonce, confidence: high }
+    role: factory
+  - method: chacha20poly1305::aead::XNonce.generate_from_rng
+    arity: 1
+    return: { type: chacha20poly1305::aead::XNonce, confidence: high }
+    role: factory
+
 hierarchy:
+  chacha20poly1305::aead::Key:
+    - core::any::Any
+  chacha20poly1305::aead::Nonce:
+    - core::any::Any
+  chacha20poly1305::aead::XNonce:
+    - core::any::Any
   chacha20poly1305::ChaCha20Poly1305:
     - chacha20poly1305::ChaChaPoly1305
   chacha20poly1305::XChaCha20Poly1305:
+    - chacha20poly1305::ChaChaPoly1305
+  chacha20poly1305::ChaCha8Poly1305:
+    - chacha20poly1305::ChaChaPoly1305
+  chacha20poly1305::ChaCha12Poly1305:
+    - chacha20poly1305::ChaChaPoly1305
+  chacha20poly1305::XChaCha8Poly1305:
+    - chacha20poly1305::ChaChaPoly1305
+  chacha20poly1305::XChaCha12Poly1305:
     - chacha20poly1305::ChaChaPoly1305
   chacha20poly1305::ChaChaPoly1305:
     - core::any::Any

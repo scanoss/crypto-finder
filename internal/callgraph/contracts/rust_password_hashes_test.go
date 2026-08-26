@@ -30,10 +30,16 @@ func TestLoadEmbeddedRustIncludesPasswordHashContracts(t *testing.T) {
 		{"scrypt::Scrypt.default", "scrypt.Scrypt.default", 0, "scrypt", "factory", "scrypt::Scrypt"},
 		{"scrypt.scrypt", "scrypt.scrypt", 4, "scrypt", "operation", "core::result::Result"},
 		{"pbkdf2::Pbkdf2.default", "pbkdf2.Pbkdf2.default", 0, "pbkdf2", "factory", "pbkdf2::Pbkdf2"},
-		// The parser fix made these resolvable; contract them so it has a consumer.
-		{"chacha20poly1305::Key.generate", "chacha20poly1305.Key.generate", 1, "chacha20poly1305", "factory", "chacha20poly1305::Key"},
-		{"chacha20poly1305::Nonce.generate", "chacha20poly1305.Nonce.generate", 1, "chacha20poly1305", "factory", "chacha20poly1305::Nonce"},
-		{"chacha20poly1305::XNonce.generate", "chacha20poly1305.XNonce.generate", 1, "chacha20poly1305", "factory", "chacha20poly1305::XNonce"},
+		// The parser fix made these resolvable; contract them so it has a
+		// consumer. `Generate::generate()` takes no arguments (crypto-common
+		// 0.2.0 src/generate.rs:43) and these were authored at arity 1, which
+		// the export path's exact-arity lookup never matched; the
+		// rng-taking spelling is `generate_from_rng(rng)` (src/generate.rs:17).
+		{"chacha20poly1305::Key.generate", "chacha20poly1305.Key.generate", 0, "chacha20poly1305", "factory", "chacha20poly1305::Key"},
+		{"chacha20poly1305::Nonce.generate", "chacha20poly1305.Nonce.generate", 0, "chacha20poly1305", "factory", "chacha20poly1305::Nonce"},
+		{"chacha20poly1305::XNonce.generate", "chacha20poly1305.XNonce.generate", 0, "chacha20poly1305", "factory", "chacha20poly1305::XNonce"},
+		{"chacha20poly1305::Key.generate_from_rng", "chacha20poly1305.Key.generate_from_rng", 1, "chacha20poly1305", "factory", "chacha20poly1305::Key"},
+		{"chacha20poly1305::Nonce.generate_from_rng", "chacha20poly1305.Nonce.generate_from_rng", 1, "chacha20poly1305", "factory", "chacha20poly1305::Nonce"},
 		{"pbkdf2.pbkdf2", "pbkdf2.pbkdf2", 4, "pbkdf2", "operation", "core::result::Result"},
 		{"pbkdf2.pbkdf2_array", "pbkdf2.pbkdf2_array", 3, "pbkdf2", "operation", "core::result::Result"},
 		{"pbkdf2.pbkdf2_hmac", "pbkdf2.pbkdf2_hmac", 4, "pbkdf2", "operation", "()"},

@@ -1,0 +1,608 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aes-gcm
+  coordinates:
+    - aes-gcm
+    - aes_gcm
+  version_range: ">=0.1.0,<0.12.0"
+  description: "RustCrypto AES-GCM authenticated encryption"
+
+# API read at aes-gcm 0.11.0. The two concrete aliases are
+# `Aes128Gcm = AesGcm<Aes128, U12>` and `Aes256Gcm = AesGcm<Aes256, U12>`
+# (src/lib.rs:148,153); there is no 192-bit alias. The generic they name,
+# `AesGcm<Aes, NonceSize, TagSize = U16>` (src/lib.rs:187), is contracted too:
+# a consumer writing `type Wide = AesGcm<Aes256, U13>;` reaches the crate
+# through it, and the parser resolves that alias to `aes_gcm::AesGcm`.
+#
+# The alias names have existed since 0.1.0 (src/lib.rs:79,82), so the range
+# starts there. 0.0.0 is a name-reservation release with no GCM API and is
+# outside the range deliberately.
+#
+# aead 0.6 (reached in 0.11.0) renamed the detached methods to
+# `encrypt_inout_detached` / `decrypt_inout_detached` (aead 0.6.0
+# src/lib.rs:225,240) and kept the previous names on the deprecated
+# `AeadInPlace` compatibility trait, so both spellings are contracted. Nonce
+# width is derived from the argument rather than fixed: `Nonce` is generic over
+# its width here (`pub type Nonce<NonceSize>`, src/lib.rs:113), so only the two
+# concrete aliases pin it at 96 bits.
+
+contracts:
+  - method: aes_gcm::Aes128Gcm.new
+    arity: 1
+    return: { type: aes_gcm::Aes128Gcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::Aes128Gcm.new_from_slice
+    arity: 1
+    return: { type: aes_gcm::Aes128Gcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::Aes128Gcm.generate_key
+    arity: 1
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::Aes256Gcm.new
+    arity: 1
+    return: { type: aes_gcm::Aes256Gcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::Aes256Gcm.new_from_slice
+    arity: 1
+    return: { type: aes_gcm::Aes256Gcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::Aes256Gcm.generate_key
+    arity: 1
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::AesGcm.new
+    arity: 1
+    return: { type: aes_gcm::AesGcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::AesGcm.new_from_slice
+    arity: 1
+    return: { type: aes_gcm::AesGcm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::AesGcm.generate_key
+    arity: 1
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::Aes128Gcm.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.encrypt_in_place_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.encrypt_inout_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes128Gcm.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.encrypt_in_place_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.encrypt_inout_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::Aes256Gcm.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::AesGcm.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.encrypt_in_place_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::AesGcm.encrypt_inout_detached
+    arity: 3
+    return: { type: aes_gcm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: aes_gcm::AesGcm.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: aes_gcm::Key.generate
+    arity: 0
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::Key.from_slice
+    arity: 1
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::Nonce.generate
+    arity: 0
+    return: { type: aes_gcm::Nonce, confidence: high }
+    role: factory
+  - method: aes_gcm::Nonce.from_slice
+    arity: 1
+    return: { type: aes_gcm::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # These crates all re-export the `aead` crate, and their own documentation
+  # imports the key and nonce types through it
+  # (`use aes_gcm::{aead::{Generate, Key}, ...}`). The callee identity keeps the
+  # path the import gave, so that spelling arrives as `aes_gcm::aead::Key` and is
+  # a different key from the `aes_gcm::Key` re-export. Both are contracted; only
+  # covering one leaves the documented idiom unresolved.
+  - method: aes_gcm::aead::Key.generate
+    arity: 0
+    return: { type: aes_gcm::aead::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::aead::Key.from_slice
+    arity: 1
+    return: { type: aes_gcm::aead::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: aes_gcm::aead::Nonce.generate
+    arity: 0
+    return: { type: aes_gcm::aead::Nonce, confidence: high }
+    role: factory
+  - method: aes_gcm::aead::Nonce.from_slice
+    arity: 1
+    return: { type: aes_gcm::aead::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # `Generate::generate()` takes no arguments (crypto-common 0.2.0
+  # src/generate.rs:43); the rng-taking spelling is `generate_from_rng(rng)`
+  # (src/generate.rs:17), and `KeyInit::generate_key(rng)` takes one
+  # (src/lib.rs:200). Arity has to be exact: the export path looks a Rust
+  # contract up by the call site's real argument count, so a zero-argument
+  # `Key::<T>::generate()` declared at arity 1 matches nothing there even
+  # though the arity-unknown lookup would still find it.
+  - method: aes_gcm::Key.generate_from_rng
+    arity: 1
+    return: { type: aes_gcm::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::Nonce.generate_from_rng
+    arity: 1
+    return: { type: aes_gcm::Nonce, confidence: high }
+    role: factory
+  - method: aes_gcm::aead::Key.generate_from_rng
+    arity: 1
+    return: { type: aes_gcm::aead::Key, confidence: high }
+    role: factory
+  - method: aes_gcm::aead::Nonce.generate_from_rng
+    arity: 1
+    return: { type: aes_gcm::aead::Nonce, confidence: high }
+    role: factory
+
+hierarchy:
+  aes_gcm::aead::Key:
+    - core::any::Any
+  aes_gcm::aead::Nonce:
+    - core::any::Any
+  aes_gcm::Aes128Gcm:
+    - aes_gcm::AesGcm
+  aes_gcm::Aes256Gcm:
+    - aes_gcm::AesGcm
+  aes_gcm::AesGcm:
+    - core::any::Any
+  aes_gcm::Key:
+    - core::any::Any
+  aes_gcm::Nonce:
+    - core::any::Any
+  aes_gcm::Tag:
+    - core::any::Any
+  alloc::vec::Vec:
+    - core::any::Any
+  core::any::Any: []

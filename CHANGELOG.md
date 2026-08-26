@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for the RustCrypto AEAD crates `aes-gcm`, `aes-gcm-siv` and `ccm`, and for the reduced-round `chacha20poly1305` flavors. Each covers construction, the allocating and in-place encrypt and decrypt operations, and both detached-tag spellings, `encrypt_in_place_detached` and the `encrypt_inout_detached` that replaced it in aead 0.6.
+### Fixed
+- `Key::<T>::generate()`, `Nonce::generate()` and `XNonce::generate()` in the `chacha20poly1305` contract were declared at arity 1 against a zero-argument call, so the served path's exact-arity lookup never matched them. They are now arity 0, and the rng-taking `generate_from_rng(rng)` spelling is contracted alongside.
 ### Fixed
 - The user guide's Rust and C++ callgraph coverage paragraphs rendered as monospaced text inside the "transitive path" code card, whose `<pre><code>` was left unclosed, and the C++ paragraph and the card were duplicated. The paragraphs now sit as prose ahead of the card and the card appears once.
 ### Fixed
