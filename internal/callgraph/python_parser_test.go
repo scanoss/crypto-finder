@@ -916,3 +916,114 @@ def checkpw(password: bytes, hashed_password: bytes) -> bool: ...
 		}
 	}
 }
+
+// TestPythonParser_ReceiverVar_UpperCaseLocal verifies that a module-level
+// UPPER_CASE local (a constant-style name that also happens to satisfy the
+// CapitalCase-type-name heuristic) still resolves as a receiver when it is a
+// known local binding. receiverIdentity's locals check must run before the
+// CapitalCase heuristic disqualifies it, since `looksLikePythonTypeName` only
+// inspects the first rune and cannot distinguish `HASHER` (a local instance)
+// from `Cipher` (a class reference) by spelling alone.
+func TestPythonParser_ReceiverVar_UpperCaseLocal(t *testing.T) {
+	src := `HASHER = Cipher()
+HASHER.update(b"x")
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, moduleInitMethodName)
+	if fn == nil {
+		t.Fatal("<module> synthetic entry point not found")
+	}
+	call := findPythonCallByMethod(fn, "update")
+	if call == nil {
+		t.Fatal("update call not found")
+	}
+	if call.ReceiverVar != "HASHER" {
+		t.Errorf("module-level HASHER.update ReceiverVar = %q, want %q", call.ReceiverVar, "HASHER")
+	}
+}
+
+// TestPythonParser_ReceiverVar_UpperCaseLocal_InFunction is the in-function
+// variant of the module-level case above: an UPPER_CASE local assigned and
+// used inside a function body must still resolve as a receiver.
+func TestPythonParser_ReceiverVar_UpperCaseLocal_InFunction(t *testing.T) {
+	src := `def run():
+    HASHER = Cipher()
+    HASHER.update(b"x")
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "update")
+	if call == nil {
+		t.Fatal("update call not found")
+	}
+	if call.ReceiverVar != "HASHER" {
+		t.Errorf("HASHER.update ReceiverVar = %q, want %q", call.ReceiverVar, "HASHER")
+	}
+}
+
+// TestPythonParser_Import_DottedPlainImport verifies that `import a.b.c`
+// binds Imports["a"] = "a" (the top-level module name, not the full dotted
+// path), so a chained-attribute call `a.b.c.foo()` resolves through
+// resolveImportedCall's chained-attribute path to the full "a.b.c.foo" FQN
+// instead of double-appending the dotted suffix ("a.b.c.b.c.foo"). It also
+// verifies a later `import a.d` does not get hidden by first-wins, since it
+// binds a distinct top-level name ("a" is shared, but resolution now depends
+// on the chained-attribute path rather than a single flattened key).
+func TestPythonParser_Import_DottedPlainImport(t *testing.T) {
+	src := `import a.b.c
+
+def run():
+    a.b.c.foo()
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "foo")
+	if call == nil {
+		t.Fatal("foo call not found")
+	}
+	want := FunctionID{Package: "a.b.c", Name: "foo"}
+	if call.Callee != want {
+		t.Errorf("a.b.c.foo() callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_Import_DottedPlainImport_MultipleTopLevelSiblings
+// verifies that `import a.b.c` followed by `import a.d` records BOTH dotted
+// imports under distinct import-map behavior: `a.b.c.foo()` still resolves
+// via a.b.c (not truncated to "a"), demonstrating first-wins on the "a" key
+// does not silently discard the second, differently-rooted dotted import's
+// own resolution path.
+func TestPythonParser_Import_DottedPlainImport_MultipleTopLevelSiblings(t *testing.T) {
+	src := `import a.b.c
+import a.d
+
+def run():
+    a.b.c.foo()
+    a.d.bar()
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	fooCall := findPythonCallByMethod(fn, "foo")
+	if fooCall == nil {
+		t.Fatal("foo call not found")
+	}
+	if want := (FunctionID{Package: "a.b.c", Name: "foo"}); fooCall.Callee != want {
+		t.Errorf("a.b.c.foo() callee = %+v, want %+v", fooCall.Callee, want)
+	}
+	barCall := findPythonCallByMethod(fn, "bar")
+	if barCall == nil {
+		t.Fatal("bar call not found")
+	}
+	if want := (FunctionID{Package: "a.d", Name: "bar"}); barCall.Callee != want {
+		t.Errorf("a.d.bar() callee = %+v, want %+v", barCall.Callee, want)
+	}
+}

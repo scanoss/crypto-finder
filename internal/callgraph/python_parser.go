@@ -244,11 +244,20 @@ func (p *PythonParser) processImportStatement(node *sitter.Node, src []byte, ana
 		child := node.Child(i)
 		switch child.Type() {
 		case pythonNodeDottedName:
-			// `import hashlib`
+			// `import hashlib` -> Imports["hashlib"] = "hashlib".
+			// `import a.b.c` -> Imports["a"] = "a" (the bound top-level
+			// name, NOT the full dotted path "a.b.c"). Real Python binds
+			// only the top-level module name "a" into scope; recording the
+			// full path here would make resolveImportedCall's
+			// chained-attribute path double-append the dotted suffix
+			// ("a.b.c.b.c.foo" instead of "a.b.c.foo") for a later
+			// `a.b.c.foo()` call, and would also let this binding silently
+			// shadow a later distinct `import a.d` under the same "a" key
+			// (see TestPythonParser_Import_DottedPlainImport,
+			// TestPythonParser_Import_DottedPlainImport_MultipleTopLevelSiblings).
 			name := child.Content(src)
-			// Use the first component as the alias
 			parts := strings.Split(name, ".")
-			recordPythonImportOnce(analysis, parts[0], name)
+			recordPythonImportOnce(analysis, parts[0], parts[0])
 		case pythonNodeAliasedImport:
 			// `import hashlib as hl`
 			var module, alias string
@@ -713,10 +722,16 @@ type pythonBindings struct {
 // receiverIdentity resolves the receiver text of an attribute call to a
 // stable object identity, or "" when it is not an object (a module, a type
 // constructor, or a call-expression result). Check order is load-bearing:
-// objectIsCall -> import -> self/cls bare -> CapitalCase type name ->
-// attribute set -> locals. Imports must stay ahead of locals so an
-// import-name receiver is never masked by a same-named parameter
-// (TestPythonParser_ModuleCall_NoReceiverVar).
+// objectIsCall -> import -> self/cls bare -> attribute set -> locals.
+// Imports must stay ahead of locals so an import-name receiver is never
+// masked by a same-named parameter (TestPythonParser_ModuleCall_NoReceiverVar).
+// A known local binding is authoritative and is checked LAST only because it
+// is the least specific positive signal — it does NOT defer to a
+// CapitalCase-looking spelling: an UPPER_CASE local (e.g. `HASHER`) still
+// resolves as a receiver (TestPythonParser_ReceiverVar_UpperCaseLocal). A
+// bare name that is neither an import, self/cls, a class attribute, nor a
+// known local (e.g. an unresolved `Cipher` type reference used directly,
+// never bound to a variable) falls through to "".
 func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analysis *FileAnalysis) string {
 	if objectIsCall || object == "" {
 		return ""
@@ -729,12 +744,15 @@ func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analy
 		// never a crypto object.
 		return ""
 	}
-	if looksLikePythonTypeName(object) {
-		return ""
-	}
 	if attr, ok := pythonSelfOrClsAttr(object); ok && b.attrs[attr] {
 		return pythonSelfObjectName + "." + attr
 	}
+	// A known local binding always wins over the CapitalCase-type-name
+	// heuristic below: an UPPER_CASE constant-style local (e.g. `HASHER`)
+	// satisfies `looksLikePythonTypeName` just as a class reference (e.g.
+	// `Cipher`) does, but a real local binder is authoritative evidence that
+	// this identifier is an instance, not a type reference. The heuristic
+	// below only disqualifies names that were never bound as a local at all.
 	if b.locals[object] {
 		return object
 	}
