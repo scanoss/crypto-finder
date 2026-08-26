@@ -1,0 +1,52 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pkcs8
+  coordinates:
+    - pkcs8
+  version_range: ">=0.10.0,<0.12.0"
+  description: "RustCrypto PKCS#8 private key encoding, including encrypted keys"
+
+# Inventory sources: pkcs8 0.11 docs (https://docs.rs/pkcs8/latest/pkcs8/)
+# and the scanoss/crypto_rules pkcs8 key rules.
+#
+# contracted: DecodePrivateKey / EncodePrivateKey DER codecs, PrivateKeyInfo
+# from_der and encrypt, EncryptedPrivateKeyInfo decrypt.
+# skipped-non-crypto: AlgorithmIdentifier re-exports, ObjectIdentifier, Version.
+# encrypt() default wrapping (scrypt log2(N)=15,r=8,p=1 and AES-256-CBC) is
+# not modelled as a cipher contract; the finding is the private-key asset.
+contracts:
+  - method: pkcs8::DecodePrivateKey.from_pkcs8_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs8::DecodePrivateKey.from_pkcs8_pem
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs8::PrivateKeyInfo.from_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs8::EncodePrivateKey.to_pkcs8_der
+    arity: 0
+    return: {type: core::result::Result, confidence: high}
+    role: output
+  - method: pkcs8::DecodePrivateKey.from_pkcs8_encrypted_der
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: pkcs8::EncryptedPrivateKeyInfo.decrypt
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+  - method: pkcs8::PrivateKeyInfo.encrypt
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+  - method: pkcs8::EncodePrivateKey.to_pkcs8_encrypted_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: output
+
+hierarchy: {}

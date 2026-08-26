@@ -1,0 +1,33 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sec1
+  coordinates:
+    - sec1
+  version_range: ">=0.7.0,<0.9.0"
+  description: "RustCrypto SEC1 elliptic-curve private key and point encoding"
+
+# Inventory sources: sec1 0.8 docs (https://docs.rs/sec1/latest/sec1/)
+# and the scanoss/crypto_rules sec1 key rules.
+#
+# contracted: Decode/Encode EC private key DER/PEM and EncodedPoint::from_bytes.
+# skipped-non-crypto: EcParameters OID parsing, LineEnding, ALGORITHM_OID.
+contracts:
+  - method: sec1::DecodeEcPrivateKey.from_sec1_der
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: sec1::EcPrivateKey.from_sec1_pem
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+  - method: sec1::EncodeEcPrivateKey.to_sec1_der
+    arity: 0
+    return: {type: core::result::Result, confidence: high}
+    role: output
+  - method: sec1::point::EncodedPoint.from_bytes
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+
+hierarchy: {}
