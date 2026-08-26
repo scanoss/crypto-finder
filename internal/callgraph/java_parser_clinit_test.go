@@ -40,8 +40,8 @@ class Sample {
 	if clinit.StartLine != 2 || clinit.EndLine != 11 {
 		t.Errorf("<clinit> range = [%d,%d], want [2,11] (class body span)", clinit.StartLine, clinit.EndLine)
 	}
-	if clinit.FunctionType != javaFunctionTypeClassInit {
-		t.Errorf("<clinit> FunctionType = %q, want %q", clinit.FunctionType, javaFunctionTypeClassInit)
+	if clinit.FunctionType != functionTypeClassInit {
+		t.Errorf("<clinit> FunctionType = %q, want %q", clinit.FunctionType, functionTypeClassInit)
 	}
 	if clinit.Visibility != VisibilityPrivate {
 		t.Errorf("<clinit> Visibility = %q, want %q", clinit.Visibility, VisibilityPrivate)

@@ -674,6 +674,91 @@ class Sub(Base):
 	}
 }
 
+// TestPythonParser_SyntheticEntryPoint_ModuleLevel verifies that a
+// module-level crypto call (outside any function/class) gets a synthetic
+// `<module>` FunctionDecl, keyed by the module's own dotted path so sibling
+// files in one package never collide on the `<module>` key.
+func TestPythonParser_SyntheticEntryPoint_ModuleLevel(t *testing.T) {
+	src := `from crypto import Cipher
+
+cipher = Cipher()
+`
+	fns := parsePythonInline(t, src)
+
+	var module *FunctionDecl
+	for i := range fns {
+		if fns[i].ID.Name == moduleInitMethodName {
+			module = &fns[i]
+			break
+		}
+	}
+	if module == nil {
+		t.Fatal("<module> synthetic decl not found")
+	}
+	if module.ID.Type != "" {
+		t.Errorf("<module> ID.Type = %q, want empty", module.ID.Type)
+	}
+	const wantPackage = "mypkg.src" // parsePythonInline writes to dir/src.py under packagePath "mypkg"
+	if module.ID.Package != wantPackage {
+		t.Errorf("<module> ID.Package = %q, want %q (module dotted path, not bare package path)", module.ID.Package, wantPackage)
+	}
+	ctorCall := findPythonCallByMethod(module, constructorMethodName)
+	if ctorCall == nil {
+		t.Fatal("Cipher() constructor call not found under <module>")
+	}
+}
+
+// TestPythonParser_SyntheticEntryPoint_ClassBody verifies that a class-body
+// statement crypto call (outside any method) gets a synthetic `<clinit>`
+// FunctionDecl, reusing Java's synthetic name for cross-language consistency.
+func TestPythonParser_SyntheticEntryPoint_ClassBody(t *testing.T) {
+	src := `from crypto import Cipher
+
+class Foo:
+    default_cipher = Cipher()
+`
+	fns := parsePythonInline(t, src)
+
+	var clinit *FunctionDecl
+	for i := range fns {
+		if fns[i].ID.Name == clinitMethodName && fns[i].ID.Type == "Foo" {
+			clinit = &fns[i]
+			break
+		}
+	}
+	if clinit == nil {
+		t.Fatal("<clinit> synthetic decl not found for class Foo")
+	}
+	ctorCall := findPythonCallByMethod(clinit, constructorMethodName)
+	if ctorCall == nil {
+		t.Fatal("Cipher() constructor call not found under <clinit>")
+	}
+}
+
+// TestPythonParser_SyntheticEntryPoint_EmptyBodyOmitted verifies that a
+// module/class with no direct-body calls gets NO synthetic decl at all —
+// the empty-body guard that keeps TestPythonE2E_Bcrypt_ConsumerScan_NoSynthesis
+// at zero.
+func TestPythonParser_SyntheticEntryPoint_EmptyBodyOmitted(t *testing.T) {
+	src := `import os
+
+X = 5
+
+class Foo:
+    x: int
+`
+	fns := parsePythonInline(t, src)
+
+	for i := range fns {
+		if fns[i].ID.Name == moduleInitMethodName {
+			t.Errorf("unexpected <module> decl for a call-free module body: %+v", fns[i].ID)
+		}
+		if fns[i].ID.Name == clinitMethodName {
+			t.Errorf("unexpected <clinit> decl for a call-free class body: %+v", fns[i].ID)
+		}
+	}
+}
+
 func TestPythonParser_ParseDirectoryIncludesPyiStubs(t *testing.T) {
 	dir := t.TempDir()
 	stub := `def gensalt(rounds: int = 12, prefix: bytes = b"2b") -> bytes: ...

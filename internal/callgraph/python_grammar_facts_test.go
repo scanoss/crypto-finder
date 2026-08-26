@@ -252,7 +252,7 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 				sawTypedDefault = true
 			case "list_splat_pattern":
 				sawSplat = true
-			case "dictionary_splat_pattern":
+			case pythonNodeDictSplatPattern:
 				sawKwargSplat = true
 			}
 		}

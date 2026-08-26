@@ -269,6 +269,29 @@ func selected(got []int, idx int) bool {
 	return false
 }
 
+// TestDeriveObjectLifecycleCalls_ModuleSyntheticReceiver covers a Python
+// module-level object: `cipher = Cipher()` followed by `cipher.set_key(k)`
+// and `cipher.encrypt(data)`, all direct children of the synthetic
+// `<module>` decl. The setup call must group as a supporting call for the
+// terminal, exactly like any other receiver/producer pair — the `<module>`
+// decl is just a regular FunctionDecl container from this function's view.
+func TestDeriveObjectLifecycleCalls_ModuleSyntheticReceiver(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "Cipher", Name: "<init>"}, AssignedVar: "cipher", Line: 1},
+			{Callee: callgraph.FunctionID{Name: "set_key"}, ReceiverVar: "cipher", Line: 2},
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "cipher", Line: 3},
+		},
+	}
+	terminal := &fn.Calls[2] // encrypt
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, terminal))
+	want := []string{"<init>", "set_key"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
 // TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls pins that a
 // reassigned variable does not merge two objects into one lifecycle. It mirrors
 // how a Java client wraps a plain socket in TLS:

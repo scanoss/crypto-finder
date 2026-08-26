@@ -53,7 +53,6 @@ const (
 	javaVarOriginKindParameter     = "parameter"
 	javaFunctionTypeMethod         = "method"
 	javaFunctionTypeConstructor    = "constructor"
-	javaFunctionTypeClassInit      = "class-init"
 	javaNodeStaticInitializer      = "static_initializer"
 	javaThisKeyword                = "this"
 	javaSuperKeyword               = "super"
@@ -608,7 +607,7 @@ func (p *JavaParser) parseClassInitDecl(
 		EndLine:         int(body.EndPoint().Row) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
-		FunctionType:    javaFunctionTypeClassInit,
+		FunctionType:    functionTypeClassInit,
 		Visibility:      VisibilityPrivate,
 		OwnerVisibility: ownerVisibility,
 	}

@@ -26,10 +26,17 @@ const (
 	pythonNodeCall               = "call"
 	pythonNodeArgumentList       = "argument_list"
 	pythonNodeAliasedImport      = "aliased_import"
-	pythonOwnerTypeModule        = "module"
-	pythonSelfObjectName         = "self"
-	pythonClsObjectName          = "cls"
-	pythonInitMethodName         = "__init__"
+	pythonNodeClassDefinition    = "class_definition"
+	pythonNodeListSplatPattern   = "list_splat_pattern"
+	pythonNodeDictSplatPattern   = "dictionary_splat_pattern"
+	// pythonOwnerTypeModule is both the FunctionDecl.OwnerType value for a
+	// module-scoped function AND (not coincidentally — CPython's grammar
+	// names its root node the same way) the tree-sitter root node's own
+	// Type(), reused as such in ast_anchor.go's isFunctionContainer.
+	pythonOwnerTypeModule = "module"
+	pythonSelfObjectName  = "self"
+	pythonClsObjectName   = "cls"
+	pythonInitMethodName  = "__init__"
 )
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
@@ -232,13 +239,56 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
-		case "class_definition":
+		case pythonNodeClassDefinition:
 			p.processClass(child, src, filePath, packagePath, analysis)
 		case "decorated_definition":
 			// Handle decorated functions and classes
 			p.processDecorated(child, src, filePath, packagePath, analysis)
 		}
 	}
+
+	if moduleDecl := p.buildModuleInitDecl(root, src, filePath, packagePath, analysis); moduleDecl != nil {
+		analysis.Functions = append(analysis.Functions, *moduleDecl)
+	}
+}
+
+// buildModuleInitDecl builds the synthetic `<module>` FunctionDecl for a
+// file's direct module-level calls (pruned at any nested
+// function/class/decorated-definition/lambda boundary). Returns nil when the
+// module body has no such calls — no decl is emitted for a call-free module,
+// which is what keeps TestPythonE2E_Bcrypt_ConsumerScan_NoSynthesis at zero.
+func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) *FunctionDecl {
+	bindings := collectPythonBindings(root, nil, src, nil)
+	calls := p.collectPythonDirectCalls(root, src, filePath, analysis, bindings)
+	if len(calls) == 0 {
+		return nil
+	}
+	return &FunctionDecl{
+		ID: FunctionID{
+			Package: pythonModuleDottedPath(filePath, packagePath),
+			Name:    moduleInitMethodName,
+		},
+		FilePath:     filePath,
+		StartLine:    int(root.StartPoint().Row) + 1,
+		EndLine:      int(root.EndPoint().Row) + 1,
+		OwnerType:    pythonOwnerTypeModule,
+		OwnerName:    packagePath,
+		FunctionType: functionTypeModuleInit,
+		Calls:        calls,
+	}
+}
+
+// pythonModuleDottedPath returns the module's own dotted path: packagePath
+// + "." + the file's stem (e.g. "pkg.a" for "pkg/a.py"), or bare packagePath
+// for "__init__.py" (whose module name IS the package). Reuses the same
+// file-stem convention as addPythonModuleAlias (builder.go) so the two stay
+// consistent.
+func pythonModuleDottedPath(filePath, packagePath string) string {
+	stem := pythonModuleFileStem(filePath)
+	if stem == "" {
+		return packagePath
+	}
+	return packagePath + "." + stem
 }
 
 // parseFunctionDef parses a function_definition node into a FunctionDecl.
@@ -340,6 +390,36 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 
 	// Walk class body for method definitions.
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs)
+
+	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs); clinit != nil {
+		analysis.Functions = append(analysis.Functions, *clinit)
+	}
+}
+
+// buildClassInitDecl builds the synthetic `<clinit>` FunctionDecl for a
+// class's direct class-body calls (outside any method), pruned at any nested
+// function/class/decorated-definition/lambda boundary. Returns nil when the
+// class body has no such calls.
+func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool) *FunctionDecl {
+	bindings := collectPythonBindings(classBody, nil, src, attrs)
+	calls := p.collectPythonDirectCalls(classBody, src, filePath, analysis, bindings)
+	if len(calls) == 0 {
+		return nil
+	}
+	return &FunctionDecl{
+		ID: FunctionID{
+			Package: packagePath,
+			Type:    className,
+			Name:    clinitMethodName,
+		},
+		FilePath:     filePath,
+		StartLine:    int(classBody.StartPoint().Row) + 1,
+		EndLine:      int(classBody.EndPoint().Row) + 1,
+		OwnerType:    ownerTypeClass,
+		OwnerName:    className,
+		FunctionType: functionTypeClassInit,
+		Calls:        calls,
+	}
 }
 
 // extractPythonBaseClassNames returns the simple identifier names from a
@@ -406,7 +486,7 @@ func (p *PythonParser) processDecorated(node *sitter.Node, src []byte, filePath,
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
-		case "class_definition":
+		case pythonNodeClassDefinition:
 			p.processClass(child, src, filePath, packagePath, analysis)
 		}
 	}
@@ -568,7 +648,7 @@ func pythonParameterNames(params *sitter.Node, src []byte) []string {
 		case goNodeIdentifier:
 			identNode = child
 		case "typed_parameter", "default_parameter", "typed_default_parameter",
-			"list_splat_pattern", "dictionary_splat_pattern":
+			pythonNodeListSplatPattern, pythonNodeDictSplatPattern:
 			identNode = firstIdentifierChild(child)
 		default:
 			// "/" and "*" separator tokens, punctuation — no identifier to bind.
@@ -663,7 +743,7 @@ func collectPythonAssignmentTargets(target *sitter.Node, src []byte, locals map[
 		for i := 0; i < int(target.ChildCount()); i++ {
 			collectPythonAssignmentTargets(target.Child(i), src, locals)
 		}
-	case "list_splat_pattern", "dictionary_splat_pattern":
+	case pythonNodeListSplatPattern, pythonNodeDictSplatPattern:
 		if ident := firstIdentifierChild(target); ident != nil {
 			locals[ident.Content(src)] = true
 		}
@@ -685,6 +765,50 @@ func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath stri
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.walkForCalls(node.Child(i), src, filePath, analysis, scoped, calls)
+	}
+}
+
+// pythonPrunedAtDefinitionNodeTypes are the node types whose subtree calls
+// must NOT be attributed to a `<module>`/`<clinit>` synthetic entry point:
+// they run at invocation time (a function/method call, a lambda call, or a
+// nested class's own methods), not at module-load/class-body execution time.
+var pythonPrunedAtDefinitionNodeTypes = map[string]bool{
+	pythonNodeFunctionDefinition: true,
+	pythonNodeClassDefinition:    true,
+	"decorated_definition":       true,
+	"lambda":                     true,
+}
+
+// collectPythonDirectCalls walks a module or class body collecting calls
+// made directly in its own statements, PRUNING the walk at any nested
+// function/class/decorated-definition/lambda boundary. Used only to build
+// the `<module>`/`<clinit>` synthetic decls — ordinary function bodies keep
+// using the unpruned walkForCalls.
+func (p *PythonParser) collectPythonDirectCalls(body *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings) []FunctionCall {
+	var calls []FunctionCall
+	p.walkPrunedForCalls(body, src, filePath, analysis, bindings, &calls)
+	return calls
+}
+
+func (p *PythonParser) walkPrunedForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, calls *[]FunctionCall) {
+	if node.Type() == pythonNodeCall {
+		if call := p.parseCallExpr(node, src, filePath, analysis, bindings); call != nil {
+			setFunctionCallASTAnchor(call, node)
+			*calls = append(*calls, *call)
+		}
+	}
+
+	scoped := bindings
+	if pythonComprehensionNodeTypes[node.Type()] {
+		scoped = bindings.withComprehensionTargets(node, src)
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if pythonPrunedAtDefinitionNodeTypes[child.Type()] {
+			continue
+		}
+		p.walkPrunedForCalls(child, src, filePath, analysis, scoped, calls)
 	}
 }
 
@@ -1080,8 +1204,12 @@ func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	if parent.Type() == pythonNodeAssignment {
 		return pythonAssignmentTargetIdentity(parent.ChildByFieldName("left"), src)
 	}
-	// expression_statement wrapping an assignment
-	if parent.Type() == "expression_statement" {
+	// expression_statement wrapping an assignment. "expression_statement" is a
+	// generic tree-sitter node name shared across grammars (Python's grammar
+	// uses the identical node name); rustNodeExpressionStatement is the
+	// existing shared constant for it (see rust_parser.go), reused here to
+	// avoid a duplicate string literal (goconst).
+	if parent.Type() == rustNodeExpressionStatement {
 		gp := parent.Parent()
 		if gp != nil && gp.Type() == pythonNodeAssignment {
 			return pythonAssignmentTargetIdentity(gp.ChildByFieldName("left"), src)
