@@ -37,6 +37,10 @@ const (
 	pythonSelfObjectName  = "self"
 	pythonClsObjectName   = "cls"
 	pythonInitMethodName  = "__init__"
+	// pythonInitPyFileName is the Python package-init filename. A file with
+	// this basename is the only place `__init__.py` re-export collection
+	// (collectPythonReExports) runs.
+	pythonInitPyFileName = "__init__.py"
 )
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
@@ -138,10 +142,75 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	// Extract imports
 	p.extractImports(root, src, analysis)
 
+	// Record __init__.py re-exports (only from explicit relative imports;
+	// see collectPythonReExports).
+	if filepath.Base(filePath) == pythonInitPyFileName {
+		p.collectPythonReExports(root, src, analysis)
+	}
+
 	// Extract function and class declarations
 	p.extractDeclarations(root, src, filePath, packagePath, analysis)
 
 	return analysis, nil
+}
+
+// collectPythonReExports walks the whole file tree (mirroring
+// extractImportsInNode's recursion) recording every symbol re-exported via
+// an explicit relative `from .mod import Sym [as Alias]` statement into
+// analysis.PythonReExports. Absolute imports (`from pkg.mod import Sym`) and
+// wildcard imports (`from .mod import *`) are never recorded — only a
+// literal relative hop, per design's "one __init__.py hop, no inferred type
+// resolution" rule. Callers MUST only invoke this for a file whose basename
+// is "__init__.py".
+func (p *PythonParser) collectPythonReExports(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	if node.Type() == "import_from_statement" {
+		p.recordPythonReExportsFromStatement(node, src, analysis)
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.collectPythonReExports(node.Child(i), src, analysis)
+	}
+}
+
+func (p *PythonParser) recordPythonReExportsFromStatement(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	moduleNameNode := node.ChildByFieldName("module_name")
+	if moduleNameNode == nil || moduleNameNode.Type() != "relative_import" {
+		// Only an explicit relative import re-exports; absolute imports in
+		// __init__.py are left alone (design: gated on in-graph evidence,
+		// not inferred).
+		return
+	}
+	modulePath, ok := pythonImportFromModulePath(moduleNameNode, src, analysis.PackagePath)
+	if !ok {
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if node.FieldNameForChild(i) != "name" {
+			continue
+		}
+		child := node.Child(i)
+		switch child.Type() {
+		case pythonNodeDottedName:
+			recordPythonReExport(analysis, child.Content(src), modulePath)
+		case pythonNodeAliasedImport:
+			aliasNode := child.ChildByFieldName("alias")
+			if aliasNode != nil {
+				recordPythonReExport(analysis, aliasNode.Content(src), modulePath)
+			}
+		}
+		// wildcard_import carries no "name" field and is intentionally
+		// ignored — `from .mod import *` never re-exports a known symbol.
+	}
+}
+
+func recordPythonReExport(analysis *FileAnalysis, symbol, modulePath string) {
+	if analysis.PythonReExports == nil {
+		analysis.PythonReExports = make(map[string]string)
+	}
+	if _, exists := analysis.PythonReExports[symbol]; exists {
+		return
+	}
+	analysis.PythonReExports[symbol] = modulePath
 }
 
 // extractImports recurses into the WHOLE file tree discovering import

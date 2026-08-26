@@ -62,6 +62,13 @@ type Builder struct {
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
+	// pythonReExports accumulates every package's `__init__.py` re-exports
+	// discovered during Phase 1 source parsing (addAnalyses), keyed by the
+	// owning package's dotted path, then by symbol name -> origin module
+	// dotted path. Reset at the start of each BuildFromDirectories call.
+	// Python-only; consumed once by applyPythonReExports at the end of
+	// Phase 1.
+	pythonReExports map[string]map[string]string
 }
 
 // NewBuilder creates a new call graph builder with the given parser.
@@ -112,6 +119,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
+	b.pythonReExports = nil
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
@@ -121,6 +129,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	}
 	if b.ecosystem == ecosystemCPP {
 		markCPPProjectLocalCalls(graph)
+	}
+	if b.ecosystem == ecosystemPython {
+		applyPythonReExports(graph, b.pythonReExports)
 	}
 	sourceParseDuration := time.Since(sourceParseStart)
 
@@ -311,6 +322,9 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 				clearCPPDependencyLocalLinkage(analysis)
 			}
 		}
+		if b.ecosystem == ecosystemPython && len(analysis.PythonReExports) > 0 {
+			b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
+		}
 		for i := range analysis.Functions {
 			fn := &analysis.Functions[i]
 			key := fn.ID.String()
@@ -432,6 +446,81 @@ func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
 		alias.ID.Package = alias.ID.Package + "." + stem
 	}
 	graph.Functions[alias.ID.String()] = &alias
+}
+
+// recordPythonReExports merges one file's __init__.py re-exports into the
+// builder's per-package accumulator, keyed by the owning package's dotted
+// path (first binding per symbol wins, matching the parser's own
+// first-import-wins convention — relevant if a package somehow had more
+// than one __init__.py analyzed, which does not happen today but keeps the
+// merge deterministic).
+func (b *Builder) recordPythonReExports(packagePath string, reexports map[string]string) {
+	if b.pythonReExports == nil {
+		b.pythonReExports = make(map[string]map[string]string)
+	}
+	table := b.pythonReExports[packagePath]
+	if table == nil {
+		table = make(map[string]string)
+		b.pythonReExports[packagePath] = table
+	}
+	for symbol, origin := range reexports {
+		if _, exists := table[symbol]; exists {
+			continue
+		}
+		table[symbol] = origin
+	}
+}
+
+// applyPythonReExports rewrites a re-exported Python symbol's callee
+// package once, after Phase 1 source parsing, so a sibling file's
+// `from pkg import Name` resolves through `pkg/__init__.py`'s
+// `from .mod import Name` to the symbol's real declaring module. table maps
+// a package's dotted path to its recorded re-exports (symbol -> origin
+// module dotted path). The rewrite is gated on in-graph evidence only: it
+// fires ONLY when the rewritten FQN exists as a declaration in the graph
+// AND the original FQN does not — never unconditionally, since contract KB
+// YAMLs key on public re-export paths (e.g. "Crypto.Cipher.AES.new") that an
+// unconditional rewrite would destroy. See design.md "re-export stitching is
+// a builder post-parse rewrite, gated on in-graph evidence".
+func applyPythonReExports(graph *CallGraph, table map[string]map[string]string) {
+	if len(table) == 0 {
+		return
+	}
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			rewritePythonReExportedCallee(graph, &fn.Calls[i].Callee, table)
+		}
+	}
+}
+
+// rewritePythonReExportedCallee rewrites callee.Package in place when it
+// names a re-exported symbol whose rewritten FQN is a graph declaration and
+// whose original FQN is not. The re-exported symbol is callee.Type for a
+// constructor/method callee (Type != "") or callee.Name for a plain
+// function callee (Type == "").
+func rewritePythonReExportedCallee(graph *CallGraph, callee *FunctionID, table map[string]map[string]string) {
+	reexports, ok := table[callee.Package]
+	if !ok {
+		return
+	}
+	symbol := callee.Name
+	if callee.Type != "" {
+		symbol = callee.Type
+	}
+	origin, ok := reexports[symbol]
+	if !ok || origin == callee.Package {
+		return
+	}
+
+	original := callee.String()
+	rewritten := FunctionID{Package: origin, Type: callee.Type, Name: callee.Name}
+	if _, exists := graph.Functions[rewritten.String()]; !exists {
+		return
+	}
+	if _, exists := graph.Functions[original]; exists {
+		return
+	}
+	callee.Package = origin
 }
 
 func pythonModuleFileStem(path string) string {

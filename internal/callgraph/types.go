@@ -347,6 +347,15 @@ type FileAnalysis struct {
 	// Presence of a key also marks the type as declared in this file.
 	ClassBases map[string][]string
 	Functions  []FunctionDecl
+	// PythonReExports maps a symbol name to the module dotted path it is
+	// re-exported from, recorded ONLY when this file is a Python
+	// `__init__.py` and ONLY from explicit relative `from .mod import Sym
+	// [as Alias]` statements (wildcard/absolute imports ignored). The
+	// builder accumulates these per-package in addAnalyses and stitches
+	// re-exported callee packages once at the end of Phase 1
+	// (applyPythonReExports, Python-only). Python only; always nil for
+	// other ecosystems.
+	PythonReExports map[string]string
 }
 
 // CallGraph is the complete call graph across all analyzed packages.
