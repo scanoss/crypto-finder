@@ -759,6 +759,62 @@ class Foo:
 	}
 }
 
+// TestPythonParser_SyntheticEntryPoint_NoNestedScopeLeak verifies that the
+// module-level <module> entry point's receiver-identity table does NOT
+// include a name bound only inside a nested function, and that a class's
+// <clinit> entry point's receiver-identity table does NOT include a name
+// bound only inside one of that class's methods (F3). Before this fix, both
+// synthetic decls' locals were built via an UNPRUNED walk of the ENTIRE
+// module/class body (including every nested function/method), so `c` (bound
+// only inside `def f()`) and `m` (bound only inside `Foo.method()`) leaked
+// into the enclosing synthetic entry point's locals table, making a
+// same-named module-level/class-body-level bare identifier incorrectly
+// resolve as a receiver.
+func TestPythonParser_SyntheticEntryPoint_NoNestedScopeLeak(t *testing.T) {
+	t.Run("module level", func(t *testing.T) {
+		src := `def f():
+    c = Cipher()
+    c.encrypt(b"y")
+
+c.encrypt(b"x")
+`
+		fns := parsePythonInline(t, src)
+		fn := findPythonFuncByName(fns, moduleInitMethodName)
+		if fn == nil {
+			t.Fatal("<module> synthetic entry point not found")
+		}
+		call := findPythonCallByMethod(fn, "encrypt")
+		if call == nil {
+			t.Fatal("module-level encrypt call not found")
+		}
+		if call.ReceiverVar != "" {
+			t.Errorf("module-level c.encrypt ReceiverVar = %q, want empty (c is bound only inside def f(), not at module level)", call.ReceiverVar)
+		}
+	})
+
+	t.Run("class body level", func(t *testing.T) {
+		src := `class Foo:
+    def method(self):
+        m = Cipher()
+        m.encrypt(b"y")
+
+    m.encrypt(b"x")
+`
+		fns := parsePythonInline(t, src)
+		fn := findPythonFuncByName(fns, clinitMethodName)
+		if fn == nil {
+			t.Fatal("<clinit> synthetic entry point not found")
+		}
+		call := findPythonCallByMethod(fn, "encrypt")
+		if call == nil {
+			t.Fatal("class-body-level encrypt call not found")
+		}
+		if call.ReceiverVar != "" {
+			t.Errorf("class-body m.encrypt ReceiverVar = %q, want empty (m is bound only inside Foo.method(), not directly in the class body)", call.ReceiverVar)
+		}
+	})
+}
+
 // TestPythonParser_Import_TryExcept verifies that an `import` statement
 // nested inside a `try`/`except ImportError` block is discovered (the parser
 // recurses into nested blocks, not only direct file-root children), and that
