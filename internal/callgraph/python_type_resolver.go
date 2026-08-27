@@ -167,18 +167,47 @@ func propagatePythonAssignedVarTypes(graph *CallGraph) {
 	}
 }
 
+// pythonTrackedAssignedType records what propagatePythonAssignedVarTypesForDecl
+// learned about a local variable from an earlier call's AssignedVar plus
+// its callee's ReturnType: the raw (possibly dotted) type name, plus the
+// DECLARING decl's own package (the function that carried the return-type
+// annotation) — consulted only when the type name itself carries no
+// package prefix (G1, PR #310 phase-2 review).
+type pythonTrackedAssignedType struct {
+	name        string
+	declPackage string
+}
+
+// pythonSplitAssignedType resolves tracked's raw type name into its
+// Package/Type components (G1, PR #310 phase-2 review). A Python return
+// annotation is occasionally already fully qualified (a contract-KB return
+// type such as "cryptography.hazmat.primitives.ciphers.Cipher" split at
+// its LAST separator: Package is everything before it, Type is the final
+// segment. A bare name ("Cipher") carries no package of its own — it must
+// be resolved against the package that DECLARED it (the function whose
+// ReturnType produced this binding), never the CALLING decl's own package:
+// a factory living in a different package/dependency than its caller must
+// not have its return type silently reassigned to the caller's package.
+func pythonSplitAssignedType(tracked pythonTrackedAssignedType) (pkg, typ string) {
+	if idx := strings.LastIndex(tracked.name, "."); idx > 0 && idx < len(tracked.name)-1 {
+		return tracked.name[:idx], tracked.name[idx+1:]
+	}
+	return tracked.declPackage, tracked.name
+}
+
 // propagatePythonAssignedVarTypesForDecl runs propagatePythonAssignedVarTypes's
 // document-order pass for exactly one FunctionDecl, extracted purely to
 // keep the outer function's cyclomatic/cognitive complexity low.
 func propagatePythonAssignedVarTypesForDecl(fn *FunctionDecl, graph *CallGraph) {
-	var varTypes map[string]string
+	var varTypes map[string]pythonTrackedAssignedType
 	for i := range fn.Calls {
 		call := &fn.Calls[i]
 		if call.ReceiverVar != "" && varTypes != nil {
-			if typeName, ok := varTypes[call.ReceiverVar]; ok {
-				call.Callee.Package = fn.ID.Package
-				call.Callee.Type = typeName
-				call.ResolvedReceiverType = typeName
+			if tracked, ok := varTypes[call.ReceiverVar]; ok {
+				pkg, typ := pythonSplitAssignedType(tracked)
+				call.Callee.Package = pkg
+				call.Callee.Type = typ
+				call.ResolvedReceiverType = typ
 			}
 		}
 		if call.AssignedVar == "" {
@@ -189,9 +218,9 @@ func propagatePythonAssignedVarTypesForDecl(fn *FunctionDecl, graph *CallGraph) 
 			continue
 		}
 		if varTypes == nil {
-			varTypes = make(map[string]string)
+			varTypes = make(map[string]pythonTrackedAssignedType)
 		}
-		varTypes[call.AssignedVar] = callee.ReturnType
+		varTypes[call.AssignedVar] = pythonTrackedAssignedType{name: callee.ReturnType, declPackage: callee.ID.Package}
 	}
 }
 

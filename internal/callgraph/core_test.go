@@ -462,6 +462,73 @@ func TestBuilder_PreservesPythonSiblingModuleFunctionsWithSameName(t *testing.T)
 	}
 }
 
+// TestBuilder_PythonAssignedVarType_UsesDeclaringPackage (G1, PR #310
+// phase-2 review) pins that propagatePythonAssignedVarTypesForDecl, when
+// rewriting a later receiver call's Callee from an earlier
+// AssignedVar/ReturnType binding, takes the Package from the DECLARING
+// decl (the function whose declared return type produced the binding —
+// here "dep.make_cipher", package "dep") rather than the CALLING decl's
+// own package ("app"). A "dep" root carries a real Version, matching a
+// genuine pip-resolved dependency: before the fix, the rewrite fabricated
+// "app.Cipher.encrypt" (a package that owns no "Cipher" declaration at
+// all); the fix must resolve "dep.Cipher.encrypt" instead.
+func TestBuilder_PythonAssignedVarType_UsesDeclaringPackage(t *testing.T) {
+	appDir := t.TempDir()
+	depDir := t.TempDir()
+
+	depSrc := `class Cipher:
+    def encrypt(self, data):
+        return data
+
+
+def make_cipher() -> Cipher:
+    return Cipher()
+`
+	appSrc := `from dep import make_cipher
+
+
+def run(data):
+    c = make_cipher()
+    return c.encrypt(data)
+`
+	if err := os.WriteFile(filepath.Join(depDir, "dep.py"), []byte(depSrc), 0o600); err != nil {
+		t.Fatalf("write dep.py: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "app.py"), []byte(appSrc), 0o600); err != nil {
+		t.Fatalf("write app.py: %v", err)
+	}
+
+	builder := NewBuilderForEcosystem("python", NewPythonParser())
+	builder.SetTypeResolver(NewPythonTypeResolverChain())
+	roots := []PackageDir{
+		{Dir: appDir, ImportPath: "app"},
+		{Dir: depDir, ImportPath: "dep", Version: "1.0.0"},
+	}
+	graph, err := builder.BuildFromDirectories(roots, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	run := graph.Functions["app.run"]
+	if run == nil {
+		t.Fatalf("missing app.run; functions=%v", sortedFunctionKeys(graph.Functions))
+	}
+	var call *FunctionCall
+	for i := range run.Calls {
+		if run.Calls[i].Callee.Name == "encrypt" {
+			call = &run.Calls[i]
+			break
+		}
+	}
+	if call == nil {
+		t.Fatalf("c.encrypt(data) call not found among %#v", run.Calls)
+	}
+	want := FunctionID{Package: "dep", Type: "Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Fatalf("Callee = %+v, want %+v (never fabricate the CALLER's own package)", call.Callee, want)
+	}
+}
+
 func sortedFunctionKeys(functions map[string]*FunctionDecl) []string {
 	keys := make([]string, 0, len(functions))
 	for key := range functions {
