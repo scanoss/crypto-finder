@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Rust callgraph contracts for `openssl-sys` 0.9.x, the raw FFI bindings to OpenSSL: the EVP digest and cipher selectors, the SHA-1 and SHA-2 one-shot and streaming digests, AES-GCM and AES-CTR selection, AES key wrapping, key agreement, ECDSA, elliptic curve keys and groups, the raw RSA entry points, X.509 certificates, and the TLS and DTLS surface. RSA key generation reports its modulus size from the call site. The padding mode of the raw RSA operations, the cipher passed to `EVP_EncryptInit_ex`, and the curve NID are carried as arguments rather than folded into an algorithm name, because one entry point serves several algorithms.
 ### Fixed
 - A Rust call written through the 2015-edition `extern crate openssl_sys as ffi;` rename now resolves to the renamed crate's own identity. Only `use ... as ...` was handled, so `ffi::EVP_sha256()` was emitted as `ffi.EVP_sha256` and matched no contract. Aliasing an FFI binding crate is the norm, so this affected the shape those crates are normally used in. `extern crate` without a rename, and `extern crate self as ...`, are unchanged.
 ### Added
