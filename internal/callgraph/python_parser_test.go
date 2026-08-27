@@ -1253,6 +1253,41 @@ func TestPythonParser_SelfNamedReceiver_FreeFunction(t *testing.T) {
 	}
 }
 
+// TestPythonParser_Parameters_NameAndTypeFromFieldNodes (A2,
+// python-parser-parity-2) pins that FunctionDecl.Parameters is populated
+// from field nodes for every parameter shape — plain, typed, defaulted,
+// typed+defaulted, and splat — with BOTH Name (previously Java-only) and
+// Type set, and that anonymous "/"/"*" separator tokens never produce a
+// spurious entry.
+func TestPythonParser_Parameters_NameAndTypeFromFieldNodes(t *testing.T) {
+	src := `def f(a, b: int, c=1, d: int = 2, /, e=3, *args, **kwargs):
+    pass
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "f")
+	if fn == nil {
+		t.Fatal("f function not found")
+	}
+	want := []FunctionParameter{
+		{Name: "a"},
+		{Name: "b", Type: "int"},
+		{Name: "c"},
+		{Name: "d", Type: "int"},
+		{Name: "e"},
+		{Name: "args"},
+		{Name: "kwargs"},
+	}
+	if len(fn.Parameters) != len(want) {
+		t.Fatalf("Parameters = %+v (%d entries), want %d entries: %+v", fn.Parameters, len(fn.Parameters), len(want), want)
+	}
+	for i := range want {
+		got := fn.Parameters[i]
+		if got.Name != want[i].Name || got.Type != want[i].Type {
+			t.Errorf("Parameters[%d] = {Name:%q Type:%q}, want {Name:%q Type:%q}", i, got.Name, got.Type, want[i].Name, want[i].Type)
+		}
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
@@ -1352,16 +1387,22 @@ func pythonVisitBudgetFixtures(t *testing.T) []string {
 	return names
 }
 
-// countAllTreeNodes counts every node in the subtree rooted at node
-// (inclusive), matching what a full unpruned single descent visits exactly
-// once.
+// countAllTreeNodes counts every NAMED node in the subtree rooted at node
+// (inclusive), matching what pythonWalk's full unpruned single descent
+// visits exactly once. pythonWalk deliberately traverses NamedChild()/
+// NamedChildCount() rather than Child()/ChildCount() — every one of its
+// dispatch cases matches only named grammar rules, so skipping anonymous
+// literal tokens (punctuation, keywords) changes nothing about its
+// behavior while avoiding a go-tree-sitter Node-wrapper allocation
+// (Tree.cachedNode) for each one; this helper counts the same named-only
+// set so the budget stays meaningful.
 func countAllTreeNodes(node *sitter.Node) int {
 	if node == nil {
 		return 0
 	}
 	count := 1
-	for i := 0; i < int(node.ChildCount()); i++ {
-		count += countAllTreeNodes(node.Child(i))
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		count += countAllTreeNodes(node.NamedChild(i))
 	}
 	return count
 }
