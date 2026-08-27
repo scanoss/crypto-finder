@@ -1,0 +1,80 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: cmac
+  coordinates:
+    - cmac
+  version_range: ">=0.6.0,<0.9.0"
+  description: "RustCrypto CMAC (OMAC1) over a generic block cipher"
+
+# Inventory sources: the cmac crate's own source at 0.6.0, 0.7.2 and 0.8.0, and
+# the APIs selected by the scanoss/crypto_rules cmac rules.
+#
+# `Cmac<C>` is the only type a consumer constructs; every callable below comes
+# from the `KeyInit` and `Mac` traits the crate re-exports, so the surface
+# mirrors the sibling hmac KB deliberately.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest`/`Mac`/`KeyInit` re-exports and the
+#     `Key`/`Output`/`CtOutput` aliases and their conversions.
+#   skipped-informative-return: `generate_key`.
+#   skipped-unsupported: `CmacCore`, the block-level type consumers do not
+#     construct directly.
+#   needs-follow-up: releases below 0.6.0 spell the constructor `new_varkey` on
+#     the older `crypto_mac::Mac` trait. The matrix lists them, so they are
+#     mined, but they are a different API and belong in their own YAML. The
+#     boundary was read from the crates: 0.6.0 depends on crypto-mac 0.11 and
+#     already exposes `new_from_slice`; 0.5.1 does not.
+contracts:
+  - method: cmac::Cmac.new_from_slice
+    arity: 1
+    return: {type: cmac::Cmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: cmac::Cmac.new
+    arity: 1
+    return: {type: cmac::Cmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: cmac::Cmac.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: cmac::Cmac.chain_update
+    arity: 1
+    return: {type: cmac::Cmac, confidence: high}
+    role: operation
+  - method: cmac::Cmac.finalize
+    arity: 0
+    return: {type: digest::CtOutput, confidence: high}
+    role: output
+  - method: cmac::Cmac.finalize_reset
+    arity: 0
+    return: {type: digest::CtOutput, confidence: high}
+    role: output
+  - method: cmac::Cmac.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: cmac::Cmac.verify
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: cmac::Cmac.verify_slice
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: cmac::Cmac.verify_truncated_left
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+
+hierarchy: {}
