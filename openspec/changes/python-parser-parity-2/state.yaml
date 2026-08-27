@@ -58,7 +58,13 @@ phases:
     task_count: 83
     review_forecast: "400-line budget risk: High; Chained PRs recommended: No; Chain strategy: size-exception; Decision needed before apply: No"
   apply:
-    status: pending
+    status: partial
+    batch: 1
+    tasks_done: "29/83 (phases 0-7)"
+    engram_topic: sdd/python-parser-parity-2/apply-progress
+    artifact: apply-progress.md
+    last_commit: 29a5f36
+    note: "Perf gate (A1-A3) landed and holds within budget through row 9 (ns/op 0.991x, B/op 1.067x vs c6ee180 after the last commit). Remaining: rows 7/11/13/C/14, regression guard, final gates."
   verify:
     status: pending
     required_measurement: "BenchmarkPythonParseDirectory_Bindings with >=8 reps in ONE continuous run; report combined mean AND range."
