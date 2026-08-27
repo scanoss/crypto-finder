@@ -166,12 +166,17 @@ type pythonSymbolTable struct {
 	stringContent         sitter.Symbol
 	typeNode              sitter.Symbol
 	genericType           sitter.Symbol
-	typeParameter         sitter.Symbol
-	binaryOperator        sitter.Symbol
-	none                  sitter.Symbol
-	decorator             sitter.Symbol
-	await                 sitter.Symbol
-	lambdaParameters      sitter.Symbol
+	// subscript is the grammar rule a "typing."-qualified generic
+	// annotation parses as (`typing.Optional[Cipher]` — G10, PR #310
+	// phase-2 review), structurally distinct from genericType (which only
+	// fires for a bare-identifier base like `Optional[Cipher]`).
+	subscript        sitter.Symbol
+	typeParameter    sitter.Symbol
+	binaryOperator   sitter.Symbol
+	none             sitter.Symbol
+	decorator        sitter.Symbol
+	await            sitter.Symbol
+	lambdaParameters sitter.Symbol
 }
 
 // pythonSyms is resolved ONCE at package init against the Python grammar
@@ -232,6 +237,7 @@ func resolvePythonSymbols(lang *sitter.Language) pythonSymbolTable {
 		"string_content":            &t.stringContent,
 		"type":                      &t.typeNode,
 		"generic_type":              &t.genericType,
+		"subscript":                 &t.subscript,
 		"type_parameter":            &t.typeParameter,
 		"binary_operator":           &t.binaryOperator,
 		"none":                      &t.none,
@@ -971,8 +977,19 @@ func recordPythonWalkBinder(node *sitter.Node, sym sitter.Symbol, src []byte, la
 // (an attribute, a tuple/pattern unpacking) is not tracked.
 func recordPythonAnnotatedAssignmentVarType(node *sitter.Node, src []byte, activeFunc *pythonScope) {
 	left := node.ChildByFieldName("left")
+	if left == nil || left.Symbol() != pythonSyms.identifier {
+		return
+	}
 	typeField := node.ChildByFieldName("type")
-	if left == nil || typeField == nil || left.Symbol() != pythonSyms.identifier {
+	if typeField == nil {
+		// An un-annotated reassignment invalidates any earlier annotation
+		// tracked for this name (G10, PR #310 phase-2 review): the name no
+		// longer necessarily holds the previously annotated type, so a
+		// LATER receiver call on it must not resolve through the now-stale
+		// entry.
+		if activeFunc.varTypes != nil {
+			delete(activeFunc.varTypes, left.Content(src))
+		}
 		return
 	}
 	normalized := pythonNormalizeAnnotation(typeField, src)
@@ -2792,6 +2809,12 @@ func pythonNormalizeAnnotation(typeNode *sitter.Node, src []byte) string {
 		return inner.Content(src)
 	case pythonSyms.genericType:
 		return pythonNormalizeGenericAnnotation(inner, src)
+	case pythonSyms.subscript:
+		// G10 (PR #310 phase-2 review): a "typing."-qualified spelling
+		// (`typing.Optional[Cipher]`) parses as a plain subscript node,
+		// structurally distinct from genericType (which only fires for a
+		// bare-identifier base like `Optional[Cipher]`).
+		return pythonNormalizeTypingSubscriptAnnotation(inner, src)
 	case pythonSyms.binaryOperator:
 		left := inner.ChildByFieldName("left")
 		right := inner.ChildByFieldName("right")
@@ -2810,9 +2833,76 @@ func pythonNormalizeAnnotation(typeNode *sitter.Node, src []byte) string {
 	}
 }
 
+// pythonIsOptionalOrUnionBase reports whether base names Optional/Union,
+// either as a bare identifier or as a "typing."-qualified attribute (G10,
+// PR #310 phase-2 review): `typing.Optional[Cipher]`/`typing.Union[...]`
+// is a real, common spelling a bare-identifier-only check previously
+// failed to normalize at all (the base was an attribute node, not an
+// identifier, so pythonNormalizeGenericAnnotation returned "" outright).
+func pythonIsOptionalOrUnionBase(base *sitter.Node, src []byte) bool {
+	switch base.Symbol() {
+	case pythonSyms.identifier:
+		return pythonIsOptionalOrUnionName(base.Content(src))
+	case pythonSyms.attribute:
+		object := base.ChildByFieldName("object")
+		attr := base.ChildByFieldName("attribute")
+		if object == nil || attr == nil || object.Symbol() != pythonSyms.identifier || object.Content(src) != "typing" {
+			return false
+		}
+		return pythonIsOptionalOrUnionName(attr.Content(src))
+	default:
+		return false
+	}
+}
+
+// pythonIsOptionalOrUnionName reports whether name is the bare "Optional"
+// or "Union" typing spelling.
+func pythonIsOptionalOrUnionName(name string) bool {
+	switch name {
+	case "Optional", "Union":
+		return true
+	default:
+		return false
+	}
+}
+
+// pythonNormalizeTypingSubscriptAnnotation handles a "typing."-qualified
+// Optional/Union annotation parsed as a subscript node (G10, PR #310
+// phase-2 review): `typing.Optional[Cipher]`/`typing.Union[Cipher, None]`
+// parse as `subscript { value: attribute{object: typing, attribute:
+// Optional|Union}, subscript: <arg>, subscript: <arg>, ... }` — a
+// structurally different shape from the bare `Optional[Cipher]` spelling
+// (`generic_type{identifier, type_parameter{...}}`, handled by
+// pythonNormalizeGenericAnnotation). Each subscript-fielded argument is
+// normalized the SAME way pythonNormalizeGenericAnnotation's own
+// type_parameter arguments are; the same "single distinct non-empty
+// result" rule applies. node's own first named child is always the
+// "value" attribute node — the loop starts at index 1 to skip it.
+func pythonNormalizeTypingSubscriptAnnotation(node *sitter.Node, src []byte) string {
+	value := node.ChildByFieldName("value")
+	if value == nil || !pythonIsOptionalOrUnionBase(value, src) {
+		return ""
+	}
+	var result string
+	count := int(node.NamedChildCount())
+	for i := 1; i < count; i++ {
+		normalized := pythonNormalizeAnnotation(node.NamedChild(i), src)
+		if normalized == "" {
+			continue
+		}
+		if result != "" && result != normalized {
+			return ""
+		}
+		result = normalized
+	}
+	return result
+}
+
 // pythonNormalizeGenericAnnotation handles generic.Symbol()==genericType
-// under pythonNormalizeAnnotation: only a bare "Optional"/"Union" base
-// identifier is recognized; its type_parameter argument list normalizes
+// under pythonNormalizeAnnotation: a base naming "Optional"/"Union" is
+// recognized, either as a bare identifier OR as a "typing."-qualified
+// attribute (`typing.Optional[Cipher]` — G10, PR #310 phase-2 review, a
+// real, common spelling); its type_parameter argument list normalizes
 // each own `type` argument recursively, and the single distinct non-empty
 // result (every None argument normalizes to "" and is skipped) is
 // returned. Two or more DISTINCT non-empty results (a real Union of
@@ -2823,12 +2913,7 @@ func pythonNormalizeGenericAnnotation(generic *sitter.Node, src []byte) string {
 		return ""
 	}
 	base := generic.NamedChild(0)
-	if base == nil || base.Symbol() != pythonSyms.identifier {
-		return ""
-	}
-	switch base.Content(src) {
-	case "Optional", "Union":
-	default:
+	if base == nil || !pythonIsOptionalOrUnionBase(base, src) {
 		return ""
 	}
 	params := generic.NamedChild(1)

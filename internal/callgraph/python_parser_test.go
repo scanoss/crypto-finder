@@ -2047,6 +2047,65 @@ def run_union(c: Union[Cipher, None], data):
 	}
 }
 
+// TestPythonParser_TypeHint_TypingPrefixNormalization (G10, PR #310
+// phase-2 review) pins that a `typing.`-qualified Optional/Union
+// annotation (`typing.Optional[Cipher]`) normalizes the same as its
+// unqualified spelling (`Optional[Cipher]`) — the "typing." module prefix
+// is a real, common spelling that previously failed to normalize at all
+// (the generic base was an `attribute` node, not a bare `identifier`).
+func TestPythonParser_TypeHint_TypingPrefixNormalization(t *testing.T) {
+	src := `import typing
+
+from mymod import Cipher
+
+
+def run(c: typing.Optional[Cipher], data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (typing.Optional[Cipher] must normalize the same as Optional[Cipher])", call.Callee, want)
+	}
+}
+
+// TestPythonParser_TypeHint_ClearedOnUnannotatedReassignment (G10, PR #310
+// phase-2 review) pins that an un-annotated reassignment clears a
+// previously tracked annotation: `c: Cipher = get_cipher()` followed by a
+// plain `c = other_thing()` must leave a LATER `c.encrypt(data)` call
+// unresolved through the STALE Cipher annotation.
+func TestPythonParser_TypeHint_ClearedOnUnannotatedReassignment(t *testing.T) {
+	src := `from mymod import Cipher
+
+
+def run(data):
+    c: Cipher = get_cipher()
+    c = other_thing()
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	staleWant := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee == staleWant {
+		t.Errorf("Callee = %+v, want anything but the STALE Cipher annotation (c was reassigned without a new annotation)", call.Callee)
+	}
+}
+
 // TestPythonParser_TypeHint_StringForwardRef (row 13, python-parser-parity-2)
 // pins that a string forward-reference annotation (`c: "Cipher"`) resolves
 // the same way as a bare `c: Cipher` annotation.
@@ -2210,6 +2269,7 @@ func TestPythonSymbolTable_AllSymbolsResolved(t *testing.T) {
 		"string_content":           pythonSyms.stringContent,
 		"type":                     pythonSyms.typeNode,
 		"generic_type":             pythonSyms.genericType,
+		"subscript":                pythonSyms.subscript,
 		"type_parameter":           pythonSyms.typeParameter,
 		"binary_operator":          pythonSyms.binaryOperator,
 		"none":                     pythonSyms.none,
