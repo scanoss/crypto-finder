@@ -1,0 +1,109 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: hashlib
+  coordinates:
+    - hashlib
+  version_range: ">=3.6"
+  description: "CPython standard library hashlib — pbkdf2_hmac and scrypt key-derivation functions"
+
+# Public API inventory (verified 2026-08-27).
+# Primary sources:
+#   - https://github.com/python/cpython/blob/main/Lib/hashlib.py
+#   - https://docs.python.org/3/library/hashlib.html
+# Approved scope for this change: the public one-shot KDF functions whose
+# output length is determined by a call argument.
+#
+# Dispositions for every public crypto-relevant API exported by hashlib and
+# the documented public hash-object protocol:
+#   contracted:
+#     - hashlib.pbkdf2_hmac
+#     - hashlib.scrypt
+#   needs-follow-up (valid crypto APIs outside this KDF-only change):
+#     - hashlib.new
+#     - hashlib.md5
+#     - hashlib.sha1
+#     - hashlib.sha224
+#     - hashlib.sha256
+#     - hashlib.sha384
+#     - hashlib.sha512
+#     - hashlib.sha3_224
+#     - hashlib.sha3_256
+#     - hashlib.sha3_384
+#     - hashlib.sha3_512
+#     - hashlib.shake_128
+#     - hashlib.shake_256
+#     - hashlib.blake2b
+#     - hashlib.blake2s
+#     - hashlib.file_digest
+#     - hash.update
+#     - hash.digest
+#     - hash.hexdigest
+#     - hash.copy
+#     - SHAKE.digest(length)
+#     - SHAKE.hexdigest(length)
+#   skipped-informative-return (capability or result metadata, not calls that
+#   add cryptographic operation semantics to inferred types):
+#     - hashlib.algorithms_guaranteed
+#     - hashlib.algorithms_available
+#     - hash.digest_size
+#     - hash.block_size
+#     - hash.name
+
+contracts:
+  # ── Key derivation functions ──────────────────────────────────────────────────
+  # Arity/index verified against the installed CPython 3.12 _hashlib
+  # built-in's own help() text (row C, python-parser-parity-2):
+  #   pbkdf2_hmac(hash_name, password, salt, iterations, dklen=None)
+  #   scrypt(password, *, salt=None, n=None, r=None, p=None, maxmem=0, dklen=64)
+  # scrypt's dklen is the LAST declared parameter (index 6) — every
+  # parameter after `password` is keyword-only in the real CPython
+  # signature (the `*` marker), so a real call can never pass dklen
+  # positionally; step 3a's keyword-name match is the ONLY path that
+  # resolves it (step 3b is unreachable for this method in practice, but
+  # parameter_types is still declared for completeness/consistency with the
+  # other contracts in this file).
+
+  - method: hashlib.pbkdf2_hmac
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.str
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 4
+        name: dklen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: hashlib.scrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 6
+        name: dklen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+hierarchy: {}

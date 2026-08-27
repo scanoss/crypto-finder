@@ -140,6 +140,13 @@ const (
 	// argument names a curve rather than carrying the size itself, so neither
 	// argument_value nor argument_bit_length models it.
 	DerivationArgumentCurveBits Derivation = "argument_curve_bits"
+	// DerivationArgumentByteLength reads an integer argument expressed in
+	// BYTES (e.g. Python KDF `dklen`/`length`/`hash_len` parameters — see
+	// python-parser-parity-2 row C) and yields bits = bytes * 8. Distinct
+	// from argument_bit_length, which counts the LENGTH of key material the
+	// value itself carries (a byte-array allocation or string literal), and
+	// from argument_value, which is already expressed in bits.
+	DerivationArgumentByteLength Derivation = "argument_byte_length"
 )
 
 // ParameterContract describes a single parameter's role in a contract
@@ -402,10 +409,11 @@ var validParameterRole = map[string]struct{}{
 
 // validDerivation is the whitelist for Contribution.Derivation.
 var validDerivation = map[string]struct{}{
-	string(DerivationArgumentValue):     {},
-	string(DerivationArgumentBitLength): {},
-	string(DerivationArgumentType):      {},
-	string(DerivationArgumentCurveBits): {},
+	string(DerivationArgumentValue):      {},
+	string(DerivationArgumentBitLength):  {},
+	string(DerivationArgumentType):       {},
+	string(DerivationArgumentCurveBits):  {},
+	string(DerivationArgumentByteLength): {},
 }
 
 // Load parses and validates a YAML knowledge base payload.
@@ -544,7 +552,7 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 			}
 			if _, ok := validDerivation[p.Contributes.Derivation]; !ok {
 				return nil, fmt.Errorf(
-					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type, argument_curve_bits}",
+					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type, argument_curve_bits, argument_byte_length}",
 					i, c.Method, j, p.Contributes.Derivation,
 				)
 			}

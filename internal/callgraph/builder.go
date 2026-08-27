@@ -19,7 +19,13 @@ import (
 const (
 	ownerTypeInterface = "interface"
 	ownerTypeClass     = "class"
-	javaStringType     = "String"
+	// ownerTypeType is the FunctionDecl.OwnerType value for a declaration
+	// owned by a non-class type (a Go struct/interface method receiver, a
+	// Rust impl block's type) — shared across parsers instead of each
+	// repeating the "type" literal (surfaced by goconst, PR #310 phase-2
+	// review cache-invalidation pass).
+	ownerTypeType  = "type"
+	javaStringType = "String"
 	// ecosystemPython is the ecosystem identifier for Python callgraphs.
 	// Used to gate Python-specific dispatch (e.g. expandPythonSubclassDispatch).
 	ecosystemPython = "python"
@@ -51,6 +57,7 @@ type ParserCloner interface {
 type PackageDir struct {
 	Dir                  string // Absolute filesystem path
 	ImportPath           string // Package/module path (e.g., "crypto/aes" or "javax.crypto")
+	DistributionName     string // Dependency coordinate when it differs from ImportPath (Python only)
 	Version              string // Dependency version when applicable (e.g., "1.2.3")
 	CompiledArtifactPath string // Absolute path to a compiled artifact for type-only resolution
 }
@@ -62,6 +69,13 @@ type Builder struct {
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
+	// pythonReExports accumulates every package's `__init__.py` re-exports
+	// discovered during Phase 1 source parsing (addAnalyses), keyed by the
+	// owning package's dotted path, then by symbol name -> origin module
+	// dotted path. Reset at the start of each BuildFromDirectories call.
+	// Python-only; consumed once by applyPythonReExports at the end of
+	// Phase 1.
+	pythonReExports map[string]map[string]string
 }
 
 // NewBuilder creates a new call graph builder with the given parser.
@@ -112,6 +126,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
+	b.pythonReExports = nil
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
@@ -121,6 +136,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	}
 	if b.ecosystem == ecosystemCPP {
 		markCPPProjectLocalCalls(graph)
+	}
+	if b.ecosystem == ecosystemPython {
+		applyPythonReExports(graph, b.pythonReExports)
 	}
 	sourceParseDuration := time.Since(sourceParseStart)
 
@@ -304,26 +322,54 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLo
 
 func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
 	for _, analysis := range analyses {
-		if b.ecosystem == ecosystemCPP {
-			if projectLocal {
-				addCPPProjectDeclarations(graph, analysis)
-			} else {
-				clearCPPDependencyLocalLinkage(analysis)
+		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
+		b.mergeAnalysisFunctions(graph, analysis)
+	}
+}
+
+// applyEcosystemAnalysisHooks runs the per-analysis, ecosystem-specific
+// bookkeeping that must happen before an analysis's declarations are merged
+// into the graph: C++ project-local linkage tracking and Python re-export
+// accumulation.
+func (b *Builder) applyEcosystemAnalysisHooks(graph *CallGraph, analysis *FileAnalysis, projectLocal bool) {
+	if b.ecosystem == ecosystemCPP {
+		if projectLocal {
+			addCPPProjectDeclarations(graph, analysis)
+		} else {
+			clearCPPDependencyLocalLinkage(analysis)
+		}
+	}
+	// Re-export accumulation is restricted to project-local analyses only.
+	// The design's stated goal is stitching sibling files WITHIN the same
+	// project package; a non-project-local (versioned dependency) package's
+	// __init__.py re-exports must never be recorded, because contract KB
+	// YAMLs key their methods on a dependency's PUBLIC re-export FQN (e.g.
+	// "authlib.jose.(JsonWebSignature).<init>"). Recording and later
+	// rewriting that FQN to the dependency's internal sub-package path would
+	// silently break KB matching for every consumer of that dependency when
+	// the dependency's own source is present in the graph (dependency scan /
+	// mining). See TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency.
+	if b.ecosystem == ecosystemPython && projectLocal && len(analysis.PythonReExports) > 0 {
+		b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
+	}
+}
+
+// mergeAnalysisFunctions merges one analysis's declarations into the graph,
+// applying the stub-preference and Python sibling-module-collision rules on
+// a key collision.
+func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysis) {
+	for i := range analysis.Functions {
+		fn := &analysis.Functions[i]
+		key := fn.ID.String()
+		if existing, ok := graph.Functions[key]; ok {
+			if keepExistingDecl(existing, fn) {
+				continue
+			}
+			if b.preservePythonModuleCollision(graph, existing, fn) {
+				continue
 			}
 		}
-		for i := range analysis.Functions {
-			fn := &analysis.Functions[i]
-			key := fn.ID.String()
-			if existing, ok := graph.Functions[key]; ok {
-				if keepExistingDecl(existing, fn) {
-					continue
-				}
-				if b.preservePythonModuleCollision(graph, existing, fn) {
-					continue
-				}
-			}
-			graph.Functions[key] = fn
-		}
+		graph.Functions[key] = fn
 	}
 }
 
@@ -434,13 +480,88 @@ func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
 	graph.Functions[alias.ID.String()] = &alias
 }
 
+// recordPythonReExports merges one file's __init__.py re-exports into the
+// builder's per-package accumulator, keyed by the owning package's dotted
+// path (first binding per symbol wins, matching the parser's own
+// first-import-wins convention — relevant if a package somehow had more
+// than one __init__.py analyzed, which does not happen today but keeps the
+// merge deterministic).
+func (b *Builder) recordPythonReExports(packagePath string, reexports map[string]string) {
+	if b.pythonReExports == nil {
+		b.pythonReExports = make(map[string]map[string]string)
+	}
+	table := b.pythonReExports[packagePath]
+	if table == nil {
+		table = make(map[string]string)
+		b.pythonReExports[packagePath] = table
+	}
+	for symbol, origin := range reexports {
+		if _, exists := table[symbol]; exists {
+			continue
+		}
+		table[symbol] = origin
+	}
+}
+
+// applyPythonReExports rewrites a re-exported Python symbol's callee
+// package once, after Phase 1 source parsing, so a sibling file's
+// `from pkg import Name` resolves through `pkg/__init__.py`'s
+// `from .mod import Name` to the symbol's real declaring module. table maps
+// a package's dotted path to its recorded re-exports (symbol -> origin
+// module dotted path). The rewrite is gated on in-graph evidence only: it
+// fires ONLY when the rewritten FQN exists as a declaration in the graph
+// AND the original FQN does not — never unconditionally, since contract KB
+// YAMLs key on public re-export paths (e.g. "Crypto.Cipher.AES.new") that an
+// unconditional rewrite would destroy. See design.md "re-export stitching is
+// a builder post-parse rewrite, gated on in-graph evidence".
+func applyPythonReExports(graph *CallGraph, table map[string]map[string]string) {
+	if len(table) == 0 {
+		return
+	}
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			rewritePythonReExportedCallee(graph, &fn.Calls[i].Callee, table)
+		}
+	}
+}
+
+// rewritePythonReExportedCallee rewrites callee.Package in place when it
+// names a re-exported symbol whose rewritten FQN is a graph declaration and
+// whose original FQN is not. The re-exported symbol is callee.Type for a
+// constructor/method callee (Type != "") or callee.Name for a plain
+// function callee (Type == "").
+func rewritePythonReExportedCallee(graph *CallGraph, callee *FunctionID, table map[string]map[string]string) {
+	reexports, ok := table[callee.Package]
+	if !ok {
+		return
+	}
+	symbol := callee.Name
+	if callee.Type != "" {
+		symbol = callee.Type
+	}
+	origin, ok := reexports[symbol]
+	if !ok || origin == callee.Package {
+		return
+	}
+
+	original := callee.String()
+	rewritten := FunctionID{Package: origin, Type: callee.Type, Name: callee.Name}
+	if _, exists := graph.Functions[rewritten.String()]; !exists {
+		return
+	}
+	if _, exists := graph.Functions[original]; exists {
+		return
+	}
+	callee.Package = origin
+}
+
 func pythonModuleFileStem(path string) string {
 	ext := filepath.Ext(path)
 	if ext != ".py" {
 		return ""
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), ext)
-	if stem == "" || stem == "__init__" {
+	if stem == "" || stem == pythonInitMethodName {
 		return ""
 	}
 	return stem

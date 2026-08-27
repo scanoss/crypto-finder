@@ -298,7 +298,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
-		OwnerType:    "type",
+		OwnerType:    ownerTypeType,
 		OwnerName:    receiver,
 		FunctionType: "method",
 		Parameters:   p.extractParameterTypes(params, src),

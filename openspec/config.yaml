@@ -1,0 +1,48 @@
+project: crypto-finder
+persistence: hybrid
+
+context: |
+  Go 1.25 CLI (module github.com/scanoss/crypto-finder). Scans source trees for
+  cryptographic usage via OpenGrep/Semgrep rules, builds tree-sitter call graphs
+  per ecosystem, resolves types via YAML contracts KB (internal/callgraph/contracts),
+  and emits interim JSON / CycloneDX CBOM / reachability exports. Two-layer error
+  model: deep packages wrap plain errors, boundary packages (cli/engine/scanner/
+  dependency) assign failure.Code/Stage. See AGENTS.md and docs/ARCHITECTURE.md.
+
+strict_tdd: true
+
+testing:
+  test_command: "go test -v -race -coverprofile=coverage.out ./..."
+  coverage_command: "make coverage"
+  coverage_check_command: "make coverage-check"
+  lint_command: "make lint"
+  golangci_lint_version: "v2.10.1"
+  build_command: "make build"
+  test_layers:
+    unit: true
+    integration: true # testcontainers-go / testcontainers-go/modules/postgres
+    e2e: false
+  coverage_threshold_total: 80
+  coverage_excluded_paths:
+    - "^cmd/"
+    - "^internal/cli/"
+
+phases:
+  proposal:
+    require_engram_and_file: true
+  spec:
+    require_engram_and_file: true
+  design:
+    require_engram_and_file: true
+  tasks:
+    require_engram_and_file: true
+    delivery_strategy: exception-ok
+    review_budget_lines: unlimited
+  apply:
+    strict_tdd: true
+    require_tests_first: true
+  verify:
+    run_tests: "go test -v -race -coverprofile=coverage.out ./..."
+    run_lint: "make lint"
+  archive:
+    move_to: "openspec/changes/archive/"

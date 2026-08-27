@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -172,6 +174,106 @@ func TestDeriveObjectLifecycleCalls_KeepsReceiverSetupWhenOperationResultIsUsed(
 	}
 }
 
+// TestDeriveObjectLifecycleCalls_ParameterReceiver covers a Python parameter
+// object: the terminal call and a prior setup call are both invoked on the
+// same function parameter (ReceiverVar), so the setup call must be grouped
+// as a supporting call for the terminal.
+func TestDeriveObjectLifecycleCalls_ParameterReceiver(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Name: "set_key"}, ReceiverVar: "cipher", Line: 2},
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "cipher", Line: 3},
+		},
+	}
+	terminal := &fn.Calls[1] // encrypt
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, terminal))
+	want := []string{"set_key"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
+// TestDeriveObjectLifecycleCalls_SelfAttrRebinding covers the selector's
+// positional protection for an AssignedVar-only constructor terminal. The
+// parser-to-selector operation-terminal case is covered separately below.
+func TestDeriveObjectLifecycleCalls_SelfAttrRebinding(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "self.cipher", Name: "<init>"}, AssignedVar: "self.cipher", Line: 2}, // AES()
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "self.cipher", Line: 3},                     // encrypt(a)
+			{Callee: callgraph.FunctionID{Type: "self.cipher", Name: "<init>"}, AssignedVar: "self.cipher", Line: 4}, // RSA()
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "self.cipher", Line: 5},                     // encrypt(b)
+		},
+	}
+
+	// The finding is the SECOND constructor (RSA()) — an AssignedVar-only
+	// producer, which is the shape deriveObjectLifecycleCalls can order-protect.
+	secondCtor := &fn.Calls[2]
+	got := indexOf(fn.Calls, secondCtor)
+	derived := lifecycleCallIndices(toIdentities(fn.Calls), got)
+
+	if selected(derived, 1) {
+		t.Errorf("second self.cipher constructor derived = %v; must NOT include encrypt(a), bound to the FIRST assignment", derived)
+	}
+	if !selected(derived, 3) {
+		t.Errorf("second self.cipher constructor derived = %v; must include encrypt(b), bound to this assignment", derived)
+	}
+}
+
+// toIdentities projects FunctionCall fixtures into the objectIdentity shape
+// lifecycleCallIndices operates on.
+func toIdentities(calls []callgraph.FunctionCall) []objectIdentity {
+	out := make([]objectIdentity, len(calls))
+	for i := range calls {
+		out[i] = objectIdentity{ReceiverVar: calls[i].ReceiverVar, AssignedVar: calls[i].AssignedVar, ChainID: calls[i].ChainID}
+	}
+	return out
+}
+
+// indexOf returns the index of target within calls by pointer identity.
+func indexOf(calls []callgraph.FunctionCall, target *callgraph.FunctionCall) int {
+	for i := range calls {
+		if &calls[i] == target {
+			return i
+		}
+	}
+	return -1
+}
+
+// selected reports whether idx is present in got.
+func selected(got []int, idx int) bool {
+	for _, i := range got {
+		if i == idx {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDeriveObjectLifecycleCalls_ModuleSyntheticReceiver covers a Python
+// module-level object: `cipher = Cipher()` followed by `cipher.set_key(k)`
+// and `cipher.encrypt(data)`, all direct children of the synthetic
+// `<module>` decl. The setup call must group as a supporting call for the
+// terminal, exactly like any other receiver/producer pair — the `<module>`
+// decl is just a regular FunctionDecl container from this function's view.
+func TestDeriveObjectLifecycleCalls_ModuleSyntheticReceiver(t *testing.T) {
+	fn := &callgraph.FunctionDecl{
+		Calls: []callgraph.FunctionCall{
+			{Callee: callgraph.FunctionID{Type: "Cipher", Name: "<init>"}, AssignedVar: "cipher", Line: 1},
+			{Callee: callgraph.FunctionID{Name: "set_key"}, ReceiverVar: "cipher", Line: 2},
+			{Callee: callgraph.FunctionID{Name: "encrypt"}, ReceiverVar: "cipher", Line: 3},
+		},
+	}
+	terminal := &fn.Calls[2] // encrypt
+
+	got := methodsOf(deriveObjectLifecycleCalls(fn, terminal))
+	want := []string{"<init>", "set_key"}
+	if !equalStrings(got, want) {
+		t.Errorf("derived = %v, want %v", got, want)
+	}
+}
+
 // TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls pins that a
 // reassigned variable does not merge two objects into one lifecycle. It mirrors
 // how a Java client wraps a plain socket in TLS:
@@ -204,6 +306,63 @@ func TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls(t *testing.
 	for _, want := range []int{2, 3, 4} {
 		if !selected[want] {
 			t.Errorf("index %d missing from lifecycle %v", want, got)
+		}
+	}
+}
+
+// TestPythonSelfAttrRebindingSplitsOperationLifecycle builds a real Python
+// callgraph and proves that a terminal operation after self.attr reassignment
+// derives only calls belonging to the new object generation. The selector is
+// unchanged; the parser supplies generation-aware identities.
+func TestPythonSelfAttrRebindingSplitsOperationLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	src := `from Crypto.Cipher import AES, RSA
+
+class Worker:
+    def run(self, key, first, second):
+        self.cipher = AES.new(key)
+        self.cipher.configure(first)
+        self.cipher.encrypt(first)
+        self.cipher = RSA.new(key)
+        self.cipher.configure(second)
+        self.cipher.encrypt(second)
+`
+	if err := os.WriteFile(filepath.Join(dir, "worker.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "mypkg"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	run := graph.Functions["mypkg.(Worker).run"]
+	if run == nil {
+		t.Fatalf("missing mypkg.(Worker).run; functions=%v", graph.Functions)
+	}
+
+	var terminal *callgraph.FunctionCall
+	for i := range run.Calls {
+		if callgraph.BaseFunctionName(run.Calls[i].Callee.Name) == "encrypt" && run.Calls[i].Line == 10 {
+			terminal = &run.Calls[i]
+			break
+		}
+	}
+	if terminal == nil {
+		t.Fatalf("second encrypt operation not found: %#v", run.Calls)
+	}
+	derived := deriveObjectLifecycleCalls(run, terminal)
+	seenLines := make(map[int]bool, len(derived))
+	for _, call := range derived {
+		seenLines[call.Line] = true
+	}
+	for _, line := range []int{5, 6, 7} {
+		if seenLines[line] {
+			t.Errorf("second-generation terminal derived first-generation line %d: %#v", line, derived)
+		}
+	}
+	for _, line := range []int{8, 9} {
+		if !seenLines[line] {
+			t.Errorf("second-generation terminal omitted line %d: %#v", line, derived)
 		}
 	}
 }

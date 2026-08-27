@@ -14,3 +14,6 @@ tmp/
 demo/
 # Local Pi runtime state
 .atl/
+
+# Generated Python perf benchmark corpus (see internal/callgraph/testdata/python_perf/generate_fixture.go)
+internal/callgraph/testdata/python_perf/modules/

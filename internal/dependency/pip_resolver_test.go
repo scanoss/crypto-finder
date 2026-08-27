@@ -642,3 +642,51 @@ func TestCollectUniqueLocations(t *testing.T) {
 		t.Errorf("locations[1] = %q, unexpected", locations[1])
 	}
 }
+
+func TestPipResolver_Resolve_PreservesDistributionAndImportRoot(t *testing.T) {
+	tmpBin := t.TempDir()
+	sitePackages := filepath.Join(t.TempDir(), "site-packages")
+	if err := os.MkdirAll(filepath.Join(sitePackages, "argon2"), 0o755); err != nil {
+		t.Fatalf("mkdir argon2 package: %v", err)
+	}
+	writeExecutable(t, tmpBin, "python3", `#!/bin/sh
+if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "list" ]; then
+  printf '%s\n' '[{"name":"argon2-cffi","version":"25.1.0"}]'
+  exit 0
+fi
+if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "show" ]; then
+  cat <<'EOF'
+Name: argon2-cffi
+Version: 25.1.0
+Location: `+sitePackages+`
+Requires:
+EOF
+  exit 0
+fi
+if [ "$1" = "-c" ]; then
+  printf '%s\n' '{"argon2":["argon2-cffi"]}'
+  exit 0
+fi
+exit 1
+`)
+	prependPath(t, tmpBin)
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "pyproject.toml"), []byte("[project]\nname='demo'\n"), 0o600); err != nil {
+		t.Fatalf("write pyproject.toml: %v", err)
+	}
+
+	result, err := NewPipResolver().Resolve(context.Background(), projectDir)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(result.Dependencies) != 1 {
+		t.Fatalf("Dependencies = %#v, want one", result.Dependencies)
+	}
+	dep := result.Dependencies[0]
+	if dep.Module != "argon2-cffi" {
+		t.Errorf("Module = %q, want distribution name %q", dep.Module, "argon2-cffi")
+	}
+	if dep.ImportPath != "argon2" {
+		t.Errorf("ImportPath = %q, want discovered import root %q", dep.ImportPath, "argon2")
+	}
+}

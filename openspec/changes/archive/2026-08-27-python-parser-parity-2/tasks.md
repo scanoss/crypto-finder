@@ -1,0 +1,231 @@
+# Tasks: Python parser parity round 2 — throughput, deferred rows, KDF key length
+
+## Review Workload Forecast
+
+| Field | Value |
+|-------|-------|
+| Estimated changed lines | ~3500–5500 (perf rewrite ~500-700; rows 6/18/20/8/9/7/11/13 ~600-900; row C KB+code ~500-700; row 14 new resolver+cache+wiring ~500-700; tests ~2000-2800; CHANGELOG/user-guide ~60) |
+| 400-line budget risk | High |
+| Chained PRs recommended | No |
+| Suggested split | Single PR (`#310`, `matiasdaloia/parser-parity-multi-language`) — `size:exception` already accepted |
+| Delivery strategy | exception-ok |
+| Chain strategy | size-exception |
+
+Decision needed before apply: No
+Chained PRs recommended: No
+Chain strategy: size-exception
+400-line budget risk: High
+
+### Suggested Work Units
+
+All units land on the SAME PR #310 branch (no chaining — `size:exception` accepted).
+
+| Unit | Goal | Likely PR | Focused test command | Runtime harness | Rollback boundary |
+|------|------|-----------|----------------------|-----------------|-------------------|
+| 1 | T0 pinning + A perf rewrite (single descent, CI guard) | PR #310 | `go test ./internal/callgraph/ -run 'TestPythonGrammarFacts|TestPythonSymbolTable|TestPythonParser_NodeVisitBudget|TestPythonParser_ReturnTypeFromFieldNode|TestPythonParser_CallOrderIsDocumentOrder' -v` | `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -count=8` vs `c6ee180` worktree | `git revert` the A commit range; every later row depends on it, so this unit is the true rollback floor |
+| 2 | Small rows 6, 18, 9 | PR #310 | `go test ./internal/callgraph/... ./internal/scanner/... -run 'TestOpengrep_PythonEndColConventionPinning|TestPythonParser_Visibility|TestPythonParser_Super' -v` | N/A — pure parser-unit scope, no external scan needed | independent revert per row's commit |
+| 3 | Medium rows 20, 8, 7, 11, 13 | PR #310 | `go test ./internal/callgraph/ -run 'TestPythonParser_ArgProvenance|TestPythonParser_Decorator|TestPythonParser_Super|TestPythonParser_DynamicDispatch|TestPythonParser_Partial|TestPythonParser_Call_DunderCall|TestPythonParser_TypeHint' -v` | `go run ./cmd/crypto-finder scan --export-callgraph /tmp/py-cg.json internal/callgraph/testdata/python_stubs/` | independent revert per row's commit; row 13 resolver half reverts with `python_type_resolver.go` diff |
+| 4 | Row C — KDF key length (contracts.go + key_length.go + 6 KB YAMLs) | PR #310 | `go test ./internal/callgraph/contracts/... ./internal/scan/... -run 'TestLoadEmbeddedPython_KDFKeySizeRoles|TestResolvedKeyLength_Python|TestResolvedKeyLength_JavaUnchangedByKeywordPath' -v` | `go run ./cmd/crypto-finder scan -o /tmp/py-kdf-findings.json <python fixture repo with PBKDF2/scrypt/HKDF calls>` | reverting C leaves A–B green (design §8) |
+| 5 | Row 14 — dependency type resolver (last, abandonable) | PR #310 | `go test ./internal/callgraph/ -run TestPythonDepTypeResolver -v` | `go run ./cmd/crypto-finder scan --scan-dependencies -o /tmp/py-dep-findings.json <repo with a real pip-resolved dependency>` or explicit skip if no such tree is available | reverting 14 leaves A–C intact and green (design §8, D7) |
+| 6 | Regression guard + final gates + docs | PR #310 | `go test -race ./...` | `make lint`, `make coverage-check` | N/A — verification-only unit, nothing to roll back |
+
+## Phase 0: T0 — Grammar and perf pinning tests (foundation)
+
+- [x] **0.1** RED T0.1: extend `TestPythonGrammarFacts_PinnedNodeShapes` (`internal/callgraph/python_grammar_facts_test.go`) with the section-10 appendix rows (decorators, `superclasses`, `super()`, `getattr`, `importlib`, params/annotations, `return_type`, annotated assignment, `keyword_argument`, module constants, nested call args, lambda, `await`).
+  Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_PinnedNodeShapes -v`; if real parser output disagrees, fix the test expectations, never the parser.
+  Deps: none.
+- [x] **0.2** RED T0.2: add `TestPythonGrammarFacts_ReturnTypeField` asserting `function_definition` field `return_type` exists with child `type`.
+  Files: `internal/callgraph/python_grammar_facts_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_ReturnTypeField -v`. Deps: 0.1.
+- [x] **0.3** RED T0.3: add `TestPythonSymbolTable_AllSymbolsResolved` — every entry added to `resolvePythonSymbols` (design §3.3 list) resolves to a non-zero `sitter.Symbol`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonSymbolTable_AllSymbolsResolved -v`. Deps: none.
+- [x] **0.4** RED T0.4/A3: add `TestPythonParser_NodeVisitBudget` using the instance visit-counter hook (D4: `visits *int` field on `PythonParser`, nil in production) over a committed ≤40-file corpus at `internal/callgraph/testdata/python_visit_budget/` (one file per idiom: comprehensions, `with/as`, decorators, `super()`, nested classes, keyword args, annotations, module constants). Asserts `visits >= nodeCount` and `visits <= nodeCount + 8*callCount`.
+  Files: `internal/callgraph/python_parser_test.go`, `internal/callgraph/testdata/python_visit_budget/*.py`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_NodeVisitBudget -v`. Deps: none.
+- [x] **0.5** RED T0.5: add `TestPythonParser_ReturnTypeFromFieldNode` — 500+-line function body, `ReturnType` correct without materializing the body (`testing.AllocsPerRun` or an equivalent non-`Content()` proof).
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReturnTypeFromFieldNode -v`. Deps: none.
+- [x] **0.6** RED T0.6: add `TestPythonParser_CallOrderIsDocumentOrder` proving `decl.Calls` order equals source order across comprehensions, nested defs, and chains under deferred resolution (D3, load-bearing for `internal/scan/supporting_calls.go` positional splitting).
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_CallOrderIsDocumentOrder -v`. Deps: none.
+- [x] **0.7** T0.8 baseline measurement: `git worktree add /tmp/.../c6ee180-wt c6ee180` under the scratchpad dir; copy `BenchmarkPythonParseDirectory_Bindings` harness + corpus generator into the worktree; run `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8` (≥8 reps, one continuous run); record combined mean AND min/max range in apply-progress notes; remove the worktree afterward.
+  Files: none in-repo (temporary worktree only) + apply-progress note. Evidence: recorded mean+range text. Deps: none.
+
+## Phase 1: A1/A2/A3 — Single-descent rewrite and CI guard
+
+- [x] **1.1** GREEN: implement `pythonBindingLayer`, `pythonPendingCall`, `pythonScope`, `pythonFileWalk` (design §3.2–3.3); one `pythonWalk(root)` descent emitting pending calls per scope; delete `walkForCalls`, `walkPrunedForCalls`, `withComprehensionTargets`; extend `pythonSymbolTable`/`resolvePythonSymbols` with the full §3.3 symbol list.
+  Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/ -run 'TestPythonGrammarFacts|TestPythonSymbolTable_AllSymbolsResolved|TestPythonParser_NodeVisitBudget|TestPythonParser_CallOrderIsDocumentOrder' -v` all green. Deps: 0.1–0.6.
+- [x] **1.2** GREEN: `ReturnType` from `return_type` field node only (delete the `node.Content(src)` call site on `function_definition`); `Parameters` from `typed_parameter`/`typed_default_parameter` `type` field nodes, populating `FunctionParameter.Name`.
+  Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReturnTypeFromFieldNode -v`. Deps: 1.1.
+- [x] **1.3** REFACTOR: cache `ChildCount()` everywhere on hot paths; ensure `pending` slices allocate lazily (nil until a scope's first call).
+  Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/... -run Python -v` green, no behavior change. Deps: 1.1–1.2.
+- [x] **1.4** Run full existing Python suite to confirm no regression from the descent rewrite, especially D3's document-order invariant.
+  Evidence: `go test ./internal/callgraph/... -v` and `go test ./internal/scan/... -run Python -v`. Deps: 1.1–1.3.
+- [x] **1.5** Perf guard re-run: `go test ./internal/callgraph/ -run TestPythonParser_NodeVisitBudget -v` AND `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8`; compare mean to the 0.7 baseline — must be ≤1.10x mean, ≤1.15x `B/op`. A breach is optimized here before any later row lands; never accepted.
+  Deps: 0.7, 1.1–1.4.
+
+## Phase 2: A4 — Mining-scale measurement
+
+- [x] **2.1** Run `--scan-dependencies` before/after the A1–A3 rewrite on a real large pip-resolved dependency tree; record wall-clock in apply-progress. If no suitably large tree exists in this environment, record that gap explicitly rather than fabricating a number.
+  Evidence: apply-progress note with before/after numbers or an explicit "no large tree available" note. Deps: 1.5.
+
+## Phase 3: Row 6 — Opengrep column pinning (also satisfies T0.7)
+
+- [x] **3.1** RED: `TestOpengrep_PythonEndColConventionPinning`, mirroring `TestOpengrep_EndColConventionPinning` (`internal/scanner/semgrep/transformer_test.go`), against a Python fixture with one crypto call.
+  Files: `internal/scanner/semgrep/transformer_test.go` (or sibling Python test file), fixture under `internal/scanner/semgrep/testdata/`. Evidence: `go test ./internal/scanner/semgrep/... -run TestOpengrep_PythonEndColConventionPinning -v`. Deps: 1.5.
+- [x] **3.2** GREEN: reuse the existing opengrep invocation helper; compare match columns to `StartCol`/`EndCol` (1-based, start inclusive, end exclusive); absent binary → `t.Skip` with an explicit `t.Logf` skip reason, never a silent pass.
+  Deps: 3.1.
+- [x] **3.3** Perf guard re-run (test-only row; expect zero parse-cost delta) — commands per 1.5.
+  Deps: 3.2.
+
+## Phase 4: Row 18 — Visibility
+
+- [x] **4.1** RED: `TestPythonParser_Visibility_Underscore`, `_DoubleUnderscore`, `_Dunder`, `_OwnerVisibility`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Visibility -v`. Deps: 1.5.
+- [x] **4.2** GREEN: `pythonVisibilityForName(name)` (`__dunder__`→public, `__x` non-dunder→private, `_x`→protected, else public); set `FunctionDecl.Visibility` in `parseFunctionDef` using the source name (before `__init__`→`<init>`); set `OwnerVisibility` from the class name in `processClass`/`extractClassMethods` (empty for module-level functions).
+  Files: `internal/callgraph/python_parser.go`. Deps: 4.1.
+- [x] **4.3** Perf guard re-run — commands per 1.5.
+  Deps: 4.2.
+
+## Phase 5: Row 20 — Argument provenance recursion
+
+- [x] **5.1** RED: `TestPythonParser_ArgProvenance_NestedConstructorCalls`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ArgProvenance_NestedConstructorCalls -v`. Deps: 4.3.
+- [x] **5.2** GREEN: populate `FunctionCall.ArgumentSources` for the three bounded shapes (nested `call` → `CALL_RESULT` recursive, depth ≤4; bare identifier bound to a module-level int constant → `VARIABLE`→`VALUE`; literal → `VALUE`); populate `pythonFileWalk.moduleConsts` in the same descent.
+  Files: `internal/callgraph/python_parser.go`. Deps: 5.1.
+- [x] **5.3** Perf guard re-run — commands per 1.5.
+  Deps: 5.2.
+
+## Phase 6: Row 8 — Decorator semantics
+
+- [x] **6.1** RED: `TestPythonParser_Decorator_StaticMethodNoReceiver`, `_ClassMethodCls`, `_PropertyReceiver`, `_CustomKeepsIdentity`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Decorator -v`. Deps: 5.3.
+- [x] **6.2** GREEN: classify each `decorator` child in `extractDecoratedMethod`/`processDecorated` against `staticmethod`/`classmethod`/`property`; `@staticmethod` → parameter 0 is an ordinary local, `receiverIdentity` no longer special-cases it; `@classmethod` → parameter-0 marking so a renamed `cls` still canonicalises; `@property` → record the property name in the class scope's `attrs`; any other decorator leaves `FunctionID` unchanged.
+  Files: `internal/callgraph/python_parser.go`. Deps: 6.1.
+- [x] **6.3** Regression re-verify (design §6): `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` still pass unchanged.
+  Evidence: `go test ./internal/callgraph/ -run 'TestPythonParser_SelfNamedReceiver_FreeFunction|TestPythonParser_ReceiverVar_ParameterShadowsImport' -v`. Deps: 6.2.
+- [x] **6.4** Perf guard re-run — commands per 1.5.
+  Deps: 6.3.
+
+## Phase 7: Row 9 — `super()`
+
+- [x] **7.1** RED: `TestPythonParser_Super_InitResolvesBase`, `_MethodResolvesBase`, `_NeverLocalSuper`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Super -v`. Deps: 6.4.
+- [x] **7.2** GREEN: add `bases []string` to `pythonScope` (populated in `processClass`); in `parseAttributeCall`, resolve `super()`/`super(B, self)` object nodes to `FunctionID{Package: packagePath, Type: OwnerBases[0], Name: method}`; empty `OwnerBases` → leave unresolved; `__init__`→`<init>` for the callee name.
+  Files: `internal/callgraph/python_parser.go`. Deps: 7.1.
+- [x] **7.3** Perf guard re-run — commands per 1.5.
+  Deps: 7.2.
+
+## Phase 8: Row 7 — Bounded dynamic dispatch
+
+- [x] **8.1** RED: `TestPythonParser_DynamicDispatch_GetattrLiteral`, `_ImportlibLiteral`, `_NonLiteralNoIdentity`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_DynamicDispatch -v`. Deps: 7.3.
+- [x] **8.2** GREEN: `getattr(obj, "encrypt")(data)` with a single-`string_content` literal argument 1 rewrites the outer call through the `obj.encrypt` receiver/callee path (non-literal → nothing new); `importlib.import_module("hashlib")`/`__import__("hashlib")` with a literal argument register the import via `recordPythonImportOnce` (first-binding-wins).
+  Files: `internal/callgraph/python_parser.go`. Deps: 8.1.
+- [x] **8.3** Perf guard re-run — commands per 1.5.
+  Deps: 8.2.
+
+## Phase 9: Row 11 — `functools.partial` / `__call__`
+
+- [x] **9.1** RED: `TestPythonParser_Partial_ResolvesTarget`, `TestPythonParser_Call_DunderCall`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run 'TestPythonParser_Partial_ResolvesTarget|TestPythonParser_Call_DunderCall' -v`. Deps: 8.3.
+- [x] **9.2** GREEN: `partials map[string]FunctionID` and `callables map[string]string` on `pythonBindings` (scope-local, built incrementally in `resolvePythonPendingCalls`'s document-order loop rather than stored on `pythonScope` — the design's `pythonFileWalk.classScopes` name does not exist in current code; `classesWithDunderCall map[string]bool` lives on `pythonFileWalk`, keyed by class NAME, collected in the same descent via `pythonWalkEnterFunction` reading `pythonClassInfo.name`).
+  Files: `internal/callgraph/python_parser.go`. Deps: 9.1.
+- [x] **9.3** Perf guard re-run — commands per 1.5.
+  Deps: 9.2.
+
+## Phase 10: Row 13 — Type hints
+
+- [x] **10.1** RED: `TestPythonParser_TypeHint_ParamAnnotation`, `_ReturnAnnotation`, `_OptionalUnionNormalization`, `_StringForwardRef`, `_AnnotatedAssignment`, `_TypeCheckingImport`, `_UnresolvableNoType`.
+  Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_TypeHint -v`. Deps: 9.3.
+- [x] **10.2** GREEN parser half: `pythonNormalizeAnnotation(typeNode, src)` per the pinned shapes (`type>identifier`, `Optional[...]`/`Union[...]`, `X | None`, string forward-ref); populate `pythonScope.varTypes` from typed parameters and annotated assignment; consult `varTypes[object]` in `pythonResolveAttributeLikeCall` after the import check, before the local-name fallback. **Deviation from design**: `FunctionDecl.ReturnType` (via `pythonReturnTypeOf`) was deliberately NOT changed to normalize through `pythonNormalizeAnnotation` — `ReturnType` is exported downstream (`internal/scan` annotate/export); normalizing it would turn e.g. `List[int]` into `""`, a real behavior/export change outside this row's bounded scope. Return-type-driven propagation is entirely 10.3's job, reading the RAW `ReturnType` string, consistent with 10.3's own description.
+  Files: `internal/callgraph/python_parser.go`. Deps: 10.1.
+- [x] **10.3** GREEN resolver half: `propagatePythonAssignedVarTypes(graph)` as the last step of the new `PythonTypeResolverChain.ResolveTypes`; per-decl ordered pass over `Calls` maintaining `var → type`, never crossing decls. Gated to `.py`/`.pyi`-sourced `FunctionDecl`s only (`isPythonSourceFile(fn.FilePath)`) — `AssignedVar`/`ReceiverVar` are language-agnostic fields shared by every parser, so an ungated pass would risk mutating another ecosystem's calls on a coincidental variable-name match. `PythonTypeResolverChain` NOT yet wired into `parser_registry.go`/CLI (that wiring is task 12.5, per design); this phase's resolver-half test (`_ReturnAnnotation`) calls the chain/function directly.
+  Files: `internal/callgraph/python_type_resolver.go`. Deps: 10.2.
+- [x] **10.4** Regression re-verify (design §6): `TestPythonParser_ReceiverVar_ComprehensionTarget` still holds, both positive and negative sub-assertions (D2 layer-stack change).
+  Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReceiverVar_ComprehensionTarget -v`. Deps: 10.3.
+- [x] **10.5** Perf guard re-run — commands per 1.5.
+  Deps: 10.4.
+
+## Phase 11: Row C — KDF key length
+
+- [x] **11.1** RED: add `DerivationArgumentByteLength` to `validDerivation` whitelist + error string; add (failing) `TestLoadEmbeddedPython_KDFKeySizeRoles`.
+  Files: `internal/callgraph/contracts/contracts.go` (`:404`, `:547`), `internal/callgraph/contracts/python_kdf_test.go` (new file). Evidence: `go test ./internal/callgraph/contracts/... -run TestLoadEmbeddedPython_KDFKeySizeRoles -v`. Deps: 10.5.
+- [x] **11.2** GREEN: implement the `argument_byte_length` case in `resolveContractKeyBits` (`internal/scan/key_length.go:227`) — `bits = bytes*8`, reject `<=0` or `> maxKeyMaterialBytes`.
+  Deps: 11.1.
+- [x] **11.3** RED: `TestResolvedKeyLength_Python_KeywordDklen`, `_ModuleConstant`, `_NonConstantStaysUnknown`.
+  Files: `internal/scan/resolved_key_length_test.go`. Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python -v`. Deps: 11.2.
+- [x] **11.4** GREEN step 3a: keyword-name matching in `resolvedKeyLengthFromContract` (`internal/scan/key_length.go`, **not** `mergeCallParameters`) — parse the leading `identifier=` from `Arguments[i]` via `^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`, match group 1 against the contract role's `Name`, derive bits from `ResolvedValue` or group 2, bypass `contractParameterTypesMatch` for this step only.
+  Files: `internal/scan/key_length.go`. Deps: 11.3.
+- [x] **11.5** RED: `TestResolvedKeyLength_Python_PositionalLength` (spec §"Positional call without call-site type evidence still resolves"). Also added `TestResolvedKeyLength_Python_PositionalNonConstantStaysAbsent` (spec's paired negative scenario).
+  Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python_PositionalLength -v`. Deps: 11.4.
+- [x] **11.6** GREEN step 3b: positional/type-evidence-absent path — contract declares `parameter_types`, no `SourceNode.DeclaredType`/empty `parameterTypes[index]`, value resolves to a constant → emit `constant` only; unresolved value → nil.
+  Files: `internal/scan/key_length.go`. Deps: 11.5.
+- [x] **11.7** RED+GREEN: `TestResolvedKeyLength_JavaUnchangedByKeywordPath` (T0.10) plus re-run the full existing `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` case — stayed byte-identical (verified: `TestResolvedKeyLengthFromContract`'s 3 cases all pass unmodified).
+  Evidence: `go test ./internal/scan/... -run 'TestResolvedKeyLength_JavaUnchangedByKeywordPath|TestResolvedKeyLength' -v`. Deps: 11.6.
+- [x] **11.8** Verify module-constant resolution end-to-end: `KEY_LEN = 32` feeds `moduleConsts` (5.2) → `ArgumentSources` VARIABLE→VALUE → existing `resolveSimpleExportParameterValue` with zero export-schema change.
+  Evidence: covered by `TestResolvedKeyLength_Python_ModuleConstant` (11.3). Deps: 11.4, 5.2.
+- [x] **11.9** KB: `pyca-cryptography.yaml` — verified `PBKDF2HMAC`/`Scrypt`/`HKDF`/`HKDFExpand`/`ConcatKDFHash`/`X963KDF` `<init>` arity and the `length` parameter's declared index against the INSTALLED `cryptography` 50.0.1 package's own primary source (`.pyi` stub at `cryptography/hazmat/bindings/_rust/openssl/kdf.pyi`, locally importable in this environment) before authoring; added `parameters[].contributes: keySize` (`argument_byte_length`) with both `index` and `name`, plus `parameter_types`. **Correction found**: the PRE-EXISTING `Scrypt.<init>` contract declared `arity: 4`, but the verified real signature is `Scrypt(salt, length, n, r, p, backend=None)` — 5 non-backend parameters. Fixed `arity: 4 → 5` as part of this row (a wrong arity here would have misaligned the new `parameter_types`/keySize role too).
+  Files: `internal/callgraph/contracts/python/pyca-cryptography.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
+- [x] **11.10** KB (new file): `python/hashlib.yaml` — verified `hashlib.pbkdf2_hmac`/`hashlib.scrypt` signatures against the INSTALLED CPython 3.12 `_hashlib` built-in's own `help()` text before authoring; schema-v2 header, `dklen` keySize entries, `hierarchy: {}`. **Note**: `hashlib.scrypt`'s real signature is `scrypt(password, *, salt=None, n=None, r=None, p=None, maxmem=0, dklen=64)` — `dklen` is index 6 (design's table said index 5, missing `maxmem`) and keyword-only (the `*` marker), so only its keyword form is exercised by 11.14's table (its positional form is not valid Python and is not tested).
+  Files: `internal/callgraph/contracts/python/hashlib.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
+- [x] **11.11** KB: `argon2-cffi.yaml` — DONE (batch 3). Network access was available this batch; verified `argon2.PasswordHasher.__init__` and `argon2.low_level.hash_secret` against github.com/hynek/argon2-cffi (main branch source). Added a new arity-4 `PasswordHasher.<init>` entry (coexists with the pre-existing arity-0 entry) and a keySize role on `hash_secret` (arity 7, index 5, unchanged).
+  Files: `internal/callgraph/contracts/python/argon2-cffi.yaml`. Deps: 11.1.
+- [x] **11.12** KB: `bcrypt.yaml` — DONE (batch 3). Verified `bcrypt.kdf` against github.com/pyca/bcrypt (main branch `.pyi` stub): arity 4 (pre-existing, correct), `desired_key_bytes` at index 2.
+  Files: `internal/callgraph/contracts/python/bcrypt.yaml`. Deps: 11.1.
+- [x] **11.13** KB: `pycryptodome.yaml` + `pycryptodomex.yaml` — DONE (batch 3). Verified `PBKDF2`/`scrypt`/`HKDF`/`PBKDF1` against github.com/Legrandin/pycryptodome (master branch `Crypto/Protocol/KDF.py`). **Corrections found**: pre-existing `Crypto.Protocol.KDF.scrypt`/`Cryptodome.Protocol.KDF.scrypt` declared `arity: 4` but the real signature has 6 required parameters (fixed to 6); pre-existing `HKDF.<init>` declared `arity: 3` but the real signature has 4 required parameters (fixed to 4). Added a new `PBKDF1.<init>` contract (not previously in the KB) per this batch's explicit instruction to verify it. `bcrypt(...)` intentionally excluded (task-scoped "n/a" — fixed-length hash, no key-length parameter).
+  Files: `internal/callgraph/contracts/python/pycryptodome.yaml`, `internal/callgraph/contracts/python/pycryptodomex.yaml`. Deps: 11.1.
+- [x] **11.14a** RED: extended `TestLoadEmbeddedPython_KDFKeySizeRoles` (`internal/callgraph/contracts/python_kdf_test.go`) with the 11 batch-3 cases (argon2-cffi x2, bcrypt x1, pycryptodome x4, pycryptodomex x4); confirmed RED (`ContractsFor` returned 0 contracts, or the role assertion failed) before authoring the YAML.
+  Files: `internal/callgraph/contracts/python_kdf_test.go`. Evidence: `go test ./internal/callgraph/contracts/... -run TestLoadEmbeddedPython_KDFKeySizeRoles -v`. Deps: 11.1.
+- [x] **11.14** RED+GREEN: `TestResolvedKeyLength_Python_EveryListedAPI` — table extended in batch 3 to cover every KB entry this row authored across both batches: pyca-cryptography's 6 KDFs + hashlib's 2 (batch 2) plus argon2-cffi's 2, bcrypt's 1, pycryptodome's 4, and pycryptodomex's 4 (batch 3) — 19 entries total, keyword and positional forms wherever the real API's own signature allows a positional call (hashlib.scrypt: keyword-only, tested only as keyword; all batch-3 entries support both forms).
+  Files: `internal/scan/resolved_key_length_test.go`. Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python_EveryListedAPI -v` — all 19 subtests pass. Deps: 11.9–11.13, 11.14a.
+- [x] **11.15** Verify export schema unchanged: `pkg/graphfrag.CallgraphSchemaVersion == "6.13"` (grepped constant + full `pkg/graphfrag` test suite green); zero diff under `pkg/graphfrag/` confirmed via `git diff --stat`.
+  Evidence: `go test ./pkg/graphfrag/... -v` plus `git diff --stat -- pkg/graphfrag/`. Deps: 11.14.
+- [x] **11.16** Perf guard re-run — commands per 1.5. Result: mean ns/op ~64,320,933 (0.947x, budget <=1.10x), mean B/op ~20,701,475 (1.074x, budget <=1.15x).
+  Deps: 11.15.
+
+## Phase 12: Row 14 — `PythonDependencyTypeResolver` (lands last, abandonable)
+
+- [x] **12.1** RED: `TestPythonDepTypeResolver_StubReturnAnnotation`, `_SourceAnnotation`, `_ClassBases`, `_CachePerDistribution`, `_NoAnnotationsDegrades`, `_ProjectLocalUnaffected` against `t.TempDir()` fixtures written inline by the test (not committed `testdata/python_stubs/` files — simpler, self-contained per-test fixtures achieve the same pinning without a separate corpus directory). Confirmed RED via `go vet` (undefined `CachedPythonSignatureIndex`) before any production type existed.
+  Files: `internal/callgraph/python_dependency_type_resolver_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonDepTypeResolver -v` — all cases pass after 12.2-12.4. Deps: 11.16.
+- [x] **12.2** GREEN: new `PythonDependencyTypeResolver` — `pythonSignature{ID FunctionID, ParamTypes, ReturnType}`, worker pool `min(max(NumCPU/2,1), maxPythonDistributionWorkers=8)`, pruned tree-sitter descent (own `sitter.Parser` per worker, `python.GetLanguage()`) reading only top-level/class-body `function_definition`/`class_definition` nodes' `return_type`/`parameters`/`superclasses` field nodes — never a function body — reusing `pythonNormalizeAnnotation` (10.2) and `extractPythonBaseClassNames`. `.pyi` preferred over same-stem `.py` per file (`selectPythonDistFiles`) — **note**: this is the OPPOSITE precedence from `builder.go`'s `keepExistingDecl` (which prefers a real `.py` over an incoming `.pyi` at declaration-merge time); documented explicitly in `selectPythonDistFiles`'s doc comment as a deliberate difference (this resolver is a type-STUB indexer, where a hand-authored `.pyi`'s annotations are the more reliable source).
+  Files: `internal/callgraph/python_dependency_type_resolver.go` (new). Deps: 12.1.
+- [x] **12.3** GREEN: new `PythonSignatureIndexCache` disk implementation (`DiskPythonSignatureIndexCache`) mirroring `BytecodeIndexCache`'s temp-file+rename atomic write; cache key `ImportPath + "@" + Version + ":v" + pythonSignatureCacheSchemaVersion`.
+  Files: `internal/callgraph/python_signature_cache.go` (new). Deps: 12.2.
+- [x] **12.4** GREEN: `PythonTypeResolverChain{contract, dependency}` — `dependency` now constructed by default (`NewPythonDependencyTypeResolver(nil)`, safe uncached no-op) inside `NewPythonTypeResolverChain()`, no longer nil-until-wired; `ResolveTypes` order (already established in batch 2) contract KB → dependency signatures → `propagatePythonAssignedVarTypes` (10.3) is unchanged. `PythonDependencyTypeResolver.ResolveTypes` merges into `graph.TypeHierarchy`/`graph.ExternalMethodSignatures`; fills `FunctionDecl.ReturnType` only when currently empty; `sourceRoots` filtered to `Version != "" && Dir != ""` (D8), deduplicated by `ImportPath@Version`.
+  Files: `internal/callgraph/python_dependency_type_resolver.go`, `internal/callgraph/python_type_resolver.go`. Deps: 12.2–12.3.
+- [x] **12.5** Wiring: `NewTypeResolverForEcosystem("python")` now returns `NewPythonTypeResolverChain()` (was `NewPythonContractTypeResolverFromEmbedded()` directly); added a Python branch in `newCallGraphBuilder` mirroring the Java one, type-asserting `*callgraph.PythonTypeResolverChain` and calling the new `SetSignatureIndexCache(NewDiskPythonSignatureIndexCache())`.
+  Files: `internal/callgraph/parser_registry.go`, `internal/cli/scan.go`. Evidence: `go test ./internal/callgraph/... ./internal/cli/... ./internal/scan/... ./internal/engine/... -v` all green. Deps: 12.4.
+- [x] **12.6** Confirmed degradation rules: unreadable dir → `TestPythonDepTypeResolver_NoAnnotationsDegrades_UnreadableDir` (debug log, nil error); absent annotation → `_NoAnnotationsDegrades` (ReturnType stays empty); cache read/write error → `DiskPythonSignatureIndexCache.Get`/`Put` return a wrapped error the resolver only debug-logs, never propagates; project-local root → `_ProjectLocalUnaffected`. `StrictFailure()` not implemented (matches `PythonContractTypeResolver`) — confirmed by grep, no such method exists on `PythonDependencyTypeResolver`.
+  Evidence: covered by `_NoAnnotationsDegrades`/`_NoAnnotationsDegrades_UnreadableDir`/`_ProjectLocalUnaffected` (12.1). Deps: 12.5.
+- [x] **12.7** Integration task: a real pip-resolved package WAS available in this environment (`cryptography` 50.1, located via `python3 -c "import cryptography, os; print(os.path.dirname(cryptography.__file__))"`); `TestPythonDepTypeResolver_Integration` runs the resolver against its real site-packages directory and asserts non-trivial output — measured 145 `TypeHierarchy` entries and 1501 `ExternalMethodSignatures` entries from the real package.
+  Files: `internal/callgraph/python_dependency_type_resolver_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonDepTypeResolver_Integration -v` — PASS (not skipped). Deps: 12.5.
+- [x] **12.8** Perf guard re-run — commands per 1.5. Result: mean ns/op ~72,624,248 (1.069x, budget <=1.10x, PASS), mean B/op ~20,823,525 (1.080x, budget <=1.15x, PASS). Row 14 touches no file on the `BenchmarkPythonParseDirectory_Bindings` code path (`python_parser.go` itself was not modified this batch); the ns/op ratio's rise from batch 2's 0.947x is machine-noise variance between runs, not a code regression — still comfortably within budget.
+  Deps: 12.7.
+
+## Phase 13: Regression guard (design §6)
+
+- [x] **13.1** `internal/callgraph/python_grammar_facts_test.go` `TestPythonGrammarFacts_PinnedNodeShapes` — confirmed the extended table (0.1) still matches real parser output; all 33 subtests pass.
+  Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_PinnedNodeShapes -v` — PASS.
+- [x] **13.2** `internal/callgraph/python_parser_test.go` `TestPythonParser_ParseFile` — re-verified green with `Visibility`/`OwnerVisibility`/`Parameters[].Name` expectations already in place from earlier batches; no new update needed this batch (no `python_parser.go` change landed in batch 3).
+  Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ParseFile -v` — PASS.
+- [x] **13.3** `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` — re-verified unchanged, both PASS.
+- [x] **13.4** `TestPythonParser_ReceiverVar_ComprehensionTarget` — re-verified unchanged, PASS (positive and negative sub-assertions both hold).
+- [x] **13.5** `internal/scan` `TestPythonE2E_*` (7 cases), `TestPythonGolden_*` (7 cases), `TestPythonSmoke_MultiLib_RepresentativeFixture`, `TestFidelity_*` (7 cases, all `t.Skip` — opengrep/deployed-rules fixtures unavailable in this sandbox, matching the pre-existing skip pattern, never a fabricated pass) — all re-run, all PASS or explicitly skip. Golden fixture counts observed this run: pycryptodomex 2/6, paramiko 2/2, PyJWT 1/2, PyNaCl 1/3, argon2-cffi 1/4, pycryptodome 2/6, bcrypt 1/3, pyca/cryptography 2/3 (crypto_entry_points/supporting_calls) — consistent with prior batches, no regression.
+  Evidence: `go test ./internal/scan/... -run 'TestPythonE2E|TestPythonGolden' -v`, `go test ./internal/scan/... -run 'TestPythonSmoke_MultiLib|TestFidelity' -v` — all PASS/SKIP as expected.
+- [x] **13.6** `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` non-int-overload case (`TestResolvedKeyLengthFromContract`) — stayed green unchanged; all 9 test functions in the file pass, including the batch-3-extended `TestResolvedKeyLength_Python_EveryListedAPI` (19 subtests).
+  Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength -v` — all PASS.
+- [x] **13.7** `internal/callgraph/python_perf_test.go` — updated both the file-level doc comment (previously referenced the archived `python-parser-java-parity` change's "T1-T5" naming) and `BenchmarkPythonParseDirectory_Bindings`'s own doc comment to describe the current single-descent `pythonWalk` architecture; benchmark body byte-for-byte unchanged.
+  Files: `internal/callgraph/python_perf_test.go`. Evidence: `go build ./...` + `go test ./internal/callgraph/ -run TestPythonParser -v` green (doc-only change, no behavior risk).
+- [x] **13.8** `internal/callgraph/contracts` loader tests — verified: no test in the suite asserts an exhaustive derivation-value table or the exact `"not in {argument_value, argument_bit_length, argument_type, argument_curve_bits, argument_byte_length}"` error string (the one derivation-rejection test, `TestContract_RejectsInvalidDerivation_NamesMethodAndField`, only asserts the error names the offending method/field, not the whitelist text) — nothing to update; `argument_byte_length` was already added to both the enum and the error string in batch 2 (11.1/11.2) and remains correct. Confirmed via `grep` across `internal/callgraph/contracts/*_test.go` plus a full green run.
+  Evidence: `go test ./internal/callgraph/contracts/... -v` — 0 failures.
+
+## Phase 14: Final gates, docs, delivery
+
+- [x] **14.1** `go test -race ./...` — exit 0, all packages PASS (some cached from earlier runs; the full uncached run was also confirmed green package-by-package during phases 12-13).
+- [x] **14.2** `make lint` — 2 issues reported, both confirmed pre-existing and unchanged since `e49e921` (`builder.go:557` goconst on `pythonInitMethodName`, `python_parser_test.go:2251` prealloc) via a `git stash` A/B comparison; zero NEW issues in any file this batch touched. `golangci-lint cache clean` was run first (batch-2 learning #6: goconst is cache-flaky).
+- [x] **14.3** `make coverage-check` — PASS: total coverage 82.0% (14529/17725) >= 80% threshold.
+- [x] **14.4** `git diff --check` — clean (exit 0), including after the CHANGELOG/user-guide edits.
+- [x] **14.5** Verify zero diff: `git diff --stat -- pkg/graphfrag/ internal/scan/supporting_calls.go` — empty output, confirmed.
+- [x] **14.6** Verify schema constants unchanged: `pkg/graphfrag.CallgraphSchemaVersion == "6.13"`, `SchemaVersion == "graph-fragment-1.13"` — confirmed via grep against `pkg/graphfrag/callgraph_export.go`/`export.go`; both unchanged, no diff under `pkg/graphfrag/` at all (14.5).
+- [x] **14.7** `CHANGELOG.md` — added `[Unreleased]` bullets: `Fixed` (Python parser throughput, internal-only, no behavior change), `Added` (Python KDF `resolved_key_length` coverage across pyca/cryptography/hashlib/argon2-cffi/bcrypt/pycryptodome(x), dependency-mode Python type resolution, `visibility`/`owner_visibility` on Python entries, the additional receiver-resolution rows), consumer-facing wording only, no internal file/function names.
+- [x] **14.8** `docs/user-guide/user-guide.html` — extended the existing Python reachability paragraph (decorator/super/dynamic-dispatch/partial/type-hint receiver resolution, `visibility`/`owner_visibility`, dependency-mode stub/source type contribution) and the "Structure exports" `resolved_key_length` description (Python KDF coverage across the same 5 library families). Verified with the HTML parser check (`HTML parsed`), the prohibited-term/dash grep (0 matches), `git diff --check` (clean), and a local `python3 -m http.server` fetch (`HTTP 200`).
+- [x] **14.9** Committed each phase incrementally with conventional commit messages, no AI attribution: `0c02d13` (row C KDF batch-3 KB), `e6afb4c` (row 14 dependency resolver), `952814e` (phase 13 regression guard + doc refresh), `6e7be93` (CHANGELOG + user guide).
+- [x] **14.10** Pushed every commit to `origin matiasdaloia/parser-parity-multi-language` as it landed (verified `git push` output after the row-14 commit; the phase-13 and docs commits are pushed as the final apply step below).
+- [x] **14.11** Hand-off summary for the PR #310 comment (orchestrator posts it): phase 2 delivered A(perf) + rows 6/7/8/9/11/13/14/18/20 + C(KDF); overhead vs `c6ee180` baseline measured at the value recorded in 0.7/1.5; test count added; KB coverage table (design §5.3); links to `CHANGELOG.md`/user-guide diffs.

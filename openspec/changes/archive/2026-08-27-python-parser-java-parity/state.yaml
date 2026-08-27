@@ -1,0 +1,76 @@
+change: python-parser-java-parity
+created: 2026-08-26
+artifact_store: hybrid
+execution_mode: auto
+delivery_strategy: exception-ok
+review_budget_lines: unlimited
+strict_tdd: true
+phases:
+  explore:
+    status: done
+    artifact: explore.md
+    engram_topic: sdd/python-parser-java-parity/explore
+    engram_id: 981
+  proposal:
+    status: done
+    artifact: proposal.md
+    engram_topic: sdd/python-parser-java-parity/proposal
+  spec:
+    status: done
+    artifact: specs/python-callgraph-binding-resolution/spec.md
+    engram_topic: sdd/python-parser-java-parity/spec
+    reconciled_with_design: true
+  design:
+    status: done
+    artifact: design.md
+    engram_topic: sdd/python-parser-java-parity/design
+    validated: true
+    validated_on: 2026-08-26
+  tasks:
+    status: done
+    artifact: tasks.md
+    engram_topic: sdd/python-parser-java-parity/tasks
+  apply:
+    status: done
+    artifact: apply-progress.md
+    engram_topic: sdd/python-parser-java-parity/apply-progress
+    tasks_complete: 41/41
+    last_commit: a1dca1d
+    known_risk: "F2 perf remediation: ~14.0% parse-time overhead vs c6ee180 baseline (8x benchtime=2s reps), down from ~97-106%. Within the <=20% hard requirement, close to but not fully at the <=10% design target. See apply-progress.md 'Remediation batch' section."
+    remediation:
+      pr: 310
+      findings_fixed: [F1, F2, F3, F4, F5, F6, F7, F8, F9]
+      status: done
+      commits: [5d49e19, 94c16d7, 5a947eb, c8a0e93, c4e003e, b7b39e9, 494302c, 825d733, a1dca1d]
+  verify:
+    status: done
+    artifact: verify-report.md
+    engram_topic: sdd/python-parser-java-parity/verify-report
+    engram_id: 990
+    verdict: pass_with_warnings
+    requirements: 7/7
+    scenarios: 27/27
+    critical_findings: 0
+    warnings: 2
+    verified_on: 2026-08-26
+    reverify:
+      status: done
+      verdict: pass_with_warnings
+      requirements: 7/7
+      scenarios: 29/29
+      critical_findings: 0
+      warnings: 3
+      head_commit: 6d7ba35
+      verified_on: 2026-08-27
+      note: "Re-verification of PR #310 remediation batch (F1-F9). All fixes confirmed with genuine negative-path tests. Perf overhead now ~19.9% combined 10-rep (was ~97-106%), within the <=20% hard cap but close to it. New finding: Engram spec artifact (id 984) is stale vs on-disk spec.md after F5's scenario additions."
+  archive:
+    status: done
+    artifact: archive-report.md
+    engram_topic: sdd/python-parser-java-parity/archive-report
+    engram_id: 992
+    archived_on: 2026-08-27
+    archive_location: openspec/changes/archive/2026-08-27-python-parser-java-parity/
+baseline:
+  tests_run: 2026-08-26
+  callgraph_python: pass
+  scan: pass

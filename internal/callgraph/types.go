@@ -16,8 +16,26 @@ const fieldExpressionNode = "field_expression"
 // clinitMethodName names the synthetic function that represents a Java class's
 // static initialization context — its `static { ... }` blocks and its
 // initialized static `field_declaration` values. Mirrors the JVM `<clinit>`
-// method.
+// method. Reused by the Python parser for its own class-body synthetic decl
+// (calls made directly in a class body, outside any method), for
+// cross-language consistency and because callers already special-case the
+// `<clinit>` name (e.g. builder.go's virtual-dispatch fan-out suppression).
 const clinitMethodName = "<clinit>"
+
+// functionTypeClassInit is the FunctionDecl.FunctionType value for a
+// `<clinit>` synthetic decl. Shared across languages (previously
+// Java-only as javaFunctionTypeClassInit).
+const functionTypeClassInit = "class-init"
+
+// moduleInitMethodName names the synthetic function that represents a
+// Python module's load-time execution context — its direct module-level
+// statements. Mirrors CPython's own module code-object name. Python-only;
+// no Java/Go/Rust/C/C++/Node equivalent exists.
+const moduleInitMethodName = "<module>"
+
+// functionTypeModuleInit is the FunctionDecl.FunctionType value for a
+// `<module>` synthetic decl.
+const functionTypeModuleInit = "module-init"
 
 // Java visibility values exported in call graph metadata.
 const (
@@ -336,6 +354,15 @@ type FileAnalysis struct {
 	// Presence of a key also marks the type as declared in this file.
 	ClassBases map[string][]string
 	Functions  []FunctionDecl
+	// PythonReExports maps a symbol name to the module dotted path it is
+	// re-exported from, recorded ONLY when this file is a Python
+	// `__init__.py` and ONLY from explicit relative `from .mod import Sym
+	// [as Alias]` statements (wildcard/absolute imports ignored). The
+	// builder accumulates these per-package in addAnalyses and stitches
+	// re-exported callee packages once at the end of Phase 1
+	// (applyPythonReExports, Python-only). Python only; always nil for
+	// other ecosystems.
+	PythonReExports map[string]string
 }
 
 // CallGraph is the complete call graph across all analyzed packages.

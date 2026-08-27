@@ -68,7 +68,6 @@ const (
 	javaVarOriginKindParameter     = "parameter"
 	javaFunctionTypeMethod         = "method"
 	javaFunctionTypeConstructor    = "constructor"
-	javaFunctionTypeClassInit      = "class-init"
 	javaNodeStaticInitializer      = "static_initializer"
 	javaNodeEnumDeclaration        = "enum_declaration"
 	javaNodeEnumBody               = "enum_body"
@@ -779,7 +778,7 @@ func (p *JavaParser) parseClassInitDecl(
 		EndLine:         int(body.EndPoint().Row) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
-		FunctionType:    javaFunctionTypeClassInit,
+		FunctionType:    functionTypeClassInit,
 		Visibility:      VisibilityPrivate,
 		OwnerVisibility: ownerVisibility,
 	}
@@ -3678,7 +3677,7 @@ func (p *JavaParser) traceSwitchExpressionNode(
 		}
 		label := rule.NamedChild(0)
 		valueNode := rule.NamedChild(1)
-		if valueNode != nil && valueNode.Type() == "expression_statement" && valueNode.NamedChildCount() > 0 {
+		if valueNode != nil && valueNode.Type() == rustNodeExpressionStatement && valueNode.NamedChildCount() > 0 {
 			valueNode = valueNode.NamedChild(0)
 		}
 		values := p.traceExpressionNode(valueNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)

@@ -228,27 +228,103 @@ contracts:
   # PBKDF2 starts uppercase so the Python parser treats it as a type constructor;
   # the emitted callee FQN uses <init>, matching the call `from Crypto.Protocol.KDF
   # import PBKDF2; PBKDF2(password, salt, 32)`.
+  # Signature verified against github.com/Legrandin/pycryptodome
+  # (lib/Crypto/Protocol/KDF.py, master branch, python-parser-parity-2
+  # batch 3): PBKDF2(password, salt, dkLen=16, count=1000, prf=None,
+  # hmac_hash_module=None) — dkLen itself defaults, but the pre-existing
+  # arity: 3 already models the common 3-positional-arg call shape
+  # (password, salt, dkLen); dkLen is at index 2.
   - method: Crypto.Protocol.KDF.PBKDF2.<init>
     arity: 3
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
+  # scrypt(password, salt, key_len, N, r, p, num_keys=1) — verified against
+  # the same primary source. **Correction**: the PRE-EXISTING contract
+  # declared arity: 4, a latent bug (same class as pyca-cryptography's
+  # Scrypt bug found in batch 2) — the real signature has 6 required
+  # parameters (only num_keys defaults). Fixed arity: 4 -> 6 as part of
+  # this row; key_len is at index 2.
   - method: Crypto.Protocol.KDF.scrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  # HKDF starts uppercase — same constructor treatment as PBKDF2.
+  # HKDF(master, key_len, salt, hashmod, num_keys=1, context=None) —
+  # verified against the same primary source. **Correction**: the
+  # PRE-EXISTING contract declared arity: 3, also a latent bug — the real
+  # signature has 4 required parameters (only num_keys/context default).
+  # Fixed arity: 3 -> 4 as part of this row; key_len is at index 1.
+  - method: Crypto.Protocol.KDF.HKDF.<init>
     arity: 4
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.bytes
+      - builtins.object
+    parameters:
+      - index: 1
+        name: key_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
-  # HKDF starts uppercase — same constructor treatment as PBKDF2.
-  - method: Crypto.Protocol.KDF.HKDF.<init>
+  # PBKDF1 starts uppercase — same constructor treatment as PBKDF2. New
+  # contract (not previously in the KB): PBKDF1(password, salt, dkLen,
+  # count=1000, hashAlgo=None) — verified against the same primary source,
+  # 3 required parameters, dkLen at index 2.
+  - method: Crypto.Protocol.KDF.PBKDF1.<init>
     arity: 3
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
 hierarchy:
   Crypto.Cipher.AES.AESCipher:

@@ -621,8 +621,8 @@ func assertPythonCallableIdentities(t *testing.T, payload *graphfrag.GraphFragme
 		}
 	}
 	assert.ElementsMatch(t, []string{
-		"dependency_intelligence_python.BaseRunner.run(?, bytes, bytes, str): bytes",
-		"dependency_intelligence_python.Runner.run(?, bytes, bytes, str): bytes",
+		"dependency_intelligence_python.BaseRunner.run(bytes, bytes, str): bytes",
+		"dependency_intelligence_python.Runner.run(bytes, bytes, str): bytes",
 	}, signatures, "base/override identities include declaring type, parameter types, and return type")
 }
 
