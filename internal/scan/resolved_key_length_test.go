@@ -265,12 +265,14 @@ func TestResolvedKeyLength_JavaUnchangedByKeywordPath(t *testing.T) {
 
 // TestResolvedKeyLength_Python_EveryListedAPI (row C, python-parser-parity-2)
 // is a table over every KDF API this row's KB coverage verified against a
-// primary source (design.md §5.3's argon2-cffi/bcrypt/pycryptodome rows are
-// NOT included — unverifiable offline in this environment, recorded as a
-// follow-up in apply-progress.md instead of guessed). Exercises the
-// keyword form for every entry, and the positional form wherever the
-// real API's own signature allows it (hashlib.scrypt's dklen is
-// keyword-only in real Python, so only its keyword form is tested).
+// primary source. Batch 2 covered pyca-cryptography and hashlib (verified
+// against the locally installed package/interpreter, offline); batch 3
+// adds argon2-cffi, bcrypt, pycryptodome, and pycryptodomex (verified
+// against each library's own GitHub source — network access was available
+// for this batch, see apply-progress.md for exact URLs/signatures).
+// Exercises the keyword form for every entry, and the positional form
+// wherever the real API's own signature allows it (hashlib.scrypt's dklen
+// is keyword-only in real Python, so only its keyword form is tested).
 func TestResolvedKeyLength_Python_EveryListedAPI(t *testing.T) {
 	t.Parallel()
 
@@ -333,6 +335,72 @@ func TestResolvedKeyLength_Python_EveryListedAPI(t *testing.T) {
 			callee:       callgraph.FunctionID{Package: "hashlib", Name: "scrypt"},
 			args:         []string{"password", "salt", "n", "r", "p", "maxmem", "dklen=32"},
 			keywordIndex: 6, testPositional: false,
+		},
+		{
+			name:         "argon2.PasswordHasher keyword hash_len",
+			callee:       callgraph.FunctionID{Package: "argon2", Type: "PasswordHasher", Name: constructorMethodName},
+			args:         []string{"time_cost", "memory_cost", "parallelism", "hash_len=32"},
+			keywordIndex: 3, testPositional: true,
+		},
+		{
+			name:         "argon2.low_level.hash_secret keyword hash_len",
+			callee:       callgraph.FunctionID{Package: "argon2.low_level", Name: "hash_secret"},
+			args:         []string{"secret", "salt", "time_cost", "memory_cost", "parallelism", "hash_len=32", "type"},
+			keywordIndex: 5, testPositional: true,
+		},
+		{
+			name:         "bcrypt.kdf keyword desired_key_bytes",
+			callee:       callgraph.FunctionID{Package: "bcrypt", Name: "kdf"},
+			args:         []string{"password", "salt", "desired_key_bytes=32", "rounds"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Crypto.Protocol.KDF.PBKDF2 keyword dkLen",
+			callee:       callgraph.FunctionID{Package: "Crypto.Protocol.KDF", Type: "PBKDF2", Name: constructorMethodName},
+			args:         []string{"password", "salt", "dkLen=32"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Crypto.Protocol.KDF.scrypt keyword key_len",
+			callee:       callgraph.FunctionID{Package: "Crypto.Protocol.KDF", Name: "scrypt"},
+			args:         []string{"password", "salt", "key_len=32", "n", "r", "p"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Crypto.Protocol.KDF.HKDF keyword key_len",
+			callee:       callgraph.FunctionID{Package: "Crypto.Protocol.KDF", Type: "HKDF", Name: constructorMethodName},
+			args:         []string{"master", "key_len=32", "salt", "hashmod"},
+			keywordIndex: 1, testPositional: true,
+		},
+		{
+			name:         "Crypto.Protocol.KDF.PBKDF1 keyword dkLen",
+			callee:       callgraph.FunctionID{Package: "Crypto.Protocol.KDF", Type: "PBKDF1", Name: constructorMethodName},
+			args:         []string{"password", "salt", "dkLen=32"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Cryptodome.Protocol.KDF.PBKDF2 keyword dkLen",
+			callee:       callgraph.FunctionID{Package: "Cryptodome.Protocol.KDF", Type: "PBKDF2", Name: constructorMethodName},
+			args:         []string{"password", "salt", "dkLen=32"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Cryptodome.Protocol.KDF.scrypt keyword key_len",
+			callee:       callgraph.FunctionID{Package: "Cryptodome.Protocol.KDF", Name: "scrypt"},
+			args:         []string{"password", "salt", "key_len=32", "n", "r", "p"},
+			keywordIndex: 2, testPositional: true,
+		},
+		{
+			name:         "Cryptodome.Protocol.KDF.HKDF keyword key_len",
+			callee:       callgraph.FunctionID{Package: "Cryptodome.Protocol.KDF", Type: "HKDF", Name: constructorMethodName},
+			args:         []string{"master", "key_len=32", "salt", "hashmod"},
+			keywordIndex: 1, testPositional: true,
+		},
+		{
+			name:         "Cryptodome.Protocol.KDF.PBKDF1 keyword dkLen",
+			callee:       callgraph.FunctionID{Package: "Cryptodome.Protocol.KDF", Type: "PBKDF1", Name: constructorMethodName},
+			args:         []string{"password", "salt", "dkLen=32"},
+			keywordIndex: 2, testPositional: true,
 		},
 	}
 

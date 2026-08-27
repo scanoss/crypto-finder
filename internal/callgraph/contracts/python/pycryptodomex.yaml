@@ -227,27 +227,90 @@ contracts:
   # ── KDF (Cryptodome.Protocol.KDF) ─────────────────────────────────────────────
 
   # PBKDF2 starts uppercase so the Python parser treats it as a type constructor;
-  # the emitted callee FQN uses <init>.
+  # the emitted callee FQN uses <init>. Mirrors pycryptodome.yaml's
+  # Crypto.Protocol.KDF.PBKDF2.<init> — same primary source, same package
+  # under a different prefix (python-parser-parity-2 batch 3).
   - method: Cryptodome.Protocol.KDF.PBKDF2.<init>
     arity: 3
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
+  # Mirrors pycryptodome.yaml's Crypto.Protocol.KDF.scrypt fix (arity: 4 ->
+  # 6, same pre-existing bug, same primary source).
   - method: Cryptodome.Protocol.KDF.scrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  # Mirrors pycryptodome.yaml's Crypto.Protocol.KDF.HKDF.<init> fix
+  # (arity: 3 -> 4, same pre-existing bug, same primary source).
+  - method: Cryptodome.Protocol.KDF.HKDF.<init>
     arity: 4
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.bytes
+      - builtins.object
+    parameters:
+      - index: 1
+        name: key_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
-  - method: Cryptodome.Protocol.KDF.HKDF.<init>
+  # New contract mirroring pycryptodome.yaml's
+  # Crypto.Protocol.KDF.PBKDF1.<init>.
+  - method: Cryptodome.Protocol.KDF.PBKDF1.<init>
     arity: 3
     return:
       type: builtins.bytes
       confidence: high
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
 hierarchy:
   Cryptodome.Cipher.AES.AESCipher:

@@ -20,10 +20,26 @@ contracts:
     arity: 2
     return: { type: builtins.bool, confidence: high }
     role: output
+  # bcrypt.kdf(password, salt, desired_key_bytes, rounds,
+  # ignore_few_rounds=False) — verified against github.com/pyca/bcrypt
+  # (src/bcrypt/__init__.pyi, main branch, python-parser-parity-2 batch 3):
+  # 4 required parameters, desired_key_bytes at index 2.
   - method: bcrypt.kdf
     arity: 4
     return: { type: builtins.bytes, confidence: high }
     role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 2
+        name: desired_key_bytes
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
 hierarchy:
   builtins.bytes:

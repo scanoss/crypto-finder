@@ -15,6 +15,41 @@ import "testing"
 // (cryptography/hazmat/bindings/_rust/openssl/kdf.pyi) for the
 // cryptography.hazmat.primitives.kdf.* entries, and CPython 3.12's
 // _hashlib built-in help() text for the hashlib.* entries.
+//
+// The argon2-cffi/bcrypt/pycryptodome(x) entries below (batch 3) were
+// verified against each library's own GitHub source (not installed
+// locally, but network access was available for this batch — see
+// apply-progress.md for the exact URL/signature/index used for each):
+//   - argon2.PasswordHasher.__init__(self, time_cost=..., memory_cost=...,
+//     parallelism=..., hash_len=..., salt_len=..., encoding=..., type=...)
+//     — all 7 parameters carry defaults; the arity-4 entry below models the
+//     common positional-call prefix (time_cost, memory_cost, parallelism,
+//     hash_len) and coexists with the pre-existing arity-0 entry (same
+//     method, different arity key — no conflict).
+//   - argon2.low_level.hash_secret(secret, salt, time_cost, memory_cost,
+//     parallelism, hash_len, type, version=ARGON2_VERSION) — 7 required
+//     params, hash_len at index 5 (pre-existing arity, role added in place).
+//   - bcrypt.kdf(password, salt, desired_key_bytes, rounds,
+//     ignore_few_rounds=False) — 4 required params, desired_key_bytes at
+//     index 2 (pre-existing arity, role added in place).
+//   - Crypto.Protocol.KDF.PBKDF2(password, salt, dkLen=16, count=1000,
+//     prf=None, hmac_hash_module=None) — dkLen at index 2 (pre-existing
+//     arity 3 kept — matches the common 3-positional-arg call shape; role
+//     added in place).
+//   - Crypto.Protocol.KDF.scrypt(password, salt, key_len, N, r, p,
+//     num_keys=1) — 6 required params, key_len at index 2. The
+//     PRE-EXISTING contract declared arity: 4, a latent bug (same class as
+//     pyca-cryptography's Scrypt bug found in batch 2) — fixed to 6 here.
+//   - Crypto.Protocol.KDF.HKDF(master, key_len, salt, hashmod,
+//     num_keys=1, context=None) — 4 required params, key_len at index 1.
+//     The PRE-EXISTING contract declared arity: 3, also a latent bug —
+//     fixed to 4 here.
+//   - Crypto.Protocol.KDF.PBKDF1(password, salt, dkLen, count=1000,
+//     hashAlgo=None) — 3 required params, dkLen at index 2 — NEW contract
+//     (not previously in the KB), added per this batch's explicit
+//     instruction to verify it alongside PBKDF2/scrypt/HKDF.
+//   - Cryptodome.Protocol.KDF.* mirrors the Crypto.* namespace identically
+//     (pycryptodomex installs the same code under a different prefix).
 func TestLoadEmbeddedPython_KDFKeySizeRoles(t *testing.T) {
 	t.Parallel()
 
@@ -34,6 +69,17 @@ func TestLoadEmbeddedPython_KDFKeySizeRoles(t *testing.T) {
 		{"cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.<init>", 3, 1, "length"},
 		{"hashlib.pbkdf2_hmac", 5, 4, "dklen"},
 		{"hashlib.scrypt", 7, 6, "dklen"},
+		{"argon2.PasswordHasher.<init>", 4, 3, "hash_len"},
+		{"argon2.low_level.hash_secret", 7, 5, "hash_len"},
+		{"bcrypt.kdf", 4, 2, "desired_key_bytes"},
+		{"Crypto.Protocol.KDF.PBKDF2.<init>", 3, 2, "dkLen"},
+		{"Crypto.Protocol.KDF.scrypt", 6, 2, "key_len"},
+		{"Crypto.Protocol.KDF.HKDF.<init>", 4, 1, "key_len"},
+		{"Crypto.Protocol.KDF.PBKDF1.<init>", 3, 2, "dkLen"},
+		{"Cryptodome.Protocol.KDF.PBKDF2.<init>", 3, 2, "dkLen"},
+		{"Cryptodome.Protocol.KDF.scrypt", 6, 2, "key_len"},
+		{"Cryptodome.Protocol.KDF.HKDF.<init>", 4, 1, "key_len"},
+		{"Cryptodome.Protocol.KDF.PBKDF1.<init>", 3, 2, "dkLen"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method, func(t *testing.T) {
