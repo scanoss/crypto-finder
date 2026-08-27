@@ -75,27 +75,33 @@ type DiskPythonSignatureIndexCache struct {
 }
 
 // NewDiskPythonSignatureIndexCache creates a signature cache under
-// ~/.scanoss/crypto-finder/cache/python-signatures/.
+// ~/.scanoss/crypto-finder/cache/python-signatures/. The directory itself
+// is created LAZILY, on first Put — see NewDiskPythonSignatureIndexCacheWithDir.
 func NewDiskPythonSignatureIndexCache() (*DiskPythonSignatureIndexCache, error) {
 	cacheDir, err := config.GetCacheDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cache dir: %w", err)
+		return nil, fmt.Errorf("callgraph: python signature cache: get cache dir: %w", err)
 	}
 	return NewDiskPythonSignatureIndexCacheWithDir(filepath.Join(cacheDir, pythonSignatureCacheDirName))
 }
 
 // NewDiskPythonSignatureIndexCacheWithDir creates a signature cache at a
-// custom directory. Useful for testing.
+// custom directory. Useful for testing. The directory is NOT created here
+// (G13, PR #310 phase-2 review): every scan wires this cache regardless of
+// --scan-dependencies, so eagerly creating the directory at construction
+// time left an empty cache directory on disk even for a scan that never
+// indexes a single dependency. The directory is created lazily, only when
+// Put actually persists a real indexed distribution.
 func NewDiskPythonSignatureIndexCacheWithDir(dir string) (*DiskPythonSignatureIndexCache, error) {
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("failed to create python signature cache dir: %w", err)
-	}
 	return &DiskPythonSignatureIndexCache{dir: dir}, nil
 }
 
 // Get loads a cached signature index entry by key. A missing, corrupted, or
 // schema-mismatched file is reported as a plain miss (ok == false, err ==
-// nil) — cache corruption degrades to a re-index, never a fatal error.
+// nil) — cache corruption degrades to a re-index, never a fatal error. A
+// missing cache DIRECTORY (never yet created — see
+// NewDiskPythonSignatureIndexCacheWithDir) is indistinguishable from a
+// missing entry and also reported as a plain miss.
 func (c *DiskPythonSignatureIndexCache) Get(_ context.Context, key string) (*CachedPythonSignatureIndex, bool, error) {
 	path := filepath.Join(c.dir, pythonSignatureCacheKeyToFilename(key))
 	data, err := os.ReadFile(path)
@@ -103,7 +109,7 @@ func (c *DiskPythonSignatureIndexCache) Get(_ context.Context, key string) (*Cac
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("failed to read python signature cache file: %w", err)
+		return nil, false, fmt.Errorf("callgraph: python signature cache: read cache file: %w", err)
 	}
 
 	var entry CachedPythonSignatureIndex
@@ -124,17 +130,24 @@ func (c *DiskPythonSignatureIndexCache) Get(_ context.Context, key string) (*Cac
 
 // Put stores a cached signature index entry by key, via a temp-file +
 // rename write for crash-safety (mirrors DiskBytecodeIndexCache.Put).
+// Creates the cache directory lazily, on this — its first real write (G13,
+// PR #310 phase-2 review): NewDiskPythonSignatureIndexCacheWithDir no
+// longer creates it eagerly.
 func (c *DiskPythonSignatureIndexCache) Put(_ context.Context, key string, value *CachedPythonSignatureIndex) (err error) {
+	if mkErr := os.MkdirAll(c.dir, 0o750); mkErr != nil {
+		return fmt.Errorf("callgraph: python signature cache: create cache dir: %w", mkErr)
+	}
+
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("failed to marshal python signature index: %w", err)
+		return fmt.Errorf("callgraph: python signature cache: marshal index: %w", err)
 	}
 
 	filename := pythonSignatureCacheKeyToFilename(key)
 	path := filepath.Join(c.dir, filename)
 	tmpFile, err := os.CreateTemp(c.dir, filename+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("failed to create python signature cache temp file: %w", err)
+		return fmt.Errorf("callgraph: python signature cache: create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -142,22 +155,22 @@ func (c *DiskPythonSignatureIndexCache) Put(_ context.Context, key string, value
 			return
 		}
 		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("cleanup temp cache file %s: %w", tmpPath, removeErr))
+			err = errors.Join(err, fmt.Errorf("callgraph: python signature cache: cleanup temp cache file %s: %w", tmpPath, removeErr))
 		}
 	}()
 
 	if _, writeErr := tmpFile.Write(data); writeErr != nil {
 		if closeErr := tmpFile.Close(); closeErr != nil {
-			return fmt.Errorf("failed to write python signature cache file: %w", errors.Join(writeErr, closeErr))
+			return fmt.Errorf("callgraph: python signature cache: write cache file: %w", errors.Join(writeErr, closeErr))
 		}
-		return fmt.Errorf("failed to write python signature cache file: %w", writeErr)
+		return fmt.Errorf("callgraph: python signature cache: write cache file: %w", writeErr)
 	}
 	if closeErr := tmpFile.Close(); closeErr != nil {
-		return fmt.Errorf("failed to close python signature cache file: %w", closeErr)
+		return fmt.Errorf("callgraph: python signature cache: close cache file: %w", closeErr)
 	}
 	// #nosec G703 -- tmpPath is created by os.CreateTemp and path is derived from a sanitized cache filename.
 	if renameErr := os.Rename(tmpPath, path); renameErr != nil {
-		return fmt.Errorf("failed to rename python signature cache file: %w", renameErr)
+		return fmt.Errorf("callgraph: python signature cache: rename cache file: %w", renameErr)
 	}
 	tmpPath = ""
 	return nil
