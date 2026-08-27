@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Python parser throughput: the single-file walk now visits each syntax node once, instead of the prior multi-pass traversal, measurably reducing parse time and allocations on large Python codebases with no change to reachability or finding output. (openspec/changes/python-parser-parity-2)
+### Added
+- Python key-derivation-function key-length resolution (`resolved_key_length`) now covers: pyca/cryptography (`PBKDF2HMAC`, `Scrypt`, `HKDF`, `HKDFExpand`, `ConcatKDFHash`, `X963KDF`), the standard library (`hashlib.pbkdf2_hmac`, `hashlib.scrypt`), `argon2-cffi` (`PasswordHasher`, `low_level.hash_secret`), `bcrypt.kdf`, and `pycryptodome`/`pycryptodomex` (`PBKDF2`, `scrypt`, `HKDF`, `PBKDF1`) — resolved from both positional and keyword-argument call forms. (openspec/changes/python-parser-parity-2)
+- Python dependency-mode type resolution: when scanning with dependency resolution enabled, a pip-resolved dependency's `.pyi` type stubs and annotated `.py` sources now contribute return types and class hierarchy for reachability, cached on disk per distribution so repeated scans do not re-index an unchanged dependency tree. (openspec/changes/python-parser-parity-2)
+- Python entries now carry `visibility`/`owner_visibility`, matching Java's convention (a dunder name is public, a single-leading-underscore name is protected, a double-leading-underscore name is private). (openspec/changes/python-parser-parity-2)
+- Python receiver resolution now additionally covers `@staticmethod`/`@classmethod`/`@property` decorator semantics, `super()` calls resolved against the enclosing class's declared base, bounded dynamic dispatch (`getattr(obj, "method")(...)`, `importlib.import_module(...)`, `__import__(...)` with a literal-string argument), `functools.partial` and `__call__` targets, and type-hint-driven receiver resolution from parameter/return/variable annotations (including `Optional[...]`/`Union[...]` normalization and string forward references). (openspec/changes/python-parser-parity-2)
+### Fixed
 - Python callgraph reachability and supporting-call precision now matches Java's structural coverage:
   - A crypto object passed as a function/method parameter now resolves as a call receiver, matching Java's parameter binding.
   - Non-assignment bindings — `with ... as`, `for ... in`, `except ... as`, the async variants, the walrus operator (`:=`), and tuple/star unpacking — now resolve `ReceiverVar`/`AssignedVar` the same way plain `x = ...` assignment already did.
