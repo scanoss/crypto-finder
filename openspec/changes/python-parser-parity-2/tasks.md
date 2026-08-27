@@ -31,33 +31,33 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 0: T0 — Grammar and perf pinning tests (foundation)
 
-- [ ] **0.1** RED T0.1: extend `TestPythonGrammarFacts_PinnedNodeShapes` (`internal/callgraph/python_grammar_facts_test.go`) with the section-10 appendix rows (decorators, `superclasses`, `super()`, `getattr`, `importlib`, params/annotations, `return_type`, annotated assignment, `keyword_argument`, module constants, nested call args, lambda, `await`).
+- [x] **0.1** RED T0.1: extend `TestPythonGrammarFacts_PinnedNodeShapes` (`internal/callgraph/python_grammar_facts_test.go`) with the section-10 appendix rows (decorators, `superclasses`, `super()`, `getattr`, `importlib`, params/annotations, `return_type`, annotated assignment, `keyword_argument`, module constants, nested call args, lambda, `await`).
   Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_PinnedNodeShapes -v`; if real parser output disagrees, fix the test expectations, never the parser.
   Deps: none.
-- [ ] **0.2** RED T0.2: add `TestPythonGrammarFacts_ReturnTypeField` asserting `function_definition` field `return_type` exists with child `type`.
+- [x] **0.2** RED T0.2: add `TestPythonGrammarFacts_ReturnTypeField` asserting `function_definition` field `return_type` exists with child `type`.
   Files: `internal/callgraph/python_grammar_facts_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_ReturnTypeField -v`. Deps: 0.1.
-- [ ] **0.3** RED T0.3: add `TestPythonSymbolTable_AllSymbolsResolved` — every entry added to `resolvePythonSymbols` (design §3.3 list) resolves to a non-zero `sitter.Symbol`.
+- [x] **0.3** RED T0.3: add `TestPythonSymbolTable_AllSymbolsResolved` — every entry added to `resolvePythonSymbols` (design §3.3 list) resolves to a non-zero `sitter.Symbol`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonSymbolTable_AllSymbolsResolved -v`. Deps: none.
-- [ ] **0.4** RED T0.4/A3: add `TestPythonParser_NodeVisitBudget` using the instance visit-counter hook (D4: `visits *int` field on `PythonParser`, nil in production) over a committed ≤40-file corpus at `internal/callgraph/testdata/python_visit_budget/` (one file per idiom: comprehensions, `with/as`, decorators, `super()`, nested classes, keyword args, annotations, module constants). Asserts `visits >= nodeCount` and `visits <= nodeCount + 8*callCount`.
+- [x] **0.4** RED T0.4/A3: add `TestPythonParser_NodeVisitBudget` using the instance visit-counter hook (D4: `visits *int` field on `PythonParser`, nil in production) over a committed ≤40-file corpus at `internal/callgraph/testdata/python_visit_budget/` (one file per idiom: comprehensions, `with/as`, decorators, `super()`, nested classes, keyword args, annotations, module constants). Asserts `visits >= nodeCount` and `visits <= nodeCount + 8*callCount`.
   Files: `internal/callgraph/python_parser_test.go`, `internal/callgraph/testdata/python_visit_budget/*.py`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_NodeVisitBudget -v`. Deps: none.
-- [ ] **0.5** RED T0.5: add `TestPythonParser_ReturnTypeFromFieldNode` — 500+-line function body, `ReturnType` correct without materializing the body (`testing.AllocsPerRun` or an equivalent non-`Content()` proof).
+- [x] **0.5** RED T0.5: add `TestPythonParser_ReturnTypeFromFieldNode` — 500+-line function body, `ReturnType` correct without materializing the body (`testing.AllocsPerRun` or an equivalent non-`Content()` proof).
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReturnTypeFromFieldNode -v`. Deps: none.
-- [ ] **0.6** RED T0.6: add `TestPythonParser_CallOrderIsDocumentOrder` proving `decl.Calls` order equals source order across comprehensions, nested defs, and chains under deferred resolution (D3, load-bearing for `internal/scan/supporting_calls.go` positional splitting).
+- [x] **0.6** RED T0.6: add `TestPythonParser_CallOrderIsDocumentOrder` proving `decl.Calls` order equals source order across comprehensions, nested defs, and chains under deferred resolution (D3, load-bearing for `internal/scan/supporting_calls.go` positional splitting).
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_CallOrderIsDocumentOrder -v`. Deps: none.
-- [ ] **0.7** T0.8 baseline measurement: `git worktree add /tmp/.../c6ee180-wt c6ee180` under the scratchpad dir; copy `BenchmarkPythonParseDirectory_Bindings` harness + corpus generator into the worktree; run `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8` (≥8 reps, one continuous run); record combined mean AND min/max range in apply-progress notes; remove the worktree afterward.
+- [x] **0.7** T0.8 baseline measurement: `git worktree add /tmp/.../c6ee180-wt c6ee180` under the scratchpad dir; copy `BenchmarkPythonParseDirectory_Bindings` harness + corpus generator into the worktree; run `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8` (≥8 reps, one continuous run); record combined mean AND min/max range in apply-progress notes; remove the worktree afterward.
   Files: none in-repo (temporary worktree only) + apply-progress note. Evidence: recorded mean+range text. Deps: none.
 
 ## Phase 1: A1/A2/A3 — Single-descent rewrite and CI guard
 
-- [ ] **1.1** GREEN: implement `pythonBindingLayer`, `pythonPendingCall`, `pythonScope`, `pythonFileWalk` (design §3.2–3.3); one `pythonWalk(root)` descent emitting pending calls per scope; delete `walkForCalls`, `walkPrunedForCalls`, `withComprehensionTargets`; extend `pythonSymbolTable`/`resolvePythonSymbols` with the full §3.3 symbol list.
+- [x] **1.1** GREEN: implement `pythonBindingLayer`, `pythonPendingCall`, `pythonScope`, `pythonFileWalk` (design §3.2–3.3); one `pythonWalk(root)` descent emitting pending calls per scope; delete `walkForCalls`, `walkPrunedForCalls`, `withComprehensionTargets`; extend `pythonSymbolTable`/`resolvePythonSymbols` with the full §3.3 symbol list.
   Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/ -run 'TestPythonGrammarFacts|TestPythonSymbolTable_AllSymbolsResolved|TestPythonParser_NodeVisitBudget|TestPythonParser_CallOrderIsDocumentOrder' -v` all green. Deps: 0.1–0.6.
-- [ ] **1.2** GREEN: `ReturnType` from `return_type` field node only (delete the `node.Content(src)` call site on `function_definition`); `Parameters` from `typed_parameter`/`typed_default_parameter` `type` field nodes, populating `FunctionParameter.Name`.
+- [x] **1.2** GREEN: `ReturnType` from `return_type` field node only (delete the `node.Content(src)` call site on `function_definition`); `Parameters` from `typed_parameter`/`typed_default_parameter` `type` field nodes, populating `FunctionParameter.Name`.
   Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReturnTypeFromFieldNode -v`. Deps: 1.1.
-- [ ] **1.3** REFACTOR: cache `ChildCount()` everywhere on hot paths; ensure `pending` slices allocate lazily (nil until a scope's first call).
+- [x] **1.3** REFACTOR: cache `ChildCount()` everywhere on hot paths; ensure `pending` slices allocate lazily (nil until a scope's first call).
   Files: `internal/callgraph/python_parser.go`. Evidence: `go test ./internal/callgraph/... -run Python -v` green, no behavior change. Deps: 1.1–1.2.
-- [ ] **1.4** Run full existing Python suite to confirm no regression from the descent rewrite, especially D3's document-order invariant.
+- [x] **1.4** Run full existing Python suite to confirm no regression from the descent rewrite, especially D3's document-order invariant.
   Evidence: `go test ./internal/callgraph/... -v` and `go test ./internal/scan/... -run Python -v`. Deps: 1.1–1.3.
-- [ ] **1.5** Perf guard re-run: `go test ./internal/callgraph/ -run TestPythonParser_NodeVisitBudget -v` AND `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8`; compare mean to the 0.7 baseline — must be ≤1.10x mean, ≤1.15x `B/op`. A breach is optimized here before any later row lands; never accepted.
+- [x] **1.5** Perf guard re-run: `go test ./internal/callgraph/ -run TestPythonParser_NodeVisitBudget -v` AND `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -run ^$ -count=8`; compare mean to the 0.7 baseline — must be ≤1.10x mean, ≤1.15x `B/op`. A breach is optimized here before any later row lands; never accepted.
   Deps: 0.7, 1.1–1.4.
 
 ## Phase 2: A4 — Mining-scale measurement
