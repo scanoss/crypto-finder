@@ -66,6 +66,19 @@ const (
 	// dynamic-dispatch rewrite matches (python-parser-parity-2):
 	// `getattr(obj, "literal")(...)`.
 	pythonGetattrBuiltinName = "getattr"
+	// pythonDunderCallMethodName is the Python instance-callable protocol
+	// method (row 11, python-parser-parity-2): `obj(data)` resolves to this
+	// name on obj's in-file class when that class declares its own
+	// __call__.
+	pythonDunderCallMethodName = "__call__"
+	// pythonFunctoolsPartialPackage/pythonFunctoolsPartialName identify a
+	// resolved functools.partial(...) call's Callee, regardless of whether
+	// it was reached via `import functools; functools.partial(...)` or
+	// `from functools import partial; partial(...)` — both resolve through
+	// the SAME existing import-based Callee construction to
+	// Package="functools", Name="partial" (row 11).
+	pythonFunctoolsPartialPackage = "functools"
+	pythonFunctoolsPartialName    = "partial"
 	// pythonInitPyFileName is the Python package-init filename. A file with
 	// this basename is the only place `__init__.py` re-export collection
 	// (collectPythonReExports) runs.
@@ -495,6 +508,11 @@ type pythonClassInfo struct {
 	// (pythonWalkEnterFunction) so a super() call can resolve against
 	// OwnerBases[0] without re-parsing the class_definition node.
 	bases []string
+	// name is the class's own declared name (row 11, python-parser-parity-2),
+	// read once in pythonWalkClass and consulted by pythonWalkEnterFunction
+	// to key fw.classesWithDunderCall when this class declares its own
+	// __call__ method.
+	name string
 }
 
 // pythonFileWalk is the accumulated output of pythonWalk's single
@@ -518,6 +536,14 @@ type pythonFileWalk struct {
 	// python-parser-parity-2). Consulted by pythonArgumentSourceFor to
 	// resolve a bare-identifier call argument bound to such a constant.
 	moduleConsts map[string]string
+	// classesWithDunderCall records, by class NAME (not node identity —
+	// resolution only ever has the callee's Type string to key on), every
+	// in-file class that declares its own __call__ method anywhere in its
+	// body (row 11, python-parser-parity-2). Populated in the SAME single
+	// descent by pythonWalkEnterFunction; consulted by
+	// pythonRecordPartialOrCallable when a pending call resolves to a
+	// locally-declared class's constructor.
+	classesWithDunderCall map[string]bool
 }
 
 // pythonWalk performs ONE full-file descent, visiting every node exactly
@@ -709,6 +735,9 @@ func (p *PythonParser) pythonWalkClass(node *sitter.Node, src []byte, analysis *
 	if superclasses := node.ChildByFieldName("superclasses"); superclasses != nil {
 		info.bases = extractPythonBaseClassNames(superclasses, src)
 	}
+	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
+		info.name = nameNode.Content(src)
+	}
 	fw.classInfo[node.StartByte()] = info
 	direct := &pythonScope{locals: &pythonBindingLayer{}, attrs: info.attrs}
 	fw.classDirect[node.StartByte()] = direct
@@ -745,6 +774,16 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 	if activeClassInfo != nil {
 		attrs = activeClassInfo.attrs
 		bases = activeClassInfo.bases
+		// row 11: a class declaring its own __call__ method registers its
+		// name into fw.classesWithDunderCall, keyed by name (not node
+		// identity) since call resolution only ever has the callee's Type
+		// string to look up against.
+		if activeClassInfo.name != "" && pythonFunctionDefName(node, src) == pythonDunderCallMethodName {
+			if fw.classesWithDunderCall == nil {
+				fw.classesWithDunderCall = make(map[string]bool)
+			}
+			fw.classesWithDunderCall[activeClassInfo.name] = true
+		}
 	}
 	scope := &pythonScope{locals: root, attrs: attrs, bases: bases}
 	if decoratorInfo != nil {
@@ -870,20 +909,114 @@ func collectPythonAssignmentTargetsLayer(target *sitter.Node, src []byte, layer 
 // were encountered during pythonWalk's single descent — document order
 // (D3), the invariant internal/scan/supporting_calls.go's
 // lifecycleSelector.selectDescendants depends on for positional self.attr
-// rebinding splits.
+// rebinding splits. partials/callables (row 11, python-parser-parity-2) are
+// scope-local — built up incrementally AS calls resolve in this SAME
+// document-order loop, never persisted beyond one scope, never crossing a
+// file — so a call can consult only an assignment that resolved EARLIER in
+// this exact scope.
 func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk, staticMethod bool, selfAlias string, bases []string) []FunctionCall {
 	if len(pending) == 0 {
 		return nil
 	}
 	calls := make([]FunctionCall, 0, len(pending))
+	var partials map[string]FunctionID
+	var callables map[string]string
 	for _, pc := range pending {
-		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias, bases: bases}
+		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias, bases: bases, partials: partials, callables: callables}
 		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
+			partials, callables = pythonRecordPartialOrCallable(pc.node, call, src, analysis, fw, partials, callables)
 		}
 	}
 	return calls
+}
+
+// pythonRecordPartialOrCallable updates the scope-local partials/callables
+// maps (row 11, python-parser-parity-2) after one pending call has
+// resolved, consulted by a LATER call in the SAME
+// resolvePythonPendingCalls loop. Exactly two bounded shapes are
+// recognized; anything else (no AssignedVar, an unrelated callee) updates
+// nothing:
+//   - `p = functools.partial(target, ...)` (Callee already resolved to
+//     Package="functools", Name="partial" via the ordinary import-resolution
+//     path, regardless of `import functools`/`from functools import
+//     partial` spelling) — records target's own resolved FunctionID keyed
+//     by p.
+//   - `obj = C()` for an in-file class C — records C's name keyed by obj.
+//     A bare LOCAL class reference `C()` resolves through parseCallExpr's
+//     ordinary identifier-call fallback (Package==analysis.PackagePath,
+//     Type=="", Name==the class's own name) — same-file class
+//     instantiation is never specially rewritten to Type/<init> the way an
+//     IMPORTED constructor is (that only happens when
+//     analysis.ImportedTypes[name] is true), so this checks Name against
+//     fw.classesWithDunderCall directly.
+func pythonRecordPartialOrCallable(pcNode *sitter.Node, call *FunctionCall, src []byte, analysis *FileAnalysis, fw *pythonFileWalk, partials map[string]FunctionID, callables map[string]string) (map[string]FunctionID, map[string]string) {
+	if call.AssignedVar == "" {
+		return partials, callables
+	}
+	if call.Callee.Package == pythonFunctoolsPartialPackage && call.Callee.Name == pythonFunctoolsPartialName {
+		if target, ok := pythonPartialTarget(pcNode, src, analysis); ok {
+			if partials == nil {
+				partials = make(map[string]FunctionID)
+			}
+			partials[call.AssignedVar] = target
+		}
+		return partials, callables
+	}
+	if call.Callee.Package == analysis.PackagePath && call.Callee.Type == "" &&
+		call.Callee.Name != "" && fw.classesWithDunderCall[call.Callee.Name] {
+		if callables == nil {
+			callables = make(map[string]string)
+		}
+		callables[call.AssignedVar] = call.Callee.Name
+	}
+	return partials, callables
+}
+
+// pythonPartialTarget resolves a functools.partial(...) call's OWN first
+// positional argument to the FunctionID it references — a bare identifier
+// (an imported or in-file function name) or a simple `object.method`
+// attribute reference (an imported module/class method, or an in-file
+// class method reference) — through the SAME import-resolution rules
+// parseCallExpr itself uses. Any other argument-0 shape (a nested call, a
+// literal, a subscript, ...) returns ok=false: row 11 never fabricates a
+// target from an expression it cannot identify as a plain name reference.
+func pythonPartialTarget(pcNode *sitter.Node, src []byte, analysis *FileAnalysis) (FunctionID, bool) {
+	argList := pythonArgumentListChild(pcNode)
+	if argList == nil || argList.NamedChildCount() == 0 {
+		return FunctionID{}, false
+	}
+	arg0 := argList.NamedChild(0)
+	switch arg0.Symbol() {
+	case pythonSyms.identifier:
+		name := arg0.Content(src)
+		if pkg, ok := analysis.Imports[name]; ok {
+			if analysis.ImportedTypes[name] {
+				return FunctionID{Package: pkg, Type: name, Name: constructorMethodName}, true
+			}
+			return FunctionID{Package: pkg, Name: name}, true
+		}
+		return FunctionID{Package: analysis.PackagePath, Name: name}, true
+	case pythonSyms.attribute:
+		object := arg0.ChildByFieldName("object")
+		method := arg0.ChildByFieldName("attribute")
+		if object == nil || method == nil || object.Symbol() != pythonSyms.identifier {
+			return FunctionID{}, false
+		}
+		objText := object.Content(src)
+		methodText := method.Content(src)
+		if pkg, ok := analysis.Imports[objText]; ok {
+			resolvedPkg := pkg
+			if analysis.FromImports[objText] {
+				resolvedPkg = pkg + "." + objText
+			}
+			return FunctionID{Package: resolvedPkg, Name: methodText}, true
+		}
+		return FunctionID{Package: analysis.PackagePath, Type: objText, Name: methodText}, true
+	default:
+		return FunctionID{}, false
+	}
 }
 
 // processImportStatement handles `import X` and `import X as Y`.
@@ -1424,6 +1557,16 @@ type pythonBindings struct {
 	// 9), consulted by parseAttributeCall to resolve a super() call
 	// against bases[0]. Empty means unresolvable — never fabricated.
 	bases []string
+	// partials maps a local variable name to the FunctionID a
+	// functools.partial(target, ...) call bound to it resolved to (row 11),
+	// consulted by a LATER bare identifier call in the SAME scope. nil
+	// (never written) is the common case.
+	partials map[string]FunctionID
+	// callables maps a local variable name to the in-file class name it was
+	// constructed from, ONLY when that class declares its own __call__
+	// method (row 11): `obj = C(); obj(data)` resolves the second call to
+	// C.__call__. nil (never written) is the common case.
+	callables map[string]string
 }
 
 // receiverIdentity resolves the receiver text of an attribute call to a
@@ -1613,46 +1756,21 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 			call = p.pythonResolveAttributeLikeCall(object, method, false, nil, src, raw, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
 		}
 	case goNodeIdentifier:
-		// Simple call like `sha256()` or imported class constructor like `Cipher()`
+		// Simple call like `sha256()`, an imported class constructor like
+		// `Cipher()`, or one of row 11's bounded rewrites (a
+		// functools.partial target, or an in-file __call__-declaring
+		// class instance) — see pythonResolveIdentifierCallee.
 		name := funcNode.Content(src)
-		if pkg, ok := analysis.Imports[name]; ok {
-			if analysis.ImportedTypes[name] {
-				call = &FunctionCall{
-					Callee:      FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
-					Raw:         raw,
-					FilePath:    filePath,
-					Line:        line,
-					StartCol:    startCol,
-					EndCol:      endCol,
-					Arguments:   args,
-					AssignedVar: assignedVar,
-					ChainID:     chainID,
-				}
-			} else {
-				call = &FunctionCall{
-					Callee:      FunctionID{Package: pkg, Name: name},
-					Raw:         raw,
-					FilePath:    filePath,
-					Line:        line,
-					StartCol:    startCol,
-					EndCol:      endCol,
-					Arguments:   args,
-					AssignedVar: assignedVar,
-					ChainID:     chainID,
-				}
-			}
-		} else {
-			call = &FunctionCall{
-				Callee:      FunctionID{Package: analysis.PackagePath, Name: name},
-				Raw:         raw,
-				FilePath:    filePath,
-				Line:        line,
-				StartCol:    startCol,
-				EndCol:      endCol,
-				Arguments:   args,
-				AssignedVar: assignedVar,
-				ChainID:     chainID,
-			}
+		call = &FunctionCall{
+			Callee:      pythonResolveIdentifierCallee(name, analysis, bindings),
+			Raw:         raw,
+			FilePath:    filePath,
+			Line:        line,
+			StartCol:    startCol,
+			EndCol:      endCol,
+			Arguments:   args,
+			AssignedVar: assignedVar,
+			ChainID:     chainID,
 		}
 	case pythonNodeAttribute:
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
@@ -1663,6 +1781,29 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		call.ArgumentSources = p.pythonArgumentSources(node, src, filePath, analysis, bindings, fw, depth)
 	}
 	return call
+}
+
+// pythonResolveIdentifierCallee resolves a bare-identifier call's Callee:
+// an imported constructor/function (Imports/ImportedTypes — unchanged from
+// before row 11), else row 11's two bounded rewrites in precedence order
+// (a functools.partial target bound earlier in this SAME scope; an in-file
+// __call__-declaring class instance bound earlier in this SAME scope),
+// else the same-package fallback (a local function, or a bare local-class
+// reference with no matching rewrite).
+func pythonResolveIdentifierCallee(name string, analysis *FileAnalysis, bindings pythonBindings) FunctionID {
+	if pkg, ok := analysis.Imports[name]; ok {
+		if analysis.ImportedTypes[name] {
+			return FunctionID{Package: pkg, Type: name, Name: constructorMethodName}
+		}
+		return FunctionID{Package: pkg, Name: name}
+	}
+	if target, ok := bindings.partials[name]; ok {
+		return target
+	}
+	if className, ok := bindings.callables[name]; ok {
+		return FunctionID{Package: analysis.PackagePath, Type: className, Name: pythonDunderCallMethodName}
+	}
+	return FunctionID{Package: analysis.PackagePath, Name: name}
 }
 
 // pythonIsSelfLikeReceiver reports whether object is a self-reference in

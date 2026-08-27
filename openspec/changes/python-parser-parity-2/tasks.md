@@ -123,11 +123,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 9: Row 11 — `functools.partial` / `__call__`
 
-- [ ] **9.1** RED: `TestPythonParser_Partial_ResolvesTarget`, `TestPythonParser_Call_DunderCall`.
+- [x] **9.1** RED: `TestPythonParser_Partial_ResolvesTarget`, `TestPythonParser_Call_DunderCall`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run 'TestPythonParser_Partial_ResolvesTarget|TestPythonParser_Call_DunderCall' -v`. Deps: 8.3.
-- [ ] **9.2** GREEN: `partials map[string]FunctionID` and `callables map[string]string` on `pythonScope`, both populated during deferred resolution; `classesWithDunderCall map[string]bool` collected in the same descent from `pythonFileWalk.classScopes`.
+- [x] **9.2** GREEN: `partials map[string]FunctionID` and `callables map[string]string` on `pythonBindings` (scope-local, built incrementally in `resolvePythonPendingCalls`'s document-order loop rather than stored on `pythonScope` — the design's `pythonFileWalk.classScopes` name does not exist in current code; `classesWithDunderCall map[string]bool` lives on `pythonFileWalk`, keyed by class NAME, collected in the same descent via `pythonWalkEnterFunction` reading `pythonClassInfo.name`).
   Files: `internal/callgraph/python_parser.go`. Deps: 9.1.
-- [ ] **9.3** Perf guard re-run — commands per 1.5.
+- [x] **9.3** Perf guard re-run — commands per 1.5.
   Deps: 9.2.
 
 ## Phase 10: Row 13 — Type hints

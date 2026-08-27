@@ -1738,6 +1738,64 @@ func TestPythonParser_DynamicDispatch_NonLiteralNoIdentity(t *testing.T) {
 	}
 }
 
+// TestPythonParser_Partial_ResolvesTarget (row 11, python-parser-parity-2)
+// pins that `hasher = functools.partial(hashlib.sha256)` followed by
+// `hasher(data)` resolves the SECOND call directly to hashlib.sha256 — the
+// partial's own resolved target — never to a fabricated "hasher" identity.
+func TestPythonParser_Partial_ResolvesTarget(t *testing.T) {
+	src := `import functools
+import hashlib
+
+def run(data):
+    hasher = functools.partial(hashlib.sha256)
+    return hasher(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "sha256")
+	if call == nil {
+		t.Fatalf("hasher(data) rewritten call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "hashlib", Name: "sha256"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_Call_DunderCall (row 11, python-parser-parity-2) pins
+// that `signer = Signer()` followed by `signer(data)` resolves the second
+// call to Signer.__call__ when Signer declares its own __call__ method.
+func TestPythonParser_Call_DunderCall(t *testing.T) {
+	src := `class Signer:
+    def __call__(self, data):
+        return self.sign(data)
+
+    def sign(self, data):
+        return data
+
+
+def run(data):
+    signer = Signer()
+    return signer(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, pythonDunderCallMethodName)
+	if call == nil {
+		t.Fatalf("signer(data) call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "mypkg", Type: "Signer", Name: pythonDunderCallMethodName}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
