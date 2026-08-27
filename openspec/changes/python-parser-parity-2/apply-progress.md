@@ -301,3 +301,172 @@ no row breached and needed to be dropped or further optimized.
   PRIMARY SOURCES (cryptography, pycryptodome, argon2-cffi, bcrypt docs)
   before authoring YAML — do not trust design §5.3's table numbers on
   faith, per its own explicit warning.
+
+## Batch 2 (this session)
+
+Continued from HEAD `e49e921` (batch 1 final). All commits pushed to
+`origin/matiasdaloia/parser-parity-multi-language`.
+
+### Phase 8 (Row 7 — bounded dynamic dispatch) — done, commit `bb6d938`
+
+`getattr(obj, "literal")(...)` (outer call whose function is itself a
+`call` node) rewrites through a NEW shared helper
+`pythonResolveAttributeLikeCall` (extracted from `parseAttributeCall`'s
+body so both a real attribute node and this synthesized
+object/method pair share identical self/cls/super()/import/fallback
+resolution). Bounded to a single `string_content` literal second argument
+(`pythonGetattrLiteralTarget`/`pythonLiteralStringContent`); non-literal
+leaves the outer expression unresolved (only the pre-existing inner
+`getattr(...)` call itself still resolves, unchanged from before this
+row). `importlib.import_module("literal")`/`__import__("literal")`
+register the literal via `recordPythonImportOnce` as a side effect
+(`pythonMaybeRecordDynamicImport`), independent of whether the call
+itself resolves. 3 new tests.
+
+**Correction found while implementing**: `pythonLiteralStringContent`
+initially assumed a `string` node has exactly ONE named child
+(`string_content`). Real parser output showed THREE named children
+(`string_start`, `string_content`, `string_end` are ALL named, not just
+`string_content`) — fixed by scanning for exactly one `string_content`
+among the named children instead of asserting `NamedChildCount()==1`.
+
+### Phase 9 (Row 11 — functools.partial / __call__) — done, commit `29a90a5`
+
+Two scope-local maps (`partials map[string]FunctionID`,
+`callables map[string]string`) built up incrementally INSIDE
+`resolvePythonPendingCalls`'s document-order loop (not stored on
+`pythonScope` — never persisted beyond one scope) via
+`pythonRecordPartialOrCallable`, consulted by a later bare-identifier call
+via the new `pythonResolveIdentifierCallee` (extracted from
+`parseCallExpr`'s `case goNodeIdentifier` to keep the growing
+import->partial->callable->fallback precedence chain flat and
+lint-clean). `classesWithDunderCall map[string]bool` lives on
+`pythonFileWalk`, keyed by class NAME (not node identity — resolution
+only ever has the Callee's Type/Name strings), populated in
+`pythonWalkEnterFunction` when entering a `__call__` method, reading a NEW
+`pythonClassInfo.name` field (set once in `pythonWalkClass` from the
+class_definition's own "name" field). 2 new tests.
+
+**Design correction found**: design named the source field
+`pythonFileWalk.classScopes`, which does not exist in the current
+single-descent architecture (`classInfo`/`classDirect`, keyed by
+StartByte) — the design text is stale from an earlier draft. Verified via
+current code, not design text, per batch-1's established practice.
+
+**Bare local class instantiation gotcha**: `Signer()` (no import) resolves
+through the ORDINARY identifier-call fallback to
+`FunctionID{Package: mypkg, Name: "Signer"}` — Type is EMPTY, Name IS the
+class name directly. It does NOT get the `{Type: "Signer", Name: "<init>"}`
+shape (that rewrite only fires for an IMPORTED constructor via
+`analysis.ImportedTypes[name]`). `pythonRecordPartialOrCallable`'s
+callable-detection condition had to match on `Callee.Type == "" &&
+Callee.Name == <class name>`, not `Callee.Name == constructorMethodName`.
+
+### Phase 10 (Row 13 — type hints, parser + resolver) — done, commit `5dfcfd5`
+
+**Parser half** (`python_parser.go`): `pythonNormalizeAnnotation` collapses
+`type>identifier`, `Optional[X]`/`Union[X, None]` (via
+`pythonNormalizeGenericAnnotation`), `X | None` (`binary_operator`), and a
+string forward-reference (reusing row 7's `pythonLiteralStringContent`) to
+a single bounded type name. `pythonScope.varTypes` is fed by typed
+parameters (`pythonTypedParameterVarTypes`, called from
+`pythonWalkEnterFunction`) and a same-scope annotated assignment
+(`recordPythonAnnotatedAssignmentVarType`, called from
+`recordPythonWalkBinder`, which now also takes `activeFunc`).
+`pythonResolveAttributeLikeCall` consults `bindings.varTypes[object]`
+AFTER the ordinary import check and BEFORE the local-name fallback, via a
+new `pythonAnnotatedReceiverCall` helper mirroring `resolveImportedCall`'s
+own `FromImports`-qualification formula.
+
+**Resolver half** (`python_type_resolver.go`, NEW additions):
+`PythonTypeResolverChain{contract, dependency}` (dependency stays nil
+until row 14/Phase 12) and `propagatePythonAssignedVarTypes` — one ordered
+pass per Python-origin `FunctionDecl` (gated via a NEW
+`isPythonSourceFile(fn.FilePath)` check — `.py`/`.pyi` suffix), tracking
+`AssignedVar -> calleeDecl.ReturnType` and rewriting a LATER matching
+`ReceiverVar`'s `Callee.Package`/`Type` + `ResolvedReceiverType`. Split
+into `propagatePythonAssignedVarTypesForDecl` to stay under the
+gocognit-20 threshold. 7 new parser tests + regression re-verify of
+`TestPythonParser_ReceiverVar_ComprehensionTarget` (still green,
+unaffected by the layer-stack scoping this row didn't touch).
+
+**Refactor performed alongside** (flagged in batch-1 continuity notes):
+`resolvePythonPendingCalls`'s five separate scope-derived parameters
+(`pending`, `staticMethod`, `selfAlias`, `bases`, +row-13's `varTypes`)
+consolidated into one `*pythonScope` parameter (`attrs` stays separate —
+callers hold their own authoritative copy independent of `scope`, e.g.
+`buildClassInitDecl`'s class-body `attrs` even when its own `direct` scope
+is defensively nil). All 3 call sites simplified; no behavior change
+(confirmed by the full suite + perf guard staying green).
+
+**Deviation from design.md** (reported, not silently applied): design's
+§4 Row 13 paragraph says "populate `pythonScope.varTypes` from ... and
+`FunctionDecl.ReturnType`" — read literally this would mean
+`pythonReturnTypeOf` itself should route through `pythonNormalizeAnnotation`.
+NOT implemented that way: `ReturnType` is exported downstream via
+`internal/scan` (annotate/export code paths), and normalizing it would
+silently turn an unbounded shape like `List[int]` into `""`, a real
+export-facing regression outside this row's bounded scope. Return-type
+PROPAGATION (var -> type from an assigned call's callee's declared
+`ReturnType`) is entirely §10.3's (`propagatePythonAssignedVarTypes`) job,
+reading the RAW `ReturnType` string — this matches §10.3's own explicit
+description ("maintaining var -> type from AssignedVar + the callee
+decl's ReturnType") and is the interpretation implemented.
+
+### Perf guard re-runs after every row (batch 2)
+
+| After row | mean ns/op | ratio vs c6ee180 (67.9ms) | mean B/op | ratio vs c6ee180 (19.28MB) |
+|---|---|---|---|---|
+| 8.3 (row 7) | ~64,727,944 | 0.954x | ~20,586,844 | 1.068x |
+| 9.3 (row 11) | ~64,727,944 | 0.953x | ~20,586,844 | 1.068x |
+| 10.5 (row 13) | ~66,455,318 | 0.979x | ~20,586,782 | 1.068x |
+
+All comfortably within budget (<=1.10x ns/op, <=1.15x B/op) throughout.
+One 10.5 run showed transient 71-176ms outliers with UNCHANGED B/op
+(system noise from a concurrent debug session on this same machine, not a
+real regression) — re-run immediately after confirmed the normal
+64-72ms range; the recorded numbers above are from that clean re-run.
+
+### Lint
+
+`golangci-lint run ./internal/callgraph/...` stayed at the confirmed
+9-issue pre-existing baseline (2 goconst, 1 gosec, 6 prealloc — all
+pre-dating this batch, diffed against `e49e921`) after every row. Two
+NEW issues were introduced and fixed during this batch: a `goconst`
+`"getattr"` (row 7, fixed via a new `pythonGetattrBuiltinName` constant)
+and a `nestif`/`gocritic ptrToRefParam` pair (row 11's identifier-call
+branch, fixed by extracting `pythonResolveIdentifierCallee`) and later a
+`gocognit`/`gocritic nestingReduce` pair (row 13, fixed by extracting
+`propagatePythonAssignedVarTypesForDecl` and inverting a nested `if` in
+`pythonWalkEnterFunction`). NOTE: `golangci-lint`'s `goconst` check showed
+transient cache-dependent flakiness (issue count varied 8-11 across
+consecutive runs with NO source change) — always re-verify with
+`golangci-lint cache clean` before trusting a lint delta.
+
+### Remaining tasks (batch 3)
+- [ ] 11.1-11.16 (Row C — KDF key length: contracts.go enum + key_length.go + 6 KB YAMLs, verify arities against primary library sources before authoring) — LARGEST remaining piece
+- [ ] 12.1-12.8 (Row 14 — PythonDependencyTypeResolver, new files, lands last/abandonable)
+- [ ] 13.1-13.8 (Regression guard — re-verify all pinned invariants)
+- [ ] 14.1-14.11 (Final gates: go test -race ./..., make lint, make coverage-check, git diff --check, CHANGELOG, user-guide.html, push)
+
+### Notes for batch 3
+- Row C's keyword-name matching lives in `internal/scan/key_length.go`
+  (D6), NOT `mergeCallParameters` — confirmed unchanged by this batch.
+  `resolvedKeyLengthFromContract` becomes a 3-step ladder (steps 1-2
+  byte-identical, step 3a keyword-name, step 3b positional/type-evidence-
+  absent). Read design.md §5.2 exactly before starting — the step
+  ordering and bypass-of-`contractParameterTypesMatch` for step 3a only is
+  load-bearing for Java neutrality.
+- Before authoring ANY of the 6 KB YAMLs, verify each library's real
+  signature against a primary source (locally importable module via
+  `python3 -c "import inspect, <mod>; print(inspect.signature(...))"`,
+  or installed package source under a venv/site-packages if present on
+  this machine) — network access for `pip download`/`pip show` is NOT
+  available. If unverifiable offline, author only what can be proven and
+  record the rest as an explicit follow-up — never guess an arity/index.
+- `PythonContractTypeResolver`/`PythonTypeResolverChain` already exist
+  (this batch added the chain type) but are NOT wired into
+  `parser_registry.go`/CLI yet — that wiring is task 12.5 (row 14), so
+  row C's KDF resolution does not depend on it (KDF key length resolution
+  runs entirely through `internal/scan/key_length.go`, independent of the
+  Python type resolver chain).
