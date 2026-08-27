@@ -1449,6 +1449,65 @@ def build(password, salt):
 	}
 }
 
+// TestPythonParser_ArgProvenance_ModuleConstant_LocalShadowNotUsed (G6, PR
+// #310 phase-2 review) pins that a bare identifier bound LOCALLY (here, a
+// function parameter) is never attributed to a same-named module-level
+// constant's value: pythonArgumentSourceFor must respect local shadowing
+// rather than fabricating provenance from an unrelated module binding.
+func TestPythonParser_ArgProvenance_ModuleConstant_LocalShadowNotUsed(t *testing.T) {
+	src := `KEY_LEN = 32
+
+
+def build(KEY_LEN, salt):
+    return derive(KEY_LEN, salt)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "build")
+	if fn == nil {
+		t.Fatal("build function not found")
+	}
+	call := findPythonCallByMethod(fn, "derive")
+	if call == nil {
+		t.Fatal("derive call not found")
+	}
+	if len(call.ArgumentSources) != 2 {
+		t.Fatalf("ArgumentSources length = %d, want 2", len(call.ArgumentSources))
+	}
+	if arg0 := call.ArgumentSources[0]; arg0 != nil {
+		t.Errorf("ArgumentSources[0] = %+v, want nil — KEY_LEN is a LOCAL parameter here, shadowing the module constant of the same name", arg0)
+	}
+}
+
+// TestPythonParser_ArgProvenance_ModuleConstant_ClearedOnNonIntegerRebind
+// (G6, PR #310 phase-2 review) pins that a LATER module-level rebinding to
+// a non-integer value invalidates an earlier-recorded module constant:
+// `KEY_LEN = 32` followed by `KEY_LEN = compute_len()` must leave KEY_LEN
+// unresolved, not fabricate the stale "32".
+func TestPythonParser_ArgProvenance_ModuleConstant_ClearedOnNonIntegerRebind(t *testing.T) {
+	src := `KEY_LEN = 32
+KEY_LEN = compute_len()
+
+
+def build(salt):
+    return derive(KEY_LEN, salt)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "build")
+	if fn == nil {
+		t.Fatal("build function not found")
+	}
+	call := findPythonCallByMethod(fn, "derive")
+	if call == nil {
+		t.Fatal("derive call not found")
+	}
+	if len(call.ArgumentSources) != 2 {
+		t.Fatalf("ArgumentSources length = %d, want 2", len(call.ArgumentSources))
+	}
+	if arg0 := call.ArgumentSources[0]; arg0 != nil {
+		t.Errorf("ArgumentSources[0] = %+v, want nil — a later non-integer rebinding must invalidate the earlier constant", arg0)
+	}
+}
+
 // TestPythonParser_Decorator_StaticMethodNoReceiver (row 8,
 // python-parser-parity-2) pins that a @staticmethod's parameter 0, even
 // when literally named "self", is treated as an ordinary local — never an

@@ -866,19 +866,29 @@ func recordPythonPendingCall(node *sitter.Node, layer *pythonBindingLayer, fw *p
 
 // recordPythonModuleConst records a moduleDirect `identifier = integer`
 // assignment into fw.moduleConsts (row 20 C(iii)): the module constant's
-// name mapped to its raw literal text (e.g. "KEY_LEN" -> "32"). Any other
-// assignment shape (non-identifier target, non-integer value, tuple
-// unpacking, ...) is silently ignored — no fabrication.
+// name mapped to its raw literal text (e.g. "KEY_LEN" -> "32"). A tuple
+// unpacking or other non-identifier target is silently ignored — no
+// fabrication. A LATER moduleDirect assignment of the SAME name to a
+// non-integer value (G6, PR #310 phase-2 review) deletes any earlier
+// recorded entry: `KEY_LEN = 32` followed by `KEY_LEN = compute_len()`
+// must never leave the stale "32" attributed to the now-rebound name.
 func recordPythonModuleConst(node *sitter.Node, src []byte, fw *pythonFileWalk) {
 	left := node.ChildByFieldName("left")
 	right := node.ChildByFieldName("right")
-	if left == nil || right == nil || left.Symbol() != pythonSyms.identifier || right.Symbol() != pythonSyms.integer {
+	if left == nil || right == nil || left.Symbol() != pythonSyms.identifier {
+		return
+	}
+	name := left.Content(src)
+	if right.Symbol() != pythonSyms.integer {
+		if fw.moduleConsts != nil {
+			delete(fw.moduleConsts, name)
+		}
 		return
 	}
 	if fw.moduleConsts == nil {
 		fw.moduleConsts = make(map[string]string)
 	}
-	fw.moduleConsts[left.Content(src)] = right.Content(src)
+	fw.moduleConsts[name] = right.Content(src)
 }
 
 // recordPythonWalkBinder applies pythonWalk's binder detection for one
@@ -2398,6 +2408,22 @@ func (p *PythonParser) pythonArgumentSources(node *sitter.Node, src []byte, file
 	return sources
 }
 
+// pythonNameLocallyShadowed reports whether name is bound in the call's
+// own binding layer when that layer is NOT the module scope's own layer
+// (G6, PR #310 phase-2 review): a function/method scope's root layer is
+// always a BRAND NEW layer with no parent chain to the module scope (see
+// pythonWalkEnterFunction), so a name bound there — a parameter, local
+// assignment, or comprehension target — is a real local that shadows any
+// same-named module-level constant. A call resolved directly at MODULE
+// scope is exempt: there, bindings.layer IS fw.moduleScope.locals, and the
+// module constant's own name is expected to be bound in that very layer.
+func pythonNameLocallyShadowed(bindings pythonBindings, fw *pythonFileWalk, name string) bool {
+	if fw.moduleScope != nil && bindings.layer == fw.moduleScope.locals {
+		return false
+	}
+	return bindings.layer.has(name)
+}
+
 // pythonArgumentSourceFor classifies exactly three bounded argument shapes
 // (row 20, design.md §4): a nested call resolves through the SAME
 // parseCallExpr path as a top-level call (recursing into its own
@@ -2437,6 +2463,14 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 		return []SourceNode{sn}
 	case pythonSyms.identifier:
 		name := argNode.Content(src)
+		if pythonNameLocallyShadowed(bindings, fw, name) {
+			// G6 (PR #310 phase-2 review): a name bound in THIS call's own
+			// (non-module) binding layer — a parameter, local assignment,
+			// or comprehension target — shadows any same-named module-level
+			// constant. Attributing the module constant's value here would
+			// fabricate provenance for an unrelated local.
+			return nil
+		}
 		value, ok := fw.moduleConsts[name]
 		if !ok {
 			return nil
