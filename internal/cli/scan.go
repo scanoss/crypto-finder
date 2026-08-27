@@ -329,18 +329,36 @@ func newCallGraphBuilder(ecosystem string, javaRuntime javaruntime.Config, inclu
 
 	cgBuilder := callgraph.NewBuilderForEcosystem(ecosystem, cgParser)
 	if typeResolver := callgraph.NewTypeResolverForEcosystem(ecosystem, javaRuntime); typeResolver != nil {
-		if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
-			bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
-			if err != nil {
-				log.Warn().Err(err).Msg("Failed to create Java bytecode cache, bytecode indexing will not be cached")
-			} else {
-				javaResolver.SetBytecodeIndexCache(bytecodeCache)
-			}
-		}
+		configureTypeResolverCaches(typeResolver)
 		cgBuilder.SetTypeResolver(typeResolver)
 	}
 
 	return cgBuilder, nil
+}
+
+// configureTypeResolverCaches injects an on-disk cache into a type
+// resolver that supports one, when that ecosystem-specific cache type
+// assertion matches. Extracted from newCallGraphBuilder to keep that
+// function's nesting flat as ecosystem-specific cache wiring grows
+// (row 14, python-parser-parity-2, mirrors the pre-existing Java
+// bytecode-cache wiring).
+func configureTypeResolverCaches(typeResolver callgraph.TypeResolver) {
+	if javaResolver, ok := typeResolver.(*callgraph.JavaBytecodeTypeResolver); ok {
+		bytecodeCache, err := callgraph.NewDiskBytecodeIndexCache()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create Java bytecode cache, bytecode indexing will not be cached")
+		} else {
+			javaResolver.SetBytecodeIndexCache(bytecodeCache)
+		}
+	}
+	if pythonResolver, ok := typeResolver.(*callgraph.PythonTypeResolverChain); ok {
+		signatureCache, err := callgraph.NewDiskPythonSignatureIndexCache()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create Python signature cache, dependency signature indexing will not be cached")
+		} else {
+			pythonResolver.SetSignatureIndexCache(signatureCache)
+		}
+	}
 }
 
 func applyTestSkipPatterns(patterns []string, includeTests bool) []string {

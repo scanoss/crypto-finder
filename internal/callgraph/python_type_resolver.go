@@ -97,10 +97,25 @@ type PythonTypeResolverChain struct {
 }
 
 // NewPythonTypeResolverChain creates a chain backed by the embedded
-// contract KB. dependency stays nil until row 14 wires
-// NewPythonDependencyTypeResolver(...) in.
+// contract KB, plus a dependency resolver with an uncached (nil-cache,
+// always-re-index) signature cache — safe on its own, but every caller
+// that cares about repeated-scan performance should call
+// SetSignatureIndexCache with a real cache (e.g. NewDiskPythonSignatureIndexCache,
+// mirroring JavaBytecodeTypeResolver.SetBytecodeIndexCache — 12.5,
+// row 14, python-parser-parity-2).
 func NewPythonTypeResolverChain() *PythonTypeResolverChain {
-	return &PythonTypeResolverChain{contract: NewPythonContractTypeResolverFromEmbedded()}
+	return &PythonTypeResolverChain{
+		contract:   NewPythonContractTypeResolverFromEmbedded(),
+		dependency: NewPythonDependencyTypeResolver(nil),
+	}
+}
+
+// SetSignatureIndexCache reconfigures the chain's dependency resolver to
+// use the given cache (12.5, row 14, python-parser-parity-2) — mirrors
+// JavaBytecodeTypeResolver.SetBytecodeIndexCache's post-construction
+// injection pattern, wired from internal/cli/scan.go.
+func (c *PythonTypeResolverChain) SetSignatureIndexCache(cache PythonSignatureIndexCache) {
+	c.dependency = NewPythonDependencyTypeResolver(cache)
 }
 
 // ResolveTypes runs the contract resolver, the optional dependency
