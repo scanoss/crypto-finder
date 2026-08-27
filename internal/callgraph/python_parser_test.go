@@ -1468,10 +1468,10 @@ func TestPythonParser_Decorator_StaticMethodNoReceiver(t *testing.T) {
 	if call == nil {
 		t.Fatal("encrypt call not found")
 	}
-	if call.ReceiverVar != "self" {
-		t.Errorf("ReceiverVar = %q, want %q (staticmethod parameter 0 is an ordinary local, even named \"self\")", call.ReceiverVar, "self")
+	if call.ReceiverVar != pythonSelfObjectName {
+		t.Errorf("ReceiverVar = %q, want %q (staticmethod parameter 0 is an ordinary local, even named \"self\")", call.ReceiverVar, pythonSelfObjectName)
 	}
-	want := FunctionID{Package: "mypkg", Type: "self", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg", Type: pythonSelfObjectName, Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}

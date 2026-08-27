@@ -560,6 +560,30 @@ type pythonFileWalk struct {
 // recursing specifically into a decorated_definition's own "definition"
 // child, so pythonWalkEnterFunction can apply the wrapping decorator's
 // staticmethod/classmethod classification to the new function scope.
+// pythonWalkSideEffects applies pythonWalk's non-scope-opening dispatch
+// cases for one node: import/re-export discovery, pending-call recording,
+// and module-constant recording. Split out of pythonWalk itself purely to
+// keep that function's cyclomatic complexity down — classDefinition and
+// decoratedDefinition stay in pythonWalk's own switch because they need an
+// early return, which this helper's callers already handle.
+func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbol, src []byte, analysis *FileAnalysis, isInitPy bool, layer *pythonBindingLayer, fw *pythonFileWalk, activeFunc, activeClassDirect *pythonScope, moduleDirect bool) {
+	switch sym {
+	case pythonSyms.importStatement:
+		p.processImportStatement(node, src, analysis)
+	case pythonSyms.importFromStatement:
+		p.processImportFromStatement(node, src, analysis)
+		if isInitPy {
+			p.recordPythonReExportsFromStatement(node, src, analysis)
+		}
+	case pythonSyms.call:
+		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
+	case pythonSyms.assignment:
+		if moduleDirect {
+			recordPythonModuleConst(node, src, fw)
+		}
+	}
+}
+
 func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, layer *pythonBindingLayer, activeFunc *pythonScope, activeClassInfo *pythonClassInfo, activeClassDirect *pythonScope, moduleDirect bool, decoratorInfo *pythonDecoratorInfo) {
 	p.countVisit()
 	// node.Symbol() is a cgo call: read it ONCE per node (sym) rather than
@@ -570,26 +594,14 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 	sym := node.Symbol()
 
 	switch sym {
-	case pythonSyms.importStatement:
-		p.processImportStatement(node, src, analysis)
-	case pythonSyms.importFromStatement:
-		p.processImportFromStatement(node, src, analysis)
-		if isInitPy {
-			p.recordPythonReExportsFromStatement(node, src, analysis)
-		}
 	case pythonSyms.classDefinition:
 		p.pythonWalkClass(node, src, analysis, isInitPy, fw, activeFunc)
 		return
 	case pythonSyms.decoratedDefinition:
 		p.pythonWalkDecorated(node, src, analysis, isInitPy, fw, layer, activeFunc, activeClassInfo, activeClassDirect, moduleDirect)
 		return
-	case pythonSyms.call:
-		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
-	case pythonSyms.assignment:
-		if moduleDirect {
-			recordPythonModuleConst(node, src, fw)
-		}
 	}
+	p.pythonWalkSideEffects(node, sym, src, analysis, isInitPy, layer, fw, activeFunc, activeClassDirect, moduleDirect)
 
 	enteringFunc := sym == pythonSyms.functionDefinition && activeFunc == nil
 	if enteringFunc {
@@ -1633,6 +1645,32 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	return call
 }
 
+// pythonIsSelfLikeReceiver reports whether object is a self-reference in
+// the CURRENT bindings (row 8): the literal "self"/"cls", or a
+// @classmethod scope's own renamed parameter-0 alias.
+func pythonIsSelfLikeReceiver(object string, bindings pythonBindings) bool {
+	if object == pythonSelfObjectName || object == pythonClsObjectName {
+		return true
+	}
+	return bindings.selfAlias != "" && object == bindings.selfAlias
+}
+
+// pythonLocalMethodCall builds the FunctionCall for a bare self/cls (or
+// super()) call: same package, no declared owner Type, no ReceiverVar.
+func pythonLocalMethodCall(packagePath, method, raw, filePath string, line, startCol, endCol int, args []string, chainID, assignedVar string) *FunctionCall {
+	return &FunctionCall{
+		Callee:      FunctionID{Package: packagePath, Name: method},
+		Raw:         raw,
+		FilePath:    filePath,
+		Line:        line,
+		StartCol:    startCol,
+		EndCol:      endCol,
+		Arguments:   args,
+		ChainID:     chainID,
+		AssignedVar: assignedVar,
+	}
+}
+
 // pythonIsSuperCallNode reports whether node is a call whose function is
 // the bare identifier "super" — covers both `super()` and `super(B, self)`
 // (row 9, python-parser-parity-2); the arguments, if any, are never
@@ -1643,6 +1681,32 @@ func pythonIsSuperCallNode(node *sitter.Node, src []byte) bool {
 	}
 	fn := node.Child(0)
 	return fn != nil && fn.Symbol() == pythonSyms.identifier && fn.Content(src) == "super"
+}
+
+// pythonResolveSuperCall builds the FunctionCall for a super()/super(B,
+// self) attribute call (row 9): callee Type is bases[0], or empty when
+// bases is empty (unresolvable, never fabricated). __init__ maps to
+// <init> for the callee name, matching parseFunctionDef.
+func pythonResolveSuperCall(bases []string, packagePath, method, raw, filePath string, line, startCol, endCol int, args []string, chainID, assignedVar string) *FunctionCall {
+	calleeName := method
+	if method == pythonInitMethodName {
+		calleeName = constructorMethodName
+	}
+	callee := FunctionID{Package: packagePath, Name: calleeName}
+	if len(bases) > 0 {
+		callee.Type = bases[0]
+	}
+	return &FunctionCall{
+		Callee:      callee,
+		Raw:         raw,
+		FilePath:    filePath,
+		Line:        line,
+		StartCol:    startCol,
+		EndCol:      endCol,
+		Arguments:   args,
+		ChainID:     chainID,
+		AssignedVar: assignedVar,
+	}
 }
 
 func looksLikePythonTypeName(name string) bool {
@@ -1721,47 +1785,15 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	// bindings.selfAlias). A @staticmethod scope disables this shortcut
 	// entirely: its parameter 0 is an ordinary local, not a self-reference,
 	// even when literally named "self"/"cls".
-	isSelfLike := object == pythonSelfObjectName || object == pythonClsObjectName ||
-		(bindings.selfAlias != "" && object == bindings.selfAlias)
-	if isSelfLike && !bindings.staticMethod {
-		return &FunctionCall{
-			Callee:      FunctionID{Package: analysis.PackagePath, Name: method},
-			Raw:         raw,
-			FilePath:    filePath,
-			Line:        line,
-			StartCol:    startCol,
-			EndCol:      endCol,
-			Arguments:   args,
-			ChainID:     chainID,
-			AssignedVar: assignedVar,
-		}
+	if pythonIsSelfLikeReceiver(object, bindings) && !bindings.staticMethod {
+		return pythonLocalMethodCall(analysis.PackagePath, method, raw, filePath, line, startCol, endCol, args, chainID, assignedVar)
 	}
 
 	// super()/super(B, self) resolves against the enclosing class's own
 	// bases[0] — never a receiver, never left as the raw "super()" text
-	// (row 9). __init__ maps to <init> for the callee name, matching
-	// parseFunctionDef. Empty bases means unresolvable and is left with no
-	// Type at all, never fabricated.
+	// (row 9).
 	if objectIsCall && pythonIsSuperCallNode(objectCallNode, src) {
-		calleeName := method
-		if method == pythonInitMethodName {
-			calleeName = constructorMethodName
-		}
-		callee := FunctionID{Package: analysis.PackagePath, Name: calleeName}
-		if len(bindings.bases) > 0 {
-			callee.Type = bindings.bases[0]
-		}
-		return &FunctionCall{
-			Callee:      callee,
-			Raw:         raw,
-			FilePath:    filePath,
-			Line:        line,
-			StartCol:    startCol,
-			EndCol:      endCol,
-			Arguments:   args,
-			ChainID:     chainID,
-			AssignedVar: assignedVar,
-		}
+		return pythonResolveSuperCall(bindings.bases, analysis.PackagePath, method, raw, filePath, line, startCol, endCol, args, chainID, assignedVar)
 	}
 
 	// Determine ReceiverVar: only when object resolves to a known object
