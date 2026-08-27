@@ -70,7 +70,8 @@ const (
 	// method (row 11, python-parser-parity-2): `obj(data)` resolves to this
 	// name on obj's in-file class when that class declares its own
 	// __call__.
-	pythonDunderCallMethodName = "__call__"
+	pythonDunderCallMethodName    = "__call__"
+	pythonDunderImportBuiltinName = "__import__"
 	// pythonSuperBuiltinName is the bare identifier row 9's super()
 	// resolution matches (python-parser-parity-2): `super()`/`super(B,
 	// self)`, and the same literal G4 (PR #310 phase-2 review) checks to
@@ -1114,7 +1115,7 @@ func pythonIsDynamicImportBinding(call *FunctionCall, analysis *FileAnalysis) bo
 		return false
 	}
 	switch call.Callee.Name {
-	case "import_module", "__import__":
+	case "import_module", pythonDunderImportBuiltinName:
 		return true
 	default:
 		return false
@@ -1496,6 +1497,24 @@ func pythonModuleDottedPathStem(filePath string) string {
 	return stem
 }
 
+func pythonFunctionDefParts(node *sitter.Node, src []byte) (string, *sitter.Node, *sitter.Node) {
+	var name string
+	var body *sitter.Node
+	var parameters *sitter.Node
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		switch child.Type() {
+		case goNodeIdentifier:
+			name = child.Content(src)
+		case pythonNodeParameters:
+			parameters = child
+		case goNodeBlock:
+			body = child
+		}
+	}
+	return name, body, parameters
+}
+
 // parseFunctionDef parses a function_definition node into a FunctionDecl.
 // attrs is the enclosing class's attribute set (nil outside a class). fw is
 // the whole-file walk output; node's own scope (parameters plus every
@@ -1504,21 +1523,7 @@ func pythonModuleDottedPathStem(filePath string) string {
 // pythonWalk in the SAME earlier traversal that also found this node, and
 // is looked up here by node identity (StartByte), not recomputed.
 func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool, fw *pythonFileWalk) *FunctionDecl {
-	var name string
-	var body *sitter.Node
-	var paramNode *sitter.Node
-
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		switch child.Type() {
-		case goNodeIdentifier:
-			name = child.Content(src)
-		case pythonNodeParameters:
-			paramNode = child
-		case goNodeBlock:
-			body = child
-		}
-	}
+	name, body, paramNode := pythonFunctionDefParts(node, src)
 
 	if name == "" {
 		return nil
@@ -2385,7 +2390,7 @@ func pythonLiteralStringContent(node *sitter.Node, src []byte) (string, bool) {
 // registers nothing.
 func (p *PythonParser) pythonMaybeRecordDynamicImport(node, funcNode *sitter.Node, src []byte, analysis *FileAnalysis) {
 	switch {
-	case funcNode.Symbol() == pythonSyms.identifier && funcNode.Content(src) == "__import__":
+	case funcNode.Symbol() == pythonSyms.identifier && funcNode.Content(src) == pythonDunderImportBuiltinName:
 		recordPythonLiteralModuleImport(node, src, analysis)
 	case funcNode.Symbol() == pythonSyms.attribute:
 		object := funcNode.ChildByFieldName("object")

@@ -64,6 +64,8 @@ type pythonDependencyParser interface {
 	Close()
 }
 
+// PythonDependencyTypeResolver enriches Python declarations from dependency
+// source and stub annotations.
 type PythonDependencyTypeResolver struct {
 	cache PythonSignatureIndexCache
 	// readDir and newParser are test seams.

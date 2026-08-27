@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -224,49 +225,87 @@ func pythonSignatureDistributionKeyForIdentity(root PackageDir, identity pythonS
 // result is deterministic and independent of the distribution's absolute
 // installation path. Unreadable or oversized inputs degrade by omission.
 func pythonSignatureSourceFingerprint(root string) string {
-	hash := sha256.New()
-	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	digest := sha256.New()
+	if err := filepath.WalkDir(root, pythonSignatureFingerprintVisitor(root, digest)); err != nil {
+		log.Debug().Err(err).Str("root", root).Msg("Failed to walk Python signature source tree")
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil))
+}
+
+func pythonSignatureFingerprintVisitor(root string, digest hash.Hash) fs.WalkDirFunc {
+	return func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			if entry != nil && entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
+			return pythonSignatureFingerprintWalkFailure(entry)
 		}
 		if entry == nil {
 			return nil
 		}
 		if entry.IsDir() {
-			if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipDirs[entry.Name()]) {
-				return fs.SkipDir
-			}
+			return pythonSignatureFingerprintDir(root, path, entry)
+		}
+		if !pythonSignatureFingerprintEligibleFile(entry) {
 			return nil
 		}
-		if entry.Type()&fs.ModeSymlink != 0 {
+		data, rel, ok := pythonSignatureFingerprintInput(root, path, entry)
+		if !ok {
 			return nil
 		}
-		name := entry.Name()
-		ext := filepath.Ext(name)
-		if ext != pythonSourceExt && ext != pythonStubExt {
-			return nil
-		}
-		if strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") || strings.HasSuffix(name, "_test.pyi") {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil || info.Size() > maxPythonDependencyFileBytes {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00", filepath.ToSlash(rel), len(data))
-		_, _ = hash.Write(data)
+		pythonSignatureFingerprintWrite(digest, rel, data)
 		return nil
-	})
-	return fmt.Sprintf("%x", hash.Sum(nil))
+	}
+}
+
+func pythonSignatureFingerprintWalkFailure(entry fs.DirEntry) error {
+	if entry != nil && entry.IsDir() {
+		return fs.SkipDir
+	}
+	return nil
+}
+
+func pythonSignatureFingerprintDir(root, path string, entry fs.DirEntry) error {
+	if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipDirs[entry.Name()]) {
+		return fs.SkipDir
+	}
+	return nil
+}
+
+func pythonSignatureFingerprintEligibleFile(entry fs.DirEntry) bool {
+	if entry.Type()&fs.ModeSymlink != 0 {
+		return false
+	}
+	name := entry.Name()
+	ext := filepath.Ext(name)
+	if ext != pythonSourceExt && ext != pythonStubExt {
+		return false
+	}
+	return !strings.HasPrefix(name, "test_") &&
+		!strings.HasSuffix(name, "_test.py") &&
+		!strings.HasSuffix(name, "_test.pyi")
+}
+
+func pythonSignatureFingerprintInput(root, path string, entry fs.DirEntry) ([]byte, string, bool) {
+	info, err := entry.Info()
+	if err != nil || info.Size() > maxPythonDependencyFileBytes {
+		return nil, "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return nil, "", false
+	}
+	return data, filepath.ToSlash(rel), true
+}
+
+func pythonSignatureFingerprintWrite(digest hash.Hash, rel string, data []byte) {
+	prefix := fmt.Sprintf("%s\x00%d\x00", rel, len(data))
+	if _, err := digest.Write([]byte(prefix)); err != nil {
+		log.Debug().Err(err).Str("path", rel).Msg("Failed to hash Python signature source path")
+		return
+	}
+	if _, err := digest.Write(data); err != nil {
+		log.Debug().Err(err).Str("path", rel).Msg("Failed to hash Python signature source bytes")
+	}
 }
