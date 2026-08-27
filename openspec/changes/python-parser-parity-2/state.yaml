@@ -60,11 +60,11 @@ phases:
   apply:
     status: partial
     batch: 2
-    tasks_done: "40/83 (phases 0-10)"
+    tasks_done: "50/83 (phases 0-11; phase 11 partial — 11.11-11.13 skipped, unverifiable offline)"
     engram_topic: sdd/python-parser-parity-2/apply-progress
     artifact: apply-progress.md
-    last_commit: 5dfcfd5
-    note: "Perf gate holds within budget through row 13 (ns/op ~0.98x, B/op ~1.068x vs c6ee180). Batch 2 landed rows 7 (dynamic dispatch), 11 (partial/__call__), 13 (type hints, parser+resolver). Remaining: row C (KDF, Phase 11 - largest remaining piece, needs primary-source signature verification), row 14 (dependency type resolver, Phase 12), regression guard (13), final gates (14)."
+    last_commit: 0fb218b
+    note: "Perf gate holds within budget through row C (ns/op ~0.947x, B/op ~1.074x vs c6ee180). Batch 2 landed rows 7 (dynamic dispatch), 11 (partial/__call__), 13 (type hints, parser+resolver), C (KDF key length: contracts.go enum + key_length.go 3-step ladder + pyca-cryptography/hashlib KB). argon2-cffi/bcrypt/pycryptodome(x) KDF KB entries deliberately NOT authored (11.11-11.13) — no primary source available offline in this environment, recorded as explicit follow-up rather than guessed. Remaining: row 14 (dependency type resolver, Phase 12), regression guard (13), final gates (14)."
   verify:
     status: pending
     required_measurement: "BenchmarkPythonParseDirectory_Bindings with >=8 reps in ONE continuous run; report combined mean AND range."

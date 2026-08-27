@@ -443,30 +443,101 @@ transient cache-dependent flakiness (issue count varied 8-11 across
 consecutive runs with NO source change) — always re-verify with
 `golangci-lint cache clean` before trusting a lint delta.
 
+### Phase 11 (Row C — KDF key length) — mostly done, commit `0fb218b`
+
+`contracts.go` gained `DerivationArgumentByteLength` ("argument_byte_length",
+bytes*8=bits), extending the `validDerivation` whitelist and its error
+string. `internal/scan/key_length.go`'s `resolvedKeyLengthFromContract`
+became a 3-step ladder exactly per design §5.2: steps 1-2 byte-for-byte
+unchanged (verified — the full pre-existing `TestResolvedKeyLengthFromContract`
+table passes unmodified); step 3a (`resolvedKeyLengthFromKeywordName`)
+matches `Arguments[i]`'s raw `name=value` text against the contract's
+keySize role `Name`, bypassing `contractParameterTypesMatch`; step 3b
+(`resolvedKeyLengthFromPositionalConstant`) resolves a purely positional
+constant when the contract declares `parameter_types` but no declared-type
+evidence exists at the keySize index. New
+`TestResolvedKeyLength_JavaUnchangedByKeywordPath` plus 7 Python-specific
+tests plus `TestLoadEmbeddedPython_KDFKeySizeRoles` (new file
+`internal/callgraph/contracts/python_kdf_test.go`).
+
+**KB coverage — VERIFIED (authored)**: `pyca-cryptography.yaml` updated
+(PBKDF2HMAC/Scrypt/HKDF gained keySize roles; HKDFExpand/ConcatKDFHash/
+X963KDF added as brand-new contracts) and a NEW `hashlib.yaml`
+(pbkdf2_hmac/scrypt). Every arity/index verified against a PRIMARY SOURCE
+actually present on this machine — `cryptography` 50.0.1 is pip-installed
+locally, so its own `.pyi` stub
+(`cryptography/hazmat/bindings/_rust/openssl/kdf.pyi`) was read directly;
+CPython 3.12's stdlib `_hashlib` built-in's own `help()` text was used for
+`hashlib.*`.
+
+**Bug found and fixed while verifying** (not a design-anticipated issue):
+the PRE-EXISTING `Scrypt.<init>` contract (authored before this change,
+untouched since) declared `arity: 4`, but the real signature is
+`Scrypt(salt, length, n, r, p, backend=None)` — 5 non-backend parameters.
+Left uncorrected, this row's own new `parameter_types`/keySize role would
+have been positioned against a systematically wrong parameter count (step
+3b's `len(contract.ParameterTypes) == len(parameters)` check would then
+mismatch for every real 5-argument call). Fixed `arity: 4 -> 5` as part of
+this commit, verified via the .pyi stub, not guessed.
+
+**Design correction found**: design.md §5.3's table listed
+`hashlib.scrypt` as `arity: 6, index: 5, name: dklen`. The REAL CPython
+signature is `scrypt(password, *, salt=None, n=None, r=None, p=None,
+maxmem=0, dklen=64)` — design's table is missing the `maxmem` parameter
+entirely, making the true arity 7 and dklen's declared index 6, not 5.
+Corrected in `hashlib.yaml`. Also: every parameter after `password` is
+keyword-only (the `*` marker) in the real signature, so `dklen` can NEVER
+be passed positionally in valid Python — step 3a (keyword-name matching)
+is therefore the ONLY realistic resolution path for `hashlib.scrypt`;
+`TestResolvedKeyLength_Python_EveryListedAPI`'s table only exercises its
+keyword form, deliberately skipping a positional test that would model
+invalid Python.
+
+**Deliberately NOT authored — argon2-cffi, bcrypt, pycryptodome,
+pycryptodomex** (tasks 11.11-11.13): none of these packages is installed
+anywhere on this machine (searched exhaustively: `pip list`, `pip cache
+list`, filesystem-wide `find` for `.whl`/`dist-info`/site-packages —
+nothing found), and network access (`pip download`/`pip show`) is
+explicitly disallowed by the batch instructions. Per those same
+instructions ("if you cannot verify offline... record the unverified
+ones as follow-ups"), NOTHING was authored for these four libraries
+rather than trusting design's own table (already proven wrong twice in
+this same row) or unverified training-data recollection. This is the
+correct, honest outcome given the environment's constraints — NOT a
+shortcut taken under time pressure.
+
+**Export schema verified unchanged**: `pkg/graphfrag.CallgraphSchemaVersion
+== "6.13"` (grep + full `pkg/graphfrag` test suite green); `git diff
+--stat -- pkg/graphfrag/ internal/scan/supporting_calls.go` empty
+(zero-diff invariant holds).
+
+### Perf guard re-run after row C
+
+| After row | mean ns/op | ratio vs c6ee180 (67.9ms) | mean B/op | ratio vs c6ee180 (19.28MB) |
+|---|---|---|---|---|
+| 11.16 (row C) | ~64,320,933 | 0.947x | ~20,701,475 | 1.074x |
+
+Within budget (<=1.10x ns/op, <=1.15x B/op).
+
 ### Remaining tasks (batch 3)
-- [ ] 11.1-11.16 (Row C — KDF key length: contracts.go enum + key_length.go + 6 KB YAMLs, verify arities against primary library sources before authoring) — LARGEST remaining piece
+- [ ] 11.11-11.13 (argon2-cffi/bcrypt/pycryptodome(x) KDF KB entries — blocked on primary-source access; author when the packages become installable, e.g. once network/pip access is available, or if they're vendored into this environment)
 - [ ] 12.1-12.8 (Row 14 — PythonDependencyTypeResolver, new files, lands last/abandonable)
 - [ ] 13.1-13.8 (Regression guard — re-verify all pinned invariants)
 - [ ] 14.1-14.11 (Final gates: go test -race ./..., make lint, make coverage-check, git diff --check, CHANGELOG, user-guide.html, push)
 
 ### Notes for batch 3
-- Row C's keyword-name matching lives in `internal/scan/key_length.go`
-  (D6), NOT `mergeCallParameters` — confirmed unchanged by this batch.
-  `resolvedKeyLengthFromContract` becomes a 3-step ladder (steps 1-2
-  byte-identical, step 3a keyword-name, step 3b positional/type-evidence-
-  absent). Read design.md §5.2 exactly before starting — the step
-  ordering and bypass-of-`contractParameterTypesMatch` for step 3a only is
-  load-bearing for Java neutrality.
-- Before authoring ANY of the 6 KB YAMLs, verify each library's real
-  signature against a primary source (locally importable module via
-  `python3 -c "import inspect, <mod>; print(inspect.signature(...))"`,
-  or installed package source under a venv/site-packages if present on
-  this machine) — network access for `pip download`/`pip show` is NOT
-  available. If unverifiable offline, author only what can be proven and
-  record the rest as an explicit follow-up — never guess an arity/index.
 - `PythonContractTypeResolver`/`PythonTypeResolverChain` already exist
-  (this batch added the chain type) but are NOT wired into
-  `parser_registry.go`/CLI yet — that wiring is task 12.5 (row 14), so
-  row C's KDF resolution does not depend on it (KDF key length resolution
-  runs entirely through `internal/scan/key_length.go`, independent of the
-  Python type resolver chain).
+  (Phase 10 added the chain type) but are NOT wired into
+  `parser_registry.go`/CLI yet — that wiring is task 12.5 (row 14).
+- Row 14's `PythonTypeResolverChain{contract, dependency}` struct literal
+  already exists with `dependency` as a plain `TypeResolver` field
+  (currently always nil) — task 12.4/12.5 just needs to construct and
+  assign a real `*PythonDependencyTypeResolver` there, no struct-shape
+  change needed.
+- If a follow-up change ever adds argon2-cffi/bcrypt/pycryptodome(x) KDF
+  coverage, mirror this row's exact pattern: `python_kdf_test.go`'s table
+  test, `parameter_types` + `parameters[].contributes: keySize` via
+  `argument_byte_length`, and VERIFY the signature against a real
+  installed package or primary documentation before authoring — never
+  trust an unverified table (this row's design.md table was wrong twice:
+  Scrypt's pre-existing arity and hashlib.scrypt's missing `maxmem`).
