@@ -292,6 +292,41 @@ func TestResolvedKeyLength_JavaUnchangedByKeywordPath(t *testing.T) {
 	})
 }
 
+// TestResolvedKeyLength_Python_ReorderedValidKeywordsPreferRoleName pins
+// real Python call semantics when two valid integer keywords are reordered.
+// Declared types cannot distinguish dklen from iterations, so the exact keyword
+// role must win before positional/type matching.
+func TestResolvedKeyLength_Python_ReorderedValidKeywordsPreferRoleName(t *testing.T) {
+	t.Parallel()
+
+	ctx := newExportBuildContext(&engine.DepScanResult{
+		CallGraph: &callgraph.CallGraph{},
+		Ecosystem: "python",
+	})
+	call := &callgraph.FunctionCall{
+		Callee:    callgraph.FunctionID{Package: "hashlib", Name: "pbkdf2_hmac"},
+		FilePath:  "derive.py",
+		Line:      11,
+		Arguments: []string{"'sha256'", "password", "salt", "dklen=32", "iterations=100000"},
+	}
+	parameters := []callGraphParameter{
+		{ParameterIndex: 0, ArgumentExpression: "'sha256'"},
+		{ParameterIndex: 1, ArgumentExpression: "password"},
+		{ParameterIndex: 2, ArgumentExpression: "salt"},
+		{ParameterIndex: 3, ArgumentExpression: "dklen=32", ResolvedValue: "32"},
+		{ParameterIndex: 4, ArgumentExpression: "iterations=100000", ResolvedValue: "100000"},
+	}
+	parameterTypes := []string{"builtins.str", "builtins.bytes", "builtins.bytes", "builtins.int", "builtins.int"}
+	matches := contractMatchesForCall(ctx, call, len(call.Arguments))
+	got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, parameterTypes)
+	if got == nil || got.Provenance != "constant" || got.Bits == nil || *got.Bits != 256 {
+		t.Fatalf("resolved key length = %#v, want dklen keyword value 256 bits", got)
+	}
+	if got.SourceCall.ParameterIndex != 4 {
+		t.Fatalf("source_call.parameter_index = %d, want declared dklen role index 4", got.SourceCall.ParameterIndex)
+	}
+}
+
 // TestResolvedKeyLength_Python_KeywordAtDifferentPositionNeverReadPositionally
 // (G2, PR #310 phase-2 review) pins that a keyword argument whose NAME does
 // not match the keySize role — but which happens to sit at the keySize

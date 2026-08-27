@@ -56,17 +56,10 @@ var pythonKeywordArgumentPattern = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)
 // is never a supporting call of its own; its value reaches the export as an
 // argument source node instead.
 //
-// Steps 1-2 (the loop below, plus resolvedKeyLengthFromParameterSources) are
-// byte-for-byte unchanged from before row C (python-parser-parity-2,
-// design.md §5.2) — INCLUDING contractParameterTypesMatch. Steps 3a
-// (resolvedKeyLengthFromKeywordName) and 3b
-// (resolvedKeyLengthFromPositionalConstant) run ONLY after both return
-// nothing, and are the sole place this function's behavior can differ from
-// before row C: 3a can only ADD a record for a name=value argument shape no
-// other ecosystem's call sites ever produce; 3b can only ADD a record
-// carrying a real resolved constant, never remove or downgrade an existing
-// one. This keeps every non-Python (and every pre-row-C Python) call site's
-// resolution byte-identical — see TestResolvedKeyLength_JavaUnchangedByKeywordPath.
+// Python keyword-name matching runs first because an exact role name is
+// stronger evidence than a declaration-order type match when valid keyword
+// arguments are reordered. Non-Python ecosystems retain the original
+// positional/source resolution order.
 func resolvedKeyLengthFromContract(
 	ctx *exportBuildContext,
 	matches []contracts.Contract,
@@ -77,6 +70,14 @@ func resolvedKeyLengthFromContract(
 	if call == nil {
 		return nil
 	}
+	// A Python keyword names its declared role exactly and therefore outranks
+	// positional/type matching, whose declaration-order indexes do not follow
+	// reordered keyword slots.
+	if ctx != nil && ctx.kb != nil && ctx.kb.Ecosystem == ecosystemPython {
+		if resolved := resolvedKeyLengthFromKeywordName(matches, call, parameters); resolved != nil {
+			return resolved
+		}
+	}
 	for i := range matches {
 		contract := &matches[i]
 		role := keySizeParameterRole(contract)
@@ -86,9 +87,6 @@ func resolvedKeyLengthFromContract(
 		return resolvedKeyLengthForRole(contract.Method, call.Line, parameters, role)
 	}
 	if resolved := resolvedKeyLengthFromParameterSources(ctx, parameters); resolved != nil {
-		return resolved
-	}
-	if resolved := resolvedKeyLengthFromKeywordName(matches, call, parameters); resolved != nil {
 		return resolved
 	}
 	if ctx == nil || ctx.kb == nil || ctx.kb.Ecosystem != ecosystemPython {
