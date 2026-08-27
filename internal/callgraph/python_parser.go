@@ -71,6 +71,13 @@ const (
 	// name on obj's in-file class when that class declares its own
 	// __call__.
 	pythonDunderCallMethodName = "__call__"
+	// pythonDunderEnterMethodName/pythonDunderExitMethodName are the
+	// context-manager protocol methods (`with obj: ...`) kept alongside
+	// __call__ in the parseFunctionDef dunder whitelist (G3, PR #310
+	// phase-2 review) so a resolved call into either one is a real,
+	// traversable declaration rather than a dangling edge.
+	pythonDunderEnterMethodName = "__enter__"
+	pythonDunderExitMethodName  = "__exit__"
 	// pythonFunctoolsPartialPackage/pythonFunctoolsPartialName identify a
 	// resolved functools.partial(...) call's Callee, regardless of whether
 	// it was reached via `import functools; functools.partial(...)` or
@@ -87,6 +94,16 @@ const (
 	// `from` import's dot-prefixed module reference (e.g. `.mod`, `..pkg`).
 	pythonNodeRelativeImport = "relative_import"
 )
+
+// pythonKeptDunderMethods whitelists the dunder method names
+// parseFunctionDef still emits a FunctionDecl for (G3, PR #310 phase-2
+// review) — every other dunder (besides __init__, handled separately) is
+// still dropped.
+var pythonKeptDunderMethods = map[string]bool{
+	pythonDunderCallMethodName:  true,
+	pythonDunderEnterMethodName: true,
+	pythonDunderExitMethodName:  true,
+}
 
 // pythonSymbolTable caches tree-sitter grammar symbol IDs for the node types
 // compared in hot per-node dispatch loops (the recursive tree walkers, which
@@ -1245,10 +1262,10 @@ func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string)
 }
 
 // extractDeclarations walks top-level statements for function and class
-// definitions, consuming prepass's precomputed locals/attrs tables (built by
-// ONE earlier collectPythonFilePrepass traversal over this same file) so
-// neither buildModuleInitDecl nor processClass need to re-walk the tree to
-// build them.
+// definitions, consuming fw's precomputed scopes/pending-call tables (built
+// by ONE earlier pythonWalk single-descent traversal over this same file,
+// see D1/A1 python-parser-parity-2) so neither buildModuleInitDecl nor
+// processClass need to re-walk the tree to build them.
 func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
@@ -1365,8 +1382,14 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		return nil
 	}
 
-	// Skip dunder methods except __init__
-	if strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") && name != pythonInitMethodName {
+	// Skip dunder methods except __init__ and the small whitelist of
+	// dunders resolution actually targets as real call edges (G3, PR #310
+	// phase-2 review): __call__ (row 11's `obj(data)` rewrite) and the
+	// context-manager protocol __enter__/__exit__. Dropping every dunder
+	// declaration left a resolved call to one of these dangling — the edge
+	// existed, but pointed at a declaration that was never created, so
+	// reachability could never continue past it.
+	if strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") && name != pythonInitMethodName && !pythonKeptDunderMethods[name] {
 		return nil
 	}
 

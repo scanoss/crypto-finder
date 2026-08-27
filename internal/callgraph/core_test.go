@@ -529,6 +529,70 @@ def run(data):
 	}
 }
 
+// TestBuilder_PythonCallReachesIntoDunderCall (G3, PR #310 phase-2 review)
+// pins that parseFunctionDef no longer drops __call__ (only the general
+// dunder-method skip continues to apply to every OTHER dunder): a class
+// declaring __call__ must have its own FunctionDecl in the graph, so a
+// call resolved to Type.__call__ (row 11) is a real, traversable edge
+// instead of dangling into a declaration that does not exist. Asserts
+// reachability all the way from `run` through `s(d)` into the
+// hashlib.sha256 call made INSIDE __call__'s own body.
+func TestBuilder_PythonCallReachesIntoDunderCall(t *testing.T) {
+	dir := t.TempDir()
+	src := `import hashlib
+
+
+class S:
+    def __call__(self, d):
+        return hashlib.sha256(d)
+
+
+def run(d):
+    s = S()
+    return s(d)
+`
+	if err := os.WriteFile(filepath.Join(dir, "app.py"), []byte(src), 0o600); err != nil {
+		t.Fatalf("write app.py: %v", err)
+	}
+
+	builder := NewBuilderForEcosystem("python", NewPythonParser())
+	graph, err := builder.BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "mypkg"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	wantID := FunctionID{Package: "mypkg", Type: "S", Name: pythonDunderCallMethodName}
+	dunderCall := graph.Functions[wantID.String()]
+	if dunderCall == nil {
+		t.Fatalf("missing %s declaration; functions=%v", wantID.String(), sortedFunctionKeys(graph.Functions))
+	}
+	var sha256Call *FunctionCall
+	for i := range dunderCall.Calls {
+		if dunderCall.Calls[i].Callee.Name == "sha256" {
+			sha256Call = &dunderCall.Calls[i]
+			break
+		}
+	}
+	if sha256Call == nil {
+		t.Fatalf("hashlib.sha256(d) call not found inside __call__'s own declaration: %#v", dunderCall.Calls)
+	}
+	if sha256Call.Callee.Package != "hashlib" {
+		t.Fatalf("Callee = %+v, want Package=hashlib", sha256Call.Callee)
+	}
+
+	callers := graph.Callers[sha256Call.Callee.String()]
+	found := false
+	for _, caller := range callers {
+		if caller == wantID.String() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("Callers[%q] = %v, want %s present (dangling edge otherwise)", sha256Call.Callee.String(), callers, wantID.String())
+	}
+}
+
 func sortedFunctionKeys(functions map[string]*FunctionDecl) []string {
 	keys := make([]string, 0, len(functions))
 	for key := range functions {
