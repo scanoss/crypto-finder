@@ -1378,6 +1378,77 @@ def top_level():
 	}
 }
 
+// TestPythonParser_ArgProvenance_NestedConstructorCalls (row 20,
+// python-parser-parity-2) pins the three bounded argument-provenance
+// shapes: a nested call (recursive CALL_RESULT, callee resolved through
+// the same parseCallExpr path), a bare identifier bound to a module-level
+// integer constant (VARIABLE wrapping VALUE), and a literal (VALUE). A
+// bare identifier that is NOT a module-level constant emits nothing.
+func TestPythonParser_ArgProvenance_NestedConstructorCalls(t *testing.T) {
+	src := `from crypto import Cipher
+
+KEY_LEN = 32
+
+
+def build(password, salt):
+    return derive(Cipher(salt), KEY_LEN, 7, "static", salt)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "build")
+	if fn == nil {
+		t.Fatal("build function not found")
+	}
+	call := findPythonCallByMethod(fn, "derive")
+	if call == nil {
+		t.Fatal("derive call not found")
+	}
+	if len(call.Arguments) != 5 {
+		t.Fatalf("Arguments = %v (%d), want 5", call.Arguments, len(call.Arguments))
+	}
+	if len(call.ArgumentSources) != 5 {
+		t.Fatalf("ArgumentSources length = %d, want 5 (index-parallel to Arguments)", len(call.ArgumentSources))
+	}
+
+	// Arg 0: Cipher(salt) — nested call, CALL_RESULT with a resolved CallTarget.
+	arg0 := call.ArgumentSources[0]
+	if len(arg0) != 1 || arg0[0].Type != "CALL_RESULT" {
+		t.Fatalf("ArgumentSources[0] = %+v, want single CALL_RESULT node", arg0)
+	}
+	if arg0[0].CallTarget == nil || arg0[0].CallTarget.Type != "Cipher" || arg0[0].CallTarget.Name != constructorMethodName {
+		t.Errorf("ArgumentSources[0].CallTarget = %+v, want Cipher.<init>", arg0[0].CallTarget)
+	}
+	if arg0[0].Location == nil || arg0[0].Location.Line != call.Line {
+		t.Errorf("ArgumentSources[0].Location = %+v, want Line %d", arg0[0].Location, call.Line)
+	}
+
+	// Arg 1: KEY_LEN — bare identifier bound to a module-level int constant.
+	arg1 := call.ArgumentSources[1]
+	if len(arg1) != 1 || arg1[0].Type != "VARIABLE" || arg1[0].Name != "KEY_LEN" {
+		t.Fatalf("ArgumentSources[1] = %+v, want single VARIABLE node named KEY_LEN", arg1)
+	}
+	if len(arg1[0].SourceNodes) != 1 || arg1[0].SourceNodes[0].Type != "VALUE" || arg1[0].SourceNodes[0].Value != "32" {
+		t.Errorf("ArgumentSources[1].SourceNodes = %+v, want single VALUE \"32\"", arg1[0].SourceNodes)
+	}
+
+	// Arg 2: 7 — integer literal.
+	arg2 := call.ArgumentSources[2]
+	if len(arg2) != 1 || arg2[0].Type != "VALUE" || arg2[0].Value != "7" {
+		t.Errorf("ArgumentSources[2] = %+v, want single VALUE \"7\"", arg2)
+	}
+
+	// Arg 3: "static" — string literal (raw text, quotes included).
+	arg3 := call.ArgumentSources[3]
+	if len(arg3) != 1 || arg3[0].Type != "VALUE" || arg3[0].Value != `"static"` {
+		t.Errorf(`ArgumentSources[3] = %+v, want single VALUE "\"static\""`, arg3)
+	}
+
+	// Arg 4: salt — bare identifier, NOT a module-level constant: no fabrication.
+	arg4 := call.ArgumentSources[4]
+	if arg4 != nil {
+		t.Errorf("ArgumentSources[4] = %+v, want nil (salt is a parameter, not a module-level constant)", arg4)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against

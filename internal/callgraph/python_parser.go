@@ -450,6 +450,12 @@ type pythonFileWalk struct {
 	funcScopes  map[uint32]*pythonScope
 	classInfo   map[uint32]*pythonClassInfo
 	classDirect map[uint32]*pythonScope
+	// moduleConsts maps a module-level integer constant's name to its raw
+	// literal text (e.g. "KEY_LEN" -> "32"), recorded ONLY for a
+	// moduleDirect `identifier = integer` assignment (row 20 C(iii),
+	// python-parser-parity-2). Consulted by pythonArgumentSourceFor to
+	// resolve a bare-identifier call argument bound to such a constant.
+	moduleConsts map[string]string
 }
 
 // pythonWalk performs ONE full-file descent, visiting every node exactly
@@ -513,6 +519,10 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 		return
 	case pythonSyms.call:
 		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
+	case pythonSyms.assignment:
+		if moduleDirect {
+			recordPythonModuleConst(node, src, fw)
+		}
 	}
 
 	enteringFunc := sym == pythonSyms.functionDefinition && activeFunc == nil
@@ -623,6 +633,23 @@ func recordPythonPendingCall(node *sitter.Node, layer *pythonBindingLayer, fw *p
 	}
 }
 
+// recordPythonModuleConst records a moduleDirect `identifier = integer`
+// assignment into fw.moduleConsts (row 20 C(iii)): the module constant's
+// name mapped to its raw literal text (e.g. "KEY_LEN" -> "32"). Any other
+// assignment shape (non-identifier target, non-integer value, tuple
+// unpacking, ...) is silently ignored — no fabrication.
+func recordPythonModuleConst(node *sitter.Node, src []byte, fw *pythonFileWalk) {
+	left := node.ChildByFieldName("left")
+	right := node.ChildByFieldName("right")
+	if left == nil || right == nil || left.Symbol() != pythonSyms.identifier || right.Symbol() != pythonSyms.integer {
+		return
+	}
+	if fw.moduleConsts == nil {
+		fw.moduleConsts = make(map[string]string)
+	}
+	fw.moduleConsts[left.Content(src)] = right.Content(src)
+}
+
 // recordPythonWalkBinder applies pythonWalk's binder detection for one
 // node: an ordinary binder (assignment/augmented_assignment, with/except
 // `as`, `for`, walrus) binds into the CURRENT layer (which is already
@@ -696,14 +723,14 @@ func collectPythonAssignmentTargetsLayer(target *sitter.Node, src []byte, layer 
 // (D3), the invariant internal/scan/supporting_calls.go's
 // lifecycleSelector.selectDescendants depends on for positional self.attr
 // rebinding splits.
-func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis) []FunctionCall {
+func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk) []FunctionCall {
 	if len(pending) == 0 {
 		return nil
 	}
 	calls := make([]FunctionCall, 0, len(pending))
 	for _, pc := range pending {
 		bindings := pythonBindings{layer: pc.layer, attrs: attrs}
-		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings); call != nil {
+		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
 		}
@@ -908,7 +935,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 // fw.moduleScope is populated once per file by pythonWalk, already scoped to
 // ONLY module-level direct-statement binders and pending calls.
 func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
-	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis)
+	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1043,7 +1070,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		if scope != nil {
 			pending = scope.pending
 		}
-		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis)
+		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw)
 	}
 
 	return decl
@@ -1091,7 +1118,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	// Walk class body for method definitions.
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, fw)
 
-	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, direct); clinit != nil {
+	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, direct, fw); clinit != nil {
 		analysis.Functions = append(analysis.Functions, *clinit)
 	}
 }
@@ -1102,12 +1129,12 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 // class body has no such calls. direct is precomputed once per class by
 // pythonWalk, already scoped to ONLY class-body direct-statement pending
 // calls.
-func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool, direct *pythonScope) *FunctionDecl {
+func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool, direct *pythonScope, fw *pythonFileWalk) *FunctionDecl {
 	var pending []pythonPendingCall
 	if direct != nil {
 		pending = direct.pending
 	}
-	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis)
+	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1372,7 +1399,14 @@ func isPythonPrunedDefinitionSymbol(sym sitter.Symbol) bool {
 }
 
 // parseCallExpr parses a call expression into a FunctionCall.
-func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings) *FunctionCall {
+// parseCallExpr parses a call expression into a FunctionCall. fw and depth
+// drive row 20's ArgumentSources population (python-parser-parity-2): fw
+// resolves a bare-identifier argument against module-level integer
+// constants, and depth bounds nested-call argument recursion at
+// pythonArgProvenanceMaxDepth. Pass depth 0 for a top-level call
+// (resolvePythonPendingCalls); pythonArgumentSourceFor threads depth+1 when
+// recursing into a nested call argument.
+func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) *FunctionCall {
 	if node.ChildCount() == 0 {
 		return nil
 	}
@@ -1390,13 +1424,14 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	startCol := int(node.StartPoint().Column) + 1
 	endCol := int(node.EndPoint().Column) + 1
 
+	var call *FunctionCall
 	switch funcNode.Type() {
 	case goNodeIdentifier:
 		// Simple call like `sha256()` or imported class constructor like `Cipher()`
 		name := funcNode.Content(src)
 		if pkg, ok := analysis.Imports[name]; ok {
 			if analysis.ImportedTypes[name] {
-				return &FunctionCall{
+				call = &FunctionCall{
 					Callee:      FunctionID{Package: pkg, Type: name, Name: constructorMethodName},
 					Raw:         raw,
 					FilePath:    filePath,
@@ -1407,10 +1442,22 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 					AssignedVar: assignedVar,
 					ChainID:     chainID,
 				}
+			} else {
+				call = &FunctionCall{
+					Callee:      FunctionID{Package: pkg, Name: name},
+					Raw:         raw,
+					FilePath:    filePath,
+					Line:        line,
+					StartCol:    startCol,
+					EndCol:      endCol,
+					Arguments:   args,
+					AssignedVar: assignedVar,
+					ChainID:     chainID,
+				}
 			}
-
-			return &FunctionCall{
-				Callee:      FunctionID{Package: pkg, Name: name},
+		} else {
+			call = &FunctionCall{
+				Callee:      FunctionID{Package: analysis.PackagePath, Name: name},
 				Raw:         raw,
 				FilePath:    filePath,
 				Line:        line,
@@ -1421,23 +1468,15 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 				ChainID:     chainID,
 			}
 		}
-		return &FunctionCall{
-			Callee:      FunctionID{Package: analysis.PackagePath, Name: name},
-			Raw:         raw,
-			FilePath:    filePath,
-			Line:        line,
-			StartCol:    startCol,
-			EndCol:      endCol,
-			Arguments:   args,
-			AssignedVar: assignedVar,
-			ChainID:     chainID,
-		}
 	case pythonNodeAttribute:
 		// Method/attribute call like `hashlib.sha256()` or `obj.method()`
-		return p.parseAttributeCall(funcNode, src, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
+		call = p.parseAttributeCall(funcNode, src, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
 	}
 
-	return nil
+	if call != nil {
+		call.ArgumentSources = p.pythonArgumentSources(node, src, filePath, analysis, bindings, fw, depth)
+	}
+	return call
 }
 
 func looksLikePythonTypeName(name string) bool {
@@ -1605,13 +1644,105 @@ func resolveImportedCall(object, method, raw, filePath string, line, startCol, e
 }
 
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
+	argList := pythonArgumentListChild(node)
+	if argList == nil {
+		return nil
+	}
+	return parseArgumentsFromDelimitedContent(argList.Content(src))
+}
+
+// pythonArgumentListChild returns a call node's argument_list child, or nil
+// if none is found.
+func pythonArgumentListChild(node *sitter.Node) *sitter.Node {
 	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		if child.Type() == pythonNodeArgumentList {
-			return parseArgumentsFromDelimitedContent(child.Content(src))
+		if child := node.Child(i); child.Type() == pythonNodeArgumentList {
+			return child
 		}
 	}
 	return nil
+}
+
+// pythonArgProvenanceMaxDepth bounds nested constructor-argument recursion
+// (row 20, python-parser-parity-2) to keep cost at O(arguments) rather than
+// unbounded, mirroring maxKeyLengthSourceDepth's spirit.
+const pythonArgProvenanceMaxDepth = 4
+
+// pythonArgumentSources builds FunctionCall.ArgumentSources for a call
+// node, index-parallel to Arguments (row 20): each named child of the
+// call's argument_list is classified via pythonArgumentSourceFor. Returns
+// nil when the call has no arguments, matching Arguments' own nil-for-empty
+// convention.
+func (p *PythonParser) pythonArgumentSources(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) [][]SourceNode {
+	argList := pythonArgumentListChild(node)
+	if argList == nil {
+		return nil
+	}
+	n := int(argList.NamedChildCount())
+	if n == 0 {
+		return nil
+	}
+	sources := make([][]SourceNode, n)
+	for i := 0; i < n; i++ {
+		sources[i] = p.pythonArgumentSourceFor(argList.NamedChild(i), src, filePath, analysis, bindings, fw, depth)
+	}
+	return sources
+}
+
+// pythonArgumentSourceFor classifies exactly three bounded argument shapes
+// (row 20, design.md §4): a nested call resolves through the SAME
+// parseCallExpr path as a top-level call (recursing into its own
+// arguments up to pythonArgProvenanceMaxDepth); a bare identifier bound to
+// a module-level integer constant (fw.moduleConsts) resolves to a
+// VARIABLE wrapping a VALUE; an integer/string literal resolves directly
+// to a VALUE. A keyword argument's wrapped value is unwrapped first.
+// Anything else emits nothing — no fabrication.
+func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) []SourceNode {
+	if argNode == nil {
+		return nil
+	}
+	if argNode.Symbol() == pythonSyms.keywordArgument {
+		if value := argNode.ChildByFieldName("value"); value != nil {
+			argNode = value
+		}
+	}
+
+	switch argNode.Symbol() {
+	case pythonSyms.call:
+		if depth >= pythonArgProvenanceMaxDepth {
+			return nil
+		}
+		nestedCall := p.parseCallExpr(argNode, src, filePath, analysis, bindings, fw, depth+1)
+		if nestedCall == nil {
+			return nil
+		}
+		sn := SourceNode{
+			Type:       "CALL_RESULT",
+			Value:      strings.TrimSpace(argNode.Content(src)),
+			CallTarget: &nestedCall.Callee,
+			Location:   &SourceLocation{FilePath: filePath, Line: nestedCall.Line},
+		}
+		for _, s := range nestedCall.ArgumentSources {
+			sn.SourceNodes = append(sn.SourceNodes, s...)
+		}
+		return []SourceNode{sn}
+	case pythonSyms.identifier:
+		name := argNode.Content(src)
+		value, ok := fw.moduleConsts[name]
+		if !ok {
+			return nil
+		}
+		return []SourceNode{{
+			Type: "VARIABLE",
+			Name: name,
+			SourceNodes: []SourceNode{
+				{Type: "VALUE", Value: value},
+			},
+		}}
+	case pythonSyms.integer, pythonSyms.string:
+		return []SourceNode{{Type: "VALUE", Value: argNode.Content(src)}}
+	default:
+		return nil
+	}
 }
 
 // parsePythonParameters extracts a function/method's declared parameters

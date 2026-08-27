@@ -85,11 +85,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 5: Row 20 — Argument provenance recursion
 
-- [ ] **5.1** RED: `TestPythonParser_ArgProvenance_NestedConstructorCalls`.
+- [x] **5.1** RED: `TestPythonParser_ArgProvenance_NestedConstructorCalls`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ArgProvenance_NestedConstructorCalls -v`. Deps: 4.3.
-- [ ] **5.2** GREEN: populate `FunctionCall.ArgumentSources` for the three bounded shapes (nested `call` → `CALL_RESULT` recursive, depth ≤4; bare identifier bound to a module-level int constant → `VARIABLE`→`VALUE`; literal → `VALUE`); populate `pythonFileWalk.moduleConsts` in the same descent.
+- [x] **5.2** GREEN: populate `FunctionCall.ArgumentSources` for the three bounded shapes (nested `call` → `CALL_RESULT` recursive, depth ≤4; bare identifier bound to a module-level int constant → `VARIABLE`→`VALUE`; literal → `VALUE`); populate `pythonFileWalk.moduleConsts` in the same descent.
   Files: `internal/callgraph/python_parser.go`. Deps: 5.1.
-- [ ] **5.3** Perf guard re-run — commands per 1.5.
+- [x] **5.3** Perf guard re-run — commands per 1.5.
   Deps: 5.2.
 
 ## Phase 6: Row 8 — Decorator semantics
