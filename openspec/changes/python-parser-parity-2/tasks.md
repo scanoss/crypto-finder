@@ -67,11 +67,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 3: Row 6 — Opengrep column pinning (also satisfies T0.7)
 
-- [ ] **3.1** RED: `TestOpengrep_PythonEndColConventionPinning`, mirroring `TestOpengrep_EndColConventionPinning` (`internal/scanner/semgrep/transformer_test.go`), against a Python fixture with one crypto call.
+- [x] **3.1** RED: `TestOpengrep_PythonEndColConventionPinning`, mirroring `TestOpengrep_EndColConventionPinning` (`internal/scanner/semgrep/transformer_test.go`), against a Python fixture with one crypto call.
   Files: `internal/scanner/semgrep/transformer_test.go` (or sibling Python test file), fixture under `internal/scanner/semgrep/testdata/`. Evidence: `go test ./internal/scanner/semgrep/... -run TestOpengrep_PythonEndColConventionPinning -v`. Deps: 1.5.
-- [ ] **3.2** GREEN: reuse the existing opengrep invocation helper; compare match columns to `StartCol`/`EndCol` (1-based, start inclusive, end exclusive); absent binary → `t.Skip` with an explicit `t.Logf` skip reason, never a silent pass.
+- [x] **3.2** GREEN: reuse the existing opengrep invocation helper; compare match columns to `StartCol`/`EndCol` (1-based, start inclusive, end exclusive); absent binary → `t.Skip` with an explicit `t.Logf` skip reason, never a silent pass.
   Deps: 3.1.
-- [ ] **3.3** Perf guard re-run (test-only row; expect zero parse-cost delta) — commands per 1.5.
+- [x] **3.3** Perf guard re-run (test-only row; expect zero parse-cost delta) — commands per 1.5.
   Deps: 3.2.
 
 ## Phase 4: Row 18 — Visibility
