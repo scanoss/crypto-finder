@@ -42,9 +42,24 @@ const (
 	javaNodeCastExpression         = "cast_expression"
 	javaNodeParenthesizedExpr      = "parenthesized_expression"
 	javaFieldValue                 = "value"
+	javaFieldBody                  = "body"
 	javaNodeFormalParameter        = "formal_parameter"
 	javaNodeCatchFormalParameter   = "catch_formal_parameter"
 	javaNodeCatchType              = "catch_type"
+	javaNodeTypePattern            = "type_pattern"
+	javaNodeRecordPatternComponent = "record_pattern_component"
+	javaNodeInstanceofExpression   = "instanceof_expression"
+	javaNodeMethodReference        = "method_reference"
+	javaNodeBlock                  = "block"
+	javaNodeConstructorBody        = "constructor_body"
+	javaNodeSwitchBlock            = "switch_block"
+	javaNodeSwitchBlockStmtGroup   = "switch_block_statement_group"
+	javaNodeSwitchRule             = "switch_rule"
+	javaNodeLambdaExpression       = "lambda_expression"
+	javaNodeCatchClause            = "catch_clause"
+	javaNodeForStatement           = "for_statement"
+	javaNodeLocalVarDeclaration    = "local_variable_declaration"
+	javaFieldRight                 = "right"
 	javaFieldName                  = "name"
 	javaFieldType                  = "type"
 	javaNodeAssignmentExpression   = "assignment_expression"
@@ -55,6 +70,15 @@ const (
 	javaFunctionTypeConstructor    = "constructor"
 	javaFunctionTypeClassInit      = "class-init"
 	javaNodeStaticInitializer      = "static_initializer"
+	javaNodeEnumDeclaration        = "enum_declaration"
+	javaNodeEnumBody               = "enum_body"
+	javaNodeEnumBodyDeclarations   = "enum_body_declarations"
+	javaNodeEnumConstant           = "enum_constant"
+	javaNodeRecordDeclaration      = "record_declaration"
+	javaNodeCompactConstructorDecl = "compact_constructor_declaration"
+	javaNodeAnnotationTypeDecl     = "annotation_type_declaration"
+	javaNodeAnnotationTypeBody     = "annotation_type_body"
+	javaNodeClassBodyType          = "class_body"
 	javaThisKeyword                = "this"
 	javaSuperKeyword               = "super"
 	javaNodeSuperclass             = "superclass"
@@ -165,6 +189,13 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// Extract imports
 	p.extractImports(root, src, analysis)
 
+	// Record every type this unit declares BEFORE resolving any call. Java
+	// imposes no declaration order between sibling types, so a call written
+	// above the class it names must still see it; without the pre-pass the
+	// shadowing rule below would apply only to types declared earlier in the
+	// file. Bases are filled in properly as each declaration is processed.
+	p.registerDeclaredJavaTypes(root, src, analysis, "")
+
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
 
@@ -225,11 +256,50 @@ func (p *JavaParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 }
 
 // extractClasses walks top-level class and interface declarations.
+// registerDeclaredJavaTypes walks the type declarations of a compilation unit
+// and marks each one as declared here, nested types included. Presence of the
+// key in ClassBases is what marks a type as source-declared; the extends and
+// implements list is stored later, when the declaration itself is processed.
+func (p *JavaParser) registerDeclaredJavaTypes(node *sitter.Node, src []byte, analysis *FileAnalysis, outerClass string) {
+	children := make([]*sitter.Node, 0, node.ChildCount())
+	for i := 0; i < int(node.ChildCount()); i++ {
+		children = append(children, node.Child(i))
+	}
+	p.registerDeclaredJavaTypesIn(children, src, analysis, outerClass)
+}
+
+// registerDeclaredJavaTypesIn marks each type declaration among nodes, then
+// recurses into its body so nested types are registered under their owner.
+func (p *JavaParser) registerDeclaredJavaTypesIn(nodes []*sitter.Node, src []byte, analysis *FileAnalysis, outerClass string) {
+	for _, child := range nodes {
+		switch child.Type() {
+		case javaNodeClassDeclaration, javaNodeInterfaceDeclaration, javaNodeEnumDeclaration,
+			javaNodeRecordDeclaration, javaNodeAnnotationTypeDecl:
+		default:
+			continue
+		}
+		name, body := parseJavaClass(child, src)
+		if name == "" {
+			continue
+		}
+		fullName := javaNestedTypeName(outerClass, name)
+		if analysis.ClassBases == nil {
+			analysis.ClassBases = make(map[string][]string)
+		}
+		if _, exists := analysis.ClassBases[fullName]; !exists {
+			analysis.ClassBases[fullName] = nil
+		}
+		if body != nil {
+			p.registerDeclaredJavaTypesIn(javaTypeBodyMembers(body), src, analysis, fullName)
+		}
+	}
+}
+
 func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		switch child.Type() {
-		case javaNodeClassDeclaration:
+		case javaNodeClassDeclaration, javaNodeRecordDeclaration, javaNodeEnumDeclaration, javaNodeAnnotationTypeDecl:
 			p.processClass(child, src, filePath, analysis, "", "")
 		case javaNodeInterfaceDeclaration:
 			p.processInterface(child, src, filePath, analysis, "", "")
@@ -263,9 +333,50 @@ func (p *JavaParser) processClass(
 	stampOwnerBases(methodDecls, bases)
 	stampTypeParamBounds(constructorDecls, typeParamBounds)
 	stampTypeParamBounds(methodDecls, typeParamBounds)
+	applyJavaTypeParamErasure(constructorDecls, typeParamBounds, analysis)
+	applyJavaTypeParamErasure(methodDecls, typeParamBounds, analysis)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullClassName, ownerVisibility)
+}
+
+// processEnumConstantBody registers the constant-specific body of an enum
+// constant (`MD5 { MessageDigest get() { ... } }`).
+//
+// The grammar models it as `enum_constant: name arguments? body:class_body`,
+// and javac compiles each such body to a class of its own — the constant is an
+// instance of an anonymous subclass of the enum. Crypto libraries use this to
+// give every algorithm constant its own implementation, so without this pass
+// those methods never become FunctionDecls and any finding inside one is
+// exported with no containing function.
+//
+// The body is named `Owner.CONSTANT` — the nested-type form used everywhere
+// else in this parser, not javac's binary `Owner$1`. As with anonymous
+// classes, the goal is a stable unique identity, not binary-compatible naming.
+func (p *JavaParser) processEnumConstantBody(
+	node *sitter.Node,
+	src []byte,
+	filePath string,
+	analysis *FileAnalysis,
+	ownerClass string,
+	ownerVisibility string,
+) {
+	body := node.ChildByFieldName(javaFieldBody)
+	if body == nil {
+		return
+	}
+	nameNode := node.ChildByFieldName(javaFieldName)
+	if nameNode == nil {
+		return
+	}
+	constantClass := javaNestedTypeName(ownerClass, nameNode.Content(src))
+
+	fieldTypes := p.collectJavaFieldTypes(body, src)
+	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
+	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, constantClass, ownerVisibility, fieldTypes, fieldAssignments)
+	appendJavaDecls(analysis, constructorDecls)
+	appendJavaDecls(analysis, methodDecls)
+	p.processJavaAnonymousClasses(body, src, filePath, analysis, constantClass, ownerVisibility)
 }
 
 // processJavaAnonymousClasses registers the bodies of anonymous class creations
@@ -386,13 +497,41 @@ func parseJavaClass(node *sitter.Node, src []byte) (string, *sitter.Node) {
 		child := node.Child(i)
 		switch child.Type() {
 		case javaNodeIdentifier:
-			className = child.Content(src)
-		case "class_body":
+			if className == "" {
+				className = child.Content(src)
+			}
+		case javaNodeClassBodyType, javaNodeEnumBody, javaNodeAnnotationTypeBody:
 			body = child
 		}
 	}
 
 	return className, body
+}
+
+// javaTypeBodyMembers returns the member declarations of a type body.
+//
+// An enum body nests its methods, fields and constructors one level deeper than
+// every other type body: the grammar is
+// `enum_body: enum_constant* enum_body_declarations?`, so the members live
+// inside the `enum_body_declarations` wrapper rather than directly under the
+// body. Flattening that wrapper here lets the class-body walkers stay uniform
+// across class_body, interface_body, enum_body and annotation_type_body.
+func javaTypeBodyMembers(body *sitter.Node) []*sitter.Node {
+	if body == nil {
+		return nil
+	}
+	members := make([]*sitter.Node, 0, body.ChildCount())
+	for i := 0; i < int(body.ChildCount()); i++ {
+		child := body.Child(i)
+		if child.Type() == javaNodeEnumBodyDeclarations {
+			for j := 0; j < int(child.ChildCount()); j++ {
+				members = append(members, child.Child(j))
+			}
+			continue
+		}
+		members = append(members, child)
+	}
+	return members
 }
 
 // extractJavaTypeParamBounds reads a class_declaration's type_parameters
@@ -440,6 +579,38 @@ func parseJavaTypeParamBounds(text string) map[string]string {
 		return nil
 	}
 	return bounds
+}
+
+// applyJavaTypeParamErasure re-resolves calls whose receiver was typed by one of
+// the declaring class's type parameters. `class C<T extends Cipher>` gives a
+// receiver of type `T` no meaning on its own, so it reached the fallback and was
+// emitted as `com.example.(T).doFinal` — a fabricated type in the user's
+// package. Java erases a type variable to its first bound (JLS 4.4), and the
+// bounds are already collected for TypeParamBounds, so the receiver is resolved
+// again against the bound.
+//
+// Only a callee that actually landed in the fallback is rewritten: matching on
+// the caller's own package leaves alone a real class that happens to share a
+// type parameter's name. Method-level type parameters are not covered — the
+// bounds collected here are the declaring class's.
+func applyJavaTypeParamErasure(decls []*FunctionDecl, bounds map[string]string, analysis *FileAnalysis) {
+	if len(bounds) == 0 || analysis == nil {
+		return
+	}
+	callerPackage := javaAnalysisPackagePath(analysis)
+	for _, decl := range decls {
+		for i := range decl.Calls {
+			call := &decl.Calls[i]
+			if call.Callee.Package != callerPackage {
+				continue
+			}
+			bound, ok := bounds[call.Callee.Type]
+			if !ok || bound == "" || bound == call.Callee.Type {
+				continue
+			}
+			call.Callee = resolveJavaObjectCallee(bound, call.Callee.Name, analysis, nil)
+		}
+	}
 }
 
 // stampTypeParamBounds copies the declaring class's type-parameter bounds onto
@@ -513,8 +684,7 @@ func javaNestedTypeName(outerType, typeName string) string {
 
 func (p *JavaParser) collectJavaFieldTypes(body *sitter.Node, src []byte) map[string]string {
 	fieldTypes := make(map[string]string)
-	for i := 0; i < int(body.ChildCount()); i++ {
-		child := body.Child(i)
+	for _, child := range javaTypeBodyMembers(body) {
 		if child.Type() == javaNodeFieldDeclaration {
 			p.collectVarTypes(child, src, fieldTypes)
 		}
@@ -535,21 +705,22 @@ func (p *JavaParser) collectJavaClassDecls(
 	var methodDecls []*FunctionDecl
 	var constructorDecls []*FunctionDecl
 
-	for i := 0; i < int(body.ChildCount()); i++ {
-		child := body.Child(i)
+	for _, child := range javaTypeBodyMembers(body) {
 		switch child.Type() {
 		case javaNodeMethodDeclaration:
 			if decl := p.parseMethodDecl(child, src, filePath, analysis, fullClassName, "class", ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				methodDecls = append(methodDecls, decl)
 			}
-		case javaNodeConstructorDeclaration:
+		case javaNodeConstructorDeclaration, javaNodeCompactConstructorDecl:
 			if decl := p.parseConstructorDecl(child, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments); decl != nil {
 				constructorDecls = append(constructorDecls, decl)
 			}
-		case javaNodeClassDeclaration:
+		case javaNodeClassDeclaration, javaNodeRecordDeclaration, javaNodeEnumDeclaration, javaNodeAnnotationTypeDecl:
 			p.processClass(child, src, filePath, analysis, fullClassName, ownerVisibility)
 		case javaNodeInterfaceDeclaration:
 			p.processInterface(child, src, filePath, analysis, fullClassName, ownerVisibility)
+		case javaNodeEnumConstant:
+			p.processEnumConstantBody(child, src, filePath, analysis, fullClassName, ownerVisibility)
 		}
 	}
 
@@ -638,8 +809,7 @@ func (p *JavaParser) parseClassInitDecl(
 // no static block still gets no `<clinit>`.
 func classInitNodes(body *sitter.Node) []*sitter.Node {
 	var nodes []*sitter.Node
-	for i := 0; i < int(body.ChildCount()); i++ {
-		child := body.Child(i)
+	for _, child := range javaTypeBodyMembers(body) {
 		switch child.Type() {
 		case javaNodeStaticInitializer:
 			nodes = append(nodes, child)
@@ -683,9 +853,8 @@ func (p *JavaParser) collectClassFieldAssignments(
 	fieldTypes map[string]string,
 ) map[string]fieldAssignment {
 	assignments := make(map[string]fieldAssignment)
-	for i := 0; i < int(body.ChildCount()); i++ {
-		child := body.Child(i)
-		if child.Type() != javaNodeConstructorDeclaration {
+	for _, child := range javaTypeBodyMembers(body) {
+		if child.Type() != javaNodeConstructorDeclaration && child.Type() != javaNodeCompactConstructorDecl {
 			continue
 		}
 		for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
@@ -833,14 +1002,14 @@ func (p *JavaParser) parseMethodDecl(
 			varTypes[k] = v
 		}
 		p.collectParameterTypes(node, src, varTypes)
-		p.collectVarTypes(body, src, varTypes)
+		p.collectScopeVarTypes(body, src, varTypes)
 
 		varOrigins := make(map[string]varOrigin)
 		for k, v := range fieldTypes {
 			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
-		p.collectVarOrigins(body, src, filePath, varOrigins, false)
+		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
 
 		p.extractReturnSources(body, src, analysis, ownerName, varTypes, varOrigins, decl)
 	}
@@ -897,14 +1066,14 @@ func (p *JavaParser) parseConstructorDecl(
 			varTypes[k] = v
 		}
 		p.collectParameterTypes(node, src, varTypes)
-		p.collectVarTypes(body, src, varTypes)
+		p.collectScopeVarTypes(body, src, varTypes)
 
 		varOrigins := make(map[string]varOrigin)
 		for k, v := range fieldTypes {
 			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
-		p.collectVarOrigins(body, src, filePath, varOrigins, false)
+		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
 
 		p.extractReturnSources(body, src, analysis, className, varTypes, varOrigins, decl)
 	}
@@ -1037,7 +1206,7 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 		varTypes[k] = v
 	}
 	p.collectParameterTypes(methodNode, src, varTypes)
-	p.collectVarTypes(body, src, varTypes)
+	p.collectScopeVarTypes(body, src, varTypes)
 
 	// Build variable origin map for data flow tracing
 	varOrigins := make(map[string]varOrigin)
@@ -1053,7 +1222,7 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 		varOrigins[k] = origin
 	}
 	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
-	p.collectVarOrigins(body, src, filePath, varOrigins, false)
+	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
 
 	var calls []FunctionCall
 	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
@@ -1257,8 +1426,104 @@ func (p *JavaParser) collectParameterTypes(node *sitter.Node, src []byte, varTyp
 // collectVarTypes scans a block for local variable declarations and records
 // variable name → declared type name (e.g., "service" → "CryptoService").
 //
-//nolint:gocognit,nestif // Variable/type collection traverses deeply nested Java declaration nodes.
+// javaOpensScope reports whether a node introduces a new declaration scope.
+//
+// Java scopes locals to the block that declares them (JLS 6.3), and loop
+// variables to their loop (JLS 14.14). Collecting a whole method body into one
+// flat map therefore loses information: two sibling blocks that both declare
+// `c` collapse to whichever declaration the walk saw last, and every call in
+// the method — including those textually before it — resolves against that one.
+// That does not merely lose a type, it swaps one for another: an AES `Cipher`
+// reported as a `Mac`, and, because the same map backs the argument tracing,
+// an algorithm string traced to the wrong literal.
+func javaOpensScope(nodeType string) bool {
+	switch nodeType {
+	case javaNodeBlock, javaNodeConstructorBody, javaNodeSwitchBlock,
+		javaNodeSwitchBlockStmtGroup, javaNodeSwitchRule, javaNodeLambdaExpression,
+		javaNodeCatchClause, javaNodeForStatement, javaNodeEnhancedFor:
+		return true
+	default:
+		return false
+	}
+}
+
+// collectScopeVarTypes records the bindings belonging to ONE scope: those
+// introduced by the scope node itself and by its descendants, stopping at any
+// nested scope. Declarations inside a nested block belong to that block and are
+// picked up when the walk enters it, layered over a copy of this scope's map.
+func (p *JavaParser) collectScopeVarTypes(scope *sitter.Node, src []byte, varTypes map[string]string) {
+	p.collectVarTypesAt(scope, src, varTypes)
+	var descend func(node *sitter.Node)
+	descend = func(node *sitter.Node) {
+		if javaOpensScope(node.Type()) {
+			return
+		}
+		p.collectVarTypesAt(node, src, varTypes)
+		for i := 0; i < int(node.ChildCount()); i++ {
+			descend(node.Child(i))
+		}
+	}
+	for i := 0; i < int(scope.ChildCount()); i++ {
+		descend(scope.Child(i))
+	}
+}
+
+// collectScopeVarOrigins is collectScopeVarTypes for the origin map that backs
+// argument tracing. The two must agree on scope boundaries or a receiver and
+// its traced arguments can disagree about which declaration they came from.
+func (p *JavaParser) collectScopeVarOrigins(scope *sitter.Node, src []byte, filePath string, origins map[string]varOrigin) {
+	p.collectVarOriginsAt(scope, src, filePath, origins, false)
+	var descend func(node *sitter.Node, isField bool)
+	descend = func(node *sitter.Node, isField bool) {
+		if javaOpensScope(node.Type()) {
+			return
+		}
+		p.collectVarOriginsAt(node, src, filePath, origins, isField)
+		fieldChild := isField || node.Type() == javaNodeFieldDeclaration
+		for i := 0; i < int(node.ChildCount()); i++ {
+			descend(node.Child(i), fieldChild)
+		}
+	}
+	for i := 0; i < int(scope.ChildCount()); i++ {
+		descend(scope.Child(i), false)
+	}
+}
+
+// javaScopedVarTypes returns a copy of outer overlaid with the bindings of the
+// scope that node opens — the inner declaration shadowing the outer one, as
+// Java requires.
+func (p *JavaParser) javaScopedVarTypes(node *sitter.Node, src []byte, outer map[string]string) map[string]string {
+	scoped := make(map[string]string, len(outer))
+	for k, v := range outer {
+		scoped[k] = v
+	}
+	p.collectScopeVarTypes(node, src, scoped)
+	return scoped
+}
+
+// javaScopedVarOrigins is javaScopedVarTypes for the origin map.
+func (p *JavaParser) javaScopedVarOrigins(node *sitter.Node, src []byte, filePath string, outer map[string]varOrigin) map[string]varOrigin {
+	scoped := make(map[string]varOrigin, len(outer))
+	for k, v := range outer {
+		scoped[k] = v
+	}
+	p.collectScopeVarOrigins(node, src, filePath, scoped)
+	return scoped
+}
+
 func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
+	p.collectVarTypesAt(node, src, varTypes)
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.collectVarTypes(node.Child(i), src, varTypes)
+	}
+}
+
+// collectVarTypesAt records only the bindings introduced by this one node,
+// without descending. Split out so the scope-bounded walk below can reuse the
+// same recognition logic while controlling its own recursion.
+//
+//nolint:gocognit,nestif // Variable/type collection traverses deeply nested Java declaration nodes.
+func (p *JavaParser) collectVarTypesAt(node *sitter.Node, src []byte, varTypes map[string]string) {
 	if node.Type() == javaNodeFormalParameters {
 		for _, param := range parseJavaParameterList(node.Content(src)) {
 			if param.Name == "" || param.Type == "" {
@@ -1268,7 +1533,7 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 		}
 	}
 
-	if node.Type() == "local_variable_declaration" || node.Type() == javaNodeFieldDeclaration {
+	if node.Type() == javaNodeLocalVarDeclaration || node.Type() == javaNodeFieldDeclaration {
 		typeName := p.extractDeclTypeName(node, src)
 		if typeName != "" {
 			// Extract variable names from declarators
@@ -1289,10 +1554,6 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 
 	if name, typeName := javaSingleDeclaredVar(node, src); name != "" {
 		varTypes[name] = typeName
-	}
-
-	for i := 0; i < int(node.ChildCount()); i++ {
-		p.collectVarTypes(node.Child(i), src, varTypes)
 	}
 }
 
@@ -1326,10 +1587,66 @@ func (p *JavaParser) collectVarTypes(node *sitter.Node, src []byte, varTypes map
 // instead of `redis.clients.jedis.Jedis.set` — a callee present in no graph. The
 // edge was never created, so no chain reached user code, and the tracer then
 // dropped every chain for the finding (see Tracer.classifyTraceItem).
+// javaTypePatternDeclaredVar reads the binding introduced by a pattern
+// variable — `o instanceof Cipher c` (JLS 14.30.1) and `case Cipher c ->`
+// (JLS 14.11.1).
+//
+// The grammar declares `type_pattern` with NO fields (its children are just an
+// unannotated type followed by an identifier), so unlike every other
+// declaration site here the two halves are read positionally from the named
+// children rather than through ChildByFieldName.
+//
+// `record_pattern_component` has the same field-less positional shape, so it
+// shares this reader; a component that is a bare `_` (underscore_pattern) has
+// a single child and is correctly ignored.
+func javaTypePatternDeclaredVar(node *sitter.Node, src []byte) (string, string) {
+	named := int(node.NamedChildCount())
+	if named < 2 {
+		return "", ""
+	}
+	nameNode := node.NamedChild(named - 1)
+	typeNode := node.NamedChild(named - 2)
+	if nameNode == nil || typeNode == nil || nameNode.Type() != javaNodeIdentifier {
+		return "", ""
+	}
+	name := strings.TrimSpace(nameNode.Content(src))
+	typeName := strings.TrimSpace(typeNode.Content(src))
+	if name == "" || typeName == "" {
+		return "", ""
+	}
+	return name, typeName
+}
+
+// javaInstanceofDeclaredVar reads the binding of an instanceof pattern
+// (`o instanceof Cipher c`, JLS 14.30.2).
+//
+// The grammar does NOT wrap this in a `type_pattern`: `instanceof_expression`
+// carries the binding itself, as `right` (the tested type) plus `name` (the
+// bound identifier); `type_pattern` is reached only through switch labels, and
+// destructuring goes through the separate `pattern` field. A plain
+// `o instanceof Cipher` with no binding has no `name`, and yields nothing here.
+func javaInstanceofDeclaredVar(node *sitter.Node, src []byte) (string, string) {
+	nameNode := node.ChildByFieldName(javaFieldName)
+	typeNode := node.ChildByFieldName(javaFieldRight)
+	if nameNode == nil || typeNode == nil {
+		return "", ""
+	}
+	name := strings.TrimSpace(nameNode.Content(src))
+	typeName := strings.TrimSpace(typeNode.Content(src))
+	if name == "" || typeName == "" {
+		return "", ""
+	}
+	return name, typeName
+}
+
 func javaSingleDeclaredVar(node *sitter.Node, src []byte) (string, string) {
 	switch node.Type() {
 	case javaNodeCatchFormalParameter:
 		return javaCatchDeclaredVar(node, src)
+	case javaNodeTypePattern, javaNodeRecordPatternComponent:
+		return javaTypePatternDeclaredVar(node, src)
+	case javaNodeInstanceofExpression:
+		return javaInstanceofDeclaredVar(node, src)
 	case javaNodeResourceDecl, javaNodeEnhancedFor:
 	default:
 		return "", ""
@@ -1424,9 +1741,12 @@ func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, file
 
 // collectVarOrigins scans a block for variable declarations and records
 // variable name → origin info including initializer expressions.
-func (p *JavaParser) collectVarOrigins(node *sitter.Node, src []byte, filePath string, origins map[string]varOrigin, isField bool) {
+
+// collectVarOriginsAt records only the origins introduced by this one node.
+// Counterpart to collectVarTypesAt; see collectScopeVarTypes.
+func (p *JavaParser) collectVarOriginsAt(node *sitter.Node, src []byte, filePath string, origins map[string]varOrigin, isField bool) {
 	nodeType := node.Type()
-	if nodeType == "local_variable_declaration" || nodeType == javaNodeFieldDeclaration {
+	if nodeType == javaNodeLocalVarDeclaration || nodeType == javaNodeFieldDeclaration {
 		p.collectDeclarationOrigins(node, src, filePath, origins, isField || nodeType == javaNodeFieldDeclaration)
 	}
 
@@ -1439,11 +1759,6 @@ func (p *JavaParser) collectVarOrigins(node *sitter.Node, src []byte, filePath s
 			filePath:    filePath,
 			paramIndex:  -1,
 		}
-	}
-
-	fieldChild := isField || nodeType == javaNodeFieldDeclaration
-	for i := 0; i < int(node.ChildCount()); i++ {
-		p.collectVarOrigins(node.Child(i), src, filePath, origins, fieldChild)
 	}
 }
 
@@ -1890,6 +2205,11 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
+	case javaNodeMethodReference:
+		if call := p.parseMethodReference(node, src, filePath, analysis, currentClass, varTypes); call != nil {
+			setFunctionCallASTAnchor(call, node)
+			*calls = append(*calls, *call)
+		}
 
 		// An anonymous class body is also walked here, so its calls are recorded
 		// against the enclosing function as well as against the anonymous method
@@ -1910,7 +2230,16 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, currentClass, varTypes, varOrigins, calls)
+		child := node.Child(i)
+		// Entering a nested scope: resolve its body against this scope's own
+		// declarations layered over the enclosing ones, so a shadowing
+		// declaration wins inside it and nowhere else.
+		childTypes, childOrigins := varTypes, varOrigins
+		if javaOpensScope(child.Type()) {
+			childTypes = p.javaScopedVarTypes(child, src, varTypes)
+			childOrigins = p.javaScopedVarOrigins(child, src, filePath, varOrigins)
+		}
+		p.walkForCalls(child, src, filePath, analysis, currentClass, childTypes, childOrigins, calls)
 	}
 }
 
@@ -2248,6 +2577,49 @@ func constructorRootType(node *sitter.Node, src []byte) string {
 }
 
 // parseObjectCreation handles `new ClassName(...)` expressions.
+// parseMethodReference records a method reference (`Cipher::getInstance`,
+// `MessageDigest::new`) as a call to its target. JLS 15.13.
+//
+// A reference names its target without invoking it, so the arity is fixed by
+// the functional interface it is assigned to, not by this site. The callee name
+// is therefore emitted WITHOUT the `#N` arity suffix, which is the existing
+// "arity unknown" form (see methodBaseArity, which reads an unsuffixed name as
+// -1) rather than a guessed number that would join the wrong overload.
+//
+// The grammar gives method_reference no fields: its named children are the
+// receiver followed by the referenced identifier, with `::` and a constructor
+// reference's `new` as anonymous tokens. So a trailing named identifier is a
+// method reference, and its absence means `::new`.
+func (p *JavaParser) parseMethodReference(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string) *FunctionCall {
+	named := int(node.NamedChildCount())
+	if named == 0 {
+		return nil
+	}
+	receiver := strings.TrimSpace(node.NamedChild(0).Content(src))
+	if receiver == "" {
+		return nil
+	}
+
+	method := ""
+	if last := node.NamedChild(named - 1); named >= 2 && last.Type() == javaNodeIdentifier {
+		method = strings.TrimSpace(last.Content(src))
+	} else if strings.HasSuffix(strings.TrimSpace(node.Content(src)), "new") {
+		method = constructorMethodName
+	}
+	if method == "" {
+		return nil
+	}
+
+	return &FunctionCall{
+		Callee:   p.resolveCallee(receiver, method, analysis, currentClass, varTypes),
+		Raw:      strings.TrimSpace(node.Content(src)),
+		FilePath: filePath,
+		Line:     int(node.StartPoint().Row) + 1,
+		StartCol: int(node.StartPoint().Column) + 1,
+		EndCol:   int(node.EndPoint().Column) + 1,
+	}
+}
+
 func (p *JavaParser) parseObjectCreation(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, varOrigins map[string]varOrigin) *FunctionCall {
 	line := int(node.StartPoint().Row) + 1
 	typeName := objectCreationTypeName(node, src)
@@ -2626,7 +2998,59 @@ func (p *JavaParser) resolveCallee(object, method string, analysis *FileAnalysis
 		return FunctionID{Name: method}
 	}
 
+	// `this` is a keyword, never a type name, so it has to be substituted before
+	// any type lookup. Left as text it flows into the fallback below and becomes
+	// a package or type called "this" — `this.(cipher).doFinal`, an identity no
+	// class can ever match. JLS 15.8.3 (this) and 15.8.4 (Outer.this).
+	if enclosing, receiver, ok := splitJavaThisReceiver(object); ok {
+		if receiver == "" {
+			// Bare `this` / `Outer.this`: the call targets the enclosing type,
+			// exactly like an unqualified call.
+			if enclosing == "" {
+				enclosing = currentClass
+			}
+			return resolveJavaLocalCallee(method, analysis, enclosing)
+		}
+		// `this.field` / `Outer.this.field`: resolve the field on its own, which
+		// is the same shape the unqualified `field.m()` receiver already takes.
+		object = receiver
+	}
+
 	return resolveJavaObjectCallee(object, method, analysis, varTypes)
+}
+
+// splitJavaThisReceiver decomposes a receiver expression that is qualified by
+// `this`, returning the enclosing type named by the qualifier (empty for a bare
+// `this`) and whatever the receiver is once `this` is stripped.
+//
+//	"this"              -> ("",      "",       true)
+//	"this.cipher"       -> ("",      "cipher", true)
+//	"Outer.this"        -> ("Outer", "",       true)
+//	"Outer.this.cipher" -> ("Outer", "cipher", true)
+//	"cipher"            -> ("",      "",       false)
+//
+// Only these forms are legal Java: `this` is a reserved word, so it can never
+// be a variable or type name, and any occurrence is one of the two qualified
+// forms above.
+func splitJavaThisReceiver(object string) (enclosing, receiver string, ok bool) {
+	object = strings.TrimSpace(object)
+	if object == javaThisKeyword {
+		return "", "", true
+	}
+	if rest, found := strings.CutPrefix(object, javaThisKeyword+"."); found {
+		return "", strings.TrimSpace(rest), true
+	}
+	// Qualified form: <Type>.this[.<receiver>]
+	marker := "." + javaThisKeyword
+	idx := strings.Index(object, marker)
+	if idx <= 0 {
+		return "", "", false
+	}
+	tail := object[idx+len(marker):]
+	if tail != "" && !strings.HasPrefix(tail, ".") {
+		return "", "", false
+	}
+	return strings.TrimSpace(object[:idx]), strings.TrimSpace(strings.TrimPrefix(tail, ".")), true
 }
 
 // recordJavaClassBases stores a declared type's extends/implements simple
@@ -2727,6 +3151,16 @@ func resolveJavaObjectCallee(object, method string, analysis *FileAnalysis, varT
 	if target, ok := resolveJavaVariableTypeCallee(object, method, analysis, varTypes); ok {
 		return target
 	}
+	// A type declared in this compilation unit shadows an on-demand ("*")
+	// import of the same simple name (JLS 6.4.1, 7.5.2), so it has to be
+	// consulted before the wildcard. Checked in this order a user class named
+	// `Cipher` sitting next to `import javax.crypto.*;` was attributed to
+	// javax.crypto, inventing a crypto finding — with a library PURL — for code
+	// that never touches the library. A single-type import cannot collide here:
+	// importing a name the unit also declares does not compile.
+	if target, ok := resolveDeclaredJavaObjectCallee(simpleClass, method, analysis); ok {
+		return target
+	}
 	if target, ok := resolveWildcardJavaObjectCallee(simpleClass, method, analysis); ok {
 		return target
 	}
@@ -2797,6 +3231,19 @@ func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis
 		}
 	}
 	return FunctionID{Package: javaAnalysisPackagePath(analysis), Type: typeName, Name: method}, true
+}
+
+// resolveDeclaredJavaObjectCallee resolves a receiver naming a type declared in
+// this file. ClassBases carries every source-declared type of the unit, and the
+// presence of the key is what marks it as declared.
+func resolveDeclaredJavaObjectCallee(simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {
+	if analysis == nil || simpleClass == "" {
+		return FunctionID{}, false
+	}
+	if _, declared := analysis.ClassBases[simpleClass]; !declared {
+		return FunctionID{}, false
+	}
+	return FunctionID{Package: javaAnalysisPackagePath(analysis), Type: simpleClass, Name: method}, true
 }
 
 func resolveWildcardJavaObjectCallee(simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {
