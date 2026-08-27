@@ -452,6 +452,16 @@ type pythonScope struct {
 	// bases holds the enclosing class's own direct superclass names (row
 	// 9), nil outside a class or when the class declares none.
 	bases []string
+	// varTypes maps a local variable name to its normalized declared type
+	// annotation (row 13, python-parser-parity-2): populated from a typed
+	// parameter (pythonWalkEnterFunction) and a same-scope annotated
+	// assignment (recordPythonWalkBinder), both via
+	// pythonNormalizeAnnotation. Function-scoped only — never populated for
+	// the module/class-direct-body scopes. A variable's INFERRED type from
+	// an earlier call's return type (an assignment with NO annotation) is a
+	// separate, resolver-level concern (propagatePythonAssignedVarTypes),
+	// not tracked here.
+	varTypes map[string]string
 }
 
 // pythonDecoratorInfo classifies a decorated_definition's decorators
@@ -638,7 +648,7 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 		activeFunc = p.pythonWalkEnterFunction(node, src, fw, activeClassInfo, decoratorInfo)
 	}
 
-	recordPythonWalkBinder(node, sym, src, layer, activeClassInfo)
+	recordPythonWalkBinder(node, sym, src, layer, activeClassInfo, activeFunc)
 
 	childLayer := layer
 	switch {
@@ -757,17 +767,24 @@ func (p *PythonParser) pythonWalkClass(node *sitter.Node, src []byte, analysis *
 func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw *pythonFileWalk, activeClassInfo *pythonClassInfo, decoratorInfo *pythonDecoratorInfo) *pythonScope {
 	root := &pythonBindingLayer{}
 	var param0 string
+	var varTypes map[string]string
 	for i := 0; i < int(node.ChildCount()); i++ {
-		if child := node.Child(i); child.Type() == pythonNodeParameters {
-			names := pythonParameterNames(child, src)
-			for _, name := range names {
-				root.bind(name)
-			}
-			if len(names) > 0 {
-				param0 = names[0]
-			}
-			break
+		child := node.Child(i)
+		if child.Type() != pythonNodeParameters {
+			continue
 		}
+		names := pythonParameterNames(child, src)
+		for _, name := range names {
+			root.bind(name)
+		}
+		if len(names) > 0 {
+			param0 = names[0]
+		}
+		// row 13: a typed/typed-default parameter's declared annotation
+		// seeds varTypes up front — an annotated assignment later in the
+		// SAME body (recordPythonWalkBinder) merges into this same map.
+		varTypes = pythonTypedParameterVarTypes(child, src)
+		break
 	}
 	var attrs map[string]bool
 	var bases []string
@@ -785,7 +802,7 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 			fw.classesWithDunderCall[activeClassInfo.name] = true
 		}
 	}
-	scope := &pythonScope{locals: root, attrs: attrs, bases: bases}
+	scope := &pythonScope{locals: root, attrs: attrs, bases: bases, varTypes: varTypes}
 	if decoratorInfo != nil {
 		scope.staticMethod = decoratorInfo.static
 		if decoratorInfo.classMethod && param0 != "" && param0 != pythonClsObjectName {
@@ -845,8 +862,13 @@ func recordPythonModuleConst(node *sitter.Node, src []byte, fw *pythonFileWalk) 
 // at any depth — a plain (non-augmented) self/cls attribute assignment adds
 // to that class's attrs. sym is node.Symbol(), precomputed once by the
 // caller's switch dispatch and threaded through here so this node's symbol
-// is never re-fetched via another cgo call.
-func recordPythonWalkBinder(node *sitter.Node, sym sitter.Symbol, src []byte, layer *pythonBindingLayer, activeClassInfo *pythonClassInfo) {
+// is never re-fetched via another cgo call. activeFunc, when non-nil,
+// receives a plain annotated assignment's normalized type into its own
+// varTypes (row 13, python-parser-parity-2) — bounded to a simple
+// identifier target inside an active function/method scope; a module- or
+// class-direct-body annotated assignment, or a tuple/attribute target, is
+// not tracked.
+func recordPythonWalkBinder(node *sitter.Node, sym sitter.Symbol, src []byte, layer *pythonBindingLayer, activeClassInfo *pythonClassInfo, activeFunc *pythonScope) {
 	switch sym {
 	case pythonSyms.assignment, pythonSyms.augmentedAssignment:
 		collectPythonAssignmentTargetsLayer(node.ChildByFieldName("left"), src, layer)
@@ -854,6 +876,9 @@ func recordPythonWalkBinder(node *sitter.Node, sym sitter.Symbol, src []byte, la
 			if attr, ok := pythonSelfOrClsAttrTarget(node.ChildByFieldName("left"), src); ok {
 				activeClassInfo.attrs[attr] = true
 			}
+		}
+		if sym == pythonSyms.assignment && activeFunc != nil {
+			recordPythonAnnotatedAssignmentVarType(node, src, activeFunc)
 		}
 	case pythonSyms.asPattern:
 		if aliasTarget := node.ChildByFieldName("alias"); aliasTarget != nil {
@@ -875,6 +900,28 @@ func recordPythonWalkBinder(node *sitter.Node, sym sitter.Symbol, src []byte, la
 			layer.bind(name.Content(src))
 		}
 	}
+}
+
+// recordPythonAnnotatedAssignmentVarType records `name: Type = value`'s
+// normalized type into activeFunc.varTypes (row 13, python-parser-parity-2)
+// when node's "left" field is a plain identifier and it carries a "type"
+// field (a PLAIN, non-annotated assignment has no "type" field at all —
+// ChildByFieldName returns nil, a no-op here). Any other left-target shape
+// (an attribute, a tuple/pattern unpacking) is not tracked.
+func recordPythonAnnotatedAssignmentVarType(node *sitter.Node, src []byte, activeFunc *pythonScope) {
+	left := node.ChildByFieldName("left")
+	typeField := node.ChildByFieldName("type")
+	if left == nil || typeField == nil || left.Symbol() != pythonSyms.identifier {
+		return
+	}
+	normalized := pythonNormalizeAnnotation(typeField, src)
+	if normalized == "" {
+		return
+	}
+	if activeFunc.varTypes == nil {
+		activeFunc.varTypes = make(map[string]string)
+	}
+	activeFunc.varTypes[left.Content(src)] = normalized
 }
 
 // collectPythonAssignmentTargetsLayer records every identifier bound by an
@@ -913,16 +960,32 @@ func collectPythonAssignmentTargetsLayer(target *sitter.Node, src []byte, layer 
 // scope-local — built up incrementally AS calls resolve in this SAME
 // document-order loop, never persisted beyond one scope, never crossing a
 // file — so a call can consult only an assignment that resolved EARLIER in
-// this exact scope.
-func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk, staticMethod bool, selfAlias string, bases []string) []FunctionCall {
-	if len(pending) == 0 {
+// this exact scope. scope carries every other scope-derived field
+// (staticMethod, selfAlias, bases, varTypes — row 13 added the last of
+// these, prompting this consolidation from five separate parameters);
+// attrs stays a SEPARATE parameter because callers already hold their own
+// authoritative copy independent of scope (e.g. buildClassInitDecl's own
+// class-body attrs even when its own `direct` scope is defensively nil). A
+// nil scope (never exercised by a real parse — see processClass) or an
+// empty scope.pending both return nil.
+func (p *PythonParser) resolvePythonPendingCalls(scope *pythonScope, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk) []FunctionCall {
+	if scope == nil || len(scope.pending) == 0 {
 		return nil
 	}
-	calls := make([]FunctionCall, 0, len(pending))
+	calls := make([]FunctionCall, 0, len(scope.pending))
 	var partials map[string]FunctionID
 	var callables map[string]string
-	for _, pc := range pending {
-		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias, bases: bases, partials: partials, callables: callables}
+	for _, pc := range scope.pending {
+		bindings := pythonBindings{
+			layer:        pc.layer,
+			attrs:        attrs,
+			staticMethod: scope.staticMethod,
+			selfAlias:    scope.selfAlias,
+			bases:        scope.bases,
+			varTypes:     scope.varTypes,
+			partials:     partials,
+			callables:    callables,
+		}
 		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
@@ -1216,7 +1279,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 // fw.moduleScope is populated once per file by pythonWalk, already scoped to
 // ONLY module-level direct-statement binders and pending calls.
 func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
-	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw, false, "", nil)
+	calls := p.resolvePythonPendingCalls(fw.moduleScope, nil, src, filePath, analysis, fw)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1347,17 +1410,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 
 	if body != nil {
 		scope := fw.funcScopes[node.StartByte()]
-		var pending []pythonPendingCall
-		var staticMethod bool
-		var selfAlias string
-		var bases []string
-		if scope != nil {
-			pending = scope.pending
-			staticMethod = scope.staticMethod
-			selfAlias = scope.selfAlias
-			bases = scope.bases
-		}
-		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, staticMethod, selfAlias, bases)
+		decl.Calls = p.resolvePythonPendingCalls(scope, attrs, src, filePath, analysis, fw)
 	}
 
 	return decl
@@ -1417,11 +1470,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 // pythonWalk, already scoped to ONLY class-body direct-statement pending
 // calls.
 func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, filePath, packagePath, className string, analysis *FileAnalysis, attrs map[string]bool, direct *pythonScope, fw *pythonFileWalk) *FunctionDecl {
-	var pending []pythonPendingCall
-	if direct != nil {
-		pending = direct.pending
-	}
-	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, false, "", nil)
+	calls := p.resolvePythonPendingCalls(direct, attrs, src, filePath, analysis, fw)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1567,6 +1616,10 @@ type pythonBindings struct {
 	// method (row 11): `obj = C(); obj(data)` resolves the second call to
 	// C.__call__. nil (never written) is the common case.
 	callables map[string]string
+	// varTypes maps a local variable name to its normalized declared type
+	// annotation (row 13), consulted by pythonResolveAttributeLikeCall
+	// after the ordinary import check and before the local-name fallback.
+	varTypes map[string]string
 }
 
 // receiverIdentity resolves the receiver text of an attribute call to a
@@ -1978,6 +2031,16 @@ func (p *PythonParser) pythonResolveAttributeLikeCall(object, method string, obj
 		if fc := resolveImportedCall(object, method, raw, filePath, line, startCol, endCol, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
 			return fc
 		}
+		// Row 13: object's own DECLARED type annotation (a typed parameter
+		// or an annotated assignment), when that type name is itself a
+		// known `from X import Type`-sourced import — resolved AFTER the
+		// ordinary import check (object itself was not an import) and
+		// BEFORE the local-name fallback below. ReceiverVar stays the
+		// local variable's own name (already computed above); an
+		// unresolvable/absent annotation falls through unchanged.
+		if fc := pythonAnnotatedReceiverCall(object, method, bindings.varTypes, receiverVar, raw, filePath, line, startCol, endCol, args, analysis, chainID, assignedVar); fc != nil {
+			return fc
+		}
 	}
 
 	// Fallback: assume same package (local object or unresolved chain result).
@@ -2151,6 +2214,41 @@ func resolveImportedCall(object, method, raw, filePath string, line, startCol, e
 	return nil
 }
 
+// pythonAnnotatedReceiverCall resolves object's OWN declared type
+// annotation (varTypes[object]) through the exact same `from X import
+// Type`-sourced import-resolution formula resolveImportedCall already uses
+// for a module-qualified receiver (row 13, python-parser-parity-2):
+// Package = the type name's own import path, further qualified with the
+// type name itself when it was bound via a `from`-import
+// (FromImports[typeName]) — an `import X as Y`-style type alias never
+// qualifies (FromImports is only ever set by a `from`-import), so this
+// stays bounded to the one shape design names as resolvable. Returns nil
+// (no fabrication) when object has no tracked type, or that type name is
+// not itself both imported AND `from`-imported.
+func pythonAnnotatedReceiverCall(object, method string, varTypes map[string]string, receiverVar, raw, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, chainID, assignedVar string) *FunctionCall {
+	typeName, ok := varTypes[object]
+	if !ok || typeName == "" {
+		return nil
+	}
+	pkg, isImport := analysis.Imports[typeName]
+	if !isImport || !analysis.FromImports[typeName] {
+		return nil
+	}
+	return &FunctionCall{
+		Callee:               FunctionID{Package: pkg + "." + typeName, Name: method},
+		ResolvedReceiverType: typeName,
+		Raw:                  raw,
+		FilePath:             filePath,
+		Line:                 line,
+		StartCol:             startCol,
+		EndCol:               endCol,
+		Arguments:            args,
+		ReceiverVar:          receiverVar,
+		ChainID:              chainID,
+		AssignedVar:          assignedVar,
+	}
+}
+
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
 	argList := pythonArgumentListChild(node)
 	if argList == nil {
@@ -2307,6 +2405,49 @@ func parsePythonParameters(node *sitter.Node, src []byte) []FunctionParameter {
 	return params
 }
 
+// pythonTypedParameterVarTypes returns, for a function/method "parameters"
+// node, a name->normalized-type map seeded from every typed_parameter/
+// typed_default_parameter carrying a "type" field (row 13,
+// python-parser-parity-2) — via pythonNormalizeAnnotation, NOT the raw
+// FunctionParameter.Type text parsePythonParameters records for the
+// exported Parameters list. A plain, default, or splat parameter (no type
+// field) contributes nothing; an unnormalizable annotation contributes
+// nothing for that one parameter (bounded, per-parameter — never fails the
+// whole function).
+func pythonTypedParameterVarTypes(params *sitter.Node, src []byte) map[string]string {
+	if params == nil {
+		return nil
+	}
+	var result map[string]string
+	count := int(params.NamedChildCount())
+	for i := 0; i < count; i++ {
+		child := params.NamedChild(i)
+		var nameNode, typeNode *sitter.Node
+		switch child.Symbol() {
+		case pythonSyms.typedParameter:
+			nameNode = firstIdentifierChild(child)
+			typeNode = child.ChildByFieldName("type")
+		case pythonSyms.typedDefaultParameter:
+			nameNode = child.ChildByFieldName("name")
+			typeNode = child.ChildByFieldName("type")
+		default:
+			continue
+		}
+		if nameNode == nil || typeNode == nil {
+			continue
+		}
+		normalized := pythonNormalizeAnnotation(typeNode, src)
+		if normalized == "" {
+			continue
+		}
+		if result == nil {
+			result = make(map[string]string)
+		}
+		result[nameNode.Content(src)] = normalized
+	}
+	return result
+}
+
 // pythonCallChainContext derives, for a Python call node, the fluent-chain
 // grouping ID and the variable name that this call's result is assigned to.
 //
@@ -2458,4 +2599,91 @@ func pythonReturnTypeOf(node *sitter.Node, src []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(returnType.Content(src))
+}
+
+// pythonNormalizeAnnotation extracts a single bounded type name from a
+// type-annotation node — a `type` field wrapper or an unwrapped expression
+// reached during recursion — per the pinned grammar shapes (row 13,
+// python-parser-parity-2):
+//   - identifier -> its own text ("Cipher")
+//   - generic_type{identifier "Optional"|"Union", type_parameter{...}} ->
+//     the single non-None type argument (see
+//     pythonNormalizeGenericAnnotation)
+//   - binary_operator{left, right: none} -> left, recursively normalized
+//     ("Cipher | None")
+//   - string{string_content} -> the forward-reference text ("Cipher" as a
+//     string literal annotation)
+//
+// Anything else (a subscript that is neither Optional nor Union, a
+// dict/list type, an unparenthesized non-None binary_operator, ...)
+// returns "" — no fabrication.
+func pythonNormalizeAnnotation(typeNode *sitter.Node, src []byte) string {
+	if typeNode == nil {
+		return ""
+	}
+	inner := typeNode
+	if typeNode.Symbol() == pythonSyms.typeNode && typeNode.NamedChildCount() == 1 {
+		inner = typeNode.NamedChild(0)
+	}
+	switch inner.Symbol() {
+	case pythonSyms.identifier:
+		return inner.Content(src)
+	case pythonSyms.genericType:
+		return pythonNormalizeGenericAnnotation(inner, src)
+	case pythonSyms.binaryOperator:
+		left := inner.ChildByFieldName("left")
+		right := inner.ChildByFieldName("right")
+		if left == nil || right == nil || right.Symbol() != pythonSyms.none {
+			return ""
+		}
+		return pythonNormalizeAnnotation(left, src)
+	case pythonSyms.string:
+		content, ok := pythonLiteralStringContent(inner, src)
+		if !ok {
+			return ""
+		}
+		return content
+	default:
+		return ""
+	}
+}
+
+// pythonNormalizeGenericAnnotation handles generic.Symbol()==genericType
+// under pythonNormalizeAnnotation: only a bare "Optional"/"Union" base
+// identifier is recognized; its type_parameter argument list normalizes
+// each own `type` argument recursively, and the single distinct non-empty
+// result (every None argument normalizes to "" and is skipped) is
+// returned. Two or more DISTINCT non-empty results (a real Union of
+// multiple concrete types) is unresolvable — "" — rather than guessing
+// which one is intended.
+func pythonNormalizeGenericAnnotation(generic *sitter.Node, src []byte) string {
+	if int(generic.NamedChildCount()) < 2 {
+		return ""
+	}
+	base := generic.NamedChild(0)
+	if base == nil || base.Symbol() != pythonSyms.identifier {
+		return ""
+	}
+	switch base.Content(src) {
+	case "Optional", "Union":
+	default:
+		return ""
+	}
+	params := generic.NamedChild(1)
+	if params == nil {
+		return ""
+	}
+	var result string
+	count := int(params.NamedChildCount())
+	for i := 0; i < count; i++ {
+		normalized := pythonNormalizeAnnotation(params.NamedChild(i), src)
+		if normalized == "" {
+			continue
+		}
+		if result != "" && result != normalized {
+			return ""
+		}
+		result = normalized
+	}
+	return result
 }

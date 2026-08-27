@@ -132,15 +132,15 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 10: Row 13 — Type hints
 
-- [ ] **10.1** RED: `TestPythonParser_TypeHint_ParamAnnotation`, `_ReturnAnnotation`, `_OptionalUnionNormalization`, `_StringForwardRef`, `_AnnotatedAssignment`, `_TypeCheckingImport`, `_UnresolvableNoType`.
+- [x] **10.1** RED: `TestPythonParser_TypeHint_ParamAnnotation`, `_ReturnAnnotation`, `_OptionalUnionNormalization`, `_StringForwardRef`, `_AnnotatedAssignment`, `_TypeCheckingImport`, `_UnresolvableNoType`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_TypeHint -v`. Deps: 9.3.
-- [ ] **10.2** GREEN parser half: `pythonNormalizeAnnotation(typeNode, src)` per the pinned shapes (`type>identifier`, `Optional[...]`/`Union[...]`, `X | None`, string forward-ref); populate `pythonScope.varTypes` from typed parameters, annotated assignment, and `FunctionDecl.ReturnType`; consult `varTypes[object]` in `parseAttributeCall` after the import check, before the local-name fallback.
+- [x] **10.2** GREEN parser half: `pythonNormalizeAnnotation(typeNode, src)` per the pinned shapes (`type>identifier`, `Optional[...]`/`Union[...]`, `X | None`, string forward-ref); populate `pythonScope.varTypes` from typed parameters and annotated assignment; consult `varTypes[object]` in `pythonResolveAttributeLikeCall` after the import check, before the local-name fallback. **Deviation from design**: `FunctionDecl.ReturnType` (via `pythonReturnTypeOf`) was deliberately NOT changed to normalize through `pythonNormalizeAnnotation` — `ReturnType` is exported downstream (`internal/scan` annotate/export); normalizing it would turn e.g. `List[int]` into `""`, a real behavior/export change outside this row's bounded scope. Return-type-driven propagation is entirely 10.3's job, reading the RAW `ReturnType` string, consistent with 10.3's own description.
   Files: `internal/callgraph/python_parser.go`. Deps: 10.1.
-- [ ] **10.3** GREEN resolver half: `propagatePythonAssignedVarTypes(graph)` as the last step of the new `PythonTypeResolverChain.ResolveTypes`; per-decl ordered pass over `Calls` maintaining `var → type`, never crossing decls.
+- [x] **10.3** GREEN resolver half: `propagatePythonAssignedVarTypes(graph)` as the last step of the new `PythonTypeResolverChain.ResolveTypes`; per-decl ordered pass over `Calls` maintaining `var → type`, never crossing decls. Gated to `.py`/`.pyi`-sourced `FunctionDecl`s only (`isPythonSourceFile(fn.FilePath)`) — `AssignedVar`/`ReceiverVar` are language-agnostic fields shared by every parser, so an ungated pass would risk mutating another ecosystem's calls on a coincidental variable-name match. `PythonTypeResolverChain` NOT yet wired into `parser_registry.go`/CLI (that wiring is task 12.5, per design); this phase's resolver-half test (`_ReturnAnnotation`) calls the chain/function directly.
   Files: `internal/callgraph/python_type_resolver.go`. Deps: 10.2.
-- [ ] **10.4** Regression re-verify (design §6): `TestPythonParser_ReceiverVar_ComprehensionTarget` still holds, both positive and negative sub-assertions (D2 layer-stack change).
+- [x] **10.4** Regression re-verify (design §6): `TestPythonParser_ReceiverVar_ComprehensionTarget` still holds, both positive and negative sub-assertions (D2 layer-stack change).
   Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ReceiverVar_ComprehensionTarget -v`. Deps: 10.3.
-- [ ] **10.5** Perf guard re-run — commands per 1.5.
+- [x] **10.5** Perf guard re-run — commands per 1.5.
   Deps: 10.4.
 
 ## Phase 11: Row C — KDF key length

@@ -1796,6 +1796,230 @@ def run(data):
 	}
 }
 
+// TestPythonParser_TypeHint_ParamAnnotation (row 13, python-parser-parity-2)
+// pins that a typed parameter's declared type, when that type name is
+// itself a known `from X import Type`-sourced import, resolves a bounded
+// receiver call through it — ReceiverVar stays the local parameter name,
+// ResolvedReceiverType and Callee reflect the annotation.
+func TestPythonParser_TypeHint_ParamAnnotation(t *testing.T) {
+	src := `from mymod import Cipher
+
+def run(c: Cipher, data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+	if call.ResolvedReceiverType != "Cipher" {
+		t.Errorf("ResolvedReceiverType = %q, want %q", call.ResolvedReceiverType, "Cipher")
+	}
+	if call.ReceiverVar != "c" {
+		t.Errorf("ReceiverVar = %q, want %q", call.ReceiverVar, "c")
+	}
+}
+
+// TestPythonParser_TypeHint_ReturnAnnotation (row 13's resolver half,
+// python-parser-parity-2) pins propagatePythonAssignedVarTypes: a
+// constructor call's result, assigned to a local, propagates that
+// constructor's OWN declared return type to a LATER receiver call on the
+// same local — bounded to the SAME FunctionDecl, run through
+// PythonTypeResolverChain directly (not yet wired into the CLI — row 14).
+func TestPythonParser_TypeHint_ReturnAnnotation(t *testing.T) {
+	src := `def get_cipher() -> Cipher:
+    return build_cipher()
+
+
+def run(data):
+    c = get_cipher()
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	graph := &CallGraph{Functions: make(map[string]*FunctionDecl)}
+	for i := range fns {
+		fn := fns[i]
+		graph.Functions[fn.ID.String()] = &fn
+	}
+	propagatePythonAssignedVarTypes(graph)
+
+	run := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
+	if run == nil {
+		t.Fatal("run function not found in graph")
+	}
+	call := findPythonCallByMethod(run, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mypkg", Type: "Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+	if call.ResolvedReceiverType != "Cipher" {
+		t.Errorf("ResolvedReceiverType = %q, want %q", call.ResolvedReceiverType, "Cipher")
+	}
+}
+
+// TestPythonParser_TypeHint_OptionalUnionNormalization (row 13,
+// python-parser-parity-2) pins that Optional[Cipher] and Union[Cipher,
+// None] parameter annotations both normalize to "Cipher", resolving the
+// SAME as a bare `c: Cipher` annotation.
+func TestPythonParser_TypeHint_OptionalUnionNormalization(t *testing.T) {
+	src := `from mymod import Cipher
+
+def run_optional(c: Optional[Cipher], data):
+    return c.encrypt(data)
+
+
+def run_union(c: Union[Cipher, None], data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+
+	optionalFn := findPythonFuncByName(fns, "run_optional")
+	if optionalFn == nil {
+		t.Fatal("run_optional function not found")
+	}
+	optionalCall := findPythonCallByMethod(optionalFn, "encrypt")
+	if optionalCall == nil {
+		t.Fatal("Optional[Cipher] c.encrypt(data) call not found")
+	}
+	if optionalCall.Callee != want {
+		t.Errorf("Optional[Cipher] Callee = %+v, want %+v", optionalCall.Callee, want)
+	}
+
+	unionFn := findPythonFuncByName(fns, "run_union")
+	if unionFn == nil {
+		t.Fatal("run_union function not found")
+	}
+	unionCall := findPythonCallByMethod(unionFn, "encrypt")
+	if unionCall == nil {
+		t.Fatal("Union[Cipher, None] c.encrypt(data) call not found")
+	}
+	if unionCall.Callee != want {
+		t.Errorf("Union[Cipher, None] Callee = %+v, want %+v", unionCall.Callee, want)
+	}
+}
+
+// TestPythonParser_TypeHint_StringForwardRef (row 13, python-parser-parity-2)
+// pins that a string forward-reference annotation (`c: "Cipher"`) resolves
+// the same way as a bare `c: Cipher` annotation.
+func TestPythonParser_TypeHint_StringForwardRef(t *testing.T) {
+	src := `from mymod import Cipher
+
+def run(c: "Cipher", data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_TypeHint_AnnotatedAssignment (row 13,
+// python-parser-parity-2) pins that a plain annotated-assignment local
+// (`c: Cipher = get_cipher()`, no parameter annotation at all) resolves a
+// LATER receiver call the same way a typed parameter would.
+func TestPythonParser_TypeHint_AnnotatedAssignment(t *testing.T) {
+	src := `from mymod import Cipher
+
+def run(data):
+    c: Cipher = get_cipher()
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_TypeHint_TypeCheckingImport (row 13,
+// python-parser-parity-2) pins that an import guarded by `if
+// TYPE_CHECKING:` is still discovered and resolves a typed-parameter
+// receiver — import discovery is already UNPRUNED (recurses into every
+// node regardless of enclosing `if`), so this is a regression guard, not
+// new production code.
+func TestPythonParser_TypeHint_TypeCheckingImport(t *testing.T) {
+	src := `from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mymod import Cipher
+
+
+def run(c: Cipher, data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mymod.Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (TYPE_CHECKING-guarded import must still be discovered)", call.Callee, want)
+	}
+}
+
+// TestPythonParser_TypeHint_UnresolvableNoType (row 13,
+// python-parser-parity-2) pins that a typed parameter whose type name is
+// NOT itself imported falls through unchanged to the pre-row-13 local
+// fallback — no fabrication, no ResolvedReceiverType.
+func TestPythonParser_TypeHint_UnresolvableNoType(t *testing.T) {
+	src := `def run(c: SomeUnknownType, data):
+    return c.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("c.encrypt(data) call not found")
+	}
+	want := FunctionID{Package: "mypkg", Type: "c", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (unresolvable annotation must fall through unchanged)", call.Callee, want)
+	}
+	if call.ResolvedReceiverType != "" {
+		t.Errorf("ResolvedReceiverType = %q, want empty", call.ResolvedReceiverType)
+	}
+	if call.ReceiverVar != "c" {
+		t.Errorf("ReceiverVar = %q, want %q", call.ReceiverVar, "c")
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
