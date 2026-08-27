@@ -273,7 +273,7 @@ func (p *RustParser) parseFunctionItem(node *sitter.Node, src []byte, filePath, 
 	ownerName := packagePath
 	functionType := "function"
 	if typeName != "" {
-		ownerType = "type"
+		ownerType = ownerTypeType
 		ownerName = typeName
 		if hasSelf {
 			functionType = "method"

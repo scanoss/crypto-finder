@@ -71,6 +71,12 @@ const (
 	// name on obj's in-file class when that class declares its own
 	// __call__.
 	pythonDunderCallMethodName = "__call__"
+	// pythonSuperBuiltinName is the bare identifier row 9's super()
+	// resolution matches (python-parser-parity-2): `super()`/`super(B,
+	// self)`, and the same literal G4 (PR #310 phase-2 review) checks to
+	// suppress the inner super() call node from being independently
+	// emitted as its own identifier call.
+	pythonSuperBuiltinName = "super"
 	// pythonDunderEnterMethodName/pythonDunderExitMethodName are the
 	// context-manager protocol methods (`with obj: ...`) kept alongside
 	// __call__ in the parseFunctionDef dunder whitelist (G3, PR #310
@@ -233,14 +239,32 @@ func resolvePythonSymbols(lang *sitter.Language) pythonSymbolTable {
 		"await":                     &t.await,
 		"lambda_parameters":         &t.lambdaParameters,
 	}
-	count := lang.SymbolCount()
+	pythonResolveSymbolTable(lang.SymbolCount(), lang.SymbolName, lang.SymbolType, dst)
+	return t
+}
+
+// pythonResolveSymbolTable is the pure core of resolvePythonSymbols,
+// extracted so its selection policy is unit testable independent of any
+// specific grammar's own symbol-ID layout (G9, PR #310 phase-2 review).
+// Iterates every symbol id in [0, count) and assigns dst[name] the symbol
+// only when that symbol is a Regular (named) grammar rule — never an
+// Anonymous token or Auxiliary symbol. The Python grammar aliases some
+// anonymous tokens to the same name as an unrelated named rule (the type/
+// await/lambda keywords all collide against the vendored grammar as of
+// this writing); an unconditional last-match-wins assignment would
+// silently pick whichever symbol happens to be enumerated last, which
+// nothing in tree-sitter's public API guarantees stays stable across
+// grammar versions.
+func pythonResolveSymbolTable(count uint32, nameOf func(sitter.Symbol) string, typeOf func(sitter.Symbol) sitter.SymbolType, dst map[string]*sitter.Symbol) {
 	for i := uint32(0); i < count; i++ {
 		sym := sitter.Symbol(i)
-		if field, ok := dst[lang.SymbolName(sym)]; ok {
+		if typeOf(sym) != sitter.SymbolTypeRegular {
+			continue
+		}
+		if field, ok := dst[nameOf(sym)]; ok {
 			*field = sym
 		}
 	}
-	return t
 }
 
 // NewPythonParser creates a new Python source parser backed by tree-sitter.
@@ -1941,7 +1965,7 @@ func pythonIsSuperCallNode(node *sitter.Node, src []byte) bool {
 		return false
 	}
 	fn := node.Child(0)
-	return fn != nil && fn.Symbol() == pythonSyms.identifier && fn.Content(src) == "super"
+	return fn != nil && fn.Symbol() == pythonSyms.identifier && fn.Content(src) == pythonSuperBuiltinName
 }
 
 // pythonCallIsAttributeObject reports whether node (a call node) is the

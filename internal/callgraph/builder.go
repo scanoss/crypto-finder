@@ -19,7 +19,13 @@ import (
 const (
 	ownerTypeInterface = "interface"
 	ownerTypeClass     = "class"
-	javaStringType     = "String"
+	// ownerTypeType is the FunctionDecl.OwnerType value for a declaration
+	// owned by a non-class type (a Go struct/interface method receiver, a
+	// Rust impl block's type) — shared across parsers instead of each
+	// repeating the "type" literal (surfaced by goconst, PR #310 phase-2
+	// review cache-invalidation pass).
+	ownerTypeType  = "type"
+	javaStringType = "String"
 	// ecosystemPython is the ecosystem identifier for Python callgraphs.
 	// Used to gate Python-specific dispatch (e.g. expandPythonSubclassDispatch).
 	ecosystemPython = "python"

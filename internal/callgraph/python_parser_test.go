@@ -2227,7 +2227,43 @@ func TestPythonSymbolTable_AllSymbolsResolved(t *testing.T) {
 			if got := lang.SymbolName(sym); got != name {
 				t.Fatalf("pythonSyms entry for %q resolved to grammar symbol name %q instead", name, got)
 			}
+			// G9 (PR #310 phase-2 review): the Python grammar aliases some
+			// anonymous tokens to the same name as an unrelated named rule
+			// (the type/await/lambda keywords all collide) — every
+			// resolved pythonSyms field must be the REGULAR rule, never
+			// the anonymous token sharing its name.
+			if got := lang.SymbolType(sym); got != sitter.SymbolTypeRegular {
+				t.Fatalf("pythonSyms entry for %q resolved to a %v symbol, want Regular", name, got)
+			}
 		})
+	}
+}
+
+// TestPythonResolveSymbolTable_PrefersRegularOverAnonymous (G9, PR #310
+// phase-2 review) pins resolvePythonSymbols's core selection algorithm,
+// extracted into pythonResolveSymbolTable so it is testable independent of
+// the real (fixed) grammar's own symbol-ID ordering: given a name shared by
+// a Regular rule (id 0) and an Anonymous token (id 1, processed SECOND),
+// the Anonymous entry must never overwrite the Regular one that was
+// already found — an unconditional last-match-wins policy would silently
+// pick whichever symbol happens to be enumerated last, which nothing in
+// tree-sitter's public API guarantees stays consistent across grammar
+// versions.
+func TestPythonResolveSymbolTable_PrefersRegularOverAnonymous(t *testing.T) {
+	const collidingName = "colliding_rule"
+	names := map[sitter.Symbol]string{0: collidingName, 1: collidingName}
+	types := map[sitter.Symbol]sitter.SymbolType{0: sitter.SymbolTypeRegular, 1: sitter.SymbolTypeAnonymous}
+	var resolved sitter.Symbol
+	dst := map[string]*sitter.Symbol{collidingName: &resolved}
+
+	pythonResolveSymbolTable(2,
+		func(s sitter.Symbol) string { return names[s] },
+		func(s sitter.Symbol) sitter.SymbolType { return types[s] },
+		dst,
+	)
+
+	if resolved != 0 {
+		t.Fatalf("resolved symbol = %d, want 0 (the REGULAR entry) — an anonymous token sharing the same grammar-rule name must never win", resolved)
 	}
 }
 
