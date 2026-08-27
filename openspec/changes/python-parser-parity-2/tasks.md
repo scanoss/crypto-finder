@@ -201,18 +201,20 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 13: Regression guard (design §6)
 
-- [ ] **13.1** `internal/callgraph/python_grammar_facts_test.go` `TestPythonGrammarFacts_PinnedNodeShapes` — confirm the extended table (0.1) matches real parser output.
-  Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_PinnedNodeShapes -v`.
-- [ ] **13.2** `internal/callgraph/python_parser_test.go` `TestPythonParser_ParseFile` and any `FunctionDecl`-equality/`Parameters` assertions — update expectations to include `Visibility`/`OwnerVisibility`/`Parameters[].Name` now populated by rows 18 and A2.
-  Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ParseFile -v`.
-- [ ] **13.3** `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` — re-verify unchanged (already covered by 6.3).
-- [ ] **13.4** `TestPythonParser_ReceiverVar_ComprehensionTarget` — re-verify unchanged, positive and negative sub-assertions both hold (already covered by 10.4).
-- [ ] **13.5** `internal/scan` `TestPythonE2E_*`, `TestPythonGolden_*`, `python_multilib_smoke_test.go`, `python_fidelity_deployed_rules_test.go` — re-run; counts may rise (all assertions `>=1`/`t.Logf`); confirm `crypto_entry_points` now carry `visibility`/`owner_visibility`.
-  Evidence: `go test ./internal/scan/... -run 'TestPythonE2E|TestPythonGolden' -v` plus `go test ./internal/scan/... -v`.
-- [ ] **13.6** `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` non-int-overload case — must stay green unchanged (already covered by 11.7).
-- [ ] **13.7** `internal/callgraph/python_perf_test.go` — update doc comment only; benchmark body unchanged.
-  Files: `internal/callgraph/python_perf_test.go`.
-- [ ] **13.8** `internal/callgraph/contracts` loader tests — add `argument_byte_length` to any exhaustive-derivation assertion; update expected error-message text.
+- [x] **13.1** `internal/callgraph/python_grammar_facts_test.go` `TestPythonGrammarFacts_PinnedNodeShapes` — confirmed the extended table (0.1) still matches real parser output; all 33 subtests pass.
+  Evidence: `go test ./internal/callgraph/ -run TestPythonGrammarFacts_PinnedNodeShapes -v` — PASS.
+- [x] **13.2** `internal/callgraph/python_parser_test.go` `TestPythonParser_ParseFile` — re-verified green with `Visibility`/`OwnerVisibility`/`Parameters[].Name` expectations already in place from earlier batches; no new update needed this batch (no `python_parser.go` change landed in batch 3).
+  Evidence: `go test ./internal/callgraph/ -run TestPythonParser_ParseFile -v` — PASS.
+- [x] **13.3** `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` — re-verified unchanged, both PASS.
+- [x] **13.4** `TestPythonParser_ReceiverVar_ComprehensionTarget` — re-verified unchanged, PASS (positive and negative sub-assertions both hold).
+- [x] **13.5** `internal/scan` `TestPythonE2E_*` (7 cases), `TestPythonGolden_*` (7 cases), `TestPythonSmoke_MultiLib_RepresentativeFixture`, `TestFidelity_*` (7 cases, all `t.Skip` — opengrep/deployed-rules fixtures unavailable in this sandbox, matching the pre-existing skip pattern, never a fabricated pass) — all re-run, all PASS or explicitly skip. Golden fixture counts observed this run: pycryptodomex 2/6, paramiko 2/2, PyJWT 1/2, PyNaCl 1/3, argon2-cffi 1/4, pycryptodome 2/6, bcrypt 1/3, pyca/cryptography 2/3 (crypto_entry_points/supporting_calls) — consistent with prior batches, no regression.
+  Evidence: `go test ./internal/scan/... -run 'TestPythonE2E|TestPythonGolden' -v`, `go test ./internal/scan/... -run 'TestPythonSmoke_MultiLib|TestFidelity' -v` — all PASS/SKIP as expected.
+- [x] **13.6** `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` non-int-overload case (`TestResolvedKeyLengthFromContract`) — stayed green unchanged; all 9 test functions in the file pass, including the batch-3-extended `TestResolvedKeyLength_Python_EveryListedAPI` (19 subtests).
+  Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength -v` — all PASS.
+- [x] **13.7** `internal/callgraph/python_perf_test.go` — updated both the file-level doc comment (previously referenced the archived `python-parser-java-parity` change's "T1-T5" naming) and `BenchmarkPythonParseDirectory_Bindings`'s own doc comment to describe the current single-descent `pythonWalk` architecture; benchmark body byte-for-byte unchanged.
+  Files: `internal/callgraph/python_perf_test.go`. Evidence: `go build ./...` + `go test ./internal/callgraph/ -run TestPythonParser -v` green (doc-only change, no behavior risk).
+- [x] **13.8** `internal/callgraph/contracts` loader tests — verified: no test in the suite asserts an exhaustive derivation-value table or the exact `"not in {argument_value, argument_bit_length, argument_type, argument_curve_bits, argument_byte_length}"` error string (the one derivation-rejection test, `TestContract_RejectsInvalidDerivation_NamesMethodAndField`, only asserts the error names the offending method/field, not the whitelist text) — nothing to update; `argument_byte_length` was already added to both the enum and the error string in batch 2 (11.1/11.2) and remains correct. Confirmed via `grep` across `internal/callgraph/contracts/*_test.go` plus a full green run.
+  Evidence: `go test ./internal/callgraph/contracts/... -v` — 0 failures.
   Evidence: `go test ./internal/callgraph/contracts/... -v`.
 
 ## Phase 14: Final gates, docs, delivery

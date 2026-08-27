@@ -7,12 +7,19 @@
 
 package callgraph
 
-// python_perf_test.go — performance guard for T1-T5's added per-file/per-body
-// parsing work (binding table, class-attribute walk, synthetic-decl pruning
-// walk, recursive import walk). The corpus is generated on demand by
-// testdata/python_perf/generate_fixture.go (not committed); this benchmark
-// skips when the generated corpus is absent, mirroring the
+// python_perf_test.go — performance guard for the Python parser's
+// single-descent architecture (python-parser-parity-2, design.md §3): one
+// full-file pythonWalk pass with deferred per-scope call resolution,
+// replacing the earlier three-walk pipeline (import prepass + per-function
+// walkForCalls + pruned walkPrunedForCalls) this benchmark originally
+// guarded (T1-T5, python-parser-java-parity). The corpus is generated on
+// demand by testdata/python_perf/generate_fixture.go (not committed); this
+// benchmark skips when the generated corpus is absent, mirroring the
 // testdata/inference_perf/TestPerformance_InferenceOverhead convention.
+// Every row landed on top of this architecture (rows 6-20, C, 14) re-runs
+// this benchmark, alongside the deterministic TestPythonParser_NodeVisitBudget
+// CI guard, before being considered done — see apply-progress.md for the
+// full per-row measurement history.
 
 import (
 	"os"
@@ -32,9 +39,11 @@ func pythonPerfFixtureDir(t testing.TB) string {
 }
 
 // BenchmarkPythonParseDirectory_Bindings measures the full Python
-// ParseDirectory + BuildFromDirectories pipeline cost, including this
-// change's binding table, class-attribute collection, `<module>`/`<clinit>`
-// synthesis, and recursive import walk, over the generated module corpus.
+// ParseDirectory + BuildFromDirectories pipeline cost — the single-descent
+// pythonWalk, its layered binding table, deferred call resolution,
+// `<module>`/`<clinit>` synthesis, and import walk — over the generated
+// module corpus. The benchmark body itself is unchanged across rows; only
+// this doc comment was updated (13.7, python-parser-parity-2 batch 3).
 func BenchmarkPythonParseDirectory_Bindings(b *testing.B) {
 	dir := pythonPerfFixtureDir(b)
 
