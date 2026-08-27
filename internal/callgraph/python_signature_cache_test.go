@@ -77,3 +77,23 @@ func TestDiskPythonSignatureIndexCache_ErrorsPrefixedWithCallgraph(t *testing.T)
 		t.Fatalf("Get() error = %q, want a \"callgraph:\"-prefixed message", getErr.Error())
 	}
 }
+
+// TestPythonSignatureDistributionKey_ChangesWhenSourceChanges proves that
+// cache identity follows the indexed distribution bytes, not only its
+// coordinate and schema version.
+func TestPythonSignatureDistributionKey_ChangesWhenSourceChanges(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api.pyi")
+	if err := os.WriteFile(path, []byte("def make() -> Cipher: ...\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := PackageDir{Dir: dir, ImportPath: "dep", DistributionName: "dep-dist", Version: "1.0.0"}
+	before := pythonSignatureDistributionKey(root)
+	if err := os.WriteFile(path, []byte("def make() -> NewCipher: ...\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after := pythonSignatureDistributionKey(root)
+	if before == after {
+		t.Fatalf("cache key did not change after source modification: %q", before)
+	}
+}

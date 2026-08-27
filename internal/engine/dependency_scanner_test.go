@@ -1046,3 +1046,26 @@ func hasPackage(pkgs []callgraph.PackageDir, importPath string) bool {
 	}
 	return false
 }
+
+func TestDependencyScanner_CollectPackageSets_PreservesPythonDistributionAndImportRoot(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "python"}}
+	resolved := &dependency.ResolveResult{RootModule: "app"}
+	depResults := []depScanResult{{
+		dep: dependency.Dependency{
+			Module:     "argon2-cffi",
+			ImportPath: "argon2",
+			Version:    "25.1.0",
+			Dir:        "/deps/argon2",
+		},
+		status: depScanStatusScanned,
+		report: reportWithCryptoAsset(),
+	}}
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if len(sets.graphPackages) != 2 {
+		t.Fatalf("graphPackages = %#v, want user root plus dependency", sets.graphPackages)
+	}
+	dep := sets.graphPackages[1]
+	if dep.ImportPath != "argon2" || dep.DistributionName != "argon2-cffi" {
+		t.Fatalf("dependency PackageDir = %#v, want ImportPath argon2 and DistributionName argon2-cffi", dep)
+	}
+}

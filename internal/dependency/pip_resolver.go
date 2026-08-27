@@ -117,7 +117,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 
 		info := infoMap[normalizePackageName(pkg.Name)]
-		dir, reason := r.resolvePackageDir(pkg.Name, info, distToImport)
+		dir, importPath, reason := r.resolvePackageRoot(pkg.Name, info, distToImport)
 		if dir == "" {
 			switch reason {
 			case skipReasonUnknown:
@@ -135,9 +135,10 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 
 		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:  pkg.Name,
-			Version: pkg.Version,
-			Dir:     dir,
+			Module:     pkg.Name,
+			ImportPath: importPath,
+			Version:    pkg.Version,
+			Dir:        dir,
 		})
 
 		// Build graph from Requires field
@@ -400,8 +401,16 @@ const (
 // It uses the distribution→import mapping from importlib.metadata as the primary
 // strategy, falling back to heuristic name normalization for older Python environments.
 func (r *PipResolver) resolvePackageDir(pkgName string, info pipShowInfo, distToImport map[string][]string) (string, skipReason) {
+	dir, _, reason := r.resolvePackageRoot(pkgName, info, distToImport)
+	return dir, reason
+}
+
+// resolvePackageRoot returns both the selected source directory and the exact
+// import root that selected it. Distribution identity remains pkgName; callers
+// must not derive Python FQNs from that coordinate.
+func (r *PipResolver) resolvePackageRoot(pkgName string, info pipShowInfo, distToImport map[string][]string) (string, string, skipReason) {
 	if info.Location == "" {
-		return "", skipReasonNoSource
+		return "", "", skipReasonNoSource
 	}
 
 	// Strategy 1: Use importlib.metadata mapping (most reliable)
@@ -410,20 +419,20 @@ func (r *PipResolver) resolvePackageDir(pkgName string, info pipShowInfo, distTo
 		for _, importName := range importNames {
 			dir := filepath.Join(info.Location, importName)
 			if isDir(dir) {
-				return dir, 0
+				return dir, importName, 0
 			}
 			// Check for single-file module (e.g., six.py)
 			if isFile(filepath.Join(info.Location, importName+".py")) {
-				return "", skipReasonSingleFile
+				return "", "", skipReasonSingleFile
 			}
 		}
 	}
 
-	// Strategy 2: Heuristic — normalized name as directory
+	// Strategy 2: Heuristic - normalized name as directory.
 	importName := normalizePackageName(pkgName)
 	dir := filepath.Join(info.Location, importName)
 	if isDir(dir) {
-		return dir, 0
+		return dir, importName, 0
 	}
 
 	// Strategy 3: Try lowercase variant
@@ -431,11 +440,11 @@ func (r *PipResolver) resolvePackageDir(pkgName string, info pipShowInfo, distTo
 	if lower != importName {
 		dir = filepath.Join(info.Location, lower)
 		if isDir(dir) {
-			return dir, 0
+			return dir, lower, 0
 		}
 	}
 
-	return "", skipReasonNoSource
+	return "", "", skipReasonNoSource
 }
 
 // pythonPackagesDistributions calls the selected interpreter's

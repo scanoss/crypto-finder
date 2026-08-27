@@ -8,8 +8,13 @@ const ecosystemJava = "java"
 
 // Dependency represents a single resolved dependency with its source location.
 type Dependency struct {
-	// Module is the import path (e.g., "golang.org/x/crypto" or "org.example:lib").
+	// Module is the dependency coordinate (e.g., "golang.org/x/crypto",
+	// "org.example:lib", or the Python distribution name "argon2-cffi").
 	Module string
+	// ImportPath is the source namespace when it differs from Module. Python
+	// resolvers use it for distribution/import-root pairs such as
+	// argon2-cffi/argon2; other ecosystems leave it empty.
+	ImportPath string
 	// Version is the resolved version (e.g., "v0.17.0" or "1.2.3").
 	Version string
 	// Dir is the absolute filesystem path to the dependency source code.

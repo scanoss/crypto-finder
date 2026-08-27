@@ -59,17 +59,29 @@ var pythonDependencySkipDirs = (&PythonParser{}).SkipDirs()
 // The resolver always returns nil error — a missing/unreadable
 // distribution, an absent annotation, or a cache I/O failure all degrade to
 // "resolve nothing for this input", never a fatal build error.
+type pythonDependencyParser interface {
+	ParseCtx(context.Context, *sitter.Tree, []byte) (*sitter.Tree, error)
+	Close()
+}
+
 type PythonDependencyTypeResolver struct {
 	cache PythonSignatureIndexCache
-	// readDir is a test seam; defaults to os.ReadDir.
-	readDir func(string) ([]os.DirEntry, error)
+	// readDir and newParser are test seams.
+	readDir   func(string) ([]os.DirEntry, error)
+	newParser func() pythonDependencyParser
 }
 
 // NewPythonDependencyTypeResolver creates a resolver backed by the supplied
 // cache. A nil cache is a safe no-op cache (every distribution is
 // re-indexed every call, never persisted).
 func NewPythonDependencyTypeResolver(cache PythonSignatureIndexCache) *PythonDependencyTypeResolver {
-	return &PythonDependencyTypeResolver{cache: cache, readDir: os.ReadDir}
+	return &PythonDependencyTypeResolver{
+		cache:   cache,
+		readDir: os.ReadDir,
+		newParser: func() pythonDependencyParser {
+			return newPythonDependencyParser()
+		},
+	}
 }
 
 // ResolveTypes implements TypeResolver (row 14 algorithm, design.md §4 row
@@ -101,8 +113,9 @@ func (r *PythonDependencyTypeResolver) ResolveTypes(graph *CallGraph, sourceRoot
 
 // selectPythonDependencyRoots filters sourceRoots to real, non-project-local
 // distributions (D8: Version != "") with a resolved source directory, and
-// deduplicates by ImportPath@Version — a dependency graph can list the same
-// resolved distribution more than once (e.g. reached via two paths).
+// deduplicates by distribution/import-root/version - a dependency graph can
+// list the same resolved distribution more than once (e.g. reached via two
+// paths), while distinct distributions must never share an index accidentally.
 func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 	seen := make(map[string]struct{}, len(sourceRoots))
 	roots := make([]PackageDir, 0, len(sourceRoots))
@@ -110,7 +123,11 @@ func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 		if root.Version == "" || root.Dir == "" {
 			continue
 		}
-		key := root.ImportPath + "@" + root.Version
+		distributionName := root.DistributionName
+		if distributionName == "" {
+			distributionName = root.ImportPath
+		}
+		key := distributionName + "@" + root.Version + ":" + root.ImportPath
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -140,7 +157,11 @@ func (r *PythonDependencyTypeResolver) buildIndexes(roots []PackageDir, workers 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			parser := newPythonDependencyParser()
+			parser := r.newParser()
+			if parser == nil {
+				return
+			}
+			defer parser.Close()
 			for root := range workCh {
 				sigs, hierarchy := r.indexDistribution(root, parser)
 				resultCh <- pythonDistributionIndexResult{signatures: sigs, hierarchy: hierarchy}
@@ -175,12 +196,18 @@ func newPythonDependencyParser() *sitter.Parser {
 
 // indexDistribution returns one distribution's signatures/hierarchy,
 // preferring a cached entry over re-walking the filesystem.
-func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser *sitter.Parser) (map[string]pythonSignature, map[string][]string) {
-	cacheKey := pythonSignatureDistributionKey(root)
+func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser pythonDependencyParser) (map[string]pythonSignature, map[string][]string) {
+	identity := pythonSignatureIdentity(root)
+	cacheKey := pythonSignatureDistributionKeyForIdentity(root, identity)
 	if r.cache != nil {
 		if cached, ok, err := r.cache.Get(context.Background(), cacheKey); err != nil {
 			log.Debug().Err(err).Str("distribution", cacheKey).Msg("Failed to load Python signature cache entry")
-		} else if ok && cached != nil && cached.SchemaVersion == pythonSignatureCacheSchemaVersion {
+		} else if ok && cached != nil &&
+			cached.SchemaVersion == pythonSignatureCacheSchemaVersion &&
+			cached.DistributionKey == cacheKey &&
+			cached.DistributionName == identity.distributionName &&
+			cached.ImportPath == identity.importPath &&
+			cached.SourceFingerprint == identity.sourceFingerprint {
 			return cached.Signatures, cached.Hierarchy
 		}
 	}
@@ -191,10 +218,13 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 
 	if r.cache != nil {
 		entry := &CachedPythonSignatureIndex{
-			SchemaVersion:   pythonSignatureCacheSchemaVersion,
-			DistributionKey: cacheKey,
-			Signatures:      signatures,
-			Hierarchy:       hierarchy,
+			SchemaVersion:     pythonSignatureCacheSchemaVersion,
+			DistributionKey:   cacheKey,
+			DistributionName:  identity.distributionName,
+			ImportPath:        identity.importPath,
+			SourceFingerprint: identity.sourceFingerprint,
+			Signatures:        signatures,
+			Hierarchy:         hierarchy,
 		}
 		if err := r.cache.Put(context.Background(), cacheKey, entry); err != nil {
 			log.Debug().Err(err).Str("distribution", cacheKey).Msg("Failed to store Python signature cache entry")
@@ -212,7 +242,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 // receives whatever was indexed before the failure.
 func (r *PythonDependencyTypeResolver) walkDistribution(
 	dir, importPath string,
-	parser *sitter.Parser,
+	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
 	hierarchy map[string][]string,
 ) {
@@ -240,7 +270,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 
 func (r *PythonDependencyTypeResolver) indexDistributionFile(
 	path, importPath string,
-	parser *sitter.Parser,
+	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
 	hierarchy map[string][]string,
 ) {
@@ -328,7 +358,7 @@ func pythonIndexTopLevelNode(node *sitter.Node, src []byte, owner FunctionID, si
 	}
 	switch def.Symbol() {
 	case pythonSyms.functionDefinition:
-		recordPythonFunctionSignature(def, src, owner, signatures)
+		recordPythonFunctionSignature(def, src, owner, signatures, false)
 	case pythonSyms.classDefinition:
 		recordPythonClassSignature(def, src, owner, signatures, hierarchy)
 	}
@@ -341,7 +371,7 @@ func pythonIndexTopLevelNode(node *sitter.Node, src []byte, owner FunctionID, si
 // matching the main parser's own convention (parseFunctionDef). The FIRST
 // distribution to declare a given FQN wins — later distributions never
 // overwrite an already-recorded signature within the same indexing pass.
-func recordPythonFunctionSignature(node *sitter.Node, src []byte, owner FunctionID, signatures map[string]pythonSignature) {
+func recordPythonFunctionSignature(node *sitter.Node, src []byte, owner FunctionID, signatures map[string]pythonSignature, implicitReceiver bool) {
 	nameNode := node.ChildByFieldName("name")
 	if nameNode == nil {
 		return
@@ -361,7 +391,7 @@ func recordPythonFunctionSignature(node *sitter.Node, src []byte, owner Function
 	signatures[fqn] = pythonSignature{
 		ID:         id,
 		ReturnType: pythonNormalizeAnnotation(node.ChildByFieldName("return_type"), src),
-		ParamTypes: pythonDependencyParamTypes(node.ChildByFieldName("parameters"), src),
+		ParamTypes: pythonDependencyParamTypes(node.ChildByFieldName("parameters"), src, implicitReceiver),
 	}
 }
 
@@ -400,7 +430,10 @@ func recordPythonClassSignature(node *sitter.Node, src []byte, owner FunctionID,
 	for i := 0; i < count; i++ {
 		child := body.NamedChild(i)
 		def := child
+		implicitReceiver := true
 		if child.Symbol() == pythonSyms.decoratedDefinition {
+			info := classifyPythonDecorators(child, src)
+			implicitReceiver = !info.static
 			inner := child.ChildByFieldName("definition")
 			if inner == nil {
 				continue
@@ -408,7 +441,7 @@ func recordPythonClassSignature(node *sitter.Node, src []byte, owner FunctionID,
 			def = inner
 		}
 		if def.Symbol() == pythonSyms.functionDefinition {
-			recordPythonFunctionSignature(def, src, methodOwner, signatures)
+			recordPythonFunctionSignature(def, src, methodOwner, signatures, implicitReceiver)
 		}
 	}
 }
@@ -417,7 +450,7 @@ func recordPythonClassSignature(node *sitter.Node, src []byte, owner FunctionID,
 // typed_default_parameter annotations, index-aligned with the declared
 // parameter list ("" for an unannotated parameter). nil when the node is
 // nil or declares no parameters.
-func pythonDependencyParamTypes(params *sitter.Node, src []byte) []string {
+func pythonDependencyParamTypes(params *sitter.Node, src []byte, implicitReceiver bool) []string {
 	if params == nil {
 		return nil
 	}
@@ -434,6 +467,9 @@ func pythonDependencyParamTypes(params *sitter.Node, src []byte) []string {
 			typeField = child.ChildByFieldName("type")
 		}
 		types[i] = pythonNormalizeAnnotation(typeField, src)
+	}
+	if implicitReceiver && len(types) > 0 {
+		return types[1:]
 	}
 	return types
 }

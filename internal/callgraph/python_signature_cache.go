@@ -9,12 +9,14 @@ package callgraph
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -28,10 +30,8 @@ const (
 	// pythonSignature's or CachedPythonSignatureIndex's shape changes so a
 	// stale on-disk entry is treated as a miss instead of being
 	// misinterpreted.
-	pythonSignatureCacheSchemaVersion = 1
+	pythonSignatureCacheSchemaVersion = 2
 )
-
-var pythonSignatureCacheFilenameUnsafeChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // pythonSignature holds one indexed function/method's declared signature
 // (row 14, python-parser-parity-2 design.md §4 row 14): the owning
@@ -61,10 +61,13 @@ type PythonSignatureIndexCache interface {
 // import-qualified by this resolver, matching row 9's OwnerBases
 // convention).
 type CachedPythonSignatureIndex struct {
-	SchemaVersion   int                        `json:"schema_version"`
-	DistributionKey string                     `json:"distribution_key"`
-	Signatures      map[string]pythonSignature `json:"signatures"`
-	Hierarchy       map[string][]string        `json:"hierarchy"`
+	SchemaVersion     int                        `json:"schema_version"`
+	DistributionKey   string                     `json:"distribution_key"`
+	DistributionName  string                     `json:"distribution_name"`
+	ImportPath        string                     `json:"import_path"`
+	SourceFingerprint string                     `json:"source_fingerprint"`
+	Signatures        map[string]pythonSignature `json:"signatures"`
+	Hierarchy         map[string][]string        `json:"hierarchy"`
 }
 
 // DiskPythonSignatureIndexCache implements PythonSignatureIndexCache using
@@ -122,7 +125,7 @@ func (c *DiskPythonSignatureIndexCache) Get(_ context.Context, key string) (*Cac
 		}
 		return nil, false, nil
 	}
-	if entry.SchemaVersion != pythonSignatureCacheSchemaVersion {
+	if entry.SchemaVersion != pythonSignatureCacheSchemaVersion || entry.DistributionKey != key {
 		return nil, false, nil
 	}
 	return &entry, true, nil
@@ -177,13 +180,93 @@ func (c *DiskPythonSignatureIndexCache) Put(_ context.Context, key string, value
 }
 
 func pythonSignatureCacheKeyToFilename(key string) string {
-	return pythonSignatureCacheFilenameUnsafeChars.ReplaceAllString(key, "_") + ".json"
+	digest := sha256.Sum256([]byte(key))
+	return fmt.Sprintf("%x.json", digest)
 }
 
-// pythonSignatureDistributionKey builds the cache key for a distribution
-// (row 14 algorithm step 2, design.md): sanitize(ImportPath) + "@" +
-// Version + schema version, so a schema bump naturally invalidates every
-// prior entry without a separate migration path.
+type pythonSignatureDistributionIdentity struct {
+	distributionName  string
+	importPath        string
+	sourceFingerprint string
+}
+
+func pythonSignatureIdentity(root PackageDir) pythonSignatureDistributionIdentity {
+	distributionName := root.DistributionName
+	if distributionName == "" {
+		distributionName = root.ImportPath
+	}
+	return pythonSignatureDistributionIdentity{
+		distributionName:  distributionName,
+		importPath:        root.ImportPath,
+		sourceFingerprint: pythonSignatureSourceFingerprint(root.Dir),
+	}
+}
+
+// pythonSignatureDistributionKey binds a cached index to the package
+// coordinate, the distinct Python import namespace, the version, the selected
+// source tree's deterministic content fingerprint, and the cache schema.
 func pythonSignatureDistributionKey(root PackageDir) string {
-	return fmt.Sprintf("%s@%s:v%d", root.ImportPath, root.Version, pythonSignatureCacheSchemaVersion)
+	return pythonSignatureDistributionKeyForIdentity(root, pythonSignatureIdentity(root))
+}
+
+func pythonSignatureDistributionKeyForIdentity(root PackageDir, identity pythonSignatureDistributionIdentity) string {
+	return fmt.Sprintf("%s@%s:import=%s:source=%s:v%d",
+		identity.distributionName,
+		root.Version,
+		identity.importPath,
+		identity.sourceFingerprint,
+		pythonSignatureCacheSchemaVersion,
+	)
+}
+
+// pythonSignatureSourceFingerprint hashes every eligible Python source/stub
+// input by normalized relative path and bytes. WalkDir is lexical, so the
+// result is deterministic and independent of the distribution's absolute
+// installation path. Unreadable or oversized inputs degrade by omission.
+func pythonSignatureSourceFingerprint(root string) string {
+	hash := sha256.New()
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry == nil {
+			return nil
+		}
+		if entry.IsDir() {
+			if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipDirs[entry.Name()]) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		name := entry.Name()
+		ext := filepath.Ext(name)
+		if ext != pythonSourceExt && ext != pythonStubExt {
+			return nil
+		}
+		if strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") || strings.HasSuffix(name, "_test.pyi") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil || info.Size() > maxPythonDependencyFileBytes {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00", filepath.ToSlash(rel), len(data))
+		_, _ = hash.Write(data)
+		return nil
+	})
+	return fmt.Sprintf("%x", hash.Sum(nil))
 }

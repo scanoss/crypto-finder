@@ -605,9 +605,14 @@ func (ds *DependencyScanner) collectPackageSets(
 	graphDeps := callGraphDependencySet(resolved, depResults)
 	for i := range depResults {
 		result := &depResults[i]
+		importPath := result.dep.ImportPath
+		if importPath == "" {
+			importPath = result.dep.Module
+		}
 		pkg := callgraph.PackageDir{
 			Dir:                  result.dep.Dir,
-			ImportPath:           result.dep.Module,
+			ImportPath:           importPath,
+			DistributionName:     result.dep.Module,
 			Version:              result.dep.Version,
 			CompiledArtifactPath: result.dep.CompiledArtifactPath,
 		}

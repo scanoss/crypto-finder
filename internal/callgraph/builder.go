@@ -57,6 +57,7 @@ type ParserCloner interface {
 type PackageDir struct {
 	Dir                  string // Absolute filesystem path
 	ImportPath           string // Package/module path (e.g., "crypto/aes" or "javax.crypto")
+	DistributionName     string // Dependency coordinate when it differs from ImportPath (Python only)
 	Version              string // Dependency version when applicable (e.g., "1.2.3")
 	CompiledArtifactPath string // Absolute path to a compiled artifact for type-only resolution
 }

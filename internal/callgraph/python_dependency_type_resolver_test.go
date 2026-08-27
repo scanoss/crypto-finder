@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	sitter "github.com/smacker/go-tree-sitter"
 )
 
 // findInstalledCryptographyPackageDir shells out to `python3` to locate a
@@ -161,12 +163,8 @@ func TestPythonDepTypeResolver_CachePerDistribution(t *testing.T) {
 		t.Fatalf("cache.puts after first run = %d, want 1", cache.puts)
 	}
 
-	// Remove the source file entirely — a second run must still resolve via
-	// the cache, proving the filesystem is not re-read.
-	if err := os.Remove(filepath.Join(dir, "kdf.pyi")); err != nil {
-		t.Fatalf("remove fixture: %v", err)
-	}
-
+	// Leave the indexed source unchanged. A deterministic content fingerprint
+	// must preserve the key and reuse the cached index.
 	graph2 := &CallGraph{Functions: map[string]*FunctionDecl{}}
 	fn2 := &FunctionDecl{ID: FunctionID{Package: "dep.kdf", Name: "make"}, Parameters: []FunctionParameter{{}}}
 	graph2.Functions[fn2.ID.String()] = fn2
@@ -274,4 +272,142 @@ func TestPythonDepTypeResolver_Integration(t *testing.T) {
 	}
 	t.Logf("dependency-mode integration: TypeHierarchy=%d ExternalMethodSignatures=%d fn.ReturnType=%q",
 		len(graph.TypeHierarchy), len(graph.ExternalMethodSignatures), fn.ReturnType)
+}
+
+// TestPythonDepTypeResolver_MethodSignaturesExcludeImplicitReceiver verifies
+// that dependency-derived signatures align with call-site argument indexes.
+// Instance/class receivers are implicit, while a static method's first
+// parameter remains explicit.
+func TestPythonDepTypeResolver_MethodSignaturesExcludeImplicitReceiver(t *testing.T) {
+	dir := t.TempDir()
+	writePythonDistFile(t, dir, "__init__.pyi", `class PasswordHasher:
+    def hash(self, password: bytes, salt: bytes) -> str: ...
+    @classmethod
+    def from_parameters(owner, memory_cost: int) -> PasswordHasher: ...
+    @staticmethod
+    def verify(encoded: str, password: bytes) -> bool: ...
+`)
+
+	graph := &CallGraph{Functions: map[string]*FunctionDecl{}}
+	resolver := NewPythonDependencyTypeResolver(newFakePythonSignatureCache())
+	root := PackageDir{Dir: dir, ImportPath: "argon2", DistributionName: "argon2-cffi", Version: "25.1.0"}
+	if err := resolver.ResolveTypes(graph, []PackageDir{root}); err != nil {
+		t.Fatalf("ResolveTypes() error = %v", err)
+	}
+
+	tests := []struct {
+		method string
+		want   []string
+	}{
+		{method: "hash", want: []string{"bytes", "bytes"}},
+		{method: "from_parameters", want: []string{"int"}},
+		{method: "verify", want: []string{"str", "bytes"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			id := FunctionID{Package: "argon2", Type: "PasswordHasher", Name: tt.method}
+			got := graph.ExternalMethodSignatures[ExternalMethodSignatureKey(id)]
+			if len(got) != 1 {
+				t.Fatalf("%s signatures = %#v, want one", tt.method, got)
+			}
+			if strings.Join(got[0].ParameterTypes, ",") != strings.Join(tt.want, ",") {
+				t.Errorf("%s ParameterTypes = %v, want %v", tt.method, got[0].ParameterTypes, tt.want)
+			}
+		})
+	}
+}
+
+type closeTrackingPythonDependencyParser struct {
+	parser *sitter.Parser
+	closes int
+}
+
+func (p *closeTrackingPythonDependencyParser) ParseCtx(ctx context.Context, oldTree *sitter.Tree, src []byte) (*sitter.Tree, error) {
+	return p.parser.ParseCtx(ctx, oldTree, src)
+}
+
+func (p *closeTrackingPythonDependencyParser) Close() {
+	p.closes++
+	p.parser.Close()
+}
+
+// TestPythonDepTypeResolver_WorkerClosesParserExactlyOnce pins ownership of
+// each native tree-sitter parser created by the bounded worker pool.
+func TestPythonDepTypeResolver_WorkerClosesParserExactlyOnce(t *testing.T) {
+	dir := t.TempDir()
+	writePythonDistFile(t, dir, "api.pyi", "def derive(value: bytes) -> bytes: ...\n")
+
+	tracker := &closeTrackingPythonDependencyParser{parser: newPythonDependencyParser()}
+	resolver := NewPythonDependencyTypeResolver(newFakePythonSignatureCache())
+	resolver.newParser = func() pythonDependencyParser { return tracker }
+	resolver.buildIndexes([]PackageDir{{Dir: dir, ImportPath: "dep", Version: "1.0.0"}}, 1)
+	if tracker.closes != 1 {
+		t.Fatalf("parser closes = %d, want exactly 1", tracker.closes)
+	}
+}
+
+// TestPythonDepTypeResolver_ModifiedDistributionInvalidatesCache verifies
+// that changing indexed bytes produces a cache miss and fresh signatures.
+func TestPythonDepTypeResolver_ModifiedDistributionInvalidatesCache(t *testing.T) {
+	dir := t.TempDir()
+	writePythonDistFile(t, dir, "kdf.pyi", "def make(x: int) -> Cipher: ...\n")
+	cache := newFakePythonSignatureCache()
+	resolver := NewPythonDependencyTypeResolver(cache)
+	roots := []PackageDir{{Dir: dir, ImportPath: "dep", DistributionName: "dep-dist", Version: "1.0.0"}}
+
+	resolve := func() string {
+		graph := &CallGraph{Functions: map[string]*FunctionDecl{}}
+		fn := &FunctionDecl{ID: FunctionID{Package: "dep.kdf", Name: "make"}}
+		graph.Functions[fn.ID.String()] = fn
+		if err := resolver.ResolveTypes(graph, roots); err != nil {
+			t.Fatalf("ResolveTypes: %v", err)
+		}
+		return fn.ReturnType
+	}
+	if got := resolve(); got != "Cipher" {
+		t.Fatalf("first ReturnType = %q, want Cipher", got)
+	}
+	writePythonDistFile(t, dir, "kdf.pyi", "def make(x: int) -> NewCipher: ...\n")
+	if got := resolve(); got != "NewCipher" {
+		t.Fatalf("modified ReturnType = %q, want NewCipher", got)
+	}
+	if cache.puts != 2 {
+		t.Fatalf("cache puts = %d, want 2 after source modification", cache.puts)
+	}
+}
+
+// TestPythonDepTypeResolver_RejectsMismatchedCachedIdentity verifies that a
+// cache backend cannot return an entry for a different distribution identity
+// under a requested key.
+func TestPythonDepTypeResolver_RejectsMismatchedCachedIdentity(t *testing.T) {
+	dir := t.TempDir()
+	writePythonDistFile(t, dir, "kdf.pyi", "def make(x: int) -> Cipher: ...\n")
+	root := PackageDir{Dir: dir, ImportPath: "dep", DistributionName: "dep-dist", Version: "1.0.0"}
+	cache := newFakePythonSignatureCache()
+	key := pythonSignatureDistributionKey(root)
+	badID := FunctionID{Package: "dep.kdf", Name: "make"}
+	cache.entries[key] = &CachedPythonSignatureIndex{
+		SchemaVersion:     pythonSignatureCacheSchemaVersion,
+		DistributionKey:   key,
+		DistributionName:  "another-distribution",
+		ImportPath:        root.ImportPath,
+		SourceFingerprint: pythonSignatureIdentity(root).sourceFingerprint,
+		Signatures: map[string]pythonSignature{
+			"dep.kdf.make": {ID: badID, ReturnType: "Wrong"},
+		},
+	}
+
+	graph := &CallGraph{Functions: map[string]*FunctionDecl{}}
+	fn := &FunctionDecl{ID: badID}
+	graph.Functions[fn.ID.String()] = fn
+	resolver := NewPythonDependencyTypeResolver(cache)
+	if err := resolver.ResolveTypes(graph, []PackageDir{root}); err != nil {
+		t.Fatalf("ResolveTypes: %v", err)
+	}
+	if fn.ReturnType != "Cipher" {
+		t.Fatalf("ReturnType = %q, want re-indexed Cipher", fn.ReturnType)
+	}
+	if cache.puts != 1 {
+		t.Fatalf("cache puts = %d, want 1 after rejecting mismatched identity", cache.puts)
+	}
 }
