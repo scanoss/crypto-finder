@@ -1,0 +1,91 @@
+change: python-parser-parity-2
+created: 2026-08-27
+artifact_store: hybrid
+execution_mode: auto
+delivery_strategy: exception-ok
+review_budget_lines: unlimited
+strict_tdd: true
+branch: matiasdaloia/parser-parity-multi-language
+pr: 310
+pr_note: "Ships on the SAME open PR #310 branch — no new PR."
+baseline_commit: c6ee180
+phases:
+  explore:
+    status: reused
+    artifact: null
+    note: "Reused from archived change python-parser-java-parity: explore.md (20-row capability matrix — the DEFERRED rows are this change's scope) + verify-report.md / PR #310 F2 perf findings. No new exploration phase was run."
+    sources:
+      - openspec/changes/archive/2026-08-27-python-parser-java-parity/explore.md
+      - openspec/changes/archive/2026-08-27-python-parser-java-parity/verify-report.md
+      - openspec/changes/archive/2026-08-27-python-parser-java-parity/archive-report.md
+      - openspec/specs/python-callgraph-binding-resolution/spec.md
+    engram_topic: sdd/python-parser-java-parity/explore
+    engram_id: 981
+  proposal:
+    status: done
+    artifact: proposal.md
+    engram_topic: sdd/python-parser-parity-2/proposal
+  spec:
+    status: done
+    artifacts:
+      - openspec/changes/python-parser-parity-2/specs/python-callgraph-parse-performance/spec.md
+      - openspec/changes/python-parser-parity-2/specs/python-kdf-key-length-resolution/spec.md
+      - openspec/changes/python-parser-parity-2/specs/python-callgraph-binding-resolution/spec.md
+    engram_topic: sdd/python-parser-parity-2/spec
+    engram_id: 998
+    reconciled_with_design: true
+  design:
+    status: done
+    artifact: design.md
+    engram_topic: sdd/python-parser-parity-2/design
+    validated: true
+    validated_on: 2026-08-27
+    approach: "ONE tree-sitter descent per file with a lexical binding-layer stack and DEFERRED per-scope call resolution (collect call nodes, resolve after the scope's binding table is final) — target 1 visit/node + O(calls); rows 6-20 reuse only existing FunctionDecl/FunctionCall/CallGraph fields; C adds argument_byte_length plus two additive resolution steps in internal/scan/key_length.go."
+    no_new_exported_field: true
+    spec_deviation: "C's keyword->parameter-name matching lands in internal/scan/key_length.go, NOT mergeCallParameters (export.go:2234). See design.md section 11 for the reason and the 3 exact spec edits requested (incl. one NEW scenario for the positional/type-evidence-absent path, without which contractParameterTypesMatch silently blocks every positional Python KDF call)."
+    adopted_field_decisions:
+      - "keyword mapping reuses FunctionCall.Arguments []string (no new field)"
+      - "row 20 provenance reuses SourceNode.SourceNodes/CallTarget"
+    unmeasured: "No Bash tool in the design phase: every perf figure is an analytic node-touch count. 10 T0 pinning tests (design.md section 9) carry every empirical claim into apply."
+    renames:
+      - "python_stub_type_resolver.go -> python_dependency_type_resolver.go (reads annotated .py as well as .pyi)"
+    affected_areas_delta: "internal/engine/dependency_scanner.go is NOT modified: builder.go:148-154 already passes packages+typeOnlyPackages to ResolveTypes, and Version != \"\" already identifies non-project-local roots."
+  tasks:
+    status: done
+    artifact: tasks.md
+    engram_topic: sdd/python-parser-parity-2/tasks
+    phase_count: 15
+    task_count: 83
+    review_forecast: "400-line budget risk: High; Chained PRs recommended: No; Chain strategy: size-exception; Decision needed before apply: No"
+  apply:
+    status: pending
+  verify:
+    status: pending
+    required_measurement: "BenchmarkPythonParseDirectory_Bindings with >=8 reps in ONE continuous run; report combined mean AND range."
+  archive:
+    status: pending
+scope:
+  performance:
+    - A1  # TreeCursor walking, symbol-id dispatch, fold per-body call walk into prepass
+    - A2  # allocation reduction (parsePythonReturnType whole-body Content(src) etc.)
+    - A3  # CI-enforceable guard: committed corpus + node-visit-counter test
+    - A4  # mining-scale --scan-dependencies measurement on a real large pip tree
+  deferred_rows: [6, 7, 8, 9, 11, 13, 14, 18, 20]
+  kdf_key_length: C
+apply_order_constraint: "A (performance) first and pinned by a CI guard; then the small deferred rows (6, 18, 9); then 7, 8, 11, 20, 13; then C; row 14 (.pyi/source dependency type resolver) LAST as its own final apply phase."
+budgets:
+  parse_overhead_target_pct: 10
+  parse_overhead_hard_cap_pct: 20
+  bytes_per_op_target: "no worse than c6ee180 baseline"
+invariants:
+  - "pkg/graphfrag.CallgraphSchemaVersion == \"6.13\" (no export schema bump)"
+  - "pkg/graphfrag.SchemaVersion == \"graph-fragment-1.13\""
+  - "zero diff on internal/scan/supporting_calls.go"
+  - "zero diff on pkg/graphfrag/"
+  - "no internal/failure import in internal/callgraph"
+non_goals:
+  - export schema change
+  - detection-rule changes (separate rules repo)
+  - internal/scan/supporting_calls.go semantics
+  - Go / Rust / Node parsers (later changes in the parity series)
+  - general Python type inference / cross-file dataflow
