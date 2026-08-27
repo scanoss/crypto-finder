@@ -1,9 +1,14 @@
 package callgraph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/python"
 )
 
 func TestPythonParser_PackageSeparator(t *testing.T) {
@@ -1245,5 +1250,242 @@ func TestPythonParser_SelfNamedReceiver_FreeFunction(t *testing.T) {
 	want := FunctionID{Package: "mypkg", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("self.encrypt callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
+// pins that every grammar-rule name resolvePythonSymbols maps into
+// pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
+// the vendored Python grammar. A typo in either the map's key (a rule name
+// that does not exist in the grammar) or its target field would otherwise
+// silently leave that pythonSyms field at its zero value, matching no real
+// node and never firing — invisible until a much harder-to-debug missed
+// dispatch bug downstream.
+func TestPythonSymbolTable_AllSymbolsResolved(t *testing.T) {
+	entries := map[string]sitter.Symbol{
+		"assignment":               pythonSyms.assignment,
+		"augmented_assignment":     pythonSyms.augmentedAssignment,
+		"as_pattern":               pythonSyms.asPattern,
+		"for_statement":            pythonSyms.forStatement,
+		"named_expression":         pythonSyms.namedExpression,
+		"call":                     pythonSyms.call,
+		"function_definition":      pythonSyms.functionDefinition,
+		"class_definition":         pythonSyms.classDefinition,
+		"decorated_definition":     pythonSyms.decoratedDefinition,
+		"lambda":                   pythonSyms.lambda,
+		"list_comprehension":       pythonSyms.listComprehension,
+		"set_comprehension":        pythonSyms.setComprehension,
+		"dictionary_comprehension": pythonSyms.dictionaryComprehension,
+		"generator_expression":     pythonSyms.generatorExpression,
+		"import_statement":         pythonSyms.importStatement,
+		"import_from_statement":    pythonSyms.importFromStatement,
+		"identifier":               pythonSyms.identifier,
+		"for_in_clause":            pythonSyms.forInClause,
+
+		"block":                    pythonSyms.block,
+		"parameters":               pythonSyms.parameters,
+		"attribute":                pythonSyms.attribute,
+		"argument_list":            pythonSyms.argumentList,
+		"dotted_name":              pythonSyms.dottedName,
+		"aliased_import":           pythonSyms.aliasedImport,
+		"wildcard_import":          pythonSyms.wildcardImport,
+		"relative_import":          pythonSyms.relativeImport,
+		"import_prefix":            pythonSyms.importPrefix,
+		"typed_parameter":          pythonSyms.typedParameter,
+		"default_parameter":        pythonSyms.defaultParameter,
+		"typed_default_parameter":  pythonSyms.typedDefaultParameter,
+		"pattern_list":             pythonSyms.patternList,
+		"tuple_pattern":            pythonSyms.tuplePattern,
+		"list_pattern":             pythonSyms.listPattern,
+		"list_splat_pattern":       pythonSyms.listSplatPattern,
+		"dictionary_splat_pattern": pythonSyms.dictSplatPattern,
+		"expression_statement":     pythonSyms.expressionStatement,
+		"keyword_argument":         pythonSyms.keywordArgument,
+		"integer":                  pythonSyms.integer,
+		"string":                   pythonSyms.string,
+		"string_content":           pythonSyms.stringContent,
+		"type":                     pythonSyms.typeNode,
+		"generic_type":             pythonSyms.genericType,
+		"type_parameter":           pythonSyms.typeParameter,
+		"binary_operator":          pythonSyms.binaryOperator,
+		"none":                     pythonSyms.none,
+		"decorator":                pythonSyms.decorator,
+		"await":                    pythonSyms.await,
+		"lambda_parameters":        pythonSyms.lambdaParameters,
+	}
+
+	lang := python.GetLanguage()
+	for name, sym := range entries {
+		t.Run(name, func(t *testing.T) {
+			if sym == 0 {
+				t.Fatalf("resolvePythonSymbols did not resolve grammar rule %q (pythonSyms field is at its zero value — check for a typo in the rule name)", name)
+			}
+			if got := lang.SymbolName(sym); got != name {
+				t.Fatalf("pythonSyms entry for %q resolved to grammar symbol name %q instead", name, got)
+			}
+		})
+	}
+}
+
+// pythonVisitBudgetFixtures returns the .py file names under
+// testdata/python_visit_budget, sorted, failing the test if the directory
+// is empty or missing.
+func pythonVisitBudgetFixtures(t *testing.T) []string {
+	t.Helper()
+	dir := filepath.Join("testdata", "python_visit_budget")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) == 0 {
+		t.Fatalf("no .py fixtures found under %s", dir)
+	}
+	if len(names) > 40 {
+		t.Fatalf("%d fixtures under %s exceeds the committed-corpus state-size bound of 40", len(names), dir)
+	}
+	return names
+}
+
+// countAllTreeNodes counts every node in the subtree rooted at node
+// (inclusive), matching what a full unpruned single descent visits exactly
+// once.
+func countAllTreeNodes(node *sitter.Node) int {
+	if node == nil {
+		return 0
+	}
+	count := 1
+	for i := 0; i < int(node.ChildCount()); i++ {
+		count += countAllTreeNodes(node.Child(i))
+	}
+	return count
+}
+
+// TestPythonParser_NodeVisitBudget (T0.4/A3, python-parser-parity-2) is the
+// CI-enforceable, non-skipping performance guard: for every committed
+// fixture, the instrumented visit counter (D4) must show the whole tree was
+// walked (visits >= nodeCount) without exceeding nodeCount plus a bounded
+// per-call allowance for deferred resolution (D1) — pythonVisitBudgetPerCall
+// extra visits per call node, never a multiple of the whole file.
+func TestPythonParser_NodeVisitBudget(t *testing.T) {
+	for _, name := range pythonVisitBudgetFixtures(t) {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			srcBytes, err := os.ReadFile(filepath.Join("testdata", "python_visit_budget", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			root, _ := parsePythonGrammarSnippet(t, string(srcBytes))
+			nodeCount := countAllTreeNodes(root)
+			callCount := len(findAllNodesOfType(root, pythonNodeCall))
+
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, name), srcBytes, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			p := NewPythonParser()
+			visits := 0
+			p.visits = &visits
+			if _, err := p.ParseDirectory(dir, "pkg"); err != nil {
+				t.Fatalf("ParseDirectory: %v", err)
+			}
+
+			if visits < nodeCount {
+				t.Errorf("visits = %d, want >= nodeCount %d (the whole tree must be walked at least once)", visits, nodeCount)
+			}
+			maxAllowed := nodeCount + pythonVisitBudgetPerCall*callCount
+			if visits > maxAllowed {
+				t.Errorf("visits = %d exceeds budget %d (nodeCount=%d + %d*callCount=%d) — parse cost has re-inflated past the single-descent target",
+					visits, maxAllowed, nodeCount, pythonVisitBudgetPerCall, callCount)
+			}
+		})
+	}
+}
+
+// largePythonFunctionBody returns a >= n-line straight-line function body
+// (each line a trivial local assignment) for TestPythonParser_ReturnTypeFromFieldNode.
+func largePythonFunctionBody(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "    x%d = %d\n", i, i)
+	}
+	b.WriteString("    return x0\n")
+	return b.String()
+}
+
+// TestPythonParser_ReturnTypeFromFieldNode (T0.5, python-parser-parity-2)
+// proves ReturnType extraction never materializes a large function body as
+// a Go string. It isolates pythonReturnTypeOf (the seam parseFunctionDef
+// calls) from the rest of the parse pipeline and asserts, via a
+// testing.Benchmark AllocedBytesPerOp measurement, that its allocation cost
+// stays far below the body's byte length — i.e. it reads only the
+// return_type field, never node.Content(src) on the whole function_definition.
+func TestPythonParser_ReturnTypeFromFieldNode(t *testing.T) {
+	body := largePythonFunctionBody(520)
+	src := "def big(x: int) -> Cipher:\n" + body
+
+	root, srcBytes := parsePythonGrammarSnippet(t, src)
+	defNode := firstNodeOfType(root, pythonNodeFunctionDefinition)
+	if defNode == nil {
+		t.Fatal("function_definition not found in fixture")
+	}
+	if got := pythonReturnTypeOf(defNode, srcBytes); got != "Cipher" {
+		t.Fatalf("pythonReturnTypeOf = %q, want %q", got, "Cipher")
+	}
+
+	result := testing.Benchmark(func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = pythonReturnTypeOf(defNode, srcBytes)
+		}
+	})
+	bodyLen := int64(len(body))
+	maxAllowed := bodyLen / 10
+	if got := result.AllocedBytesPerOp(); got > maxAllowed {
+		t.Errorf("pythonReturnTypeOf allocated %d bytes/op for a %d-byte function body; want <= %d — it must read only the return_type field node, never node.Content(src) on the whole function_definition",
+			got, bodyLen, maxAllowed)
+	}
+}
+
+// TestPythonParser_CallOrderIsDocumentOrder (T0.6/D3, python-parser-parity-2)
+// pins that decl.Calls preserves source (visitation) order across a
+// comprehension, a with/as binder, a fluent-style attribute call, and
+// nested constructor-argument calls — the invariant
+// internal/scan/supporting_calls.go's lifecycleSelector.selectDescendants
+// depends on for positional self.attr rebinding splits. This invariant MUST
+// keep holding once deferred per-scope call resolution (D1) replaces
+// today's immediate resolution.
+func TestPythonParser_CallOrderIsDocumentOrder(t *testing.T) {
+	src := `def process(items):
+    results = [transform(x) for x in items]
+    with open_resource() as res:
+        res.configure(setup())
+    outer(inner(nested_call()))
+    return finalize(results)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "process")
+	if fn == nil {
+		t.Fatal("process function not found")
+	}
+
+	var order []string
+	for _, c := range fn.Calls {
+		order = append(order, c.Callee.Name)
+	}
+	want := []string{"transform", "open_resource", "configure", "setup", "outer", "inner", "nested_call", "finalize"}
+	if len(order) != len(want) {
+		t.Fatalf("call order = %v (%d calls), want %v (%d calls)", order, len(order), want, len(want))
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("call order = %v, want %v (mismatch at index %d: got %q want %q)", order, want, i, order[i], want[i])
+		}
 	}
 }

@@ -512,6 +512,361 @@ func TestPythonGrammarFacts_PinnedNodeShapes(t *testing.T) {
 			t.Fatalf("first classmethod parameter = %v, want \"cls\"", firstParam)
 		}
 	})
+
+	// The following cases extend the table with the design.md §10 grammar
+	// appendix rows not yet pinned above (python-parser-parity-2, T0.1).
+
+	t.Run("class_definition_superclasses_field_holds_base_names", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "class Foo(Base1, pkg.Base2):\n    pass\n")
+		classDef := firstNodeOfType(root, pythonNodeClassDefinition)
+		if classDef == nil {
+			t.Fatal("class_definition not found")
+		}
+		superclasses := classDef.ChildByFieldName("superclasses")
+		if superclasses == nil || superclasses.Type() != pythonNodeArgumentList {
+			t.Fatalf("class_definition superclasses field = %v, want argument_list", superclasses)
+		}
+		var sawIdent, sawAttr bool
+		for i := 0; i < int(superclasses.ChildCount()); i++ {
+			switch superclasses.Child(i).Type() {
+			case goNodeIdentifier:
+				sawIdent = true
+			case pythonNodeAttribute:
+				sawAttr = true
+			}
+		}
+		if !sawIdent {
+			t.Error("plain identifier base (Base1) not found under superclasses")
+		}
+		if !sawAttr {
+			t.Error("attribute base (pkg.Base2) not found under superclasses")
+		}
+		_ = src
+	})
+
+	t.Run("decorated_definition_call_decorator_has_function_and_arguments", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "class K:\n    @app.route(\"/x\")\n    def handler(self):\n        pass\n")
+		decorated := firstNodeOfType(root, "decorated_definition")
+		if decorated == nil {
+			t.Fatal("decorated_definition not found")
+		}
+		decorator := firstNodeOfType(decorated, "decorator")
+		if decorator == nil {
+			t.Fatal("decorator not found")
+		}
+		call := firstNodeOfType(decorator, pythonNodeCall)
+		if call == nil {
+			t.Fatal("@app.route(...) decorator did not parse as a call node")
+		}
+		fn := call.Child(0)
+		if fn == nil || fn.Type() != pythonNodeAttribute {
+			t.Fatalf("decorator call function child = %v, want attribute", fn)
+		}
+		if fn.Content(src) != "app.route" {
+			t.Fatalf("decorator call function content = %q, want %q", fn.Content(src), "app.route")
+		}
+	})
+
+	t.Run("super_call_object_is_call_whose_function_is_identifier_super", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "class C(Base):\n    def __init__(self):\n        super().__init__()\n")
+		call := firstNodeOfType(root, pythonNodeCall)
+		// The outermost call in document order is super().__init__(); its
+		// function is an attribute whose object is the inner super() call.
+		fn := call.Child(0)
+		if fn == nil || fn.Type() != pythonNodeAttribute {
+			t.Fatalf("outer call function = %v, want attribute", fn)
+		}
+		obj := fn.ChildByFieldName("object")
+		if obj == nil || obj.Type() != pythonNodeCall {
+			t.Fatalf("super().__init__() object field = %v, want call", obj)
+		}
+		superFn := obj.Child(0)
+		if superFn == nil || superFn.Type() != goNodeIdentifier || superFn.Content(src) != "super" {
+			t.Fatalf("inner call function = %v, want identifier \"super\"", superFn)
+		}
+		methodAttr := fn.ChildByFieldName("attribute")
+		if methodAttr == nil || methodAttr.Content(src) != "__init__" {
+			t.Fatalf("outer call attribute field = %v, want \"__init__\"", methodAttr)
+		}
+	})
+
+	t.Run("getattr_literal_call_shape_is_call_of_call_result", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "getattr(obj, 'encrypt')(data)\n")
+		outer := firstNodeOfType(root, pythonNodeCall)
+		if outer == nil {
+			t.Fatal("outer call not found")
+		}
+		inner := outer.Child(0)
+		if inner == nil || inner.Type() != pythonNodeCall {
+			t.Fatalf("outer call function child = %v, want call (getattr(...))", inner)
+		}
+		innerFn := inner.Child(0)
+		if innerFn == nil || innerFn.Type() != goNodeIdentifier || innerFn.Content(src) != "getattr" {
+			t.Fatalf("inner call function = %v, want identifier \"getattr\"", innerFn)
+		}
+		strNode := firstNodeOfType(inner, "string")
+		if strNode == nil {
+			t.Fatal("string literal argument not found under getattr(...)")
+		}
+		content := firstNodeOfType(strNode, "string_content")
+		if content == nil || content.Content(src) != "encrypt" {
+			t.Fatalf("string_content = %v, want \"encrypt\"", content)
+		}
+	})
+
+	t.Run("importlib_import_module_and_dunder_import_are_ordinary_calls", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "importlib.import_module('hashlib')\n__import__('hashlib')\n")
+		calls := findAllNodesOfType(root, pythonNodeCall)
+		if len(calls) != 2 {
+			t.Fatalf("call count = %d, want 2", len(calls))
+		}
+		attrFn := calls[0].Child(0)
+		if attrFn == nil || attrFn.Type() != pythonNodeAttribute {
+			t.Fatalf("importlib.import_module call function = %v, want attribute", attrFn)
+		}
+		strContent := firstNodeOfType(calls[0], "string_content")
+		if strContent == nil || strContent.Content(src) != "hashlib" {
+			t.Fatalf("importlib.import_module argument = %v, want \"hashlib\"", strContent)
+		}
+		identFn := calls[1].Child(0)
+		if identFn == nil || identFn.Type() != goNodeIdentifier || identFn.Content(src) != "__import__" {
+			t.Fatalf("__import__ call function = %v, want identifier \"__import__\"", identFn)
+		}
+	})
+
+	t.Run("typed_parameter_type_field_is_type_over_identifier", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "def f(x: Cipher):\n    pass\n")
+		typedParam := firstNodeOfType(root, "typed_parameter")
+		if typedParam == nil {
+			t.Fatal("typed_parameter not found")
+		}
+		typeField := typedParam.ChildByFieldName("type")
+		if typeField == nil || typeField.Type() != "type" {
+			t.Fatalf("typed_parameter type field = %v, want type", typeField)
+		}
+		ident := firstNodeOfType(typeField, goNodeIdentifier)
+		if ident == nil || ident.Content(src) != "Cipher" {
+			t.Fatalf("typed_parameter type identifier = %v, want \"Cipher\"", ident)
+		}
+	})
+
+	t.Run("typed_default_parameter_optional_uses_generic_type", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "def f(y: Optional[Cipher] = None):\n    pass\n")
+		typedDefault := firstNodeOfType(root, "typed_default_parameter")
+		if typedDefault == nil {
+			t.Fatal("typed_default_parameter not found")
+		}
+		typeField := typedDefault.ChildByFieldName("type")
+		if typeField == nil {
+			t.Fatal("typed_default_parameter type field is nil")
+		}
+		generic := firstNodeOfType(typeField, "generic_type")
+		if generic == nil {
+			t.Fatal("generic_type not found under Optional[Cipher] annotation")
+		}
+		outerIdent := generic.Child(0)
+		if outerIdent == nil || outerIdent.Type() != goNodeIdentifier || outerIdent.Content(src) != "Optional" {
+			t.Fatalf("generic_type outer identifier = %v, want \"Optional\"", outerIdent)
+		}
+		typeParam := firstNodeOfType(generic, "type_parameter")
+		if typeParam == nil {
+			t.Fatal("type_parameter not found under generic_type")
+		}
+		innerType := firstNodeOfType(typeParam, "type")
+		if innerType == nil {
+			t.Fatal("inner type node not found under type_parameter")
+		}
+		innerIdent := firstNodeOfType(innerType, goNodeIdentifier)
+		if innerIdent == nil || innerIdent.Content(src) != "Cipher" {
+			t.Fatalf("Optional[Cipher] inner identifier = %v, want \"Cipher\"", innerIdent)
+		}
+	})
+
+	t.Run("union_pipe_none_return_uses_binary_operator", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "def f() -> Cipher | None:\n    pass\n")
+		fn := firstNodeOfType(root, pythonNodeFunctionDefinition)
+		if fn == nil {
+			t.Fatal("function_definition not found")
+		}
+		returnType := fn.ChildByFieldName("return_type")
+		if returnType == nil || returnType.Type() != "type" {
+			t.Fatalf("function_definition return_type field = %v, want type", returnType)
+		}
+		binOp := firstNodeOfType(returnType, "binary_operator")
+		if binOp == nil {
+			t.Fatal("binary_operator not found under Cipher | None return type")
+		}
+		left := binOp.ChildByFieldName("left")
+		right := binOp.ChildByFieldName("right")
+		if left == nil || left.Content(src) != "Cipher" {
+			t.Fatalf("binary_operator left field = %v, want \"Cipher\"", left)
+		}
+		if right == nil || right.Type() != "none" {
+			t.Fatalf("binary_operator right field = %v, want none", right)
+		}
+	})
+
+	t.Run("string_forward_ref_return_type_wraps_string_content", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "def f() -> \"Cipher\":\n    pass\n")
+		fn := firstNodeOfType(root, pythonNodeFunctionDefinition)
+		if fn == nil {
+			t.Fatal("function_definition not found")
+		}
+		returnType := fn.ChildByFieldName("return_type")
+		if returnType == nil {
+			t.Fatal("return_type field is nil")
+		}
+		strNode := firstNodeOfType(returnType, "string")
+		if strNode == nil {
+			t.Fatal("string node not found under forward-reference return type")
+		}
+		content := firstNodeOfType(strNode, "string_content")
+		if content == nil || content.Content(src) != "Cipher" {
+			t.Fatalf("string_content = %v, want \"Cipher\"", content)
+		}
+	})
+
+	t.Run("annotated_assignment_uses_left_type_right_fields", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "active: Cipher = default_cipher()\n")
+		assignment := firstNodeOfType(root, pythonNodeAssignment)
+		if assignment == nil {
+			t.Fatal("assignment not found")
+		}
+		left := assignment.ChildByFieldName("left")
+		typeField := assignment.ChildByFieldName("type")
+		right := assignment.ChildByFieldName("right")
+		if left == nil || left.Content(src) != "active" {
+			t.Fatalf("annotated assignment left field = %v, want \"active\"", left)
+		}
+		if typeField == nil || typeField.Type() != "type" {
+			t.Fatalf("annotated assignment type field = %v, want type", typeField)
+		}
+		if right == nil || right.Type() != pythonNodeCall {
+			t.Fatalf("annotated assignment right field = %v, want call", right)
+		}
+	})
+
+	t.Run("keyword_argument_uses_name_value_fields_positional_is_plain_child", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "PBKDF2HMAC(algorithm, length=32, salt=salt)\n")
+		argList := firstNodeOfType(root, pythonNodeArgumentList)
+		if argList == nil {
+			t.Fatal("argument_list not found")
+		}
+		var sawPositionalIdent bool
+		var kwArgs []*sitter.Node
+		for i := 0; i < int(argList.ChildCount()); i++ {
+			child := argList.Child(i)
+			switch child.Type() {
+			case goNodeIdentifier:
+				sawPositionalIdent = true
+			case "keyword_argument":
+				kwArgs = append(kwArgs, child)
+			}
+		}
+		if !sawPositionalIdent {
+			t.Error("positional identifier argument not found as a direct argument_list child")
+		}
+		if len(kwArgs) != 2 {
+			t.Fatalf("keyword_argument count = %d, want 2", len(kwArgs))
+		}
+		name := kwArgs[0].ChildByFieldName("name")
+		value := kwArgs[0].ChildByFieldName("value")
+		if name == nil || name.Content(src) != "length" {
+			t.Fatalf("first keyword_argument name field = %v, want \"length\"", name)
+		}
+		if value == nil || value.Type() != "integer" || value.Content(src) != "32" {
+			t.Fatalf("first keyword_argument value field = %v, want integer \"32\"", value)
+		}
+	})
+
+	t.Run("module_constant_assignment_binds_identifier_to_integer", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "KEY_LEN = 32\n")
+		assignment := firstNodeOfType(root, pythonNodeAssignment)
+		if assignment == nil {
+			t.Fatal("assignment not found")
+		}
+		left := assignment.ChildByFieldName("left")
+		right := assignment.ChildByFieldName("right")
+		if left == nil || left.Content(src) != "KEY_LEN" {
+			t.Fatalf("module constant left field = %v, want \"KEY_LEN\"", left)
+		}
+		if right == nil || right.Type() != "integer" || right.Content(src) != "32" {
+			t.Fatalf("module constant right field = %v, want integer \"32\"", right)
+		}
+	})
+
+	t.Run("nested_constructor_call_arguments_are_direct_argument_list_children", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "outer(inner(value))\n")
+		outer := firstNodeOfType(root, pythonNodeCall)
+		if outer == nil {
+			t.Fatal("outer call not found")
+		}
+		var argList *sitter.Node
+		for i := 0; i < int(outer.ChildCount()); i++ {
+			if outer.Child(i).Type() == pythonNodeArgumentList {
+				argList = outer.Child(i)
+			}
+		}
+		if argList == nil {
+			t.Fatal("outer call argument_list not found")
+		}
+		var nestedCall *sitter.Node
+		for i := 0; i < int(argList.ChildCount()); i++ {
+			if argList.Child(i).Type() == pythonNodeCall {
+				nestedCall = argList.Child(i)
+			}
+		}
+		if nestedCall == nil {
+			t.Fatal("inner(value) is not a direct child of outer's argument_list")
+		}
+		innerFn := nestedCall.Child(0)
+		if innerFn == nil || innerFn.Type() != goNodeIdentifier || innerFn.Content(src) != "inner" {
+			t.Fatalf("nested call function = %v, want identifier \"inner\"", innerFn)
+		}
+	})
+
+	t.Run("lambda_uses_parameters_and_body_fields", func(t *testing.T) {
+		root, src := parsePythonGrammarSnippet(t, "transform = lambda x: process(x)\n")
+		lambdaNode := firstNodeOfType(root, "lambda")
+		if lambdaNode == nil {
+			t.Fatal("lambda not found")
+		}
+		params := lambdaNode.ChildByFieldName("parameters")
+		if params == nil || params.Type() != "lambda_parameters" {
+			t.Fatalf("lambda parameters field = %v, want lambda_parameters", params)
+		}
+		ident := firstNodeOfType(params, goNodeIdentifier)
+		if ident == nil || ident.Content(src) != "x" {
+			t.Fatalf("lambda parameter identifier = %v, want \"x\"", ident)
+		}
+		body := lambdaNode.ChildByFieldName("body")
+		if body == nil || body.Type() != pythonNodeCall {
+			t.Fatalf("lambda body field = %v, want call", body)
+		}
+	})
+}
+
+// TestPythonGrammarFacts_ReturnTypeField (T0.2, python-parser-parity-2) pins
+// that function_definition carries a "return_type" field whose child is a
+// "type" node — A2 depends on reading this field directly instead of
+// re-deriving the return type from the whole definition's Content(src).
+func TestPythonGrammarFacts_ReturnTypeField(t *testing.T) {
+	root, src := parsePythonGrammarSnippet(t, "def encrypt(data: bytes) -> Cipher:\n    return active\n")
+	fn := firstNodeOfType(root, pythonNodeFunctionDefinition)
+	if fn == nil {
+		t.Fatal("function_definition not found")
+	}
+	returnType := fn.ChildByFieldName("return_type")
+	if returnType == nil {
+		t.Fatal("function_definition return_type field is nil")
+	}
+	if returnType.Type() != "type" {
+		t.Fatalf("return_type field node type = %q, want \"type\"", returnType.Type())
+	}
+	ident := firstNodeOfType(returnType, goNodeIdentifier)
+	if ident == nil || ident.Content(src) != "Cipher" {
+		t.Fatalf("return_type identifier = %v, want \"Cipher\"", ident)
+	}
 }
 
 // findAllNodesOfType returns every node of the given type found via pre-order

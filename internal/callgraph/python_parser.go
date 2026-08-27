@@ -16,7 +16,31 @@ import (
 type PythonParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	// visits, when non-nil, counts every node visited by this parser
+	// instance's recursive walkers (D4, python-parser-parity-2). Always nil
+	// in production — set only by TestPythonParser_NodeVisitBudget via
+	// direct same-package field access. A PythonParser is never shared
+	// across goroutines (CloneParser returns an independent instance per
+	// worker), so an instance field is race-free without synchronization.
+	// Production cost is a single nil-pointer compare per node.
+	visits *int
 }
+
+// countVisit increments p.visits when the visit-budget test hook is active
+// (D4). Called once per node by every top-level recursive walker so the
+// hook's cost never depends on how many walkers happen to visit a node.
+func (p *PythonParser) countVisit() {
+	if p.visits != nil {
+		*p.visits++
+	}
+}
+
+// pythonVisitBudgetPerCall bounds the extra node-visit allowance
+// TestPythonParser_NodeVisitBudget grants per call node, on top of the
+// file's total node count, to account for deferred per-scope call
+// resolution (D1): a call is collected once during the single descent and
+// revisited once more when its scope resolves pending calls.
+const pythonVisitBudgetPerCall = 8
 
 const (
 	pythonNodeDottedName         = "dotted_name"
@@ -75,6 +99,39 @@ type pythonSymbolTable struct {
 	importFromStatement     sitter.Symbol
 	identifier              sitter.Symbol
 	forInClause             sitter.Symbol
+
+	// Added by design §3.3 (python-parser-parity-2, A1) to extend
+	// symbol-id dispatch across the single-descent walker and its readers.
+	block                 sitter.Symbol
+	parameters            sitter.Symbol
+	attribute             sitter.Symbol
+	argumentList          sitter.Symbol
+	dottedName            sitter.Symbol
+	aliasedImport         sitter.Symbol
+	wildcardImport        sitter.Symbol
+	relativeImport        sitter.Symbol
+	importPrefix          sitter.Symbol
+	typedParameter        sitter.Symbol
+	defaultParameter      sitter.Symbol
+	typedDefaultParameter sitter.Symbol
+	patternList           sitter.Symbol
+	tuplePattern          sitter.Symbol
+	listPattern           sitter.Symbol
+	listSplatPattern      sitter.Symbol
+	dictSplatPattern      sitter.Symbol
+	expressionStatement   sitter.Symbol
+	keywordArgument       sitter.Symbol
+	integer               sitter.Symbol
+	string                sitter.Symbol
+	stringContent         sitter.Symbol
+	typeNode              sitter.Symbol
+	genericType           sitter.Symbol
+	typeParameter         sitter.Symbol
+	binaryOperator        sitter.Symbol
+	none                  sitter.Symbol
+	decorator             sitter.Symbol
+	await                 sitter.Symbol
+	lambdaParameters      sitter.Symbol
 }
 
 // pythonSyms is resolved ONCE at package init against the Python grammar
@@ -110,6 +167,37 @@ func resolvePythonSymbols(lang *sitter.Language) pythonSymbolTable {
 		"import_from_statement":      &t.importFromStatement,
 		goNodeIdentifier:             &t.identifier,
 		"for_in_clause":              &t.forInClause,
+
+		goNodeBlock:                 &t.block,
+		pythonNodeParameters:        &t.parameters,
+		pythonNodeAttribute:         &t.attribute,
+		pythonNodeArgumentList:      &t.argumentList,
+		pythonNodeDottedName:        &t.dottedName,
+		pythonNodeAliasedImport:     &t.aliasedImport,
+		"wildcard_import":           &t.wildcardImport,
+		pythonNodeRelativeImport:    &t.relativeImport,
+		"import_prefix":             &t.importPrefix,
+		"typed_parameter":           &t.typedParameter,
+		"default_parameter":         &t.defaultParameter,
+		"typed_default_parameter":   &t.typedDefaultParameter,
+		"pattern_list":              &t.patternList,
+		"tuple_pattern":             &t.tuplePattern,
+		"list_pattern":              &t.listPattern,
+		pythonNodeListSplatPattern:  &t.listSplatPattern,
+		pythonNodeDictSplatPattern:  &t.dictSplatPattern,
+		rustNodeExpressionStatement: &t.expressionStatement,
+		"keyword_argument":          &t.keywordArgument,
+		"integer":                   &t.integer,
+		"string":                    &t.string,
+		"string_content":            &t.stringContent,
+		"type":                      &t.typeNode,
+		"generic_type":              &t.genericType,
+		"type_parameter":            &t.typeParameter,
+		"binary_operator":           &t.binaryOperator,
+		"none":                      &t.none,
+		"decorator":                 &t.decorator,
+		"await":                     &t.await,
+		"lambda_parameters":         &t.lambdaParameters,
 	}
 	count := lang.SymbolCount()
 	for i := uint32(0); i < count; i++ {
@@ -351,6 +439,7 @@ type pythonFilePrepass struct {
 // active function (matches walkForCalls's own fully-unpruned call
 // collection for a real FunctionDecl's body).
 func (p *PythonParser) collectPythonFilePrepass(node *sitter.Node, src []byte, analysis *FileAnalysis, prepass *pythonFilePrepass, isInitPy, moduleDirect bool, activeClass *pythonClassScope, classDirect bool, activeFunc map[string]bool) {
+	p.countVisit()
 	// node.Symbol() is a cgo call: read it ONCE per node (sym) rather than
 	// re-invoking it once per switch case — visited-node count dominates
 	// this walk's cost (every node in the file goes through this
@@ -781,7 +870,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		OwnerType:    ownerType,
 		OwnerName:    ownerName,
 		FunctionType: functionType,
-		ReturnType:   parsePythonReturnType(node.Content(src)),
+		ReturnType:   pythonReturnTypeOf(node, src),
 		Parameters:   parsePythonParameters(paramNode, src),
 	}
 
@@ -1158,6 +1247,7 @@ func collectPythonAssignmentTargets(target *sitter.Node, src []byte, locals map[
 }
 
 func (p *PythonParser) walkForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, calls *[]FunctionCall) {
+	p.countVisit()
 	sym := node.Symbol()
 	if sym == pythonSyms.call {
 		if call := p.parseCallExpr(node, src, filePath, analysis, bindings); call != nil {
@@ -1207,6 +1297,7 @@ func (p *PythonParser) collectPythonDirectCalls(body *sitter.Node, src []byte, f
 }
 
 func (p *PythonParser) walkPrunedForCalls(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, calls *[]FunctionCall) {
+	p.countVisit()
 	sym := node.Symbol()
 	if sym == pythonSyms.call {
 		if call := p.parseCallExpr(node, src, filePath, analysis, bindings); call != nil {
@@ -1654,6 +1745,15 @@ func pythonAssignmentTargetIdentity(left *sitter.Node, src []byte) string {
 		return pythonSelfObjectName + "." + attr
 	}
 	return ""
+}
+
+// pythonReturnTypeOf extracts a function_definition node's declared return
+// type. TODO(A2, python-parser-parity-2): read the "return_type" field node
+// directly instead of the whole node's Content(src) — see
+// TestPythonParser_ReturnTypeFromFieldNode, which pins the allocation
+// budget this must satisfy once fixed.
+func pythonReturnTypeOf(node *sitter.Node, src []byte) string {
+	return parsePythonReturnType(node.Content(src))
 }
 
 func parsePythonReturnType(defContent string) string {
