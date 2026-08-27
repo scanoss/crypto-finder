@@ -1,0 +1,290 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ccm
+  coordinates:
+    - ccm
+  version_range: ">=0.1.0,<0.7.0"
+  description: "RustCrypto CCM (Counter with CBC-MAC) authenticated encryption (RFC 3610)"
+
+# API read at ccm 0.5.0. The crate exposes exactly one type,
+# `Ccm<C, M, N>` (src/lib.rs:98), and no per-cipher aliases: the API it
+# documents is an alias the CONSUMER names,
+#
+#     pub type Aes256Ccm = Ccm<Aes256, U10, U13>;
+#     let cipher = Aes256Ccm::new(&key);
+#
+# (src/lib.rs:20-21, unchanged in shape since 0.1.0 src/lib.rs:14-18). That
+# makes this contract the only thing that can give those calls reachability:
+# the alias name is arbitrary, so no rule can attribute `Aes256Ccm::new` to
+# this crate, and the parser resolves the alias to `ccm::Ccm` before looking a
+# contract up.
+#
+# `Ccm` has existed since 0.1.0, so the range starts there. 0.0.0 is a
+# name-reservation release shipping only a `src/main.rs` that prints
+# "Hello, world!" — it has no library at all.
+#
+# Tag and nonce widths are type arguments in bytes (`U10`, `U13`) and the
+# callee identity drops type arguments, so they are derived from the call's own
+# arguments rather than declared here. `generate_key` arrived in 0.5.0 and the
+# aead 0.6 `*_inout_detached` spelling in 0.6.0-pre.0.
+
+contracts:
+  - method: ccm::Ccm.new
+    arity: 1
+    return: { type: ccm::Ccm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ccm::Ccm.new_from_slice
+    arity: 1
+    return: { type: ccm::Ccm, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ccm::Ccm.generate_key
+    arity: 1
+    return: { type: ccm::Key, confidence: high }
+    role: factory
+  - method: ccm::Ccm.encrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: ccm::Ccm.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: ccm::Ccm.encrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: ccm::Ccm.decrypt_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: ccm::Ccm.encrypt_in_place_detached
+    arity: 3
+    return: { type: ccm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: ccm::Ccm.decrypt_in_place_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: ccm::Ccm.encrypt_inout_detached
+    arity: 3
+    return: { type: ccm::Tag, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+  - method: ccm::Ccm.decrypt_inout_detached
+    arity: 4
+    return: { type: (), confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: associated_data
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+      - index: 3
+        name: tag
+        role: metadata-contributing
+        contributes: { property: authenticationTag, derivation: argument_value }
+  - method: ccm::Key.generate
+    arity: 0
+    return: { type: ccm::Key, confidence: high }
+    role: factory
+  - method: ccm::Key.from_slice
+    arity: 1
+    return: { type: ccm::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ccm::Nonce.generate
+    arity: 0
+    return: { type: ccm::Nonce, confidence: high }
+    role: factory
+  - method: ccm::Nonce.from_slice
+    arity: 1
+    return: { type: ccm::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # These crates all re-export the `aead` crate, and their own documentation
+  # imports the key and nonce types through it
+  # (`use ccm::{aead::{Generate, Key}, ...}`). The callee identity keeps the
+  # path the import gave, so that spelling arrives as `ccm::aead::Key` and is
+  # a different key from the `ccm::Key` re-export. Both are contracted; only
+  # covering one leaves the documented idiom unresolved.
+  - method: ccm::aead::Key.generate
+    arity: 0
+    return: { type: ccm::aead::Key, confidence: high }
+    role: factory
+  - method: ccm::aead::Key.from_slice
+    arity: 1
+    return: { type: ccm::aead::Key, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ccm::aead::Nonce.generate
+    arity: 0
+    return: { type: ccm::aead::Nonce, confidence: high }
+    role: factory
+  - method: ccm::aead::Nonce.from_slice
+    arity: 1
+    return: { type: ccm::aead::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # `Generate::generate()` takes no arguments (crypto-common 0.2.0
+  # src/generate.rs:43); the rng-taking spelling is `generate_from_rng(rng)`
+  # (src/generate.rs:17), and `KeyInit::generate_key(rng)` takes one
+  # (src/lib.rs:200). Arity has to be exact: the export path looks a Rust
+  # contract up by the call site's real argument count, so a zero-argument
+  # `Key::<T>::generate()` declared at arity 1 matches nothing there even
+  # though the arity-unknown lookup would still find it.
+  - method: ccm::Key.generate_from_rng
+    arity: 1
+    return: { type: ccm::Key, confidence: high }
+    role: factory
+  - method: ccm::Nonce.generate_from_rng
+    arity: 1
+    return: { type: ccm::Nonce, confidence: high }
+    role: factory
+  - method: ccm::aead::Key.generate_from_rng
+    arity: 1
+    return: { type: ccm::aead::Key, confidence: high }
+    role: factory
+  - method: ccm::aead::Nonce.generate_from_rng
+    arity: 1
+    return: { type: ccm::aead::Nonce, confidence: high }
+    role: factory
+
+hierarchy:
+  ccm::aead::Key:
+    - core::any::Any
+  ccm::aead::Nonce:
+    - core::any::Any
+  ccm::Ccm:
+    - core::any::Any
+  ccm::Key:
+    - core::any::Any
+  ccm::Nonce:
+    - core::any::Any
+  ccm::Tag:
+    - core::any::Any
+  alloc::vec::Vec:
+    - core::any::Any
+  core::any::Any: []
