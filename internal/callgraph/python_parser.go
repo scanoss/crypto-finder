@@ -321,7 +321,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 		classInfo:   make(map[uint32]*pythonClassInfo),
 		classDirect: make(map[uint32]*pythonScope),
 	}
-	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true)
+	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true, nil)
 
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
@@ -423,6 +423,56 @@ type pythonScope struct {
 	locals  *pythonBindingLayer
 	attrs   map[string]bool // class-scoped self/cls attribute names; nil outside a class
 	pending []pythonPendingCall
+	// staticMethod is true for a @staticmethod-decorated function scope
+	// (row 8, python-parser-parity-2): parameter 0 is an ordinary local,
+	// never an implicit self/cls receiver refusal.
+	staticMethod bool
+	// selfAlias, when non-empty, is a @classmethod scope's OWN parameter-0
+	// name when it differs from the literal "cls" (row 8): treated
+	// everywhere as equivalent to "self"/"cls" so a renamed first
+	// parameter still canonicalises.
+	selfAlias string
+}
+
+// pythonDecoratorInfo classifies a decorated_definition's decorators
+// against the fixed set staticmethod/classmethod/property (row 8,
+// python-parser-parity-2). Any other decorator (an identifier not in the
+// set, an attribute, or a call such as @app.route('/x')) leaves every
+// field false/empty — the wrapped FunctionID is unchanged.
+type pythonDecoratorInfo struct {
+	static      bool
+	classMethod bool
+	property    bool
+}
+
+// classifyPythonDecorators scans a decorated_definition node's own
+// "decorator" children (NOT its wrapped definition) for the fixed
+// staticmethod/classmethod/property set. A decorator is classified only
+// when its wrapped expression is a bare identifier — an attribute (never
+// bare "staticmethod" etc.) or a call (e.g. @app.route('/x')) never
+// matches, matching design's "any other decorator is ignored" rule.
+func classifyPythonDecorators(node *sitter.Node, src []byte) pythonDecoratorInfo {
+	var info pythonDecoratorInfo
+	count := int(node.NamedChildCount())
+	for i := 0; i < count; i++ {
+		child := node.NamedChild(i)
+		if child.Symbol() != pythonSyms.decorator || child.NamedChildCount() == 0 {
+			continue
+		}
+		expr := child.NamedChild(0)
+		if expr.Symbol() != pythonSyms.identifier {
+			continue
+		}
+		switch expr.Content(src) {
+		case "staticmethod":
+			info.static = true
+		case "classmethod":
+			info.classMethod = true
+		case "property":
+			info.property = true
+		}
+	}
+	return info
 }
 
 // pythonClassInfo accumulates one class's self/cls attribute set, collected
@@ -497,7 +547,12 @@ type pythonFileWalk struct {
 // function-scope collection is NEVER pruned within an active function — a
 // class or lambda nested inside a function still contributes its calls/
 // locals to that SAME enclosing function scope.
-func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, layer *pythonBindingLayer, activeFunc *pythonScope, activeClassInfo *pythonClassInfo, activeClassDirect *pythonScope, moduleDirect bool) {
+// decoratorInfo is nil for every ordinary recursive call; it is non-nil
+// ONLY when pythonWalkDecorated (row 8, python-parser-parity-2) is
+// recursing specifically into a decorated_definition's own "definition"
+// child, so pythonWalkEnterFunction can apply the wrapping decorator's
+// staticmethod/classmethod classification to the new function scope.
+func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, layer *pythonBindingLayer, activeFunc *pythonScope, activeClassInfo *pythonClassInfo, activeClassDirect *pythonScope, moduleDirect bool, decoratorInfo *pythonDecoratorInfo) {
 	p.countVisit()
 	// node.Symbol() is a cgo call: read it ONCE per node (sym) rather than
 	// re-invoking it once per switch case — visited-node count dominates
@@ -517,6 +572,9 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 	case pythonSyms.classDefinition:
 		p.pythonWalkClass(node, src, analysis, isInitPy, fw, activeFunc)
 		return
+	case pythonSyms.decoratedDefinition:
+		p.pythonWalkDecorated(node, src, analysis, isInitPy, fw, layer, activeFunc, activeClassInfo, activeClassDirect, moduleDirect)
+		return
 	case pythonSyms.call:
 		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
 	case pythonSyms.assignment:
@@ -527,7 +585,7 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 
 	enteringFunc := sym == pythonSyms.functionDefinition && activeFunc == nil
 	if enteringFunc {
-		activeFunc = p.pythonWalkEnterFunction(node, src, fw, activeClassInfo)
+		activeFunc = p.pythonWalkEnterFunction(node, src, fw, activeClassInfo, decoratorInfo)
 	}
 
 	recordPythonWalkBinder(node, sym, src, layer, activeClassInfo)
@@ -561,8 +619,55 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 		if pruned {
 			nextClassDirect = nil
 		}
-		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && !pruned)
+		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && !pruned, nil)
 	}
+}
+
+// pythonWalkDecorated handles pythonWalk's decorated_definition case (row
+// 8, python-parser-parity-2): classify the decorators against the fixed
+// staticmethod/classmethod/property set, record a @property's own name
+// into the enclosing class's attrs (so a bounded `self.prop.method()`
+// receiver identity resolves the same way a self.attr assignment does),
+// and recurse into every child exactly as pythonWalk's own generic loop
+// would — except the wrapped "definition" child additionally receives the
+// classification (consumed only by pythonWalkEnterFunction; a decorated
+// class_definition ignores it entirely, matching design's "any other
+// decorator is ignored" rule for classes).
+func (p *PythonParser) pythonWalkDecorated(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, layer *pythonBindingLayer, activeFunc *pythonScope, activeClassInfo *pythonClassInfo, activeClassDirect *pythonScope, moduleDirect bool) {
+	info := classifyPythonDecorators(node, src)
+	definition := node.ChildByFieldName("definition")
+	if info.property && activeClassInfo != nil && definition != nil {
+		if name := pythonFunctionDefName(definition, src); name != "" {
+			activeClassInfo.attrs[name] = true
+		}
+	}
+
+	childCount := int(node.NamedChildCount())
+	for i := 0; i < childCount; i++ {
+		child := node.NamedChild(i)
+		pruned := isPythonPrunedDefinitionSymbol(child.Symbol())
+		nextClassDirect := activeClassDirect
+		if pruned {
+			nextClassDirect = nil
+		}
+		var childInfo *pythonDecoratorInfo
+		if child == definition {
+			childInfo = &info
+		}
+		p.pythonWalk(child, src, analysis, isInitPy, fw, layer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && !pruned, childInfo)
+	}
+}
+
+// pythonFunctionDefName returns a function_definition node's own declared
+// name (its first identifier child), or "" if none is found.
+func pythonFunctionDefName(node *sitter.Node, src []byte) string {
+	count := int(node.NamedChildCount())
+	for i := 0; i < count; i++ {
+		if child := node.NamedChild(i); child.Symbol() == pythonSyms.identifier {
+			return child.Content(src)
+		}
+	}
+	return ""
 }
 
 // pythonWalkClass handles pythonWalk's class_definition case: register a
@@ -583,7 +688,7 @@ func (p *PythonParser) pythonWalkClass(node *sitter.Node, src []byte, analysis *
 
 	childCount := int(node.NamedChildCount())
 	for i := 0; i < childCount; i++ {
-		p.pythonWalk(node.NamedChild(i), src, analysis, isInitPy, fw, direct.locals, activeFunc, info, direct, false)
+		p.pythonWalk(node.NamedChild(i), src, analysis, isInitPy, fw, direct.locals, activeFunc, info, direct, false, nil)
 	}
 }
 
@@ -593,12 +698,17 @@ func (p *PythonParser) pythonWalkClass(node *sitter.Node, src []byte, analysis *
 // declared parameter names, attach the enclosing class's attrs (nil outside
 // a class), and return it so the caller's recursive descent threads it
 // through as the active function scope.
-func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw *pythonFileWalk, activeClassInfo *pythonClassInfo) *pythonScope {
+func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw *pythonFileWalk, activeClassInfo *pythonClassInfo, decoratorInfo *pythonDecoratorInfo) *pythonScope {
 	root := &pythonBindingLayer{}
+	var param0 string
 	for i := 0; i < int(node.ChildCount()); i++ {
 		if child := node.Child(i); child.Type() == pythonNodeParameters {
-			for _, name := range pythonParameterNames(child, src) {
+			names := pythonParameterNames(child, src)
+			for _, name := range names {
 				root.bind(name)
+			}
+			if len(names) > 0 {
+				param0 = names[0]
 			}
 			break
 		}
@@ -608,6 +718,15 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 		attrs = activeClassInfo.attrs
 	}
 	scope := &pythonScope{locals: root, attrs: attrs}
+	if decoratorInfo != nil {
+		scope.staticMethod = decoratorInfo.static
+		if decoratorInfo.classMethod && param0 != "" && param0 != pythonClsObjectName {
+			// row 8: a classmethod whose first parameter is named
+			// something other than "cls" still canonicalises — see
+			// pythonBindings.selfAlias's use in parseAttributeCall.
+			scope.selfAlias = param0
+		}
+	}
 	fw.funcScopes[node.StartByte()] = scope
 	return scope
 }
@@ -723,13 +842,13 @@ func collectPythonAssignmentTargetsLayer(target *sitter.Node, src []byte, layer 
 // (D3), the invariant internal/scan/supporting_calls.go's
 // lifecycleSelector.selectDescendants depends on for positional self.attr
 // rebinding splits.
-func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk) []FunctionCall {
+func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk, staticMethod bool, selfAlias string) []FunctionCall {
 	if len(pending) == 0 {
 		return nil
 	}
 	calls := make([]FunctionCall, 0, len(pending))
 	for _, pc := range pending {
-		bindings := pythonBindings{layer: pc.layer, attrs: attrs}
+		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias}
 		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
@@ -935,7 +1054,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 // fw.moduleScope is populated once per file by pythonWalk, already scoped to
 // ONLY module-level direct-statement binders and pending calls.
 func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
-	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw)
+	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw, false, "")
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1067,10 +1186,14 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	if body != nil {
 		scope := fw.funcScopes[node.StartByte()]
 		var pending []pythonPendingCall
+		var staticMethod bool
+		var selfAlias string
 		if scope != nil {
 			pending = scope.pending
+			staticMethod = scope.staticMethod
+			selfAlias = scope.selfAlias
 		}
-		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw)
+		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, staticMethod, selfAlias)
 	}
 
 	return decl
@@ -1134,7 +1257,7 @@ func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, fi
 	if direct != nil {
 		pending = direct.pending
 	}
-	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw)
+	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, false, "")
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1256,6 +1379,16 @@ func pythonSelfOrClsAttrTarget(target *sitter.Node, src []byte) (attr string, ok
 type pythonBindings struct {
 	layer *pythonBindingLayer // this call's captured binding layer (D1/D2)
 	attrs map[string]bool     // class-scoped attribute names (canonical, no prefix)
+	// staticMethod disables the self/cls self-reference special-casing
+	// entirely (row 8): a @staticmethod scope's parameter 0 is an
+	// ordinary local, never an implicit receiver refusal, regardless of
+	// its literal name.
+	staticMethod bool
+	// selfAlias, when non-empty, is an ADDITIONAL name (besides the
+	// literal "self"/"cls") that behaves as the enclosing instance/class
+	// self-reference — a @classmethod scope's own renamed parameter-0
+	// (row 8).
+	selfAlias string
 }
 
 // receiverIdentity resolves the receiver text of an attribute call to a
@@ -1278,9 +1411,11 @@ func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analy
 	if _, isImport := analysis.Imports[object]; isImport {
 		return ""
 	}
-	if object == pythonSelfObjectName || object == pythonClsObjectName {
-		// A bare self/cls receiver names the enclosing instance/class itself,
-		// never a crypto object.
+	if !b.staticMethod && (object == pythonSelfObjectName || object == pythonClsObjectName) {
+		// A bare self/cls receiver names the enclosing instance/class
+		// itself, never a crypto object — UNLESS this scope is a
+		// @staticmethod (row 8), where parameter 0 is an ordinary local
+		// even if literally named "self"/"cls".
 		return ""
 	}
 	if attr, ok := pythonSelfOrClsAttr(object); ok && b.attrs[attr] {
@@ -1546,8 +1681,15 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 
 	raw := node.Content(src)
 
-	// "self" calls are local method calls
-	if object == pythonSelfObjectName {
+	// "self"/"cls" calls are local method calls — and, inside a
+	// @classmethod scope whose first parameter is named something other
+	// than "cls", that renamed name canonicalises the same way (row 8:
+	// bindings.selfAlias). A @staticmethod scope disables this shortcut
+	// entirely: its parameter 0 is an ordinary local, not a self-reference,
+	// even when literally named "self"/"cls".
+	isSelfLike := object == pythonSelfObjectName || object == pythonClsObjectName ||
+		(bindings.selfAlias != "" && object == bindings.selfAlias)
+	if isSelfLike && !bindings.staticMethod {
 		return &FunctionCall{
 			Callee:      FunctionID{Package: analysis.PackagePath, Name: method},
 			Raw:         raw,

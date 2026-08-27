@@ -1449,6 +1449,141 @@ def build(password, salt):
 	}
 }
 
+// TestPythonParser_Decorator_StaticMethodNoReceiver (row 8,
+// python-parser-parity-2) pins that a @staticmethod's parameter 0, even
+// when literally named "self", is treated as an ordinary local — never an
+// implicit instance receiver refusal.
+func TestPythonParser_Decorator_StaticMethodNoReceiver(t *testing.T) {
+	src := `class KeyStore:
+    @staticmethod
+    def wrap(self, data):
+        return self.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "wrap")
+	if fn == nil {
+		t.Fatal("wrap method not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "self" {
+		t.Errorf("ReceiverVar = %q, want %q (staticmethod parameter 0 is an ordinary local, even named \"self\")", call.ReceiverVar, "self")
+	}
+	want := FunctionID{Package: "mypkg", Type: "self", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_Decorator_ClassMethodCls (row 8, python-parser-parity-2)
+// pins that a bare "cls.foo()" call resolves as a local method call
+// exactly like "self.foo()" (the row's stated precondition), AND that a
+// @classmethod whose first parameter is renamed away from "cls" still
+// canonicalises the same way.
+func TestPythonParser_Decorator_ClassMethodCls(t *testing.T) {
+	src := `class KeyStore:
+    @classmethod
+    def literal(cls, x):
+        return cls.build(x)
+
+    @classmethod
+    def renamed(klass, x):
+        return klass.build(x)
+`
+	fns := parsePythonInline(t, src)
+	want := FunctionID{Package: "mypkg", Name: "build"}
+
+	literal := findPythonFuncByName(fns, "literal")
+	if literal == nil {
+		t.Fatal("literal method not found")
+	}
+	literalCall := findPythonCallByMethod(literal, "build")
+	if literalCall == nil {
+		t.Fatal("cls.build(x) call not found")
+	}
+	if literalCall.Callee != want {
+		t.Errorf("literal cls.build Callee = %+v, want %+v (bare cls resolves like self)", literalCall.Callee, want)
+	}
+	if literalCall.ReceiverVar != "" {
+		t.Errorf("literal cls.build ReceiverVar = %q, want empty (local method call, not a receiver)", literalCall.ReceiverVar)
+	}
+
+	renamed := findPythonFuncByName(fns, "renamed")
+	if renamed == nil {
+		t.Fatal("renamed method not found")
+	}
+	renamedCall := findPythonCallByMethod(renamed, "build")
+	if renamedCall == nil {
+		t.Fatal("klass.build(x) call not found")
+	}
+	if renamedCall.Callee != want {
+		t.Errorf("renamed klass.build Callee = %+v, want %+v (renamed classmethod parameter-0 still canonicalises)", renamedCall.Callee, want)
+	}
+	if renamedCall.ReceiverVar != "" {
+		t.Errorf("renamed klass.build ReceiverVar = %q, want empty (local method call, not a receiver)", renamedCall.ReceiverVar)
+	}
+}
+
+// TestPythonParser_Decorator_PropertyReceiver (row 8,
+// python-parser-parity-2) pins that a @property's own name is recorded
+// into the enclosing class's attrs, so `self.<property>.method()` resolves
+// a bounded self.<property> receiver identity the same way a self.attr
+// assignment already does.
+func TestPythonParser_Decorator_PropertyReceiver(t *testing.T) {
+	src := `class Vault:
+    @property
+    def cipher(self):
+        return self._cipher
+
+    def use(self, data):
+        self.cipher.encrypt(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "use")
+	if fn == nil {
+		t.Fatal("use method not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatal("encrypt call not found")
+	}
+	if call.ReceiverVar != "self.cipher" {
+		t.Errorf("ReceiverVar = %q, want %q (property name must be recorded into the class's attrs)", call.ReceiverVar, "self.cipher")
+	}
+}
+
+// TestPythonParser_Decorator_CustomKeepsIdentity (row 8,
+// python-parser-parity-2) pins that a decorator outside the fixed
+// staticmethod/classmethod/property set (bare identifier not in the set,
+// an attribute, or a call such as @app.route('/x')) leaves the wrapped
+// FunctionID unchanged — self.process(...) still resolves as an ordinary
+// local method call.
+func TestPythonParser_Decorator_CustomKeepsIdentity(t *testing.T) {
+	src := `class Handler:
+    @app.route('/x')
+    def handle(self, request):
+        return self.process(request)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "handle")
+	if fn == nil {
+		t.Fatal("handle method not found")
+	}
+	call := findPythonCallByMethod(fn, "process")
+	if call == nil {
+		t.Fatal("process call not found")
+	}
+	want := FunctionID{Package: "mypkg", Name: "process"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (unaffected by a non-fixed-set decorator)", call.Callee, want)
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("ReceiverVar = %q, want empty", call.ReceiverVar)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against

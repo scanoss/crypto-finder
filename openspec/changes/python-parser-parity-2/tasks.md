@@ -94,13 +94,13 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 6: Row 8 — Decorator semantics
 
-- [ ] **6.1** RED: `TestPythonParser_Decorator_StaticMethodNoReceiver`, `_ClassMethodCls`, `_PropertyReceiver`, `_CustomKeepsIdentity`.
+- [x] **6.1** RED: `TestPythonParser_Decorator_StaticMethodNoReceiver`, `_ClassMethodCls`, `_PropertyReceiver`, `_CustomKeepsIdentity`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Decorator -v`. Deps: 5.3.
-- [ ] **6.2** GREEN: classify each `decorator` child in `extractDecoratedMethod`/`processDecorated` against `staticmethod`/`classmethod`/`property`; `@staticmethod` → parameter 0 is an ordinary local, `receiverIdentity` no longer special-cases it; `@classmethod` → parameter-0 marking so a renamed `cls` still canonicalises; `@property` → record the property name in the class scope's `attrs`; any other decorator leaves `FunctionID` unchanged.
+- [x] **6.2** GREEN: classify each `decorator` child in `extractDecoratedMethod`/`processDecorated` against `staticmethod`/`classmethod`/`property`; `@staticmethod` → parameter 0 is an ordinary local, `receiverIdentity` no longer special-cases it; `@classmethod` → parameter-0 marking so a renamed `cls` still canonicalises; `@property` → record the property name in the class scope's `attrs`; any other decorator leaves `FunctionID` unchanged.
   Files: `internal/callgraph/python_parser.go`. Deps: 6.1.
-- [ ] **6.3** Regression re-verify (design §6): `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` still pass unchanged.
+- [x] **6.3** Regression re-verify (design §6): `TestPythonParser_SelfNamedReceiver_FreeFunction`, `_ReceiverVar_ParameterShadowsImport` still pass unchanged.
   Evidence: `go test ./internal/callgraph/ -run 'TestPythonParser_SelfNamedReceiver_FreeFunction|TestPythonParser_ReceiverVar_ParameterShadowsImport' -v`. Deps: 6.2.
-- [ ] **6.4** Perf guard re-run — commands per 1.5.
+- [x] **6.4** Perf guard re-run — commands per 1.5.
   Deps: 6.3.
 
 ## Phase 7: Row 9 — `super()`
