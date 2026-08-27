@@ -719,3 +719,97 @@ across rounds on one machine in round 1. Still comfortably within budget.
   installed package or primary documentation before authoring — never
   trust an unverified table (this row's design.md table was wrong twice:
   Scrypt's pre-existing arity and hashlib.scrypt's missing `maxmem`).
+
+## Remediation batch (PR #310 fresh-context review, phase 2)
+
+Triggered by the phase-2 review comment on PR #310 (`73c9d28..29ceef5`),
+13 findings (G1-G13), all fixed on the SAME branch/PR, TDD (RED test
+first for every behavioral fix), one commit per finding. Continued from
+HEAD `29ceef5` (the verify-report commit `33361ee` is the actual base).
+
+### Findings fixed
+
+| # | Sev | Summary | Commit |
+|---|---|---|---|
+| G1 | HIGH | `propagatePythonAssignedVarTypesForDecl` fabricated FQNs from the caller's own package and an un-split dotted return type | `ac06f87` |
+| G2 | HIGH | KDF step 3b read a keyword arg for a DIFFERENT parameter as positional (`PBKDF2(pw, salt, count=1000)` → 8000 bits) | `efeb4b8` |
+| G3 | HIGH | `parseFunctionDef` dropped `__call__` entirely — a resolved row-11 call edge pointed at a declaration that never existed | `be51004` |
+| G4 | MED | Inner `super()`/`getattr(...)` call nodes fabricated `mypkg.super`/`mypkg.getattr` | `86e2fda` |
+| G5 | MED | Dynamic imports registered at deferred call-resolution time — invisible to an earlier-resolved function scope | `9f2aeaa` |
+| G6 | MED | Module-constant provenance ignored local shadowing and later non-integer rebinding | `4137f5c` |
+| G7 | MED | KDF step 3b was NOT gated to Python, contradicting its own doc comment/test | `efeb4b8` (same commit as G2) |
+| G8 | MED | `make lint` red: 1 introduced `prealloc`, 1 pre-existing `goconst` | `6bd7727` |
+| G9 | LOW | `resolvePythonSymbols` lacked a `SymbolTypeRegular` filter (type/await/lambda grammar collisions) | `2cf0f7d` |
+| G10 | LOW | `typing.Optional[...]` never normalized; an un-annotated reassignment left a stale type annotation in place | `f577317` |
+| G11 | LOW | CHANGELOG `[Unreleased]` had 8 duplicate `### Fixed`/`### Added` headings; perf bullet overclaimed "no output change" | `f81c580` |
+| G12 | LOW | User guide cited stale schema `6.12`/`graph-fragment-1.12` | `f81c580` (same commit as G11) |
+| G13 | LOW | Stale doc comment (`collectPythonFilePrepass`); missing `callgraph:` error prefix; eager cache-dir creation; CI opengrep claim | doc comment folded into `be51004`'s file touch; cache fix `781e8fe`; CI claim investigated and found FALSE (see below) |
+
+### G1 deviation (documented, deliberate)
+
+The review's "never rewrite when the result does not exist as a
+declaration or KB type — do not fabricate" clause was NOT implemented as
+a full graph/KB existence gate. A strict existence gate would break the
+EXISTING, already-accepted approval test
+`TestPythonParser_TypeHint_ReturnAnnotation`, which intentionally
+resolves a bare return-type annotation with no class ever declared for
+it anywhere in the test fixture — matching design.md's documented
+row-13 bounded-inference scope. Instead, implemented exactly the two
+literal fabrication patterns the review's own example names: (1) a
+dotted return-type name now splits into Package/Type instead of being
+glued whole into the Type field, (2) a bare return-type name now
+resolves its Package from the DECLARING decl (the function that carried
+the return-type annotation) instead of the CALLING decl's own package.
+Both of the review's own prescribed RED tests — a builder-level
+Version-bearing dependency root, and a scan-level dotted KB chain — pass
+under this narrower fix, and the existing approval test still passes
+unmodified.
+
+### G13 CI-opengrep sub-finding: investigated, false premise
+
+`.github/workflows/test.yml` runs `go test` INSIDE `Dockerfile.test`,
+which already installs opengrep (pinned `v1.12.1`) and puts it on PATH
+before the test command runs. No other workflow runs `go test`. So
+`TestOpengrep_PythonEndColConventionPinning` (and the pre-existing Java
+analogue) already run for real in CI, not skipped. No workflow edit was
+made for this sub-item.
+
+### Lint tooling gotcha discovered during G9
+
+`golangci-lint` (pinned `v2.10.1`) appeared to report a NEW `goconst`
+regression ("type" has 5 occurrences) from unrelated edits. Verified
+deterministically (5/5 reproductions with cache-clear + any
+`internal/callgraph` package touch, 5/5 clean on an untouched package)
+that this was a STALE LOCAL LINT CACHE hiding a genuine, already-existing
+duplicate-string violation (5 real `"type"` literal occurrences across
+`go_parser.go`/`rust_parser.go`, exceeding `min-occurrences: 3`) that
+had simply never been flagged before on this machine. Fixed by
+consolidating both into a new shared `ownerTypeType` constant in
+`builder.go` (`2cf0f7d`). Lesson for future batches: `golangci-lint
+cache clean` before trusting ANY lint result — pass or fail — once a
+package has been touched.
+
+### Perf guard (final, all remediation fixes applied)
+
+8 reps, one continuous run, `BenchmarkPythonParseDirectory_Bindings`:
+
+| Metric | mean | range | ratio vs c6ee180 baseline | budget | result |
+|---|---|---|---|---|---|
+| ns/op | 66,701,038 (66.7ms) | 64.73ms-70.58ms | 0.982x | <=1.10x | PASS |
+| B/op | 20,816,194 (19.85MiB) | 20.81M-20.82M | 1.080x | <=1.15x | PASS |
+
+### Final gates (remediation batch)
+
+| Gate | Result |
+|---|---|
+| `go test -race ./...` | exit 0, all packages PASS |
+| `go test -v -race -coverprofile=coverage.out ./...` | exit 0, 0 FAIL |
+| `make lint` | 0 issues (verified 3x with `golangci-lint cache clean`) |
+| `make coverage-check` | PASS, 82.2% (14619/17791) >= 80% |
+| `git diff --check` | clean |
+| `git diff 29ceef5 HEAD --stat -- pkg/graphfrag/ internal/scan/supporting_calls.go` | empty |
+| Schema constants | `CallgraphSchemaVersion == "6.13"`, `SchemaVersion == "graph-fragment-1.13"` — unchanged |
+| CHANGELOG.md / user-guide.html | Updated (G11/G12), verified per `docs/user-guide/AGENTS.md` |
+
+Commits: `ac06f87..f81c580`, all conventional, no AI attribution, pushed
+to `origin/matiasdaloia/parser-parity-multi-language`.
