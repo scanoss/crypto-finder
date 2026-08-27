@@ -1639,7 +1639,12 @@ func TestPythonParser_Super_MethodResolvesBase(t *testing.T) {
 // TestPythonParser_Super_NeverLocalSuper pins that a class with NO explicit
 // base (bases empty) leaves a super() call unresolved — no Type at all,
 // never the fabricated literal "super()" text the old fallback path would
-// have produced.
+// have produced. Also pins (G4, PR #310 phase-2 review) that the INNER
+// super() call node — recorded as its own pending call because it is a
+// nested `call` node in the tree — is never independently emitted as an
+// identifier call named "super": that node exists purely to compose the
+// enclosing super().run() attribute call, which is what the assertions
+// above already resolve correctly.
 func TestPythonParser_Super_NeverLocalSuper(t *testing.T) {
 	src := `class Standalone:
     def run(self):
@@ -1663,13 +1668,22 @@ func TestPythonParser_Super_NeverLocalSuper(t *testing.T) {
 	if call.ReceiverVar != "" {
 		t.Errorf("ReceiverVar = %q, want empty (super() is never a receiver)", call.ReceiverVar)
 	}
+	for _, c := range fn.Calls {
+		if c.Callee.Name == "super" {
+			t.Errorf("found a call with Name=%q (%+v) — the inner super() node must never be emitted as its own identifier call", "super", c)
+		}
+	}
 }
 
 // TestPythonParser_DynamicDispatch_GetattrLiteral (row 7,
 // python-parser-parity-2) pins that `getattr(obj, "encrypt")(data)`, with a
 // single-string_content literal method-name argument, rewrites through the
 // SAME receiver/callee resolution path as an ordinary `obj.encrypt(data)`
-// attribute call.
+// attribute call. Also pins (G4, PR #310 phase-2 review) that the INNER
+// getattr(obj, "encrypt") call node — recorded as its own pending call
+// because it is a nested `call` node in the tree — is never independently
+// emitted as an identifier call named "getattr": that node exists purely
+// to compose the enclosing dynamic-dispatch call already resolved above.
 func TestPythonParser_DynamicDispatch_GetattrLiteral(t *testing.T) {
 	src := `def run(obj, data):
     return getattr(obj, "encrypt")(data)
@@ -1689,6 +1703,11 @@ func TestPythonParser_DynamicDispatch_GetattrLiteral(t *testing.T) {
 	}
 	if call.ReceiverVar != "obj" {
 		t.Errorf("ReceiverVar = %q, want %q", call.ReceiverVar, "obj")
+	}
+	for _, c := range fn.Calls {
+		if c.Callee.Name == pythonGetattrBuiltinName {
+			t.Errorf("found a call with Name=%q (%+v) — the inner getattr(...) node must never be emitted as its own identifier call", pythonGetattrBuiltinName, c)
+		}
 	}
 }
 

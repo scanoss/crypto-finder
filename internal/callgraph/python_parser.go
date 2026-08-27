@@ -1835,7 +1835,17 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 		// Simple call like `sha256()`, an imported class constructor like
 		// `Cipher()`, or one of row 11's bounded rewrites (a
 		// functools.partial target, or an in-file __call__-declaring
-		// class instance) — see pythonResolveIdentifierCallee.
+		// class instance) — see pythonResolveIdentifierCallee. G4 (PR #310
+		// phase-2 review): an inner `super()`/`getattr(...)` call node that
+		// exists purely to compose an ENCLOSING attribute/call expression
+		// (`super().m()`, `getattr(obj, "x")(y)`) is ALSO independently
+		// recorded as its own pending call (every call node is), but must
+		// never itself be emitted as a resolved identifier call — neither
+		// shape names a real standalone callable, and doing so previously
+		// fabricated a bogus `<package>.super`/`<package>.getattr` node.
+		if pythonIsSuppressedInnerCall(node, funcNode, src) {
+			break
+		}
 		name := funcNode.Content(src)
 		call = &FunctionCall{
 			Callee:      pythonResolveIdentifierCallee(name, analysis, bindings),
@@ -1918,6 +1928,62 @@ func pythonIsSuperCallNode(node *sitter.Node, src []byte) bool {
 	}
 	fn := node.Child(0)
 	return fn != nil && fn.Symbol() == pythonSyms.identifier && fn.Content(src) == "super"
+}
+
+// pythonCallIsAttributeObject reports whether node (a call node) is the
+// "object" field of its parent attribute node — the shape `X().method()`
+// embeds X() this way (G4, PR #310 phase-2 review). Used to suppress
+// emitting a spurious identifier call for an inner `super()` used purely
+// to compose an attribute chain: super() alone never names a real
+// standalone callable.
+func pythonCallIsAttributeObject(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil || parent.Symbol() != pythonSyms.attribute {
+		return false
+	}
+	object := parent.ChildByFieldName("object")
+	return object != nil && object.Equal(node)
+}
+
+// pythonCallIsEnclosingCallFunction reports whether node (a call node) is
+// the "function" field of its parent call node — the shape
+// `getattr(obj, "x")(y)` embeds the inner getattr(...) call this way (G4,
+// PR #310 phase-2 review). Used to suppress emitting a spurious identifier
+// call for the inner getattr(...) node once row 7's outer dynamic-dispatch
+// rewrite already consumed it.
+func pythonCallIsEnclosingCallFunction(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil || parent.Symbol() != pythonSyms.call {
+		return false
+	}
+	fn := parent.ChildByFieldName("function")
+	return fn != nil && fn.Equal(node)
+}
+
+// pythonIsSuppressedInnerCall reports whether node is an inner call node
+// that exists purely to compose an enclosing attribute/call expression —
+// `super()` embedded as an attribute's object (`super().m()`), or
+// `getattr(...)` embedded as an enclosing call's function
+// (`getattr(obj,"x")(y)`) — and must never itself be emitted as a resolved
+// identifier call (G4, PR #310 phase-2 review). The getattr case is
+// suppressed only when the ENCLOSING call is itself row 7's literal
+// dynamic-dispatch shape (pythonGetattrLiteralTarget succeeds on it): when
+// the enclosing call's method-name argument is non-literal, row 7's outer
+// rewrite never fires, and the inner getattr(...) call remains the ONLY
+// record of this expression — exactly the pre-row-7 fallback behavior
+// TestPythonParser_DynamicDispatch_NonLiteralNoIdentity pins.
+func pythonIsSuppressedInnerCall(node, funcNode *sitter.Node, src []byte) bool {
+	if pythonIsSuperCallNode(node, src) && pythonCallIsAttributeObject(node) {
+		return true
+	}
+	if funcNode.Content(src) != pythonGetattrBuiltinName || !pythonCallIsEnclosingCallFunction(node) {
+		return false
+	}
+	// pythonGetattrLiteralTarget expects the getattr(...) call node ITSELF
+	// (node, not its parent) — see the outer-call dispatch above, which
+	// passes funcNode == node.Child(0) the same way.
+	_, _, ok := pythonGetattrLiteralTarget(node, src)
+	return ok
 }
 
 // pythonResolveSuperCall builds the FunctionCall for a super()/super(B,
