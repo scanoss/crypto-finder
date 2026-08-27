@@ -113,7 +113,9 @@ phases:
         - "Task 14.11 (orchestrator hand-off summary) remains unchecked; substance already covered by PR review-response comments; carried from the first verify pass, not new"
       critical_issues: 0
   archive:
-    status: pending
+    status: done
+    archived_on: 2026-08-27
+    archive_location: openspec/changes/archive/2026-08-27-python-parser-parity-2
   remediation:
     status: done
     trigger: "PR #310 fresh-context review, phase 2 (73c9d28..29ceef5)"
