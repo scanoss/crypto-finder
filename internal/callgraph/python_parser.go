@@ -432,6 +432,9 @@ type pythonScope struct {
 	// everywhere as equivalent to "self"/"cls" so a renamed first
 	// parameter still canonicalises.
 	selfAlias string
+	// bases holds the enclosing class's own direct superclass names (row
+	// 9), nil outside a class or when the class declares none.
+	bases []string
 }
 
 // pythonDecoratorInfo classifies a decorated_definition's decorators
@@ -483,6 +486,11 @@ func classifyPythonDecorators(node *sitter.Node, src []byte) pythonDecoratorInfo
 // statements for the synthetic <clinit> entry point.
 type pythonClassInfo struct {
 	attrs map[string]bool
+	// bases holds the class's own direct superclass names (row 9,
+	// python-parser-parity-2), threaded into every method's pythonScope
+	// (pythonWalkEnterFunction) so a super() call can resolve against
+	// OwnerBases[0] without re-parsing the class_definition node.
+	bases []string
 }
 
 // pythonFileWalk is the accumulated output of pythonWalk's single
@@ -682,6 +690,9 @@ func pythonFunctionDefName(node *sitter.Node, src []byte) string {
 // class, so its own methods are never separately extracted either).
 func (p *PythonParser) pythonWalkClass(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, activeFunc *pythonScope) {
 	info := &pythonClassInfo{attrs: make(map[string]bool)}
+	if superclasses := node.ChildByFieldName("superclasses"); superclasses != nil {
+		info.bases = extractPythonBaseClassNames(superclasses, src)
+	}
 	fw.classInfo[node.StartByte()] = info
 	direct := &pythonScope{locals: &pythonBindingLayer{}, attrs: info.attrs}
 	fw.classDirect[node.StartByte()] = direct
@@ -714,10 +725,12 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 		}
 	}
 	var attrs map[string]bool
+	var bases []string
 	if activeClassInfo != nil {
 		attrs = activeClassInfo.attrs
+		bases = activeClassInfo.bases
 	}
-	scope := &pythonScope{locals: root, attrs: attrs}
+	scope := &pythonScope{locals: root, attrs: attrs, bases: bases}
 	if decoratorInfo != nil {
 		scope.staticMethod = decoratorInfo.static
 		if decoratorInfo.classMethod && param0 != "" && param0 != pythonClsObjectName {
@@ -842,13 +855,13 @@ func collectPythonAssignmentTargetsLayer(target *sitter.Node, src []byte, layer 
 // (D3), the invariant internal/scan/supporting_calls.go's
 // lifecycleSelector.selectDescendants depends on for positional self.attr
 // rebinding splits.
-func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk, staticMethod bool, selfAlias string) []FunctionCall {
+func (p *PythonParser) resolvePythonPendingCalls(pending []pythonPendingCall, attrs map[string]bool, src []byte, filePath string, analysis *FileAnalysis, fw *pythonFileWalk, staticMethod bool, selfAlias string, bases []string) []FunctionCall {
 	if len(pending) == 0 {
 		return nil
 	}
 	calls := make([]FunctionCall, 0, len(pending))
 	for _, pc := range pending {
-		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias}
+		bindings := pythonBindings{layer: pc.layer, attrs: attrs, staticMethod: staticMethod, selfAlias: selfAlias, bases: bases}
 		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
@@ -1054,7 +1067,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 // fw.moduleScope is populated once per file by pythonWalk, already scoped to
 // ONLY module-level direct-statement binders and pending calls.
 func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
-	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw, false, "")
+	calls := p.resolvePythonPendingCalls(fw.moduleScope.pending, nil, src, filePath, analysis, fw, false, "", nil)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1188,12 +1201,14 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		var pending []pythonPendingCall
 		var staticMethod bool
 		var selfAlias string
+		var bases []string
 		if scope != nil {
 			pending = scope.pending
 			staticMethod = scope.staticMethod
 			selfAlias = scope.selfAlias
+			bases = scope.bases
 		}
-		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, staticMethod, selfAlias)
+		decl.Calls = p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, staticMethod, selfAlias, bases)
 	}
 
 	return decl
@@ -1257,7 +1272,7 @@ func (p *PythonParser) buildClassInitDecl(classBody *sitter.Node, src []byte, fi
 	if direct != nil {
 		pending = direct.pending
 	}
-	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, false, "")
+	calls := p.resolvePythonPendingCalls(pending, attrs, src, filePath, analysis, fw, false, "", nil)
 	if len(calls) == 0 {
 		return nil
 	}
@@ -1389,6 +1404,10 @@ type pythonBindings struct {
 	// self-reference — a @classmethod scope's own renamed parameter-0
 	// (row 8).
 	selfAlias string
+	// bases holds the enclosing class's own direct superclass names (row
+	// 9), consulted by parseAttributeCall to resolve a super() call
+	// against bases[0]. Empty means unresolvable — never fabricated.
+	bases []string
 }
 
 // receiverIdentity resolves the receiver text of an attribute call to a
@@ -1614,6 +1633,18 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	return call
 }
 
+// pythonIsSuperCallNode reports whether node is a call whose function is
+// the bare identifier "super" — covers both `super()` and `super(B, self)`
+// (row 9, python-parser-parity-2); the arguments, if any, are never
+// inspected.
+func pythonIsSuperCallNode(node *sitter.Node, src []byte) bool {
+	if node == nil || node.ChildCount() == 0 {
+		return false
+	}
+	fn := node.Child(0)
+	return fn != nil && fn.Symbol() == pythonSyms.identifier && fn.Content(src) == "super"
+}
+
 func looksLikePythonTypeName(name string) bool {
 	if name == "" {
 		return false
@@ -1652,6 +1683,7 @@ func pythonVisibilityForName(name string) string {
 // (not just the attribute node), matching the Java parser's convention.
 func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, bindings pythonBindings, chainID, assignedVar string) *FunctionCall {
 	var object, method string
+	var objectCallNode *sitter.Node
 	objectIsCall := false
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -1669,9 +1701,11 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		case pythonNodeCall:
 			// Chained call: `Cipher(a,b).encryptor()` — object is a call result.
 			// Use the raw text as a placeholder identifier; the ReceiverVar logic
-			// will not fire (it only fires for simple identifier locals).
+			// will not fire (it only fires for simple identifier locals). Keep
+			// the node reference too — needed to detect super() (row 9).
 			object = child.Content(src)
 			objectIsCall = true
+			objectCallNode = child
 		}
 	}
 
@@ -1692,6 +1726,33 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	if isSelfLike && !bindings.staticMethod {
 		return &FunctionCall{
 			Callee:      FunctionID{Package: analysis.PackagePath, Name: method},
+			Raw:         raw,
+			FilePath:    filePath,
+			Line:        line,
+			StartCol:    startCol,
+			EndCol:      endCol,
+			Arguments:   args,
+			ChainID:     chainID,
+			AssignedVar: assignedVar,
+		}
+	}
+
+	// super()/super(B, self) resolves against the enclosing class's own
+	// bases[0] — never a receiver, never left as the raw "super()" text
+	// (row 9). __init__ maps to <init> for the callee name, matching
+	// parseFunctionDef. Empty bases means unresolvable and is left with no
+	// Type at all, never fabricated.
+	if objectIsCall && pythonIsSuperCallNode(objectCallNode, src) {
+		calleeName := method
+		if method == pythonInitMethodName {
+			calleeName = constructorMethodName
+		}
+		callee := FunctionID{Package: analysis.PackagePath, Name: calleeName}
+		if len(bindings.bases) > 0 {
+			callee.Type = bindings.bases[0]
+		}
+		return &FunctionCall{
+			Callee:      callee,
 			Raw:         raw,
 			FilePath:    filePath,
 			Line:        line,

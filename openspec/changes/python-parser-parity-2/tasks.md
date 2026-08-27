@@ -105,11 +105,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 7: Row 9 — `super()`
 
-- [ ] **7.1** RED: `TestPythonParser_Super_InitResolvesBase`, `_MethodResolvesBase`, `_NeverLocalSuper`.
+- [x] **7.1** RED: `TestPythonParser_Super_InitResolvesBase`, `_MethodResolvesBase`, `_NeverLocalSuper`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Super -v`. Deps: 6.4.
-- [ ] **7.2** GREEN: add `bases []string` to `pythonScope` (populated in `processClass`); in `parseAttributeCall`, resolve `super()`/`super(B, self)` object nodes to `FunctionID{Package: packagePath, Type: OwnerBases[0], Name: method}`; empty `OwnerBases` → leave unresolved; `__init__`→`<init>` for the callee name.
+- [x] **7.2** GREEN: add `bases []string` to `pythonScope` (populated in `processClass`); in `parseAttributeCall`, resolve `super()`/`super(B, self)` object nodes to `FunctionID{Package: packagePath, Type: OwnerBases[0], Name: method}`; empty `OwnerBases` → leave unresolved; `__init__`→`<init>` for the callee name.
   Files: `internal/callgraph/python_parser.go`. Deps: 7.1.
-- [ ] **7.3** Perf guard re-run — commands per 1.5.
+- [x] **7.3** Perf guard re-run — commands per 1.5.
   Deps: 7.2.
 
 ## Phase 8: Row 7 — Bounded dynamic dispatch

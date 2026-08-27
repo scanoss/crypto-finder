@@ -1584,6 +1584,87 @@ func TestPythonParser_Decorator_CustomKeepsIdentity(t *testing.T) {
 	}
 }
 
+// TestPythonParser_Super_InitResolvesBase (row 9, python-parser-parity-2)
+// pins that super().__init__() resolves against the enclosing class's own
+// base, with __init__ mapped to <init> for the callee name.
+func TestPythonParser_Super_InitResolvesBase(t *testing.T) {
+	src := `class AesCipher(BaseCipher):
+    def __init__(self, key):
+        super().__init__(key)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, constructorMethodName)
+	if fn == nil {
+		t.Fatal("<init> method not found")
+	}
+	// super().__init__(key) is a 2-link fluent chain (super(), matching
+	// any other chain root, is ALSO recorded as its own pending call —
+	// pre-existing, unrelated to row 9); find the outer .__init__() link.
+	call := findPythonCallByMethod(fn, constructorMethodName)
+	if call == nil {
+		t.Fatalf("super().__init__() call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "mypkg", Type: "BaseCipher", Name: constructorMethodName}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("ReceiverVar = %q, want empty (super() is never a receiver)", call.ReceiverVar)
+	}
+}
+
+// TestPythonParser_Super_MethodResolvesBase pins that an ordinary
+// (non-__init__) super() method call resolves the same way, WITHOUT the
+// <init> rename.
+func TestPythonParser_Super_MethodResolvesBase(t *testing.T) {
+	src := `class AesCipher(BaseCipher):
+    def transform(self, data):
+        return super().transform(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "transform")
+	if fn == nil {
+		t.Fatal("transform method not found")
+	}
+	call := findPythonCallByMethod(fn, "transform")
+	if call == nil {
+		t.Fatal("super().transform(data) call not found")
+	}
+	want := FunctionID{Package: "mypkg", Type: "BaseCipher", Name: "transform"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+}
+
+// TestPythonParser_Super_NeverLocalSuper pins that a class with NO explicit
+// base (bases empty) leaves a super() call unresolved — no Type at all,
+// never the fabricated literal "super()" text the old fallback path would
+// have produced.
+func TestPythonParser_Super_NeverLocalSuper(t *testing.T) {
+	src := `class Standalone:
+    def run(self):
+        return super().run()
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run method not found")
+	}
+	call := findPythonCallByMethod(fn, "run")
+	if call == nil {
+		t.Fatal("super().run() call not found")
+	}
+	if call.Callee.Type != "" {
+		t.Errorf("Callee.Type = %q, want empty (no base class declared — never fabricated)", call.Callee.Type)
+	}
+	if call.Callee.Package != "mypkg" || call.Callee.Name != "run" {
+		t.Errorf("Callee = %+v, want Package=mypkg Name=run", call.Callee)
+	}
+	if call.ReceiverVar != "" {
+		t.Errorf("ReceiverVar = %q, want empty (super() is never a receiver)", call.ReceiverVar)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
