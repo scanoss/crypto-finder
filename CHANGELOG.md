@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- A Rust call written through the 2015-edition `extern crate openssl_sys as ffi;` rename now resolves to the renamed crate's own identity. Only `use ... as ...` was handled, so `ffi::EVP_sha256()` was emitted as `ffi.EVP_sha256` and matched no contract. Aliasing an FFI binding crate is the norm, so this affected the shape those crates are normally used in. `extern crate` without a rename, and `extern crate self as ...`, are unchanged.
 ### Added
 - Rust callgraph contracts for the RustCrypto AEAD crates `aes-gcm`, `aes-gcm-siv` and `ccm`, and for the reduced-round `chacha20poly1305` flavors. Each covers construction, the allocating and in-place encrypt and decrypt operations, and both detached-tag spellings, `encrypt_in_place_detached` and the `encrypt_inout_detached` that replaced it in aead 0.6.
 ### Fixed
