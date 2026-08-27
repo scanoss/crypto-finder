@@ -203,6 +203,19 @@ contracts:
       confidence: high
 
   # ── Key derivation functions ──────────────────────────────────────────────────
+  # Every constructor arity/index below was verified against the installed
+  # cryptography 50.0.1 package's own primary source — the .pyi stub at
+  # cryptography/hazmat/bindings/_rust/openssl/kdf.pyi (row C,
+  # python-parser-parity-2) — not asserted on faith. PBKDF2HMAC(algorithm,
+  # length, salt, iterations, backend=None); Scrypt(salt, length, n, r, p,
+  # backend=None) — arity 5, NOT 4: the PRE-EXISTING arity: 4 below was a
+  # latent bug (this class has 5 non-backend positional-or-keyword
+  # parameters, confirmed against the stub, fixed as part of this row rather
+  # than propagated into a new keySize role that would then be positioned
+  # against the wrong parameter_types length); HKDF(algorithm, length, salt,
+  # info, backend=None); HKDFExpand(algorithm, length, info, backend=None);
+  # ConcatKDFHash(algorithm, length, otherinfo, backend=None);
+  # X963KDF(algorithm, length, sharedinfo, backend=None).
 
   - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.<init>
     arity: 4
@@ -210,6 +223,18 @@ contracts:
       type: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC
       confidence: high
     role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
   - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.derive
     arity: 1
@@ -224,6 +249,18 @@ contracts:
       type: cryptography.hazmat.primitives.kdf.hkdf.HKDF
       confidence: high
     role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
   - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.derive
     arity: 1
@@ -232,14 +269,102 @@ contracts:
       confidence: high
     role: output
 
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
   - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.<init>
-    arity: 4
+    arity: 5
     return:
       type: cryptography.hazmat.primitives.kdf.scrypt.Scrypt
       confidence: high
     role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
 
   - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.derive
     arity: 1
     return:
       type: builtins.bytes
@@ -276,6 +401,12 @@ hierarchy:
   cryptography.hazmat.primitives.kdf.hkdf.HKDF:
     - builtins.object
   cryptography.hazmat.primitives.kdf.scrypt.Scrypt:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.x963kdf.X963KDF:
     - builtins.object
   builtins.bytes:
     - builtins.object

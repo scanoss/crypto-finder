@@ -145,37 +145,37 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 11: Row C — KDF key length
 
-- [ ] **11.1** RED: add `DerivationArgumentByteLength` to `validDerivation` whitelist + error string; add (failing) `TestLoadEmbeddedPython_KDFKeySizeRoles`.
-  Files: `internal/callgraph/contracts/contracts.go` (`:404`, `:547`), `internal/callgraph/contracts/contracts_test.go` (or Python-specific test file). Evidence: `go test ./internal/callgraph/contracts/... -run TestLoadEmbeddedPython_KDFKeySizeRoles -v`. Deps: 10.5.
-- [ ] **11.2** GREEN: implement the `argument_byte_length` case in `resolveContractKeyBits` (`internal/scan/key_length.go:227`) — `bits = bytes*8`, reject `<=0` or `> maxKeyMaterialBytes`.
+- [x] **11.1** RED: add `DerivationArgumentByteLength` to `validDerivation` whitelist + error string; add (failing) `TestLoadEmbeddedPython_KDFKeySizeRoles`.
+  Files: `internal/callgraph/contracts/contracts.go` (`:404`, `:547`), `internal/callgraph/contracts/python_kdf_test.go` (new file). Evidence: `go test ./internal/callgraph/contracts/... -run TestLoadEmbeddedPython_KDFKeySizeRoles -v`. Deps: 10.5.
+- [x] **11.2** GREEN: implement the `argument_byte_length` case in `resolveContractKeyBits` (`internal/scan/key_length.go:227`) — `bits = bytes*8`, reject `<=0` or `> maxKeyMaterialBytes`.
   Deps: 11.1.
-- [ ] **11.3** RED: `TestResolvedKeyLength_Python_KeywordDklen`, `_ModuleConstant`, `_NonConstantStaysUnknown`.
+- [x] **11.3** RED: `TestResolvedKeyLength_Python_KeywordDklen`, `_ModuleConstant`, `_NonConstantStaysUnknown`.
   Files: `internal/scan/resolved_key_length_test.go`. Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python -v`. Deps: 11.2.
-- [ ] **11.4** GREEN step 3a: keyword-name matching in `resolvedKeyLengthFromContract` (`internal/scan/key_length.go`, **not** `mergeCallParameters`) — parse the leading `identifier=` from `Arguments[i]` via `^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`, match group 1 against the contract role's `Name`, derive bits from `ResolvedValue` or group 2, bypass `contractParameterTypesMatch` for this step only.
+- [x] **11.4** GREEN step 3a: keyword-name matching in `resolvedKeyLengthFromContract` (`internal/scan/key_length.go`, **not** `mergeCallParameters`) — parse the leading `identifier=` from `Arguments[i]` via `^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`, match group 1 against the contract role's `Name`, derive bits from `ResolvedValue` or group 2, bypass `contractParameterTypesMatch` for this step only.
   Files: `internal/scan/key_length.go`. Deps: 11.3.
-- [ ] **11.5** RED: `TestResolvedKeyLength_Python_PositionalLength` (spec §"Positional call without call-site type evidence still resolves").
+- [x] **11.5** RED: `TestResolvedKeyLength_Python_PositionalLength` (spec §"Positional call without call-site type evidence still resolves"). Also added `TestResolvedKeyLength_Python_PositionalNonConstantStaysAbsent` (spec's paired negative scenario).
   Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python_PositionalLength -v`. Deps: 11.4.
-- [ ] **11.6** GREEN step 3b: positional/type-evidence-absent path — contract declares `parameter_types`, no `SourceNode.DeclaredType`/empty `parameterTypes[index]`, value resolves to a constant → emit `constant` only; unresolved value → nil.
+- [x] **11.6** GREEN step 3b: positional/type-evidence-absent path — contract declares `parameter_types`, no `SourceNode.DeclaredType`/empty `parameterTypes[index]`, value resolves to a constant → emit `constant` only; unresolved value → nil.
   Files: `internal/scan/key_length.go`. Deps: 11.5.
-- [ ] **11.7** RED+GREEN: `TestResolvedKeyLength_JavaUnchangedByKeywordPath` (T0.10) plus re-run the full existing `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` case — must stay byte-identical.
+- [x] **11.7** RED+GREEN: `TestResolvedKeyLength_JavaUnchangedByKeywordPath` (T0.10) plus re-run the full existing `internal/scan/resolved_key_length_test.go` incl. the `wantAbsent` case — stayed byte-identical (verified: `TestResolvedKeyLengthFromContract`'s 3 cases all pass unmodified).
   Evidence: `go test ./internal/scan/... -run 'TestResolvedKeyLength_JavaUnchangedByKeywordPath|TestResolvedKeyLength' -v`. Deps: 11.6.
-- [ ] **11.8** Verify module-constant resolution end-to-end: `KEY_LEN = 32` feeds `moduleConsts` (5.2) → `ArgumentSources` VARIABLE→VALUE → existing `resolveSimpleExportParameterValue` with zero export-schema change.
+- [x] **11.8** Verify module-constant resolution end-to-end: `KEY_LEN = 32` feeds `moduleConsts` (5.2) → `ArgumentSources` VARIABLE→VALUE → existing `resolveSimpleExportParameterValue` with zero export-schema change.
   Evidence: covered by `TestResolvedKeyLength_Python_ModuleConstant` (11.3). Deps: 11.4, 5.2.
-- [ ] **11.9** KB: `pyca-cryptography.yaml` — verify `PBKDF2HMAC`/`Scrypt`/`HKDF`/`HKDFExpand`/`ConcatKDFHash`/`X963KDF` `<init>` arity and the `length` parameter's declared index against the `cryptography` library's own source/docs before authoring; add `parameters[].contributes: keySize` (`argument_byte_length`) with both `index` and `name`, plus `parameter_types`.
+- [x] **11.9** KB: `pyca-cryptography.yaml` — verified `PBKDF2HMAC`/`Scrypt`/`HKDF`/`HKDFExpand`/`ConcatKDFHash`/`X963KDF` `<init>` arity and the `length` parameter's declared index against the INSTALLED `cryptography` 50.0.1 package's own primary source (`.pyi` stub at `cryptography/hazmat/bindings/_rust/openssl/kdf.pyi`, locally importable in this environment) before authoring; added `parameters[].contributes: keySize` (`argument_byte_length`) with both `index` and `name`, plus `parameter_types`. **Correction found**: the PRE-EXISTING `Scrypt.<init>` contract declared `arity: 4`, but the verified real signature is `Scrypt(salt, length, n, r, p, backend=None)` — 5 non-backend parameters. Fixed `arity: 4 → 5` as part of this row (a wrong arity here would have misaligned the new `parameter_types`/keySize role too).
   Files: `internal/callgraph/contracts/python/pyca-cryptography.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
-- [ ] **11.10** KB (new file): `python/hashlib.yaml` — verify `hashlib.pbkdf2_hmac`/`hashlib.scrypt` signatures against CPython stdlib docs before authoring; schema-v2 header, `dklen` keySize entries, hierarchy edges to a root.
+- [x] **11.10** KB (new file): `python/hashlib.yaml` — verified `hashlib.pbkdf2_hmac`/`hashlib.scrypt` signatures against the INSTALLED CPython 3.12 `_hashlib` built-in's own `help()` text before authoring; schema-v2 header, `dklen` keySize entries, `hierarchy: {}`. **Note**: `hashlib.scrypt`'s real signature is `scrypt(password, *, salt=None, n=None, r=None, p=None, maxmem=0, dklen=64)` — `dklen` is index 6 (design's table said index 5, missing `maxmem`) and keyword-only (the `*` marker), so only its keyword form is exercised by 11.14's table (its positional form is not valid Python and is not tested).
   Files: `internal/callgraph/contracts/python/hashlib.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
-- [ ] **11.11** KB: `argon2-cffi.yaml` — verify `argon2.PasswordHasher.<init>` signature (`hash_len` position) against argon2-cffi docs before authoring; add keySize entry.
-  Files: `internal/callgraph/contracts/python/argon2-cffi.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
-- [ ] **11.12** KB: `bcrypt.yaml` — verify `bcrypt.kdf` signature (`desired_key_bytes` position) against py-bcrypt docs before authoring; add keySize entry.
-  Files: `internal/callgraph/contracts/python/bcrypt.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
-- [ ] **11.13** KB: `pycryptodome.yaml` + `pycryptodomex.yaml` — verify `Crypto.Protocol.KDF.PBKDF2`/`scrypt`/`HKDF` signatures against PyCryptodome docs before authoring; mirror keySize entries under both `Crypto.*` and `Cryptodome.*` namespaces.
-  Files: `internal/callgraph/contracts/python/pycryptodome.yaml`, `internal/callgraph/contracts/python/pycryptodomex.yaml`. Evidence: `go test ./internal/callgraph/contracts/... -v`. Deps: 11.1.
-- [ ] **11.14** RED+GREEN: `TestResolvedKeyLength_Python_EveryListedAPI` — table over the full design §5.3 API list, positional and keyword forms.
-  Files: `internal/scan/resolved_key_length_test.go`. Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python_EveryListedAPI -v`. Deps: 11.9–11.13.
-- [ ] **11.15** Verify export schema unchanged: `pkg/graphfrag.CallgraphSchemaVersion == "6.13"`, `SchemaVersion == "graph-fragment-1.13"`.
-  Evidence: `go test ./internal/scan/... -run 'TestExportSchema|TestFragmentExport' -v`. Deps: 11.14.
-- [ ] **11.16** Perf guard re-run — commands per 1.5.
+- [ ] **11.11** KB: `argon2-cffi.yaml` — **NOT DONE, recorded as a follow-up.** argon2-cffi is not installed in this environment and no network access is available (`pip download`/`pip show` explicitly disallowed); no locally cached wheel/dist-info was found anywhere on the machine (searched exhaustively). Per the phase instructions ("if still unverifiable, author only what you can prove and record the unverified ones as follow-ups"), this contract was deliberately NOT authored rather than guessed from unverified recollection.
+  Files: `internal/callgraph/contracts/python/argon2-cffi.yaml` (existing file, untouched). Deps: 11.1.
+- [ ] **11.12** KB: `bcrypt.yaml` — **NOT DONE, same reason as 11.11**: `bcrypt` is not installed locally and unverifiable offline.
+  Files: `internal/callgraph/contracts/python/bcrypt.yaml` (existing file, untouched). Deps: 11.1.
+- [ ] **11.13** KB: `pycryptodome.yaml` + `pycryptodomex.yaml` — **NOT DONE, same reason as 11.11**: `Crypto`/`Cryptodome` (pycryptodome/pycryptodomex) are not installed locally and unverifiable offline.
+  Files: `internal/callgraph/contracts/python/pycryptodome.yaml`, `internal/callgraph/contracts/python/pycryptodomex.yaml` (existing files, untouched). Deps: 11.1.
+- [x] **11.14** RED+GREEN: `TestResolvedKeyLength_Python_EveryListedAPI` — table over every KB entry this row ACTUALLY authored (pyca-cryptography's 6 KDFs + hashlib's 2), positional and keyword forms wherever the real API's own signature allows a positional call (hashlib.scrypt: keyword-only, tested only as keyword). Does NOT cover argon2-cffi/bcrypt/pycryptodome/pycryptodomex (11.11-11.13, not authored).
+  Files: `internal/scan/resolved_key_length_test.go`. Evidence: `go test ./internal/scan/... -run TestResolvedKeyLength_Python_EveryListedAPI -v`. Deps: 11.9–11.10 (11.11–11.13 deliberately skipped, see above).
+- [x] **11.15** Verify export schema unchanged: `pkg/graphfrag.CallgraphSchemaVersion == "6.13"` (grepped constant + full `pkg/graphfrag` test suite green); zero diff under `pkg/graphfrag/` confirmed via `git diff --stat`.
+  Evidence: `go test ./pkg/graphfrag/... -v` plus `git diff --stat -- pkg/graphfrag/`. Deps: 11.14.
+- [x] **11.16** Perf guard re-run — commands per 1.5. Result: mean ns/op ~64,320,933 (0.947x, budget <=1.10x), mean B/op ~20,701,475 (1.074x, budget <=1.15x).
   Deps: 11.15.
 
 ## Phase 12: Row 14 — `PythonDependencyTypeResolver` (lands last, abandonable)

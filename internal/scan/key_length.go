@@ -35,6 +35,15 @@ const (
 // count is a literal, e.g. `new byte[32]`.
 var byteArrayAllocation = regexp.MustCompile(`^new\s+byte\s*\[\s*(\d+)\s*]$`)
 
+// pythonKeywordArgumentPattern matches a Python keyword-argument's raw text
+// (`extractPythonCallArguments` preserves it verbatim, comma-split, with no
+// keyword_argument stripping — see design.md D6): `<name> = <value>`,
+// e.g. "length=32" or "length=KEY_LEN". Only Python call sites ever produce
+// an ArgumentExpression matching this shape (row C, python-parser-parity-2,
+// step 3a) — Java/Go/Rust have no name=value argument syntax, so this
+// pattern can never match their call-site text.
+var pythonKeywordArgumentPattern = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`)
+
 // resolvedKeyLengthFromContract derives raw key-length evidence for a
 // structurally derived supporting call. It publishes configured bits, not a
 // policy interpretation, and retains unknown provenance without fabricating a
@@ -46,6 +55,18 @@ var byteArrayAllocation = regexp.MustCompile(`^new\s+byte\s*\[\s*(\d+)\s*]$`)
 // The spec constructor is not part of the generator's object lifecycle, so it
 // is never a supporting call of its own; its value reaches the export as an
 // argument source node instead.
+//
+// Steps 1-2 (the loop below, plus resolvedKeyLengthFromParameterSources) are
+// byte-for-byte unchanged from before row C (python-parser-parity-2,
+// design.md §5.2) — INCLUDING contractParameterTypesMatch. Steps 3a
+// (resolvedKeyLengthFromKeywordName) and 3b
+// (resolvedKeyLengthFromPositionalConstant) run ONLY after both return
+// nothing, and are the sole place this function's behavior can differ from
+// before row C: 3a can only ADD a record for a name=value argument shape no
+// other ecosystem's call sites ever produce; 3b can only ADD a record
+// carrying a real resolved constant, never remove or downgrade an existing
+// one. This keeps every non-Python (and every pre-row-C Python) call site's
+// resolution byte-identical — see TestResolvedKeyLength_JavaUnchangedByKeywordPath.
 func resolvedKeyLengthFromContract(
 	ctx *exportBuildContext,
 	matches []contracts.Contract,
@@ -64,7 +85,115 @@ func resolvedKeyLengthFromContract(
 		}
 		return resolvedKeyLengthForRole(contract.Method, call.Line, parameters, role)
 	}
-	return resolvedKeyLengthFromParameterSources(ctx, parameters)
+	if resolved := resolvedKeyLengthFromParameterSources(ctx, parameters); resolved != nil {
+		return resolved
+	}
+	if resolved := resolvedKeyLengthFromKeywordName(matches, call, parameters); resolved != nil {
+		return resolved
+	}
+	return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes)
+}
+
+// resolvedKeyLengthFromKeywordName implements step 3a (design.md §5.2): a
+// keyword argument at ANY call-site position whose text is `<name>=<value>`
+// and whose <name> matches a keySize role's declared Name resolves
+// directly — deliberately bypassing contractParameterTypesMatch, since a
+// keyword name identifies the parameter exactly, a strictly stronger
+// signal than a positional declared-type match. Once a matching keyword IS
+// found, this always returns a non-nil record (constant when the value
+// resolves, unknown otherwise) — exactly like resolvedKeyLengthForRole
+// (steps 1-2) already does for a positional match.
+func resolvedKeyLengthFromKeywordName(matches []contracts.Contract, call *callgraph.FunctionCall, parameters []callGraphParameter) *graphfrag.ResolvedKeyLength {
+	for i := range matches {
+		contract := &matches[i]
+		role := keySizeParameterRole(contract)
+		if role == nil || role.Name == "" {
+			continue
+		}
+		for j := range parameters {
+			parameter := &parameters[j]
+			m := pythonKeywordArgumentPattern.FindStringSubmatch(parameter.ArgumentExpression)
+			if len(m) < 3 || m[1] != role.Name {
+				continue
+			}
+			value := parameter.ResolvedValue
+			if value == "" {
+				value = m[2]
+			}
+			resolved := &graphfrag.ResolvedKeyLength{
+				Provenance: keyLengthProvenanceUnknown,
+				SourceCall: graphfrag.SourceCallRef{
+					FunctionName:   contract.Method,
+					Line:           call.Line,
+					ParameterIndex: *role.Index,
+				},
+			}
+			if bits, ok := resolveContractKeyBits(value, role.Contributes.Derivation); ok {
+				resolved.Bits = &bits
+				resolved.Provenance = keyLengthProvenanceConstant
+			}
+			return resolved
+		}
+	}
+	return nil
+}
+
+// resolvedKeyLengthFromPositionalConstant implements step 3b (design.md
+// §5.2): a contract that declares parameter_types (asserting one
+// unambiguous signature) but whose call site supplies NO declared-type
+// evidence at the keySize index — neither a call-site SourceNode.DeclaredType
+// nor a resolver-supplied parameterTypes[index] — still resolves when the
+// raw positional argument itself is a constant. This is what makes a
+// purely positional `PBKDF2(password, salt, 32)` resolve. Unlike step 3a,
+// this NEVER emits an "unknown" record: reaching here means steps 1-2 and
+// 3a already had their chance and found nothing, so silence on an
+// unresolved value is correct — a false "unknown" record would be new
+// noise, not new evidence.
+func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call *callgraph.FunctionCall, parameters []callGraphParameter, parameterTypes []string) *graphfrag.ResolvedKeyLength {
+	for i := range matches {
+		contract := &matches[i]
+		role := keySizeParameterRole(contract)
+		if role == nil || len(contract.ParameterTypes) == 0 {
+			continue
+		}
+		index := *role.Index
+		if index >= len(parameters) {
+			continue
+		}
+		if index < len(parameterTypes) && strings.TrimSpace(parameterTypes[index]) != "" {
+			continue
+		}
+		if parameterHasDeclaredType(&parameters[index]) {
+			continue
+		}
+		bits, ok := resolveContractKeyBits(parameters[index].ResolvedValue, role.Contributes.Derivation)
+		if !ok {
+			continue
+		}
+		return &graphfrag.ResolvedKeyLength{
+			Bits:       &bits,
+			Provenance: keyLengthProvenanceConstant,
+			SourceCall: graphfrag.SourceCallRef{
+				FunctionName:   contract.Method,
+				Line:           call.Line,
+				ParameterIndex: index,
+			},
+		}
+	}
+	return nil
+}
+
+// parameterHasDeclaredType reports whether any of parameter's source nodes
+// carries a non-empty DeclaredType — call-site type evidence step 3b
+// requires to be ABSENT before it will resolve a purely positional
+// argument.
+func parameterHasDeclaredType(parameter *callGraphParameter) bool {
+	for i := range parameter.SourceNodes {
+		if strings.TrimSpace(parameter.SourceNodes[i].DeclaredType) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // keySizeParameterRole returns the contract's key-size-contributing parameter,
@@ -235,6 +364,16 @@ func resolveContractKeyBits(value, derivation string) (int, bool) {
 		return keyMaterialBits(value)
 	case string(contracts.DerivationArgumentCurveBits):
 		return ecCurveFieldBits(value)
+	case string(contracts.DerivationArgumentByteLength):
+		// A Python KDF's dklen/length/hash_len argument is expressed in
+		// BYTES (row C, python-parser-parity-2), unlike argument_value
+		// (already bits) or argument_bit_length (counts key MATERIAL
+		// length, not a declared count).
+		bytesCount, err := strconv.Atoi(value)
+		if err != nil || bytesCount <= 0 || bytesCount > maxKeyMaterialBytes {
+			return 0, false
+		}
+		return bytesCount * 8, true
 	default:
 		return 0, false
 	}
