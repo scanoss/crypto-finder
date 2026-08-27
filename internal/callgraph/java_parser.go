@@ -189,6 +189,13 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// Extract imports
 	p.extractImports(root, src, analysis)
 
+	// Record every type this unit declares BEFORE resolving any call. Java
+	// imposes no declaration order between sibling types, so a call written
+	// above the class it names must still see it; without the pre-pass the
+	// shadowing rule below would apply only to types declared earlier in the
+	// file. Bases are filled in properly as each declaration is processed.
+	p.registerDeclaredJavaTypes(root, src, analysis, "")
+
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
 
@@ -249,6 +256,45 @@ func (p *JavaParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 }
 
 // extractClasses walks top-level class and interface declarations.
+// registerDeclaredJavaTypes walks the type declarations of a compilation unit
+// and marks each one as declared here, nested types included. Presence of the
+// key in ClassBases is what marks a type as source-declared; the extends and
+// implements list is stored later, when the declaration itself is processed.
+func (p *JavaParser) registerDeclaredJavaTypes(node *sitter.Node, src []byte, analysis *FileAnalysis, outerClass string) {
+	children := make([]*sitter.Node, 0, node.ChildCount())
+	for i := 0; i < int(node.ChildCount()); i++ {
+		children = append(children, node.Child(i))
+	}
+	p.registerDeclaredJavaTypesIn(children, src, analysis, outerClass)
+}
+
+// registerDeclaredJavaTypesIn marks each type declaration among nodes, then
+// recurses into its body so nested types are registered under their owner.
+func (p *JavaParser) registerDeclaredJavaTypesIn(nodes []*sitter.Node, src []byte, analysis *FileAnalysis, outerClass string) {
+	for _, child := range nodes {
+		switch child.Type() {
+		case javaNodeClassDeclaration, javaNodeInterfaceDeclaration, javaNodeEnumDeclaration,
+			javaNodeRecordDeclaration, javaNodeAnnotationTypeDecl:
+		default:
+			continue
+		}
+		name, body := parseJavaClass(child, src)
+		if name == "" {
+			continue
+		}
+		fullName := javaNestedTypeName(outerClass, name)
+		if analysis.ClassBases == nil {
+			analysis.ClassBases = make(map[string][]string)
+		}
+		if _, exists := analysis.ClassBases[fullName]; !exists {
+			analysis.ClassBases[fullName] = nil
+		}
+		if body != nil {
+			p.registerDeclaredJavaTypesIn(javaTypeBodyMembers(body), src, analysis, fullName)
+		}
+	}
+}
+
 func (p *JavaParser) extractClasses(root *sitter.Node, src []byte, filePath string, analysis *FileAnalysis) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
@@ -287,6 +333,8 @@ func (p *JavaParser) processClass(
 	stampOwnerBases(methodDecls, bases)
 	stampTypeParamBounds(constructorDecls, typeParamBounds)
 	stampTypeParamBounds(methodDecls, typeParamBounds)
+	applyJavaTypeParamErasure(constructorDecls, typeParamBounds, analysis)
+	applyJavaTypeParamErasure(methodDecls, typeParamBounds, analysis)
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 	p.processJavaAnonymousClasses(body, src, filePath, analysis, fullClassName, ownerVisibility)
@@ -531,6 +579,38 @@ func parseJavaTypeParamBounds(text string) map[string]string {
 		return nil
 	}
 	return bounds
+}
+
+// applyJavaTypeParamErasure re-resolves calls whose receiver was typed by one of
+// the declaring class's type parameters. `class C<T extends Cipher>` gives a
+// receiver of type `T` no meaning on its own, so it reached the fallback and was
+// emitted as `com.example.(T).doFinal` — a fabricated type in the user's
+// package. Java erases a type variable to its first bound (JLS 4.4), and the
+// bounds are already collected for TypeParamBounds, so the receiver is resolved
+// again against the bound.
+//
+// Only a callee that actually landed in the fallback is rewritten: matching on
+// the caller's own package leaves alone a real class that happens to share a
+// type parameter's name. Method-level type parameters are not covered — the
+// bounds collected here are the declaring class's.
+func applyJavaTypeParamErasure(decls []*FunctionDecl, bounds map[string]string, analysis *FileAnalysis) {
+	if len(bounds) == 0 || analysis == nil {
+		return
+	}
+	callerPackage := javaAnalysisPackagePath(analysis)
+	for _, decl := range decls {
+		for i := range decl.Calls {
+			call := &decl.Calls[i]
+			if call.Callee.Package != callerPackage {
+				continue
+			}
+			bound, ok := bounds[call.Callee.Type]
+			if !ok || bound == "" || bound == call.Callee.Type {
+				continue
+			}
+			call.Callee = resolveJavaObjectCallee(bound, call.Callee.Name, analysis, nil)
+		}
+	}
 }
 
 // stampTypeParamBounds copies the declaring class's type-parameter bounds onto
@@ -3071,6 +3151,16 @@ func resolveJavaObjectCallee(object, method string, analysis *FileAnalysis, varT
 	if target, ok := resolveJavaVariableTypeCallee(object, method, analysis, varTypes); ok {
 		return target
 	}
+	// A type declared in this compilation unit shadows an on-demand ("*")
+	// import of the same simple name (JLS 6.4.1, 7.5.2), so it has to be
+	// consulted before the wildcard. Checked in this order a user class named
+	// `Cipher` sitting next to `import javax.crypto.*;` was attributed to
+	// javax.crypto, inventing a crypto finding — with a library PURL — for code
+	// that never touches the library. A single-type import cannot collide here:
+	// importing a name the unit also declares does not compile.
+	if target, ok := resolveDeclaredJavaObjectCallee(simpleClass, method, analysis); ok {
+		return target
+	}
 	if target, ok := resolveWildcardJavaObjectCallee(simpleClass, method, analysis); ok {
 		return target
 	}
@@ -3141,6 +3231,19 @@ func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis
 		}
 	}
 	return FunctionID{Package: javaAnalysisPackagePath(analysis), Type: typeName, Name: method}, true
+}
+
+// resolveDeclaredJavaObjectCallee resolves a receiver naming a type declared in
+// this file. ClassBases carries every source-declared type of the unit, and the
+// presence of the key is what marks it as declared.
+func resolveDeclaredJavaObjectCallee(simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {
+	if analysis == nil || simpleClass == "" {
+		return FunctionID{}, false
+	}
+	if _, declared := analysis.ClassBases[simpleClass]; !declared {
+		return FunctionID{}, false
+	}
+	return FunctionID{Package: javaAnalysisPackagePath(analysis), Type: simpleClass, Name: method}, true
 }
 
 func resolveWildcardJavaObjectCallee(simpleClass, method string, analysis *FileAnalysis) (FunctionID, bool) {

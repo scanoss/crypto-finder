@@ -355,3 +355,89 @@ func assertContains(t *testing.T, keys []string, want string) {
 	}
 	t.Fatalf("missing call %q; recorded: %v", want, keys)
 }
+
+// TestJavaParser_DeclaredTypeShadowsWildcardImport pins JLS 6.4.1 / 7.5.2: a
+// type declared in this compilation unit shadows an on-demand import of the
+// same simple name. Checked the other way round, a user class named `Cipher`
+// next to `import javax.crypto.*;` was attributed to javax.crypto, inventing a
+// library finding for code that never touches the library. BouncyCastle's own
+// `org.bouncycastle.util.Arrays` is a real instance of this shape.
+func TestJavaParser_DeclaredTypeShadowsWildcardImport(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		src  string
+	}{
+		{
+			name: "declared before use",
+			want: "com.example.Cipher.getInstance#1",
+			src: `package com.example;
+import javax.crypto.*;
+class Cipher { static Cipher getInstance(String s) { return null; } }
+class C { void go() { Cipher.getInstance("AES"); } }`,
+		},
+		{
+			name: "declared after use",
+			want: "com.example.Cipher.getInstance#1",
+			src: `package com.example;
+import javax.crypto.*;
+class C { void go() { Cipher.getInstance("AES"); } }
+class Cipher { static Cipher getInstance(String s) { return null; } }`,
+		},
+		{
+			name: "wildcard still wins when nothing is declared",
+			want: "javax.crypto.Cipher.getInstance#1",
+			src: `package com.example;
+import javax.crypto.*;
+class C { void go() throws Exception { Cipher.getInstance("AES"); } }`,
+		},
+		{
+			name: "single type import still wins",
+			want: "org.mine.Cipher.getInstance#1",
+			src: `package com.example;
+import javax.crypto.*;
+import org.mine.Cipher;
+class C { void go() throws Exception { Cipher.getInstance("AES"); } }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { assertJavaCall(t, tt.src, tt.want) })
+	}
+}
+
+// TestJavaParser_TypeParameterErasure pins JLS 4.4: a receiver typed by a class
+// type parameter erases to that parameter's first bound. Unerased, `T` reached
+// the fallback and was emitted as a fabricated `com.example.(T)`.
+func TestJavaParser_TypeParameterErasure(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		src  string
+	}{
+		{
+			name: "bounded type parameter",
+			want: "javax.crypto.Cipher.doFinal#1",
+			src: `package com.example;
+import javax.crypto.Cipher;
+class C<T extends Cipher> { void go(T t) throws Exception { t.doFinal(new byte[0]); } }`,
+		},
+		{
+			name: "first of several bounds",
+			want: "javax.crypto.Cipher.doFinal#1",
+			src: `package com.example;
+import javax.crypto.Cipher;
+import java.io.Serializable;
+class C<T extends Cipher & Serializable> { void go(T t) throws Exception { t.doFinal(new byte[0]); } }`,
+		},
+		{
+			name: "real class sharing a parameter name is untouched",
+			want: "com.example.T.m#0",
+			src: `package com.example;
+class T { void m() {} }
+class C { void go(T t) { t.m(); } }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { assertJavaCall(t, tt.src, tt.want) })
+	}
+}
