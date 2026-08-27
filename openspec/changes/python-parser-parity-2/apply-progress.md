@@ -102,8 +102,39 @@ catching a regression back to multi-pass — is unaffected).
 | Runtime harness command/scenario and exact result | `go test ./internal/callgraph/ -bench BenchmarkPythonParseDirectory_Bindings -count=8` vs c6ee180 worktree — ns/op 0.892x, B/op 1.058x, both within budget |
 | Rollback boundary | `git revert 32d9791` (the A1-A3 commit) leaves 9aa415c (T0 tests only, some RED by design pending A1) — every later row depends on this commit landing |
 
+## Phase 2 (A4 mining-scale measurement) — done
+
+Used the real, ambient pip-resolved dependency tree already present in this
+environment (`/home/matiasdaloia/.local/lib/python3.12/site-packages`, 131
+packages via `pip list`, 322MB, 6285 `.py` files — `internal/dependency`'s
+`PipResolver` auto-detects the ambient `PATH` interpreter when no
+project-local `.venv`/`venv` exists, per its documented priority order).
+Built two CLI binaries (`crypto-finder-before` from the pre-A1-rewrite
+worktree at commit `9aa415c`, `crypto-finder-head` from this batch's final
+state) and ran `scan --scan-dependencies --no-remote-rules --rules-dir
+testdata/rules` against a minimal one-file Python project, 5 reps each
+(remote ruleset registry is unreachable in this sandbox — `--no-remote-rules
+--rules-dir` substitutes the repo's own committed test rules, which is
+enough to exercise the full dependency-resolution + parse + build +
+inference + rules-match pipeline).
+
+**Caveat**: the first rep of each binary was COLD (dependency-resolution
+`pip show`/dist-info-scan caching not yet warm) and showed high variance
+(15.6s before vs 54.4s after on the very first run) — this was NOT a parser
+regression; it reflects `pip show` subprocess/dist-info indexing cache
+state, confirmed by 4 subsequent WARM reps per binary converging tightly.
+
+| Binary | Warm wall-clock (5 reps, `time -f %es`) | Findings |
+|---|---|---|
+| before (pre-A1, `9aa415c`) | 15.55s, 15.46s, 15.33s (mean ~15.4s) | 10 files, 23 crypto assets |
+| after (HEAD, this batch) | 13.32s, 13.31s, 13.35s (mean ~13.3s) | 10 files, 23 crypto assets (identical — no correctness regression) |
+
+**Result: ~13.6% wall-clock improvement at mining scale**, consistent
+with (slightly better than) the isolated `BenchmarkPythonParseDirectory_Bindings`
+ns/op improvement (0.892x). Findings are byte-identical in count between
+before/after, confirming the rewrite did not change scan output.
+
 ## Remaining tasks (batch 2+, not yet started)
-- [ ] 2.1 (A4 mining-scale measurement)
 - [ ] 3.1-3.3 (Row 6 — opengrep column pinning)
 - [ ] 4.1-4.3 (Row 18 — visibility)
 - [ ] 5.1-5.3 (Row 20 — arg provenance)

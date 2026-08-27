@@ -62,7 +62,7 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 2: A4 — Mining-scale measurement
 
-- [ ] **2.1** Run `--scan-dependencies` before/after the A1–A3 rewrite on a real large pip-resolved dependency tree; record wall-clock in apply-progress. If no suitably large tree exists in this environment, record that gap explicitly rather than fabricating a number.
+- [x] **2.1** Run `--scan-dependencies` before/after the A1–A3 rewrite on a real large pip-resolved dependency tree; record wall-clock in apply-progress. If no suitably large tree exists in this environment, record that gap explicitly rather than fabricating a number.
   Evidence: apply-progress note with before/after numbers or an explicit "no large tree available" note. Deps: 1.5.
 
 ## Phase 3: Row 6 — Opengrep column pinning (also satisfies T0.7)
