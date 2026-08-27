@@ -1,0 +1,169 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: age
+  coordinates:
+    - "filippo.io/age"
+  version_range: ">=1.0.0-beta4,<1.4.0"
+  description: "age file encryption library"
+
+# Inventory sources: filippo.io/age v1.2.1 and v1.3.1 module sources fetched from
+# the Go module proxy, and the ten age detection rules under
+# semgrep-rules/go/age. The library is a facade: its own payload encryption is
+# ChaCha20-Poly1305 through golang.org/x/crypto, its recipient stanzas use
+# X25519, and its passphrase mode uses scrypt. Those primitives already have
+# their own contract in golang-x-crypto.yaml, so only the age-level identities a
+# consumer actually calls are declared here.
+#
+# The declared range starts at v1.0.0-beta4 deliberately. The committed version
+# list begins at v1.0.0-beta1, but the package is not importable before beta4:
+# beta1 and beta2 keep the whole library under internal/age, which Go makes
+# unreachable from outside the module, and beta3 exposes it at the nested path
+# filippo.io/age/age rather than the module root. A consumer cannot write any of
+# the identities below against those three releases, so they are out of range
+# rather than unsupported.
+#
+# Added at v1.2.0: (*ScryptRecipient).WrapWithLabels.
+# Added at v1.3.0: EncryptReader, DecryptReaderAt, DecryptHeader, ExtractHeader,
+# the Hybrid post-quantum identity and recipient, and NewInjectedFileKeyIdentity.
+# Declaring them across the whole range is safe: a call that does not exist in an
+# older release cannot appear at a call site compiled against it.
+contracts:
+  # File encryption and decryption. Both take a variadic recipient/identity
+  # list, which occupies one slot under the KB varargs convention.
+  - method: filippo.io/age.Encrypt
+    arity: 2
+    varargs: true
+    return: { type: io.WriteCloser, confidence: high }
+    role: operation
+  - method: filippo.io/age.EncryptReader
+    arity: 2
+    varargs: true
+    return: { type: io.Reader, confidence: high }
+    role: operation
+  - method: filippo.io/age.Decrypt
+    arity: 2
+    varargs: true
+    return: { type: io.Reader, confidence: high }
+    role: operation
+  - method: filippo.io/age.DecryptReaderAt
+    arity: 3
+    varargs: true
+    return: { type: io.ReaderAt, confidence: high }
+    role: operation
+  - method: filippo.io/age.DecryptHeader
+    arity: 2
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: filippo.io/age.ExtractHeader
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+
+  # X25519 identities and recipients.
+  - method: filippo.io/age.GenerateX25519Identity
+    arity: 0
+    return: { type: "*filippo.io/age.X25519Identity", confidence: high }
+    role: factory
+  - method: filippo.io/age.ParseX25519Identity
+    arity: 1
+    return: { type: "*filippo.io/age.X25519Identity", confidence: high }
+    role: factory
+  - method: filippo.io/age.ParseX25519Recipient
+    arity: 1
+    return: { type: "*filippo.io/age.X25519Recipient", confidence: high }
+    role: factory
+  - method: filippo.io/age.(*X25519Identity).Recipient
+    arity: 0
+    return: { type: "*filippo.io/age.X25519Recipient", confidence: high }
+    role: factory
+  - method: filippo.io/age.(*X25519Recipient).Wrap
+    arity: 1
+    return: { type: "[]*filippo.io/age.Stanza", confidence: high }
+    role: operation
+  - method: filippo.io/age.(*X25519Identity).Unwrap
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+
+  # Passphrase mode. scrypt work factor is a log2 cost, so it is recorded as the
+  # cost property rather than an iteration count.
+  - method: filippo.io/age.NewScryptRecipient
+    arity: 1
+    return: { type: "*filippo.io/age.ScryptRecipient", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: filippo.io/age.NewScryptIdentity
+    arity: 1
+    return: { type: "*filippo.io/age.ScryptIdentity", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: filippo.io/age.(*ScryptRecipient).SetWorkFactor
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: cost, derivation: argument_value } }
+  - method: filippo.io/age.(*ScryptIdentity).SetMaxWorkFactor
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: cost, derivation: argument_value } }
+  - method: filippo.io/age.(*ScryptRecipient).Wrap
+    arity: 1
+    return: { type: "[]*filippo.io/age.Stanza", confidence: high }
+    role: operation
+  - method: filippo.io/age.(*ScryptRecipient).WrapWithLabels
+    arity: 1
+    return: { type: "[]*filippo.io/age.Stanza", confidence: high }
+    role: operation
+  - method: filippo.io/age.(*ScryptIdentity).Unwrap
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+
+  # Hybrid post-quantum recipients, X25519 combined with ML-KEM-768 (v1.3.0+).
+  - method: filippo.io/age.GenerateHybridIdentity
+    arity: 0
+    return: { type: "*filippo.io/age.HybridIdentity", confidence: high }
+    role: factory
+  - method: filippo.io/age.ParseHybridIdentity
+    arity: 1
+    return: { type: "*filippo.io/age.HybridIdentity", confidence: high }
+    role: factory
+  - method: filippo.io/age.ParseHybridRecipient
+    arity: 1
+    return: { type: "*filippo.io/age.HybridRecipient", confidence: high }
+    role: factory
+  - method: filippo.io/age.(*HybridIdentity).Recipient
+    arity: 0
+    return: { type: "*filippo.io/age.HybridRecipient", confidence: high }
+    role: factory
+  - method: filippo.io/age.(*HybridRecipient).Wrap
+    arity: 1
+    return: { type: "[]*filippo.io/age.Stanza", confidence: high }
+    role: operation
+  - method: filippo.io/age.(*HybridRecipient).WrapWithLabels
+    arity: 1
+    return: { type: "[]*filippo.io/age.Stanza", confidence: high }
+    role: operation
+  - method: filippo.io/age.(*HybridIdentity).Unwrap
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+
+  # Multi-identity and multi-recipient parsing from a key file.
+  - method: filippo.io/age.ParseIdentities
+    arity: 1
+    return: { type: "[]filippo.io/age.Identity", confidence: high }
+    role: factory
+  - method: filippo.io/age.ParseRecipients
+    arity: 1
+    return: { type: "[]filippo.io/age.Recipient", confidence: high }
+    role: factory
+
+hierarchy: {}
