@@ -35,12 +35,12 @@ func (p *PythonParser) countVisit() {
 	}
 }
 
-// pythonVisitBudgetPerCall bounds the extra node-visit allowance
+// pythonVisitBudgetPerCall bounds the extra resolution-work allowance
 // TestPythonParser_NodeVisitBudget grants per call node, on top of the
-// file's total node count, to account for deferred per-scope call
-// resolution (D1): a call is collected once during the single descent and
-// revisited once more when its scope resolves pending calls.
-const pythonVisitBudgetPerCall = 8
+// file's total node count. Deferred resolution counts each guarded node-access
+// path (call decomposition, argument extraction, and provenance inspection),
+// not just the initial pythonWalk entry.
+const pythonVisitBudgetPerCall = 12
 
 const (
 	pythonNodeDottedName         = "dotted_name"
@@ -702,16 +702,16 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 
 	enteringFunc := sym == pythonSyms.functionDefinition && activeFunc == nil
 	if enteringFunc {
-		activeFunc = p.pythonWalkEnterFunction(node, src, fw, activeClassInfo, decoratorInfo)
+		functionScope := p.pythonWalkEnterFunction(node, src, fw, activeClassInfo, decoratorInfo)
+		recordPythonWalkBinder(node, sym, src, layer, activeClassInfo, functionScope)
+		p.pythonWalkFunctionChildren(node, src, analysis, isInitPy, fw, layer, functionScope, activeClassInfo, activeClassDirect, moduleDirect)
+		return
 	}
 
 	recordPythonWalkBinder(node, sym, src, layer, activeClassInfo, activeFunc)
 
 	childLayer := layer
-	switch {
-	case enteringFunc:
-		childLayer = activeFunc.locals
-	case isPythonComprehensionSymbol(sym):
+	if isPythonComprehensionSymbol(sym) {
 		childLayer = &pythonBindingLayer{parent: layer}
 	}
 
@@ -731,12 +731,32 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 	childCount := int(node.NamedChildCount())
 	for i := 0; i < childCount; i++ {
 		child := node.NamedChild(i)
-		pruned := isPythonPrunedDefinitionSymbol(child.Symbol())
+		childSym := child.Symbol()
+		pruned := isPythonPrunedDefinitionSymbol(childSym)
+		headerExecutesHere := childSym == pythonSyms.functionDefinition || childSym == pythonSyms.decoratedDefinition
 		nextClassDirect := activeClassDirect
-		if pruned {
+		if pruned && !headerExecutesHere {
 			nextClassDirect = nil
 		}
-		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && !pruned, nil)
+		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && (!pruned || headerExecutesHere), nil)
+	}
+}
+
+// pythonWalkFunctionChildren preserves Python's split execution scopes for an
+// outermost function definition. Its decorator wrapper is traversed by
+// pythonWalkDecorated in the enclosing scope; parameter defaults, annotations,
+// and the return annotation also execute there. Only the body block belongs to
+// the new function scope.
+func (p *PythonParser) pythonWalkFunctionChildren(node *sitter.Node, src []byte, analysis *FileAnalysis, isInitPy bool, fw *pythonFileWalk, enclosingLayer *pythonBindingLayer, functionScope *pythonScope, activeClassInfo *pythonClassInfo, activeClassDirect *pythonScope, moduleDirect bool) {
+	body := node.ChildByFieldName("body")
+	childCount := int(node.NamedChildCount())
+	for i := 0; i < childCount; i++ {
+		child := node.NamedChild(i)
+		if child == body {
+			p.pythonWalk(child, src, analysis, isInitPy, fw, functionScope.locals, functionScope, activeClassInfo, nil, false, nil)
+			continue
+		}
+		p.pythonWalk(child, src, analysis, isInitPy, fw, enclosingLayer, nil, activeClassInfo, activeClassDirect, moduleDirect, nil)
 	}
 }
 
@@ -762,16 +782,18 @@ func (p *PythonParser) pythonWalkDecorated(node *sitter.Node, src []byte, analys
 	childCount := int(node.NamedChildCount())
 	for i := 0; i < childCount; i++ {
 		child := node.NamedChild(i)
-		pruned := isPythonPrunedDefinitionSymbol(child.Symbol())
+		childSym := child.Symbol()
+		pruned := isPythonPrunedDefinitionSymbol(childSym)
+		headerExecutesHere := child == definition && childSym == pythonSyms.functionDefinition
 		nextClassDirect := activeClassDirect
-		if pruned {
+		if pruned && !headerExecutesHere {
 			nextClassDirect = nil
 		}
 		var childInfo *pythonDecoratorInfo
 		if child == definition {
 			childInfo = &info
 		}
-		p.pythonWalk(child, src, analysis, isInitPy, fw, layer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && !pruned, childInfo)
+		p.pythonWalk(child, src, analysis, isInitPy, fw, layer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && (!pruned || headerExecutesHere), childInfo)
 	}
 }
 
@@ -1053,24 +1075,83 @@ func (p *PythonParser) resolvePythonPendingCalls(scope *pythonScope, attrs map[s
 	calls := make([]FunctionCall, 0, len(scope.pending))
 	var partials map[string]FunctionID
 	var callables map[string]string
+	var dynamicImports map[string]bool
+	attributeGenerations := make(map[string]int)
 	for _, pc := range scope.pending {
 		bindings := pythonBindings{
-			layer:        pc.layer,
-			attrs:        attrs,
-			staticMethod: scope.staticMethod,
-			selfAlias:    scope.selfAlias,
-			bases:        scope.bases,
-			varTypes:     scope.varTypes,
-			partials:     partials,
-			callables:    callables,
+			layer:          pc.layer,
+			attrs:          attrs,
+			staticMethod:   scope.staticMethod,
+			selfAlias:      scope.selfAlias,
+			bases:          scope.bases,
+			varTypes:       scope.varTypes,
+			partials:       partials,
+			callables:      callables,
+			dynamicImports: dynamicImports,
 		}
 		if call := p.parseCallExpr(pc.node, src, filePath, analysis, bindings, fw, 0); call != nil {
+			applyPythonAttributeGeneration(call, attributeGenerations)
+			if pythonIsDynamicImportBinding(call, analysis) {
+				if dynamicImports == nil {
+					dynamicImports = make(map[string]bool)
+				}
+				dynamicImports[call.AssignedVar] = true
+			}
 			setFunctionCallASTAnchor(call, pc.node)
 			calls = append(calls, *call)
 			partials, callables = pythonRecordPartialOrCallable(pc.node, call, src, analysis, fw, partials, callables)
 		}
 	}
 	return calls
+}
+
+// pythonIsDynamicImportBinding recognizes the bounded dynamic-import call
+// shapes already registered during pythonWalk when their result is assigned
+// under the same module name. That local is the imported module value, not a
+// lexical shadow of it.
+func pythonIsDynamicImportBinding(call *FunctionCall, analysis *FileAnalysis) bool {
+	if call == nil || call.AssignedVar == "" || analysis.Imports[call.AssignedVar] != call.AssignedVar {
+		return false
+	}
+	switch call.Callee.Name {
+	case "import_module", "__import__":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyPythonAttributeGeneration versions repeated self.attr/cls.attr
+// assignments within one ordered scope. Generation one deliberately retains
+// the historical unsuffixed identity so constructor assignments in __init__
+// still connect to uses in sibling methods. Later rebindings receive a stable
+// suffix, splitting operation lifecycles without changing selector policy.
+func applyPythonAttributeGeneration(call *FunctionCall, generations map[string]int) {
+	if call == nil {
+		return
+	}
+	if base, ok := pythonGeneratedAttributeBase(call.ReceiverVar); ok {
+		call.ReceiverVar = pythonAttributeGenerationIdentity(base, generations[base])
+	}
+	if base, ok := pythonGeneratedAttributeBase(call.AssignedVar); ok {
+		generation := generations[base] + 1
+		generations[base] = generation
+		call.AssignedVar = pythonAttributeGenerationIdentity(base, generation)
+	}
+}
+
+func pythonGeneratedAttributeBase(identity string) (string, bool) {
+	if _, ok := pythonSelfOrClsAttr(identity); !ok {
+		return "", false
+	}
+	return identity, true
+}
+
+func pythonAttributeGenerationIdentity(base string, generation int) string {
+	if generation <= 1 {
+		return base
+	}
+	return fmt.Sprintf("%s@%d", base, generation)
 }
 
 // pythonRecordPartialOrCallable updates the scope-local partials/callables
@@ -1474,6 +1555,12 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		functionType = "constructor"
 	}
 
+	scope := fw.funcScopes[node.StartByte()]
+	parameters := parsePythonParameters(paramNode, src)
+	if className != "" && (scope == nil || !scope.staticMethod) && len(parameters) > 0 {
+		parameters = parameters[1:]
+	}
+
 	decl := &FunctionDecl{
 		ID: FunctionID{
 			Package: packagePath,
@@ -1487,13 +1574,12 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		OwnerName:       ownerName,
 		FunctionType:    functionType,
 		ReturnType:      pythonReturnTypeOf(node, src),
-		Parameters:      parsePythonParameters(paramNode, src),
+		Parameters:      parameters,
 		Visibility:      pythonVisibilityForName(name),
 		OwnerVisibility: ownerVisibility,
 	}
 
 	if body != nil {
-		scope := fw.funcScopes[node.StartByte()]
 		decl.Calls = p.resolvePythonPendingCalls(scope, attrs, src, filePath, analysis, fw)
 	}
 
@@ -1704,14 +1790,18 @@ type pythonBindings struct {
 	// annotation (row 13), consulted by pythonResolveAttributeLikeCall
 	// after the ordinary import check and before the local-name fallback.
 	varTypes map[string]string
+	// dynamicImports marks earlier assignment bindings created by the bounded
+	// importlib.import_module/__import__ forms. Those locals hold the imported
+	// module and therefore do not shadow its registered import identity.
+	dynamicImports map[string]bool
 }
 
 // receiverIdentity resolves the receiver text of an attribute call to a
 // stable object identity, or "" when it is not an object (a module, a type
 // constructor, or a call-expression result). Check order is load-bearing:
-// objectIsCall -> import -> self/cls bare -> attribute set -> locals.
-// Imports must stay ahead of locals so an import-name receiver is never
-// masked by a same-named parameter (TestPythonParser_ModuleCall_NoReceiverVar).
+// objectIsCall -> locally-shadowed import -> import -> self/cls bare ->
+// attribute set -> locals. Python lexical bindings outrank a file-global
+// import with the same spelling.
 // A known local binding is authoritative and is checked LAST only because it
 // is the least specific positive signal — it does NOT defer to a
 // CapitalCase-looking spelling: an UPPER_CASE local (e.g. `HASHER`) still
@@ -1723,7 +1813,7 @@ func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analy
 	if objectIsCall || object == "" {
 		return ""
 	}
-	if _, isImport := analysis.Imports[object]; isImport {
+	if _, isImport := analysis.Imports[object]; isImport && !b.dynamicImports[object] && !b.layer.has(object) {
 		return ""
 	}
 	if !b.staticMethod && (object == pythonSelfObjectName || object == pythonClsObjectName) {
@@ -1746,6 +1836,17 @@ func (b pythonBindings) receiverIdentity(object string, objectIsCall bool, analy
 		return object
 	}
 	return ""
+}
+
+// locallyShadowsImport reports whether the first name in an attribute
+// expression is lexically bound at this call site. It prevents a file-global
+// import from resolving through a parameter or local with the same name.
+func (b pythonBindings) locallyShadowsImport(object string) bool {
+	first := object
+	if dot := strings.IndexByte(first, '.'); dot >= 0 {
+		first = first[:dot]
+	}
+	return first != "" && b.layer.has(first) && !b.dynamicImports[first]
 }
 
 // pythonSelfOrClsAttr splits a receiver text of the shape "self.attr" or
@@ -1857,6 +1958,7 @@ func isPythonPrunedDefinitionSymbol(sym sitter.Symbol) bool {
 // (resolvePythonPendingCalls); pythonArgumentSourceFor threads depth+1 when
 // recursing into a nested call argument.
 func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) *FunctionCall {
+	p.countVisit()
 	if node.ChildCount() == 0 {
 		return nil
 	}
@@ -1932,7 +2034,7 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 // else the same-package fallback (a local function, or a bare local-class
 // reference with no matching rewrite).
 func pythonResolveIdentifierCallee(name string, analysis *FileAnalysis, bindings pythonBindings) FunctionID {
-	if pkg, ok := analysis.Imports[name]; ok {
+	if pkg, ok := analysis.Imports[name]; ok && (!bindings.layer.has(name) || bindings.dynamicImports[name]) {
 		if analysis.ImportedTypes[name] {
 			return FunctionID{Package: pkg, Type: name, Name: constructorMethodName}
 		}
@@ -2104,6 +2206,7 @@ func pythonVisibilityForName(name string) string {
 // startCol and endCol are the 1-based column span of the FULL call expression node
 // (not just the attribute node), matching the Java parser's convention.
 func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, bindings pythonBindings, chainID, assignedVar string) *FunctionCall {
+	p.countVisit()
 	var object, method string
 	var objectCallNode *sitter.Node
 	objectIsCall := false
@@ -2172,8 +2275,10 @@ func (p *PythonParser) pythonResolveAttributeLikeCall(object, method string, obj
 
 	// Try to resolve through imports when the object is not itself a call result.
 	if !objectIsCall {
-		if fc := resolveImportedCall(object, method, raw, filePath, line, startCol, endCol, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
-			return fc
+		if !bindings.locallyShadowsImport(object) {
+			if fc := resolveImportedCall(object, method, raw, filePath, line, startCol, endCol, args, receiverVar, chainID, assignedVar, analysis); fc != nil {
+				return fc
+			}
 		}
 		// Row 13: object's own DECLARED type annotation (a typed parameter
 		// or an annotated assignment), when that type name is itself a
@@ -2405,6 +2510,7 @@ func pythonAnnotatedReceiverCall(object, method string, varTypes map[string]stri
 }
 
 func (p *PythonParser) extractPythonCallArguments(node *sitter.Node, src []byte) []string {
+	p.countVisit()
 	argList := pythonArgumentListChild(node)
 	if argList == nil {
 		return nil
@@ -2434,6 +2540,7 @@ const pythonArgProvenanceMaxDepth = 4
 // nil when the call has no arguments, matching Arguments' own nil-for-empty
 // convention.
 func (p *PythonParser) pythonArgumentSources(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) [][]SourceNode {
+	p.countVisit()
 	argList := pythonArgumentListChild(node)
 	if argList == nil {
 		return nil
@@ -2474,6 +2581,7 @@ func pythonNameLocallyShadowed(bindings pythonBindings, fw *pythonFileWalk, name
 // to a VALUE. A keyword argument's wrapped value is unwrapped first.
 // Anything else emits nothing — no fabrication.
 func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) []SourceNode {
+	p.countVisit()
 	if argNode == nil {
 		return nil
 	}

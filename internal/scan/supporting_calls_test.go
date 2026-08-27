@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -192,29 +194,9 @@ func TestDeriveObjectLifecycleCalls_ParameterReceiver(t *testing.T) {
 	}
 }
 
-// TestDeriveObjectLifecycleCalls_SelfAttrRebinding covers Python's
-// `self.attr` reassignment: within one method, `self.cipher = AES()` +
-// `self.cipher.encrypt(a)` followed by `self.cipher = RSA()` +
-// `self.cipher.encrypt(b)`. It pins that the canonical "self.<attr>" string
-// identity Python now emits participates in the SAME positional
-// selectDescendants protection already proven for Java field rebinding
-// (TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls):
-// ordering protection anchors on the index of the call that PRODUCES the
-// object (an AssignedVar-only call, i.e. the terminal finding is the
-// constructor), which walks forward and correctly excludes calls made
-// before the rebinding constructor.
-//
-// Design-deviation note (discovered during apply, not assumed): the ordering
-// protection is anchored on the PRODUCING call's index, not on the
-// receiver-variable name alone. When the terminal finding is instead a pure
-// ReceiverVar-only OPERATION call (e.g. the encrypt() call itself, with no
-// AssignedVar), deriveObjectLifecycleCalls falls into the unordered
-// selectReceiverCalls/selectAncestors branches, which have no "since"
-// boundary and would merge both bindings' supporting calls. This is a
-// pre-existing, language-agnostic property of the frozen selector algorithm
-// in supporting_calls.go (unrelated to how Python vs. Java produces
-// ReceiverVar/AssignedVar strings) — confirmed here, not fixed, since
-// supporting_calls.go MUST remain byte-for-byte unchanged per spec.
+// TestDeriveObjectLifecycleCalls_SelfAttrRebinding covers the selector's
+// positional protection for an AssignedVar-only constructor terminal. The
+// parser-to-selector operation-terminal case is covered separately below.
 func TestDeriveObjectLifecycleCalls_SelfAttrRebinding(t *testing.T) {
 	fn := &callgraph.FunctionDecl{
 		Calls: []callgraph.FunctionCall{
@@ -324,6 +306,63 @@ func TestLifecycleCallIndices_ReassignedReceiverExcludesEarlierCalls(t *testing.
 	for _, want := range []int{2, 3, 4} {
 		if !selected[want] {
 			t.Errorf("index %d missing from lifecycle %v", want, got)
+		}
+	}
+}
+
+// TestPythonSelfAttrRebindingSplitsOperationLifecycle builds a real Python
+// callgraph and proves that a terminal operation after self.attr reassignment
+// derives only calls belonging to the new object generation. The selector is
+// unchanged; the parser supplies generation-aware identities.
+func TestPythonSelfAttrRebindingSplitsOperationLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	src := `from Crypto.Cipher import AES, RSA
+
+class Worker:
+    def run(self, key, first, second):
+        self.cipher = AES.new(key)
+        self.cipher.configure(first)
+        self.cipher.encrypt(first)
+        self.cipher = RSA.new(key)
+        self.cipher.configure(second)
+        self.cipher.encrypt(second)
+`
+	if err := os.WriteFile(filepath.Join(dir, "worker.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "mypkg"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	run := graph.Functions["mypkg.(Worker).run"]
+	if run == nil {
+		t.Fatalf("missing mypkg.(Worker).run; functions=%v", graph.Functions)
+	}
+
+	var terminal *callgraph.FunctionCall
+	for i := range run.Calls {
+		if callgraph.BaseFunctionName(run.Calls[i].Callee.Name) == "encrypt" && run.Calls[i].Line == 10 {
+			terminal = &run.Calls[i]
+			break
+		}
+	}
+	if terminal == nil {
+		t.Fatalf("second encrypt operation not found: %#v", run.Calls)
+	}
+	derived := deriveObjectLifecycleCalls(run, terminal)
+	seenLines := make(map[int]bool, len(derived))
+	for _, call := range derived {
+		seenLines[call.Line] = true
+	}
+	for _, line := range []int{5, 6, 7} {
+		if seenLines[line] {
+			t.Errorf("second-generation terminal derived first-generation line %d: %#v", line, derived)
+		}
+	}
+	for _, line := range []int{8, 9} {
+		if !seenLines[line] {
+			t.Errorf("second-generation terminal omitted line %d: %#v", line, derived)
 		}
 	}
 }

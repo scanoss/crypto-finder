@@ -1118,13 +1118,10 @@ func TestPythonModuleDottedPath(t *testing.T) {
 	}
 }
 
-// TestPythonParser_ReceiverVar_ParameterShadowsImport pins current
-// precedence (F9): a parameter that shares its name with an imported symbol
-// does NOT resolve as a receiver. receiverIdentity checks Imports before
-// locals (see TestPythonParser_ModuleCall_NoReceiverVar for the module-level
-// case), so the import wins even when the SAME name is ALSO a declared
-// parameter — the call still resolves through the import (Callee reflects
-// "x.cipher", not a plain same-package call), and ReceiverVar stays empty.
+// TestPythonParser_ReceiverVar_ParameterShadowsImport pins Python's lexical
+// name resolution: a function parameter shadows a same-named module import.
+// Module-level uses of the import still resolve through analysis.Imports, but
+// the call inside f must stay attached to the local receiver.
 func TestPythonParser_ReceiverVar_ParameterShadowsImport(t *testing.T) {
 	src := `from x import cipher
 
@@ -1140,12 +1137,46 @@ def f(cipher):
 	if call == nil {
 		t.Fatal("update call not found")
 	}
-	if call.ReceiverVar != "" {
-		t.Errorf("cipher.update ReceiverVar = %q, want empty (import must outrank the same-named parameter)", call.ReceiverVar)
+	if call.ReceiverVar != "cipher" {
+		t.Errorf("cipher.update ReceiverVar = %q, want %q (parameter must shadow the module import)", call.ReceiverVar, "cipher")
 	}
-	want := FunctionID{Package: "x.cipher", Name: "update"}
+	want := FunctionID{Package: "mypkg", Type: "cipher", Name: "update"}
 	if call.Callee != want {
-		t.Errorf("cipher.update callee = %+v, want %+v (resolved through the import, not treated as a local receiver call)", call.Callee, want)
+		t.Errorf("cipher.update callee = %+v, want %+v (parameter must shadow the module import)", call.Callee, want)
+	}
+}
+
+// TestPythonParser_FunctionHeadersExecuteInEnclosingScope verifies Python's
+// definition-time execution model: decorators and default expressions run in
+// the enclosing module scope, while only the function body runs in the new
+// function scope.
+func TestPythonParser_FunctionHeadersExecuteInEnclosingScope(t *testing.T) {
+	src := `@decorate(factory())
+def derive(material=default_material()):
+    return run(material)
+`
+	fns := parsePythonInline(t, src)
+	module := findPythonFuncByName(fns, moduleInitMethodName)
+	if module == nil {
+		t.Fatal("module function not found")
+	}
+	for _, method := range []string{"decorate", "factory", "default_material"} {
+		if findPythonCallByMethod(module, method) == nil {
+			t.Errorf("module calls do not include definition-time %s(): %#v", method, module.Calls)
+		}
+	}
+
+	derive := findPythonFuncByName(fns, "derive")
+	if derive == nil {
+		t.Fatal("derive function not found")
+	}
+	if findPythonCallByMethod(derive, "run") == nil {
+		t.Errorf("derive body calls do not include run(): %#v", derive.Calls)
+	}
+	for _, method := range []string{"decorate", "factory", "default_material"} {
+		if findPythonCallByMethod(derive, method) != nil {
+			t.Errorf("derive body unexpectedly owns definition-time %s(): %#v", method, derive.Calls)
+		}
 	}
 }
 
@@ -1290,6 +1321,49 @@ func TestPythonParser_Parameters_NameAndTypeFromFieldNodes(t *testing.T) {
 
 // TestPythonParser_Visibility_Underscore (row 18, python-parser-parity-2)
 // pins that a single-leading-underscore name resolves to VisibilityProtected.
+// TestPythonParser_MethodParametersExcludeImplicitReceiver verifies that
+// exported method signatures describe only call-site arguments. Ordinary and
+// class methods omit their implicit receiver; static methods keep parameter 0.
+func TestPythonParser_MethodParametersExcludeImplicitReceiver(t *testing.T) {
+	src := `class Worker:
+    def derive(self, material: bytes, length: int):
+        pass
+
+    @classmethod
+    def build(owner, length: int):
+        pass
+
+    @staticmethod
+    def digest(algorithm: str, material: bytes):
+        pass
+`
+	fns := parsePythonInline(t, src)
+	tests := []struct {
+		name string
+		want []string
+	}{
+		{name: "derive", want: []string{"material", "length"}},
+		{name: "build", want: []string{"length"}},
+		{name: "digest", want: []string{"algorithm", "material"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := findPythonFuncByName(fns, tt.name)
+			if fn == nil {
+				t.Fatalf("%s method not found", tt.name)
+			}
+			if len(fn.Parameters) != len(tt.want) {
+				t.Fatalf("%s Parameters = %+v, want names %v", tt.name, fn.Parameters, tt.want)
+			}
+			for i, want := range tt.want {
+				if fn.Parameters[i].Name != want {
+					t.Errorf("%s Parameters[%d].Name = %q, want %q", tt.name, i, fn.Parameters[i].Name, want)
+				}
+			}
+		})
+	}
+}
+
 func TestPythonParser_Visibility_Underscore(t *testing.T) {
 	src := `def _internal_helper(x):
     return x
@@ -2404,6 +2478,9 @@ func TestPythonParser_NodeVisitBudget(t *testing.T) {
 
 			if visits < nodeCount {
 				t.Errorf("visits = %d, want >= nodeCount %d (the whole tree must be walked at least once)", visits, nodeCount)
+			}
+			if callCount > 0 && visits == nodeCount {
+				t.Errorf("visits = nodeCount = %d despite %d deferred calls; resolution node work is not instrumented", visits, callCount)
 			}
 			maxAllowed := nodeCount + pythonVisitBudgetPerCall*callCount
 			if visits > maxAllowed {
