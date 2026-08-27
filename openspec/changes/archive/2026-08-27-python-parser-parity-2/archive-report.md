@@ -1,9 +1,9 @@
 # Archive Report: Python Parser Parity Round 2
 
-**Change**: `python-parser-parity-2`  
-**Archived**: 2026-08-27  
-**Archive Location**: `openspec/changes/archive/2026-08-27-python-parser-parity-2/`  
-**Branch**: `matiasdaloia/parser-parity-multi-language` (open PR #310)  
+**Change**: `python-parser-parity-2`
+**Archived**: 2026-08-27
+**Archive Location**: `openspec/changes/archive/2026-08-27-python-parser-parity-2/`
+**Branch**: `matiasdaloia/parser-parity-multi-language` (open PR #310)
 **Baseline**: `c6ee180`
 
 ## Executive Summary

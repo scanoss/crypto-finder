@@ -1,9 +1,9 @@
 # Archive Report: python-parser-java-parity
 
-**Change**: Python parser parity with Java (callgraph binding resolution)  
-**Status**: ARCHIVED — Complete and ready for delivery  
-**Archived Date**: 2026-08-27  
-**Branch**: `matiasdaloia/parser-parity-multi-language`  
+**Change**: Python parser parity with Java (callgraph binding resolution)
+**Status**: ARCHIVED — Complete and ready for delivery
+**Archived Date**: 2026-08-27
+**Branch**: `matiasdaloia/parser-parity-multi-language`
 **Base**: `main` (merge-base `c6ee180`)
 
 ## Executive Summary
@@ -24,7 +24,7 @@ The `python-parser-java-parity` change has been successfully completed, verified
 - Re-verification: pass-with-warnings, 7/7 requirements, 29/29 scenarios green.
 
 ### Task Completion Gate
-**Status**: PASS ✓  
+**Status**: PASS ✓
 All 41 implementation tasks in `tasks.md` marked complete [x]:
 - Phases 0–7 (grammar pin, receivers, bindings, attribute provenance, synthetic entry points, imports, re-exports, perf guard): all TDD cycles (RED/GREEN/REFACTOR) completed.
 - Phase 8 (regression guard on existing Python inventory): all 26 sub-tasks verified; no breakage.
@@ -180,6 +180,6 @@ All SDD artifacts (proposal, spec, design, tasks, apply-progress, verify-report,
 
 ---
 
-**Archive Report Generated**: 2026-08-27  
-**Artifact Store**: Hybrid (filesystem + Engram)  
+**Archive Report Generated**: 2026-08-27
+**Artifact Store**: Hybrid (filesystem + Engram)
 **Archive Location**: `openspec/changes/archive/2026-08-27-python-parser-java-parity/`
