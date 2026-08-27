@@ -519,11 +519,189 @@ shortcut taken under time pressure.
 
 Within budget (<=1.10x ns/op, <=1.15x B/op).
 
-### Remaining tasks (batch 3)
-- [ ] 11.11-11.13 (argon2-cffi/bcrypt/pycryptodome(x) KDF KB entries — blocked on primary-source access; author when the packages become installable, e.g. once network/pip access is available, or if they're vendored into this environment)
-- [ ] 12.1-12.8 (Row 14 — PythonDependencyTypeResolver, new files, lands last/abandonable)
-- [ ] 13.1-13.8 (Regression guard — re-verify all pinned invariants)
-- [ ] 14.1-14.11 (Final gates: go test -race ./..., make lint, make coverage-check, git diff --check, CHANGELOG, user-guide.html, push)
+### Remaining tasks (batch 3) — ALL COMPLETE, see "Batch 3" section below
+- [x] 11.11-11.13 (argon2-cffi/bcrypt/pycryptodome(x) KDF KB entries — network access WAS available this batch; verified against each library's own GitHub source)
+- [x] 12.1-12.8 (Row 14 — PythonDependencyTypeResolver, new files, lands last/abandonable)
+- [x] 13.1-13.8 (Regression guard — re-verified all pinned invariants)
+- [x] 14.1-14.10 (Final gates: go test -race ./..., make lint, make coverage-check, git diff --check, CHANGELOG, user-guide.html, push — done; 14.11 hand-off summary is the orchestrator's own PR-comment step)
+
+## Status (batch 3): COMPLETE — 83/83 tasks done, all phases 0-14
+
+Batch 3 finished the change: KDF KB entries for the 4 libraries batch 2
+left as a follow-up (11.11-11.14), the dependency-mode type resolver
+(Phase 12, row 14), the regression guard (Phase 13), and every final gate
+(Phase 14). All commits pushed to
+`origin/matiasdaloia/parser-parity-multi-language`. Latest commit:
+`6e7be93` (docs). Code commits, in order: `0c02d13` (row C KDF batch-3
+KB), `e6afb4c` (row 14 dependency resolver).
+
+### 11.11-11.14 — argon2-cffi/bcrypt/pycryptodome(x) KDF key-length KB
+
+**Key discovery vs. batch 2**: network access via `curl` WAS available in
+this batch's sandbox (batch 2's environment apparently did not have it, or
+the constraint description was conservative) — verified by fetching each
+library's real source from `raw.githubusercontent.com` before authoring
+any contract, per the crypto-kb-author skill's primary-source requirement.
+
+| Library | URL fetched | Verified signature | Index/name used |
+|---|---|---|---|
+| argon2-cffi | `raw.githubusercontent.com/hynek/argon2-cffi/main/src/argon2/_password_hasher.py` | `PasswordHasher.__init__(self, time_cost=..., memory_cost=..., parallelism=..., hash_len=..., salt_len=..., encoding=..., type=...)` — all 7 params default | index 3, name `hash_len` (new arity-4 entry alongside the pre-existing arity-0 one) |
+| argon2-cffi | `raw.githubusercontent.com/hynek/argon2-cffi/main/src/argon2/low_level.py` | `hash_secret(secret, salt, time_cost, memory_cost, parallelism, hash_len, type, version=ARGON2_VERSION)` — 7 required | index 5, name `hash_len` |
+| bcrypt | `raw.githubusercontent.com/pyca/bcrypt/main/src/bcrypt/__init__.pyi` | `kdf(password, salt, desired_key_bytes, rounds, ignore_few_rounds=False)` — 4 required | index 2, name `desired_key_bytes` |
+| pycryptodome | `raw.githubusercontent.com/Legrandin/pycryptodome/master/lib/Crypto/Protocol/KDF.py` | `PBKDF2(password, salt, dkLen=16, count=1000, prf=None, hmac_hash_module=None)` | index 2, name `dkLen` (pre-existing arity 3 kept) |
+| pycryptodome | (same file) | `scrypt(password, salt, key_len, N, r, p, num_keys=1)` — 6 required, NOT 4 | index 2, name `key_len` — **fixed pre-existing `arity: 4` bug to 6** |
+| pycryptodome | (same file) | `HKDF(master, key_len, salt, hashmod, num_keys=1, context=None)` — 4 required, NOT 3 | index 1, name `key_len` — **fixed pre-existing `arity: 3` bug to 4** |
+| pycryptodome | (same file) | `PBKDF1(password, salt, dkLen, count=1000, hashAlgo=None)` — 3 required, new contract | index 2, name `dkLen` |
+| pycryptodomex | (mirrors pycryptodome under `Cryptodome.*`) | same 4 methods, identical signatures | same indices/names |
+
+`Crypto.Protocol.KDF.bcrypt(password, cost, salt=None)` was intentionally
+excluded — a fixed-length hash with no key-length parameter, matching the
+batch instruction's own "n/a" note.
+
+**Two pre-existing arity bugs found and fixed** (same class as batch 2's
+`Scrypt.<init>` fix in `pyca-cryptography.yaml`): `pycryptodome.yaml`/
+`pycryptodomex.yaml`'s `scrypt` and `HKDF.<init>` contracts both
+under-declared their required parameter count. Left uncorrected, the new
+`parameter_types`/keySize role this row adds would have been positioned
+against the wrong parameter count.
+
+Tests: extended `TestLoadEmbeddedPython_KDFKeySizeRoles`
+(`internal/callgraph/contracts/python_kdf_test.go`, 11 new cases, RED
+confirmed before authoring) and `TestResolvedKeyLength_Python_EveryListedAPI`
+(`internal/scan/resolved_key_length_test.go`, 11 new cases, both keyword
+and positional forms — all batch-3 APIs support positional calls, unlike
+`hashlib.scrypt`).
+
+### Phase 12 — PythonDependencyTypeResolver (row 14)
+
+New files: `internal/callgraph/python_dependency_type_resolver.go`,
+`internal/callgraph/python_signature_cache.go`,
+`internal/callgraph/python_dependency_type_resolver_test.go`. Wired into
+`PythonTypeResolverChain` (`python_type_resolver.go`, new
+`SetSignatureIndexCache` method) and `NewTypeResolverForEcosystem("python")`
+(`parser_registry.go`, now returns the chain instead of the bare contract
+resolver) and `internal/cli/scan.go` (new `configureTypeResolverCaches`
+helper, mirrors the pre-existing Java bytecode-cache wiring — also fixes a
+`nestif` lint finding the two-branch inline version would have triggered).
+
+A bounded worker pool (`min(max(NumCPU/2,1), 8)`) indexes each distinct
+pip-resolved distribution (`Version != "" && Dir != ""`, D8) via a pruned
+tree-sitter descent: only top-level and class-body
+`function_definition`/`class_definition` nodes, reading `return_type`,
+`parameters`, and `superclasses` field nodes, reusing row 13's
+`pythonNormalizeAnnotation` and the existing `extractPythonBaseClassNames`.
+Never descends into a function body. `.pyi` is preferred over a same-stem
+`.py` per file — the OPPOSITE precedence from `builder.go`'s
+`keepExistingDecl` (which prefers a real `.py` over an incoming `.pyi` at
+declaration-MERGE time); documented explicitly as a deliberate difference
+in `selectPythonDistFiles`'s doc comment, since this resolver is
+specifically a type-stub indexer where a hand-authored `.pyi`'s
+annotations are the more reliable source.
+
+Cache key: `ImportPath + "@" + Version + ":v" + schemaVersion`, disk-backed
+JSON with temp-file+rename atomic writes, mirroring
+`DiskBytecodeIndexCache`. Merges into `graph.TypeHierarchy` and
+`graph.ExternalMethodSignatures`; fills `FunctionDecl.ReturnType` only
+when currently empty (KB always wins, per D7).
+
+**Integration test result (12.7)**: ran against the REAL installed
+`cryptography` 50.1 package (`python3 -c "import cryptography, os;
+print(os.path.dirname(cryptography.__file__))"` located the site-packages
+dir) — indexed 145 `TypeHierarchy` entries and 1501
+`ExternalMethodSignatures` entries in 0.06s. Test PASSED (not skipped).
+
+**Lint fixes required after first pass**: `errcheck` (unchecked
+`os.Remove`/`tmpFile.Close` in the cache's defer/error paths — fixed by
+mirroring `DiskBytecodeIndexCache`'s exact error-join pattern), `gosec`
+G703 (path-traversal false positive on `os.Rename` — suppressed with the
+same `#nosec G703` comment `bytecode_cache.go` already uses, with the same
+justification), `goconst` (`.py`/`.pyi` literals — extracted to local
+consts), `nilerr` (a deliberate degrade-to-miss on JSON unmarshal error —
+fixed by mirroring `bytecode_cache.go`'s corrupted-file-removal pattern
+instead of silently swallowing), `noctx` (test file's `exec.Command` ->
+`exec.CommandContext`), `nestif` (`internal/cli/scan.go`'s two-branch
+type-resolver cache wiring — extracted to `configureTypeResolverCaches`).
+
+### Phase 13 — regression guard
+
+Re-ran every enumerated test (grammar facts, `ParseFile`,
+self-named-receiver, comprehension-target, all `TestPythonE2E_*`/
+`TestPythonGolden_*`/multilib-smoke/fidelity fixtures, the full
+`resolved_key_length_test.go` suite) — all green, no expectation changes
+needed since no `python_parser.go` edit landed in batch 3. Refreshed
+`python_perf_test.go`'s two doc comments, which still referenced the
+archived `python-parser-java-parity` change's "T1-T5" naming instead of
+the current single-descent `pythonWalk` architecture (benchmark body
+byte-for-byte unchanged). Confirmed no exhaustive-derivation-value test
+exists in `internal/callgraph/contracts` to update (13.8) — the one
+derivation-rejection test only asserts the error names the offending
+method/field, not the whitelist text.
+
+### Phase 14 — final gates
+
+| Gate | Result |
+|---|---|
+| `go test -race ./...` | exit 0, all packages PASS |
+| `make lint` | 2 issues, both confirmed pre-existing/unchanged since `e49e921` via `git stash` A/B (builder.go goconst, python_parser_test.go prealloc) — 0 NEW issues |
+| `make coverage-check` | PASS, 82.0% (14529/17725) >= 80% |
+| `git diff --check` | clean |
+| `git diff --stat -- pkg/graphfrag/ internal/scan/supporting_calls.go` | empty |
+| Schema constants | `CallgraphSchemaVersion == "6.13"`, `SchemaVersion == "graph-fragment-1.13"` — unchanged |
+| `CHANGELOG.md` | `[Unreleased]` Fixed (perf) + Added (KDF coverage, dependency-mode resolution, visibility, receiver-resolution rows) bullets added |
+| `docs/user-guide/user-guide.html` | extended reachability + structure-exports sections; verified HTML parser + prohibited-term/dash grep (0 matches) + `git diff --check` + local HTTP server fetch (200) |
+
+### Final perf guard table (all batches, python-parser-parity-2)
+
+| Stage | mean ns/op | ratio vs c6ee180 | mean B/op | ratio vs c6ee180 | Budget |
+|---|---|---|---|---|---|
+| c6ee180 baseline | 67,913,428 | 1.000x | 19,275,101 | 1.000x | — |
+| After A1-A3 rewrite (batch 1) | 60,590,328 | 0.892x | 20,390,622 | 1.058x | PASS |
+| After row C (batch 2, 11.16) | ~64,320,933 | 0.947x | ~20,701,475 | 1.074x | PASS |
+| After row 14 (batch 3, 12.8, final) | ~72,624,248 | 1.069x | ~20,823,525 | 1.080x | PASS (<=1.10x / <=1.15x) |
+
+The final ns/op ratio's rise from 0.947x to 1.069x reflects machine-noise
+variance between runs (row 14's own files are never on the
+`BenchmarkPythonParseDirectory_Bindings` code path — `python_parser.go`
+was not modified in batch 3), consistent with the design doc's own
+documented observation that this benchmark showed 12.5%-27.5% swing
+across rounds on one machine in round 1. Still comfortably within budget.
+
+## Key learnings (batch 3)
+
+1. Network access via `curl`/`raw.githubusercontent.com` WAS available in
+   this batch's sandbox, contradicting the constraint assumed in batch 2
+   ("no network access is available") — always re-verify environment
+   constraints per-batch rather than trusting a prior batch's finding.
+2. `ContractsForTolerant`'s Python-only any-arity fallback (exact-arity
+   first, then any-arity-for-that-method-name) means a KB contract's
+   declared `arity:` field mostly only needs internal consistency with its
+   own `parameter_types` length (validated: they must be equal) — it does
+   NOT need to match every real call site's actual argument count, since
+   keyword calls with a subset of a Python function's many defaulted
+   parameters will still find the contract via the tolerant fallback.
+3. Two contracts for the SAME method at DIFFERENT arities is a valid,
+   already-precedented KB pattern (confirmed via
+   `rust_libraries_test.go`'s `Argon2Factory.create#0`/`#1`) — used here to
+   add a keySize-bearing `argon2.PasswordHasher.<init>#4` entry alongside
+   the pre-existing `#0` entry without disturbing any existing test.
+4. `PythonParser.ParseDirectory` is NOT recursive (only reads files
+   directly in the given dir via `os.ReadDir`, skipping subdirectories);
+   recursion into a package's nested subdirectories happens one level up,
+   in `Builder.analyzePackage`/`collectParseDirs`, which builds each
+   subdirectory's dotted import path via `parser.SubPackagePath`. A
+   from-scratch dependency indexer must mirror THAT recursion+path
+   convention (not `ParseDirectory`'s own single-directory contract) to
+   produce FQNs consistent with what the main source-parsing pass would
+   compute for the same distribution.
+5. `builder.go`'s `keepExistingDecl` prefers a real `.py` over an incoming
+   `.pyi` at declaration-MERGE time — the opposite precedence from what
+   design.md's row 14 asked for ("`.pyi` preferred over a same-stem
+   `.py`"). Both are legitimate for their own purpose (a real
+   implementation's parsed body is richer for the main graph; a
+   hand-authored stub's annotations are more reliable for a TYPE index)
+   — resolved by keeping row 14's own resolver independent of
+   `builder.go`'s merge logic entirely, with the difference documented
+   explicitly rather than silently reconciled.
 
 ### Notes for batch 3
 - `PythonContractTypeResolver`/`PythonTypeResolverChain` already exist
