@@ -1737,6 +1737,65 @@ def run(data):
 	}
 }
 
+// TestPythonParser_DynamicDispatch_ImportlibLiteral_ModuleLevelVisibleInFunction
+// (G5, PR #310 phase-2 review) pins that a MODULE-level dynamic import is
+// visible from a function scope even though function scopes resolve their
+// pending calls BEFORE the module scope resolves its own
+// (extractDeclarations processes every function_definition first, then
+// buildModuleInitDecl last): the registration must happen during the
+// pythonWalk descent itself, not at deferred call-resolution time, or an
+// earlier-resolved function scope would see no import at all.
+func TestPythonParser_DynamicDispatch_ImportlibLiteral_ModuleLevelVisibleInFunction(t *testing.T) {
+	src := `import importlib
+
+hashlib = importlib.import_module("hashlib")
+
+
+def run(data):
+    return hashlib.sha256(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "sha256")
+	if call == nil {
+		t.Fatalf("hashlib.sha256(data) call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "hashlib", Name: "sha256"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (module-level import_module literal must register before any function scope resolves)", call.Callee, want)
+	}
+}
+
+// TestPythonParser_DynamicDispatch_ImportlibLiteral_SkipsRelativeLiteral (G5,
+// PR #310 phase-2 review) pins that a relative-import literal (starting
+// with ".") never registers a junk key: `importlib.import_module(".mod",
+// "pkg")` must not bind a "." name at all.
+func TestPythonParser_DynamicDispatch_ImportlibLiteral_SkipsRelativeLiteral(t *testing.T) {
+	src := `import importlib
+
+mod = importlib.import_module(".mod", "pkg")
+`
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "src.py")
+	if err := os.WriteFile(filePath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPythonParser()
+	analyses, err := p.ParseDirectory(dir, "mypkg")
+	if err != nil {
+		t.Fatalf("ParseDirectory: %v", err)
+	}
+	if len(analyses) == 0 {
+		t.Fatal("no analyses returned")
+	}
+	if pkg, ok := analyses[0].Imports[".mod"]; ok {
+		t.Errorf("Imports[\".mod\"] = %q, want no entry — a relative-import literal must never register a junk key", pkg)
+	}
+}
+
 // TestPythonParser_DynamicDispatch_NonLiteralNoIdentity (row 7,
 // python-parser-parity-2) pins that a non-literal getattr method-name
 // argument fabricates NOTHING beyond the pre-existing (row-7-unrelated)

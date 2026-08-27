@@ -634,6 +634,16 @@ func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbo
 		}
 	case pythonSyms.call:
 		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
+		// Row 7's dynamic-import registration (G5, PR #310 phase-2 review)
+		// must happen during THIS single descent, not at deferred
+		// per-scope call-resolution time: extractDeclarations resolves
+		// every function scope BEFORE the module scope (buildModuleInitDecl
+		// runs last), so a module-level `import_module(...)` registered
+		// only when ITS OWN pending call resolves would still be invisible
+		// to an earlier-resolved function scope that uses the same name.
+		if funcNode := node.Child(0); funcNode != nil {
+			p.pythonMaybeRecordDynamicImport(node, funcNode, src, analysis)
+		}
 	case pythonSyms.assignment:
 		if moduleDirect {
 			recordPythonModuleConst(node, src, fw)
@@ -1813,12 +1823,6 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	startCol := int(node.StartPoint().Column) + 1
 	endCol := int(node.EndPoint().Column) + 1
 
-	// Row 7 (python-parser-parity-2): a literal-argument
-	// importlib.import_module(...)/__import__(...) registers its module name
-	// as an import, independent of whether this call itself resolves —
-	// mirrors what a real `import X` statement would have bound.
-	p.pythonMaybeRecordDynamicImport(node, funcNode, src, analysis)
-
 	var call *FunctionCall
 	switch funcNode.Type() {
 	case pythonNodeCall:
@@ -2214,10 +2218,15 @@ func pythonLiteralStringContent(node *sitter.Node, src []byte) (string, bool) {
 // literal-argument `importlib.import_module("hashlib")` or
 // `__import__("hashlib")` binds "hashlib" as an import exactly as a real
 // `import hashlib` statement would (recordPythonImportOnce — first binding
-// in document order wins). node is the outer call (whose OWN argument_list
-// carries the literal); funcNode is that call's function expression.
-// Anything else — a non-literal argument, an unrelated call — registers
-// nothing.
+// in document order wins). Called from pythonWalkSideEffects DURING the
+// single descent (G5, PR #310 phase-2 review), not at deferred
+// per-scope call-resolution time — a module-level dynamic import must be
+// visible to every function scope, including one resolved BEFORE the
+// module scope itself (extractDeclarations resolves every function before
+// calling buildModuleInitDecl last). node is the call node (whose OWN
+// argument_list carries the literal); funcNode is that call's function
+// expression. Anything else — a non-literal argument, an unrelated call —
+// registers nothing.
 func (p *PythonParser) pythonMaybeRecordDynamicImport(node, funcNode *sitter.Node, src []byte, analysis *FileAnalysis) {
 	switch {
 	case funcNode.Symbol() == pythonSyms.identifier && funcNode.Content(src) == "__import__":
@@ -2242,7 +2251,13 @@ func recordPythonLiteralModuleImport(node *sitter.Node, src []byte, analysis *Fi
 		return
 	}
 	name, ok := pythonLiteralStringContent(argList.NamedChild(0), src)
-	if !ok {
+	if !ok || strings.HasPrefix(name, ".") {
+		// A leading "." marks a RELATIVE import specification (the real
+		// two-argument `importlib.import_module(".mod", "pkg")` form) — the
+		// literal alone names no resolvable absolute module and would
+		// register a junk key (G5, PR #310 phase-2 review). Package-level
+		// relative-import resolution is out of this bounded row's scope;
+		// register nothing rather than fabricate one.
 		return
 	}
 	recordPythonImportOnce(analysis, name, name)
