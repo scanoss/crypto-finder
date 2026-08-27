@@ -91,6 +91,17 @@ func resolvedKeyLengthFromContract(
 	if resolved := resolvedKeyLengthFromKeywordName(matches, call, parameters); resolved != nil {
 		return resolved
 	}
+	if ctx == nil || ctx.kb == nil || ctx.kb.Ecosystem != ecosystemPython {
+		// Step 3b (design.md §5.2) is additive ONLY for Python: it resolves
+		// a purely positional constant with NO call-site declared-type
+		// evidence at all, a precondition every non-Python ecosystem's own
+		// extractCallArguments can already satisfy accidentally (e.g. a
+		// resolver-unresolved variable at the keySize index) — see
+		// TestResolvedKeyLength_JavaUnchangedByKeywordPath (G7, PR #310
+		// phase-2 review). Gating on ecosystem keeps every other
+		// ecosystem's resolution byte-identical to before row C.
+		return nil
+	}
 	return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes)
 }
 
@@ -164,6 +175,17 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 			continue
 		}
 		if parameterHasDeclaredType(&parameters[index]) {
+			continue
+		}
+		if pythonKeywordArgumentPattern.MatchString(parameters[index].ArgumentExpression) {
+			// A keyword-shaped expression at the keySize POSITION is not
+			// necessarily the keySize ARGUMENT: Python keyword arguments can
+			// appear at any raw position regardless of their declared index
+			// (G2, PR #310 phase-2 review — `PBKDF2(pw, salt, count=1000)`
+			// previously read "count"'s value as the key length). Step 3a
+			// already handles every genuine keyword match by NAME; a
+			// keyword-shaped expression that reaches here matched no role
+			// name and must never be reinterpreted positionally.
 			continue
 		}
 		bits, ok := resolveContractKeyBits(parameters[index].ResolvedValue, role.Contributes.Derivation)

@@ -246,20 +246,81 @@ func TestResolvedKeyLength_JavaUnchangedByKeywordPath(t *testing.T) {
 		Ecosystem: "java",
 	})
 	keyGeneratorInit := callgraph.FunctionID{Package: "javax.crypto", Type: "KeyGenerator", Name: "init#1"}
+
+	t.Run("declared-type mismatch stays nil", func(t *testing.T) {
+		call := &callgraph.FunctionCall{
+			Callee:    keyGeneratorInit,
+			FilePath:  "KeyFlow.java",
+			Line:      9,
+			Arguments: []string{"parameters"},
+		}
+		parameters := []callGraphParameter{{
+			ParameterIndex:     0,
+			ArgumentExpression: "parameters",
+		}}
+		matches := contractMatchesForCall(ctx, call, len(call.Arguments))
+		got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, []string{"java.security.spec.AlgorithmParameterSpec"})
+		if got != nil {
+			t.Fatalf("resolved key length = %#v, want nil — steps 3a/3b (row C) must never resolve a Java call site", got)
+		}
+	})
+
+	// G7 (PR #310 phase-2 review): step 3b (design.md §5.2) is a Python-only
+	// path. A resolved variable with NO declared-type evidence at all (no
+	// SourceNode.DeclaredType, no resolver-supplied parameterTypes) still
+	// satisfies step 3b's "no type evidence" precondition on ANY ecosystem
+	// — an ungated step 3b would fabricate a "constant" record for
+	// KeyGenerator.init(keySize) here, a shape steps 1-2 never resolved
+	// before row C either.
+	t.Run("resolved variable with no type evidence at all stays nil", func(t *testing.T) {
+		call := &callgraph.FunctionCall{
+			Callee:    keyGeneratorInit,
+			FilePath:  "KeyFlow.java",
+			Line:      11,
+			Arguments: []string{"keySize"},
+		}
+		parameters := []callGraphParameter{{
+			ParameterIndex:     0,
+			ArgumentExpression: "keySize",
+			ResolvedValue:      "256",
+		}}
+		matches := contractMatchesForCall(ctx, call, len(call.Arguments))
+		got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, nil)
+		if got != nil {
+			t.Fatalf("resolved key length = %#v, want nil — step 3b must never resolve a non-Python call site", got)
+		}
+	})
+}
+
+// TestResolvedKeyLength_Python_KeywordAtDifferentPositionNeverReadPositionally
+// (G2, PR #310 phase-2 review) pins that a keyword argument whose NAME does
+// not match the keySize role — but which happens to sit at the keySize
+// role's declared POSITIONAL index — is never misread as that role's raw
+// positional value. `PBKDF2(password, salt, count=1000)` previously
+// resolved 8000 bits (1000 bytes) by reading "count"'s value in place of
+// the (omitted) `dkLen` argument.
+func TestResolvedKeyLength_Python_KeywordAtDifferentPositionNeverReadPositionally(t *testing.T) {
+	t.Parallel()
+
+	ctx := newExportBuildContext(&engine.DepScanResult{
+		CallGraph: &callgraph.CallGraph{},
+		Ecosystem: "python",
+	})
 	call := &callgraph.FunctionCall{
-		Callee:    keyGeneratorInit,
-		FilePath:  "KeyFlow.java",
+		Callee:    callgraph.FunctionID{Package: "Crypto.Protocol.KDF", Type: "PBKDF2", Name: constructorMethodName},
+		FilePath:  "derive.py",
 		Line:      9,
-		Arguments: []string{"parameters"},
+		Arguments: []string{"password", "salt", "count=1000"},
 	}
-	parameters := []callGraphParameter{{
-		ParameterIndex:     0,
-		ArgumentExpression: "parameters",
-	}}
+	parameters := []callGraphParameter{
+		{ParameterIndex: 0, ArgumentExpression: "password"},
+		{ParameterIndex: 1, ArgumentExpression: "salt"},
+		{ParameterIndex: 2, ArgumentExpression: "count=1000", ResolvedValue: "1000"},
+	}
 	matches := contractMatchesForCall(ctx, call, len(call.Arguments))
-	got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, []string{"java.security.spec.AlgorithmParameterSpec"})
+	got := resolvedKeyLengthFromContract(ctx, matches, call, parameters, nil)
 	if got != nil {
-		t.Fatalf("resolved key length = %#v, want nil — steps 3a/3b (row C) must never resolve a Java call site", got)
+		t.Fatalf("resolved key length = %#v, want nil (a keyword arg for a DIFFERENT parameter must never be read positionally)", got)
 	}
 }
 
