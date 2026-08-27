@@ -76,11 +76,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 4: Row 18 — Visibility
 
-- [ ] **4.1** RED: `TestPythonParser_Visibility_Underscore`, `_DoubleUnderscore`, `_Dunder`, `_OwnerVisibility`.
+- [x] **4.1** RED: `TestPythonParser_Visibility_Underscore`, `_DoubleUnderscore`, `_Dunder`, `_OwnerVisibility`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_Visibility -v`. Deps: 1.5.
-- [ ] **4.2** GREEN: `pythonVisibilityForName(name)` (`__dunder__`→public, `__x` non-dunder→private, `_x`→protected, else public); set `FunctionDecl.Visibility` in `parseFunctionDef` using the source name (before `__init__`→`<init>`); set `OwnerVisibility` from the class name in `processClass`/`extractClassMethods` (empty for module-level functions).
+- [x] **4.2** GREEN: `pythonVisibilityForName(name)` (`__dunder__`→public, `__x` non-dunder→private, `_x`→protected, else public); set `FunctionDecl.Visibility` in `parseFunctionDef` using the source name (before `__init__`→`<init>`); set `OwnerVisibility` from the class name in `processClass`/`extractClassMethods` (empty for module-level functions).
   Files: `internal/callgraph/python_parser.go`. Deps: 4.1.
-- [ ] **4.3** Perf guard re-run — commands per 1.5.
+- [x] **4.3** Perf guard re-run — commands per 1.5.
   Deps: 4.2.
 
 ## Phase 5: Row 20 — Argument provenance recursion

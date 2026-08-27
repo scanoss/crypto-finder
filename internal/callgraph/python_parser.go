@@ -1008,10 +1008,12 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	ownerType := pythonOwnerTypeModule
 	ownerName := packagePath
 	functionType := "function"
+	ownerVisibility := ""
 	if className != "" {
 		ownerType = ownerTypeClass
 		ownerName = className
 		functionType = "method"
+		ownerVisibility = pythonVisibilityForName(className)
 	}
 	if funcName == constructorMethodName {
 		functionType = "constructor"
@@ -1023,14 +1025,16 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 			Type:    className,
 			Name:    funcName,
 		},
-		FilePath:     filePath,
-		StartLine:    int(node.StartPoint().Row) + 1,
-		EndLine:      int(node.EndPoint().Row) + 1,
-		OwnerType:    ownerType,
-		OwnerName:    ownerName,
-		FunctionType: functionType,
-		ReturnType:   pythonReturnTypeOf(node, src),
-		Parameters:   parsePythonParameters(paramNode, src),
+		FilePath:        filePath,
+		StartLine:       int(node.StartPoint().Row) + 1,
+		EndLine:         int(node.EndPoint().Row) + 1,
+		OwnerType:       ownerType,
+		OwnerName:       ownerName,
+		FunctionType:    functionType,
+		ReturnType:      pythonReturnTypeOf(node, src),
+		Parameters:      parsePythonParameters(paramNode, src),
+		Visibility:      pythonVisibilityForName(name),
+		OwnerVisibility: ownerVisibility,
 	}
 
 	if body != nil {
@@ -1443,6 +1447,29 @@ func looksLikePythonTypeName(name string) bool {
 
 	first := rune(name[0])
 	return first >= 'A' && first <= 'Z'
+}
+
+// pythonVisibilityForName derives a Python declared-access-modifier
+// approximation from lexical naming convention alone (row 18,
+// python-parser-parity-2): a dunder name (`__dunder__`) is
+// VisibilityPublic; a double-leading-underscore, non-dunder name (`__x`,
+// name-mangled by real Python) is VisibilityPrivate; a single-leading-
+// underscore name (`_x`) is VisibilityProtected; anything else is
+// VisibilityPublic. Applied to a function/method's SOURCE name (before the
+// `__init__`→`<init>` rename) for FunctionDecl.Visibility, and to a class's
+// own name for FunctionDecl.OwnerVisibility. Python has no package-private
+// concept, so this never returns VisibilityPackagePrivate.
+func pythonVisibilityForName(name string) string {
+	switch {
+	case strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") && len(name) > 4:
+		return VisibilityPublic
+	case strings.HasPrefix(name, "__"):
+		return VisibilityPrivate
+	case strings.HasPrefix(name, "_"):
+		return VisibilityProtected
+	default:
+		return VisibilityPublic
+	}
 }
 
 // parseAttributeCall handles calls on attributes like `module.func()`, `obj.method()`,

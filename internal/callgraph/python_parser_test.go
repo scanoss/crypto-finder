@@ -1288,6 +1288,96 @@ func TestPythonParser_Parameters_NameAndTypeFromFieldNodes(t *testing.T) {
 	}
 }
 
+// TestPythonParser_Visibility_Underscore (row 18, python-parser-parity-2)
+// pins that a single-leading-underscore name resolves to VisibilityProtected.
+func TestPythonParser_Visibility_Underscore(t *testing.T) {
+	src := `def _internal_helper(x):
+    return x
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "_internal_helper")
+	if fn == nil {
+		t.Fatal("_internal_helper function not found")
+	}
+	if fn.Visibility != VisibilityProtected {
+		t.Errorf("Visibility = %q, want %q", fn.Visibility, VisibilityProtected)
+	}
+}
+
+// TestPythonParser_Visibility_DoubleUnderscore pins that a double-leading-
+// underscore, non-dunder name (name-mangled in real Python) resolves to
+// VisibilityPrivate.
+func TestPythonParser_Visibility_DoubleUnderscore(t *testing.T) {
+	src := `class Vault:
+    def __mangled_helper(self):
+        return self
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "__mangled_helper")
+	if fn == nil {
+		t.Fatal("__mangled_helper method not found")
+	}
+	if fn.Visibility != VisibilityPrivate {
+		t.Errorf("Visibility = %q, want %q", fn.Visibility, VisibilityPrivate)
+	}
+}
+
+// TestPythonParser_Visibility_Dunder pins that a dunder name resolves to
+// VisibilityPublic. __init__ is the only dunder method parseFunctionDef
+// ever turns into a FunctionDecl (every other dunder is skipped outright),
+// so it is the only reachable case for this rule; its Visibility is
+// computed from the SOURCE name "__init__", before the <init> rename.
+func TestPythonParser_Visibility_Dunder(t *testing.T) {
+	src := `class Cipher:
+    def __init__(self, key):
+        self.key = key
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, constructorMethodName)
+	if fn == nil {
+		t.Fatal("<init> method not found")
+	}
+	if fn.Visibility != VisibilityPublic {
+		t.Errorf("Visibility = %q, want %q", fn.Visibility, VisibilityPublic)
+	}
+}
+
+// TestPythonParser_Visibility_OwnerVisibility pins that OwnerVisibility is
+// derived from the enclosing class's OWN name via the same rule, and stays
+// empty for a module-level function (Python has no package-private
+// concept, so a module-level function gets Visibility only — matching
+// Java's package-private-vs-absent distinction).
+func TestPythonParser_Visibility_OwnerVisibility(t *testing.T) {
+	src := `class _InternalHelper:
+    def run(self):
+        return self
+
+
+def top_level():
+    return None
+`
+	fns := parsePythonInline(t, src)
+
+	method := findPythonFuncByName(fns, "run")
+	if method == nil {
+		t.Fatal("run method not found")
+	}
+	if method.OwnerVisibility != VisibilityProtected {
+		t.Errorf("run OwnerVisibility = %q, want %q (class _InternalHelper is protected)", method.OwnerVisibility, VisibilityProtected)
+	}
+
+	moduleFn := findPythonFuncByName(fns, "top_level")
+	if moduleFn == nil {
+		t.Fatal("top_level function not found")
+	}
+	if moduleFn.OwnerVisibility != "" {
+		t.Errorf("top_level OwnerVisibility = %q, want empty (module-level function has no owner visibility)", moduleFn.OwnerVisibility)
+	}
+	if moduleFn.Visibility != VisibilityPublic {
+		t.Errorf("top_level Visibility = %q, want %q", moduleFn.Visibility, VisibilityPublic)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
