@@ -554,7 +554,7 @@ func pythonModuleFileStem(path string) string {
 		return ""
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), ext)
-	if stem == "" || stem == "__init__" {
+	if stem == "" || stem == pythonInitMethodName {
 		return ""
 	}
 	return stem

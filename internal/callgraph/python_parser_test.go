@@ -2385,7 +2385,7 @@ func TestPythonParser_CallOrderIsDocumentOrder(t *testing.T) {
 		t.Fatal("process function not found")
 	}
 
-	var order []string
+	order := make([]string, 0, len(fn.Calls))
 	for _, c := range fn.Calls {
 		order = append(order, c.Callee.Name)
 	}
