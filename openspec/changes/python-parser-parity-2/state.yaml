@@ -87,6 +87,31 @@ phases:
       - "make lint's prealloc finding (python_parser_test.go:2251) was introduced by this change's own T0.6 test (commit 9aa415c), not pre-existing at true baseline c6ee180 as apply-progress's e49e921 comparison implied; cosmetic only, non-blocking"
       - "user-guide.html Structure exports panel states stale schema 6.12/graph-fragment-1.12 (actual: 6.13/graph-fragment-1.13); pre-existing drift this change did not introduce but touched the same paragraph"
     critical_issues: 0
+    reverification:
+      status: done
+      trigger: "PR #310 phase-2 remediation batch review of G1-G13 fixes"
+      verdict: "PASS WITH WARNINGS"
+      verified_on: 2026-08-27
+      verified_head: 4f4f72c
+      commit_range: "33361ee..4f4f72c (12 commits, ac06f87..4f4f72c on top of the previously-verified 33361ee)"
+      findings_confirmed_fixed: "13/13 (G1-G13), each with source read + named passing test independently re-run"
+      perf_measurement:
+        head_mean_ns_op: 65765877
+        baseline_mean_ns_op: 69711171
+        ns_op_ratio: 0.943
+        head_mean_b_op: 20816001
+        baseline_mean_b_op: 19276976
+        b_op_ratio: 1.080
+        budget: "<=1.10x ns/op, <=1.15x B/op"
+        result: PASS
+        note: "baseline re-measured fresh in a temporary c6ee180 worktree this pass; closely matches both the originally recorded baseline and apply-progress's own remediation-batch figure (66.7ms/20.8MB, 0.982x/1.080x)"
+      prior_warnings_resolved:
+        - "make lint prealloc/goconst mischaracterization: moot, make lint is 0 issues after G8"
+        - "user-guide stale schema 6.12/graph-fragment-1.12: fixed by G12, confirmed 6.13/graph-fragment-1.13"
+      new_warnings:
+        - "G1 deviation: narrows two literal fabrication patterns but does not add a full existence gate; a propagated (non-direct-annotation) bare return-type with no backing declaration or KB entry can still produce an inert, non-matching FQN. Documented, deliberate, inert downstream, consistent with the already-accepted TestPythonParser_TypeHint_ReturnAnnotation scope boundary. Recommend a follow-up pinning test in a later batch."
+        - "Task 14.11 (orchestrator hand-off summary) remains unchecked; substance already covered by PR review-response comments; carried from the first verify pass, not new"
+      critical_issues: 0
   archive:
     status: pending
   remediation:

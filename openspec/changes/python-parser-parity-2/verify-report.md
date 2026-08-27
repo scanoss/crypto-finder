@@ -111,3 +111,101 @@ None beyond the two WARNINGs above.
 All 83 tasks complete, all spec requirements/scenarios have passing, non-trivial covering tests (independently re-run and spot-read, not merely trusted from the apply artifacts), all 5 invariants hold with zero diff, all 19 KDF KB contracts are internally consistent, the performance budget is independently re-measured and comfortably within budget (0.947x ns/op, 1.080x B/op — the B/op figure matches apply-progress's own final measurement almost exactly, cross-validating both independent measurements), all final gates pass for real (`go test -race ./...`, `make coverage-check`, `git diff --check`), commit hygiene is clean (25/25 conventional, 0 AI attribution), and CHANGELOG/user-guide are updated and pass their documented checks. The two WARNINGs are non-blocking: one is a mischaracterization in apply-progress's own lint accounting (the underlying lint finding itself is cosmetic and was already correctly reported as present), the other is pre-existing documentation drift this change did not introduce.
 
 **Recommendation: proceed to `sdd-archive`.**
+
+---
+
+## Re-verification (phase-2 remediation batch, PR #310)
+
+**Verified**: 2026-08-27, HEAD `4f4f72c` (branch `matiasdaloia/parser-parity-multi-language`, PR #310), 12 commits `ac06f87..4f4f72c` on top of the previously-verified `33361ee`.
+
+**Trigger**: a second fresh-context review on PR #310 (`73c9d28..29ceef5`) found 13 new findings (G1–G13); this pass independently re-verifies each fix plus every gate this change owns.
+
+**Verdict**: PASS WITH WARNINGS (both prior WARNINGs are now resolved; one new non-blocking WARNING on the G1 deviation's residual scope, carried at the same severity as the prior verify's accepted-scope finding — not a regression).
+
+### G1–G13 fix verification (source read + named test, independently re-run)
+
+| # | Fix | Named test | Result |
+|---|---|---|---|
+| G1 | `pythonSplitAssignedType` splits a dotted `ReturnType` into Package/Type at the last separator; a bare name resolves `Package` from the **declaring** decl (`callee.ID.Package`), never the caller's | `TestBuilder_PythonAssignedVarType_UsesDeclaringPackage`, `TestContractMatchesForCall_PythonAssignedVarType_DottedReturnSplits` | PASS — read `internal/callgraph/python_type_resolver.go`; confirmed the diff no longer writes `fn.ID.Package` (the calling decl) into `Callee.Package` |
+| G2/G7 | KDF step 3b now gated to `ctx.kb.Ecosystem == "python"`; skips a keyword-shaped expression (`pythonKeywordArgumentPattern`) at the keySize position | `TestResolvedKeyLength_Python_KeywordAtDifferentPositionNeverReadPositionally`; `TestResolvedKeyLength_JavaUnchangedByKeywordPath` extended with 2 new `t.Run` subtests (declared-type mismatch, no-type-evidence) | PASS — read `internal/scan/key_length.go`; both the ecosystem gate and the keyword-shape skip are real code, not test-only |
+| G3 | `pythonKeptDunderMethods` whitelists `__call__`/`__enter__`/`__exit__` in `parseFunctionDef`'s dunder-skip | `TestBuilder_PythonCallReachesIntoDunderCall` | PASS — non-tautological: builds a real graph, asserts `sha256Call.Callee.Package == "hashlib"` and that `wantID` appears in `graph.Callers[...]`, i.e. an edge that would dangle before the fix |
+| G4 | Inner `super()`/`getattr(...)` call node suppressed when it composes an enclosing attribute/call expression | Extended `TestPythonParser_Super_NeverLocalSuper` and `TestPythonParser_DynamicDispatch_GetattrLiteral` with a loop asserting no `Name == "super"` / `pythonGetattrBuiltinName` call exists | PASS |
+| G5 | Dynamic-import registration moved from deferred call-resolution time into `pythonWalkSideEffects`'s call case (single descent); relative literals (leading `.`) skipped | `TestPythonParser_DynamicDispatch_ImportlibLiteral_ModuleLevelVisibleInFunction`, `_SkipsRelativeLiteral` | PASS |
+| G6 | `pythonArgumentSourceFor` skips the module-constant lookup when the identifier is bound in a non-module layer (param/local/comprehension); `recordPythonModuleConst` deletes a stale entry on a later non-integer rebind | `TestPythonParser_ArgProvenance_ModuleConstant_LocalShadowNotUsed`, `_ClearedOnNonIntegerRebind` | PASS |
+| G8 | `make lint` findings fixed: `prealloc` (test slice preallocated), pre-existing `goconst` (`__init__` literal → shared `pythonInitMethodName`) | N/A (lint gate) | PASS — `make lint` 0 issues, re-verified with `golangci-lint cache clean` per apply-progress's documented gotcha |
+| G9 | `resolvePythonSymbols` extracted into `pythonResolveSymbolTable`, filtered to `SymbolTypeRegular` | `TestPythonResolveSymbolTable_PrefersRegularOverAnonymous` | PASS |
+| G10 | `typing.Optional[...]`/`typing.Union[...]` (a `subscript` node) normalized via `pythonNormalizeTypingSubscriptAnnotation`; `recordPythonAnnotatedAssignmentVarType` clears a stale annotation on later un-annotated reassignment | `TestPythonParser_TypeHint_TypingPrefixNormalization`, `_ClearedOnUnannotatedReassignment` | PASS |
+| G11/G12 | CHANGELOG `[Unreleased]` merged to exactly one `### Added`/`### Fixed`; user guide schema numbers corrected to `6.13`/`graph-fragment-1.13` | N/A (doc gates) | PASS — verified directly (see below) |
+| G13 | Stale `collectPythonFilePrepass` doc comment fixed; signature-cache directory now created lazily in `Put` with a `callgraph:`-prefixed error; CI-opengrep sub-finding investigated and found to be a false premise (`Dockerfile.test` already installs opengrep `v1.12.1` on PATH before `go test` runs in `test.yml`) | N/A (doc/infra) | PASS — confirmed `Dockerfile.test`/`test.yml` wiring independently; no workflow edit was needed |
+
+All 14 named regression tests re-run individually and confirmed PASS in this pass (`internal/callgraph` and `internal/scan` full-package runs below already include them).
+
+### G1 deviation — assessed
+
+The review's literal ask ("never rewrite when the result does not exist as a declaration or KB type") was **not** implemented as a full existence gate; apply-progress documents this explicitly as deliberate, to avoid breaking the existing accepted approval test `TestPythonParser_TypeHint_ReturnAnnotation` (which intentionally resolves a bare return-type annotation with no class ever declared for it, matching design.md's row-13 bounded-inference scope).
+
+Read `pythonSplitAssignedType` directly to construct the adversarial case: a factory function `def factory() -> Cipher: ...` declared in package `mypkg/utils`, where no class/type named `Cipher` is declared anywhere in the codebase and no KB contract exists for `mypkg/utils.Cipher`. After G1's fix, `x = factory(); x.encrypt()` still resolves `Callee.Package = "mypkg/utils"`, `Callee.Type = "Cipher"` — an FQN backed by neither a declaration nor a KB entry. This is a real gap relative to the review's literal wording, but it is **not new behavior introduced by G1**: it is the same bounded-inference behavior the previously-accepted `TestPythonParser_TypeHint_ReturnAnnotation` already pins for the direct-annotation case, now merely reachable one hop further through assigned-var propagation. It is inert downstream — an FQN matching no KB contract produces no finding, so it cannot fabricate a crypto detection, only a dangling/no-op resolved type. G1's actual, narrower fix correctly closes both literal fabrication patterns the review named (wrong-package attribution, un-split dotted text); the broader existence-gate question is a pre-existing, documented scope boundary, not a regression.
+
+**Recommendation**: a follow-up test pinning this exact propagated (not direct-annotation) no-declaration/no-KB case would tighten the boundary further, but it is not required to unblock this change — flagged as WARNING, not CRITICAL.
+
+### Full suite re-run (real counts, this pass)
+
+| Command | Exit | Result |
+|---|---|---|
+| `go build ./...` | 0 | clean |
+| `go test -v -race -coverprofile=coverage.out ./...` | 0 | 31 packages ok, 0 FAIL (strict-TDD runner) |
+| `go test ./internal/callgraph/... -count=1 -v` | 0 | 504 PASS, 0 FAIL |
+| `go test ./internal/scan/ -count=1 -v` | 0 | 187 PASS, 0 FAIL |
+| `make lint` (after `golangci-lint cache clean`) | 0 | 0 issues |
+| `make coverage-check` | 0 | PASS — 82.2% (14619/17791) >= 80% |
+| `git diff --check` | 0 | clean |
+
+### Perf re-measurement (independent, this pass)
+
+8 reps, one continuous run, `BenchmarkPythonParseDirectory_Bindings`, 200-module corpus already present on disk:
+
+| Stage | ns/op | B/op |
+|---|---|---|
+| HEAD `4f4f72c` (this pass) | 65,765,877 (65.77ms) | 20,816,001 (19.85 MiB) |
+| `c6ee180` baseline (re-measured this pass, fresh temporary worktree, harness+corpus copied in, removed after) | 69,711,171 (69.71ms) | 19,276,976 (18.38 MiB) |
+| Ratio | **0.943x** (budget ≤1.10x, PASS) | **1.080x** (budget ≤1.15x, PASS) |
+
+The freshly re-measured `c6ee180` baseline (19,276,976 B/op) closely matches the recorded baseline (19.28 MB / ~19,280,000 bytes decimal) and apply-progress's own remediation-batch figure (66.7ms / 20.8MB, ratio 0.982x/1.080x) — cross-validating both this independent measurement and the apply-progress self-report. Both budgets hold comfortably.
+
+### Gates independently re-verified
+
+| Gate | Result |
+|---|---|
+| `go test -race ./...` | PASS |
+| `make lint` | 0 issues |
+| `make coverage-check` | PASS (82.2%) |
+| `git diff --check` | clean |
+| Zero diff `pkg/graphfrag/` vs `c6ee180` | PASS — `git diff c6ee180 HEAD --stat -- pkg/graphfrag/` empty |
+| Zero diff `internal/scan/supporting_calls.go` vs `c6ee180` | PASS — empty diff |
+| `CallgraphSchemaVersion == "6.13"` | PASS (`pkg/graphfrag/callgraph_export.go:33`) |
+| `SchemaVersion == "graph-fragment-1.13"` | PASS (`pkg/graphfrag/export.go:46`) |
+| No `internal/failure` import in `internal/callgraph` | PASS — grep empty |
+| CHANGELOG `[Unreleased]` has exactly one `### Added`/`### Fixed` | PASS — confirmed by direct read; resolves the prior verify's WARNING #1 (the lint mischaracterization it described is also moot now that G8 brought `make lint` to 0 issues) |
+| User guide states `6.13`/`graph-fragment-1.13` | PASS — resolves the prior verify's WARNING #2 (stale `6.12`/`1.12`) |
+| `docs/user-guide/AGENTS.md` verification script (HTML parse, prohibited-term grep, `git diff --check`) | PASS — all three ran clean |
+| Commit hygiene `33361ee..HEAD` (12 commits) | PASS — all conventional (`fix(python):`, `fix(scan):`, `chore(python):`, `docs:`, `docs(sdd):`), zero AI attribution (`git log --format=%B | grep -iE "co-authored-by|generated with|claude|anthropic"` → no matches) |
+
+### Task completeness
+
+83/84 task lines checked in `tasks.md`; the sole unchecked item, **14.11** ("Hand-off summary for the PR #310 comment (orchestrator posts it)"), is an orchestrator-owned, non-implementation cleanup task — carried unchanged from the first verify pass (no diff to `tasks.md` in `33361ee..HEAD`), not a regression. Its substance is already satisfied in practice: the PR itself carries two matiasdaloia comments (one per review round) documenting the exact fixes, commits, and gates. WARNING, not CRITICAL, per the decision-gate rule for cleanup tasks.
+
+### Issues (this pass)
+
+**CRITICAL**: None.
+
+**WARNING**:
+1. G1's fix narrows two literal fabrication patterns but does not add a full existence gate; a propagated (non-direct-annotation) bare return-type with no backing declaration or KB entry can still produce an inert, non-matching FQN. Documented, deliberate, inert downstream, consistent with the already-accepted `TestPythonParser_TypeHint_ReturnAnnotation` scope boundary — not a regression. Recommend a follow-up pinning test in a later batch.
+2. Task 14.11 (orchestrator hand-off summary) remains unchecked; substance already covered by the PR's own review-response comments. Carried from the first verify pass, not new.
+
+**SUGGESTION**: None.
+
+### Final Verdict (re-verification): **PASS WITH WARNINGS**
+
+All 13 G1–G13 findings are fixed with real code changes and real, non-tautological, independently-re-run passing tests. Both WARNINGs from the first verify pass (lint mischaracterization, stale user-guide schema numbers) are resolved. Perf is independently re-measured within budget (0.943x ns/op, 1.080x B/op). All final gates re-run for real and pass. Commit hygiene is clean. The two WARNINGs raised in this pass are non-blocking and do not represent regressions.
+
+**Recommendation: proceed to `sdd-archive`.**
