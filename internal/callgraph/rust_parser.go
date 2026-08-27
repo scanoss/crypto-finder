@@ -143,6 +143,8 @@ func (p *RustParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 		switch child.Type() {
 		case "use_declaration":
 			p.processUseDecl(child, src, analysis, "")
+		case "extern_crate_declaration":
+			p.recordRustExternCrateAlias(child, src, analysis)
 		case rustNodeTypeItem:
 			p.recordRustTypeAlias(child, src, analysis)
 		}
@@ -275,6 +277,36 @@ func (p *RustParser) recordRustAliasImport(node *sitter.Node, src []byte, analys
 		realPath = prefix + "::" + realPath
 	}
 	analysis.ImportAliases[alias] = realPath
+}
+
+// recordRustExternCrateAlias resolves the 2015-edition rename
+// `extern crate openssl_sys as ffi;` so a call written `ffi::EVP_sha256()`
+// keeps the crate's own identity.
+//
+// `use openssl_sys as ffi;` was already handled, by recordRustAliasImport. The
+// `extern crate` spelling reached extractImports as an unrecognized node type
+// and the rename was dropped, so the call key kept the local name — `ffi.X`
+// instead of `openssl_sys.X`. That is the wrong-key case rather than the
+// missing-key one: the identity looks like data and matches no contract.
+// FFI binding crates are where it shows, because aliasing them is the norm.
+func (p *RustParser) recordRustExternCrateAlias(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	// `extern crate foo;` has one identifier and no rename; `extern crate self
+	// as foo;` carries a `self` keyword node rather than a second identifier.
+	// Both leave the identity alone, so require exactly the two-identifier form.
+	var idents []string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == goNodeIdentifier {
+			idents = append(idents, child.Content(src))
+		}
+	}
+	if len(idents) != 2 {
+		return
+	}
+	crateName, alias := idents[0], idents[1]
+	if crateName == "" || alias == "" || alias == crateName {
+		return
+	}
+	analysis.ImportAliases[alias] = crateName
 }
 
 func (p *RustParser) recordRustScopedImport(fullPath string, analysis *FileAnalysis, combinedPrefix string) {

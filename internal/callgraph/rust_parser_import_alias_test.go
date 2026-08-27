@@ -321,3 +321,54 @@ fn documented_idiom(key: &[u8; 16], iv: &[u8; 16], buf: &mut [u8]) {
 		}
 	}
 }
+
+// `extern crate openssl_sys as ffi;` is the 2015-edition rename. Only the
+// `use ... as ...` spelling was resolved, so a call through the extern-crate
+// alias kept the local name in the identity — `ffi.EVP_sha256` rather than
+// `openssl_sys.EVP_sha256` — and matched no contract. FFI binding crates are
+// where this shows, because aliasing them is the norm.
+func TestRustParser_ExternCrateRenameResolvesCrateIdentity(t *testing.T) {
+	t.Parallel()
+
+	got := parseRustCalleeFQNs(t, `extern crate openssl_sys as ffi;
+
+unsafe fn digest(rsa: *mut ffi::RSA, e: *mut ffi::BIGNUM) {
+    let _md = ffi::EVP_sha256();
+    let _ = ffi::RSA_generate_key_ex(rsa, 2048, e, core::ptr::null_mut());
+}`)
+
+	want := map[string]string{
+		"ffi::EVP_sha256":          "openssl_sys.EVP_sha256",
+		"ffi::RSA_generate_key_ex": "openssl_sys.RSA_generate_key_ex",
+	}
+	for raw, wantFQN := range want {
+		if got[raw] != wantFQN {
+			t.Errorf("call %q resolved to %q, want %q", raw, got[raw], wantFQN)
+		}
+	}
+}
+
+// The two spellings that must keep behaving as they did: `use ... as ...`
+// already resolved, and a plain `extern crate` without a rename has no alias to
+// apply and must leave the crate path untouched.
+func TestRustParser_ExternCrateWithoutRenameKeepsCratePath(t *testing.T) {
+	t.Parallel()
+
+	got := parseRustCalleeFQNs(t, `extern crate openssl_sys;
+use openssl_sys as sys;
+
+unsafe fn digest() {
+    let _a = openssl_sys::EVP_sha256();
+    let _b = sys::EVP_sha384();
+}`)
+
+	want := map[string]string{
+		"openssl_sys::EVP_sha256": "openssl_sys.EVP_sha256",
+		"sys::EVP_sha384":         "openssl_sys.EVP_sha384",
+	}
+	for raw, wantFQN := range want {
+		if got[raw] != wantFQN {
+			t.Errorf("call %q resolved to %q, want %q", raw, got[raw], wantFQN)
+		}
+	}
+}
