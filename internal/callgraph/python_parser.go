@@ -62,6 +62,10 @@ const (
 	pythonSelfObjectName  = "self"
 	pythonClsObjectName   = "cls"
 	pythonInitMethodName  = "__init__"
+	// pythonGetattrBuiltinName is the bare identifier row 7's bounded
+	// dynamic-dispatch rewrite matches (python-parser-parity-2):
+	// `getattr(obj, "literal")(...)`.
+	pythonGetattrBuiltinName = "getattr"
 	// pythonInitPyFileName is the Python package-init filename. A file with
 	// this basename is the only place `__init__.py` re-export collection
 	// (collectPythonReExports) runs.
@@ -1590,8 +1594,24 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 	startCol := int(node.StartPoint().Column) + 1
 	endCol := int(node.EndPoint().Column) + 1
 
+	// Row 7 (python-parser-parity-2): a literal-argument
+	// importlib.import_module(...)/__import__(...) registers its module name
+	// as an import, independent of whether this call itself resolves —
+	// mirrors what a real `import X` statement would have bound.
+	p.pythonMaybeRecordDynamicImport(node, funcNode, src, analysis)
+
 	var call *FunctionCall
 	switch funcNode.Type() {
+	case pythonNodeCall:
+		// Row 7 bounded dynamic dispatch: `getattr(obj, "literal")(...)` —
+		// the outer call's function is itself a call. Only a single-
+		// string_content literal method-name argument rewrites through the
+		// SAME receiver/callee path as an ordinary attribute call; anything
+		// else (a non-literal name, a non-getattr inner call) fabricates
+		// nothing and leaves call nil, exactly as before this row.
+		if object, method, ok := pythonGetattrLiteralTarget(funcNode, src); ok {
+			call = p.pythonResolveAttributeLikeCall(object, method, false, nil, src, raw, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
+		}
 	case goNodeIdentifier:
 		// Simple call like `sha256()` or imported class constructor like `Cipher()`
 		name := funcNode.Content(src)
@@ -1778,7 +1798,18 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 	}
 
 	raw := node.Content(src)
+	return p.pythonResolveAttributeLikeCall(object, method, objectIsCall, objectCallNode, src, raw, filePath, line, startCol, endCol, args, analysis, bindings, chainID, assignedVar)
+}
 
+// pythonResolveAttributeLikeCall resolves an already-decomposed
+// receiver/method pair through the SAME resolution path parseAttributeCall
+// uses for a real `object.method()` attribute node: the self/cls local-
+// method shortcut, super() base resolution, import resolution, and the
+// same-package fallback. Shared with row 7's bounded
+// `getattr(obj, "literal")(...)` rewrite (python-parser-parity-2), which has
+// no real attribute node to decompose — object/method/objectIsCall/
+// objectCallNode are already known by the caller.
+func (p *PythonParser) pythonResolveAttributeLikeCall(object, method string, objectIsCall bool, objectCallNode *sitter.Node, src []byte, raw, filePath string, line, startCol, endCol int, args []string, analysis *FileAnalysis, bindings pythonBindings, chainID, assignedVar string) *FunctionCall {
 	// "self"/"cls" calls are local method calls — and, inside a
 	// @classmethod scope whose first parameter is named something other
 	// than "cls", that renamed name canonicalises the same way (row 8:
@@ -1821,6 +1852,107 @@ func (p *PythonParser) parseAttributeCall(node *sitter.Node, src []byte, filePat
 		ChainID:     chainID,
 		AssignedVar: assignedVar,
 	}
+}
+
+// pythonGetattrLiteralTarget recognizes row 7's bounded dynamic-dispatch
+// shape: funcNode is itself a `call` node whose function is the bare
+// identifier "getattr", with a second positional argument that is a single-
+// string_content literal — `getattr(obj, "encrypt")`. Returns the receiver
+// expression text (argument 0, verbatim) and the literal method name when
+// this shape matches; ok=false for anything else (a non-getattr inner call,
+// too few arguments, or a non-literal second argument), which must
+// fabricate nothing.
+func pythonGetattrLiteralTarget(funcNode *sitter.Node, src []byte) (object, method string, ok bool) {
+	if funcNode == nil || funcNode.Symbol() != pythonSyms.call {
+		return "", "", false
+	}
+	fn0 := funcNode.Child(0)
+	if fn0 == nil || fn0.Symbol() != pythonSyms.identifier || fn0.Content(src) != pythonGetattrBuiltinName {
+		return "", "", false
+	}
+	argList := pythonArgumentListChild(funcNode)
+	if argList == nil || int(argList.NamedChildCount()) < 2 {
+		return "", "", false
+	}
+	literal, litOK := pythonLiteralStringContent(argList.NamedChild(1), src)
+	if !litOK {
+		return "", "", false
+	}
+	return argList.NamedChild(0).Content(src), literal, true
+}
+
+// pythonLiteralStringContent returns the text of a `string` node's single
+// `string_content` child — the exact bounded shape row 7 requires for a
+// literal argument. A plain string literal's named children are
+// string_start/string_content/string_end; an f-string with interpolation
+// instead carries an "interpolation" named child in place of (or beside)
+// string_content, and a concatenated/adjacent-string-literal argument would
+// be a DIFFERENT outer node entirely (not a single `string` node) — so
+// requiring EXACTLY ONE string_content child among node's named children
+// rejects both without needing to special-case them individually. Any other
+// shape (not a string node, zero or multiple string_content children)
+// returns ok=false — no fabrication.
+func pythonLiteralStringContent(node *sitter.Node, src []byte) (string, bool) {
+	if node == nil || node.Symbol() != pythonSyms.string {
+		return "", false
+	}
+	var content *sitter.Node
+	count := int(node.NamedChildCount())
+	for i := 0; i < count; i++ {
+		child := node.NamedChild(i)
+		if child.Symbol() != pythonSyms.stringContent {
+			continue
+		}
+		if content != nil {
+			// A second string_content sibling means this is NOT the plain
+			// single-literal shape (row 7 is intentionally bounded) —
+			// reject rather than guess which one is intended.
+			return "", false
+		}
+		content = child
+	}
+	if content == nil {
+		return "", false
+	}
+	return content.Content(src), true
+}
+
+// pythonMaybeRecordDynamicImport registers row 7's other bounded shape: a
+// literal-argument `importlib.import_module("hashlib")` or
+// `__import__("hashlib")` binds "hashlib" as an import exactly as a real
+// `import hashlib` statement would (recordPythonImportOnce — first binding
+// in document order wins). node is the outer call (whose OWN argument_list
+// carries the literal); funcNode is that call's function expression.
+// Anything else — a non-literal argument, an unrelated call — registers
+// nothing.
+func (p *PythonParser) pythonMaybeRecordDynamicImport(node, funcNode *sitter.Node, src []byte, analysis *FileAnalysis) {
+	switch {
+	case funcNode.Symbol() == pythonSyms.identifier && funcNode.Content(src) == "__import__":
+		recordPythonLiteralModuleImport(node, src, analysis)
+	case funcNode.Symbol() == pythonSyms.attribute:
+		object := funcNode.ChildByFieldName("object")
+		attr := funcNode.ChildByFieldName("attribute")
+		if object != nil && object.Symbol() == pythonSyms.identifier && object.Content(src) == "importlib" &&
+			attr != nil && attr.Content(src) == "import_module" {
+			recordPythonLiteralModuleImport(node, src, analysis)
+		}
+	}
+}
+
+// recordPythonLiteralModuleImport reads node's (a call node) own first
+// argument as a literal string and, when present, registers it via
+// recordPythonImportOnce under its own name (both key and module path equal
+// the literal text, mirroring a plain `import <name>` statement).
+func recordPythonLiteralModuleImport(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	argList := pythonArgumentListChild(node)
+	if argList == nil || argList.NamedChildCount() == 0 {
+		return
+	}
+	name, ok := pythonLiteralStringContent(argList.NamedChild(0), src)
+	if !ok {
+		return
+	}
+	recordPythonImportOnce(analysis, name, name)
 }
 
 // resolveImportedCall attempts to resolve a module-qualified attribute call by looking

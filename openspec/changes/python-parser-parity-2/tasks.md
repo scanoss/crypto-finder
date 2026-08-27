@@ -114,11 +114,11 @@ All units land on the SAME PR #310 branch (no chaining — `size:exception` acce
 
 ## Phase 8: Row 7 — Bounded dynamic dispatch
 
-- [ ] **8.1** RED: `TestPythonParser_DynamicDispatch_GetattrLiteral`, `_ImportlibLiteral`, `_NonLiteralNoIdentity`.
+- [x] **8.1** RED: `TestPythonParser_DynamicDispatch_GetattrLiteral`, `_ImportlibLiteral`, `_NonLiteralNoIdentity`.
   Files: `internal/callgraph/python_parser_test.go`. Evidence: `go test ./internal/callgraph/ -run TestPythonParser_DynamicDispatch -v`. Deps: 7.3.
-- [ ] **8.2** GREEN: `getattr(obj, "encrypt")(data)` with a single-`string_content` literal argument 1 rewrites the outer call through the `obj.encrypt` receiver/callee path (non-literal → nothing new); `importlib.import_module("hashlib")`/`__import__("hashlib")` with a literal argument register the import via `recordPythonImportOnce` (first-binding-wins).
+- [x] **8.2** GREEN: `getattr(obj, "encrypt")(data)` with a single-`string_content` literal argument 1 rewrites the outer call through the `obj.encrypt` receiver/callee path (non-literal → nothing new); `importlib.import_module("hashlib")`/`__import__("hashlib")` with a literal argument register the import via `recordPythonImportOnce` (first-binding-wins).
   Files: `internal/callgraph/python_parser.go`. Deps: 8.1.
-- [ ] **8.3** Perf guard re-run — commands per 1.5.
+- [x] **8.3** Perf guard re-run — commands per 1.5.
   Deps: 8.2.
 
 ## Phase 9: Row 11 — `functools.partial` / `__call__`

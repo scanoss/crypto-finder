@@ -1665,6 +1665,79 @@ func TestPythonParser_Super_NeverLocalSuper(t *testing.T) {
 	}
 }
 
+// TestPythonParser_DynamicDispatch_GetattrLiteral (row 7,
+// python-parser-parity-2) pins that `getattr(obj, "encrypt")(data)`, with a
+// single-string_content literal method-name argument, rewrites through the
+// SAME receiver/callee resolution path as an ordinary `obj.encrypt(data)`
+// attribute call.
+func TestPythonParser_DynamicDispatch_GetattrLiteral(t *testing.T) {
+	src := `def run(obj, data):
+    return getattr(obj, "encrypt")(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "encrypt")
+	if call == nil {
+		t.Fatalf("getattr(obj, \"encrypt\")(data) call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "mypkg", Type: "obj", Name: "encrypt"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
+	}
+	if call.ReceiverVar != "obj" {
+		t.Errorf("ReceiverVar = %q, want %q", call.ReceiverVar, "obj")
+	}
+}
+
+// TestPythonParser_DynamicDispatch_ImportlibLiteral (row 7,
+// python-parser-parity-2) pins that a literal-argument
+// importlib.import_module(...) registers the import exactly as `import
+// hashlib` would, so a LATER bare `hashlib.sha256()` reference resolves.
+func TestPythonParser_DynamicDispatch_ImportlibLiteral(t *testing.T) {
+	src := `import importlib
+
+def run(data):
+    hashlib = importlib.import_module("hashlib")
+    return hashlib.sha256(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	call := findPythonCallByMethod(fn, "sha256")
+	if call == nil {
+		t.Fatalf("hashlib.sha256(data) call not found among %+v", fn.Calls)
+	}
+	want := FunctionID{Package: "hashlib", Name: "sha256"}
+	if call.Callee != want {
+		t.Errorf("Callee = %+v, want %+v (import_module literal must register the import)", call.Callee, want)
+	}
+}
+
+// TestPythonParser_DynamicDispatch_NonLiteralNoIdentity (row 7,
+// python-parser-parity-2) pins that a non-literal getattr method-name
+// argument fabricates NOTHING beyond the pre-existing (row-7-unrelated)
+// recording of the inner `getattr(obj, name)` call as its own pending call
+// — exactly as before row 7, and unlike the literal case, no additional
+// rewritten call is ever added.
+func TestPythonParser_DynamicDispatch_NonLiteralNoIdentity(t *testing.T) {
+	src := `def run(obj, name, data):
+    return getattr(obj, name)(data)
+`
+	fns := parsePythonInline(t, src)
+	fn := findPythonFuncByName(fns, "run")
+	if fn == nil {
+		t.Fatal("run function not found")
+	}
+	if len(fn.Calls) != 1 || fn.Calls[0].Callee.Name != "getattr" {
+		t.Errorf("Calls = %+v, want exactly one call (the inner getattr(...) itself) and no fabricated identity", fn.Calls)
+	}
+}
+
 // TestPythonSymbolTable_AllSymbolsResolved (T0.3, python-parser-parity-2)
 // pins that every grammar-rule name resolvePythonSymbols maps into
 // pythonSymbolTable actually resolves to a non-zero sitter.Symbol against
