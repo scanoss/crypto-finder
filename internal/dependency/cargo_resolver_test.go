@@ -38,6 +38,14 @@ func TestCargoPackageNameFromID(t *testing.T) {
 			id:   "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
 			want: "serde",
 		},
+		{
+			id:   "path+file:///abs/path/to/crate#0.8.4",
+			want: "crate",
+		},
+		{
+			id:   "git+https://github.com/foo/bar#abc123def4567890abc123def4567890abc123de",
+			want: "bar",
+		},
 	}
 
 	for _, tt := range tests {
@@ -72,6 +80,35 @@ func TestCargoPackageRefFromID(t *testing.T) {
 		{
 			id:   "my-crate",
 			want: Ref{Module: "my-crate"},
+		},
+		// A `path+` ID whose fragment carries only a version: the name comes
+		// from the path's last segment. Reading the fragment as the name left
+		// Module set to "0.8.4", a version standing where a crate name belongs.
+		{
+			id:   "path+file:///abs/path/to/crate#0.8.4",
+			want: Ref{Module: "crate", Version: "0.8.4"},
+		},
+		// A `git+` ID whose fragment is a commit REVISION, not a version: the
+		// name comes from the repository, and Version stays empty rather than
+		// being invented from the sha.
+		{
+			id:   "git+https://github.com/foo/bar#abc123def4567890abc123def4567890abc123de",
+			want: Ref{Module: "bar"},
+		},
+		{
+			id:   "git+https://github.com/foo/bar?branch=main#abc123def4567890abc123def4567890abc123de",
+			want: Ref{Module: "bar"},
+		},
+		// A `git+` ID whose fragment IS a version, with the repository's ".git"
+		// suffix on the location.
+		{
+			id:   "git+https://github.com/foo/bar.git#0.2.0",
+			want: Ref{Module: "bar", Version: "0.2.0"},
+		},
+		// The explicit `name@version` fragment still wins for both forms.
+		{
+			id:   "git+https://github.com/foo/bar#baz@0.3.0",
+			want: Ref{Module: "baz", Version: "0.3.0"},
 		},
 	}
 

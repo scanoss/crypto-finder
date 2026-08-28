@@ -193,15 +193,43 @@ func (r *CargoResolver) cargoMetadata(ctx context.Context, dir string) (*cargoMe
 // Older formats may look like:
 //   - "ring 0.17.8 (registry+https://github.com/rust-lang/crates.io-index)"
 //   - "ring@0.17.8"
+//
+// A `path+` or `git+` ID may also name the package only by its LOCATION, with
+// the fragment carrying just a version or just a git revision:
+//   - "path+file:///abs/path/to/crate#0.8.4"
+//   - "git+https://github.com/foo/bar#<40-hex sha>"
+//
+// Reading the fragment as the name left Module set to "0.8.4" and to the commit
+// sha respectively — a version and a revision standing where a crate name
+// belongs, which no coordinate can be matched against. The name then comes from
+// the path's last segment or the repository's, exactly as cargo's own
+// PackageIdSpec derives it, and the fragment is classified: a leading digit with
+// a "." in it is a version, anything else is a revision and leaves Version
+// empty rather than inventing one.
 func cargoPackageRefFromID(id string) Ref {
+	location, fragment := id, ""
 	if hashIdx := strings.LastIndex(id, "#"); hashIdx != -1 && hashIdx+1 < len(id) {
-		id = id[hashIdx+1:]
+		location, fragment = id[:hashIdx], id[hashIdx+1:]
+		id = fragment
 	}
 
 	if atIdx := strings.LastIndex(id, "@"); atIdx != -1 {
 		return Ref{
 			Module:  id[:atIdx],
 			Version: id[atIdx+1:],
+		}
+	}
+
+	// Only the location forms whose fragment is allowed to omit the name. A
+	// plain `registry+` ID always spells the name out, so its handling is
+	// unchanged.
+	if fragment != "" && (strings.HasPrefix(location, "path+") || strings.HasPrefix(location, "git+")) {
+		if name := cargoNameFromLocation(location); name != "" {
+			ref := Ref{Module: name}
+			if cargoFragmentIsVersion(fragment) {
+				ref.Version = fragment
+			}
+			return ref
 		}
 	}
 
@@ -214,6 +242,36 @@ func cargoPackageRefFromID(id string) Ref {
 	}
 
 	return Ref{Module: id}
+}
+
+// cargoNameFromLocation derives a crate name from a `path+` or `git+` package
+// ID's location: the last path segment, with any query string and a repository's
+// ".git" suffix removed.
+func cargoNameFromLocation(location string) string {
+	if queryIdx := strings.IndexByte(location, '?'); queryIdx != -1 {
+		location = location[:queryIdx]
+	}
+	location = strings.TrimRight(location, "/")
+	if slashIdx := strings.LastIndexByte(location, '/'); slashIdx != -1 {
+		location = location[slashIdx+1:]
+	}
+	location = strings.TrimSuffix(location, ".git")
+	// A location that reduced to the scheme itself, or to nothing, names no
+	// crate; the caller keeps its existing fallbacks rather than guessing.
+	if location == "" || strings.Contains(location, "+") || strings.Contains(location, ":") {
+		return ""
+	}
+	return location
+}
+
+// cargoFragmentIsVersion reports whether a name-less package ID fragment is a
+// version rather than a git revision. Cargo writes a semver there, or a commit
+// hash; a hash carries no ".".
+func cargoFragmentIsVersion(fragment string) bool {
+	if fragment == "" || fragment[0] < '0' || fragment[0] > '9' {
+		return false
+	}
+	return strings.Contains(fragment, ".")
 }
 
 // cargoPackageNameFromID extracts the package name from a cargo package ID.
