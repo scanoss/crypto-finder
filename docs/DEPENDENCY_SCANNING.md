@@ -1073,6 +1073,8 @@ The extensible architecture makes adding a new language a matter of implementing
 
 The `MavenResolver` uses a **three-tier fallback strategy** to maximize dependency recovery, especially for multi-module projects:
 
+Every Maven invocation receives `-Dmaven.repo.local=$HOME/.m2/repository`, so Maven writes artifacts to the same repository that Crypto Finder reads even when the process overrides `HOME` and the JVM reports a different `user.home`.
+
 **Tier 1 — Reactor with `--fail-never`** (always attempted):
 - Runs `mvn dependency:list --fail-never -DappendOutput=true -DincludeScope=compile`
 - The `--fail-never` flag continues past module failures; `-DappendOutput=true` accumulates results from all succeeding modules into a single output file
@@ -1099,6 +1101,7 @@ Dependencies without source JARs are included in the resolution results but with
 The `GradleResolver` asks Gradle itself for a machine-readable dependency model via a temporary init script:
 
 - Prefers `./gradlew` and falls back to `gradle` from `PATH`
+- Uses the caller's `GRADLE_USER_HOME` when set; otherwise defaults it to `$HOME/.gradle`
 - Resolves the main Java compile classpath for single-project and multi-project builds
 - Treats included Gradle subprojects as `WorkspaceMembers` rather than external dependencies
 - Captures external module coordinates, versioned dependency edges, compiled JAR paths, and best-effort source archive paths

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
@@ -81,6 +85,23 @@ func TestNewDependencyScanner(t *testing.T) {
 	}
 	if ds.orchestrator != orchestrator || ds.resolver != resolver || ds.cgBuilder != builder || ds.findingsCache != cache {
 		t.Fatal("NewDependencyScanner did not wire dependencies correctly")
+	}
+}
+
+func TestLogDependencyScanSummary_WarnsWhenAllDependenciesLackSources(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Logger
+	log.Logger = zerolog.New(&output)
+	t.Cleanup(func() { log.Logger = previous })
+
+	logDependencyScanSummary(dependencyScanSummary{depsSkippedSource: 3})
+
+	got := output.String()
+	if !strings.Contains(got, `"level":"warn"`) {
+		t.Fatalf("expected warning log, got %s", got)
+	}
+	if !strings.Contains(got, `"depsScanned":0`) || !strings.Contains(got, `"depsSkippedNoSource":3`) {
+		t.Fatalf("expected dependency counters in warning, got %s", got)
 	}
 }
 

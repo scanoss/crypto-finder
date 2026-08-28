@@ -232,16 +232,34 @@ func (r *GradleResolver) exportDependencyModel(ctx context.Context, targetDir, c
 }
 
 func (r *GradleResolver) configureGradleCommand(cmd *exec.Cmd, targetDir string) error {
+	env := os.Environ()
+	if _, configured := os.LookupEnv("GRADLE_USER_HOME"); !configured {
+		if home, err := os.UserHomeDir(); err == nil {
+			env = envWithValue(env, "GRADLE_USER_HOME", filepath.Join(home, ".gradle"))
+		}
+	}
+
 	selection, err := r.resolveJavaSelection(targetDir)
 	if err != nil {
 		return err
 	}
-	if selection == nil {
-		return nil
+	if selection != nil {
+		env = javaruntime.EnvWithJavaHome(env, selection.JavaHome)
 	}
 
-	cmd.Env = javaruntime.EnvWithJavaHome(os.Environ(), selection.JavaHome)
+	cmd.Env = env
 	return nil
+}
+
+func envWithValue(base []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range base {
+		if strings.HasPrefix(entry, prefix) {
+			base[i] = prefix + value
+			return base
+		}
+	}
+	return append(base, prefix+value)
 }
 
 type gradleVersion struct {

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Java dependency scans now keep Maven's local repository aligned with `HOME`, default Gradle's user home to `$HOME/.gradle` unless already configured, and warn when every resolved dependency is skipped because source is unavailable.
 - Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.
 - Rust imports, type aliases and bindings are scoped to the block, function or module that declares them.
 - A Rust module the crate declares shadows a same-named dependency, in the declaring file only.

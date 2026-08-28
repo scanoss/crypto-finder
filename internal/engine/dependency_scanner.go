@@ -297,7 +297,11 @@ func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummar
 }
 
 func logDependencyScanSummary(summary dependencyScanSummary) {
-	log.Info().
+	event := log.Info()
+	if summary.depsScanned == 0 && summary.depsSkippedSource > 0 {
+		event = log.Warn()
+	}
+	event.
 		Int("depsScanned", summary.depsScanned).
 		Int("depsSkippedNoSource", summary.depsSkippedSource).
 		Int("depsFailed", summary.depsFailed).
