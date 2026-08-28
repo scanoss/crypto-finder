@@ -1,0 +1,37 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: azure_security_keyvault_certificates
+  coordinates:
+    - azure_security_keyvault_certificates
+  version_range: ">=0.0.1,<2.0.0"
+  description: "Azure Key Vault certificates client (generated SDK)"
+
+# API read at azure_security_keyvault_certificates 1.0.0
+# (src/generated/clients/certificate_client.rs). X.509 certificate lifecycle in
+# the vault. Contracted so a consumer's certificate variables resolve; the
+# matching rule reports assetType certificate and does not infer the key type,
+# signature algorithm or certificate state, none of which a call site names.
+contracts:
+  - method: azure_security_keyvault_certificates::CertificateClient.create_certificate
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: azure_security_keyvault_certificates::CertificateClient.import_certificate
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: azure_security_keyvault_certificates::CertificateClient.get_certificate
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_certificates::CertificateClient.merge_certificate
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_certificates::CertificateClient.backup_certificate
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+
+hierarchy: {}
