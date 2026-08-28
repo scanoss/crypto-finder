@@ -184,7 +184,7 @@ func TestGradleResolver_ConfigureGradleCommand_UsesHomeCacheUnlessConfigured(t *
 			if tt.set {
 				t.Setenv("GRADLE_USER_HOME", tt.configured)
 			}
-			cmd := exec.Command("gradle")
+			cmd := exec.CommandContext(context.Background(), "gradle")
 			if err := NewGradleResolver().configureGradleCommand(cmd, t.TempDir()); err != nil {
 				t.Fatalf("configureGradleCommand: %v", err)
 			}

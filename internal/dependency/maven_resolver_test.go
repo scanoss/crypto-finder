@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -234,9 +235,9 @@ exit 0
 	}
 }
 
-func TestMavenResolver_Resolve_UsesHomeLocalRepositoryForEveryCommand(t *testing.T) {
+func TestMavenResolver_Resolve_UsesHomeLocalRepository(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	project := t.TempDir()
 	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId><version>1.2.3</version></dependency></dependencies></project>`
@@ -300,6 +301,27 @@ exit 0
 	}
 	if len(result.Dependencies) != 1 || result.Dependencies[0].Dir == "" {
 		t.Fatalf("expected dependency sources under HOME local repository, got %#v", result.Dependencies)
+	}
+}
+
+func TestMavenResolver_ConfigureMavenCommand_UsesHomeLocalRepository(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	cmd := exec.CommandContext(context.Background(), "mvn", "dependency:tree")
+	if err := NewMavenResolver().configureMavenCommand(cmd); err != nil {
+		t.Fatalf("configureMavenCommand: %v", err)
+	}
+
+	want := "-Dmaven.repo.local=" + filepath.Join(home, ".m2", "repository")
+	matches := 0
+	for _, arg := range cmd.Args {
+		if arg == want {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("Maven command has %d copies of %q, want exactly one: %#v", matches, want, cmd.Args)
 	}
 }
 
