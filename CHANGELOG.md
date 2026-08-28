@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Dependency-source findings surfaced during API entry-point inference now keep `dependency_info` and source-root-relative paths instead of appearing as direct findings with absolute cache paths.
 - Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.
 - Rust imports, type aliases and bindings are scoped to the block, function or module that declares them.
 - A Rust module the crate declares shadows a same-named dependency, in the declaring file only.

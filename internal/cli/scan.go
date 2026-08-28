@@ -1069,7 +1069,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// is a no-op when scanning a consumer of the library or a Type 1 library.
 	if callGraphResult != nil && callGraphResult.CallGraph != nil {
 		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
-			engine.SynthesizeRuleCryptoEntryPoints(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
+			engine.SynthesizeRuleCryptoEntryPointsForResult(callGraphResult, rulePaths)
 			scanutil.MaterializeConditionedFindings(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
 		} else {
 			log.Debug().
