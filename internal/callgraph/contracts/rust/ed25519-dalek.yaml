@@ -31,6 +31,24 @@ library:
 # arity-1 Signer spelling — a genuine difference, not an overload, so both are
 # declared.
 #
+# The remaining sign/verify rule surface was audited exhaustively against the
+# published crate sources. All nine APIs are contracted below:
+#
+#   0.1.0  SecretKey.sign (src/ed25519.rs:136).
+#   1.0.1  Keypair.try_sign/sign_prehashed/verify_prehashed
+#          (src/keypair.rs:410,:237,:323), ExpandedSecretKey.sign_prehashed
+#          (src/secret.rs:435), and PublicKey.verify_prehashed
+#          (src/public.rs:182).
+#   2.0.0  SigningKey.sign_prehashed/verify_prehashed
+#          (src/signing.rs:304,:392) and VerifyingKey.verify_prehashed
+#          (src/verifying.rs:327). The 2.x prehashed methods require the
+#          crate's `digest` feature; the corresponding 1.0.1 APIs are not
+#          feature-gated.
+#
+# The prehashed signatures omit parameter_types because their digest argument
+# is generic. Method plus arity does not identify one canonical declared
+# signature there, even though the operation return is unambiguous.
+#
 # skipped-non-crypto: Debug, Zeroize and serde impls; the constant-length
 #   accessors are contracted as `output` because a consumer's signature and key
 #   variables are typed through them.
@@ -58,6 +76,10 @@ contracts:
     return: { type: ed25519_dalek::Signature, confidence: high }
     parameter_types: ["&[u8]"]
     role: operation
+  - method: ed25519_dalek::SigningKey.sign_prehashed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
   - method: ed25519_dalek::SigningKey.try_sign
     arity: 1
     return: { type: core::result::Result, confidence: high }
@@ -72,6 +94,10 @@ contracts:
     arity: 2
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::SigningKey.verify_prehashed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
     role: operation
   - method: ed25519_dalek::SigningKey.to_bytes
     arity: 0
@@ -100,6 +126,10 @@ contracts:
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&[u8]", "&ed25519::Signature"]
     role: operation
+  - method: ed25519_dalek::VerifyingKey.verify_prehashed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
   - method: ed25519_dalek::VerifyingKey.to_bytes
     arity: 0
     return: { type: "[u8; 32]", confidence: high }
@@ -126,6 +156,15 @@ contracts:
     return: { type: ed25519_dalek::Signature, confidence: high }
     parameter_types: ["&[u8]"]
     role: operation
+  - method: ed25519_dalek::Keypair.try_sign
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: ed25519_dalek::Keypair.sign_prehashed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
   - method: ed25519_dalek::Keypair.verify
     arity: 2
     return: { type: core::result::Result, confidence: high }
@@ -135,6 +174,10 @@ contracts:
     arity: 2
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::Keypair.verify_prehashed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
     role: operation
   - method: ed25519_dalek::Keypair.to_bytes
     arity: 0
@@ -155,6 +198,10 @@ contracts:
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&[u8]", "&ed25519::Signature"]
     role: operation
+  - method: ed25519_dalek::PublicKey.verify_prehashed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
   - method: ed25519_dalek::PublicKey.to_bytes
     arity: 0
     return: { type: "[u8; 32]", confidence: high }
@@ -168,6 +215,11 @@ contracts:
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&[u8]"]
     role: factory
+  - method: ed25519_dalek::SecretKey.sign
+    arity: 1
+    return: { type: ed25519_dalek::Signature, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
   - method: ed25519_dalek::ExpandedSecretKey.from_bytes
     arity: 1
     return: { type: core::result::Result, confidence: high }
@@ -177,6 +229,10 @@ contracts:
     arity: 2
     return: { type: ed25519_dalek::Signature, confidence: high }
     parameter_types: ["&[u8]", "&ed25519_dalek::PublicKey"]
+    role: operation
+  - method: ed25519_dalek::ExpandedSecretKey.sign_prehashed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
     role: operation
 
 hierarchy: {}
