@@ -145,6 +145,63 @@ exit 0
 	}
 }
 
+func TestGradleResolver_ConfigureGradleCommand_UsesHomeCacheUnlessConfigured(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	override := filepath.Join(t.TempDir(), "gradle-cache")
+	previous, wasConfigured := os.LookupEnv("GRADLE_USER_HOME")
+	if err := os.Unsetenv("GRADLE_USER_HOME"); err != nil {
+		t.Fatalf("unset GRADLE_USER_HOME: %v", err)
+	}
+	t.Cleanup(func() {
+		if wasConfigured {
+			_ = os.Setenv("GRADLE_USER_HOME", previous)
+			return
+		}
+		_ = os.Unsetenv("GRADLE_USER_HOME")
+	})
+
+	tests := []struct {
+		name       string
+		set        bool
+		configured string
+		want       string
+	}{
+		{
+			name: "defaults under HOME",
+			want: filepath.Join(home, ".gradle"),
+		},
+		{
+			name:       "preserves caller override",
+			set:        true,
+			configured: override,
+			want:       override,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.set {
+				t.Setenv("GRADLE_USER_HOME", tt.configured)
+			}
+			cmd := exec.CommandContext(context.Background(), "gradle")
+			if err := NewGradleResolver().configureGradleCommand(cmd, t.TempDir()); err != nil {
+				t.Fatalf("configureGradleCommand: %v", err)
+			}
+
+			var got string
+			for _, entry := range cmd.Environ() {
+				if strings.HasPrefix(entry, "GRADLE_USER_HOME=") {
+					got = strings.TrimPrefix(entry, "GRADLE_USER_HOME=")
+				}
+			}
+			if got != tt.want {
+				t.Fatalf("GRADLE_USER_HOME = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGradleResolver_Resolve_FallsBackToPathGradle(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
