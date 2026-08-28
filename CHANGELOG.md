@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.
+- Rust imports, type aliases and bindings are scoped to the block, function or module that declares them.
+- A Rust module the crate declares shadows a same-named dependency, in the declaring file only.
+- A Rust path segment the manifest does not declare as a dependency is no longer read as a crate.
+- Rust glob imports resolve to the module that declares the name, and only when unambiguous.
+- A `use super::*` glob names the parent module, so a test module is not reported as the owner of a public type.
+- Rust path roots and spellings resolve to what they name: `crate::`, `self::`, `super::`, `Self::`, `dyn`, a leading `::`, `use crate::{a, b}`, `use x::{self, Y}`, `use PATH as NAME` and `use crate as NAME`.
+- `impl Trait for Type` is attributed to the implementing type, and `impl Trait for Box<dyn X>` to the boxed trait.
+- An `impl` block's self type keeps the path its header wrote, instead of re-resolving the bare leaf through the file's imports.
+- A derive-macro import no longer claims a type of the same name; Rust keeps the macro and type namespaces apart.
+- Rust ownership wrappers keep their own identity; only the wrappers implementing `Deref` are seen through.
+- Rust crate re-export aliases resolve from sibling files, per directory.
+- A Rust single-file module appears in the package path, as its `mod.rs` form already did.
+- Rust declared-type facts are keyed by the declaring module, with conflicting names dropped rather than guessed.
+- A Rust generic receiver resolves through its trait bound; an unbounded parameter carries no type, and a glob may not claim one.
+- Calls inside a Rust `match`-arm guard are walked again.
+- An inline Rust `#[cfg(test)]` module is skipped by default, as a test file already was, so a crate's test-only cryptography is not reported as its own.
+- A Rust `#[cfg(test)]` module's declarations stay out of the crate index too, so a factory declared only for tests does not type a receiver in shipped code.
+- A Rust `#[cfg(not(test))]` module is production code and is no longer dropped, and a comment between the attribute and the `mod` no longer defeats the gate.
+- A Rust name two files of a crate declare differently stays dropped when a third file repeats one of them, instead of directory walk order deciding it.
+- The edition-2018 `::` disambiguator no longer survives a renaming or list import into a callee key's package.
+- A Rust crate above the index file cap is left unindexed rather than half indexed, because a partial index cannot see the conflicts it did not read.
+- Two Rust declarations sharing one `Type.method` key are merged instead of one being dropped.
+- A Rust trait default method is recorded once, owned by the trait.
+- No Rust callee key carries source text, a keyword or a placeholder where a resolved package or type belongs.
+- A cargo `path+`/`git+` package ID takes its crate name from the location, not from the fragment.
 - Java enums, records and annotation types are no longer skipped whole. The class walk dispatched only on `class_declaration` and `interface_declaration`, so an `enum` or `record` produced no function declarations at all: every crypto call inside one was invisible, with no finding, no call chain and no warning. Enum bodies nest their members one level deeper than every other type body, inside `enum_body_declarations`, and that wrapper is now transparent to the member walkers, so methods, constructors, fields and `static` initializers are found in all of them. Constant-specific bodies (`MD5 { MessageDigest get() { ... } }`) are registered as their own type, named `Owner.CONSTANT`, and record compact constructors are parsed as constructors. The enum singleton is the standard Java idiom for a crypto provider or registry, so this was a silent gap in a common shape.
 - A Java pattern variable now carries the type it binds. `if (o instanceof Cipher c)` and `case Cipher c ->` left `c` unbound, and the receiver fallback then adopted the variable's own NAME as its type, emitting `com.example.(c).doFinal` — a fabricated identity in the user's package that matches no contract. This produced a wrong edge rather than an unresolved one, and the invented name varied with whatever the developer had called the variable. `instanceof` carries its binding on the expression itself (`right` plus `name`) rather than through a `type_pattern`, so it is read separately from switch labels; record pattern components share the switch-label shape. Ordinary locals, parameters and `catch` variables are unchanged.
 - A Java receiver qualified by `this` now resolves. `this` is a keyword and never a type name, but left as receiver text it flowed into the type lookups and became the callee's package or type: `this.cipher.doFinal()` was emitted as `this.(cipher).doFinal` and `this.helper()` as `(this).helper`. Both the bare and the qualified forms (`Outer.this`, JLS 15.8.4) are now substituted before any lookup. The unqualified spellings resolved correctly before and still do; an identifier that merely begins with `this` is untouched.
@@ -14,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Java receiver typed by one of its class's type parameters now erases to that parameter's first bound (JLS 4.4). `class C<T extends Cipher>` left a receiver of type `T` unresolved, and it was emitted as `com.example.(T).doFinal` — a fabricated type in the user's package that matches no contract. The bounds were already collected for `TypeParamBounds` but never consulted when resolving a receiver. Only a callee that fell back to the caller's own package is rewritten, so a real class sharing a type parameter's name is untouched. Method-level type parameters are not covered.
 - Java local variable types are now scoped to the block that declares them. All declarations in a method were collected into one flat map, so the last declaration of a name won for every call in that method, including calls textually before it. Two sibling blocks that both declared `c` therefore resolved both receivers to whichever came last — reporting an AES `Cipher` as a `Mac`. The same map backs argument tracing, so a shadowed name also traced to the other block's literal: `Cipher.getInstance(alg)` with `alg` bound to `"AES/GCM/NoPadding"` reported the transformation string `"DES/ECB/PKCS5Padding"`. Because rules deliberately leave `algorithmFamily`, `mode` and `padding` to this layer to resolve, that surfaced as a confidently wrong algorithm in the CBOM rather than a missing one. Declarations are now layered per scope, an inner declaration shadowing an outer one inside its own block and nowhere else.
 ### Added
+- Rust declarations resolve crate-wide, indexed once per crate and shared across workers.
+- Rust dependency renames in `Cargo.toml` resolve to the real crate, including renames inherited from a workspace and 2015-edition `extern crate` aliases.
+- Rust inline `mod` blocks, trait default bodies and scoped `use` declarations are walked.
+- Rust prelude types are attributed to the standard library rather than the analyzed crate.
+- A directory's Rust glob re-exports are read once per directory instead of once per file.
 - Java method references are recorded as calls to their target, so `Cipher::getInstance`, `MessageDigest::new`, `this::helper` and `c::doFinal` are no longer invisible. The node was never visited, so a crypto API reached only through a reference produced no edge. The callee name carries no arity suffix: a reference takes its arity from the functional interface it is assigned to, not from the reference site, and the unsuffixed form is the existing "arity unknown" spelling rather than a guessed number that would join the wrong overload.
 ### Added
 - C callgraph contracts for micro-ecc: the five named curve selectors, the entropy-source configuration, key generation and public-key derivation, ECDH shared-secret agreement, and both signing spellings with verification. Every operation carries its curve argument as operation-determining, so the curve a consumer selects at the call site is what the finding is attributed to, and the selectors give the curve handle a type so the same identity survives being bound to a variable first. The very-long-integer arithmetic surface is deliberately left uncontracted: it implements the primitives above rather than being an API a consumer selects.
