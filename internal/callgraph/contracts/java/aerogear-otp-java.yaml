@@ -1,0 +1,136 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: aerogear-otp-java
+  coordinates:
+    - "org.jboss.aerogear:aerogear-otp-java"
+  version_range: ">=1.0,<1.1"
+  description: "AeroGear OTP — TOTP generation and verification over a Base32 shared secret"
+
+# Inventory source: the library's own sources jar at 1.0.0, six public types.
+# The four versions the coverage matrix lists are one release line, 1.0.0 plus
+# its M1, M8 and CR1 milestones, so a single range covers them.
+#
+# The secret drives everything here: Base32.random produces it, the Totp
+# constructor takes it, and generation and verification both read it. That is why
+# the constructors carry the secret as a metadata-contributing parameter rather
+# than leaving it opaque.
+#
+# Role note, deliberately divergent: the sibling OTP knowledge base for pyotp
+# classifies its equivalents of now, verify and the provisioning URI all as
+# output. Here generation and verification carry role operation, matching the
+# role definitions and this family's own acceptance wording, which separates
+# generation and verification from output. The two knowledge bases therefore
+# disagree on the same protocol, and reconciling them is campaign work rather
+# than something to settle silently in one direction.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: Base32.encode, decode, encodeInternal and decodeInternal,
+#     which are a generic base32 codec rather than key material handling;
+#     Clock.getCurrentInterval, a time accessor; Hash.toString and
+#     Digits.getValue, enum accessors; and the DecodingException constructor.
+contracts:
+
+  # Shared-secret generation. The value this returns becomes the Totp secret.
+  - method: org.jboss.aerogear.security.otp.api.Base32.random
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+
+  # Totp construction. The secret argument is the whole security of the scheme,
+  # so it is reported rather than left opaque.
+  - method: org.jboss.aerogear.security.otp.Totp.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.jboss.aerogear.security.otp.Totp
+    return: {type: org.jboss.aerogear.security.otp.Totp, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: org.jboss.aerogear.security.otp.Totp.<init>
+    arity: 2
+    parameter_types: [java.lang.String, org.jboss.aerogear.security.otp.api.Clock]
+    canonical_return_type: org.jboss.aerogear.security.otp.Totp
+    return: {type: org.jboss.aerogear.security.otp.Totp, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+      - index: 1
+        name: clock
+        role: operation-determining
+        contributes: {property: parameters, derivation: argument_type}
+
+  # Generation and verification.
+  - method: org.jboss.aerogear.security.otp.Totp.now
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.jboss.aerogear.security.otp.Totp.verify
+    arity: 1
+    return: {type: boolean, confidence: high}
+    role: operation
+
+  # The provisioning URI embeds the shared secret, so it is an output that
+  # carries key material rather than a formatting helper.
+  - method: org.jboss.aerogear.security.otp.Totp.uri
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+  # The time step. Constructing a Clock with an explicit interval changes the
+  # window every generated and verified code is valid for.
+  - method: org.jboss.aerogear.security.otp.api.Clock.<init>
+    arity: 0
+    canonical_return_type: org.jboss.aerogear.security.otp.api.Clock
+    return: {type: org.jboss.aerogear.security.otp.api.Clock, confidence: high}
+    role: config
+  - method: org.jboss.aerogear.security.otp.api.Clock.<init>
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: org.jboss.aerogear.security.otp.api.Clock
+    return: {type: org.jboss.aerogear.security.otp.api.Clock, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: interval
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+
+  # The underlying MAC. The hash argument selects the algorithm and the secret
+  # carries the key size.
+  - method: org.jboss.aerogear.security.otp.api.Hmac.<init>
+    arity: 3
+    parameter_types: [org.jboss.aerogear.security.otp.api.Hash, "byte[]", long]
+    canonical_return_type: org.jboss.aerogear.security.otp.api.Hmac
+    return: {type: org.jboss.aerogear.security.otp.api.Hmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.jboss.aerogear.security.otp.api.Hmac.digest
+    arity: 0
+    return: {type: "byte[]", confidence: high}
+    role: operation
+
+# The three types this KB returns are plain classes, so each needs its edge to
+# the root for the reachability check the loader runs over the java ecosystem.
+hierarchy:
+  org.jboss.aerogear.security.otp.Totp:
+    - java.lang.Object
+  org.jboss.aerogear.security.otp.api.Clock:
+    - java.lang.Object
+  org.jboss.aerogear.security.otp.api.Hmac:
+    - java.lang.Object
+
