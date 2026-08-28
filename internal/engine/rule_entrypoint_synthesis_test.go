@@ -8,6 +8,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,18 +16,24 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
 // writeRule writes a minimal rule file carrying one metadata.crypto block and
 // returns its path.
-func writeRule(t *testing.T, dir, api, family string) string {
+func writeRule(t *testing.T, dir, api, family string, rulePURL ...string) string {
 	t.Helper()
+	purlMetadata := ""
+	if len(rulePURL) > 0 {
+		purlMetadata = "      purl: " + rulePURL[0] + "\n"
+	}
 	body := "" +
 		"rules:\n" +
 		"  - id: test.rule\n" +
 		"    metadata:\n" +
+		purlMetadata +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +
 		"        algorithmPrimitive: kdf\n" +
@@ -105,6 +112,150 @@ func TestSynthesize_FiresForOwningLibrary(t *testing.T) {
 	}
 	if asset.StartLine != 10 {
 		t.Errorf("synthetic finding should sit at the method definition line, got %d", asset.StartLine)
+	}
+}
+
+func TestSynthesizeRuleCryptoEntryPointsForResult_AttributesDependencySource(t *testing.T) {
+	depRoot := filepath.Join(t.TempDir(), ".scanoss", "crypto-finder", "cache", "sources", "com.example-library", "1.2.3")
+	decl := builderWithBcrypt()
+	decl.FilePath = filepath.Join(depRoot, "src", "main", "java", "com", "example", "Builder.java")
+
+	dependencyInfo := &entities.DependencyInfo{
+		Module:  "com.example:library",
+		Version: "1.2.3",
+		PURL:    "pkg:maven/com.example/library@1.2.3",
+	}
+	otherDependencyInfo := &entities.DependencyInfo{Module: "com.example:other", Version: "4.5.6"}
+	report := &entities.InterimReport{Findings: []entities.Finding{
+		{
+			FilePath: "src/main/java/com/example/Builder.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine:      30,
+				EndLine:        30,
+				Source:         findingSourceDependency,
+				DependencyInfo: dependencyInfo,
+			}},
+		},
+		{
+			FilePath: "src/main/java/com/example/Builder.java",
+			Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine:      40,
+				EndLine:        40,
+				Source:         findingSourceDependency,
+				DependencyInfo: otherDependencyInfo,
+			}},
+		},
+	}}
+	rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt", "pkg:maven/com.example/library")
+	result := &DepScanResult{
+		Report:      report,
+		CallGraph:   graphWith(decl),
+		Ecosystem:   "java",
+		ProjectRoot: t.TempDir(),
+		Dependencies: []dependency.Dependency{{
+			Module:  dependencyInfo.Module,
+			Version: dependencyInfo.Version,
+			Dir:     depRoot,
+		}},
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rule}); got != 1 {
+		t.Fatalf("synthesized findings = %d, want 1", got)
+	}
+	if got := len(report.Findings[0].CryptographicAssets); got != 2 {
+		t.Errorf("owning dependency assets = %d, want existing and synthesized assets", got)
+	}
+	if got := len(report.Findings[1].CryptographicAssets); got != 1 {
+		t.Errorf("same-path dependency assets = %d, want unrelated dependency unchanged", got)
+	}
+	synthesized := report.Findings[0].CryptographicAssets[1]
+	if synthesized.PURL != "" {
+		t.Errorf("dependency synthesized asset purl = %q, want empty", synthesized.PURL)
+	}
+	if synthesized.DependencyInfo == nil || synthesized.DependencyInfo.PURL != dependencyInfo.PURL {
+		t.Errorf("dependency synthesized asset dependency_info = %#v, want versioned purl %q", synthesized.DependencyInfo, dependencyInfo.PURL)
+	}
+
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal interim report: %v", err)
+	}
+	var exported struct {
+		Findings []struct {
+			FilePath            string `json:"file_path"`
+			CryptographicAssets []struct {
+				DependencyInfo *entities.DependencyInfo `json:"dependency_info"`
+				PURL           *string                  `json:"purl"`
+			} `json:"cryptographic_assets"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(data, &exported); err != nil {
+		t.Fatalf("unmarshal interim report schema: %v", err)
+	}
+	for _, finding := range exported.Findings {
+		if filepath.IsAbs(finding.FilePath) {
+			t.Errorf("interim finding exposes absolute dependency path %q", finding.FilePath)
+		}
+		for _, asset := range finding.CryptographicAssets {
+			if asset.DependencyInfo == nil {
+				t.Errorf("dependency-source asset at %q has no dependency_info", finding.FilePath)
+			}
+			if asset.PURL != nil {
+				t.Errorf("dependency-source asset at %q exposes top-level purl %q", finding.FilePath, *asset.PURL)
+			}
+		}
+	}
+}
+
+func TestSynthesizeRuleCryptoEntryPointsForResult_PreservesDirectSource(t *testing.T) {
+	projectRoot := t.TempDir()
+	decl := builderWithBcrypt()
+	decl.FilePath = filepath.Join(projectRoot, decl.FilePath)
+	rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt")
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   graphWith(decl),
+		Ecosystem:   "java",
+		ProjectRoot: projectRoot,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rule}); got != 1 {
+		t.Fatalf("synthesized findings = %d, want 1", got)
+	}
+	if len(result.Report.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(result.Report.Findings))
+	}
+	finding := result.Report.Findings[0]
+	if filepath.IsAbs(finding.FilePath) || finding.FilePath != filepath.ToSlash(builderWithBcrypt().FilePath) {
+		t.Errorf("direct finding path = %q, want project-relative path", finding.FilePath)
+	}
+	asset := finding.CryptographicAssets[0]
+	if asset.Source != findingSourceDirect {
+		t.Errorf("direct asset source = %q, want %q", asset.Source, findingSourceDirect)
+	}
+	if asset.DependencyInfo != nil {
+		t.Errorf("direct asset dependency_info = %#v, want nil", asset.DependencyInfo)
+	}
+}
+
+func TestSynthesizeRuleCryptoEntryPointsForResult_DropsUnownedAbsoluteSource(t *testing.T) {
+	decl := builderWithBcrypt()
+	decl.FilePath = filepath.Join(t.TempDir(), "external", "Builder.java")
+	rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt")
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   graphWith(decl),
+		Ecosystem:   "java",
+		ProjectRoot: t.TempDir(),
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rule}); got != 0 {
+		t.Fatalf("synthesized findings = %d, want 0 for an unowned absolute source", got)
+	}
+	if len(result.Report.Findings) != 0 {
+		t.Fatalf("findings = %d, want no path-unsafe finding", len(result.Report.Findings))
 	}
 }
 

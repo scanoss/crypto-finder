@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Dependency-source findings surfaced during API entry-point inference now keep `dependency_info` and source-root-relative paths instead of appearing as direct findings with absolute cache paths.
 - Java dependency scans now keep Maven's local repository aligned with the operating-system user home (`HOME` on Unix and `USERPROFILE` on Windows), default Gradle's user home under the same root unless already configured, and warn when every resolved dependency is skipped because source is unavailable.
 - Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.
 - Rust imports, type aliases and bindings are scoped to the block, function or module that declares them.

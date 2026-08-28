@@ -76,8 +76,21 @@ const (
 // "" to apply the default >= 2-dot gate.
 //
 // report is mutated in place; returns the number of findings added. FindingIDs
-// are assigned by the caller's existing AssignFindingIDs pass.
+// are assigned by the caller's existing AssignFindingIDs pass. Production
+// callers with dependency or project roots should use
+// SynthesizeRuleCryptoEntryPointsForResult so declaration paths can be
+// normalized safely; this lower-level form remains useful for isolated graphs.
 func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *callgraph.CallGraph, rulePaths []string, ecosystem string) int {
+	return synthesizeRuleCryptoEntryPoints(report, graph, rulePaths, ecosystem, nil)
+}
+
+func synthesizeRuleCryptoEntryPoints(
+	report *entities.InterimReport,
+	graph *callgraph.CallGraph,
+	rulePaths []string,
+	ecosystem string,
+	result *DepScanResult,
+) int {
 	if report == nil || graph == nil || len(rulePaths) == 0 {
 		return 0
 	}
@@ -89,7 +102,7 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 
 	declsByFQN, declsByClass := indexGraphDeclarations(graph)
 	fileIdx := indexReportFiles(report)
-	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem)
+	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem, result)
 
 	if added > 0 {
 		log.Info().
@@ -98,6 +111,17 @@ func SynthesizeRuleCryptoEntryPoints(report *entities.InterimReport, graph *call
 			Msg("Surfaced library public crypto API methods as entry points (from rule metadata.crypto)")
 	}
 	return added
+}
+
+// SynthesizeRuleCryptoEntryPointsForResult applies rule-backed entry-point
+// synthesis to the report carried by a dependency scan result. Synthesized
+// locations are made relative to their owning project or dependency root, and
+// dependency assets retain module, version, and package identity.
+func SynthesizeRuleCryptoEntryPointsForResult(result *DepScanResult, rulePaths []string) int {
+	if result == nil {
+		return 0
+	}
+	return synthesizeRuleCryptoEntryPoints(result.Report, result.CallGraph, rulePaths, result.Ecosystem, result)
 }
 
 // indexGraphDeclarations indexes method definitions present in the scanned
@@ -123,7 +147,15 @@ func indexGraphDeclarations(
 func indexReportFiles(report *entities.InterimReport) map[string]int {
 	fileIdx := make(map[string]int, len(report.Findings))
 	for i := range report.Findings {
-		fileIdx[report.Findings[i].FilePath] = i
+		finding := &report.Findings[i]
+		if len(finding.CryptographicAssets) == 0 {
+			fileIdx[syntheticFindingKey(finding.FilePath, nil)] = i
+			continue
+		}
+		for j := range finding.CryptographicAssets {
+			asset := &finding.CryptographicAssets[j]
+			fileIdx[syntheticFindingKey(finding.FilePath, asset.DependencyInfo)] = i
+		}
 	}
 	return fileIdx
 }
@@ -135,6 +167,7 @@ func synthesizeRuleCryptoAssets(
 	declsByFQN map[string][]*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
 	ecosystem string,
+	result *DepScanResult,
 ) int {
 	added := 0
 	for api, metas := range apiCrypto {
@@ -142,7 +175,7 @@ func synthesizeRuleCryptoAssets(
 		if len(decls) == 0 && ecosystem == ecosystemPython {
 			decls = pythonModuleCollapsedDecls(api, declsByFQN)
 		}
-		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass)
+		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass, result)
 	}
 	return added
 }
@@ -187,11 +220,12 @@ func synthesizeAPIAssets(
 	metas []map[string]string,
 	decls []*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
+	result *DepScanResult,
 ) int {
 	if len(decls) == 0 {
-		return synthesizeImplicitCtorAsset(report, fileIdx, api, metas, declsByClass)
+		return synthesizeImplicitCtorAsset(report, fileIdx, api, metas, declsByClass, result)
 	}
-	return synthesizeDeclaredAPIAssets(report, fileIdx, api, metas, decls)
+	return synthesizeDeclaredAPIAssets(report, fileIdx, api, metas, decls, result)
 }
 
 func synthesizeImplicitCtorAsset(
@@ -200,6 +234,7 @@ func synthesizeImplicitCtorAsset(
 	api string,
 	metas []map[string]string,
 	declsByClass map[string][]*callgraph.FunctionDecl,
+	result *DepScanResult,
 ) int {
 	// No source-declared method matches the api. A constructor api may still
 	// belong to a scanned class with only an implicit default constructor.
@@ -209,7 +244,7 @@ func synthesizeImplicitCtorAsset(
 	}
 	added := 0
 	for _, meta := range metas {
-		if appendSyntheticRuleAsset(report, fileIdx, api, meta, rep) {
+		if appendSyntheticRuleAsset(report, fileIdx, api, meta, rep, result) {
 			added++
 		}
 	}
@@ -228,6 +263,7 @@ func synthesizeDeclaredAPIAssets(
 	api string,
 	metas []map[string]string,
 	decls []*callgraph.FunctionDecl,
+	result *DepScanResult,
 ) int {
 	added := 0
 	for _, fn := range decls {
@@ -235,7 +271,7 @@ func synthesizeDeclaredAPIAssets(
 			continue // Type 1: primitive already detected inside the method.
 		}
 		for _, meta := range metas {
-			if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn) {
+			if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn, result) {
 				added++
 			}
 		}
@@ -249,9 +285,19 @@ func appendSyntheticRuleAsset(
 	api string,
 	meta map[string]string,
 	fn *callgraph.FunctionDecl,
+	result *DepScanResult,
 ) bool {
 	asset := buildSyntheticAssetFromRule(api, meta, fn)
-	return appendSyntheticAsset(report, fileIdx, fn.FilePath, languageForPath(fn.FilePath), asset)
+	filePath, depInfo, ok := syntheticFindingLocation(result, fn.FilePath)
+	if !ok {
+		return false
+	}
+	if depInfo != nil {
+		asset.Source = findingSourceDependency
+		asset.PURL = ""
+		asset.DependencyInfo = depInfo
+	}
+	return appendSyntheticAsset(report, fileIdx, filePath, languageForPath(fn.FilePath), asset)
 }
 
 // functionFQN renders a FunctionID as the dotted fully-qualified name used in a
@@ -393,6 +439,62 @@ func buildSyntheticAssetFromRule(api string, meta map[string]string, fn *callgra
 	}
 }
 
+func syntheticFindingLocation(result *DepScanResult, actualPath string) (string, *entities.DependencyInfo, bool) {
+	if result == nil {
+		return actualPath, nil, true
+	}
+
+	cleanPath := filepath.Clean(actualPath)
+	matchedDepIndex := -1
+	matchedDepRootLen := -1
+	matchedRelativePath := ""
+	for i := range result.Dependencies {
+		dep := &result.Dependencies[i]
+		rel, ok := pathRelativeToRoot(dep.Dir, cleanPath)
+		rootLen := len(filepath.Clean(dep.Dir))
+		if !ok || rootLen <= matchedDepRootLen {
+			continue
+		}
+		matchedDepIndex = i
+		matchedDepRootLen = rootLen
+		matchedRelativePath = rel
+	}
+	if matchedDepIndex >= 0 {
+		dep := &result.Dependencies[matchedDepIndex]
+		return filepath.ToSlash(matchedRelativePath), &entities.DependencyInfo{
+			Module:  dep.Module,
+			Version: dep.Version,
+			PURL:    purl.Dependency(result.Ecosystem, dep.Module, dep.Version),
+		}, true
+	}
+	if rel, ok := pathRelativeToRoot(result.ProjectRoot, cleanPath); ok {
+		return filepath.ToSlash(rel), nil, true
+	}
+	if !filepath.IsAbs(cleanPath) {
+		return filepath.ToSlash(cleanPath), nil, true
+	}
+	return "", nil, false
+}
+
+func pathRelativeToRoot(root, path string) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
+}
+
+func syntheticFindingKey(filePath string, depInfo *entities.DependencyInfo) string {
+	subject := findingSourceDirect
+	if depInfo != nil && depInfo.Module != "" {
+		subject = depInfo.Module + "@" + depInfo.Version
+	}
+	return subject + "\x00" + filepath.ToSlash(filePath)
+}
+
 // appendSyntheticAsset adds asset to the Finding for filePath (creating one if
 // needed), skipping exact duplicates. Two assets are considered duplicates only
 // when they sit at the same line AND carry identical metadata in full (not just
@@ -406,7 +508,8 @@ func appendSyntheticAsset(
 	filePath, language string,
 	asset entities.CryptographicAsset,
 ) bool {
-	if idx, ok := fileIdx[filePath]; ok {
+	key := syntheticFindingKey(filePath, asset.DependencyInfo)
+	if idx, ok := fileIdx[key]; ok {
 		for i := range report.Findings[idx].CryptographicAssets {
 			existing := &report.Findings[idx].CryptographicAssets[i]
 			if existing.StartLine == asset.StartLine && maps.Equal(existing.Metadata, asset.Metadata) {
@@ -421,7 +524,7 @@ func appendSyntheticAsset(
 		Language:            language,
 		CryptographicAssets: []entities.CryptographicAsset{asset},
 	})
-	fileIdx[filePath] = len(report.Findings) - 1
+	fileIdx[key] = len(report.Findings) - 1
 	return true
 }
 
