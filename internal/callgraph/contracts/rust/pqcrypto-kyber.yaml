@@ -1,0 +1,123 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pqcrypto-kyber
+  coordinates:
+    - pqcrypto-kyber
+    - pqcrypto_kyber
+  version_range: ">=0.1.0,<0.9.0"
+  description: "PQClean CRYSTALS-Kyber key encapsulation"
+
+# API read at pqcrypto-kyber 0.8.1. Every variant module exposes the same three
+# free functions with identical shapes (src/kyber512.rs:126, :158, :186):
+#
+#   keypair()                            -> (PublicKey, SecretKey)
+#   encapsulate(&PublicKey)              -> (SharedSecret, Ciphertext)
+#   decapsulate(&Ciphertext, &SecretKey) -> SharedSecret
+#
+# Note decapsulate's argument order: ciphertext FIRST, secret key second.
+# Reading it the other way round would declare parameter_types that never match
+# a real call site.
+#
+# Which variant modules exist changes across the range, and all are contracted:
+# 0.1.0 ships kyber768 only; 0.2.0 adds the three standard variants; 0.6.0 adds
+# the six 90s variants; 0.7.9 removes the 90s ones again. Contracting a module a
+# given version does not ship is harmless - nothing resolves to it - whereas
+# omitting one leaves a real call site untyped.
+#
+# The authored key uses Rust's own "::" module separator with a "." before the
+# function. That is what a dot-joined call-site FQN normalizes to, so one key
+# serves BOTH spellings the parser produces: pqcrypto_kyber.kyber512.keypair
+# from `use pqcrypto_kyber::kyber512;`, and pqcrypto_kyber::kyber768.keypair
+# from `use pqcrypto_kyber::kyber768::keypair;`.
+#
+# skipped-non-crypto: the pqcrypto-traits impls and the byte accessors on the
+#   key and ciphertext types; they encode and decode rather than being an API a
+#   consumer selects.
+contracts:
+  - method: pqcrypto_kyber::kyber512.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber512::PublicKey, pqcrypto_kyber::kyber512::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber512.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber512::SharedSecret, pqcrypto_kyber::kyber512::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber512::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber512.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber512::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber512::Ciphertext", "&pqcrypto_kyber::kyber512::SecretKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber768.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber768::PublicKey, pqcrypto_kyber::kyber768::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber768.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber768::SharedSecret, pqcrypto_kyber::kyber768::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber768::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber768.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber768::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber768::Ciphertext", "&pqcrypto_kyber::kyber768::SecretKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber1024.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber1024::PublicKey, pqcrypto_kyber::kyber1024::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber1024.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber1024::SharedSecret, pqcrypto_kyber::kyber1024::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber1024::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber1024.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber1024::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber1024::Ciphertext", "&pqcrypto_kyber::kyber1024::SecretKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber51290s.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber51290s::PublicKey, pqcrypto_kyber::kyber51290s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber51290s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber51290s::SharedSecret, pqcrypto_kyber::kyber51290s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber51290s::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber51290s.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber51290s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber51290s::Ciphertext", "&pqcrypto_kyber::kyber51290s::SecretKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber76890s.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber76890s::PublicKey, pqcrypto_kyber::kyber76890s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber76890s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber76890s::SharedSecret, pqcrypto_kyber::kyber76890s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber76890s::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber76890s.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber76890s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber76890s::Ciphertext", "&pqcrypto_kyber::kyber76890s::SecretKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber102490s.keypair
+    arity: 0
+    return: { type: "(pqcrypto_kyber::kyber102490s::PublicKey, pqcrypto_kyber::kyber102490s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto_kyber::kyber102490s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto_kyber::kyber102490s::SharedSecret, pqcrypto_kyber::kyber102490s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber102490s::PublicKey"]
+    role: operation
+  - method: pqcrypto_kyber::kyber102490s.decapsulate
+    arity: 2
+    return: { type: pqcrypto_kyber::kyber102490s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto_kyber::kyber102490s::Ciphertext", "&pqcrypto_kyber::kyber102490s::SecretKey"]
+    role: operation
+
+hierarchy: {}
