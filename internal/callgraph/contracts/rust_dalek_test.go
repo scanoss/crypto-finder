@@ -104,6 +104,15 @@ func TestDalekContractsResolveFromDottedCallSiteKeys(t *testing.T) {
 		"x25519_dalek.StaticSecret.random",
 		"ed25519_dalek.SigningKey.generate",
 		"ed25519_dalek.VerifyingKey.verify_strict",
+		"ed25519_dalek.SecretKey.sign",
+		"ed25519_dalek.Keypair.try_sign",
+		"ed25519_dalek.SigningKey.sign_prehashed",
+		"ed25519_dalek.Keypair.sign_prehashed",
+		"ed25519_dalek.ExpandedSecretKey.sign_prehashed",
+		"ed25519_dalek.SigningKey.verify_prehashed",
+		"ed25519_dalek.VerifyingKey.verify_prehashed",
+		"ed25519_dalek.Keypair.verify_prehashed",
+		"ed25519_dalek.PublicKey.verify_prehashed",
 		"curve25519_dalek.EdwardsPoint.mul_base",
 		"curve25519_dalek.Scalar.random",
 	} {
@@ -112,6 +121,40 @@ func TestDalekContractsResolveFromDottedCallSiteKeys(t *testing.T) {
 			// encodes none, which is the common case.
 			if got := kb.ContractsFor(dotted, -1); len(got) != 1 {
 				t.Fatalf("ContractsFor(%q, -1) = %d contracts, want 1", dotted, len(got))
+			}
+		})
+	}
+}
+
+func TestEd25519DalekPrehashedContractsOmitGenericParameterTypes(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(rust): %v", err)
+	}
+
+	tests := []struct {
+		method string
+		arity  int
+	}{
+		{"ed25519_dalek::SigningKey.sign_prehashed", 2},
+		{"ed25519_dalek::Keypair.sign_prehashed", 2},
+		{"ed25519_dalek::ExpandedSecretKey.sign_prehashed", 3},
+		{"ed25519_dalek::SigningKey.verify_prehashed", 3},
+		{"ed25519_dalek::VerifyingKey.verify_prehashed", 3},
+		{"ed25519_dalek::Keypair.verify_prehashed", 3},
+		{"ed25519_dalek::PublicKey.verify_prehashed", 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s#%d", tt.method, tt.arity), func(t *testing.T) {
+			got := kb.ContractsFor(tt.method, tt.arity)
+			if len(got) != 1 {
+				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
+			}
+			if len(got[0].ParameterTypes) != 0 {
+				t.Fatalf("%s#%d parameter_types = %v, want empty for generic digest argument", tt.method, tt.arity, got[0].ParameterTypes)
 			}
 		})
 	}
