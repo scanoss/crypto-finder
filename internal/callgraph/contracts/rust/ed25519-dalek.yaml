@@ -1,0 +1,182 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ed25519-dalek
+  coordinates:
+    - ed25519-dalek
+    - ed25519_dalek
+  version_range: ">=0.1.0,<4.0.0"
+  description: "Ed25519 EdDSA signatures over Curve25519 (RFC 8032)"
+
+# API read at ed25519-dalek 2.2.0 (src/signing.rs, src/verifying.rs), with the
+# older spellings read at the version each was introduced or removed:
+#
+#   0.1.0  SecretKey is a [u8; 64] newtype that signs directly (src/ed25519.rs:85,
+#          :136); PublicKey::verify returns bool (:242); Keypair::generate (:301).
+#   1.0.1  Keypair (src/keypair.rs:36) with generate (:127) and Signer/Verifier
+#          impls (:408,:416); PublicKey (src/public.rs:40) with a Result-returning
+#          verify (:322); SecretKey (src/secret.rs:45) and ExpandedSecretKey
+#          (:240) whose sign takes the public key too (:390).
+#   2.0.0  Keypair renamed SigningKey (src/signing.rs:60) and PublicKey renamed
+#          VerifyingKey (src/verifying.rs:59); the SecretKey struct becomes
+#          `pub type SecretKey = [u8; 32]` (src/signing.rs:54). Both the old and
+#          the new type names are contracted, because the committed range spans
+#          the rename.
+#
+# `sign` is not declared on SigningKey directly: it arrives through the
+# `signature::Signer` impl (2.2.0 src/signing.rs:506), and the call site resolves
+# to the receiver type, so the contract is keyed on the receiver.
+#
+# ExpandedSecretKey.sign carries arity 2 (message, public key) against the
+# arity-1 Signer spelling — a genuine difference, not an overload, so both are
+# declared.
+#
+# skipped-non-crypto: Debug, Zeroize and serde impls; the constant-length
+#   accessors are contracted as `output` because a consumer's signature and key
+#   variables are typed through them.
+contracts:
+  - method: ed25519_dalek::SigningKey.generate
+    arity: 1
+    return: { type: ed25519_dalek::SigningKey, confidence: high }
+    role: factory
+  - method: ed25519_dalek::SigningKey.from_bytes
+    arity: 1
+    return: { type: ed25519_dalek::SigningKey, confidence: high }
+    parameter_types: ["&ed25519_dalek::SecretKey"]
+    role: factory
+  - method: ed25519_dalek::SigningKey.from_keypair_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8; 64]"]
+    role: factory
+  - method: ed25519_dalek::SigningKey.verifying_key
+    arity: 0
+    return: { type: ed25519_dalek::VerifyingKey, confidence: high }
+    role: factory
+  - method: ed25519_dalek::SigningKey.sign
+    arity: 1
+    return: { type: ed25519_dalek::Signature, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: ed25519_dalek::SigningKey.try_sign
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: ed25519_dalek::SigningKey.verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::SigningKey.verify_strict
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::SigningKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: ed25519_dalek::SigningKey.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: ed25519_dalek::SigningKey.to_keypair_bytes
+    arity: 0
+    return: { type: "[u8; 64]", confidence: high }
+    role: output
+  - method: ed25519_dalek::VerifyingKey.from_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8; 32]"]
+    role: factory
+  - method: ed25519_dalek::VerifyingKey.verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::VerifyingKey.verify_strict
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::VerifyingKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: ed25519_dalek::VerifyingKey.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: ed25519_dalek::VerifyingKey.to_edwards
+    arity: 0
+    return: { type: curve25519_dalek::EdwardsPoint, confidence: high }
+    role: output
+  - method: ed25519_dalek::Keypair.generate
+    arity: 1
+    return: { type: ed25519_dalek::Keypair, confidence: high }
+    role: factory
+  - method: ed25519_dalek::Keypair.from_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ed25519_dalek::Keypair.sign
+    arity: 1
+    return: { type: ed25519_dalek::Signature, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: ed25519_dalek::Keypair.verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::Keypair.verify_strict
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::Keypair.to_bytes
+    arity: 0
+    return: { type: "[u8; 64]", confidence: high }
+    role: output
+  - method: ed25519_dalek::PublicKey.from_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ed25519_dalek::PublicKey.verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::PublicKey.verify_strict
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519::Signature"]
+    role: operation
+  - method: ed25519_dalek::PublicKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: ed25519_dalek::SecretKey.generate
+    arity: 1
+    return: { type: ed25519_dalek::SecretKey, confidence: high }
+    role: factory
+  - method: ed25519_dalek::SecretKey.from_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ed25519_dalek::ExpandedSecretKey.from_bytes
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ed25519_dalek::ExpandedSecretKey.sign
+    arity: 2
+    return: { type: ed25519_dalek::Signature, confidence: high }
+    parameter_types: ["&[u8]", "&ed25519_dalek::PublicKey"]
+    role: operation
+
+hierarchy: {}
