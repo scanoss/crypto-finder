@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
@@ -81,6 +85,50 @@ func TestNewDependencyScanner(t *testing.T) {
 	}
 	if ds.orchestrator != orchestrator || ds.resolver != resolver || ds.cgBuilder != builder || ds.findingsCache != cache {
 		t.Fatal("NewDependencyScanner did not wire dependencies correctly")
+	}
+}
+
+func TestLogDependencyScanSummary_Level(t *testing.T) {
+	previous := log.Logger
+	t.Cleanup(func() { log.Logger = previous })
+
+	tests := []struct {
+		name    string
+		summary dependencyScanSummary
+		level   string
+	}{
+		{
+			name:    "warns when every dependency lacks source",
+			summary: dependencyScanSummary{depsSkippedSource: 3},
+			level:   "warn",
+		},
+		{
+			name:    "stays informational when at least one dependency is scanned",
+			summary: dependencyScanSummary{depsScanned: 1, depsSkippedSource: 3},
+			level:   "info",
+		},
+		{
+			name:    "stays informational when no dependency is skipped",
+			summary: dependencyScanSummary{},
+			level:   "info",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			log.Logger = zerolog.New(&output)
+
+			logDependencyScanSummary(tt.summary)
+
+			got := output.String()
+			if !strings.Contains(got, `"level":"`+tt.level+`"`) {
+				t.Fatalf("expected %s log, got %s", tt.level, got)
+			}
+			if !strings.Contains(got, `"depsScanned":`) || !strings.Contains(got, `"depsSkippedNoSource":`) {
+				t.Fatalf("expected dependency counters in log, got %s", got)
+			}
+		})
 	}
 }
 

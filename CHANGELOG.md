@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Dependency-source findings surfaced during API entry-point inference now keep `dependency_info` and source-root-relative paths instead of appearing as direct findings with absolute cache paths.
+- Java dependency scans now keep Maven's local repository aligned with the operating-system user home (`HOME` on Unix and `USERPROFILE` on Windows), default Gradle's user home under the same root unless already configured, and warn when every resolved dependency is skipped because source is unavailable.
 - Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.
 - Rust imports, type aliases and bindings are scoped to the block, function or module that declares them.
 - A Rust module the crate declares shadows a same-named dependency, in the declaring file only.
@@ -47,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust prelude types are attributed to the standard library rather than the analyzed crate.
 - A directory's Rust glob re-exports are read once per directory instead of once per file.
 - Java method references are recorded as calls to their target, so `Cipher::getInstance`, `MessageDigest::new`, `this::helper` and `c::doFinal` are no longer invisible. The node was never visited, so a crypto API reached only through a reference produced no edge. The callee name carries no arity suffix: a reference takes its arity from the functional interface it is assigned to, not from the reference site, and the unsuffixed form is the existing "arity unknown" spelling rather than a guessed number that would join the wrong overload.
+### Added
+- Rust callgraph contracts for russh and russh-keys: the client connect and authenticate surface, and the key loaders. russh-keys was folded into russh at 0.50.0, leaving its Cargo.toml and reappearing as a `keys` module, so the same loaders are reached as `russh_keys::*` on older pins and `russh::keys::*` on newer ones; both roots are contracted, each to its own crate. The header records what the contracts do NOT recover: the authenticate methods hang off a Handle a consumer obtains as `connect(...).await.unwrap()`, and that chain is not modelled, so such a receiver still resolves to the consumer's own package.
 ### Added
 - Rust callgraph contracts for the PQClean post-quantum crates: pqcrypto-kyber's keypair, encapsulate and decapsulate across every variant module the committed range ships, and the same surface reached through the pqcrypto umbrella. The umbrella's `kem` re-export changes crate mid-range — 0.17.0 is the last version re-exporting pqcrypto-kyber and 0.18.0 replaces it with pqcrypto-mlkem — so both module paths are contracted; a consumer's import root decides which one a call resolves under.
 ### Added
