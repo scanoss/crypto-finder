@@ -363,6 +363,21 @@ type FileAnalysis struct {
 	// (applyPythonReExports, Python-only). Python only; always nil for
 	// other ecosystems.
 	PythonReExports map[string]string
+	// rustFacts holds the declared-type facts collected from a Rust file:
+	// struct and enum-variant field types, function return types, and the
+	// set of types the file declares. The receiver-typing layer resolves
+	// through it, so a method call on a struct field or on a helper's
+	// return value carries a real identity instead of the local package.
+	// Rust only; always nil for other ecosystems.
+	rustFacts *rustFileFacts
+	// rustCrateIndex is the shared per-crate declaration index the parser built,
+	// consulted for facts that live in another file of the same crate. Rust
+	// only; always nil for other ecosystems.
+	rustCrateIndex *rustCrateIndex
+	// rustDependencies is the set of crate names the analyzed crate's manifest
+	// declares. A path segment that is not one of them, and not the standard
+	// library, cannot name a crate. Rust only.
+	rustDependencies map[string]bool
 }
 
 // CallGraph is the complete call graph across all analyzed packages.

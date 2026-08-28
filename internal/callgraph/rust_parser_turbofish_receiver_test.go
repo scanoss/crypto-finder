@@ -24,6 +24,10 @@ func TestRustParser_TurbofishConstructorKeepsReceiverIdentity(t *testing.T) {
 		name string
 		src  string
 		want []string
+		// absent lists the keys this case FORBIDS. Asserting presence only made
+		// the table a subset check, which no longer forbade the wrong keys the
+		// fix removed.
+		absent []string
 	}{
 		{
 			name: "turbofish on an imported type",
@@ -82,9 +86,19 @@ fn go(data: &[u8]) {
 			},
 		},
 		{
-			// Not a constructor: a generic free function bound with `let`. The
-			// turbofish spelling now agrees with the plain spelling, which
-			// already resolved no receiver type for this shape.
+			// Not a constructor: a generic free function bound with `let`, whose
+			// return type this file does not declare. Both spellings must agree
+			// and both must resolve NO receiver type.
+			//
+			// The expectation changed with the structural receiver-typing pass.
+			// It used to be "app.x.finish" / "app.y.finish": the old fallback
+			// put the receiver VARIABLE's name in the callee key's type field,
+			// so an unresolved receiver was emitted as a key that looks exactly
+			// like a resolved one and joins to nothing. The pass replaced that
+			// fallback with an explicitly untyped callee, so the same
+			// "no receiver type" outcome this case has always asserted is now
+			// spelled "app.finish" for both. The invariant under test — the two
+			// spellings agree — is unchanged.
 			name: "generic free function agrees with the plain spelling",
 			src: `use helper::compute;
 fn go(a: u32) {
@@ -93,7 +107,11 @@ fn go(a: u32) {
     let y = compute(a);
     y.finish();
 }`,
-			want: []string{"app.x.finish", "app.y.finish"},
+			want: []string{"app.finish", "helper.compute"},
+			// The old fallback put the receiver VARIABLE's name in the key's
+			// type field, producing a key that looks exactly like a resolved one
+			// and joins to nothing. Both spellings are forbidden by name.
+			absent: []string{"app.x.finish", "app.y.finish"},
 		},
 		{
 			name: "turbofish carrying a generic argument",
@@ -133,6 +151,12 @@ fn go(bytes: &[u8], block: &mut [u8; 16]) {
 			for _, key := range tc.want {
 				if !got[key] {
 					t.Errorf("missing callee key %q; got %v", key, keysOf(got))
+				}
+			}
+			for _, key := range tc.absent {
+				if got[key] {
+					t.Errorf("emitted the forbidden callee key %q; a receiver "+
+						"variable's name is not a type", key)
 				}
 			}
 			// A legitimate key may carry "::" inside its package segment

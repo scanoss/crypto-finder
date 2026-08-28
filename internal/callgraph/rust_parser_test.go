@@ -135,7 +135,11 @@ impl MyCrypto {
 		}
 		foundSelfCall := false
 		for _, call := range fn.Calls {
-			if call.Callee.Package == "myproject" && call.Callee.Type == "MyCrypto" && call.Callee.Name == "helper" {
+			// The fixture is crypto.rs, so its declarations live in the module
+			// `myproject::crypto` — a single-file module names a module just as
+			// a directory one does, and the contract KB keys it that way
+			// (`openssl::rsa::Rsa.generate`, from src/rsa.rs).
+			if call.Callee.Package == "myproject::crypto" && call.Callee.Type == "MyCrypto" && call.Callee.Name == "helper" {
 				foundSelfCall = true
 				break
 			}
