@@ -294,6 +294,7 @@ func appendSyntheticRuleAsset(
 	}
 	if depInfo != nil {
 		asset.Source = findingSourceDependency
+		asset.PURL = ""
 		asset.DependencyInfo = depInfo
 	}
 	return appendSyntheticAsset(report, fileIdx, filePath, languageForPath(fn.FilePath), asset)

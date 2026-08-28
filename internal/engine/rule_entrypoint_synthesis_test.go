@@ -23,12 +23,17 @@ import (
 
 // writeRule writes a minimal rule file carrying one metadata.crypto block and
 // returns its path.
-func writeRule(t *testing.T, dir, api, family string) string {
+func writeRule(t *testing.T, dir, api, family string, rulePURL ...string) string {
 	t.Helper()
+	purlMetadata := ""
+	if len(rulePURL) > 0 {
+		purlMetadata = "      purl: " + rulePURL[0] + "\n"
+	}
 	body := "" +
 		"rules:\n" +
 		"  - id: test.rule\n" +
 		"    metadata:\n" +
+		purlMetadata +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +
 		"        algorithmPrimitive: kdf\n" +
@@ -143,7 +148,7 @@ func TestSynthesizeRuleCryptoEntryPointsForResult_AttributesDependencySource(t *
 			}},
 		},
 	}}
-	rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt")
+	rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt", "pkg:maven/com.example/library")
 	result := &DepScanResult{
 		Report:      report,
 		CallGraph:   graphWith(decl),
@@ -165,6 +170,13 @@ func TestSynthesizeRuleCryptoEntryPointsForResult_AttributesDependencySource(t *
 	if got := len(report.Findings[1].CryptographicAssets); got != 1 {
 		t.Errorf("same-path dependency assets = %d, want unrelated dependency unchanged", got)
 	}
+	synthesized := report.Findings[0].CryptographicAssets[1]
+	if synthesized.PURL != "" {
+		t.Errorf("dependency synthesized asset purl = %q, want empty", synthesized.PURL)
+	}
+	if synthesized.DependencyInfo == nil || synthesized.DependencyInfo.PURL != dependencyInfo.PURL {
+		t.Errorf("dependency synthesized asset dependency_info = %#v, want versioned purl %q", synthesized.DependencyInfo, dependencyInfo.PURL)
+	}
 
 	data, err := json.Marshal(report)
 	if err != nil {
@@ -175,6 +187,7 @@ func TestSynthesizeRuleCryptoEntryPointsForResult_AttributesDependencySource(t *
 			FilePath            string `json:"file_path"`
 			CryptographicAssets []struct {
 				DependencyInfo *entities.DependencyInfo `json:"dependency_info"`
+				PURL           *string                  `json:"purl"`
 			} `json:"cryptographic_assets"`
 		} `json:"findings"`
 	}
@@ -188,6 +201,9 @@ func TestSynthesizeRuleCryptoEntryPointsForResult_AttributesDependencySource(t *
 		for _, asset := range finding.CryptographicAssets {
 			if asset.DependencyInfo == nil {
 				t.Errorf("dependency-source asset at %q has no dependency_info", finding.FilePath)
+			}
+			if asset.PURL != nil {
+				t.Errorf("dependency-source asset at %q exposes top-level purl %q", finding.FilePath, *asset.PURL)
 			}
 		}
 	}
