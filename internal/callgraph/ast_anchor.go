@@ -39,7 +39,12 @@ func namedASTPath(node *sitter.Node) string {
 
 func namedChildIndex(parent, child *sitter.Node) int {
 	index := 0
-	for i := 0; i < int(parent.NamedChildCount()); i++ {
+	// The count is hoisted out of the loop condition on purpose: every
+	// tree-sitter node access is a cgo call, and evaluating it once per
+	// iteration doubled the cost of a scan that runs for every call expression
+	// in every file.
+	parentNamedChildren := int(parent.NamedChildCount())
+	for i := 0; i < parentNamedChildren; i++ {
 		namedChild := parent.NamedChild(i)
 		if strings.Contains(namedChild.Type(), "comment") {
 			continue

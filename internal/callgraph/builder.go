@@ -29,6 +29,9 @@ const (
 	// ecosystemPython is the ecosystem identifier for Python callgraphs.
 	// Used to gate Python-specific dispatch (e.g. expandPythonSubclassDispatch).
 	ecosystemPython = "python"
+	// ecosystemRust is the ecosystem identifier for Rust callgraphs. Used to
+	// gate the same-typed-method merge, which is Rust-specific.
+	ecosystemRust = "rust"
 )
 
 // Parser extracts function declarations, calls, and imports from source files
@@ -368,9 +371,83 @@ func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysi
 			if b.preservePythonModuleCollision(graph, existing, fn) {
 				continue
 			}
+			if b.mergeRustTypedMethodCollision(graph, key, existing, fn) {
+				continue
+			}
 		}
 		graph.Functions[key] = fn
 	}
+}
+
+// mergeRustTypedMethodCollision unions the calls of two declarations that share
+// one `Type.method` key, instead of letting the later one replace the earlier.
+//
+// Rust allows a type to have an inherent `fn feed` and a trait impl's `fn feed`,
+// and the contract KB keys BOTH as `Type.method` on purpose:
+// `impl Digest for Sha256 { fn update }` is the RustCrypto shape and
+// `sha2::Sha256.update` has to match it. So neither side may be given a
+// different key, and last-write-wins silently discarded a whole function body.
+// Idiomatic Rust puts the substantive `impl T { .. }` before the trait impls, so
+// the survivor was usually the one-line forwarder:
+//
+//	age 0.11.1 src/plugin.rs:625 age.(IdentityPluginV1).unwrap_stanzas — the whole
+//	plugin decryption path, 58 edges — replaced by a 2-edge forwarder at :732.
+//	quinn-proto 0.11.9 src/crypto/rustls.rs:220/232
+//	quinn-proto::crypto.(HeaderKey).decrypt/.encrypt, 7 edges each.
+//	quinn-proto::connection.(Retransmits).bitor_assign, 9.
+//	quinn.(RecvStream).poll_read, 5. p256 Scalar add/sub/invert/square/double/
+//	is_odd, 11. 32 declarations and 119 edges across the corpus.
+//
+// Unioning over-approximates reachability BETWEEN two same-named methods of one
+// type, which is a far smaller error than deleting a 58-edge decryption path.
+// preservePythonModuleCollision is the precedent: it keeps both sides of the
+// analogous Python collision rather than picking a winner.
+//
+// The earlier declaration's own position and signature are kept, so the caller
+// key points at the substantive body rather than at the forwarder.
+func (b *Builder) mergeRustTypedMethodCollision(graph *CallGraph, key string, existing, candidate *FunctionDecl) bool {
+	if b.ecosystem != ecosystemRust {
+		return false
+	}
+	if existing.ID.Type == "" || existing == candidate {
+		return false
+	}
+	merged := *existing
+	merged.Calls = appendUnseenCalls(existing.Calls, candidate.Calls)
+	if len(merged.ReturnSources) == 0 {
+		merged.ReturnSources = candidate.ReturnSources
+	}
+	graph.Functions[key] = &merged
+	return true
+}
+
+// appendUnseenCalls appends the calls of one body to another's, skipping any
+// call already present at the same position with the same callee. Merging runs
+// once per colliding declaration, so it has to be idempotent.
+func appendUnseenCalls(into, from []FunctionCall) []FunctionCall {
+	if len(from) == 0 {
+		return into
+	}
+	type site struct {
+		callee   string
+		filePath string
+		line     int
+		startCol int
+	}
+	seen := make(map[site]bool, len(into))
+	for i := range into {
+		seen[site{into[i].Callee.String(), into[i].FilePath, into[i].Line, into[i].StartCol}] = true
+	}
+	merged := into
+	for i := range from {
+		at := site{from[i].Callee.String(), from[i].FilePath, from[i].Line, from[i].StartCol}
+		if seen[at] {
+			continue
+		}
+		seen[at] = true
+		merged = append(merged, from[i])
+	}
+	return merged
 }
 
 func clearCPPDependencyLocalLinkage(analysis *FileAnalysis) {

@@ -66,10 +66,17 @@ fn build(key: &[u8], iv: &[u8]) {
 		"BareCbcEnc::new":      "cbc.Encryptor.new",
 		"QualifiedCbcEnc::new": "cbc.Encryptor.new",
 		// An alias whose right-hand side names a generic type this crate
-		// declares does reach the qualification, and must come back out of it
-		// unattributed: `LocalGeneric` is in no import map, so there is no
-		// crate to name.
-		"LocalAlias::new": "LocalGeneric.new",
+		// declares resolves to that type IN THIS CRATE.
+		//
+		// The expectation changed with the scoped-callee fix. It used to be
+		// "LocalGeneric.new" — the type name sitting in the key's PACKAGE
+		// field with an empty type field, on the reasoning that a name in no
+		// import map has "no crate to name". But `struct LocalGeneric<T>` is
+		// declared in this very fixture, so the crate to name is the local
+		// one, and a type in the package field is unqueryable: nothing indexes
+		// a type as a package. 290 edges in openssl 0.10.81 and 190 in russh
+		// 0.54.6 carried that shape.
+		"LocalAlias::new": "app.LocalGeneric.new",
 		// A renaming import records a bare target too, but that target is
 		// already a real path. The fixture makes the collision real:
 		// `use aes_gcm::aes;` maps `aes -> aes_gcm`, and `use aes as blk;`
