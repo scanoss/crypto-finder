@@ -2,7 +2,9 @@ package dependency
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -230,6 +232,96 @@ exit 0
 	}
 	if len(result.deps) != 1 || result.deps[0].Module != "org.example:lib" {
 		t.Fatalf("unexpected deps: %#v", result.deps)
+	}
+}
+
+func TestMavenResolver_Resolve_UsesHomeLocalRepository(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	project := t.TempDir()
+	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId><version>1.2.3</version></dependency></dependencies></project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+
+	sourceFixture := filepath.Join(t.TempDir(), "lib-1.2.3-sources.jar")
+	createZipArchive(t, sourceFixture, map[string]string{"src/Lib.java": "class Lib {}"})
+	argsCapture := filepath.Join(t.TempDir(), "maven-args.txt")
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+out=""
+repo=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -Dmaven.repo.local=*) repo="${arg#-Dmaven.repo.local=}" ;;
+  esac
+done
+case " $* " in
+  *" dependency:list "*)
+    cat > "$out" <<'EOF_LIST'
+org.example:lib:jar:1.2.3:compile
+EOF_LIST
+    ;;
+  *" dependency:tree "*)
+    cat > "$out" <<'EOF_TREE'
+com.acme:app:jar:1.0.0:compile
+\- org.example:lib:jar:1.2.3:compile
+EOF_TREE
+    ;;
+  *" dependency:sources "*)
+    if [ -n "$repo" ]; then
+      target="$repo/org/example/lib/1.2.3"
+      mkdir -p "$target"
+      cp %q "$target/lib-1.2.3-sources.jar"
+      : > "$target/lib-1.2.3.jar"
+    fi
+    ;;
+esac
+exit 0
+`, argsCapture, sourceFixture))
+	prependPath(t, binDir)
+
+	result, err := NewMavenResolver().Resolve(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	data, err := os.ReadFile(argsCapture)
+	if err != nil {
+		t.Fatalf("read Maven args: %v", err)
+	}
+	wantArg := "-Dmaven.repo.local=" + filepath.Join(home, ".m2", "repository")
+	for _, invocation := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if !strings.Contains(invocation, wantArg) {
+			t.Fatalf("Maven invocation missing %q: %s", wantArg, invocation)
+		}
+	}
+	if len(result.Dependencies) != 1 || result.Dependencies[0].Dir == "" {
+		t.Fatalf("expected dependency sources under HOME local repository, got %#v", result.Dependencies)
+	}
+}
+
+func TestMavenResolver_ConfigureMavenCommand_UsesHomeLocalRepository(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	cmd := exec.CommandContext(context.Background(), "mvn", "dependency:tree")
+	if err := NewMavenResolver().configureMavenCommand(cmd); err != nil {
+		t.Fatalf("configureMavenCommand: %v", err)
+	}
+
+	want := "-Dmaven.repo.local=" + filepath.Join(home, ".m2", "repository")
+	matches := 0
+	for _, arg := range cmd.Args {
+		if arg == want {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("Maven command has %d copies of %q, want exactly one: %#v", matches, want, cmd.Args)
 	}
 }
 

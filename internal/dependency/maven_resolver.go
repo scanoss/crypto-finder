@@ -335,6 +335,10 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 }
 
 func (r *MavenResolver) configureMavenCommand(cmd *exec.Cmd) error {
+	if m2Repo := r.findM2Repository(); m2Repo != "" {
+		cmd.Args = append(cmd.Args, "-Dmaven.repo.local="+m2Repo)
+	}
+
 	selection, err := javaruntime.ResolveExplicitSelection(r.javaRuntime)
 	if err != nil {
 		return err
