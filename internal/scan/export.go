@@ -455,7 +455,7 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, opt
 		bw := bufio.NewWriterSize(file, 1<<20)
 		writer := graphFragmentJSONWriter{w: bw}
 		var writeErr error
-		streamed, writeErr = streamCallGraphExportWithOptions(&writer, ctx, assets, meta, options)
+		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta, options)
 		return finishBufferedOutput(bw, writeErr)
 	}); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
@@ -478,15 +478,6 @@ type streamedCallGraphExport struct {
 }
 
 func streamCallGraphExport(
-	writer *graphFragmentJSONWriter,
-	ctx *exportBuildContext,
-	assets []callGraphExportAsset,
-	meta callGraphExportScanMeta,
-) (streamedCallGraphExport, error) {
-	return streamCallGraphExportWithOptions(writer, ctx, assets, meta, CallGraphExportOptions{})
-}
-
-func streamCallGraphExportWithOptions(
 	writer *graphFragmentJSONWriter,
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,

@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,8 @@ func TestSelectorMaterializationPublicExports(t *testing.T) {
 
 	cmd := exec.CommandContext(t.Context(), binary, "--error-format", "json", "scan", "--scanner", "opengrep", "--no-remote-rules",
 		"--no-default-exclusions", "--languages", "java", "--rules", rulesPath, "--output", findingsPath,
-		"--export-callgraph", callgraphPath, "--export-graph-fragment", fragmentPath, target)
+		"--export-callgraph", callgraphPath, "--export-callgraph-entry-points=false",
+		"--export-graph-fragment", fragmentPath, target)
 	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(tmp, "home"), "FAKE_OPENGREP_OUTPUT="+fakeOutput,
 		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 	output, err := cmd.CombinedOutput()
@@ -69,6 +71,10 @@ func TestSelectorMaterializationPublicExports(t *testing.T) {
 	for _, ruleID := range []string{"java.pgp.aes128", "java.pgp.des", "java.digest.sha2"} {
 		require.Truef(t, fragmentRules[ruleID], "graph fragment missing conditioned %s", ruleID)
 	}
+
+	var callgraphDocument map[string]json.RawMessage
+	readJSON(t, callgraphPath, &callgraphDocument)
+	require.NotContains(t, callgraphDocument, "crypto_entry_points", "disabled entry-point export must omit the index")
 
 	var live graphfrag.CallgraphExport
 	readJSON(t, callgraphPath, &live)
