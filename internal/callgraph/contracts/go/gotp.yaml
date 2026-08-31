@@ -1,0 +1,134 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: gotp
+  coordinates:
+    - "github.com/xlzd/gotp"
+  version_range: ">=0.1.0,<0.2.0"
+  description: "gotp TOTP/HOTP one-time password library"
+
+# Inventory source: github.com/xlzd/gotp v0.1.0 module source from the Go module
+# proxy (otp.go, totp.go, hotp.go, utils.go). The library implements RFC 4226
+# HOTP and RFC 6238 TOTP over crypto/hmac with a caller-supplied hash; a nil
+# hasher resolves to HMAC-SHA1 in NewOTP. The HMAC primitive itself is covered
+# by stdlib-crypto.yaml, so only gotp-level identities are declared here.
+#
+# Dispositions for the remaining public surface:
+# - Hasher is a plain struct built as a composite literal; non-callable, omitted.
+# - Itob is an integer-serialization helper with no crypto semantics
+#   (skipped-non-crypto).
+# - IsSecretValid is a base32 format check on the secret string; it neither
+#   creates, configures, operates on, nor extracts a crypto object
+#   (skipped-non-crypto).
+# - NowWithExpiration returns (code string, expiration int64); the crypto value
+#   is the first result, so the contract declares string.
+contracts:
+  # Constructors. NewOTP returns the embedded base by value; the TOTP/HOTP
+  # constructors return pointers. digits sizes the emitted code and the hasher
+  # value selects the HMAC hash (nil selects SHA-1).
+  - method: github.com/xlzd/gotp.NewOTP
+    arity: 3
+    return: { type: github.com/xlzd/gotp.OTP, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: digits, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+      - { index: 2, name: hasher, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.NewTOTP
+    arity: 4
+    return: { type: "*github.com/xlzd/gotp.TOTP", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: digits, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+      - { index: 2, name: interval, role: metadata-contributing, contributes: { property: interval, derivation: argument_value } }
+      - { index: 3, name: hasher, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.NewDefaultTOTP
+    arity: 1
+    return: { type: "*github.com/xlzd/gotp.TOTP", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.NewHOTP
+    arity: 3
+    return: { type: "*github.com/xlzd/gotp.HOTP", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: digits, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+      - { index: 2, name: hasher, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.NewDefaultHOTP
+    arity: 1
+    return: { type: "*github.com/xlzd/gotp.HOTP", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: secret, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+  # Code generation and verification. These run the HMAC truncation defined by
+  # RFC 4226 section 5.3 over the configured secret.
+  - method: github.com/xlzd/gotp.(*TOTP).At
+    arity: 1
+    return: { type: string, confidence: high }
+    role: operation
+  - method: github.com/xlzd/gotp.(*TOTP).AtTime
+    arity: 1
+    return: { type: string, confidence: high }
+    role: operation
+  - method: github.com/xlzd/gotp.(*TOTP).Now
+    arity: 0
+    return: { type: string, confidence: high }
+    role: operation
+  - method: github.com/xlzd/gotp.(*TOTP).NowWithExpiration
+    arity: 0
+    return: { type: string, confidence: high }
+    role: operation
+  - method: github.com/xlzd/gotp.(*TOTP).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: otp, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.(*TOTP).VerifyTime
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: otp, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/xlzd/gotp.(*HOTP).At
+    arity: 1
+    return: { type: string, confidence: high }
+    role: operation
+  - method: github.com/xlzd/gotp.(*HOTP).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: otp, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+
+  # Secret material. RandomSecret draws from math/rand seeded with the current
+  # time in v0.1.0; the weak source is a library property recorded here only as
+  # provenance for the factory role, not as a finding.
+  - method: github.com/xlzd/gotp.RandomSecret
+    arity: 1
+    return: { type: string, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: length, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+
+  # Enrollment URIs embed the base32 secret in otpauth:// form.
+  - method: github.com/xlzd/gotp.(*TOTP).ProvisioningUri
+    arity: 2
+    return: { type: string, confidence: high }
+    role: output
+  - method: github.com/xlzd/gotp.(*HOTP).ProvisioningUri
+    arity: 3
+    return: { type: string, confidence: high }
+    role: output
+  - method: github.com/xlzd/gotp.BuildUri
+    arity: 8
+    return: { type: string, confidence: high }
+    role: output
+    parameters:
+      - { index: 4, name: algorithm, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+
+hierarchy: {}
