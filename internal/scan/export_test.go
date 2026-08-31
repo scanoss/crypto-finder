@@ -768,7 +768,7 @@ func TestBuildCallGraphExport_OperationContractExportsSupportingCallOnly(t *test
 	}
 	var buf bytes.Buffer
 	bw := bufio.NewWriter(&buf)
-	streamed, err := streamCallGraphExport(&graphFragmentJSONWriter{w: bw}, ctx, callGraphExportAssets(result.Report), buildCallGraphExportScanMeta(result))
+	streamed, err := streamCallGraphExport(&graphFragmentJSONWriter{w: bw}, ctx, callGraphExportAssets(result.Report), buildCallGraphExportScanMeta(result), CallGraphExportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

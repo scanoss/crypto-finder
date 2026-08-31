@@ -548,6 +548,16 @@ func TestScanCommand_ExportCallgraphMaxChainsFlag(t *testing.T) {
 	}
 }
 
+func TestScanCommand_ExportCallgraphEntryPointsFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("export-callgraph-entry-points")
+	if flag == nil {
+		t.Fatal("expected --export-callgraph-entry-points flag")
+	}
+	if flag.DefValue != "true" {
+		t.Fatalf("default = %q, want true", flag.DefValue)
+	}
+}
+
 func TestCountFindings(t *testing.T) {
 	t.Run("nil report", func(t *testing.T) {
 		count := scanutil.CountFindings(nil)
