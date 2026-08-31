@@ -3,7 +3,10 @@
 
 package graphfrag
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // ExportInternedFunction is one identity record in the schema-6.14 functions[]
 // catalog. It carries the stable callable identity that inlined call_chains
@@ -67,10 +70,23 @@ func IdentityFromChainNode(n ExportChainNode) FrameIdentity {
 }
 
 func internKey(id FrameIdentity) string {
-	if id.FunctionKey != "" {
-		return "k\x00" + id.FunctionKey
+	var b strings.Builder
+	b.WriteString(id.FunctionKey)
+	b.WriteByte(0)
+	b.WriteString(id.FunctionName)
+	b.WriteByte(0)
+	b.WriteString(id.FilePath)
+	b.WriteByte(0)
+	b.WriteString(strconv.Itoa(id.StartLine))
+	if id.DependencyInfo != nil {
+		b.WriteByte(0)
+		b.WriteString(id.DependencyInfo.Module)
+		b.WriteByte(0)
+		b.WriteString(id.DependencyInfo.Version)
+		b.WriteByte(0)
+		b.WriteString(id.DependencyInfo.PURL)
 	}
-	return "n\x00" + id.FunctionName + "\x00" + id.FilePath + "\x00" + strconv.Itoa(id.StartLine)
+	return b.String()
 }
 
 // Intern records id on first sight and returns its catalog index.

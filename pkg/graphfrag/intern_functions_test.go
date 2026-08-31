@@ -22,6 +22,49 @@ func TestFunctionInterner_ReusesFirstSeenIdentity(t *testing.T) {
 	}
 }
 
+func TestFunctionInterner_KeepsSameSignatureAcrossDependencies(t *testing.T) {
+	t.Parallel()
+
+	var intern FunctionInterner
+	left := intern.Intern(FrameIdentity{
+		FunctionKey:  "sink#0",
+		FunctionName: "com.lib.Sink.run",
+		FilePath:     "Sink.java",
+		StartLine:    10,
+		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:left", Version: "1.0.0", PURL: "pkg:maven/com.lib/left@1.0.0"},
+	})
+	right := intern.Intern(FrameIdentity{
+		FunctionKey:  "sink#0",
+		FunctionName: "com.lib.Sink.run",
+		FilePath:     "Sink.java",
+		StartLine:    10,
+		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:right", Version: "2.0.0", PURL: "pkg:maven/com.lib/right@2.0.0"},
+	})
+	leftAgain := intern.Intern(FrameIdentity{
+		FunctionKey:  "sink#0",
+		FunctionName: "com.lib.Sink.run",
+		FilePath:     "Sink.java",
+		StartLine:    10,
+		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:left", Version: "1.0.0", PURL: "pkg:maven/com.lib/left@1.0.0"},
+	})
+	if left == right {
+		t.Fatalf("same function_key interned as one catalog row across two dependencies")
+	}
+	if leftAgain != left {
+		t.Fatalf("left interned twice: first=%d again=%d", left, leftAgain)
+	}
+	got := intern.Functions()
+	if len(got) != 2 {
+		t.Fatalf("catalog len = %d, want 2", len(got))
+	}
+	if got[left].DependencyInfo == nil || got[left].DependencyInfo.Module != "com.lib:left" {
+		t.Fatalf("left catalog row = %+v, want module com.lib:left", got[left].DependencyInfo)
+	}
+	if got[right].DependencyInfo == nil || got[right].DependencyInfo.Module != "com.lib:right" {
+		t.Fatalf("right catalog row = %+v, want module com.lib:right", got[right].DependencyInfo)
+	}
+}
+
 func TestToCallgraphExport_InternsCallChainsBesideInlinedFrames(t *testing.T) {
 	t.Parallel()
 
@@ -69,6 +112,12 @@ func TestToCallgraphExport_InternsCallChainsBesideInlinedFrames(t *testing.T) {
 			}
 			if got.CanonicalSignature != frame.CanonicalSignature {
 				t.Fatalf("route %d frame %d canonical_signature = %q, want %q", i, j, got.CanonicalSignature, frame.CanonicalSignature)
+			}
+			if (got.DependencyInfo == nil) != (frame.DependencyInfo == nil) {
+				t.Fatalf("route %d frame %d dependency_info presence interned=%v inlined=%v", i, j, got.DependencyInfo, frame.DependencyInfo)
+			}
+			if got.DependencyInfo != nil && *got.DependencyInfo != *frame.DependencyInfo {
+				t.Fatalf("route %d frame %d dependency_info interned=%+v inlined=%+v", i, j, *got.DependencyInfo, *frame.DependencyInfo)
 			}
 		}
 	}
