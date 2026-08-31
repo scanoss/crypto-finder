@@ -1,0 +1,20 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: digest
+  coordinates:
+    - digest
+  version_range: ">=0.10.0,<0.11.0"
+  description: "RustCrypto Digest trait underlying hash crates"
+
+# Same rationale as crypto-common.yaml: this crate declares the shared
+# Digest trait, not a terminal operation. See trait_associated_types.
+contracts: []
+
+trait_associated_types:
+  - trait: Digest
+    name: OutputSize
+    type: generic_array::GenericArray
+  - trait: OutputSizeUser
+    name: OutputSize
+    type: generic_array::GenericArray

@@ -75,6 +75,17 @@ type KnowledgeBase struct {
 	Contracts map[string][]Contract
 	// Hierarchy maps a child FQN to its direct parent FQNs. Used for LUB.
 	Hierarchy map[string][]string
+	// TraitAssociatedTypes maps "<trait>::<associated type name>" (e.g.
+	// "KeyInit::KeySize") to the type it resolves to. A generic parameter
+	// bound to a cataloged trait carries that trait's identity (see the
+	// Rust callgraph's first-trait-bound rule); this table lets `C::KeySize`
+	// resolve past the trait name to what the associated type itself names,
+	// the same way a resolved method call resolves past its receiver.
+	// A present key with an empty value means the trait is cataloged but
+	// declares no usable default for that associated type -- distinct from
+	// an absent key, which means the (trait, name) pair is not cataloged at
+	// all. Callers must treat both as "no resolution."
+	TraitAssociatedTypes map[string]string
 }
 
 // Contract describes a single KB entry mapping a method call to an inferred return type.
@@ -201,6 +212,20 @@ func (kb *KnowledgeBase) ContractsFor(method string, arity int) []Contract {
 
 func contractKey(method string, arity int) string {
 	return fmt.Sprintf("%s#%d", method, arity)
+}
+
+// TraitAssociatedType returns the type a cataloged trait's associated type
+// resolves to. ok reports whether the (trait, name) pair is cataloged at
+// all; it is true even when the returned type is "" (known trait and
+// associated type name, but no usable default), so callers can tell an
+// uncataloged pair from one with nothing to resolve to. Either case means
+// "no resolution" for a caller that only wants a usable type.
+func (kb *KnowledgeBase) TraitAssociatedType(trait, name string) (typ string, ok bool) {
+	if kb == nil || kb.TraitAssociatedTypes == nil || trait == "" || name == "" {
+		return "", false
+	}
+	typ, ok = kb.TraitAssociatedTypes[trait+"::"+name]
+	return typ, ok
 }
 
 // rustContractsFor retries a Rust lookup against the key shape the Rust KBs are
@@ -334,11 +359,22 @@ func (kb *KnowledgeBase) ContractsForCFunction(method string, arity int, externa
 
 // yamlKB is the YAML-level representation used for unmarshalling.
 type yamlKB struct {
-	SchemaVersion string              `yaml:"schema_version"`
-	Ecosystem     string              `yaml:"ecosystem"`
-	Library       *yamlLibrary        `yaml:"library"`
-	Contracts     []yamlContract      `yaml:"contracts"`
-	Hierarchy     map[string][]string `yaml:"hierarchy"`
+	SchemaVersion        string                    `yaml:"schema_version"`
+	Ecosystem            string                    `yaml:"ecosystem"`
+	Library              *yamlLibrary              `yaml:"library"`
+	Contracts            []yamlContract            `yaml:"contracts"`
+	Hierarchy            map[string][]string       `yaml:"hierarchy"`
+	TraitAssociatedTypes []yamlTraitAssociatedType `yaml:"trait_associated_types,omitempty"`
+}
+
+// yamlTraitAssociatedType declares one associated type a trait carries. See
+// KnowledgeBase.TraitAssociatedTypes.
+type yamlTraitAssociatedType struct {
+	Trait string `yaml:"trait"`
+	Name  string `yaml:"name"`
+	// Type is optional: an entry may catalog a trait's associated type name
+	// with no resolvable default (see TraitAssociatedType).
+	Type string `yaml:"type,omitempty"`
 }
 
 type yamlLibrary struct {
@@ -435,13 +471,17 @@ func Load(data []byte) (*KnowledgeBase, error) {
 			VersionRange: raw.Library.VersionRange,
 			Description:  raw.Library.Description,
 		},
-		Contracts: make(map[string][]Contract),
-		Hierarchy: make(map[string][]string),
+		Contracts:            make(map[string][]Contract),
+		Hierarchy:            make(map[string][]string),
+		TraitAssociatedTypes: make(map[string]string),
 	}
 	if err := indexContracts(&raw, kb); err != nil {
 		return nil, err
 	}
 	if err := indexHierarchy(&raw, kb); err != nil {
+		return nil, err
+	}
+	if err := indexTraitAssociatedTypes(&raw, kb); err != nil {
 		return nil, err
 	}
 	return kb, nil
@@ -616,6 +656,27 @@ func indexHierarchy(raw *yamlKB, kb *KnowledgeBase) error {
 	return nil
 }
 
+// indexTraitAssociatedTypes validates and indexes all trait_associated_types
+// entries into the KnowledgeBase. Two entries for the same (trait, name) pair
+// in one file must agree, the same discipline mergeTraitAssociatedTypes
+// applies across files.
+func indexTraitAssociatedTypes(raw *yamlKB, kb *KnowledgeBase) error {
+	for i, t := range raw.TraitAssociatedTypes {
+		if t.Trait == "" {
+			return fmt.Errorf("contracts: trait_associated_types[%d]: trait is required", i)
+		}
+		if t.Name == "" {
+			return fmt.Errorf("contracts: trait_associated_types[%d] (%s): name is required", i, t.Trait)
+		}
+		key := t.Trait + "::" + t.Name
+		if existing, dup := kb.TraitAssociatedTypes[key]; dup && existing != t.Type {
+			return fmt.Errorf("contracts: trait_associated_types[%d]: duplicate entry for %q with different type: %q vs %q", i, key, existing, t.Type)
+		}
+		kb.TraitAssociatedTypes[key] = t.Type
+	}
+	return nil
+}
+
 // embedFSFor returns the embedded filesystem and directory name for the given ecosystem.
 // Returns nil, "" if the ecosystem is not known.
 func embedFSFor(ecosystem string) (fs.FS, string) {
@@ -642,9 +703,10 @@ func embedFSFor(ecosystem string) (fs.FS, string) {
 // emptyKB returns a valid empty KnowledgeBase with schema version "2".
 func emptyKB() *KnowledgeBase {
 	return &KnowledgeBase{
-		SchemaVersion: "2",
-		Contracts:     map[string][]Contract{},
-		Hierarchy:     map[string][]string{},
+		SchemaVersion:        "2",
+		Contracts:            map[string][]Contract{},
+		Hierarchy:            map[string][]string{},
+		TraitAssociatedTypes: map[string]string{},
 	}
 }
 
@@ -742,12 +804,17 @@ func Merge(kbs ...*KnowledgeBase) (*KnowledgeBase, error) {
 	if err != nil {
 		return nil, err
 	}
+	mergedTraitAssociatedTypes, err := mergeTraitAssociatedTypes(kbs)
+	if err != nil {
+		return nil, err
+	}
 	return &KnowledgeBase{
-		SchemaVersion: "2",
-		Ecosystem:     eco,
-		Library:       nil, // merger of N libraries: no single Library identifies it
-		Contracts:     mergedContracts,
-		Hierarchy:     mergedHierarchy,
+		SchemaVersion:        "2",
+		Ecosystem:            eco,
+		Library:              nil, // merger of N libraries: no single Library identifies it
+		Contracts:            mergedContracts,
+		Hierarchy:            mergedHierarchy,
+		TraitAssociatedTypes: mergedTraitAssociatedTypes,
 	}, nil
 }
 
@@ -755,10 +822,11 @@ func Merge(kbs ...*KnowledgeBase) (*KnowledgeBase, error) {
 // original via the returned value. Used by Merge when len(kbs) == 1.
 func cloneKB(kb *KnowledgeBase) *KnowledgeBase {
 	clone := &KnowledgeBase{
-		SchemaVersion: kb.SchemaVersion,
-		Ecosystem:     kb.Ecosystem,
-		Contracts:     make(map[string][]Contract, len(kb.Contracts)),
-		Hierarchy:     make(map[string][]string, len(kb.Hierarchy)),
+		SchemaVersion:        kb.SchemaVersion,
+		Ecosystem:            kb.Ecosystem,
+		Contracts:            make(map[string][]Contract, len(kb.Contracts)),
+		Hierarchy:            make(map[string][]string, len(kb.Hierarchy)),
+		TraitAssociatedTypes: make(map[string]string, len(kb.TraitAssociatedTypes)),
 	}
 	if kb.Library != nil {
 		lib := *kb.Library
@@ -777,6 +845,9 @@ func cloneKB(kb *KnowledgeBase) *KnowledgeBase {
 		dst := make([]string, len(v))
 		copy(dst, v)
 		clone.Hierarchy[k] = dst
+	}
+	for k, v := range kb.TraitAssociatedTypes {
+		clone.TraitAssociatedTypes[k] = v
 	}
 	return clone
 }
@@ -1015,6 +1086,37 @@ func setsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// mergeTraitAssociatedTypes applies the same discipline as mergeContracts'
+// rule 1/2 to trait_associated_types entries: identical (trait, name, type)
+// across libraries is idempotent; the same (trait, name) with a different
+// type is a HARD ERROR naming both libraries.
+func mergeTraitAssociatedTypes(kbs []*KnowledgeBase) (map[string]string, error) {
+	merged := make(map[string]string)
+	owningLib := make(map[string]string)
+	for _, kb := range kbs {
+		libName := ""
+		if kb.Library != nil {
+			libName = kb.Library.Name
+		}
+		for key, typ := range kb.TraitAssociatedTypes {
+			existing, seen := merged[key]
+			if !seen {
+				merged[key] = typ
+				owningLib[key] = libName
+				continue
+			}
+			if existing == typ {
+				continue
+			}
+			return nil, fmt.Errorf(
+				"contracts: trait_associated_types conflict for %s: library %q has type %q; library %q has type %q",
+				key, owningLib[key], existing, libName, typ,
+			)
+		}
+	}
+	return merged, nil
 }
 
 // isSubset returns true if every element of sub is in super.

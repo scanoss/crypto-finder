@@ -1,0 +1,26 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: crypto-common
+  coordinates:
+    - crypto-common
+  version_range: ">=0.1.0,<0.2.0"
+  description: "RustCrypto shared traits underlying cipher/digest/MAC crates"
+
+# This library carries no terminal crypto operations of its own -- it only
+# declares the base traits algorithm crates (aes, sha2, hmac, ...) implement,
+# and the associated types generic code written against those traits names
+# (`fn setup<C: KeyInit>(k: &[u8]) -> C::KeySize`). See trait_associated_types
+# below; contracts stays empty on purpose.
+contracts: []
+
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: generic_array::GenericArray
+  - trait: KeySizeUser
+    name: KeySize
+    type: generic_array::GenericArray
+  - trait: BlockSizeUser
+    name: BlockSize
+    type: generic_array::GenericArray

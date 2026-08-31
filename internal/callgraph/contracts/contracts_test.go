@@ -1869,3 +1869,153 @@ hierarchy: {}
 		t.Fatalf("expected nil Parameters for legacy contract, got %#v", entries[0].Parameters)
 	}
 }
+
+// TestLoadKnowledgeBase_ParsesTraitAssociatedTypes verifies trait_associated_types
+// entries parse and resolve via KnowledgeBase.TraitAssociatedType.
+func TestLoadKnowledgeBase_ParsesTraitAssociatedTypes(t *testing.T) {
+	t.Parallel()
+
+	kb := mustLoad(t, `
+schema_version: "2"
+ecosystem: rust
+library: {name: crypto-common-test}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: generic_array::GenericArray
+  - trait: SomeTrait
+    name: NoDefault
+hierarchy: {}
+`)
+	typ, ok := kb.TraitAssociatedType("KeyInit", "KeySize")
+	if !ok || typ != "generic_array::GenericArray" {
+		t.Fatalf("TraitAssociatedType(KeyInit, KeySize) = (%q, %v), want (%q, true)", typ, ok, "generic_array::GenericArray")
+	}
+
+	// A cataloged (trait, name) pair with no type is still "known" -- ok is
+	// true -- but carries nothing a caller can resolve to.
+	typ, ok = kb.TraitAssociatedType("SomeTrait", "NoDefault")
+	if !ok || typ != "" {
+		t.Fatalf("TraitAssociatedType(SomeTrait, NoDefault) = (%q, %v), want (\"\", true)", typ, ok)
+	}
+
+	if _, ok := kb.TraitAssociatedType("Uncataloged", "Anything"); ok {
+		t.Fatal("expected ok=false for an uncataloged (trait, name) pair")
+	}
+}
+
+// TestLoadKnowledgeBase_RejectsTraitAssociatedTypeMissingTrait verifies trait
+// is required on every trait_associated_types entry.
+func TestLoadKnowledgeBase_RejectsTraitAssociatedTypeMissingTrait(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: rust
+library: {name: test}
+contracts: []
+trait_associated_types:
+  - name: KeySize
+    type: generic_array::GenericArray
+hierarchy: {}
+`))
+	if err == nil {
+		t.Fatal("expected error for trait_associated_types entry missing trait, got nil")
+	}
+}
+
+// TestLoadKnowledgeBase_RejectsTraitAssociatedTypeMissingName verifies name is
+// required on every trait_associated_types entry.
+func TestLoadKnowledgeBase_RejectsTraitAssociatedTypeMissingName(t *testing.T) {
+	t.Parallel()
+
+	_, err := contracts.Load([]byte(`
+schema_version: "2"
+ecosystem: rust
+library: {name: test}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    type: generic_array::GenericArray
+hierarchy: {}
+`))
+	if err == nil {
+		t.Fatal("expected error for trait_associated_types entry missing name, got nil")
+	}
+}
+
+// TestMerge_TraitAssociatedTypes_IdenticalIsIdempotent verifies two libraries
+// declaring the same (trait, name) -> type merge without error, mirroring
+// contract merge rule 1.
+func TestMerge_TraitAssociatedTypes_IdenticalIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	a := mustLoad(t, `
+schema_version: "2"
+ecosystem: rust
+library: {name: lib-a}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: generic_array::GenericArray
+hierarchy: {}
+`)
+	b := mustLoad(t, `
+schema_version: "2"
+ecosystem: rust
+library: {name: lib-b}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: generic_array::GenericArray
+hierarchy: {}
+`)
+	merged, err := contracts.Merge(a, b)
+	if err != nil {
+		t.Fatalf("Merge() error = %v", err)
+	}
+	typ, ok := merged.TraitAssociatedType("KeyInit", "KeySize")
+	if !ok || typ != "generic_array::GenericArray" {
+		t.Fatalf("merged TraitAssociatedType = (%q, %v), want (%q, true)", typ, ok, "generic_array::GenericArray")
+	}
+}
+
+// TestMerge_TraitAssociatedTypes_ConflictingTypeIsHardError verifies two
+// libraries declaring the same (trait, name) with a DIFFERENT type is a hard
+// error naming both libraries, mirroring contract merge rule 2.
+func TestMerge_TraitAssociatedTypes_ConflictingTypeIsHardError(t *testing.T) {
+	t.Parallel()
+
+	a := mustLoad(t, `
+schema_version: "2"
+ecosystem: rust
+library: {name: lib-a}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: generic_array::GenericArray
+hierarchy: {}
+`)
+	b := mustLoad(t, `
+schema_version: "2"
+ecosystem: rust
+library: {name: lib-b}
+contracts: []
+trait_associated_types:
+  - trait: KeyInit
+    name: KeySize
+    type: some_other_crate::Size
+hierarchy: {}
+`)
+	_, err := contracts.Merge(a, b)
+	if err == nil {
+		t.Fatal("expected conflict error for divergent trait_associated_types entries, got nil")
+	}
+	if !strings.Contains(err.Error(), "lib-a") || !strings.Contains(err.Error(), "lib-b") {
+		t.Fatalf("expected error to name both libraries, got: %v", err)
+	}
+}
