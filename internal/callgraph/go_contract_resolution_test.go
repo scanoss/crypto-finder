@@ -157,3 +157,86 @@ func f(key, data []byte) {
 		t.Errorf("plain call edge to app.Encrypt was lost in reconciliation; callers: %v", callers)
 	}
 }
+
+// TestGoBuilder_InCorpusProducerTypesReceiver pins the in-graph half of the
+// assigned-var pass: a := binding from a function DECLARED IN THE CORPUS types
+// through that declaration's return — no contract involved. Requires the
+// declared return type to actually be extracted ("result" is a field of the
+// declaration node, not a node type; matching a child typed "result" never
+// fired, so every Go declaration carried an empty ReturnType).
+func TestGoBuilder_InCorpusProducerTypesReceiver(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type Keyring struct{}
+
+func (k *Keyring) Unwrap(data []byte) []byte { return data }
+
+func NewKeyring() *Keyring { return &Keyring{} }
+
+func Open() (*Keyring, error) { return NewKeyring(), nil }
+
+func use(data []byte) {
+	k := NewKeyring()
+	k.Unwrap(data)
+	kr, _ := Open()
+	kr.Unwrap(data)
+}
+`)
+	found := 0
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			if fn.Calls[i].Callee.String() == "app.(*Keyring).Unwrap" {
+				found++
+			}
+		}
+	}
+	if found != 2 {
+		t.Errorf("expected both := receivers to join app.(*Keyring).Unwrap, got %d; calls: %v", found, goCalleeKeys(g))
+	}
+}
+
+// TestGoBuilder_AliasQualifiedProducerReturn pins the cross-package half of
+// in-corpus producer typing: a helper in the root package returning a type
+// from a subpackage, spelled through the file's import alias. The stored
+// ReturnType used to carry the alias verbatim ("*format.Header"), which means
+// nothing outside its file, so the := receiver could not be typed. The parser
+// now expands the alias from the file's imports at extraction time. This is
+// age's own Encrypt/encryptHdr shape.
+func TestGoBuilder_AliasQualifiedProducerReturn(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "format"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"format/format.go": `package format
+
+type Header struct{}
+
+func (h *Header) Marshal() {}
+`,
+		"main.go": `package app
+
+import "example.com/app/format"
+
+func makeHeader() (*format.Header, error) {
+	return &format.Header{}, nil
+}
+
+func run() {
+	hdr, _ := makeHeader()
+	hdr.Marshal()
+}
+`,
+	}
+	for name, src := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "example.com/app"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoCall(t, g, "example.com/app/format.(*Header).Marshal")
+}

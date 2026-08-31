@@ -1499,7 +1499,7 @@ func resolveGoAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase, 
 // reconciled after the loop so a caller that ALSO calls that plain function
 // keeps its edge.
 func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase) int {
-	varTypes := goAssignedVarContractTypes(fn, kb)
+	varTypes := goAssignedVarContractTypes(graph, fn, kb)
 	if len(varTypes) == 0 {
 		return 0
 	}
@@ -1519,7 +1519,17 @@ func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, f
 			continue
 		}
 		oldKeys[call.Callee.String()] = true
-		call.Callee = FunctionID{Package: pkg, Type: typ, Name: call.Callee.Name}
+		rewritten := FunctionID{Package: pkg, Type: typ, Name: call.Callee.Name}
+		if _, ok := graph.Functions[rewritten.String()]; !ok {
+			// Go keys a pointer-receiver method under (*Type); a variable of
+			// either form can call it, so prefer whichever spelling actually
+			// has a declaration.
+			pointer := FunctionID{Package: pkg, Type: "*" + typ, Name: call.Callee.Name}
+			if _, ok := graph.Functions[pointer.String()]; ok {
+				rewritten = pointer
+			}
+		}
+		call.Callee = rewritten
 		addCaller(graph.Callers, call.Callee.String(), callerKey)
 		recordCallEdgeResolution(graph, callerKey, call.Callee.String(), EdgeKindExact, "", call)
 		resolved++
@@ -1548,7 +1558,7 @@ func reconcileGoRewrittenCallers(graph *CallGraph, callerKey string, fn *Functio
 // goAssignedVarContractTypes maps each variable a function binds via `:=` to
 // the KB return type of its producer, dropping any variable whose assignments
 // disagree.
-func goAssignedVarContractTypes(fn *FunctionDecl, kb *contracts.KnowledgeBase) map[string]string {
+func goAssignedVarContractTypes(graph *CallGraph, fn *FunctionDecl, kb *contracts.KnowledgeBase) map[string]string {
 	types := make(map[string]string)
 	conflicted := make(map[string]bool)
 	for i := range fn.Calls {
@@ -1565,6 +1575,14 @@ func goAssignedVarContractTypes(fn *FunctionDecl, kb *contracts.KnowledgeBase) m
 		}
 		ret := unconditionalContractReturn(kb.ContractsForTolerant(fqn, arity))
 		if ret == "" {
+			// In-corpus producer: use its declared return type. `s := newServer()`
+			// has no contract — the type only exists on the declaration, which the
+			// per-file pass could not see and this builder pass can.
+			if decl, ok := graph.Functions[call.Callee.String()]; ok {
+				ret = goReceiverTypeFromReturn(decl)
+			}
+		}
+		if ret == "" {
 			continue
 		}
 		if prev, seen := types[call.AssignedVar]; seen && prev != ret {
@@ -1575,6 +1593,54 @@ func goAssignedVarContractTypes(fn *FunctionDecl, kb *contracts.KnowledgeBase) m
 		types[call.AssignedVar] = ret
 	}
 	return types
+}
+
+// goReceiverTypeFromReturn derives the receiver type a producer's declared
+// return binds: the first non-error component of the (possibly multi-valued)
+// return, pointer and type arguments erased, qualified with the producer's own
+// package. An alias-qualified return ("cipher.Block") is skipped — expanding
+// the alias needs the file's imports, which this pass does not carry; those
+// producers are the KB's job.
+func goReceiverTypeFromReturn(decl *FunctionDecl) string {
+	raw := goFirstValueReturn(decl.ReturnType)
+	raw = strings.TrimLeft(raw, "*")
+	if i := strings.Index(raw, "["); i > 0 {
+		raw = raw[:i]
+	}
+	if raw == "" || raw == "error" || strings.ContainsAny(raw, " ]") {
+		return ""
+	}
+	// Already qualified: the parser expanded the file's import alias, so the
+	// last segment is the type and everything before it the package path.
+	if dot := strings.LastIndex(raw, "."); dot > 0 {
+		typ := raw[dot+1:]
+		if typ == "" || typ[0] < 'A' || typ[0] > 'Z' {
+			return ""
+		}
+		return raw
+	}
+	if r := raw[0]; r < 'A' || r > 'Z' {
+		// predeclared or unexported-shaped: not a receiver identity worth writing
+		return ""
+	}
+	return qualifiedType(decl.ID.Package, raw)
+}
+
+// goFirstValueReturn picks the component of a declared return that carries the
+// value: the first non-error entry of a multi-value return, or the return
+// itself.
+func goFirstValueReturn(returnType string) string {
+	raw := strings.TrimSpace(returnType)
+	if !strings.HasPrefix(raw, "(") {
+		return raw
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(raw, "("), ")")
+	for _, p := range strings.Split(inner, ",") {
+		if p = strings.TrimSpace(p); p != "" && p != "error" {
+			return p
+		}
+	}
+	return ""
 }
 
 // goContractMethod spells a method on a type the way the Go KBs key it:

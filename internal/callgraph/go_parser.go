@@ -25,7 +25,6 @@ const (
 	goNodeFieldIdentifier = "field_identifier"
 	goNodeTypeIdentifier  = "type_identifier"
 	goNodeParameterDecl   = "parameter_declaration"
-	goNodeResult          = "result"
 	goNodeReturnStatement = "return_statement"
 	goNodeExpressionList  = "expression_list"
 	goNodeCallExpression  = "call_expression"
@@ -230,7 +229,6 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	var name string
 	var body *sitter.Node
 	var params *sitter.Node
-	var result *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -241,8 +239,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 			if params == nil {
 				params = child
 			}
-		case goNodeResult:
-			result = child
+
 		case goNodeBlock:
 			body = child
 		}
@@ -265,7 +262,12 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 		FunctionType: "function",
 		Parameters:   p.extractParameterTypes(params, src),
 	}
-	decl.ReturnType = p.extractReturnType(result, src)
+	// "result" is a FIELD of the declaration node, not a node type; the child's
+	// own type is pointer_type, type_identifier, or a parameter_list for
+	// multi-value returns. Matching a child *typed* "result" never fired, so
+	// every Go declaration carried an empty ReturnType and nothing downstream
+	// could type a := binding from an in-corpus producer.
+	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if body != nil {
 		varTypes := p.collectGoVarTypes(params, body, src)
@@ -280,7 +282,6 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 	var name, receiver, receiverVar string
 	var body *sitter.Node
 	var params *sitter.Node
-	var result *sitter.Node
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -294,8 +295,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 			} else if params == nil {
 				params = child
 			}
-		case goNodeResult:
-			result = child
+
 		case goNodeBlock:
 			body = child
 		}
@@ -319,7 +319,12 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 		FunctionType: "method",
 		Parameters:   p.extractParameterTypes(params, src),
 	}
-	decl.ReturnType = p.extractReturnType(result, src)
+	// "result" is a FIELD of the declaration node, not a node type; the child's
+	// own type is pointer_type, type_identifier, or a parameter_list for
+	// multi-value returns. Matching a child *typed* "result" never fired, so
+	// every Go declaration carried an empty ReturnType and nothing downstream
+	// could type a := binding from an in-corpus producer.
+	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if body != nil {
 		varTypes := p.collectGoVarTypes(params, body, src)
@@ -969,11 +974,46 @@ func (p *GoParser) extractParameterTypes(node *sitter.Node, src []byte) []Functi
 	return params
 }
 
-func (p *GoParser) extractReturnType(node *sitter.Node, src []byte) string {
+func (p *GoParser) extractReturnType(node *sitter.Node, src []byte, analysis *FileAnalysis) string {
 	if node == nil {
 		return ""
 	}
-	return strings.TrimSpace(node.Content(src))
+	return goQualifyReturnType(strings.TrimSpace(node.Content(src)), analysis)
+}
+
+// goQualifyReturnType expands the package alias of each component of a
+// declared return ("*format.Header" -> "*filippo.io/age/internal/format.Header")
+// using the file's imports. The alias only means something inside this file, so
+// leaving it in the stored ReturnType made the type unusable anywhere else —
+// the builder pass that types := receivers from in-corpus producers had to
+// skip every alias-qualified return. An unqualified type is left alone; it is
+// qualified with the declaring package where it is consumed.
+func goQualifyReturnType(raw string, analysis *FileAnalysis) string {
+	if raw == "" || analysis == nil || len(analysis.Imports) == 0 {
+		return raw
+	}
+	if strings.HasPrefix(raw, "(") && strings.HasSuffix(raw, ")") {
+		parts := strings.Split(raw[1:len(raw)-1], ",")
+		for i := range parts {
+			parts[i] = goQualifyReturnType(strings.TrimSpace(parts[i]), analysis)
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
+	}
+	core := raw
+	prefix := ""
+	for strings.HasPrefix(core, "*") {
+		prefix += "*"
+		core = core[1:]
+	}
+	dot := strings.Index(core, ".")
+	if dot <= 0 {
+		return raw
+	}
+	path, ok := analysis.Imports[core[:dot]]
+	if !ok {
+		return raw
+	}
+	return prefix + path + core[dot:]
 }
 
 func (p *GoParser) extractCallArguments(node *sitter.Node, src []byte) []string {
