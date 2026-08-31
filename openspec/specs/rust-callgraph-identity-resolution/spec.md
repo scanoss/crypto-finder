@@ -364,15 +364,15 @@ lifetime in a parameter's type MUST NOT prevent resolution.
 ### Requirement: Prelude types belong to the standard library
 
 `Result`, `Option`, `Vec`, `Box` and the rest of the standard prelude are in
-scope with no import. A prelude type the source WRITES — in an annotation, a
-parameter, or the constructor call itself — MUST be attributed to `std` and
+scope with no import. A prelude type — whether the source WRITES it (in an
+annotation, a parameter, or the constructor call itself) or it is INFERRED
+from a constructor's return via a binding — MUST be attributed to `std` and
 MUST NOT be emitted under the analyzed crate's own package. A crate that
-declares its own alias of a prelude name MUST still win. A prelude type
-INFERRED from a constructor's return is a known gap, recorded below.
+declares its own alias of a prelude name MUST still win.
 
-#### Scenario: A written prelude type resolves to the standard library
+#### Scenario: A written or inferred prelude type resolves to the standard library
 
-- GIVEN `fn a(v: Vec<u8>) -> usize { v.len() }`, `fn b(o: Option<u8>) { o.unwrap() }` and `let _v = Vec::from(p);`
+- GIVEN `fn a(v: Vec<u8>) -> usize { v.len() }`, `fn b(o: Option<u8>) { o.unwrap() }`, `let _v = Vec::from(p);` and `let v = Vec::from(p); v.clone();`
 - THEN each MUST be attributed to `std`
 - Pinned by: `TestRustParser_PreludeTypeBoundary`
 
@@ -511,26 +511,63 @@ a default scan.
 - THEN the receiver MUST NOT be typed from that declaration, because a declaration that ships only under `cargo test` cannot type shipped code
 - Pinned by: `TestRustParser_CfgTestDeclarationsStayOutOfTheCrateIndex`
 
+### Requirement: A crate's own root package matches the identity a consumer resolves
+
+Cargo lets a manifest's `[package] name` use hyphens, but substitutes
+underscores for the identifier code actually references — `use aes_gcm::...`,
+never `use aes-gcm::...`. Scanning a hyphenated crate as its own target MUST
+attribute its declarations to the underscore form, the same identity a
+contract keys on and the same identity that crate carries when reached as
+another crate's dependency, or a contract can never match while scanning its
+own library.
+
+#### Scenario: A hyphenated manifest name becomes the crate identifier
+
+- GIVEN `Cargo.toml` declaring `name = "aes-gcm"`
+- THEN the crate's own root package MUST be `aes_gcm`, not `aes-gcm`
+- Pinned by: `TestDetectRootModule/rust-hyphenated-name-becomes-the-crate-identifier`
+
 ## Known gaps
 
 These are measured shortfalls, not decisions. Each is real, each is recorded so
 it is not rediscovered as news, and each names its size so a future change can
 be judged against it.
 
-### A prelude type inferred from a constructor keeps the crate's package
+### A prelude type inferred from a constructor keeps the crate's package — CLOSED
 
-`let v = Vec::from(p); v.clone()` emits `pkg.(Vec).clone` rather than
-`std.(Vec).clone`. The written spellings resolve correctly; only the inferred
-one does not. Measured at 64 of 109,880 edges across 53 published crates
-(`Box` 28, `Result` 18, `Vec` 16, `Option` 2). No contract keys `Vec.clone`,
-`Box.as_mut` or `Option.map`, so it fabricates no cryptographic identity. It is
-a subset of the wrapper-package gap below.
+`let v = Vec::from(p); v.clone()` used to emit `pkg.(Vec).clone` rather than
+`std.(Vec).clone`. The written spellings resolved correctly; only the inferred
+one did not, because a bare wrapping constructor (`Vec::from`, with no `::` of
+its own) duplicated its head into the wrapper text passed downstream
+(`Vec::Vec<..>`), which the qualified-path reader then took for a module named
+`Vec` holding a type also named `Vec`, falling back to the analyzed crate's
+package. Closed two ways: `resolveRustReceiverType` now checks the prelude
+table at both fallback points regardless of how a type got there, and
+`rustScopedCallType` stopped duplicating a path-less constructor's own head
+into `Vec::Vec<..>` in the first place (`TestRustParser_BareWrappingConstructorKeepsTheStandardLibraryPackage`,
+`TestRustParser_PreludeTypeBoundary`). Was measured at 64 of 109,880 edges
+across 53 published crates (`Box` 28, `Result` 18, `Vec` 16, `Option` 2); it
+was a subset of the wrapper-package gap below, so the same fix closes the
+share of that gap this exact shape produced.
+
+### A crate's own package segment is taken verbatim from the manifest — CLOSED
+
+Scanning a hyphenated crate's own source used to yield `aes-gcm.(AesGcm).encrypt`,
+while the same crate reached as a dependency yielded the identifier form
+`aes_gcm`. Contracts fire on consumers, so the consumer form is the one that
+matters, but a contract could never match while scanning its own library.
+Closed by normalizing the manifest's hyphenated `[package] name` to the
+underscore form `DetectRootModule` already used for a dependency
+(`TestDetectRootModule/rust-hyphenated-name-becomes-the-crate-identifier`).
 
 ### A receiver is not always seen through a wrapper
 
 About 2,100 edges carry a wrapper (`Result`, `Option`, `Vec`, `Box`) in the
-type field with a non-standard-library package. The largest remaining shape
-class, and the one to attack first.
+type field with a non-standard-library package. The bare-constructor shape
+above was one confirmed source; the fix has not been re-measured against the
+full 53-crate corpus, so this gap stays open until that re-measurement
+confirms how much of the 2,100 it closes. Still the largest remaining shape
+class, and the one to keep attacking.
 
 ### An operation on a type returned by a dependency's instance method is untyped
 
@@ -552,13 +589,6 @@ surface, so a contract remains authorable for every shape in the backlog.
 About 190 keys carry a single-letter type with the crate's own package. A glob
 can no longer claim one, but a bare parameter reaching the type field with the
 local package is a separate family.
-
-### A crate's own package segment is taken verbatim from the manifest
-
-Scanning a hyphenated crate's own source yields `aes-gcm.(AesGcm).encrypt`,
-while the same crate reached as a dependency yields the identifier form
-`aes_gcm`. Contracts fire on consumers, so the consumer form is the one that
-matters, but a contract can never match while scanning its own library.
 
 ## Decisions deliberately not implemented
 
@@ -583,6 +613,17 @@ names name a concrete type in a specific crate, so these edges cannot match by
 construction — the concrete type is unknowable at a generic site. The shape
 does put a type-parameter name where a package belongs, which is noted as a
 cosmetic consequence, not a finding.
+
+**Partially reopened**: `trait_associated_types` (added for `KeyInit`,
+`Digest`, `BlockSizeUser`, `AeadCore`) gives `C::FieldBytesSize` a real
+identity when `C` is bound to `elliptic_curve::Curve`, because that one
+associated type resolves to the same `GenericArray`-family answer regardless
+of which concrete curve substitutes `C` — the "concrete type is unknowable"
+premise does not hold for a size type shared across implementors. `Curve::Uint`
+is deliberately NOT cataloged: it is not a size type, and its real type varies
+per curve in a way this KB cannot state as one constant. `T::Ref::from_ptr` and
+similar shapes tied to a genuinely per-implementor type remain unresolved —
+this decision stays in force for those.
 
 ### Slice and primitive receivers carry no type
 
