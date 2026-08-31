@@ -526,6 +526,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		// Result.forwardClosures. Captured from the first chain's terminal frame;
 		// all chains of one finding share the same terminal op node.
 		anchorNode graphNode
+		// pathCountTruncated mirrors FindingChain.PathCountTruncated (#292).
+		pathCountTruncated bool
 	}
 	groupMap := make(map[findingKey]*chainGroup)
 	var groupOrder []findingKey
@@ -566,6 +568,12 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			grp.supportingCallIDs = chainSupportingCallIDs(fc)
 		}
 		mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
+		if fc.PathCountTruncated {
+			grp.pathCountTruncated = true
+			// Carrier frames exist only for finding/anchor identity; do not publish
+			// them as call_chains (mirrors live's empty emission after a ceiling skip).
+			continue
+		}
 		if len(nodes) > 0 {
 			grp.callChains = append(grp.callChains, nodes)
 		}
@@ -597,8 +605,14 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root, meta.Ecosystem)
 		}
-		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
+		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0 || grp.pathCountTruncated)
 		fg.Analysis = stitchedFindingAnalysis(&fg)
+		if grp.pathCountTruncated {
+			if fg.Analysis == nil {
+				fg.Analysis = &ExportFindingAnalysis{}
+			}
+			fg.Analysis.CallChains = AnalysisPartial
+		}
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)

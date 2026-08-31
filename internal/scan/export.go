@@ -1396,14 +1396,21 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	if len(asset.ParameterConditions) > 0 {
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
 	}
+	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
 	// Only a run that knows what user code is can answer the question at all.
-	if containingFn != nil && ctx.userPackages != nil {
+	// When the path-count ceiling skips emission (truncated && !traced), Count
+	// already proved routes exist — do not stamp reachable=false, or entry-point
+	// indexing drops the finding and the legacy boolean contradicts
+	// reachability=unknown (#292).
+	if containingFn != nil && ctx.userPackages != nil && !(truncated && !traced) {
 		reachable := traced
 		fg.Reachable = &reachable
 	}
-	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
 	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
-	if fg.Reachability != graphfrag.ReachabilityNotApplicable {
+	// Always surface analysis when a reverse-trace cap fired, including the
+	// mine path where reachability is not_applicable — otherwise the ceiling
+	// skip leaves no exported truncation signal on the groovy-shaped case.
+	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
 		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
 	}
 
@@ -2852,12 +2859,19 @@ func buildCallChains(
 	_ = structuralCallChains(ctx, containingFn)
 	var chains [][]callGraphChainNode
 	traced = len(raw) > 0
-	if !traced {
-		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
-		chains = [][]callGraphChainNode{{node}}
-	} else {
+	truncated := ctx.callChainTruncated[cacheKey]
+	switch {
+	case traced:
 		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
 		chains = materializeCallChainNodes(ctx, expanded)
+	case truncated:
+		// Path-count ceiling (#292): Count proved routes exist but Routes was
+		// skipped. Emit zero chains — do not synthesize the self-chain fallback,
+		// which would look like a caller-less crypto call.
+		chains = nil
+	default:
+		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
+		chains = [][]callGraphChainNode{{node}}
 	}
 	attachCryptoCall(chains, cryptoCall)
 	ctx.consumeCallChainUsage(cacheKey)
@@ -2900,11 +2914,16 @@ func structuralCallChains(
 	}
 	raw := structuralTracebackChains(ctx, containingFn)
 	var result [][]callGraphChainNode
-	if len(raw) == 0 {
+	truncated := ctx.callChainTruncated[cacheKey]
+	switch {
+	case len(raw) > 0:
+		result = materializeStructuralChainNodes(ctx, raw)
+	case truncated:
+		// Mirror buildCallChains: a ceiling skip must not become a self-chain.
+		result = nil
+	default:
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		result = [][]callGraphChainNode{{node}}
-	} else {
-		result = materializeStructuralChainNodes(ctx, raw)
 	}
 	ctx.callChainCache[cacheKey] = result
 	return result

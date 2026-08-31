@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
-- Condensed call-chain export no longer materialises routes after counting more than 100000 condensed paths for one finding. Those findings keep an accurate path total, emit no chains, and stay partial/truncated so a pathological fan-in cannot exhaust process memory before the existing 128-chain emit budget applies. The live `--export-callgraph` path and the stitched export share the same ceiling. Documented per-finding upper bounds remain 128 chains and 32 frames.
+- Condensed call-chain export no longer materialises routes after counting more than 100000 condensed paths for one finding. Those findings emit no chains, keep `analysis.call_chains` partial (including on the mine path), and use `reachability: unknown` instead of claiming unreachable, so a pathological fan-in cannot exhaust process memory before the existing 128-chain emit budget applies. The live `--export-callgraph` path and the stitched export share the same ceiling. Documented per-finding upper bounds remain 128 chains and 32 frames.
 - Dependency-source findings surfaced during API entry-point inference now keep `dependency_info` and source-root-relative paths instead of appearing as direct findings with absolute cache paths.
 - Java dependency scans now keep Maven's local repository aligned with the operating-system user home (`HOME` on Unix and `USERPROFILE` on Windows), default Gradle's user home under the same root unless already configured, and warn when every resolved dependency is skipped because source is unavailable.
 - Rust receiver types are resolved from the syntax tree instead of the source text of the statement that bound them.

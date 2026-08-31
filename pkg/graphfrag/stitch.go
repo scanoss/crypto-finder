@@ -1275,8 +1275,17 @@ func traceBackward(
 		// The route total is counted before enumerating (condensedBackwardChains
 		// returns it) but is not published: the served contract has no field for
 		// it, and this package stays free of a logger by design.
-		chains, _, _ := condensedBackwardChains(opNode, reverse, chainEntrySet)
+		chains, _, truncated := condensedBackwardChains(opNode, reverse, chainEntrySet)
 		if len(chains) == 0 {
+			if truncated {
+				// Path-count ceiling (#292): Count proved entry-reaching routes
+				// exist but Routes was skipped. Emit one finding carrier per op
+				// with PathCountTruncated so ToCallgraphExport can stamp
+				// unknown/partial with empty call_chains — do not fabricate the
+				// self-entry chain that asserts the op is its own entry.
+				emitPathCountTruncatedFindings(opNode, opsByNode, fragments, functionsByNode, out)
+				continue
+			}
 			if chainEntries != nil && !chainEntries[opNode] &&
 				!composedReaches(composedFindings, opsByNode[opNode]) {
 				// Restricted enumeration and no requested entry reaches this
@@ -1294,6 +1303,33 @@ func traceBackward(
 		for _, chain := range chains {
 			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, out)
 		}
+	}
+}
+
+// emitPathCountTruncatedFindings records each crypto op on opNode as a finding
+// carrier after the condensed path-count ceiling skipped route materialisation.
+// Frames hold only the op node so anchor identity survives; PathCountTruncated
+// tells the export converter not to treat that frame as a genuine self-chain.
+func emitPathCountTruncatedFindings(
+	opNode graphNode,
+	opsByNode map[graphNode][]CryptoOperation,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
+	out *Result,
+) {
+	frame := buildFrame(opNode, inbound{}, fragments, functionsByNode)
+	for i := range opsByNode[opNode] {
+		op := opsByNode[opNode][i]
+		opCopy := op
+		out.Chains = append(out.Chains, FindingChain{
+			FindingID:          op.FindingID,
+			RuleID:             op.RuleID,
+			Symbol:             op.Symbol,
+			Frames:             []CallFrame{frame},
+			Confidence:         ConfidenceHigh,
+			CryptoOp:           &opCopy,
+			PathCountTruncated: true,
+		})
 	}
 }
 

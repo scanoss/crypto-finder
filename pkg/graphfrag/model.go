@@ -667,6 +667,12 @@ type FindingChain struct {
 	// terminal node so the converter can emit crypto_call without re-reading the
 	// fragments.
 	CryptoOp *CryptoOperation
+
+	// PathCountTruncated is set when condensed route enumeration skipped
+	// materialisation because Count exceeded graphwalk.PathCountSkipThreshold
+	// (#292). The chain then carries the op node only as a finding carrier;
+	// ToCallgraphExport emits empty call_chains and reachability=unknown.
+	PathCountTruncated bool
 }
 
 // SuppressedEdge is one call edge (or grouped call site) the stitcher declined
