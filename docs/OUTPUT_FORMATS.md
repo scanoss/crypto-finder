@@ -103,8 +103,10 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.12`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.14`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
 
+- **`6.14`** adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` (0-based positions into that catalog) beside the existing inlined `call_chains`. The index lists reconstruct the same N-sample of routes. Inlined frames keep their previous field names and meaning. `crypto_entry_points` is still the complete reverse-reach set. Live `--export-callgraph` and stitch stamp this version together.
+- **`6.13`** adds `call_chains[].entry_resolution` and `entry_declared_type`, reporting how the call arriving at each frame was established.
 - **`6.12`** adds the rule-vs-callgraph key-length conflict marker to `supporting_calls[].supporting_call.resolved_key_length`. When a detection rule declares a static `keyLength` and the callgraph resolves a different value for a finding referencing that evidence, the resolved `bits` stay primary, the rule value is retained as `rule_declared_bits`, and `rule_conflict` is `true`. Agreement, an unresolved key length, and a rule that declares no `keyLength` all leave both fields absent. The marker is computed during the scan, so consumers read it directly instead of re-deriving it from rule metadata.
 
 - **`6.11`** adds optional `supporting_calls[].supporting_call.resolved_key_length` for structurally derived Java key-generation configuration calls referenced by `finding_graphs[].supporting_call_ids`. It contains raw integer `bits` only when static analysis resolves a literal or simple propagated constant, `provenance` (`constant` or `unknown`), and required `source_call` (`function_name`, `line`, `parameter_index`) for the contributing argument. It is preserved by live, graph-fragment, and stitched callgraph exports; terminal `crypto_call` records do not carry it, and it does not populate CBOM properties or express a security threshold.
@@ -125,6 +127,7 @@ Schema note: call graph export version **`6.12`** is the current customer-facing
 
 - Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
+- `functions[]` (schema `6.14`) is the interned identity catalog for those emitted routes. `finding_graphs[].call_chain_indexes` lists the same walks as integer positions into that catalog, without removing the inlined `call_chains` objects.
 - Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
@@ -378,7 +381,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.12`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.14`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the

@@ -630,15 +630,14 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 	}
 }
 
-// TestCallgraphSchemaVersion_Is612 pins the canonical callgraph schema version
-// at 6.12 — the current reachability contract, with resolved key-length evidence
-// carrying the rule-vs-callgraph conflict marker.
+// TestCallgraphSchemaVersion_Is614 pins the canonical callgraph schema version
+// at 6.14 — interned functions[] beside inlined call_chains.
 // The bump is unconditional: it
 // advances regardless of whether any given export emits the new fields.
-func TestCallgraphSchemaVersion_Is613(t *testing.T) {
+func TestCallgraphSchemaVersion_Is614(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.13" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.13")
+	if CallgraphSchemaVersion != "6.14" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.14")
 	}
 }

@@ -74,9 +74,9 @@ func TestGeneratedExportsMatchSchemas(t *testing.T) {
 			name:             "callgraph",
 			schema:           filepath.Join("..", "..", "schemas", "callgraph-schema.json"),
 			document:         callgraphPath,
-			properties:       []string{"crypto_entry_points", "finding_graphs", "scan_metadata", "schema_version", "supporting_calls"},
-			outputProperties: []string{"crypto_entry_points", "finding_graphs", "scan_metadata", "schema_version", "supporting_calls"},
-			populatedArrays:  []string{"crypto_entry_points", "finding_graphs", "supporting_calls"},
+			properties:       []string{"crypto_entry_points", "finding_graphs", "functions", "scan_metadata", "schema_version", "supporting_calls"},
+			outputProperties: []string{"crypto_entry_points", "finding_graphs", "functions", "scan_metadata", "schema_version", "supporting_calls"},
+			populatedArrays:  []string{"crypto_entry_points", "finding_graphs", "functions", "supporting_calls"},
 			invalidVersion:   "6.7",
 		},
 	} {
