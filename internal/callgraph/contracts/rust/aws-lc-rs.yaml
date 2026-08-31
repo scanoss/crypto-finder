@@ -1,0 +1,80 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aws-lc-rs
+  coordinates:
+    - aws-lc-rs
+    - aws_lc_rs
+  version_range: ">=1.0.0,<1.18.0"
+  description: "Safe AWS-LC bindings with a ring-compatible API"
+
+# API read at aws-lc-rs 1.17.1 (src/digest.rs, src/hmac.rs, src/aead.rs,
+# src/aead/unbound_key.rs) and cross-checked at 1.0.0, 1.8.1 and 1.12.6.
+#
+# VERSION RANGE STARTS AT 1.0.0, NOT AT THE MATRIX'S OLDEST ROW. The matrix
+# lists 0.0.1, which is a placeholder release predating the API entirely.
+#
+# KEY SHAPES DIFFER BY CALLABLE KIND, and both are authored as the parser emits
+# them -- read off an exported call graph, not assumed:
+#   free function in a module   aws_lc_rs.digest.digest       -> two dots, so the
+#                               normalisation rewrites the separator in front of
+#                               the receiver: authored `aws_lc_rs::digest.digest`
+#   method on a type            aws_lc_rs::aead.UnboundKey.new -> authored
+#                               `aws_lc_rs::aead::UnboundKey.new`
+#
+# ARITIES READ FROM THE DECLARATIONS (self excluded):
+#   digest::digest(algorithm, data)                    -> 2  (digest.rs:194)
+#   hmac::sign(key, data)                              -> 2  (hmac.rs:488)
+#   hmac::verify(key, data, tag)                       -> 3  (hmac.rs:545)
+#   UnboundKey::new(algorithm, key_bytes)              -> 2  (aead/unbound_key.rs:46)
+#   LessSafeKey::new(key)                              -> 1  (aead.rs:710)
+#   LessSafeKey::seal_in_place_append_tag(&mut self, aad, in_out) -> 2 (aead.rs:467)
+#
+# NOTE ON THE SIBLING SYS CRATE. aws-lc-rs reaches raw AWS-LC through a
+# CRATE-LEVEL alias declared in lib.rs -- `extern crate aws_lc_sys as aws_lc;` --
+# with the call sites in aead.rs, digest.rs and friends. Nothing here contracts
+# that alias, and that is deliberate: the same lib.rs also carries
+# `#[cfg(feature = "fips")] extern crate aws_lc_fips_sys as aws_lc;`, so the
+# alias resolves to a different crate depending on a cargo feature. Contracting
+# it would attribute aws-lc-fips-sys call sites to aws-lc-sys. Keeping the safe
+# API here and the raw FFI in aws-lc-sys.yaml is also what stops a single
+# consumer call from being counted against both crates.
+#
+# skipped-non-crypto: Nonce/Aad/Tag wrappers, the error types, encoding
+#   helpers, and the ring-compatibility re-export shims.
+contracts:
+  - method: aws_lc_rs::digest.digest
+    arity: 2
+    return: { type: aws_lc_rs::digest::Digest, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::digest::Algorithm", "&[u8]"]
+    role: operation
+  - method: aws_lc_rs::hmac.sign
+    arity: 2
+    return: { type: aws_lc_rs::hmac::Tag, confidence: high }
+    parameter_types: ["&aws_lc_rs::hmac::Key", "&[u8]"]
+    role: operation
+  - method: aws_lc_rs::hmac.verify
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aws_lc_rs::hmac::Key", "&[u8]", "&[u8]"]
+    role: operation
+  - method: aws_lc_rs::aead::UnboundKey.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::aead::Algorithm", "&[u8]"]
+    role: factory
+  - method: aws_lc_rs::aead::LessSafeKey.new
+    arity: 1
+    return: { type: aws_lc_rs::aead::LessSafeKey, confidence: high }
+    parameter_types: ["aws_lc_rs::aead::UnboundKey"]
+    role: factory
+  - method: aws_lc_rs::aead::LessSafeKey.seal_in_place_append_tag
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: aws_lc_rs::aead::LessSafeKey.open_in_place
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+
+hierarchy: {}
