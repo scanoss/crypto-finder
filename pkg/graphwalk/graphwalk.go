@@ -378,9 +378,9 @@ func (s *tarjanState[T]) liftParent(parent, child T) {
 }
 
 // PathCountSkipThreshold is the defensive ceiling for condensed route
-// materialisation (issue #292). Count itself is O(V) and cheap; Routes still
+// materialization (issue #292). Count itself is O(V) and cheap; Routes still
 // expands concrete paths up to a budget after the full path count is known.
-// When that count is combinatorially large, materialising even a capped route
+// When that count is combinatorially large, materializing even a capped route
 // set has exhausted process memory in the field. Callers should skip Routes
 // above this ceiling, emit no chains, and report truncated so reachability can
 // stay on the existing partial / unknown contract.

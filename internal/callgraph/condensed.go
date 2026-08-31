@@ -138,7 +138,7 @@ func (t *Tracer) TraceBackCondensed(
 			Str("function", targetKey).
 			Int("total_condensed_paths", total).
 			Int("path_count_skip_threshold", PathCountSkipThreshold).
-			Msg("Skipping condensed call chain materialisation: path count exceeds safety ceiling")
+			Msg("Skipping condensed call chain materialization: path count exceeds safety ceiling")
 		return nil, total, true
 	}
 	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {

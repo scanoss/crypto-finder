@@ -1307,7 +1307,7 @@ func traceBackward(
 }
 
 // emitPathCountTruncatedFindings records each crypto op on opNode as a finding
-// carrier after the condensed path-count ceiling skipped route materialisation.
+// carrier after the condensed path-count ceiling skipped route materialization.
 // Frames hold only the op node so anchor identity survives; PathCountTruncated
 // tells the export converter not to treat that frame as a genuine self-chain.
 func emitPathCountTruncatedFindings(

@@ -38,7 +38,7 @@ const (
 	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
 	callGraphExportMaxDepth        = 32
-	callGraphExportMaxChains       = 128 // emit budget; graphwalk.PathCountSkipThreshold skips materialisation above 100000 paths
+	callGraphExportMaxChains       = 128 // emit budget; graphwalk.PathCountSkipThreshold skips materialization above 100000 paths
 	maxExportSourceResolutionDepth = 8
 	constructorMethodName          = "<init>"
 )
@@ -1397,22 +1397,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
 	}
 	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
-	// Only a run that knows what user code is can answer the question at all.
-	// When the path-count ceiling skips emission (truncated && !traced), Count
-	// already proved routes exist — do not stamp reachable=false, or entry-point
-	// indexing drops the finding and the legacy boolean contradicts
-	// reachability=unknown (#292).
-	if containingFn != nil && ctx.userPackages != nil && !(truncated && !traced) {
-		reachable := traced
-		fg.Reachable = &reachable
-	}
-	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
-	// Always surface analysis when a reverse-trace cap fired, including the
-	// mine path where reachability is not_applicable — otherwise the ceiling
-	// skip leaves no exported truncation signal on the groovy-shaped case.
-	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
-		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
-	}
+	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated)
 
 	if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason
@@ -1433,6 +1418,27 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	return fg
+}
+
+// applyLiveReachabilityState stamps Reachable, Reachability, and Analysis for one
+// finding graph after chain materialization. When the path-count ceiling skips
+// emission (truncated && !traced), Count already proved routes exist — leave
+// Reachable unset so entry-point indexing still runs, and keep analysis partial
+// even on the mine path (#292).
+func applyLiveReachabilityState(
+	fg *callGraphExportFinding,
+	containingFn *callgraph.FunctionDecl,
+	ctx *exportBuildContext,
+	traced, truncated bool,
+) {
+	if containingFn != nil && ctx.userPackages != nil && (!truncated || traced) {
+		reachable := traced
+		fg.Reachable = &reachable
+	}
+	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
+	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
+		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
+	}
 }
 
 // filterConditionedCallChains keeps only the chains whose terminal crypto call

@@ -244,7 +244,7 @@ func TestTraceBackCondensed_CollapsesCycleInsteadOfEnumeratingIt(t *testing.T) {
 
 // TestTraceBackCondensed_HighFanInStaysBounded runs the shape that motivated the
 // O(V+E) frontier — a dense library with very high fan-in — and asserts the
-// #292 path-count ceiling skips materialisation, the exact total is still
+// #292 path-count ceiling skips materialization, the exact total is still
 // reported, and it finishes fast.
 func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	t.Parallel()
@@ -469,7 +469,7 @@ func TestTraceBackCondensed_UnreachableFindingHasNoChains(t *testing.T) {
 
 // TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling is the #292
 // defensive cap: when Count reports more condensed routes than the safety
-// ceiling, TraceBackCondensed must not materialise any of them. Emitting the
+// ceiling, TraceBackCondensed must not materialize any of them. Emitting the
 // maxChains budget after counting hundreds of thousands of paths is what the
 // field OOM observed — the warning fired with emitted=128 / total≈473k, then
 // the process was killed. Skipping Routes entirely keeps peak memory on the
@@ -496,7 +496,7 @@ func TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling(t *testing.T)
 
 // TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling keeps the
 // pre-#292 truncation contract for the common case: Count between maxChains and
-// the safety ceiling still materialises up to maxChains routes.
+// the safety ceiling still materializes up to maxChains routes.
 func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling(t *testing.T) {
 	t.Parallel()
 	// 6^4 = 1296 paths: above the 128 emit budget, under the 100000 ceiling.
