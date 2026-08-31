@@ -37,6 +37,14 @@ const (
 	goFieldType               = "type"
 	goNodeGenericType         = "generic_type"
 	goNodePointerType         = "pointer_type"
+	goNodeSelectorExpression  = "selector_expression"
+	goFieldOperand            = "operand"
+	goFieldField              = "field"
+	goFieldFunction           = "function"
+	goFieldLeft               = "left"
+	goFieldRight              = "right"
+	goNodeParenExpr           = "parenthesized_expression"
+	goNodeAssignmentStmt      = "assignment_statement"
 )
 
 // NewGoParser creates a new Go source parser backed by tree-sitter.
@@ -540,6 +548,7 @@ func (p *GoParser) parseCallExpr(
 		}
 	}
 	if call != nil {
+		call.ChainID, call.AssignedVar = goCallChainContext(node, src)
 		call.StartCol = int(node.StartPoint().Column) + 1
 		call.EndCol = int(node.EndPoint().Column) + 1
 	}
@@ -564,6 +573,108 @@ var goPredeclaredIdentifiers = map[string]bool{
 	"uint16": true, "uint32": true, "uint64": true, "uintptr": true,
 }
 
+// goChainableCallNode unwraps an expression to the call node it denotes, or nil
+// when it is not a call: the operand of a chained selector is a call_expression,
+// possibly inside parentheses.
+func goChainableCallNode(node *sitter.Node) *sitter.Node {
+	for node != nil && node.Type() == goNodeParenExpr {
+		node = node.NamedChild(0)
+	}
+	if node != nil && node.Type() == goNodeCallExpression {
+		return node
+	}
+	return nil
+}
+
+// goCallChainContext mirrors callChainContext for Go's chain shape, where a
+// link is `call_expression → function: selector_expression → operand: <inner
+// call>`. Inner links share the root call's start byte as ChainID; the root
+// carries the ChainID only when it actually has inner links, plus the variable
+// its result is bound to, when any.
+func goCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar string) {
+	root := goChainRootNode(node)
+	if root != node {
+		return fmt.Sprintf("%d", root.StartByte()), ""
+	}
+	if fn := node.ChildByFieldName(goFieldFunction); fn != nil && fn.Type() == goNodeSelectorExpression {
+		if goChainableCallNode(fn.ChildByFieldName(goFieldOperand)) != nil {
+			chainID = fmt.Sprintf("%d", root.StartByte())
+		}
+	}
+	return chainID, goAssignedVarFromParent(root, src)
+}
+
+// goChainRootNode climbs from a call to the outermost call of its fluent chain:
+// the parent selector whose operand is this call, wrapped in the parent call.
+func goChainRootNode(node *sitter.Node) *sitter.Node {
+	root := node
+	for {
+		parent := root.Parent()
+		for parent != nil && parent.Type() == goNodeParenExpr {
+			parent = parent.Parent()
+		}
+		if parent == nil || parent.Type() != goNodeSelectorExpression {
+			break
+		}
+		grand := parent.Parent()
+		if grand == nil || grand.Type() != goNodeCallExpression || grand.ChildByFieldName(goFieldFunction) != parent {
+			break
+		}
+		root = grand
+	}
+	return root
+}
+
+// goAssignedVarFromParent names the variable a call's result is bound to: the
+// matching name of a `:=` or `=`, or a `var x = ...` spec. For the multi-valued
+// Go idiom `block, err := f(key)` the first non-blank name is the value the
+// crypto lifecycle follows; the error is never the crypto object.
+func goAssignedVarFromParent(node *sitter.Node, src []byte) string {
+	parent := node.Parent()
+	if parent == nil || parent.Type() != goNodeExpressionList {
+		return ""
+	}
+	// Only when this call is the sole right-hand expression is the binding
+	// unambiguous; `a, b := f(), g()` pairs positionally and is left alone.
+	if int(parent.NamedChildCount()) != 1 {
+		return ""
+	}
+	grand := parent.Parent()
+	if grand == nil {
+		return ""
+	}
+	switch grand.Type() {
+	case goNodeShortVarDeclaration, goNodeAssignmentStmt:
+		left := grand.ChildByFieldName(goFieldLeft)
+		if left == nil || left == parent {
+			return ""
+		}
+		return goFirstBoundName(left, src)
+	case "var_spec":
+		// `var h = sha256.New()`: the names sit directly on the spec.
+		if name := grand.ChildByFieldName("name"); name != nil {
+			return strings.TrimSpace(name.Content(src))
+		}
+	}
+	return ""
+}
+
+// goFirstBoundName returns the first non-blank identifier of a binding list:
+// for the multi-valued idiom `block, err := f(key)` the first name is the
+// value the crypto lifecycle follows; the error is never the crypto object.
+func goFirstBoundName(left *sitter.Node, src []byte) string {
+	for i := 0; i < int(left.NamedChildCount()); i++ {
+		name := left.NamedChild(i)
+		if name.Type() != goNodeIdentifier {
+			continue
+		}
+		if text := strings.TrimSpace(name.Content(src)); text != "" && text != "_" {
+			return text
+		}
+	}
+	return ""
+}
+
 func (p *GoParser) parseSelectorCall(
 	node *sitter.Node,
 	src []byte,
@@ -575,19 +686,40 @@ func (p *GoParser) parseSelectorCall(
 	currentReceiverVar string,
 	varTypes map[string]string,
 ) *FunctionCall {
-	var operand, field string
+	operandNode := node.ChildByFieldName(goFieldOperand)
+	fieldNode := node.ChildByFieldName(goFieldField)
+	if operandNode == nil || fieldNode == nil {
+		return nil
+	}
+	field := fieldNode.Content(src)
+	if field == "" {
+		return nil
+	}
 
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		switch child.Type() {
-		case goNodeIdentifier:
-			operand = child.Content(src)
-		case goNodeFieldIdentifier:
-			field = child.Content(src)
+	// A selector whose operand is itself a call — `sha256.New().Sum(data)` —
+	// is a fluent-chain link. Its receiver type is the inner call's return
+	// type, which this per-file pass does not know, so the link is emitted
+	// with an empty callee type (the honest form) and its ChainID groups it
+	// with the inner call; resolveFluentChainCalleesByContract then seeds the
+	// type from the root link's KB contract and rewrites this one. Before
+	// this branch existed the link was not emitted at all: the walk only
+	// recognized identifier operands, so every chained call vanished from
+	// the graph — the crypto idiom `sha256.New().Sum(x)` lost its operation.
+	if goChainableCallNode(operandNode) != nil {
+		return &FunctionCall{
+			Callee:    FunctionID{Name: field},
+			Raw:       node.Content(src),
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
 		}
 	}
 
-	if operand == "" || field == "" {
+	if operandNode.Type() != goNodeIdentifier {
+		return nil
+	}
+	operand := operandNode.Content(src)
+	if operand == "" {
 		return nil
 	}
 

@@ -194,6 +194,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
+	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
 
 	// Resolve single-argument pass-through dispatch: a call site whose
 	// interface-typed parameter is used, unmodified, as the sole receiver of an
@@ -1378,7 +1379,10 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 	// Seed the receiver type from the root (innermost) link's KB return type.
 	rootCall := &fn.Calls[idxs[0]]
 	rootFQN, rootArity := splitMethodArity(&rootCall.Callee)
-	if kb.Ecosystem == ecosystemCPP && rootArity < 0 {
+	// C++ and Go callee names carry no arity suffix, so the contract key's
+	// arity has to come from the call site. For Go the argument count is the
+	// arity exactly: the language has no overloading.
+	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && rootArity < 0 {
 		rootArity = len(rootCall.Arguments)
 	}
 	rootContracts := kb.ContractsForTolerant(rootFQN, rootArity)
@@ -1405,7 +1409,13 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			continue
 		}
 		pkg, typ := splitQualifiedTypeName(currentType)
-		rewritten := FunctionID{Package: pkg, Type: typ, Name: fmt.Sprintf("%s#%d", base, arity)}
+		name := fmt.Sprintf("%s#%d", base, arity)
+		if kb.Ecosystem == ecosystemGo {
+			// Go declarations carry no arity suffix (the language has no
+			// overloading), so the rewritten identity must not either.
+			name = base
+		}
+		rewritten := FunctionID{Package: pkg, Type: typ, Name: name}
 		oldKey := call.Callee.String()
 		if newKey := rewritten.String(); newKey != oldKey {
 			call.Callee = rewritten
@@ -1436,14 +1446,145 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 // contract's declared arity when the varargs fallback matched).
 func chainLinkContracts(kb *contracts.KnowledgeBase, currentType string, call *FunctionCall) ([]contracts.Contract, string, int) {
 	base, arity := methodBaseArity(call.Callee.Name)
-	if kb.Ecosystem == ecosystemCPP && arity < 0 {
+	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && arity < 0 {
 		arity = len(call.Arguments)
 	}
 	ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
+	if len(ctrs) == 0 && kb.Ecosystem == ecosystemGo {
+		// The Go KBs key a method on a type in FunctionID.String() form —
+		// `crypto/cipher.(AEAD).Seal` — because a Go package path may itself
+		// contain dots, so the flat `pkg.Type.method` spelling is ambiguous.
+		ctrs = kb.ContractsForTolerant(goContractMethod(currentType, base), arity)
+	}
 	if len(ctrs) == 0 && kb.Ecosystem == ecosystemJava {
 		ctrs, arity = javaVarargsChainContracts(kb, currentType+"."+base, arity)
 	}
 	return ctrs, base, arity
+}
+
+// resolveGoAssignedVarCallees types Go method calls whose receiver was bound by
+// a `:=` from a KB-known producer:
+//
+//	gcm, _ := cipher.NewGCM(block)   // contract: returns crypto/cipher.AEAD
+//	gcm.Seal(nil, nonce, data, nil)  // was app.Seal — now crypto/cipher.(AEAD).Seal
+//
+// Go declares locals with `:=` almost exclusively and carries no type
+// annotation to read, so the per-file pass cannot type these receivers; the
+// producer's return type only exists here, where the KB is loaded. This is the
+// Go counterpart of the Python assigned-var propagation pass.
+//
+// Conservative on two axes: a variable assigned twice with DIFFERENT known
+// types in one function is skipped outright — the per-function map cannot see
+// block scope, and guessing here is how an AES receiver gets reported as a Mac.
+// And only a callee that resolves to nothing (no declaration, receiver typed by
+// nobody) is rewritten, never one that already joined a real declaration.
+func resolveGoAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase, ecosystem string) {
+	if kb == nil || ecosystem != ecosystemGo {
+		return
+	}
+	resolved := 0
+	for callerKey, fn := range graph.Functions {
+		resolved += resolveGoAssignedVarCalleesInFunction(graph, callerKey, fn, kb)
+	}
+	if resolved > 0 {
+		log.Info().Int("resolved", resolved).Msg("Resolved Go assigned-var receivers via contract KB")
+	}
+}
+
+// resolveGoAssignedVarCalleesInFunction rewrites one function's receiver-typed
+// calls. The KB-typed receiver wins even when the fallback key coincides with a
+// real declaration: `block.Encrypt(...)` with block typed crypto/cipher.Block
+// by its producer's contract is a method call on that value, never a call to a
+// same-package function that happens to be named Encrypt. The old keys are
+// reconciled after the loop so a caller that ALSO calls that plain function
+// keeps its edge.
+func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase) int {
+	varTypes := goAssignedVarContractTypes(fn, kb)
+	if len(varTypes) == 0 {
+		return 0
+	}
+	resolved := 0
+	oldKeys := make(map[string]bool)
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.ReceiverVar == "" || call.Callee.Type != "" {
+			continue
+		}
+		receiverType, ok := varTypes[call.ReceiverVar]
+		if !ok {
+			continue
+		}
+		pkg, typ := splitQualifiedTypeName(receiverType)
+		if pkg == "" || typ == "" {
+			continue
+		}
+		oldKeys[call.Callee.String()] = true
+		call.Callee = FunctionID{Package: pkg, Type: typ, Name: call.Callee.Name}
+		addCaller(graph.Callers, call.Callee.String(), callerKey)
+		recordCallEdgeResolution(graph, callerKey, call.Callee.String(), EdgeKindExact, "", call)
+		resolved++
+	}
+	reconcileGoRewrittenCallers(graph, callerKey, fn, oldKeys)
+	return resolved
+}
+
+// reconcileGoRewrittenCallers drops the caller's edge to each pre-rewrite key
+// that no remaining call in the function still targets.
+func reconcileGoRewrittenCallers(graph *CallGraph, callerKey string, fn *FunctionDecl, oldKeys map[string]bool) {
+	for oldKey := range oldKeys {
+		still := false
+		for i := range fn.Calls {
+			if fn.Calls[i].Callee.String() == oldKey {
+				still = true
+				break
+			}
+		}
+		if !still {
+			removeCaller(graph.Callers, oldKey, callerKey)
+		}
+	}
+}
+
+// goAssignedVarContractTypes maps each variable a function binds via `:=` to
+// the KB return type of its producer, dropping any variable whose assignments
+// disagree.
+func goAssignedVarContractTypes(fn *FunctionDecl, kb *contracts.KnowledgeBase) map[string]string {
+	types := make(map[string]string)
+	conflicted := make(map[string]bool)
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.AssignedVar == "" || conflicted[call.AssignedVar] {
+			continue
+		}
+		fqn, arity := splitMethodArity(&call.Callee)
+		if arity < 0 {
+			arity = len(call.Arguments)
+		}
+		if call.Callee.Type != "" {
+			fqn = goContractMethod(qualifiedType(call.Callee.Package, call.Callee.Type), BaseFunctionName(call.Callee.Name))
+		}
+		ret := unconditionalContractReturn(kb.ContractsForTolerant(fqn, arity))
+		if ret == "" {
+			continue
+		}
+		if prev, seen := types[call.AssignedVar]; seen && prev != ret {
+			conflicted[call.AssignedVar] = true
+			delete(types, call.AssignedVar)
+			continue
+		}
+		types[call.AssignedVar] = ret
+	}
+	return types
+}
+
+// goContractMethod spells a method on a type the way the Go KBs key it:
+// `hash.Hash` + `Sum` -> `hash.(Hash).Sum`.
+func goContractMethod(qualifiedType, base string) string {
+	pkg, typ := splitQualifiedTypeName(qualifiedType)
+	if pkg == "" || typ == "" {
+		return qualifiedType + "." + base
+	}
+	return pkg + ".(" + typ + ")." + base
 }
 
 // javaVarargsChainContracts retries a Java chain-link contract lookup at

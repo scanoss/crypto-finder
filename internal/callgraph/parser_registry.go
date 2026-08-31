@@ -4,6 +4,7 @@ import "github.com/scanoss/crypto-finder/internal/javaruntime"
 
 const (
 	ecosystemCPP         = "cpp"
+	ecosystemGo          = "go"
 	ecosystemJava        = "java"
 	lambdaExpressionNode = "lambda_expression"
 )
