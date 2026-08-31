@@ -1,0 +1,178 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: supranational-blst
+  coordinates:
+    - "github.com/supranational/blst"
+  version_range: ">=0.1.0,<1.0.0"
+  description: "supranational blst BLS12-381 Go bindings"
+
+# Inventory source: github.com/supranational/blst v0.1.0 and v0.3.8 module
+# sources from the Go module proxy (bindings/go). The pairing engine is the
+# bundled native blst library behind cgo; only the Go binding boundary is
+# contracted, per the committed family audit. Both signature variants are
+# declared: minimal-public-key (P1Affine keys, P2Affine signatures) and
+# minimal-signature (mirrored). PairingCtx grew the hash_or_encode/DST
+# parameters after v0.1.0; both arities are declared. The low-level
+# P1/P2/Fp12/Scalar arithmetic, the compression/serialization getters beyond
+# the main three types, and the rb_tree helper stay uncontracted.
+contracts:
+  - method: github.com/supranational/blst/bindings/go.KeyGen
+    arity: 2
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.SecretKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: ikm, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.KeyGenV3
+    arity: 2
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.SecretKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: ikm, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.DeriveMasterEip2333
+    arity: 1
+    return: { type: "*github.com/supranational/blst/bindings/go.SecretKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: ikm, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).Sign
+    arity: 4
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.P2Affine", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sk, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: msg, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 2, name: dst, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).Sign
+    arity: 4
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.P1Affine", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sk, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: msg, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 2, name: dst, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).Verify
+    arity: 6
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).Verify
+    arity: 6
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).AggregateVerify
+    arity: 5
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).AggregateVerify
+    arity: 5
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).FastAggregateVerify
+    arity: 4
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).FastAggregateVerify
+    arity: 4
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).KeyValidate
+    arity: 0
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).KeyValidate
+    arity: 0
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).SigValidate
+    arity: 1
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).SigValidate
+    arity: 1
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.PairingCtx
+    arity: 2
+    return: { type: "github.com/supranational/blst/bindings/go.Pairing", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: DST, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.PairingCtx
+    arity: 0
+    return: { type: "github.com/supranational/blst/bindings/go.Pairing", confidence: high }
+    role: factory
+  - method: github.com/supranational/blst/bindings/go.PairingCommit
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.PairingFinalVerify
+    arity: 2
+    varargs: true
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.PairingAggregatePkInG1
+    arity: 6
+    varargs: true
+    return: { type: int, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.PairingAggregatePkInG2
+    arity: 6
+    varargs: true
+    return: { type: int, confidence: high }
+    role: operation
+  - method: github.com/supranational/blst/bindings/go.HashToG1
+    arity: 3
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.P1", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: msg, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 1, name: dst, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.HashToG2
+    arity: 3
+    varargs: true
+    return: { type: "*github.com/supranational/blst/bindings/go.P2", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: msg, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 1, name: dst, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).Compress
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).Compress
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/supranational/blst/bindings/go.(*P1Affine).Deserialize
+    arity: 1
+    return: { type: "*github.com/supranational/blst/bindings/go.P1Affine", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: in, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/supranational/blst/bindings/go.(*P2Affine).Deserialize
+    arity: 1
+    return: { type: "*github.com/supranational/blst/bindings/go.P2Affine", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: in, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+
+hierarchy: {}
