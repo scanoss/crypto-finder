@@ -195,6 +195,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
+	respellGoPointerReceivers(graph, b.ecosystem)
 
 	// Resolve single-argument pass-through dispatch: a call site whose
 	// interface-typed parameter is used, unmodified, as the sole receiver of an
@@ -375,6 +376,9 @@ func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysi
 			if b.mergeRustTypedMethodCollision(graph, key, existing, fn) {
 				continue
 			}
+			if b.mergeGoBuildTagCollision(graph, key, existing, fn) {
+				continue
+			}
 		}
 		graph.Functions[key] = fn
 	}
@@ -411,6 +415,31 @@ func (b *Builder) mergeRustTypedMethodCollision(graph *CallGraph, key string, ex
 		return false
 	}
 	if existing.ID.Type == "" || existing == candidate {
+		return false
+	}
+	merged := *existing
+	merged.Calls = appendUnseenCalls(existing.Calls, candidate.Calls)
+	if len(merged.ReturnSources) == 0 {
+		merged.ReturnSources = candidate.ReturnSources
+	}
+	graph.Functions[key] = &merged
+	return true
+}
+
+// mergeGoBuildTagCollision unions the calls of two Go declarations that share
+// one key from different files: build-tagged platform variants
+// (command_unix.go and command_windows.go both declaring the same function)
+// are the usual shape, since the parser reads every file regardless of build
+// constraints. Last-write-wins silently dropped one platform's whole body —
+// the go/types differential surfaced it as blocks of consecutive missing
+// calls. Unioning over-approximates across platforms, which is honest for a
+// scanner: the code exists and runs on the platform it was written for.
+// mergeRustTypedMethodCollision above is the in-ecosystem precedent.
+func (b *Builder) mergeGoBuildTagCollision(graph *CallGraph, key string, existing, candidate *FunctionDecl) bool {
+	if b.ecosystem != ecosystemGo {
+		return false
+	}
+	if existing == candidate || existing.FilePath == candidate.FilePath {
 		return false
 	}
 	merged := *existing
@@ -1648,6 +1677,48 @@ func goReceiverTypeFromReturn(decl *FunctionDecl) string {
 		return ""
 	}
 	return qualifiedType(decl.ID.Package, raw)
+}
+
+// respellGoPointerReceivers flips the pointer spelling of a typed callee to
+// whichever form is actually declared: a value-typed variable calls a
+// pointer-receiver method through Go's automatic addressing, so the call was
+// keyed (T).m while the declaration lives at (*T).m — the same member, never
+// joining. go/types reports the declared receiver's spelling; so do we now,
+// for every type the corpus declares. External types stay as written: their
+// method sets are unknowable without signatures.
+func respellGoPointerReceivers(graph *CallGraph, ecosystem string) {
+	if ecosystem != ecosystemGo {
+		return
+	}
+	respelled := 0
+	for callerKey, fn := range graph.Functions {
+		for i := range fn.Calls {
+			call := &fn.Calls[i]
+			t := call.Callee.Type
+			if t == "" {
+				continue
+			}
+			if _, declared := graph.Functions[call.Callee.String()]; declared {
+				continue
+			}
+			flipped := "*" + t
+			if strings.HasPrefix(t, "*") {
+				flipped = t[1:]
+			}
+			candidate := FunctionID{Package: call.Callee.Package, Type: flipped, Name: call.Callee.Name}
+			if _, declared := graph.Functions[candidate.String()]; !declared {
+				continue
+			}
+			oldKey := call.Callee.String()
+			call.Callee = candidate
+			addCaller(graph.Callers, candidate.String(), callerKey, oldKey)
+			recordCallEdgeResolution(graph, callerKey, candidate.String(), EdgeKindExact, "", call)
+			respelled++
+		}
+	}
+	if respelled > 0 {
+		log.Info().Int("respelled", respelled).Msg("Respelled Go pointer receivers to their declared form")
+	}
 }
 
 // goFirstValueReturn picks the component of a declared return that carries the

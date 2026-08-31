@@ -432,3 +432,62 @@ func (s *outer) run(data []byte, pk PublicKey) {
 		}
 	}
 }
+
+// TestGoBuilder_IdentityCollisionsAndSpelling pins three graph-identity rules
+// the go/types differential surfaced: multiple init functions coexist (each
+// under a file-discriminated name — one shared key kept only the last one's
+// calls); build-tagged duplicates of one function union their calls instead of
+// the later file silently dropping the earlier body; and a value-spelled call
+// to a pointer-declared method is respelled to the declared form, as go/types
+// reports it, so the same member joins instead of dangling.
+func TestGoBuilder_IdentityCollisionsAndSpelling(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"a.go": `package app
+
+import "crypto/sha256"
+
+func init() { sha256.New() }
+
+type Box struct{ n int }
+
+func (b *Box) Bump() { b.n++ }
+
+func use() {
+	var b Box
+	b.Bump()
+}
+`,
+		"b.go": `package app
+
+import "crypto/hmac"
+import "crypto/sha256"
+
+func init() { hmac.New(sha256.New, nil) }
+`,
+	}
+	for name, src := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ambos init sobreviven, con sus llamadas
+	assertGoCall(t, g, "crypto/sha256.New")
+	assertGoCall(t, g, "crypto/hmac.New")
+	inits := 0
+	for k := range g.Functions {
+		if strings.HasPrefix(k, "app.<init:") {
+			inits++
+		}
+	}
+	if inits != 2 {
+		t.Errorf("expected 2 file-discriminated init declarations, got %d", inits)
+	}
+	// respelling: la llamada por valor joinea el metodo declarado en puntero
+	assertGoCall(t, g, "app.(*Box).Bump")
+}

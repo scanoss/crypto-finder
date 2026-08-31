@@ -577,6 +577,20 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	// could type a := binding from an in-corpus producer.
 	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
+	if name == "init" {
+		// Go allows any number of init functions per package and even per
+		// file; they all run. One shared key would keep only the last one's
+		// calls in the graph — the same silent drop the per-file <varinit>
+		// declaration exists to avoid — so each gets a file-discriminated
+		// identity. Nothing can call init explicitly, so no call site needs
+		// the undiscriminated name.
+		base := filePath
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
+		}
+		decl.ID.Name = "<init:" + strings.TrimSuffix(base, ".go") + ">"
+	}
+
 	if body != nil {
 		varTypes := p.collectGoVarTypes(params, src)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
@@ -1363,6 +1377,12 @@ func (p *GoParser) resolveSelectorReceiverType(
 	for strings.HasPrefix(trimmed, "*") {
 		pointerPrefix += "*"
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "*"))
+	}
+	// Type arguments are erased from every declared identity (a method set is
+	// formed on the bare name), so a receiver typed `Reachable[T]` must erase
+	// too or it joins nothing.
+	if i := strings.Index(trimmed, "["); i > 0 {
+		trimmed = trimmed[:i]
 	}
 
 	// A predeclared type belongs to the universe scope, not to the caller's
