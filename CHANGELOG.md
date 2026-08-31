@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A derive-macro import no longer claims a type of the same name; Rust keeps the macro and type namespaces apart.
 - Rust ownership wrappers keep their own identity; only the wrappers implementing `Deref` are seen through.
 - Rust crate re-export aliases resolve from sibling files, per directory.
+- A Rust item re-export (`pub use path::Item as Name;`, chained across modules or not) now resolves to the crate that implements it, instead of the intermediate module that merely re-exports it.
 - A Rust single-file module appears in the package path, as its `mod.rs` form already did.
 - Rust declared-type facts are keyed by the declaring module, with conflicting names dropped rather than guessed.
 - A Rust generic receiver resolves through its trait bound; an unbounded parameter carries no type, and a glob may not claim one.
@@ -53,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Rust `#[cfg(not(test))]` module is production code and is no longer dropped, and a comment between the attribute and the `mod` no longer defeats the gate.
 - A Rust name two files of a crate declare differently stays dropped when a third file repeats one of them, instead of directory walk order deciding it.
 - The edition-2018 `::` disambiguator no longer survives a renaming or list import into a callee key's package.
+- A Rust function declared to return `impl Trait` resolves to the concrete type its body constructs, instead of the trait named in the signature.
+- A Rust call written as `Trait::method(receiver, args)` resolves to the same identity as `receiver.method(args)`, instead of losing its receiver.
 - A Rust crate above the index file cap is left unindexed rather than half indexed, because a partial index cannot see the conflicts it did not read.
 - Two Rust declarations sharing one `Type.method` key are merged instead of one being dropped.
 - A Rust trait default method is recorded once, owned by the trait.
