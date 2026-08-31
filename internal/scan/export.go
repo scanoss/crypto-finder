@@ -380,14 +380,27 @@ type exportDependencyRoot struct {
 
 // --- Entry point ---
 
+// CallGraphExportOptions controls optional callgraph export sections and
+// per-finding limits. Its zero value preserves the default export.
+type CallGraphExportOptions struct {
+	MaxChains             int
+	OmitCryptoEntryPoints bool
+}
+
 // ExportCallGraph writes the current finding-centric callgraph export.
 func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
-	return ExportCallGraphWithMaxChains(path, format, result, 0)
+	return ExportCallGraphWithOptions(path, format, result, CallGraphExportOptions{})
 }
 
 // ExportCallGraphWithMaxChains writes the callgraph export using maxChains as
 // the per-finding emit budget. A maxChains of 0 uses the default of 128.
 func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanResult, maxChains int) error {
+	return ExportCallGraphWithOptions(path, format, result, CallGraphExportOptions{MaxChains: maxChains})
+}
+
+// ExportCallGraphWithOptions writes the callgraph export with explicit
+// optional-section and per-finding controls.
+func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
 	if result == nil {
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
 	}
@@ -408,11 +421,12 @@ func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanRes
 		Str("file", path).
 		Str("format", format).
 		Int("finding_assets", totalAssets).
-		Int("max_chains", graphfrag.ResolveMaxChains(maxChains)).
+		Int("max_chains", graphfrag.ResolveMaxChains(options.MaxChains)).
+		Bool("omit_crypto_entry_points", options.OmitCryptoEntryPoints).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
-	payload, err := buildCallGraphExportV2ToFile(path, result, maxChains)
+	payload, err := buildCallGraphExportV2ToFile(path, result, options)
 	buildDuration := time.Since(buildStart)
 	if err != nil {
 		return err
@@ -431,8 +445,8 @@ func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanRes
 	return nil
 }
 
-func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, maxChains int) (callGraphExportV2, error) {
-	ctx := newExportBuildContextWithMaxChains(result, maxChains)
+func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, options CallGraphExportOptions) (callGraphExportV2, error) {
+	ctx := newExportBuildContextWithMaxChains(result, options.MaxChains)
 	assets := callGraphExportAssets(result.Report)
 	meta := buildCallGraphExportScanMeta(result)
 
@@ -441,7 +455,7 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, max
 		bw := bufio.NewWriterSize(file, 1<<20)
 		writer := graphFragmentJSONWriter{w: bw}
 		var writeErr error
-		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta)
+		streamed, writeErr = streamCallGraphExportWithOptions(&writer, ctx, assets, meta, options)
 		return finishBufferedOutput(bw, writeErr)
 	}); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
@@ -469,10 +483,20 @@ func streamCallGraphExport(
 	assets []callGraphExportAsset,
 	meta callGraphExportScanMeta,
 ) (streamedCallGraphExport, error) {
+	return streamCallGraphExportWithOptions(writer, ctx, assets, meta, CallGraphExportOptions{})
+}
+
+func streamCallGraphExportWithOptions(
+	writer *graphFragmentJSONWriter,
+	ctx *exportBuildContext,
+	assets []callGraphExportAsset,
+	meta callGraphExportScanMeta,
+	options CallGraphExportOptions,
+) (streamedCallGraphExport, error) {
 	if err := writeCallGraphPrefix(writer, meta); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	streamed, err := streamFindingGraphs(writer, ctx, assets)
+	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -483,6 +507,9 @@ func streamCallGraphExport(
 	supportingCalls := sortedSupportingCalls(streamed.supportingByID)
 	for i := range supportingCalls {
 		supportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, supportingCalls[i].FunctionKey)
+		if options.OmitCryptoEntryPoints {
+			continue
+		}
 		if _, ok := streamed.referencedSupporting[supportingCalls[i].SupportingID]; ok {
 			continue
 		}
@@ -492,15 +519,18 @@ func streamCallGraphExport(
 		return streamedCallGraphExport{}, err
 	}
 
-	entryPoints := flattenEntryPointIndex(ctx.kb, streamed.index)
-	for i := range entryPoints {
-		if streamed.chainRoots[entryPoints[i].FunctionKey] {
-			entryPoints[i].Root = true
+	var entryPoints []callGraphCryptoEntryPoint
+	if !options.OmitCryptoEntryPoints {
+		entryPoints = flattenEntryPointIndex(ctx.kb, streamed.index)
+		for i := range entryPoints {
+			if streamed.chainRoots[entryPoints[i].FunctionKey] {
+				entryPoints[i].Root = true
+			}
+			entryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, entryPoints[i].FunctionKey)
 		}
-		entryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, entryPoints[i].FunctionKey)
-	}
-	if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
-		return streamedCallGraphExport{}, err
+		if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
+			return streamedCallGraphExport{}, err
+		}
 	}
 	if _, err := writer.w.WriteString("\n}\n"); err != nil {
 		return streamedCallGraphExport{}, err
@@ -533,11 +563,17 @@ func streamFindingGraphs(
 	writer *graphFragmentJSONWriter,
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,
+	buildEntryPointIndex bool,
 ) (streamedFindingGraphs, error) {
-	index := make(map[string]*entryPointData)
+	var index map[string]*entryPointData
+	var referencedSupporting map[string]struct{}
+	var chainRoots map[string]bool
+	if buildEntryPointIndex {
+		index = make(map[string]*entryPointData)
+		referencedSupporting = make(map[string]struct{})
+		chainRoots = make(map[string]bool)
+	}
 	supportingByID := make(map[string]callGraphSupportingCall)
-	referencedSupporting := make(map[string]struct{})
-	chainRoots := make(map[string]bool)
 	intern := graphfrag.FunctionInterner{}
 	buildStart := time.Now()
 
@@ -550,7 +586,7 @@ func streamFindingGraphs(
 		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
 		// See buildCryptoEntryPoints for why an unreachable finding contributes
 		// no entry point, and why a nil Reachable (the mine path) is exempt.
-		if fg.Reachable == nil || *fg.Reachable {
+		if buildEntryPointIndex && (fg.Reachable == nil || *fg.Reachable) {
 			// The index comes from reverse reachability, not from the chains that
 			// happened to be exported (issue #249).
 			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
@@ -560,12 +596,14 @@ func streamFindingGraphs(
 			// all of them even when call_chains was capped, which a scan of the
 			// exported chain heads cannot.
 			markReachSetRoots(ctx, chainRoots, containingFn)
-		} else {
+		} else if buildEntryPointIndex {
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
-		for _, chain := range fg.CallChains {
-			if len(chain) >= 2 && chain[0].FunctionKey != "" {
-				chainRoots[chain[0].FunctionKey] = true
+		if buildEntryPointIndex {
+			for _, chain := range fg.CallChains {
+				if len(chain) >= 2 && chain[0].FunctionKey != "" {
+					chainRoots[chain[0].FunctionKey] = true
+				}
 			}
 		}
 		internLiveFindingGraph(&intern, &fg)

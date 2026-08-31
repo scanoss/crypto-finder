@@ -103,6 +103,7 @@ var (
 	scanExportCallgraph          string
 	scanExportCgFormat           string
 	scanExportCallgraphMaxChains int
+	scanExportEntryPoints        bool
 	scanExportGraphFragment      string
 	scanExportGfFormat           string
 	scanDepWorkers               int
@@ -186,7 +187,9 @@ func init() {
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
 	scanCmd.Flags().IntVar(&scanExportCallgraphMaxChains, "export-callgraph-max-chains", graphfrag.DefaultMaxChainsPerOp,
-		"Per-finding call-chain sample size for --export-callgraph (default 128). crypto_entry_points stays the full reverse-reach set. Depth cap remains 32.")
+		"Per-finding call-chain sample size for --export-callgraph (default 128). crypto_entry_points stays the full reverse-reach set when enabled. Depth cap remains 32.")
+	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", true,
+		"Include the full crypto_entry_points reverse-reachability index in --export-callgraph")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
 	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
@@ -1116,7 +1119,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Str("file", scanExportCallgraph).
 			Str("format", scanExportCgFormat).
 			Msg("Starting call graph export")
-		if exportErr := scanutil.ExportCallGraphWithMaxChains(scanExportCallgraph, scanExportCgFormat, callGraphResult, scanExportCallgraphMaxChains); exportErr != nil {
+		if exportErr := scanutil.ExportCallGraphWithOptions(scanExportCallgraph, scanExportCgFormat, callGraphResult, scanutil.CallGraphExportOptions{
+			MaxChains:             scanExportCallgraphMaxChains,
+			OmitCryptoEntryPoints: !scanExportEntryPoints,
+		}); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,
 				failure.CodeCallGraphExportFailed,
