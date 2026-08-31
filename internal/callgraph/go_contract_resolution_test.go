@@ -364,3 +364,71 @@ func use(ui *UI, l Labeled, data []byte) {
 		}
 	}
 }
+
+// TestGoParser_OracleParityShapes pins the three shapes the go/types
+// differential surfaced: a call whose receiver is a field chain was dropped
+// entirely; a call in a package-level var initializer had no containing
+// function; and a rebinding `pk, ok := pk.(T)` must resolve its own right-hand
+// side against the OUTER binding (Go's declared-before-use), which a
+// scope-level overlay got wrong and only textual-order collection gets right.
+func TestGoParser_OracleParityShapes(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+import "crypto/sha256"
+
+type inner struct{}
+
+func (inner) XORKeyStream(dst, src []byte) {}
+
+type outer struct{ c inner }
+
+var packageDigest = sha256.New()
+
+type PublicKey interface {
+	Type() string
+}
+
+type CryptoPublicKey interface {
+	CryptoPublicKey() PublicKey
+}
+
+func (s *outer) run(data []byte, pk PublicKey) {
+	s.c.XORKeyStream(data, data)
+	if pk, ok := pk.(CryptoPublicKey); ok {
+		_ = pk
+	}
+}
+`)
+	// campo-cadena: emitida (honesta), no ausente
+	foundField := false
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			if fn.Calls[i].Raw == "s.c.XORKeyStream" {
+				foundField = true
+			}
+		}
+	}
+	if !foundField {
+		t.Error("field-chain receiver call was dropped from the graph")
+	}
+	// var a nivel paquete: la llamada existe dentro del <varinit> del archivo
+	assertGoCall(t, g, "crypto/sha256.New")
+	foundInit := false
+	for k := range g.Functions {
+		if strings.HasPrefix(k, "app.<varinit:") {
+			foundInit = true
+		}
+	}
+	if !foundInit {
+		t.Error("package-level var initializer produced no containing declaration")
+	}
+	// la asercion que se rebindea a si misma no debe fabricar un tipo para su RHS
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			c := &fn.Calls[i]
+			if c.Raw == "pk.Type" && c.Callee.Type == "CryptoPublicKey" {
+				t.Errorf("assertion binding leaked into its own right-hand side: %s", c.Callee.String())
+			}
+		}
+	}
+}

@@ -247,6 +247,45 @@ func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, pac
 	if len(embeds) > 0 {
 		flattenGoEmbeddedInterfaces(analysis, embeds, packagePath)
 	}
+	p.extractGoPackageInitCalls(root, src, filePath, packagePath, analysis)
+}
+
+// extractGoPackageInitCalls collects the calls made by package-level variable
+// initializers — `var errNoMatch = errors.New(...)`, `var b64 = base64.
+// RawStdEncoding.Strict()` — into one synthetic <varinit> declaration per file.
+// These run at program start, before main; without a containing function the
+// walk never visited them and the calls were absent from the graph entirely.
+// The Java parser's synthetic <clinit> is the same idea for class initializers.
+func (p *GoParser) extractGoPackageInitCalls(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+	var calls []FunctionCall
+	varTypes := make(map[string]string)
+	for i := 0; i < int(root.ChildCount()); i++ {
+		child := root.Child(i)
+		if child.Type() != "var_declaration" {
+			continue
+		}
+		p.walkForCalls(child, src, filePath, analysis, "", "", varTypes, &calls)
+	}
+	if len(calls) == 0 {
+		return
+	}
+	// One synthetic decl per FILE, discriminated in the name: several files of
+	// one package would otherwise collide on the same map key in the graph and
+	// silently drop each other's initializer calls.
+	base := filePath
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".go")
+	analysis.Functions = append(analysis.Functions, FunctionDecl{
+		ID:           FunctionID{Package: packagePath, Name: "<varinit:" + base + ">"},
+		FilePath:     filePath,
+		StartLine:    1,
+		EndLine:      int(root.EndPoint().Row) + 1,
+		OwnerType:    "package",
+		FunctionType: "function",
+		Calls:        calls,
+	})
 }
 
 // extractInterfaceMethods registers each method of an interface declaration as
@@ -539,7 +578,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if body != nil {
-		varTypes := p.collectGoVarTypes(params, body, src)
+		varTypes := p.collectGoVarTypes(params, src)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, "", "", varTypes)
 	}
@@ -596,7 +635,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if body != nil {
-		varTypes := p.collectGoVarTypes(params, body, src)
+		varTypes := p.collectGoVarTypes(params, src)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 	}
@@ -771,13 +810,25 @@ func (p *GoParser) walkForCalls(
 		}
 	}
 
+	// Bindings are recorded in textual order, AFTER descending into the node
+	// that introduces them: in `pk, ok := pk.(ssh.CryptoPublicKey)` the
+	// right-hand pk is the OUTER one (Go's declared-before-use), so the calls
+	// inside the right side must resolve against the map as it was before the
+	// binding lands. A nested scope gets a copy, so its bindings shadow inward
+	// and never leak back out — the position-sensitive lookup go/types does,
+	// approximated by walk order.
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
-		childTypes := varTypes
 		if goOpensScope(child.Type()) {
-			childTypes = p.goScopedVarTypes(child, src, varTypes)
+			scoped := make(map[string]string, len(varTypes))
+			for k, v := range varTypes {
+				scoped[k] = v
+			}
+			p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, scoped, calls)
+			continue
 		}
-		p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, childTypes, calls)
+		p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, calls)
+		p.collectGoVarTypesAt(child, src, varTypes)
 	}
 }
 
@@ -1028,7 +1079,18 @@ func (p *GoParser) parseSelectorCall(
 	}
 
 	if operandNode.Type() != goNodeIdentifier {
-		return nil
+		// Any other receiver shape — a field chain (`s.c.XORKeyStream(...)`),
+		// an index expression (`hs[i].Sum(...)`), a composite literal — is a
+		// real call whose receiver this pass cannot type. Dropping it removed
+		// the call from the graph entirely (34 of age's stream.go call sites);
+		// it is emitted with the honest empty identity instead.
+		return &FunctionCall{
+			Callee:    FunctionID{Name: field},
+			Raw:       node.Content(src),
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
+		}
 	}
 	operand := operandNode.Content(src)
 	if operand == "" {
@@ -1067,10 +1129,11 @@ func (p *GoParser) parseSelectorCall(
 	}
 }
 
-func (p *GoParser) collectGoVarTypes(paramsNode, body *sitter.Node, src []byte) map[string]string {
+// collectGoVarTypes seeds a function's binding map with its parameters; the
+// body's bindings are collected in textual order during the call walk.
+func (p *GoParser) collectGoVarTypes(paramsNode *sitter.Node, src []byte) map[string]string {
 	varTypes := make(map[string]string)
 	p.collectGoParameterTypes(paramsNode, src, varTypes)
-	p.collectGoScopeVarTypes(body, src, varTypes)
 	return varTypes
 }
 
@@ -1121,36 +1184,6 @@ func goOpensScope(nodeType string) bool {
 	default:
 		return false
 	}
-}
-
-// collectGoScopeVarTypes records the bindings belonging to ONE scope: the scope
-// node's own plus its descendants', stopping at nested scopes.
-func (p *GoParser) collectGoScopeVarTypes(scope *sitter.Node, src []byte, varTypes map[string]string) {
-	p.collectGoVarTypesAt(scope, src, varTypes)
-	var descend func(n *sitter.Node)
-	descend = func(n *sitter.Node) {
-		if goOpensScope(n.Type()) {
-			return
-		}
-		p.collectGoVarTypesAt(n, src, varTypes)
-		for i := 0; i < int(n.ChildCount()); i++ {
-			descend(n.Child(i))
-		}
-	}
-	for i := 0; i < int(scope.ChildCount()); i++ {
-		descend(scope.Child(i))
-	}
-}
-
-// goScopedVarTypes overlays a scope's own bindings on a copy of the enclosing
-// ones, so an inner declaration shadows outward and nowhere else.
-func (p *GoParser) goScopedVarTypes(node *sitter.Node, src []byte, outer map[string]string) map[string]string {
-	scoped := make(map[string]string, len(outer))
-	for k, v := range outer {
-		scoped[k] = v
-	}
-	p.collectGoScopeVarTypes(node, src, scoped)
-	return scoped
 }
 
 // collectGoVarTypesAt records only the bindings this one node introduces,
