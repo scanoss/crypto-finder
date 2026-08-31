@@ -25,6 +25,7 @@ func TestRustParser_GenericAssociatedTypeResolvesThroughCatalogedTrait(t *testin
 		{"Digest::OutputSize", "Digest", "OutputSize"},
 		{"BlockSizeUser::BlockSize", "BlockSizeUser", "BlockSize"},
 		{"AeadCore::NonceSize", "AeadCore", "NonceSize"},
+		{"Curve::FieldBytesSize", "Curve", "FieldBytesSize"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -93,8 +93,8 @@ internal/callgraph/contracts/
 │                          #   azure-keyvault-keys, azure-keyvault-secrets
 └── rust/                  # aes, blowfish, des, cbc, cfb-mode, ctr, aes-gcm, aes-gcm-siv,
                            #   ccm, chacha20poly1305, argon2, pbkdf2, scrypt, dsa, ecdsa,
-                           #   ed25519, ghash, poly1305, ring, openssl, rsa, sodiumoxide
-                           #   (+ bootstrap)
+                           #   ed25519, ghash, poly1305, ring, openssl, rsa, sodiumoxide,
+                           #   crypto-common, digest, aead, elliptic-curve (+ bootstrap)
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
