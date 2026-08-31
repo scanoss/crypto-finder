@@ -1113,8 +1113,19 @@ func (p *GoParser) parseSelectorCall(
 
 	raw := operand + "." + field
 
+	// A local binding shadows an imported package of the same name (Go's
+	// innermost-scope rule): in tink-go, `key.AESKeyBytes()` inside a function
+	// that binds a variable `key` is a METHOD call on that variable, yet the
+	// import lookup ran first and emitted a call to a package function that
+	// does not exist. The binding map holds exactly the names bound up to this
+	// position, so consulting it first is the language's own resolution order.
+	_, shadowedByLocal := varTypes[operand]
+	if operand == currentReceiverVar && currentReceiverVar != "" {
+		shadowedByLocal = true
+	}
+
 	// Try to resolve the operand as a package import
-	if importPath, ok := analysis.Imports[operand]; ok {
+	if importPath, ok := analysis.Imports[operand]; ok && !shadowedByLocal {
 		return &FunctionCall{
 			Callee: FunctionID{
 				Package: importPath,
@@ -1202,9 +1213,37 @@ func goOpensScope(nodeType string) bool {
 
 // collectGoVarTypesAt records only the bindings this one node introduces,
 // without descending — the scope-bounded walk controls its own recursion.
+// goBindNames records each identifier of a binding list as a local. overwrite
+// controls rebinding: a range variable always rebinds; a := keeps an existing
+// (possibly typed) entry for a reused name.
+func goBindNames(left *sitter.Node, src []byte, varTypes map[string]string, overwrite bool) {
+	for i := 0; i < int(left.NamedChildCount()); i++ {
+		n := left.NamedChild(i)
+		if n == nil || n.Type() != goNodeIdentifier {
+			continue
+		}
+		name := strings.TrimSpace(n.Content(src))
+		if name == "" || name == "_" {
+			continue
+		}
+		if _, exists := varTypes[name]; exists && !overwrite {
+			continue
+		}
+		varTypes[name] = ""
+	}
+}
+
 func (p *GoParser) collectGoVarTypesAt(node *sitter.Node, src []byte, varTypes map[string]string) {
 	if node.Type() == goNodeShortVarDeclaration {
 		p.collectGoShortVarTypes(node, src, varTypes)
+	}
+
+	if node.Type() == "range_clause" {
+		// `for k, v := range xs` declares locals too; they shadow imports the
+		// same way, with no type this pass can name.
+		if l := node.ChildByFieldName("left"); l != nil {
+			goBindNames(l, src, varTypes, true)
+		}
 	}
 
 	if node.Type() == goNodeFuncLiteral {
@@ -1252,6 +1291,12 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 	if left == nil || right == nil {
 		return
 	}
+	// Every name a := binds is a LOCAL from here on, even when its type is
+	// unknown: `hash, ok := HashIdToHash(b)` must shadow the imported package
+	// `hash` (Go's innermost-scope rule), or `hash.Available()` resolves as a
+	// call into the package. An unknown type stays empty — the honest form —
+	// and the builder pass may still type it from the producer's return.
+	goBindNames(left, src, varTypes, false)
 	count := int(left.NamedChildCount())
 	// A type assertion states its type in its own syntax even in the
 	// two-valued form: `r, ok := x.(RecipientWithLabels)` binds the first

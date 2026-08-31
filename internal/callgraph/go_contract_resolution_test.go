@@ -491,3 +491,51 @@ func init() { hmac.New(sha256.New, nil) }
 	// respelling: la llamada por valor joinea el metodo declarado en puntero
 	assertGoCall(t, g, "app.(*Box).Bump")
 }
+
+// TestGoParser_LocalsShadowImportedPackages pins Go's innermost-scope rule
+// against the import table: a local named like an imported package makes
+// `key.AESKeyBytes()` a METHOD call, yet the import lookup ran first and
+// emitted a call into the package. Found by the go/types differential on
+// tink-go (a parameter named key next to the imported package key) and on
+// x/crypto (hash, ok := HashIdToHash(...) next to the package hash — a name
+// bound with no known type must still shadow).
+func TestGoParser_LocalsShadowImportedPackages(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+import (
+	"crypto/sha256"
+	"hash"
+)
+
+type Key struct{}
+
+func (k *Key) Bytes() []byte { return nil }
+
+func lookup(id int) (hash.Hash, bool) { return sha256.New(), true }
+
+func use(key *Key) []byte {
+	hash, ok := lookup(1)
+	if !ok {
+		return nil
+	}
+	hash.Reset()
+	for _, key := range []*Key{key} {
+		key.Bytes()
+	}
+	return key.Bytes()
+}
+`)
+	// el local hash sombrea al paquete Y se tipa por el retorno del productor
+	assertGoCall(t, g, "hash.(Hash).Reset")
+	// el parametro key sombrea y joinea su metodo
+	assertGoCall(t, g, "app.(*Key).Bytes")
+	for _, k := range goCalleeKeys(g) {
+		if k == "hash.Reset" {
+			t.Errorf("local hash did not shadow package hash: %q", k)
+		}
+		// la range var sombrea (queda honesta-sin-anclar); nunca una llamada de paquete
+		if k == "app.Bytes" {
+			t.Errorf("range-bound key resolved as a package call: %q", k)
+		}
+	}
+}
