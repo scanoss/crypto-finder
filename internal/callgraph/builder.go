@@ -247,6 +247,19 @@ type parseDirWork struct {
 // first, then its subdirectories in os.ReadDir order) without parsing, so
 // analyzePackageParallel can merge parse results in exactly the order the
 // serial path would have produced them.
+// dirSkippingParser lets a parser exclude directories by shape, not just by
+// literal name: the go tool ignores every directory whose name begins with
+// "_" (x/crypto's _asm avo generators, for one), a rule no other ecosystem
+// shares — Python's _internal packages are real, importable code.
+type dirSkippingParser interface {
+	SkipsDirNamed(name string) bool
+}
+
+func (b *Builder) parserSkipsDir(name string) bool {
+	p, ok := b.parser.(dirSkippingParser)
+	return ok && p.SkipsDirNamed(name)
+}
+
 func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]bool) []parseDirWork {
 	work := []parseDirWork{{dir: dir, importPath: importPath}}
 	entries, readErr := os.ReadDir(dir)
@@ -259,7 +272,7 @@ func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]b
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") || skipDirs[name] {
+		if strings.HasPrefix(name, ".") || skipDirs[name] || b.parserSkipsDir(name) {
 			continue
 		}
 		subDir := filepath.Join(dir, name)

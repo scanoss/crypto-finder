@@ -539,3 +539,69 @@ func use(key *Key) []byte {
 		}
 	}
 }
+
+// TestGoParser_ToolingParityShapes pins three input/emission rules the go/types
+// differential surfaced on x/crypto and tink-go: a directory whose name begins
+// with "_" is not part of any build (x/crypto's _asm avo generators — 7,850
+// spurious call sites); an explicitly instantiated generic call, which the
+// pinned grammar misparses as a conversion to a generic type, is recovered as
+// the call it is (tink-go's key-serializer registrations); and an immediately
+// invoked func literal is emitted with the honest empty identity instead of
+// vanishing.
+func TestGoParser_ToolingParityShapes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "_asm"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"_asm/gen.go": `package asm
+
+import "crypto/sha256"
+
+func gen() { sha256.New() }
+`,
+		"a.go": `package app
+
+func RegisterKeySerializer[T any](v T) error { return nil }
+
+type serializer struct{}
+
+func init() {
+	RegisterKeySerializer[*serializer](&serializer{})
+	go func() { helper() }()
+}
+
+func helper() {}
+`,
+	}
+	for name, src := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range goCalleeKeys(g) {
+		if strings.Contains(k, "sha256") {
+			t.Errorf("underscore directory was parsed: %q", k)
+		}
+	}
+	// the misparsed generic call is recovered and joins its declaration
+	assertGoCall(t, g, "app.RegisterKeySerializer")
+	// the IIFE exists (honest) and its body is walked
+	assertGoCall(t, g, "app.helper")
+	foundIIFE := false
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			if fn.Calls[i].Callee.Name == "<func-literal>" {
+				foundIIFE = true
+			}
+		}
+	}
+	if !foundIIFE {
+		t.Error("immediately invoked func literal was not emitted")
+	}
+}

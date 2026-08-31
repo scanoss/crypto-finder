@@ -127,6 +127,12 @@ func (p *GoParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, err
 	return analyses, nil
 }
 
+// SkipsDirNamed mirrors the go tool's rule: a directory whose name begins with
+// "_" is not part of any build.
+func (p *GoParser) SkipsDirNamed(name string) bool {
+	return strings.HasPrefix(name, "_")
+}
+
 // SkipDirs returns directory names to skip during Go package traversal.
 func (p *GoParser) SkipDirs() map[string]bool {
 	return map[string]bool{"vendor": true, "testdata": true}
@@ -824,6 +830,22 @@ func (p *GoParser) walkForCalls(
 		}
 	}
 
+	// The pinned tree-sitter-go grammar predates explicit generic
+	// instantiation and misparses `Register[*Key](&x{})` as a CONVERSION to
+	// the generic type Register[*Key] — no error node, no call_expression, so
+	// the call vanished (145 of tink-go's sites, its key-serializer
+	// registrations among them; go/types sees every one). Until the grammar
+	// pin moves, a conversion whose type is generic and does NOT name a type
+	// declared in this file is read back as the call it is.
+	if node.Type() == goNodeTypeConversion {
+		if call := p.parseGoMisparsedGenericCall(node, src, filePath, analysis, varTypes); call != nil {
+			call.StartCol = int(node.StartPoint().Column) + 1
+			call.EndCol = int(node.EndPoint().Column) + 1
+			setFunctionCallASTAnchor(call, node)
+			*calls = append(*calls, *call)
+		}
+	}
+
 	// Bindings are recorded in textual order, AFTER descending into the node
 	// that introduces them: in `pk, ok := pk.(ssh.CryptoPublicKey)` the
 	// right-hand pk is the OUTER one (Go's declared-before-use), so the calls
@@ -846,6 +868,55 @@ func (p *GoParser) walkForCalls(
 	}
 }
 
+// parseGoMisparsedGenericCall recovers an explicitly instantiated generic call
+// from the conversion shape the pinned grammar gives it. See walkForCalls.
+func (p *GoParser) parseGoMisparsedGenericCall(node *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, varTypes map[string]string) *FunctionCall {
+	typeNode := node.ChildByFieldName(goFieldType)
+	if typeNode == nil || typeNode.Type() != goNodeGenericType {
+		return nil
+	}
+	base := typeNode.ChildByFieldName(goFieldType)
+	if base == nil {
+		return nil
+	}
+	name := strings.TrimSpace(base.Content(src))
+	if name == "" {
+		return nil
+	}
+	line := int(node.StartPoint().Row) + 1
+	var args []string
+	if operand := node.ChildByFieldName(goFieldOperand); operand != nil {
+		args = []string{strings.TrimSpace(operand.Content(src))}
+	}
+	if dot := strings.Index(name, "."); dot > 0 {
+		// qualified: pkg.Register[T](x) — resolve the alias like any selector
+		alias, fn := name[:dot], name[dot+1:]
+		if _, shadowed := varTypes[alias]; !shadowed {
+			if importPath, ok := analysis.Imports[alias]; ok {
+				return &FunctionCall{
+					Callee:    FunctionID{Package: importPath, Name: fn},
+					Raw:       name,
+					FilePath:  filePath,
+					Line:      line,
+					Arguments: args,
+				}
+			}
+		}
+		return nil
+	}
+	if analysis.DeclaredTypes[name] {
+		// a REAL conversion to a locally declared generic type
+		return nil
+	}
+	return &FunctionCall{
+		Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
+		Raw:       name,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
+	}
+}
+
 func (p *GoParser) parseCallExpr(
 	node *sitter.Node,
 	src []byte,
@@ -863,8 +934,31 @@ func (p *GoParser) parseCallExpr(
 	line := int(node.StartPoint().Row) + 1
 	args := p.extractCallArguments(node, src)
 
+	// An explicitly instantiated generic call — RegisterKeySerializer[*Key](x),
+	// or pkg.Register[T](x) — wraps its function in an index_expression. The
+	// type arguments are erased everywhere else, so they are unwrapped here
+	// too; before this the whole call was dropped (145 of tink-go's call
+	// sites, its key-serializer registrations among them).
+	for funcNode != nil && funcNode.Type() == "index_expression" {
+		funcNode = funcNode.ChildByFieldName(goFieldOperand)
+	}
+	if funcNode == nil {
+		return nil
+	}
+
 	var call *FunctionCall
 	switch funcNode.Type() {
+	case goNodeFuncLiteral:
+		// An immediately invoked literal — go func(){...}(), defer func(){...}()
+		// — is a real call whose body the walk already visits; the invocation
+		// itself carries the honest empty identity (there is nothing to name).
+		call = &FunctionCall{
+			Callee:    FunctionID{Name: "<func-literal>"},
+			Raw:       "func(){...}()",
+			FilePath:  filePath,
+			Line:      line,
+			Arguments: args,
+		}
 	case "selector_expression":
 		call = p.parseSelectorCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes)
 	case goNodeIdentifier:
