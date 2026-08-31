@@ -29,6 +29,14 @@ const (
 	goNodeReturnStatement = "return_statement"
 	goNodeExpressionList  = "expression_list"
 	goNodeCallExpression  = "call_expression"
+	// Node names verified against tree-sitter-go v0.23.4 node-types.json.
+	goNodeShortVarDeclaration = "short_var_declaration"
+	goNodeCompositeLiteral    = "composite_literal"
+	goNodeTypeConversion      = "type_conversion_expression"
+	goNodeUnaryExpression     = "unary_expression"
+	goFieldType               = "type"
+	goNodeGenericType         = "generic_type"
+	goNodePointerType         = "pointer_type"
 )
 
 // NewGoParser creates a new Go source parser backed by tree-sitter.
@@ -414,8 +422,8 @@ func (p *GoParser) extractReceiverInfo(paramList *sitter.Node, src []byte) (stri
 				switch typeNode.Type() {
 				case goNodeIdentifier:
 					receiverName = typeNode.Content(src)
-				case "pointer_type", goNodeTypeIdentifier:
-					return receiverName, typeNode.Content(src)
+				case goNodePointerType, goNodeTypeIdentifier, goNodeGenericType:
+					return receiverName, goErasedReceiverType(typeNode, src)
 				}
 			}
 		}
@@ -424,6 +432,32 @@ func (p *GoParser) extractReceiverInfo(paramList *sitter.Node, src []byte) (stri
 }
 
 // extractCalls walks a function body to find all call expressions.
+// goErasedReceiverType names a method's receiver type with its type arguments
+// erased: `Gen[T]` and `*Gen[T]` become `Gen` and `*Gen`.
+//
+// A generic receiver parses as `generic_type`, which was matched by no case at
+// all, so `func (g Gen[T]) Get()` produced a declaration with no owning type —
+// orphaned, since no call on a `Gen` value can ever join it. The pointer form
+// did match, but kept the `[T]` in the identity, which a call on a `Gen[int]`
+// likewise cannot match. Go itself erases type parameters when forming a
+// type's method set, so the identity has to erase them too.
+func goErasedReceiverType(typeNode *sitter.Node, src []byte) string {
+	switch typeNode.Type() {
+	case goNodeGenericType:
+		if base := typeNode.ChildByFieldName(goFieldType); base != nil {
+			return strings.TrimSpace(base.Content(src))
+		}
+	case goNodePointerType:
+		// `*Gen[T]`: the pointed-to type is the sole named child.
+		if inner := typeNode.NamedChild(0); inner != nil {
+			if erased := goErasedReceiverType(inner, src); erased != "" {
+				return "*" + erased
+			}
+		}
+	}
+	return strings.TrimSpace(typeNode.Content(src))
+}
+
 func (p *GoParser) extractCalls(
 	body *sitter.Node,
 	src []byte,
@@ -632,6 +666,10 @@ func (p *GoParser) collectGoLocalVarTypes(node *sitter.Node, src []byte, varType
 		return
 	}
 
+	if node.Type() == goNodeShortVarDeclaration {
+		p.collectGoShortVarTypes(node, src, varTypes)
+	}
+
 	if node.Type() == "var_spec" {
 		text := strings.TrimSpace(node.Content(src))
 		if eq := strings.Index(text, "="); eq >= 0 {
@@ -654,6 +692,82 @@ func (p *GoParser) collectGoLocalVarTypes(node *sitter.Node, src []byte, varType
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.collectGoLocalVarTypes(node.Child(i), src, varTypes)
 	}
+}
+
+// collectGoShortVarTypes records the bindings of a short variable declaration
+// (`buf := make([]byte, n)`) whose type its right-hand side already states.
+//
+// Go declares locals with `:=` far more often than with `var x T`, and only the
+// latter was read here, so most locals carried no type at all and any method
+// call on them fell back to the caller's package. Only the forms that carry
+// their type in their own syntax are read: a composite literal, a conversion,
+// `make`, `new`, and `&` applied to a composite literal. Binding the result of
+// an ordinary call (`c := f()`) needs f's return type, which is not available
+// during this per-file pass.
+func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
+	left := node.ChildByFieldName("left")
+	right := node.ChildByFieldName("right")
+	if left == nil || right == nil {
+		return
+	}
+	count := int(left.NamedChildCount())
+	// Differing counts mean one multi-valued call feeds several names
+	// (`block, err := aes.NewCipher(key)`); the names cannot be paired here.
+	if count == 0 || count != int(right.NamedChildCount()) {
+		return
+	}
+	for i := 0; i < count; i++ {
+		nameNode := left.NamedChild(i)
+		if nameNode == nil || nameNode.Type() != goNodeIdentifier {
+			continue
+		}
+		name := strings.TrimSpace(nameNode.Content(src))
+		if name == "" || name == "_" {
+			continue
+		}
+		if typeText := goSyntacticType(right.NamedChild(i), src); typeText != "" {
+			varTypes[name] = typeText
+		}
+	}
+}
+
+// goSyntacticType returns the type an expression states in its own syntax, or
+// "" when naming it would require resolving something else first.
+func goSyntacticType(expr *sitter.Node, src []byte) string {
+	if expr == nil {
+		return ""
+	}
+	switch expr.Type() {
+	case goNodeCompositeLiteral, goNodeTypeConversion:
+		if t := expr.ChildByFieldName(goFieldType); t != nil {
+			return strings.TrimSpace(t.Content(src))
+		}
+	case goNodeUnaryExpression:
+		op := expr.ChildByFieldName("operator")
+		if op == nil || strings.TrimSpace(op.Content(src)) != "&" {
+			return ""
+		}
+		if inner := goSyntacticType(expr.ChildByFieldName("operand"), src); inner != "" {
+			return "*" + inner
+		}
+	case goNodeCallExpression:
+		fn := expr.ChildByFieldName("function")
+		args := expr.ChildByFieldName("arguments")
+		if fn == nil || args == nil || fn.Type() != goNodeIdentifier {
+			return ""
+		}
+		first := args.NamedChild(0)
+		if first == nil {
+			return ""
+		}
+		switch strings.TrimSpace(fn.Content(src)) {
+		case "make":
+			return strings.TrimSpace(first.Content(src))
+		case "new":
+			return "*" + strings.TrimSpace(first.Content(src))
+		}
+	}
+	return ""
 }
 
 func (p *GoParser) resolveSelectorReceiverType(
