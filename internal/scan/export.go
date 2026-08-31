@@ -38,7 +38,7 @@ const (
 	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
 	callGraphExportMaxDepth        = 32
-	callGraphExportMaxChains       = 128
+	callGraphExportMaxChains       = 128 // emit budget; graphwalk.PathCountSkipThreshold skips materialisation above 100000 paths
 	maxExportSourceResolutionDepth = 8
 	constructorMethodName          = "<init>"
 )
