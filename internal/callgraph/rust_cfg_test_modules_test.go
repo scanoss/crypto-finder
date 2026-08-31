@@ -144,16 +144,15 @@ mod gated {
 	}
 }
 
-// TestRustParser_PreludeTypeBoundary pins where prelude attribution holds and
-// where it stops. A prelude type the source WRITES belongs to the standard
-// library; a prelude type INFERRED from a constructor's return still carries
-// the analyzed crate's package, which is the wrapper-package gap the spec
-// records under "Known gaps". Measured at 64 of 109,880 edges across 53
-// published crates. No contract keys `Vec.clone` or `Box.as_mut`, so no
-// cryptographic identity is fabricated by it.
-//
-// This test exists so the boundary moves deliberately: if the inferred case
-// starts resolving to `std`, this test fails and the spec is updated with it.
+// TestRustParser_PreludeTypeBoundary pins that a prelude type resolves to the
+// standard library whether the source WRITES it or the parser INFERS it from
+// a constructor's return. The inferred case used to carry the analyzed
+// crate's package instead -- the wrapper-package gap the spec recorded under
+// "Known gaps", measured at 64 of 109,880 edges across 53 published crates --
+// because a bare wrapping constructor (`Vec::from`, with no `::` in its own
+// spelling) duplicated its head into the wrapper text passed downstream
+// (`Vec::Vec<..>`), which `rustQualifiedIdentity` then read as a module named
+// `Vec` holding a type also named `Vec`, falling back to the local package.
 func TestRustParser_PreludeTypeBoundary(t *testing.T) {
 	cases := []struct {
 		name string
@@ -176,9 +175,9 @@ func TestRustParser_PreludeTypeBoundary(t *testing.T) {
 			want: "std.Vec.from",
 		},
 		{
-			name: "a type inferred from the constructor keeps the crate package",
+			name: "a type inferred from the constructor also resolves to the standard library",
 			src:  "pub fn d(p: &[u8]) { let v = Vec::from(p); v.clone(); }",
-			want: "app.Vec.clone",
+			want: "std.Vec.clone",
 		},
 	}
 	for _, tc := range cases {

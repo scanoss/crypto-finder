@@ -2183,8 +2183,17 @@ func resolveRustReceiverType(analysis *FileAnalysis, inferredType string) (pkg, 
 		}
 		current = realPath
 	}
+	// A prelude type inferred from a constructor's return (`let v = Vec::from(p);`)
+	// is in scope everywhere without an import, same as one written in an
+	// annotation, and belongs to the standard library rather than this crate.
 	if current != inferredType {
+		if rustPreludeTypes[current] {
+			return rustPreludePackage, current
+		}
 		return analysis.PackagePath, current
+	}
+	if rustPreludeTypes[inferredType] {
+		return rustPreludePackage, inferredType
 	}
 	return analysis.PackagePath, inferredType
 }
