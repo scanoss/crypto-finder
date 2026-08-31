@@ -78,8 +78,7 @@ type exportBuildContext struct {
 	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
 	calleeSignatureKeys  map[string]string
 	chainIDsByCallerLine map[string]map[int]string
-	// maxChainsBudget is the per-finding condensed route emit cap (#334).
-	// Zero resolves to callGraphExportMaxChains (128).
+	// maxChainsBudget is the resolved per-finding condensed route emit cap (#334).
 	maxChainsBudget int
 	// reachSetCache memoizes the reverse-reachability answer per containing
 	// function (issue #249): function key → minimum hops, plus which of those
@@ -407,7 +406,7 @@ func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanRes
 		Str("file", path).
 		Str("format", format).
 		Int("finding_assets", totalAssets).
-		Int("max_chains", resolveExportMaxChains(maxChains)).
+		Int("max_chains", graphfrag.ResolveMaxChains(maxChains)).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
@@ -1288,18 +1287,11 @@ func countExportFindingAssets(report *entities.InterimReport) int {
 	return total
 }
 
-func resolveExportMaxChains(n int) int {
-	if n <= 0 {
-		return callGraphExportMaxChains
-	}
-	return n
-}
-
 func (ctx *exportBuildContext) emitMaxChains() int {
-	if ctx == nil {
+	if ctx == nil || ctx.maxChainsBudget <= 0 {
 		return callGraphExportMaxChains
 	}
-	return resolveExportMaxChains(ctx.maxChainsBudget)
+	return ctx.maxChainsBudget
 }
 
 func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
@@ -1318,7 +1310,7 @@ func newExportBuildContextWithMaxChains(result *engine.DepScanResult, maxChains 
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
 		userPackages:            exportUserPackages(result),
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
-		maxChainsBudget:         resolveExportMaxChains(maxChains),
+		maxChainsBudget:         graphfrag.ResolveMaxChains(maxChains),
 	}
 	for _, dep := range result.Dependencies {
 		if dep.Dir == "" {

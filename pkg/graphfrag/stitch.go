@@ -185,7 +185,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
 			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures),
 			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures, composedRoutes),
-			composedRoutes, ambiguousCandidates, resolveMaxChains(opts.MaxChains), &out)
+			composedRoutes, ambiguousCandidates, ResolveMaxChains(opts.MaxChains), &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
@@ -1181,7 +1181,9 @@ const (
 	DefaultMaxChainsPerOp = 128
 )
 
-func resolveMaxChains(n int) int {
+// ResolveMaxChains maps a caller-supplied emit budget onto DefaultMaxChainsPerOp
+// when the value is omitted (zero) or invalid (negative).
+func ResolveMaxChains(n int) int {
 	if n <= 0 {
 		return DefaultMaxChainsPerOp
 	}

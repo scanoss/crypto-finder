@@ -47,7 +47,7 @@ func condensedBackwardChains(
 	entrySet map[graphNode]bool,
 	maxChains int,
 ) (chains []backwardChain, total int, truncated bool) {
-	maxChains = resolveMaxChains(maxChains)
+	maxChains = ResolveMaxChains(maxChains)
 	callers := make(map[graphNode][]graphNode, len(reverse))
 	inbounds := make(map[callSiteKey]inbound, len(reverse))
 	for target, edges := range reverse {

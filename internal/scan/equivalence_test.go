@@ -78,6 +78,8 @@ func assertEquivClean(t *testing.T, rep *equiv.DiffReport) {
 // the live callgraph export path (buildCallGraphExportV2) — the schema-6.1
 // callgraph a `crypto-finder --export-callgraph` of that component produces.
 func liveCallgraphExport(t *testing.T, file, src string, report *entities.InterimReport) callGraphExportV2 {
+	return liveCallgraphExportWithMaxChains(t, file, src, report, 0)
+}
 	t.Helper()
 	const importPath = "com.app:app"
 	dir := t.TempDir()
@@ -89,9 +91,9 @@ func liveCallgraphExport(t *testing.T, file, src string, report *entities.Interi
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
-	return buildCallGraphExportV2(&engine.DepScanResult{
+	return buildCallGraphExportV2WithMaxChains(&engine.DepScanResult{
 		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: importPath, Ecosystem: "java",
-	})
+	}, maxChains)
 }
 
 // TestEquivalence_SingleComponent_StitchMatchesLive is the headline live<->stitch
