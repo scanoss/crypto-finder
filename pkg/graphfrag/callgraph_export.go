@@ -30,7 +30,7 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.13"
+const CallgraphSchemaVersion = "6.14"
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -79,6 +79,7 @@ type CallgraphExport struct {
 	SchemaVersion     string                   `json:"schema_version"`
 	ScanMetadata      ExportScanMeta           `json:"scan_metadata"`
 	FindingGraphs     []ExportFindingGraph     `json:"finding_graphs"`
+	Functions         []ExportInternedFunction `json:"functions"`
 	SupportingCalls   []ExportSupportingCall   `json:"supporting_calls,omitempty"`
 	CryptoEntryPoints []ExportCryptoEntryPoint `json:"crypto_entry_points,omitempty"`
 }
@@ -107,6 +108,11 @@ type ExportFindingGraph struct {
 	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 	// CallChains is the set of surviving root-to-crypto paths for this finding.
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
+	// CallChainIndexes is the 6.14 interned form of CallChains: each route is a
+	// list of indexes into the top-level functions[] catalog. Same order and
+	// length as CallChains so a consumer can reconstruct the inlined identity
+	// walk without dropping the 6.x frame objects.
+	CallChainIndexes [][]int `json:"call_chain_indexes,omitempty"`
 	// ForwardCalls is the finding anchor's forward call closure (6.3+): what the
 	// matched method transitively calls, with per-call-site argument data-flow.
 	// Present only when the stitch ran with StitchOptions.ForwardClosure; findings
@@ -563,6 +569,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	for i := range out.SupportingCalls {
 		out.SupportingCalls[i].ErasedSignature = r.erasedByFunctionKey[out.SupportingCalls[i].FunctionKey]
 	}
+	intern := FunctionInterner{}
+	for i := range out.FindingGraphs {
+		out.FindingGraphs[i].CallChainIndexes = intern.InternChains(out.FindingGraphs[i].CallChains)
+	}
+	out.Functions = intern.Functions()
 	return out
 }
 

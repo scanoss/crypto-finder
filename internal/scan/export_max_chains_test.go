@@ -94,6 +94,32 @@ func TestBuildCallGraphExport_MaxChainsOneKeepsFullEntryIndex(t *testing.T) {
 	if !sawAlpha || !sawBeta {
 		t.Fatalf("crypto_entry_points = %#v, want both alpha and beta (#249)", payload.CryptoEntryPoints)
 	}
+
+	if payload.SchemaVersion != graphfrag.CallgraphSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, graphfrag.CallgraphSchemaVersion)
+	}
+	if len(payload.Functions) == 0 {
+		t.Fatal("functions catalog empty on live export")
+	}
+	if len(fg.CallChainIndexes) != len(fg.CallChains) {
+		t.Fatalf("call_chain_indexes len = %d, want %d", len(fg.CallChainIndexes), len(fg.CallChains))
+	}
+	rebuilt, ok := graphfrag.ReconstructChainIdentities(payload.Functions, fg.CallChainIndexes)
+	if !ok {
+		t.Fatal("live call_chain_indexes pointed outside functions[]")
+	}
+	for i, chain := range fg.CallChains {
+		if len(rebuilt[i]) != len(chain) {
+			t.Fatalf("route %d rebuilt len = %d, inlined len = %d", i, len(rebuilt[i]), len(chain))
+		}
+		for j, frame := range chain {
+			got := rebuilt[i][j]
+			if got.FunctionKey != frame.FunctionKey || got.FunctionName != frame.FunctionName || got.FilePath != frame.FilePath {
+				t.Fatalf("live route %d frame %d interned %+v != inlined key=%q name=%q path=%q",
+					i, j, got, frame.FunctionKey, frame.FunctionName, frame.FilePath)
+			}
+		}
+	}
 }
 
 func TestBuildCallGraphExport_DefaultMaxChainsUnchanged(t *testing.T) {

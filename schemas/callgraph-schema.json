@@ -12,7 +12,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.13",
+      "const": "6.14",
       "type": "string",
       "description": "Version of the customer-facing callgraph contract."
     },
@@ -31,6 +31,29 @@
       "description": "Lifecycle and context calls associated with findings.",
       "items": {
         "$ref": "#/definitions/SupportingCall"
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Interned callable identity catalog for the emitted call_chains sample. finding_graphs[].call_chain_indexes are 0-based positions into this array.",
+      "items": {
+        "type": "object",
+        "required": [
+          "function_name",
+          "file_path"
+        ],
+        "properties": {
+          "function_key": {
+            "type": "string"
+          },
+          "function_name": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
       }
     },
     "crypto_entry_points": {
@@ -61,6 +84,17 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/CallChain"
+          }
+        },
+        "call_chain_indexes": {
+          "type": "array",
+          "description": "Index-based routes matching call_chains order. Each inner array lists functions[] indexes for that walk.",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       },
