@@ -22,6 +22,7 @@ type GoParser struct {
 
 const (
 	goNodeIdentifier      = "identifier"
+	goBuiltinNew          = "new"
 	goNodeBlock           = "block"
 	goNodeFieldIdentifier = "field_identifier"
 	goNodeTypeIdentifier  = "type_identifier"
@@ -988,7 +989,7 @@ var goPredeclaredIdentifiers = map[string]bool{
 	// functions
 	"append": true, "cap": true, "clear": true, "close": true, "complex": true,
 	"copy": true, "delete": true, "imag": true, "len": true, "make": true,
-	"max": true, "min": true, "new": true, "panic": true, "print": true,
+	"max": true, "min": true, goBuiltinNew: true, "panic": true, "print": true,
 	"println": true, "real": true, "recover": true,
 	// types, reachable as conversions
 	"any": true, "bool": true, "byte": true, "comparable": true,
@@ -1474,7 +1475,7 @@ func goMakeNewType(expr *sitter.Node, src []byte) string {
 	switch strings.TrimSpace(fn.Content(src)) {
 	case "make":
 		return strings.TrimSpace(first.Content(src))
-	case "new":
+	case goBuiltinNew:
 		return "*" + strings.TrimSpace(first.Content(src))
 	}
 	return ""
