@@ -120,6 +120,18 @@ same-arity overloads remain possible; call-site source provenance then selects t
 concrete signature instead of the KB guessing one overload. Keep these fields distinct
 from semantic `return.type`, which may intentionally model only one inferred value.
 
+A YAML may also declare `trait_associated_types`, a flat list of `{trait, name,
+type}` entries (`type` optional). This resolves a generic parameter's associated
+type past its trait bound: a `C: KeyInit` bound already gives `C` the `KeyInit`
+identity (first-trait-bound rule), and a `trait_associated_types` entry for
+`{trait: KeyInit, name: KeySize}` lets `C::KeySize` resolve to what the entry
+names, instead of stopping at the bare trait name. An entry with no `type` still
+counts as cataloged (the trait is known to declare that associated type) but
+resolves to nothing usable, which callers must treat the same as an uncataloged
+pair — never invent a value. Merge applies the same rule 1/2 discipline as
+contracts: identical entries across libraries are idempotent; the same
+`(trait, name)` with a different `type` is a HARD ERROR naming both libraries.
+
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schema is independent (currently
 `6.14` for the callgraph export — `pkg/graphfrag.CallgraphSchemaVersion` — and
