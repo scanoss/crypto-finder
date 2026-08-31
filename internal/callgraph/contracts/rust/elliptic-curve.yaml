@@ -1,0 +1,22 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: elliptic-curve
+  coordinates:
+    - elliptic-curve
+  version_range: ">=0.13.0,<0.14.0"
+  description: "RustCrypto shared traits underlying p256/p384/k256/ecdsa"
+
+# Same rationale as crypto-common.yaml/digest.yaml: this crate declares the
+# Curve trait algorithm crates (p256, k256, ...) implement, not a terminal
+# operation of its own. See trait_associated_types. `Curve::Uint` (the
+# curve's big-integer type) is deliberately NOT cataloged here: unlike
+# FieldBytesSize, it is not a GenericArray-family size type, and its real
+# resolution varies per curve in a way this KB cannot state as one constant
+# without risking a wrong identity.
+contracts: []
+
+trait_associated_types:
+  - trait: Curve
+    name: FieldBytesSize
+    type: generic_array::GenericArray
