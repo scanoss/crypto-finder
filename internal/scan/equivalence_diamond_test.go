@@ -84,6 +84,36 @@ func TestEquivalence_Diamond_ReconvergentPathsCollapse(t *testing.T) {
 	assertEquivClean(t, rep)
 }
 
+// TestEquivalence_MaxChainsOne_LiveMatchesStitch pins issue #334: at N=1, live
+// export and stitch emit the same sampled routes and the same entry index.
+func TestEquivalence_MaxChainsOne_LiveMatchesStitch(t *testing.T) {
+	t.Parallel()
+	key := graphfrag.ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0"}
+	report := reportForTerminal(t, 21, `javax.crypto.Cipher.getInstance("AES")`, "javax.crypto.Cipher.getInstance")
+
+	live := liveCallgraphExportWithMaxChains(t, "Svc.java", diamondFixtureSrc, report, 1)
+
+	frag := buildModuleFragment(t, key, "com.app:app", "Svc.java", diamondFixtureSrc, report)
+	res, err := graphfrag.StitchWithOptions(key, graphfrag.DependencyGraph{}, map[graphfrag.ComponentKey]graphfrag.Fragment{key: frag}, graphfrag.StitchOptions{EntryRootedOnly: true, MaxChains: 1})
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	stitched := res.ToCallgraphExport(key, graphfrag.ScanMeta{RootModule: "com.app:app", Ecosystem: "java"})
+
+	if len(live.FindingGraphs) != 1 || len(stitched.FindingGraphs) != 1 {
+		t.Fatalf("finding_graphs live=%d stitched=%d, want 1", len(live.FindingGraphs), len(stitched.FindingGraphs))
+	}
+	if n := len(live.FindingGraphs[0].CallChains); n != 1 {
+		t.Fatalf("live CallChains = %d, want 1", n)
+	}
+	if n := len(stitched.FindingGraphs[0].CallChains); n != 1 {
+		t.Fatalf("stitched CallChains = %d, want 1", n)
+	}
+
+	rep := equiv.Compare(decodeEquiv(t, live), decodeEquiv(t, stitched), res.Suppressed, equiv.Options{})
+	assertEquivClean(t, rep)
+}
+
 func countChains(cg equiv.CallgraphExportJSON) int {
 	n := 0
 	for _, fg := range cg.FindingGraphs {

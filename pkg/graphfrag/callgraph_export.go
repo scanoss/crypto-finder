@@ -542,7 +542,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root, meta.Ecosystem)
 		}
-		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated)
+		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated, grp.chainsTruncated)
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
@@ -587,6 +587,8 @@ type exportChainGroup struct {
 	anchorNode graphNode
 	// pathCountTruncated mirrors FindingChain.PathCountTruncated (#292).
 	pathCountTruncated bool
+	// chainsTruncated mirrors FindingChain.ChainsTruncated (#334).
+	chainsTruncated bool
 }
 
 // ingestExportFindingChain merges one FindingChain into the export grouping map.
@@ -637,6 +639,9 @@ func ingestExportFindingChain(
 		grp.pathCountTruncated = true
 		return groupOrder
 	}
+	if fc.ChainsTruncated {
+		grp.chainsTruncated = true
+	}
 	if len(nodes) > 0 {
 		grp.callChains = append(grp.callChains, nodes)
 	}
@@ -646,10 +651,10 @@ func ingestExportFindingChain(
 // stampStitchedFindingGraph sets reachability and analysis for one finding
 // graph. A path-count ceiling skip (#292) is treated like other caps: unknown
 // reachability and partial call_chains, with empty served chains.
-func stampStitchedFindingGraph(fg *ExportFindingGraph, r *Result, pathCountTruncated bool) {
+func stampStitchedFindingGraph(fg *ExportFindingGraph, r *Result, pathCountTruncated, chainsTruncated bool) {
 	fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0 || pathCountTruncated)
 	fg.Analysis = stitchedFindingAnalysis(fg)
-	if !pathCountTruncated {
+	if !pathCountTruncated && !chainsTruncated {
 		return
 	}
 	if fg.Analysis == nil {

@@ -673,6 +673,11 @@ type FindingChain struct {
 	// (#292). The chain then carries the op node only as a finding carrier;
 	// ToCallgraphExport emits empty call_chains and reachability=unknown.
 	PathCountTruncated bool
+
+	// ChainsTruncated is set when condensed routes were sampled to MaxChains
+	// (issue #334). The emitted frames are genuine; analysis.call_chains is
+	// still partial because more condensed routes exist.
+	ChainsTruncated bool
 }
 
 // SuppressedEdge is one call edge (or grouped call site) the stitcher declined

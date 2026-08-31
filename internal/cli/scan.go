@@ -48,6 +48,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const (
@@ -78,37 +79,38 @@ var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 var SupportedFormats = []string{formatJSON, "cyclonedx"}
 
 var (
-	scanRules                []string
-	scanRuleDirs             []string
-	scanScanner              string
-	scanFormat               string
-	scanOutput               string
-	scanLanguages            []string
-	scanFailOnFind           bool
-	scanTimeout              string
-	scanNoRemoteRules        bool
-	scanNoCache              bool
-	scanAPIKey               string
-	scanAPIURL               string
-	scanStrict               bool
-	scanMaxStaleAge          string
-	scanNoDedup              bool
-	scanInterfile            bool
-	scanDependencies         bool
-	scanIncludeTests         bool
-	scanNoDefaultExclusions  bool     // --no-default-exclusions flag
-	scanExcludePatterns      []string // --exclude flag (repeatable)
-	scanDepEcosystem         string
-	scanExportCallgraph      string
-	scanExportCgFormat       string
-	scanExportGraphFragment  string
-	scanExportGfFormat       string
-	scanDepWorkers           int
-	scanJavaJDKMajor         string
-	scanJavaJDKHomes         []string
-	scanJavaCompiledArtifact string
-	scanFindingsCache        string
-	scanProgress             bool
+	scanRules                    []string
+	scanRuleDirs                 []string
+	scanScanner                  string
+	scanFormat                   string
+	scanOutput                   string
+	scanLanguages                []string
+	scanFailOnFind               bool
+	scanTimeout                  string
+	scanNoRemoteRules            bool
+	scanNoCache                  bool
+	scanAPIKey                   string
+	scanAPIURL                   string
+	scanStrict                   bool
+	scanMaxStaleAge              string
+	scanNoDedup                  bool
+	scanInterfile                bool
+	scanDependencies             bool
+	scanIncludeTests             bool
+	scanNoDefaultExclusions      bool     // --no-default-exclusions flag
+	scanExcludePatterns          []string // --exclude flag (repeatable)
+	scanDepEcosystem             string
+	scanExportCallgraph          string
+	scanExportCgFormat           string
+	scanExportCallgraphMaxChains int
+	scanExportGraphFragment      string
+	scanExportGfFormat           string
+	scanDepWorkers               int
+	scanJavaJDKMajor             string
+	scanJavaJDKHomes             []string
+	scanJavaCompiledArtifact     string
+	scanFindingsCache            string
+	scanProgress                 bool
 )
 
 var scanCmd = &cobra.Command{
@@ -183,6 +185,8 @@ func init() {
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
+	scanCmd.Flags().IntVar(&scanExportCallgraphMaxChains, "export-callgraph-max-chains", graphfrag.DefaultMaxChainsPerOp,
+		"Per-finding call-chain sample size for --export-callgraph (default 128). crypto_entry_points stays the full reverse-reach set. Depth cap remains 32.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
 	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
@@ -612,6 +616,14 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
 	scanLanguages = normalizedLanguages
+	if scanExportCallgraphMaxChains < 1 {
+		return failure.WrapUnknown(
+			fmt.Errorf("export-callgraph-max-chains must be at least 1"),
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			"--export-callgraph-max-chains must be at least 1",
+		)
+	}
 
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
@@ -1104,7 +1116,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Str("file", scanExportCallgraph).
 			Str("format", scanExportCgFormat).
 			Msg("Starting call graph export")
-		if exportErr := scanutil.ExportCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult); exportErr != nil {
+		if exportErr := scanutil.ExportCallGraphWithMaxChains(scanExportCallgraph, scanExportCgFormat, callGraphResult, scanExportCallgraphMaxChains); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,
 				failure.CodeCallGraphExportFailed,

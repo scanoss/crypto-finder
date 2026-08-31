@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `--export-callgraph-max-chains` sets the per-finding `call_chains` sample size for live `--export-callgraph` (default 128). Stitch uses the same N through `StitchOptions.MaxChains` (zero keeps 128). `crypto_entry_points` remains the full reverse-reach set. When more condensed routes exist than N, `analysis.call_chains` is `partial`. The 100000 path-count skip ceiling and the 32-frame depth cap are unchanged.
 ### Fixed
 - Condensed call-chain export no longer materializes routes after counting more than 100000 condensed paths for one finding. Those findings emit no chains, keep `analysis.call_chains` partial (including on the mine path), and use `reachability: unknown` instead of claiming unreachable, so a pathological fan-in cannot exhaust process memory before the existing 128-chain emit budget applies. The live `--export-callgraph` path and the stitched export share the same ceiling. Documented per-finding upper bounds remain 128 chains and 32 frames.
 - Dependency-source findings surfaced during API entry-point inference now keep `dependency_info` and source-root-relative paths instead of appearing as direct findings with absolute cache paths.
