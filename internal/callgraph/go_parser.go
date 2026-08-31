@@ -210,6 +210,10 @@ func (p *GoParser) processImportSpec(spec *sitter.Node, src []byte, analysis *Fi
 func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
+		if child.Type() == "type_declaration" {
+			p.extractInterfaceMethods(child, src, filePath, packagePath, analysis)
+			continue
+		}
 		switch child.Type() {
 		case "function_declaration":
 			decl := p.parseFunctionDecl(child, src, filePath, packagePath, analysis)
@@ -221,6 +225,61 @@ func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, pac
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
+		}
+	}
+}
+
+// extractInterfaceMethods registers each method of an interface declaration as
+// a FunctionDecl with OwnerType "interface". A Go interface method has no body,
+// so the walk never produced a declaration for it: a call on an
+// interface-typed receiver — `id.Unwrap(...)` with `id age.Identity` — had
+// nothing to join, and the builder's generic expandInterfaceDispatch, which
+// keys off OwnerType "interface" exactly like Java's interface declarations,
+// never fired for Go. Embedded interfaces (type_elem) are not flattened here;
+// the dispatch expansion matches by name and arity, which does not need them.
+func (p *GoParser) extractInterfaceMethods(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		spec := node.NamedChild(i)
+		if spec.Type() != "type_spec" {
+			continue
+		}
+		typeNode := spec.ChildByFieldName(goFieldType)
+		nameNode := spec.ChildByFieldName("name")
+		if typeNode == nil || nameNode == nil || typeNode.Type() != "interface_type" {
+			continue
+		}
+		ifaceName := strings.TrimSpace(nameNode.Content(src))
+		if ifaceName == "" {
+			continue
+		}
+		for j := 0; j < int(typeNode.NamedChildCount()); j++ {
+			elem := typeNode.NamedChild(j)
+			if elem.Type() != "method_elem" {
+				continue
+			}
+			methodName := ""
+			if n := elem.ChildByFieldName("name"); n != nil {
+				methodName = strings.TrimSpace(n.Content(src))
+			}
+			if methodName == "" {
+				continue
+			}
+			decl := &FunctionDecl{
+				ID: FunctionID{
+					Package: packagePath,
+					Type:    ifaceName,
+					Name:    methodName,
+				},
+				FilePath:     filePath,
+				StartLine:    int(elem.StartPoint().Row) + 1,
+				EndLine:      int(elem.EndPoint().Row) + 1,
+				OwnerType:    "interface",
+				OwnerName:    ifaceName,
+				FunctionType: "method",
+				Parameters:   p.extractParameterTypes(elem.ChildByFieldName("parameters"), src),
+			}
+			decl.ReturnType = p.extractReturnType(elem.ChildByFieldName("result"), src, analysis)
+			analysis.Functions = append(analysis.Functions, *decl)
 		}
 	}
 }
@@ -920,7 +979,13 @@ func (p *GoParser) resolveSelectorReceiverType(
 
 	typeText, ok := varTypes[operand]
 	if !ok || strings.TrimSpace(typeText) == "" {
-		return analysis.PackagePath, ""
+		// Unknown receiver: emit no identity at all rather than the caller's
+		// package. `cmd.StdoutPipe()` under the caller's package is an identity
+		// that LOOKS like a package function — it can coincide with a real
+		// same-package name, and, because an edge with no EdgeResolutions entry
+		// reads as exact, it presented an unresolved call as resolved proof.
+		// The empty form is the honest one the Java parser already emits.
+		return "", ""
 	}
 
 	trimmed := strings.TrimSpace(typeText)

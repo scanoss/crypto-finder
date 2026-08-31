@@ -240,3 +240,44 @@ func run() {
 	}
 	assertGoCall(t, g, "example.com/app/format.(*Header).Marshal")
 }
+
+// TestGoBuilder_InterfaceMethodDispatch pins Go interface extraction: an
+// interface method has no body, so the walk never declared it — a call on an
+// interface-typed receiver had nothing to join and the builder's generic
+// expandInterfaceDispatch, keyed on OwnerType "interface", never fired for Go.
+func TestGoBuilder_InterfaceMethodDispatch(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type Identity interface {
+	Unwrap(data []byte) []byte
+}
+
+type X25519 struct{}
+
+func (x *X25519) Unwrap(data []byte) []byte { return data }
+
+type Scrypt struct{}
+
+func (s *Scrypt) Unwrap(data []byte) []byte { return data }
+
+func decrypt(id Identity, data []byte) []byte {
+	return id.Unwrap(data)
+}
+`)
+	if _, ok := g.Functions["app.(Identity).Unwrap"]; !ok {
+		t.Fatalf("interface method not declared; decls: %v", goCalleeKeys(g))
+	}
+	assertGoCall(t, g, "app.(Identity).Unwrap")
+	// the generic expansion must link decrypt to both implementations
+	for _, impl := range []string{"app.(*X25519).Unwrap", "app.(*Scrypt).Unwrap"} {
+		found := false
+		for _, c := range g.Callers[impl] {
+			if c == "app.decrypt" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("interface dispatch did not link %s; callers: %v", impl, g.Callers[impl])
+		}
+	}
+}

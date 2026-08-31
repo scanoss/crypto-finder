@@ -1483,8 +1483,19 @@ func resolveGoAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase, 
 		return
 	}
 	resolved := 0
-	for callerKey, fn := range graph.Functions {
-		resolved += resolveGoAssignedVarCalleesInFunction(graph, callerKey, fn, kb)
+	// To a fixed point: typing one receiver can reveal the producer of the
+	// next — `id, _ := age.GenerateX25519Identity(); r := id.Recipient();
+	// r.Wrap(fileKey)` needs id's type before r's producer is even known.
+	// Four passes bound the deepest chain any real code showed.
+	for range 4 {
+		pass := 0
+		for callerKey, fn := range graph.Functions {
+			pass += resolveGoAssignedVarCalleesInFunction(graph, callerKey, fn, kb)
+		}
+		resolved += pass
+		if pass == 0 {
+			break
+		}
 	}
 	if resolved > 0 {
 		log.Info().Int("resolved", resolved).Msg("Resolved Go assigned-var receivers via contract KB")
@@ -1514,19 +1525,32 @@ func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, f
 		if !ok {
 			continue
 		}
-		pkg, typ := splitQualifiedTypeName(receiverType)
+		// A pointer marker in the type ("*filippo.io/age.X25519Identity")
+		// belongs to the TYPE side of the identity, never to the package:
+		// methods are keyed pkg.(*Type).name.
+		core := strings.TrimSpace(receiverType)
+		ptr := ""
+		for strings.HasPrefix(core, "*") {
+			ptr = "*"
+			core = core[1:]
+		}
+		pkg, typ := splitQualifiedTypeName(core)
 		if pkg == "" || typ == "" {
 			continue
 		}
 		oldKeys[call.Callee.String()] = true
-		rewritten := FunctionID{Package: pkg, Type: typ, Name: call.Callee.Name}
+		rewritten := FunctionID{Package: pkg, Type: ptr + typ, Name: call.Callee.Name}
 		if _, ok := graph.Functions[rewritten.String()]; !ok {
-			// Go keys a pointer-receiver method under (*Type); a variable of
-			// either form can call it, so prefer whichever spelling actually
-			// has a declaration.
-			pointer := FunctionID{Package: pkg, Type: "*" + typ, Name: call.Callee.Name}
-			if _, ok := graph.Functions[pointer.String()]; ok {
-				rewritten = pointer
+			// Go keys a pointer-receiver method under (*Type) and a value one
+			// under (Type); a variable of either form can call both, so prefer
+			// whichever spelling actually has a declaration.
+			toggled := "*" + typ
+			if ptr != "" {
+				toggled = typ
+			}
+			other := FunctionID{Package: pkg, Type: toggled, Name: call.Callee.Name}
+			if _, ok := graph.Functions[other.String()]; ok {
+				rewritten = other
 			}
 		}
 		call.Callee = rewritten
@@ -1571,7 +1595,7 @@ func goAssignedVarContractTypes(graph *CallGraph, fn *FunctionDecl, kb *contract
 			arity = len(call.Arguments)
 		}
 		if call.Callee.Type != "" {
-			fqn = goContractMethod(qualifiedType(call.Callee.Package, call.Callee.Type), BaseFunctionName(call.Callee.Name))
+			fqn = call.Callee.Package + ".(" + call.Callee.Type + ")." + BaseFunctionName(call.Callee.Name)
 		}
 		ret := unconditionalContractReturn(kb.ContractsForTolerant(fqn, arity))
 		if ret == "" {

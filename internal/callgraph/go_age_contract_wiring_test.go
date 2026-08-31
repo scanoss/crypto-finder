@@ -109,18 +109,13 @@ func receiverMethods(rec *age.X25519Recipient, id *age.X25519Identity, sr *age.S
 	}
 }
 
-// A receiver whose type comes from a short variable declaration over a library
-// constructor is NOT resolved to the library today: the Go parser types a
-// receiver from explicit syntax (a typed var, a typed parameter) and has no
-// pass that carries a contract's return type onto the variable it binds. The
-// call is therefore keyed to the consuming package instead.
-//
-// This is pinned rather than fixed here. Carrying contract return types onto
-// short variable declarations is Go binding resolution, a shared-behavior
-// change to the analyzer that belongs to the per-language parser parity series
-// rather than to one library's coverage ticket. When that lands, this test is
-// the one that must be updated, and the expectation below becomes the age key.
-func TestAgeReceiverFromShortVarDeclIsNotYetResolved(t *testing.T) {
+// A receiver bound by a short variable declaration over a library constructor
+// resolves through the constructor's contract return type — including a
+// chained binding whose producer is only known once the previous receiver has
+// been typed. This landed as Go binding resolution (the assigned-var pass run
+// to a fixed point); this test previously pinned the opposite behavior and
+// carried instructions to flip it when the resolution arrived.
+func TestAgeReceiverFromShortVarDeclResolvesViaContract(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -137,30 +132,27 @@ func consumer(fileKey []byte) {
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	analyses, err := NewGoParser().ParseDirectory(dir, "app")
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got := map[string]bool{}
-	for _, analysis := range analyses {
-		for _, fn := range analysis.Functions {
-			for _, call := range fn.Calls {
-				got[call.Callee.String()] = true
-			}
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			got[fn.Calls[i].Callee.String()] = true
 		}
 	}
 
-	// The constructor itself resolves; the two calls on its result do not.
-	if !got["filippo.io/age.GenerateX25519Identity"] {
-		t.Fatalf("constructor identity regressed; got %v", ageCalleeKeys(got))
-	}
-	if !got["app.Recipient"] || !got["app.Wrap"] {
-		t.Fatalf("short-var receiver resolution changed; got %v.\n"+
-			"If Go binding resolution has landed, these should now be "+
-			"filippo.io/age.(*X25519Identity).Recipient and "+
-			"filippo.io/age.(*X25519Recipient).Wrap, and this test plus the age "+
-			"coverage notes must be updated together.", ageCalleeKeys(got))
+	for _, want := range []string{
+		"filippo.io/age.GenerateX25519Identity",
+		"filippo.io/age.(*X25519Identity).Recipient",
+		"filippo.io/age.(*X25519Recipient).Wrap",
+	} {
+		if !got[want] {
+			t.Fatalf("missing %q; got %v", want, ageCalleeKeys(got))
+		}
 	}
 }
 
