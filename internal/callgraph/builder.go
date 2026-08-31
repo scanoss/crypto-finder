@@ -149,6 +149,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	callerIndexStart := time.Now()
+	pruneGoPredeclaredCalls(graph, b.ecosystem)
 	b.buildCallerIndex(graph)
 	callerIndexDuration := time.Since(callerIndexStart)
 
@@ -194,6 +195,8 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
+	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
+	respellGoPointerReceivers(graph, b.ecosystem)
 
 	// Resolve single-argument pass-through dispatch: a call site whose
 	// interface-typed parameter is used, unmodified, as the sole receiver of an
@@ -245,6 +248,19 @@ type parseDirWork struct {
 // first, then its subdirectories in os.ReadDir order) without parsing, so
 // analyzePackageParallel can merge parse results in exactly the order the
 // serial path would have produced them.
+// dirSkippingParser lets a parser exclude directories by shape, not just by
+// literal name: the go tool ignores every directory whose name begins with
+// "_" (x/crypto's _asm avo generators, for one), a rule no other ecosystem
+// shares — Python's _internal packages are real, importable code.
+type dirSkippingParser interface {
+	SkipsDirNamed(name string) bool
+}
+
+func (b *Builder) parserSkipsDir(name string) bool {
+	p, ok := b.parser.(dirSkippingParser)
+	return ok && p.SkipsDirNamed(name)
+}
+
 func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]bool) []parseDirWork {
 	work := []parseDirWork{{dir: dir, importPath: importPath}}
 	entries, readErr := os.ReadDir(dir)
@@ -257,7 +273,7 @@ func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]b
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") || skipDirs[name] {
+		if strings.HasPrefix(name, ".") || skipDirs[name] || b.parserSkipsDir(name) {
 			continue
 		}
 		subDir := filepath.Join(dir, name)
@@ -374,6 +390,9 @@ func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysi
 			if b.mergeRustTypedMethodCollision(graph, key, existing, fn) {
 				continue
 			}
+			if b.mergeGoBuildTagCollision(graph, key, existing, fn) {
+				continue
+			}
 		}
 		graph.Functions[key] = fn
 	}
@@ -410,6 +429,31 @@ func (b *Builder) mergeRustTypedMethodCollision(graph *CallGraph, key string, ex
 		return false
 	}
 	if existing.ID.Type == "" || existing == candidate {
+		return false
+	}
+	merged := *existing
+	merged.Calls = appendUnseenCalls(existing.Calls, candidate.Calls)
+	if len(merged.ReturnSources) == 0 {
+		merged.ReturnSources = candidate.ReturnSources
+	}
+	graph.Functions[key] = &merged
+	return true
+}
+
+// mergeGoBuildTagCollision unions the calls of two Go declarations that share
+// one key from different files: build-tagged platform variants
+// (command_unix.go and command_windows.go both declaring the same function)
+// are the usual shape, since the parser reads every file regardless of build
+// constraints. Last-write-wins silently dropped one platform's whole body —
+// the go/types differential surfaced it as blocks of consecutive missing
+// calls. Unioning over-approximates across platforms, which is honest for a
+// scanner: the code exists and runs on the platform it was written for.
+// mergeRustTypedMethodCollision above is the in-ecosystem precedent.
+func (b *Builder) mergeGoBuildTagCollision(graph *CallGraph, key string, existing, candidate *FunctionDecl) bool {
+	if b.ecosystem != ecosystemGo {
+		return false
+	}
+	if existing == candidate || existing.FilePath == candidate.FilePath {
 		return false
 	}
 	merged := *existing
@@ -1378,7 +1422,10 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 	// Seed the receiver type from the root (innermost) link's KB return type.
 	rootCall := &fn.Calls[idxs[0]]
 	rootFQN, rootArity := splitMethodArity(&rootCall.Callee)
-	if kb.Ecosystem == ecosystemCPP && rootArity < 0 {
+	// C++ and Go callee names carry no arity suffix, so the contract key's
+	// arity has to come from the call site. For Go the argument count is the
+	// arity exactly: the language has no overloading.
+	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && rootArity < 0 {
 		rootArity = len(rootCall.Arguments)
 	}
 	rootContracts := kb.ContractsForTolerant(rootFQN, rootArity)
@@ -1405,7 +1452,13 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 			continue
 		}
 		pkg, typ := splitQualifiedTypeName(currentType)
-		rewritten := FunctionID{Package: pkg, Type: typ, Name: fmt.Sprintf("%s#%d", base, arity)}
+		name := fmt.Sprintf("%s#%d", base, arity)
+		if kb.Ecosystem == ecosystemGo {
+			// Go declarations carry no arity suffix (the language has no
+			// overloading), so the rewritten identity must not either.
+			name = base
+		}
+		rewritten := FunctionID{Package: pkg, Type: typ, Name: name}
 		oldKey := call.Callee.String()
 		if newKey := rewritten.String(); newKey != oldKey {
 			call.Callee = rewritten
@@ -1436,14 +1489,308 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 // contract's declared arity when the varargs fallback matched).
 func chainLinkContracts(kb *contracts.KnowledgeBase, currentType string, call *FunctionCall) ([]contracts.Contract, string, int) {
 	base, arity := methodBaseArity(call.Callee.Name)
-	if kb.Ecosystem == ecosystemCPP && arity < 0 {
+	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && arity < 0 {
 		arity = len(call.Arguments)
 	}
 	ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
+	if len(ctrs) == 0 && kb.Ecosystem == ecosystemGo {
+		// The Go KBs key a method on a type in FunctionID.String() form —
+		// `crypto/cipher.(AEAD).Seal` — because a Go package path may itself
+		// contain dots, so the flat `pkg.Type.method` spelling is ambiguous.
+		ctrs = kb.ContractsForTolerant(goContractMethod(currentType, base), arity)
+	}
 	if len(ctrs) == 0 && kb.Ecosystem == ecosystemJava {
 		ctrs, arity = javaVarargsChainContracts(kb, currentType+"."+base, arity)
 	}
 	return ctrs, base, arity
+}
+
+// resolveGoAssignedVarCallees types Go method calls whose receiver was bound by
+// a `:=` from a KB-known producer:
+//
+//	gcm, _ := cipher.NewGCM(block)   // contract: returns crypto/cipher.AEAD
+//	gcm.Seal(nil, nonce, data, nil)  // was app.Seal — now crypto/cipher.(AEAD).Seal
+//
+// Go declares locals with `:=` almost exclusively and carries no type
+// annotation to read, so the per-file pass cannot type these receivers; the
+// producer's return type only exists here, where the KB is loaded. This is the
+// Go counterpart of the Python assigned-var propagation pass.
+//
+// Conservative on two axes: a variable assigned twice with DIFFERENT known
+// types in one function is skipped outright — the per-function map cannot see
+// block scope, and guessing here is how an AES receiver gets reported as a Mac.
+// And only a callee that resolves to nothing (no declaration, receiver typed by
+// nobody) is rewritten, never one that already joined a real declaration.
+func resolveGoAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase, ecosystem string) {
+	if kb == nil || ecosystem != ecosystemGo {
+		return
+	}
+	resolved := 0
+	// To a fixed point: typing one receiver can reveal the producer of the
+	// next — `id, _ := age.GenerateX25519Identity(); r := id.Recipient();
+	// r.Wrap(fileKey)` needs id's type before r's producer is even known.
+	// Four passes bound the deepest chain any real code showed.
+	for range 4 {
+		pass := 0
+		for callerKey, fn := range graph.Functions {
+			pass += resolveGoAssignedVarCalleesInFunction(graph, callerKey, fn, kb)
+		}
+		resolved += pass
+		if pass == 0 {
+			break
+		}
+	}
+	if resolved > 0 {
+		log.Info().Int("resolved", resolved).Msg("Resolved Go assigned-var receivers via contract KB")
+	}
+}
+
+// resolveGoAssignedVarCalleesInFunction rewrites one function's receiver-typed
+// calls. The KB-typed receiver wins even when the fallback key coincides with a
+// real declaration: `block.Encrypt(...)` with block typed crypto/cipher.Block
+// by its producer's contract is a method call on that value, never a call to a
+// same-package function that happens to be named Encrypt. The old keys are
+// reconciled after the loop so a caller that ALSO calls that plain function
+// keeps its edge.
+func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase) int {
+	varTypes := goAssignedVarContractTypes(graph, fn, kb)
+	if len(varTypes) == 0 {
+		return 0
+	}
+	resolved := 0
+	oldKeys := make(map[string]bool)
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.ReceiverVar == "" || call.Callee.Type != "" {
+			continue
+		}
+		receiverType, ok := varTypes[call.ReceiverVar]
+		if !ok {
+			continue
+		}
+		// A pointer marker in the type ("*filippo.io/age.X25519Identity")
+		// belongs to the TYPE side of the identity, never to the package:
+		// methods are keyed pkg.(*Type).name.
+		core := strings.TrimSpace(receiverType)
+		ptr := ""
+		for strings.HasPrefix(core, "*") {
+			ptr = "*"
+			core = core[1:]
+		}
+		pkg, typ := splitQualifiedTypeName(core)
+		if pkg == "" || typ == "" {
+			continue
+		}
+		oldKeys[call.Callee.String()] = true
+		rewritten := FunctionID{Package: pkg, Type: ptr + typ, Name: call.Callee.Name}
+		if _, ok := graph.Functions[rewritten.String()]; !ok {
+			// Go keys a pointer-receiver method under (*Type) and a value one
+			// under (Type); a variable of either form can call both, so prefer
+			// whichever spelling actually has a declaration.
+			toggled := "*" + typ
+			if ptr != "" {
+				toggled = typ
+			}
+			other := FunctionID{Package: pkg, Type: toggled, Name: call.Callee.Name}
+			if _, ok := graph.Functions[other.String()]; ok {
+				rewritten = other
+			}
+		}
+		call.Callee = rewritten
+		addCaller(graph.Callers, call.Callee.String(), callerKey)
+		recordCallEdgeResolution(graph, callerKey, call.Callee.String(), EdgeKindExact, "", call)
+		resolved++
+	}
+	reconcileGoRewrittenCallers(graph, callerKey, fn, oldKeys)
+	return resolved
+}
+
+// reconcileGoRewrittenCallers drops the caller's edge to each pre-rewrite key
+// that no remaining call in the function still targets.
+func reconcileGoRewrittenCallers(graph *CallGraph, callerKey string, fn *FunctionDecl, oldKeys map[string]bool) {
+	for oldKey := range oldKeys {
+		still := false
+		for i := range fn.Calls {
+			if fn.Calls[i].Callee.String() == oldKey {
+				still = true
+				break
+			}
+		}
+		if !still {
+			removeCaller(graph.Callers, oldKey, callerKey)
+		}
+	}
+}
+
+// goAssignedVarContractTypes maps each variable a function binds via `:=` to
+// the KB return type of its producer, dropping any variable whose assignments
+// disagree.
+func goAssignedVarContractTypes(graph *CallGraph, fn *FunctionDecl, kb *contracts.KnowledgeBase) map[string]string {
+	types := make(map[string]string)
+	conflicted := make(map[string]bool)
+	for i := range fn.Calls {
+		call := &fn.Calls[i]
+		if call.AssignedVar == "" || conflicted[call.AssignedVar] {
+			continue
+		}
+		fqn, arity := splitMethodArity(&call.Callee)
+		if arity < 0 {
+			arity = len(call.Arguments)
+		}
+		if call.Callee.Type != "" {
+			fqn = call.Callee.Package + ".(" + call.Callee.Type + ")." + BaseFunctionName(call.Callee.Name)
+		}
+		ret := unconditionalContractReturn(kb.ContractsForTolerant(fqn, arity))
+		if ret == "" {
+			// In-corpus producer: use its declared return type. `s := newServer()`
+			// has no contract — the type only exists on the declaration, which the
+			// per-file pass could not see and this builder pass can.
+			if decl, ok := graph.Functions[call.Callee.String()]; ok {
+				ret = goReceiverTypeFromReturn(decl)
+			}
+		}
+		if ret == "" {
+			continue
+		}
+		if prev, seen := types[call.AssignedVar]; seen && prev != ret {
+			conflicted[call.AssignedVar] = true
+			delete(types, call.AssignedVar)
+			continue
+		}
+		types[call.AssignedVar] = ret
+	}
+	return types
+}
+
+// goReceiverTypeFromReturn derives the receiver type a producer's declared
+// return binds: the first non-error component of the (possibly multi-valued)
+// return, pointer and type arguments erased, qualified with the producer's own
+// package. An alias-qualified return ("cipher.Block") is skipped — expanding
+// the alias needs the file's imports, which this pass does not carry; those
+// producers are the KB's job.
+func goReceiverTypeFromReturn(decl *FunctionDecl) string {
+	raw := goFirstValueReturn(decl.ReturnType)
+	raw = strings.TrimLeft(raw, "*")
+	if i := strings.Index(raw, "["); i > 0 {
+		raw = raw[:i]
+	}
+	if raw == "" || raw == "error" || strings.ContainsAny(raw, " ]") {
+		return ""
+	}
+	// Already qualified: the parser expanded the file's import alias, so the
+	// last segment is the type and everything before it the package path.
+	if dot := strings.LastIndex(raw, "."); dot > 0 {
+		typ := raw[dot+1:]
+		if typ == "" || typ[0] < 'A' || typ[0] > 'Z' {
+			return ""
+		}
+		return raw
+	}
+	if r := raw[0]; r < 'A' || r > 'Z' {
+		// predeclared or unexported-shaped: not a receiver identity worth writing
+		return ""
+	}
+	return qualifiedType(decl.ID.Package, raw)
+}
+
+// pruneGoPredeclaredCalls drops the calls whose bare name is a predeclared
+// identifier and no declaration backs: `len(x)` under the caller's package is
+// the universe scope's len, `int(x)` is a conversion, and neither reaches user
+// code. A package CAN declare its own `new` or `print` — etcd does both — and
+// those calls survive, because their declaration exists; the per-file parser
+// cannot know that (the declaration may live in a sibling file), which is why
+// the pruning happens here, with the whole package in view.
+func pruneGoPredeclaredCalls(graph *CallGraph, ecosystem string) {
+	if ecosystem != ecosystemGo {
+		return
+	}
+	pruned := 0
+	for _, fn := range graph.Functions {
+		kept := fn.Calls[:0]
+		for i := range fn.Calls {
+			call := &fn.Calls[i]
+			if call.Callee.Type == "" && call.Callee.Package != "" && goPredeclaredIdentifiers[BaseFunctionName(call.Callee.Name)] {
+				if _, declared := graph.Functions[call.Callee.String()]; !declared {
+					pruned++
+					continue
+				}
+			}
+			kept = append(kept, fn.Calls[i])
+		}
+		fn.Calls = kept
+	}
+	if pruned > 0 {
+		log.Debug().Int("pruned", pruned).Msg("Pruned predeclared-identifier calls with no backing declaration")
+	}
+}
+
+// respellGoPointerReceivers flips the pointer spelling of a typed callee to
+// whichever form is actually declared: a value-typed variable calls a
+// pointer-receiver method through Go's automatic addressing, so the call was
+// keyed (T).m while the declaration lives at (*T).m — the same member, never
+// joining. go/types reports the declared receiver's spelling; so do we now,
+// for every type the corpus declares. External types stay as written: their
+// method sets are unknowable without signatures.
+func respellGoPointerReceivers(graph *CallGraph, ecosystem string) {
+	if ecosystem != ecosystemGo {
+		return
+	}
+	respelled := 0
+	for callerKey, fn := range graph.Functions {
+		for i := range fn.Calls {
+			call := &fn.Calls[i]
+			t := call.Callee.Type
+			if t == "" {
+				continue
+			}
+			if _, declared := graph.Functions[call.Callee.String()]; declared {
+				continue
+			}
+			flipped := "*" + t
+			if strings.HasPrefix(t, "*") {
+				flipped = t[1:]
+			}
+			candidate := FunctionID{Package: call.Callee.Package, Type: flipped, Name: call.Callee.Name}
+			if _, declared := graph.Functions[candidate.String()]; !declared {
+				continue
+			}
+			oldKey := call.Callee.String()
+			call.Callee = candidate
+			addCaller(graph.Callers, candidate.String(), callerKey, oldKey)
+			recordCallEdgeResolution(graph, callerKey, candidate.String(), EdgeKindExact, "", call)
+			respelled++
+		}
+	}
+	if respelled > 0 {
+		log.Info().Int("respelled", respelled).Msg("Respelled Go pointer receivers to their declared form")
+	}
+}
+
+// goFirstValueReturn picks the component of a declared return that carries the
+// value: the first non-error entry of a multi-value return, or the return
+// itself.
+func goFirstValueReturn(returnType string) string {
+	raw := strings.TrimSpace(returnType)
+	if !strings.HasPrefix(raw, "(") {
+		return raw
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(raw, "("), ")")
+	for _, p := range strings.Split(inner, ",") {
+		if p = strings.TrimSpace(p); p != "" && p != "error" {
+			return p
+		}
+	}
+	return ""
+}
+
+// goContractMethod spells a method on a type the way the Go KBs key it:
+// `hash.Hash` + `Sum` -> `hash.(Hash).Sum`.
+func goContractMethod(qualifiedType, base string) string {
+	pkg, typ := splitQualifiedTypeName(qualifiedType)
+	if pkg == "" || typ == "" {
+		return qualifiedType + "." + base
+	}
+	return pkg + ".(" + typ + ")." + base
 }
 
 // javaVarargsChainContracts retries a Java chain-link contract lookup at
