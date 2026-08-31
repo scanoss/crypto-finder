@@ -255,6 +255,26 @@ type parseDirWork struct {
 	importPath string
 }
 
+// NestedModuleNamer lets a parser re-root the import path when traversal
+// enters a directory that declares its own module. Mining workspaces unpack a
+// module one or more directories below the scan root (<workspace>/<host>/
+// <path>@<version>/go.mod), so without this the subtree is named after the
+// workspace directory and every cross-package call inside the module resolves
+// to the declared import path instead — leaving the two halves unmatchable in
+// the exported graph.
+type NestedModuleNamer interface {
+	NestedModulePath(dir string) string
+}
+
+func (b *Builder) subImportPath(subDir, parentPath, dirName string) string {
+	if namer, ok := b.parser.(NestedModuleNamer); ok {
+		if modulePath := namer.NestedModulePath(subDir); modulePath != "" {
+			return modulePath
+		}
+	}
+	return b.parser.SubPackagePath(parentPath, dirName)
+}
+
 // collectParseDirs reproduces analyzeDir's pre-order traversal (directory
 // first, then its subdirectories in os.ReadDir order) without parsing, so
 // analyzePackageParallel can merge parse results in exactly the order the
@@ -298,7 +318,7 @@ func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
 		if b.skipWalkDirectory(subDir, name) {
 			continue
 		}
-		subImportPath := b.parser.SubPackagePath(importPath, name)
+		subImportPath := b.subImportPath(subDir, importPath, name)
 		work = append(work, b.collectParseDirs(subDir, subImportPath)...)
 	}
 	return work
@@ -588,7 +608,7 @@ func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph, proje
 		if b.skipWalkDirectory(subDir, name) {
 			continue
 		}
-		subImportPath := b.parser.SubPackagePath(importPath, name)
+		subImportPath := b.subImportPath(subDir, importPath, name)
 		if err := b.analyzeDir(subDir, subImportPath, graph, projectLocal); err != nil {
 			log.Debug().Err(err).Str("dir", subDir).Msg("Failed to analyze subdirectory")
 		}

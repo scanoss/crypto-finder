@@ -1,6 +1,7 @@
 package callgraph
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -140,6 +141,34 @@ func (p *GoParser) SkipsDirNamed(name string) bool {
 // SubPackagePath constructs a child import path by appending the dir name with "/".
 func (p *GoParser) SubPackagePath(parentPath, dirName string) string {
 	return parentPath + "/" + dirName
+}
+
+// NestedModulePath implements NestedModuleNamer: when dir carries its own
+// go.mod, the subtree is that module and its packages must be named by the
+// declared module path, not by the directory chain from the scan root. This
+// is how an unpacked module proxy zip (<workspace>/<host>/<path>@<version>/)
+// gets github.com/owner/repo identities that its own cross-package call sites
+// resolve to.
+func (p *GoParser) NestedModulePath(dir string) string {
+	file, err := os.Open(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			log.Debug().Err(closeErr).Msg("Failed to close go.mod")
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+
+	return ""
 }
 
 // PackageSeparator returns "/" — Go uses forward slashes in import paths.
