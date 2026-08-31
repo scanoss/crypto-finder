@@ -244,7 +244,8 @@ func TestTraceBackCondensed_CollapsesCycleInsteadOfEnumeratingIt(t *testing.T) {
 
 // TestTraceBackCondensed_HighFanInStaysBounded runs the shape that motivated the
 // O(V+E) frontier — a dense library with very high fan-in — and asserts the
-// budget is respected, the exact total is still reported, and it finishes fast.
+// #292 path-count ceiling skips materialization, the exact total is still
+// reported, and it finishes fast.
 func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	t.Parallel()
 	graph, target := buildHighFanInGraph(8, 8)
@@ -253,14 +254,14 @@ func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
 	elapsed := time.Since(start)
 
-	if len(chains) > 128 {
-		t.Fatalf("chains = %d, want at most the 128 budget", len(chains))
+	if len(chains) != 0 {
+		t.Fatalf("chains = %d, want 0 once total exceeds PathCountSkipThreshold", len(chains))
 	}
 	if !truncated {
-		t.Fatalf("truncated = false with total %d and budget 128, want true", total)
+		t.Fatalf("truncated = false with total %d over the path-count ceiling, want true", total)
 	}
-	if total <= 128 {
-		t.Fatalf("total = %d, want more than the budget on a high-fan-in graph", total)
+	if total <= PathCountSkipThreshold {
+		t.Fatalf("total = %d, want more than PathCountSkipThreshold=%d on a high-fan-in graph", total, PathCountSkipThreshold)
 	}
 	if elapsed > 10*time.Second {
 		t.Fatalf("condensed traceback took %s, want well under 10s", elapsed)
@@ -463,5 +464,56 @@ func TestTraceBackCondensed_UnreachableFindingHasNoChains(t *testing.T) {
 
 	if len(chains) != 0 || total != 0 || truncated {
 		t.Fatalf("chains=%d total=%d truncated=%v, want 0/0/false", len(chains), total, truncated)
+	}
+}
+
+// TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling is the #292
+// defensive cap: when Count reports more condensed routes than the safety
+// ceiling, TraceBackCondensed must not materialize any of them. Emitting the
+// maxChains budget after counting hundreds of thousands of paths is what the
+// field OOM observed — the warning fired with emitted=128 / total≈473k, then
+// the process was killed. Skipping Routes entirely keeps peak memory on the
+// Reach/Condense structure and still reports total + truncated so callers can
+// downgrade reachability.
+func TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling(t *testing.T) {
+	t.Parallel()
+	// 8^6 = 262144 paths, above PathCountSkipThreshold (100000) and well above
+	// the emit budget. Before the fix this returned 128 chains.
+	graph, target := buildHighFanInGraph(8, 6)
+
+	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
+
+	if total <= PathCountSkipThreshold {
+		t.Fatalf("total = %d, want more than PathCountSkipThreshold=%d so the ceiling fires", total, PathCountSkipThreshold)
+	}
+	if len(chains) != 0 {
+		t.Fatalf("chains = %d, want 0: Routes must be skipped when Count exceeds the ceiling", len(chains))
+	}
+	if !truncated {
+		t.Fatal("truncated = false, want true when the path-count ceiling skips emission")
+	}
+}
+
+// TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling keeps the
+// pre-#292 truncation contract for the common case: Count between maxChains and
+// the safety ceiling still materializes up to maxChains routes.
+func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling(t *testing.T) {
+	t.Parallel()
+	// 6^4 = 1296 paths: above the 128 emit budget, under the 100000 ceiling.
+	graph, target := buildHighFanInGraph(6, 4)
+
+	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
+
+	if total <= 128 {
+		t.Fatalf("total = %d, want more than the emit budget", total)
+	}
+	if total > PathCountSkipThreshold {
+		t.Fatalf("total = %d, want at most PathCountSkipThreshold=%d so Routes still runs", total, PathCountSkipThreshold)
+	}
+	if len(chains) != 128 {
+		t.Fatalf("chains = %d, want the 128 emit budget", len(chains))
+	}
+	if !truncated {
+		t.Fatal("truncated = false, want true when total exceeds the emit budget")
 	}
 }

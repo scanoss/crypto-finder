@@ -38,7 +38,7 @@ const (
 	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
 	callGraphExportMaxDepth        = 32
-	callGraphExportMaxChains       = 128
+	callGraphExportMaxChains       = 128 // emit budget; graphwalk.PathCountSkipThreshold skips materialization above 100000 paths
 	maxExportSourceResolutionDepth = 8
 	constructorMethodName          = "<init>"
 )
@@ -1396,16 +1396,8 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	if len(asset.ParameterConditions) > 0 {
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
 	}
-	// Only a run that knows what user code is can answer the question at all.
-	if containingFn != nil && ctx.userPackages != nil {
-		reachable := traced
-		fg.Reachable = &reachable
-	}
 	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
-	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
-	if fg.Reachability != graphfrag.ReachabilityNotApplicable {
-		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
-	}
+	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated)
 
 	if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason
@@ -1426,6 +1418,27 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	return fg
+}
+
+// applyLiveReachabilityState stamps Reachable, Reachability, and Analysis for one
+// finding graph after chain materialization. When the path-count ceiling skips
+// emission (truncated && !traced), Count already proved routes exist — leave
+// Reachable unset so entry-point indexing still runs, and keep analysis partial
+// even on the mine path (#292).
+func applyLiveReachabilityState(
+	fg *callGraphExportFinding,
+	containingFn *callgraph.FunctionDecl,
+	ctx *exportBuildContext,
+	traced, truncated bool,
+) {
+	if containingFn != nil && ctx.userPackages != nil && (!truncated || traced) {
+		reachable := traced
+		fg.Reachable = &reachable
+	}
+	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
+	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
+		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
+	}
 }
 
 // filterConditionedCallChains keeps only the chains whose terminal crypto call
@@ -2852,12 +2865,19 @@ func buildCallChains(
 	_ = structuralCallChains(ctx, containingFn)
 	var chains [][]callGraphChainNode
 	traced = len(raw) > 0
-	if !traced {
-		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
-		chains = [][]callGraphChainNode{{node}}
-	} else {
+	truncated := ctx.callChainTruncated[cacheKey]
+	switch {
+	case traced:
 		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
 		chains = materializeCallChainNodes(ctx, expanded)
+	case truncated:
+		// Path-count ceiling (#292): Count proved routes exist but Routes was
+		// skipped. Emit zero chains — do not synthesize the self-chain fallback,
+		// which would look like a caller-less crypto call.
+		chains = nil
+	default:
+		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
+		chains = [][]callGraphChainNode{{node}}
 	}
 	attachCryptoCall(chains, cryptoCall)
 	ctx.consumeCallChainUsage(cacheKey)
@@ -2900,11 +2920,16 @@ func structuralCallChains(
 	}
 	raw := structuralTracebackChains(ctx, containingFn)
 	var result [][]callGraphChainNode
-	if len(raw) == 0 {
+	truncated := ctx.callChainTruncated[cacheKey]
+	switch {
+	case len(raw) > 0:
+		result = materializeStructuralChainNodes(ctx, raw)
+	case truncated:
+		// Mirror buildCallChains: a ceiling skip must not become a self-chain.
+		result = nil
+	default:
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		result = [][]callGraphChainNode{{node}}
-	} else {
-		result = materializeStructuralChainNodes(ctx, raw)
 	}
 	ctx.callChainCache[cacheKey] = result
 	return result

@@ -509,66 +509,11 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		},
 	}
 
-	// Group chains by finding ID and optional occurrence key.
-	type findingKey struct {
-		findingID     string
-		occurrenceKey string
-	}
-	type chainGroup struct {
-		findingID         string
-		occurrenceKey     string
-		purl              string
-		purlConflict      bool
-		matchedOp         *ExportMatchedOperation
-		supportingCallIDs []string
-		callChains        [][]ExportChainNode
-		// anchorNode is the finding's terminal (crypto op) node — the key into
-		// Result.forwardClosures. Captured from the first chain's terminal frame;
-		// all chains of one finding share the same terminal op node.
-		anchorNode graphNode
-	}
-	groupMap := make(map[findingKey]*chainGroup)
-	var groupOrder []findingKey
+	groupMap := make(map[exportFindingKey]*exportChainGroup)
+	var groupOrder []exportFindingKey
 
 	for i := range r.Chains {
-		fc := &r.Chains[i]
-		nodes, resolvedFindingID := buildExportChain(fc, root, meta.Ecosystem)
-		// Use the resolved (potentially dep-prefixed) finding_id as the group key.
-		// For root-component ops the resolved ID equals the original; for dep ops it
-		// is recomputed with the "module@version/" prefix to match live --scan-dependencies.
-		// When computeFindingID returned "" (legacy fragments with no FilePath/StartLine),
-		// fall back to the original FindingChain.FindingID so the chain is still emitted.
-		if resolvedFindingID == "" {
-			resolvedFindingID = fc.FindingID
-		}
-		key := findingKey{findingID: resolvedFindingID, occurrenceKey: chainOccurrenceKey(fc)}
-		grp, exists := groupMap[key]
-		if !exists {
-			grp = &chainGroup{
-				findingID:         resolvedFindingID,
-				occurrenceKey:     key.occurrenceKey,
-				matchedOp:         chainMatchedOp(fc),
-				supportingCallIDs: chainSupportingCallIDs(fc),
-				purl:              directFindingPURL(fc, root),
-			}
-			if last := len(fc.Frames) - 1; last >= 0 {
-				grp.anchorNode = graphNode{
-					Component: fc.Frames[last].Component,
-					Function:  fc.Frames[last].Signature,
-				}
-			}
-			groupMap[key] = grp
-			groupOrder = append(groupOrder, key)
-		}
-		// All chains for one finding share the same terminal crypto op; fill the
-		// FK from the first chain that carries it (legacy/empty fragments → nil).
-		if len(grp.supportingCallIDs) == 0 {
-			grp.supportingCallIDs = chainSupportingCallIDs(fc)
-		}
-		mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
-		if len(nodes) > 0 {
-			grp.callChains = append(grp.callChains, nodes)
-		}
+		groupOrder = ingestExportFindingChain(groupMap, groupOrder, &r.Chains[i], root, meta.Ecosystem)
 	}
 
 	sort.Slice(groupOrder, func(i, j int) bool {
@@ -597,8 +542,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		if r.forwardClosures != nil {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root, meta.Ecosystem)
 		}
-		fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0)
-		fg.Analysis = stitchedFindingAnalysis(&fg)
+		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated)
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
@@ -620,6 +564,98 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		out.SupportingCalls[i].ErasedSignature = r.erasedByFunctionKey[out.SupportingCalls[i].FunctionKey]
 	}
 	return out
+}
+
+// exportFindingKey groups chains by finding ID and optional occurrence key.
+type exportFindingKey struct {
+	findingID     string
+	occurrenceKey string
+}
+
+// exportChainGroup accumulates served chains and metadata for one finding.
+type exportChainGroup struct {
+	findingID         string
+	occurrenceKey     string
+	purl              string
+	purlConflict      bool
+	matchedOp         *ExportMatchedOperation
+	supportingCallIDs []string
+	callChains        [][]ExportChainNode
+	// anchorNode is the finding's terminal (crypto op) node — the key into
+	// Result.forwardClosures. Captured from the first chain's terminal frame;
+	// all chains of one finding share the same terminal op node.
+	anchorNode graphNode
+	// pathCountTruncated mirrors FindingChain.PathCountTruncated (#292).
+	pathCountTruncated bool
+}
+
+// ingestExportFindingChain merges one FindingChain into the export grouping map.
+// Path-count ceiling carriers (#292) create the group and mark truncation but do
+// not publish their single-frame body as call_chains.
+func ingestExportFindingChain(
+	groupMap map[exportFindingKey]*exportChainGroup,
+	groupOrder []exportFindingKey,
+	fc *FindingChain,
+	root ComponentKey,
+	ecosystem string,
+) []exportFindingKey {
+	nodes, resolvedFindingID := buildExportChain(fc, root, ecosystem)
+	// Use the resolved (potentially dep-prefixed) finding_id as the group key.
+	// For root-component ops the resolved ID equals the original; for dep ops it
+	// is recomputed with the "module@version/" prefix to match live --scan-dependencies.
+	// When computeFindingID returned "" (legacy fragments with no FilePath/StartLine),
+	// fall back to the original FindingChain.FindingID so the chain is still emitted.
+	if resolvedFindingID == "" {
+		resolvedFindingID = fc.FindingID
+	}
+	key := exportFindingKey{findingID: resolvedFindingID, occurrenceKey: chainOccurrenceKey(fc)}
+	grp, exists := groupMap[key]
+	if !exists {
+		grp = &exportChainGroup{
+			findingID:         resolvedFindingID,
+			occurrenceKey:     key.occurrenceKey,
+			matchedOp:         chainMatchedOp(fc),
+			supportingCallIDs: chainSupportingCallIDs(fc),
+			purl:              directFindingPURL(fc, root),
+		}
+		if last := len(fc.Frames) - 1; last >= 0 {
+			grp.anchorNode = graphNode{
+				Component: fc.Frames[last].Component,
+				Function:  fc.Frames[last].Signature,
+			}
+		}
+		groupMap[key] = grp
+		groupOrder = append(groupOrder, key)
+	}
+	// All chains for one finding share the same terminal crypto op; fill the
+	// FK from the first chain that carries it (legacy/empty fragments → nil).
+	if len(grp.supportingCallIDs) == 0 {
+		grp.supportingCallIDs = chainSupportingCallIDs(fc)
+	}
+	mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
+	if fc.PathCountTruncated {
+		grp.pathCountTruncated = true
+		return groupOrder
+	}
+	if len(nodes) > 0 {
+		grp.callChains = append(grp.callChains, nodes)
+	}
+	return groupOrder
+}
+
+// stampStitchedFindingGraph sets reachability and analysis for one finding
+// graph. A path-count ceiling skip (#292) is treated like other caps: unknown
+// reachability and partial call_chains, with empty served chains.
+func stampStitchedFindingGraph(fg *ExportFindingGraph, r *Result, pathCountTruncated bool) {
+	fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0 || pathCountTruncated)
+	fg.Analysis = stitchedFindingAnalysis(fg)
+	if !pathCountTruncated {
+		return
+	}
+	if fg.Analysis == nil {
+		fg.Analysis = &ExportFindingAnalysis{}
+	}
+	fg.Analysis.CallChains = AnalysisPartial
 }
 
 // directFindingPURL keeps package URLs out of dependency-origin projections.

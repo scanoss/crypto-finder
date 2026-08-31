@@ -97,6 +97,11 @@ func (t *Tracer) ReachingFunctions(
 	return reach.Depth, reach.Terminal
 }
 
+// PathCountSkipThreshold re-exports graphwalk.PathCountSkipThreshold so callgraph
+// callers and tests can name the #292 ceiling without importing graphwalk for a
+// single constant. Keep this alias equal to the graphwalk value.
+const PathCountSkipThreshold = graphwalk.PathCountSkipThreshold
+
 // TraceBackCondensed walks callers of target over the cycle-collapsed reverse
 // graph and returns one chain per (route, terminal) pair, ordered entry -> target
 // like TraceBackLimited.
@@ -104,6 +109,10 @@ func (t *Tracer) ReachingFunctions(
 // total is the exact number of such pairs, counted before any chain is built, so
 // it is accurate even when maxChains truncates the returned slice. truncated
 // reports whether len(chains) < total. A maxChains of 0 means unlimited.
+//
+// When total exceeds PathCountSkipThreshold, Routes is not called: chains is
+// empty and truncated is true. That is the #292 stop-the-bleeding cap — prefer
+// a partial answer over process death on pathological fan-in.
 func (t *Tracer) TraceBackCondensed(
 	target FunctionID,
 	userPackages map[string]bool,
@@ -124,6 +133,14 @@ func (t *Tracer) TraceBackCondensed(
 	condensed := graphwalk.Condense(reach, nodeLess)
 
 	total = graphwalk.Count(reach, condensed)
+	if total > PathCountSkipThreshold {
+		log.Warn().
+			Str("function", targetKey).
+			Int("total_condensed_paths", total).
+			Int("path_count_skip_threshold", PathCountSkipThreshold).
+			Msg("Skipping condensed call chain materialization: path count exceeds safety ceiling")
+		return nil, total, true
+	}
 	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
 		chains = append(chains, t.materializeRoute(route))
 	}
