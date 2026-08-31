@@ -47,14 +47,13 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
 FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS scanner-installer
 
 ARG OPENGREP_VERSION=v1.12.1
-ARG OPENGREP_INSTALLER_SHA256=a74388d0aec282eddf15fc8d42884de6531e1fc5a7bdc3ac31863c854e974eee
 ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
 ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
 ARG TARGETARCH
 ARG RUST_VERSION=1.88.0
 ARG RUSTUP_INSTALLER_SHA256=6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf
 
-# Install system dependencies for OpenGrep installer
+# Install system dependencies for downloading the pinned OpenGrep binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl=8.14.1-2+deb13u4 \
     ca-certificates=20250419 \
@@ -63,13 +62,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Semgrep 1.145.0
 RUN pip install --no-cache-dir semgrep==1.145.0
 
-# Install OpenGrep after verifying the version-pinned installer.
-RUN curl -fsSL "https://raw.githubusercontent.com/opengrep/opengrep/${OPENGREP_VERSION}/install.sh" -o /tmp/opengrep-install.sh \
-    && echo "${OPENGREP_INSTALLER_SHA256}  /tmp/opengrep-install.sh" | sha256sum -c - \
-    && bash /tmp/opengrep-install.sh -v "${OPENGREP_VERSION}" \
-    && case "${TARGETARCH}" in amd64) hash="${OPENGREP_AMD64_SHA256}" ;; arm64) hash="${OPENGREP_ARM64_SHA256}" ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
-    && echo "${hash}  /root/.opengrep/cli/${OPENGREP_VERSION}/opengrep" | sha256sum -c - \
-    && rm -f /tmp/opengrep-install.sh
+# Install the pinned opengrep release directly. This avoids the installer's
+# live releases API lookup while retaining binary integrity verification.
+RUN case "${TARGETARCH}" in \
+        amd64) asset="opengrep_manylinux_x86"; hash="${OPENGREP_AMD64_SHA256}" ;; \
+        arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && install_dir="/root/.opengrep/cli/${OPENGREP_VERSION}" \
+    && mkdir -p "${install_dir}" \
+    && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
+    && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
+    && chmod a+x "${install_dir}/opengrep" \
+    && ln -s "${install_dir}" /root/.opengrep/cli/latest
 
 # ============================================================================
 # Stage 3: Final image with all language toolchains
@@ -112,12 +117,11 @@ RUN python -m venv /opt/target-venv
 # /root. Move them under /home/crypto so the non-root runtime user can
 # reach them.
 #
-# OpenGrep needs an extra step: its v1.12.1 installer creates an ABSOLUTE
-# symlink at /root/.opengrep/cli/latest pointing into /root/.opengrep/cli/
-# <version>/. After the move that symlink dangles. Rather than try to
-# rewrite symlinks, we locate the real binary with `find` and pin a stable
-# /usr/local/bin/opengrep symlink that doesn't depend on the installer's
-# internal layout (which has shifted across versions).
+# OpenGrep needs an extra step: the install places an ABSOLUTE symlink at
+# /root/.opengrep/cli/latest pointing into /root/.opengrep/cli/<version>/.
+# After the move that symlink dangles. Rather than rewrite it, we locate
+# the real binary with `find` and pin a stable /usr/local/bin/opengrep
+# symlink that does not depend on that layout.
 RUN groupadd --system crypto && \
     useradd --system --gid crypto --create-home --home-dir /home/crypto --shell /usr/sbin/nologin crypto && \
     mkdir -p /workspace /home/crypto/.config /home/crypto/.cache && \

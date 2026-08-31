@@ -5,10 +5,11 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
-readonly OPENGREP_INSTALLER_URL="https://raw.githubusercontent.com/opengrep/opengrep/v1.12.1/install.sh"
-readonly OPENGREP_INSTALLER_SHA256="a74388d0aec282eddf15fc8d42884de6531e1fc5a7bdc3ac31863c854e974eee"
+readonly OPENGREP_VERSION="v1.12.1"
 readonly OPENGREP_AMD64_SHA256="f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963"
 readonly OPENGREP_ARM64_SHA256="078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8"
+readonly OPENGREP_AMD64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
+readonly OPENGREP_ARM64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_aarch64"
 readonly RUSTUP_INSTALLER_URL="https://sh.rustup.rs"
 readonly RUSTUP_INSTALLER_SHA256="6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf"
 
@@ -110,10 +111,11 @@ for file in "${DOCKERFILES[@]}"; do
 done
 
 for file in "${DOCKERFILES[@]}"; do
-  if grep -q 'opengrep-install.sh' "$file" && ! grep -q "${OPENGREP_INSTALLER_SHA256}" "$file"; then
-    fail "$file does not pin the OpenGrep installer checksum"
-  fi
   if grep -q 'opengrep-install.sh' "$file"; then
+    fail "$file uses the OpenGrep installer (live GitHub releases API lookup); download the pinned release binary instead"
+  fi
+  if grep -q 'OPENGREP_VERSION' "$file"; then
+    grep -q 'opengrep/opengrep/releases/download' "$file" || fail "$file does not download the pinned OpenGrep release binary"
     grep -q "${OPENGREP_AMD64_SHA256}" "$file" || fail "$file does not pin the amd64 OpenGrep checksum"
     grep -q "${OPENGREP_ARM64_SHA256}" "$file" || fail "$file does not pin the arm64 OpenGrep checksum"
   fi
@@ -132,7 +134,8 @@ fi
 
 if [[ "${1:-}" == "--network" ]]; then
   for pair in \
-    "${OPENGREP_INSTALLER_URL}|${OPENGREP_INSTALLER_SHA256}" \
+    "${OPENGREP_AMD64_URL}|${OPENGREP_AMD64_SHA256}" \
+    "${OPENGREP_ARM64_URL}|${OPENGREP_ARM64_SHA256}" \
     "${RUSTUP_INSTALLER_URL}|${RUSTUP_INSTALLER_SHA256}"; do
     url=${pair%%|*}
     expected=${pair#*|}
