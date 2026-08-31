@@ -1503,8 +1503,19 @@ func (c *rustTypeCtx) rustScopedCallType(node, fn *sitter.Node, depth int) strin
 	if rustWrapperTypes[head] && rustWrappingConstructors[nodeFieldText(fn, "name", c.src)] {
 		// The wrapper keeps its PATH: `tokio::sync::Mutex` and
 		// `std::sync::Mutex` differ in whether their lock can be poisoned, and
-		// dropping the path made the awaited one look like the other.
-		return c.rustWrappedArgumentType(node, rustModulePathText(typeText)+"::"+head, depth)
+		// dropping the path made the awaited one look like the other. A bare
+		// name (`Vec::from`, `Mutex::new`) carries no path at all — prefixing
+		// `rustModulePathText(typeText)` unconditionally duplicated the head
+		// into `Vec::Vec<..>`, which `rustQualifiedIdentity` then read as a
+		// module named `Vec` containing a type also named `Vec`, falling back
+		// to the analyzed crate's own package for every value wrapper (Vec,
+		// Option, Result never get seen through, so this never self-corrects
+		// the way a Deref wrapper's own bug would).
+		wrapper := head
+		if path := rustTypePathText(typeText); path != "" {
+			wrapper = path + "::" + head
+		}
+		return c.rustWrappedArgumentType(node, wrapper, depth)
 	}
 	if head != "" && !looksLikeRustTypeName(head) {
 		// A module path, not a type: `std::ptr::null_mut()` produces no
