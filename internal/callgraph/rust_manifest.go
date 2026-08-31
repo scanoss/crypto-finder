@@ -526,7 +526,36 @@ func (index *rustCrateIndex) indexCrateSources(p *RustParser, root string) *rust
 		merged.mergeCrateFacts(facts)
 		tree.Close()
 	}
+	resolveRustReExportChains(merged)
 	return merged
+}
+
+// resolveRustReExportChains follows each re-export to whatever it ultimately
+// names, once every file in the crate has contributed its own. A crate's
+// public type commonly aliases its way through two or three modules before
+// reaching the crate that implements it -- `pub use crate::inner::Cipher as
+// MyCipher;` in one module and `pub use aes::Aes128 as Cipher;` in the module
+// it names -- and only chasing the second from the first's target gives
+// MyCipher the aes::Aes128 identity a contract keys on, rather than the
+// intermediate module's own path.
+func resolveRustReExportChains(facts *rustFileFacts) {
+	const maxHops = 8
+	for key, target := range facts.reExports {
+		pkg, typ := target.pkg, target.typ
+		seen := map[string]bool{key: true}
+		for hop := 0; hop < maxHops; hop++ {
+			nextKey := rustQualifyFactKey(pkg, typ)
+			next, ok := facts.reExports[nextKey]
+			if !ok || seen[nextKey] {
+				// Missing, or a cycle: leave the chain where it stands rather
+				// than loop or guess past what the crate actually declares.
+				break
+			}
+			seen[nextKey] = true
+			pkg, typ = next.pkg, next.typ
+		}
+		facts.reExports[key] = rustReExportTarget{pkg: pkg, typ: typ}
+	}
 }
 
 // recordDirAliasesLocked stores one file's crate re-export aliases under its
@@ -673,6 +702,12 @@ func (p *RustParser) qualifyCrateFacts(facts *rustFileFacts, root *sitter.Node, 
 	for _, fields := range facts.structFields {
 		for field, typeText := range fields {
 			fields[field] = rustQualifyFactType(staging, typeText)
+		}
+	}
+	for key, target := range facts.reExports {
+		facts.reExports[key] = rustReExportTarget{
+			pkg: resolveRustTypePackage(target.pkg, staging),
+			typ: target.typ,
 		}
 	}
 }

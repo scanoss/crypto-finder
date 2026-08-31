@@ -6,11 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/rust"
+
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
 const (
@@ -74,6 +77,12 @@ type RustParser struct {
 	// crateIndex is shared with every clone of this parser, so a crate's
 	// declarations are indexed once per build rather than once per worker.
 	crateIndex *rustCrateIndex
+	// kb is the embedded Rust contracts KB, used to resolve a generic's
+	// associated type (`C::KeySize`) past its trait bound. Loaded once per
+	// process (see rustEmbeddedContractsKB) and shared across every parser
+	// instance and clone, the same way crateIndex is: the KB does not depend
+	// on which worker asked for it.
+	kb *contracts.KnowledgeBase
 }
 
 // NewRustParser creates a new Rust source parser backed by tree-sitter.
@@ -81,7 +90,25 @@ func NewRustParser(opts ...ParserOption) *RustParser {
 	cfg := newParserConfig(opts)
 	p := sitter.NewParser()
 	p.SetLanguage(rust.GetLanguage())
-	return &RustParser{parser: p, includeTests: cfg.includeTests, crateIndex: newRustCrateIndex()}
+	return &RustParser{parser: p, includeTests: cfg.includeTests, crateIndex: newRustCrateIndex(), kb: rustEmbeddedContractsKB()}
+}
+
+var (
+	rustEmbeddedContractsKBOnce   sync.Once
+	rustEmbeddedContractsKBCached *contracts.KnowledgeBase
+)
+
+// rustEmbeddedContractsKB loads the embedded Rust contracts KB once per
+// process. A load failure degrades to a nil KB (no associated-type
+// resolution), never a startup error.
+func rustEmbeddedContractsKB() *contracts.KnowledgeBase {
+	rustEmbeddedContractsKBOnce.Do(func() {
+		kb, err := contracts.LoadEmbedded("rust")
+		if err == nil {
+			rustEmbeddedContractsKBCached = kb
+		}
+	})
+	return rustEmbeddedContractsKBCached
 }
 
 // CloneParser returns an independent RustParser with the same configuration,
@@ -968,7 +995,18 @@ func rustReturnExpressionNode(node *sitter.Node) *sitter.Node {
 }
 
 func (p *RustParser) traceRustTailExpression(body *sitter.Node, ctx *rustTypeCtx, filePath string) []SourceNode {
-	src := ctx.src
+	tail := rustBlockTailExpressionNode(body, ctx.src)
+	if tail == nil {
+		return nil
+	}
+	return p.traceRustReturnExpression(tail, ctx, filePath)
+}
+
+// rustBlockTailExpressionNode returns a block's implicit tail expression: its
+// last statement, when that statement is an expression with no trailing `;`.
+// A block ending in a `;`-terminated statement, or in anything else, has no
+// tail value.
+func rustBlockTailExpressionNode(body *sitter.Node, src []byte) *sitter.Node {
 	if body == nil || body.Type() != goNodeBlock {
 		return nil
 	}
@@ -978,10 +1016,10 @@ func (p *RustParser) traceRustTailExpression(body *sitter.Node, ctx *rustTypeCtx
 			continue
 		}
 		if child.Type() == rustNodeExpressionStatement && child.NamedChildCount() == 1 && !strings.HasSuffix(strings.TrimSpace(child.Content(src)), ";") {
-			return p.traceRustReturnExpression(child.NamedChild(0), ctx, filePath)
+			return child.NamedChild(0)
 		}
 		if child.Type() != rustNodeExpressionStatement {
-			return p.traceRustReturnExpression(child, ctx, filePath)
+			return child
 		}
 		return nil
 	}
@@ -1187,7 +1225,11 @@ func (p *RustParser) parseCallExpr(node *sitter.Node, ctx *rustTypeCtx, filePath
 	switch funcNode.Type() {
 	case javaNodeScopedIdentifier:
 		// e.g., `ring::aead::Aead::new(...)` or `Aead::new(...)`
-		call = p.parseScopedCall(funcNode, src, filePath, line, args, analysis, ctx.selfType, ctx.generics)
+		if ufcs := p.parseUFCSCall(node, funcNode, ctx, filePath, line, args); ufcs != nil {
+			call = ufcs
+		} else {
+			call = p.parseScopedCall(funcNode, src, filePath, line, args, analysis, ctx.selfType, ctx.generics)
+		}
 	case goNodeIdentifier:
 		// Simple call like `encrypt(...)`
 		name := funcNode.Content(src)
@@ -1269,6 +1311,88 @@ func rustSelfConstructorCallee(analysis *FileAnalysis, selfType string) (Functio
 }
 
 // parseScopedCall handles calls like `Type::method()` or `module::func()`.
+// parseUFCSCall recognizes the fully-qualified-syntax form of a method call —
+// `Trait::method(&mut receiver, args)` or `Type::method(receiver, args)`,
+// exactly equivalent to `receiver.method(args)` — and resolves it the same
+// way a dotted method call resolves, so the two spellings of one call produce
+// the same receiver identity instead of the UFCS form losing it to a
+// receiverless static-call resolution.
+//
+// The rewrite fires only when the call's first argument is a bare place
+// (stripped of any `&`/`&mut`) whose OWN already-resolved type has the same
+// bare name as the scoped path's prefix: `d`'s declared type substituting to
+// "Digest" matches a `Digest::` prefix, and `key`'s type in
+// `Aes128::new_from_slice(key)` does not match "Aes128", so a genuine
+// receiverless call is never rewritten. This needs no knowledge of which
+// traits exist — it reuses the identity the parser already established for
+// the argument, so a mismatch is a receiverless call, not a maybe.
+func (p *RustParser) parseUFCSCall(node, funcNode *sitter.Node, ctx *rustTypeCtx, filePath string, line int, args []string) *FunctionCall {
+	if len(args) == 0 {
+		return nil
+	}
+	argsNode := rustCallArgumentsNode(node)
+	if argsNode == nil || argsNode.NamedChildCount() == 0 {
+		return nil
+	}
+	receiver := rustUnwrapReferenceNode(argsNode.NamedChild(0))
+	if receiver == nil || (receiver.Type() != goNodeIdentifier && receiver.Type() != rustNodeSelf) {
+		return nil
+	}
+
+	src, analysis := ctx.src, ctx.analysis
+	content := stripRustTypeArguments(rustScopedTypeText(funcNode, src))
+	lastSep := strings.LastIndex(content, "::")
+	if lastSep <= 0 {
+		return nil
+	}
+	prefix, name := content[:lastSep], content[lastSep+2:]
+
+	typeText := ctx.rustSubstituteGeneric(ctx.rustExprType(receiver, 0))
+	if typeText == "" || rustTypeHead(typeText) != rustTypeHead(prefix) {
+		return nil
+	}
+	pkg, typ := rustQualifyType(analysis, analysis.rustFacts, typeText)
+	if typ == "" {
+		return nil
+	}
+	return &FunctionCall{
+		Callee:      FunctionID{Package: pkg, Type: typ, Name: name},
+		Raw:         node.Content(src),
+		FilePath:    filePath,
+		Line:        line,
+		Arguments:   args[1:],
+		ReceiverVar: receiver.Content(src),
+	}
+}
+
+// rustCallArgumentsNode returns a call expression's `arguments` node.
+func rustCallArgumentsNode(node *sitter.Node) *sitter.Node {
+	nodeChildren := int(node.ChildCount())
+	for i := 0; i < nodeChildren; i++ {
+		child := node.Child(i)
+		if child.Type() == "arguments" {
+			return child
+		}
+	}
+	return nil
+}
+
+// rustUnwrapReferenceNode strips `&`/`&mut`/unary wrapper nodes down to the
+// place expression underneath, mirroring how rustExprType reads through them.
+func rustUnwrapReferenceNode(node *sitter.Node) *sitter.Node {
+	for node != nil {
+		if node.Symbol() != rustSyms.referenceExpression && node.Symbol() != rustSyms.unaryExpression {
+			return node
+		}
+		if v := node.ChildByFieldName("value"); v != nil {
+			node = v
+			continue
+		}
+		node = rustInnerExpression(node)
+	}
+	return nil
+}
+
 func (p *RustParser) parseScopedCall(node *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis, selfType string, generics map[string]string) *FunctionCall {
 	// raw keeps the spelling the source used; content is what resolution reads.
 	raw := stripRustTypeArguments(node.Content(src))
@@ -1621,6 +1745,12 @@ func splitRustScopedCallee(analysis *FileAnalysis, prefix, name string) Function
 				return FunctionID{Package: analysis.PackagePath, Name: name}
 			} else if ownerSep > 0 && looksLikeRustTypeName(owner[ownerSep+2:]) {
 				return FunctionID{Package: analysis.PackagePath, Name: name}
+			}
+			// owner may itself only re-export typeName: `outer::MyCipher::new(..)`
+			// where outer.rs writes `pub use aes::Aes128 as MyCipher;` is the aes
+			// crate's constructor, not a method the outer module declares.
+			if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, owner, typeName); ok {
+				return FunctionID{Package: reExportPkg, Type: reExportTyp, Name: name}
 			}
 			return FunctionID{Package: owner, Type: typeName, Name: name}
 		}
@@ -2021,6 +2151,12 @@ func resolveRustReceiverType(analysis *FileAnalysis, inferredType string) (pkg, 
 		// dependency.
 		if undeclared, ok := rustUndeclaredCratePath(analysis, importedPkg); ok {
 			return undeclared, inferredType
+		}
+		// The imported name may itself be a re-export: `use outer::MyCipher;`
+		// where outer.rs writes `pub use aes::Aes128 as MyCipher;` means the
+		// aes crate's identity, not outer's own path.
+		if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, importedPkg, inferredType); ok {
+			return reExportPkg, reExportTyp
 		}
 		return importedPkg, inferredType
 	}

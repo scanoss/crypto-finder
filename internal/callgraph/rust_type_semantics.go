@@ -199,6 +199,16 @@ type rustFileFacts struct {
 	// files, which is its entire ring-backed AEAD, ECDSA and CSPRNG surface —
 	// 147 call edges that resolved to a module path naming no crate.
 	crateAliases map[string]string
+	// reExports maps a module-qualified name (rustQualifyFactKey(module, name))
+	// to the package and type a `pub use path::Item;` or `pub use path::Item as
+	// Name;` re-export ultimately names, once resolveRustReExportChains has
+	// followed it through every other re-export in the crate. A crate's public
+	// type commonly aliases its way through two or three modules before
+	// reaching the crate that implements it, and `outer::MyCipher` naming
+	// `outer` as the identity — the module that merely re-exports it, not
+	// `aes::Aes128` which does the encryption — is a wrong identity, not a
+	// missing one.
+	reExports map[string]rustReExportTarget
 	// conflicting names are declared more than once in the crate with
 	// DIFFERENT types. They resolve to nothing: an ambiguous answer here would
 	// name one algorithm where another is used, which is the failure mode this
@@ -277,6 +287,22 @@ func (f *rustFileFacts) declaringModule(name string) (string, bool) {
 	return f.fallback.declaringModule(name)
 }
 
+// reExportTarget returns the package and type a module-qualified name
+// ultimately re-exports, when the crate's re-export chains have been
+// resolved. key is rustQualifyFactKey(module, name).
+func (f *rustFileFacts) reExportTarget(key string) (pkg, typ string, ok bool) {
+	if f == nil || key == "" {
+		return "", "", false
+	}
+	if target, recorded := f.reExports[key]; recorded {
+		if target.pkg == "" {
+			return "", "", false
+		}
+		return target.pkg, target.typ, true
+	}
+	return f.fallback.reExportTarget(key)
+}
+
 // declaresModule reports whether the module at modulePath declares a child
 // module by this name.
 //
@@ -319,8 +345,28 @@ func (f *rustFileFacts) mergeCrateFacts(other *rustFileFacts) {
 	f.mergeFnReturns(other)
 	f.mergeStructFields(other)
 	f.mergeDeclaredTypes(other)
+	f.mergeReExports(other)
 	for name := range other.localModules {
 		f.localModules[name] = true
+	}
+}
+
+// mergeReExports folds in another file's re-export targets, dropping a key two
+// files name differently for the same reason a conflicting declared type is
+// dropped: two modules re-exporting the same qualified name to different
+// targets is a naming collision the code cannot have, not evidence to guess
+// from.
+func (f *rustFileFacts) mergeReExports(other *rustFileFacts) {
+	for key, target := range other.reExports {
+		if f.conflicting["reexport:"+key] {
+			continue
+		}
+		if existing, seen := f.reExports[key]; seen && existing != target {
+			delete(f.reExports, key)
+			f.conflicting["reexport:"+key] = true
+			continue
+		}
+		f.reExports[key] = target
 	}
 }
 
@@ -389,7 +435,15 @@ func newRustFileFacts() *rustFileFacts {
 		localModules: make(map[string]bool),
 		conflicting:  make(map[string]bool),
 		crateAliases: make(map[string]string),
+		reExports:    make(map[string]rustReExportTarget),
 	}
+}
+
+// rustReExportTarget is the package and type a re-exported name ultimately
+// names.
+type rustReExportTarget struct {
+	pkg string
+	typ string
 }
 
 // collectRustFileFacts walks the whole file — including inline `mod` blocks and
@@ -463,6 +517,7 @@ func (f *rustFileFacts) walk(node *sitter.Node, src []byte, selfType, modulePath
 			f.walk(body, src, selfType, rustQualifyFactKey(modulePath, name))
 		case rustSyms.useDeclaration:
 			f.recordCrateAlias(child, src)
+			f.recordItemReExport(child, src, modulePath)
 		case rustSyms.externCrate:
 			f.recordExternCrate(child, src)
 		case rustSyms.foreignModItem:
@@ -640,6 +695,9 @@ func (f *rustFileFacts) recordReturn(fn *sitter.Node, src []byte, selfType, modu
 	if name == "" || ret == "" {
 		return
 	}
+	if concrete := rustImplTraitConcreteReturn(fn, ret, src); concrete != "" {
+		ret = concrete
+	}
 	// Module-qualified first: two modules in one file may each declare a
 	// `build()` returning a different cipher, and keeping only the bare name
 	// made one of them answer for both.
@@ -664,6 +722,90 @@ func (f *rustFileFacts) putReturn(key, ret string) {
 		return
 	}
 	f.fnReturns[key] = ret
+}
+
+// rustImplTraitConcreteReturn resolves a `-> impl Trait` return to the
+// concrete type its body actually constructs, when that is a simple
+// constructor call or a bare unit-like type. Rust requires every return path
+// of such a function to name the same hidden concrete type (it monomorphizes
+// to exactly one), so resolving any single one of them is correct — unlike
+// `dyn Trait`, whose concrete type is genuinely a runtime decision. Declaring
+// anything else here is left alone rather than guessed.
+func rustImplTraitConcreteReturn(fn *sitter.Node, declaredReturn string, src []byte) string {
+	if !strings.HasPrefix(declaredReturn, "impl ") {
+		return ""
+	}
+	body := fn.ChildByFieldName("body")
+	if body == nil {
+		return ""
+	}
+	expr := rustBlockTailExpressionNode(body, src)
+	if expr == nil {
+		expr = rustFirstReturnExpressionNode(body)
+	}
+	return rustConstructorShapedTypeText(expr, src)
+}
+
+// rustFirstReturnExpressionNode finds the first `return expr;` in a function
+// body, not descending into a nested function or closure — those return from
+// themselves, not from the function being recorded.
+func rustFirstReturnExpressionNode(node *sitter.Node) *sitter.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Type() == "return_expression" {
+		return rustReturnExpressionNode(node)
+	}
+	if node.Type() == rustNodeFunctionItem || node.Type() == rustNodeClosureExpression {
+		return nil
+	}
+	namedChildren := int(node.NamedChildCount())
+	for i := 0; i < namedChildren; i++ {
+		if found := rustFirstReturnExpressionNode(node.NamedChild(i)); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// rustConstructorShapedTypeText returns the type a constructor-shaped
+// expression names: `Type::method(..)` names Type, and a bare type-case
+// identifier — a unit struct or a fieldless enum variant used as a value —
+// names itself. Anything else yields "": there is no general way to read a
+// concrete type off an arbitrary expression without real type inference.
+func rustConstructorShapedTypeText(expr *sitter.Node, src []byte) string {
+	if expr == nil {
+		return ""
+	}
+	switch expr.Type() {
+	case rustNodeCallExpression:
+		if expr.ChildCount() == 0 {
+			return ""
+		}
+		funcNode := expr.Child(0)
+		if funcNode.Type() == rustNodeGenericFunction && funcNode.ChildCount() > 0 {
+			funcNode = funcNode.Child(0)
+		}
+		if funcNode.Type() != javaNodeScopedIdentifier {
+			return ""
+		}
+		content := stripRustTypeArguments(rustScopedTypeText(funcNode, src))
+		lastSep := strings.LastIndex(content, "::")
+		if lastSep <= 0 {
+			return ""
+		}
+		typ := content[:lastSep]
+		if !rustIsTypeCase(rustTypeHead(typ)) {
+			return ""
+		}
+		return typ
+	case goNodeIdentifier:
+		name := expr.Content(src)
+		if rustIsTypeCase(name) {
+			return name
+		}
+	}
+	return ""
 }
 
 // recordCrateAlias records a `use <crate> as <name>;` re-export. Only a path
@@ -705,6 +847,62 @@ func (f *rustFileFacts) recordCrateReExport(alias, crate string) {
 		return
 	}
 	f.crateAliases[alias] = crate
+}
+
+// recordItemReExport records a `pub use path::Item;` or
+// `pub use path::Item as Name;` as a re-export target: within modulePath, the
+// local name (the alias, or Item when unaliased) means whatever path::Item
+// names. The raw path is qualified against the declaring file's own imports in
+// qualifyCrateFacts, and chains across files are followed once the whole crate
+// has been indexed, in resolveRustReExportChains — a crate's public type
+// commonly aliases its way through two or three modules before reaching the
+// crate that implements it.
+func (f *rustFileFacts) recordItemReExport(useDecl *sitter.Node, src []byte, modulePath string) {
+	argument := useDecl.ChildByFieldName("argument")
+	if argument == nil {
+		return
+	}
+	var fullPath, alias string
+	switch argument.Type() {
+	case rustNodeUseAsClause:
+		fullPath, alias, _ = rustAliasImportParts(argument, src)
+	case javaNodeScopedIdentifier:
+		fullPath = rustScopedTypeText(argument, src)
+	default:
+		return
+	}
+	lastSep := strings.LastIndex(fullPath, "::")
+	if lastSep <= 0 {
+		return
+	}
+	rawPkg, rawType := fullPath[:lastSep], fullPath[lastSep+2:]
+	// Only a TYPE re-export gives a receiver its identity; a re-exported free
+	// function or constant is not a callee key's type segment.
+	if !rustIsTypeCase(rawType) {
+		return
+	}
+	if alias == "" {
+		alias = rawType
+	}
+	f.putReExport(rustQualifyFactKey(modulePath, alias), rawPkg, rawType)
+}
+
+// putReExport records a re-export target, dropping a name two declarations
+// already contradicted for the same reason a conflicting declared type is.
+func (f *rustFileFacts) putReExport(key, pkg, typ string) {
+	if key == "" || pkg == "" || typ == "" {
+		return
+	}
+	if f.conflicting["reexport:"+key] {
+		return
+	}
+	target := rustReExportTarget{pkg: pkg, typ: typ}
+	if existing, seen := f.reExports[key]; seen && existing != target {
+		delete(f.reExports, key)
+		f.conflicting["reexport:"+key] = true
+		return
+	}
+	f.reExports[key] = target
 }
 
 // rustPassThroughReExport reports the crate a module is a pure facade for: a
@@ -983,10 +1181,16 @@ func rustIsScreamingCase(segment string) bool {
 	return letters > 0
 }
 
-// rustSubstituteGeneric replaces a generic parameter with its trait bound.
+// rustSubstituteGeneric replaces a generic parameter with its trait bound, or
+// with the type its associated type resolves to when the KB catalogs one
+// (`C::KeySize` where `C: KeyInit` names KeyInit::KeySize, not KeyInit
+// itself).
 func (c *rustTypeCtx) rustSubstituteGeneric(typeText string) string {
 	if len(c.generics) == 0 || typeText == "" {
 		return typeText
+	}
+	if resolved, ok := c.rustSubstituteGenericAssociatedType(typeText); ok {
+		return resolved
 	}
 	head := rustTypeHead(typeText)
 	bound, isGeneric := c.generics[head]
@@ -994,6 +1198,48 @@ func (c *rustTypeCtx) rustSubstituteGeneric(typeText string) string {
 		return typeText
 	}
 	return bound
+}
+
+// rustSubstituteGenericAssociatedType resolves `C::Assoc` when C is a generic
+// parameter bound to a trait the KB catalogs with that associated type. ok is
+// false whenever there is nothing more specific than the bare trait bound
+// already gives — including a cataloged (trait, name) pair with no usable
+// default — so the caller falls through to its existing behavior rather than
+// substituting an empty type.
+func (c *rustTypeCtx) rustSubstituteGenericAssociatedType(typeText string) (string, bool) {
+	if c.parser == nil || c.parser.kb == nil {
+		return "", false
+	}
+	genericName, assocName, ok := rustSplitGenericAssociatedPath(typeText)
+	if !ok {
+		return "", false
+	}
+	bound, isGeneric := c.generics[genericName]
+	if !isGeneric || bound == "" {
+		return "", false
+	}
+	resolved, cataloged := c.parser.kb.TraitAssociatedType(bound, assocName)
+	if !cataloged || resolved == "" {
+		return "", false
+	}
+	return resolved, true
+}
+
+// rustSplitGenericAssociatedPath splits a type text of the exact shape
+// `Generic::Assoc` (a bare two-segment path, once reference/pointer/mut/dyn
+// noise is stripped) into its two names. A deeper path (`Generic::Assoc::More`)
+// or anything else does not match this shape.
+func rustSplitGenericAssociatedPath(typeText string) (generic, assoc string, ok bool) {
+	t := rustStripTypeNoisePrefixes(typeText)
+	idx := strings.Index(t, "::")
+	if idx <= 0 {
+		return "", "", false
+	}
+	rest := t[idx+2:]
+	if rest == "" || strings.Contains(rest, "::") {
+		return "", "", false
+	}
+	return t[:idx], rest, true
 }
 
 // collectRustGenerics records the generic parameters in scope for a
@@ -1900,11 +2146,19 @@ func rustUnwrapTypeWith(typeText string, wrappers map[string]bool) string {
 
 // rustTypeHead reduces type text to the bare type name a callee key carries:
 // no references, no `dyn`/`impl`, no type arguments, no path.
-func rustTypeHead(typeText string) string {
+// rustStripTypeNoisePrefixes strips the reference/pointer/mut/dyn/impl/ref
+// noise a type text may carry, leaving the path underneath untouched (unlike
+// rustTypeHead, which also collapses the path down to one segment).
+func rustStripTypeNoisePrefixes(typeText string) string {
 	t := rustStripLifetimes(strings.TrimSpace(typeText))
 	for _, prefix := range []string{"&", "*const ", "*mut ", "*", "mut ", "dyn ", "impl ", "ref "} {
 		t = rustStripLifetimes(strings.TrimSpace(strings.TrimPrefix(t, prefix)))
 	}
+	return t
+}
+
+func rustTypeHead(typeText string) string {
+	t := rustStripTypeNoisePrefixes(typeText)
 	if strings.HasPrefix(t, "(") && strings.HasSuffix(t, ")") {
 		t = strings.TrimSpace(t[1 : len(t)-1])
 	}
@@ -2343,12 +2597,32 @@ func rustQualifiedIdentity(analysis *FileAnalysis, unwrapped, head string) (pkg,
 		if last := path[idx+2:]; rustIsTypeCase(last) {
 			return resolveRustTypePackage(path[:idx], analysis), last, true
 		}
-		return resolveRustTypePackage(path, analysis), head, true
+		pkg := resolveRustTypePackage(path, analysis)
+		if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, pkg, head); ok {
+			return reExportPkg, reExportTyp, true
+		}
+		return pkg, head, true
 	}
 	if rustIsTypeCase(path) {
 		return resolveRustReceiverTypePackage(analysis, path), path, true
 	}
-	return resolveRustTypePackage(path, analysis), head, true
+	pkg = resolveRustTypePackage(path, analysis)
+	if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, pkg, head); ok {
+		return reExportPkg, reExportTyp, true
+	}
+	return pkg, head, true
+}
+
+// rustModuleReExport checks whether a resolved local module re-exports name
+// under it, and if so returns what the re-export ultimately names. A
+// `pub use aes::Aes128 as Cipher;` in a module two hops away makes
+// `mymodule::Cipher` the aes crate's identity, not mymodule's own path — the
+// module merely re-exports it.
+func rustModuleReExport(analysis *FileAnalysis, pkg, name string) (string, string, bool) {
+	if analysis == nil || analysis.rustFacts == nil {
+		return "", "", false
+	}
+	return analysis.rustFacts.reExportTarget(rustQualifyFactKey(pkg, name))
 }
 
 // rustIteratorElementMethods are the iterator adapters whose closure parameter
