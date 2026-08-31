@@ -1,0 +1,166 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: crypto11
+  coordinates:
+    - "github.com/ThalesIgnite/crypto11"
+  version_range: ">=0.1.0,<1.3.0"
+  description: "ThalesIgnite crypto11 high-level PKCS#11 facade"
+
+# Inventory source: github.com/ThalesIgnite/crypto11 v1.2.5 and v1.6.1 module
+# sources from the Go module proxy (the contracted surface is identical), with
+# the pre-v1.1.0 package-level generator era noted on the detection side.
+#
+# The range ends at v1.3.0 deliberately: from that release the repository was
+# renamed and go.mod declares module github.com/ThalesGroup/crypto11, so a
+# consumer literally cannot import the ThalesIgnite path against those
+# releases (Go rejects the module-path mismatch). Call sites compiled against
+# v1.3.0+ carry ThalesGroup identities that belong to that coordinate, not to
+# this one — out of range rather than unsupported, following the age
+# precedent.
+#
+# Dispositions: the crypto.Signer/crypto.Decrypter method calls on the
+# returned Signer/SignerDecrypter values resolve through stdlib interfaces
+# (interface-typed receivers; the stdlib contracts own crypto.Signer.Sign);
+# attribute plumbing (NewAttributeSet*, GetAttribute*, AttributeSet methods)
+# and the WithAttributes DSA/label variants beyond those declared are
+# structural lookups; SecretKey Encrypt/Decrypt low-level padding helpers are
+# unexported.
+contracts:
+  - method: github.com/ThalesIgnite/crypto11.Configure
+    arity: 1
+    return: { type: "*github.com/ThalesIgnite/crypto11.Context", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: config, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.ConfigureFromFile
+    arity: 1
+    return: { type: "*github.com/ThalesIgnite/crypto11.Context", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateRSAKeyPair
+    arity: 2
+    return: { type: "github.com/ThalesIgnite/crypto11.SignerDecrypter", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateRSAKeyPairWithLabel
+    arity: 3
+    return: { type: "github.com/ThalesIgnite/crypto11.SignerDecrypter", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateRSAKeyPairWithAttributes
+    arity: 3
+    return: { type: "github.com/ThalesIgnite/crypto11.SignerDecrypter", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateECDSAKeyPair
+    arity: 2
+    return: { type: "github.com/ThalesIgnite/crypto11.Signer", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: curve, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateECDSAKeyPairWithLabel
+    arity: 3
+    return: { type: "github.com/ThalesIgnite/crypto11.Signer", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: curve, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateECDSAKeyPairWithAttributes
+    arity: 3
+    return: { type: "github.com/ThalesIgnite/crypto11.Signer", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: curve, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateDSAKeyPair
+    arity: 2
+    return: { type: "github.com/ThalesIgnite/crypto11.Signer", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: params, role: metadata-contributing, contributes: { property: parameters, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateSecretKey
+    arity: 3
+    return: { type: "*github.com/ThalesIgnite/crypto11.SecretKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+      - { index: 2, name: cipher, role: metadata-contributing, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).GenerateSecretKeyWithLabel
+    arity: 4
+    return: { type: "*github.com/ThalesIgnite/crypto11.SecretKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+      - { index: 3, name: cipher, role: metadata-contributing, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*Context).FindKeyPair
+    arity: 2
+    return: { type: "github.com/ThalesIgnite/crypto11.Signer", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).FindKey
+    arity: 2
+    return: { type: "*github.com/ThalesIgnite/crypto11.SecretKey", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).FindPrivateKey
+    arity: 2
+    return: { type: "github.com/ThalesIgnite/crypto11.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).NewRandomReader
+    arity: 0
+    return: { type: "io.Reader", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).FindCertificate
+    arity: 3
+    return: { type: "*crypto/x509.Certificate", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*Context).ImportCertificate
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: certificate, role: metadata-contributing, contributes: { property: certificate, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewCBCEncrypter
+    arity: 1
+    return: { type: "crypto/cipher.BlockMode", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: iv, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewCBCDecrypter
+    arity: 1
+    return: { type: "crypto/cipher.BlockMode", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: iv, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewCBCEncrypterCloser
+    arity: 1
+    return: { type: "github.com/ThalesIgnite/crypto11.BlockModeCloser", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: iv, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewCBCDecrypterCloser
+    arity: 1
+    return: { type: "github.com/ThalesIgnite/crypto11.BlockModeCloser", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: iv, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewGCM
+    arity: 0
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).NewHMAC
+    arity: 2
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: mech, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: length, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: github.com/ThalesIgnite/crypto11.(*SecretKey).Delete
+    arity: 0
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: github.com/ThalesIgnite/crypto11.(*Context).Close
+    arity: 0
+    return: { type: "error", confidence: high }
+    role: operation
+
+hierarchy: {}
