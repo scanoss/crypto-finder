@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Go predeclared identifiers are no longer recorded as calls into the caller's own package. `len(x)`, `make(...)`, `copy(...)` and conversions such as `int(x)` were emitted as `<caller package>.len`, `<caller package>.make` and so on: callees that match no declaration, belong to no package, and reach no user code. They live in the universe scope, which the parser did not model. Measured on this repository's own source, 3,025 of 11,824 call sites — 26% — were these; the graph now carries 8,799 real ones. Calls to real functions, including same-package ones, are unaffected.
 ### Added
 - `--export-callgraph-max-chains` sets the per-finding `call_chains` sample size for live `--export-callgraph` (default 128). Stitch uses the same N through `StitchOptions.MaxChains` (zero keeps 128). `crypto_entry_points` remains the full reverse-reach set. When more condensed routes exist than N, `analysis.call_chains` is `partial`. The 100000 path-count skip ceiling and the 32-frame depth cap are unchanged.
 - Callgraph export schema `6.14` adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` beside the existing inlined `call_chains` nodes. Index lists reconstruct the same N-sample of routes. Live `--export-callgraph` and stitch stamp the same version. `crypto_entry_points` remains the complete reverse-reach set. Inlined chain frame shape is unchanged.

@@ -484,6 +484,16 @@ func (p *GoParser) parseCallExpr(
 	case goNodeIdentifier:
 		// Simple call like `doSomething()`
 		name := funcNode.Content(src)
+		if goPredeclaredIdentifiers[name] {
+			// A predeclared identifier belongs to no package: it lives in the
+			// universe scope (go/types, universe.go), which is the root of the
+			// scope tree and exists before any source is read. Emitting it under
+			// the caller's package invents a callee — `internal/callgraph.len` —
+			// that no declaration can ever match, and `int(x)` is not even a call
+			// but a conversion. Neither reaches user code, so neither belongs in
+			// a call graph built to answer reachability.
+			return nil
+		}
 		call = &FunctionCall{
 			Callee: FunctionID{
 				Package: analysis.PackagePath,
@@ -500,6 +510,24 @@ func (p *GoParser) parseCallExpr(
 		call.EndCol = int(node.EndPoint().Column) + 1
 	}
 	return call
+}
+
+// goPredeclaredIdentifiers is Go's universe scope: the predeclared functions,
+// types and constants that belong to no package (Go spec, "Predeclared
+// identifiers"; go/types builds the same set in universe.go). Types appear here
+// because a conversion — `int(x)`, `string(b)` — parses as a call expression.
+var goPredeclaredIdentifiers = map[string]bool{
+	// functions
+	"append": true, "cap": true, "clear": true, "close": true, "complex": true,
+	"copy": true, "delete": true, "imag": true, "len": true, "make": true,
+	"max": true, "min": true, "new": true, "panic": true, "print": true,
+	"println": true, "real": true, "recover": true,
+	// types, reachable as conversions
+	"any": true, "bool": true, "byte": true, "comparable": true,
+	"complex64": true, "complex128": true, "error": true, "float32": true,
+	"float64": true, "int": true, "int8": true, "int16": true, "int32": true,
+	"int64": true, "rune": true, "string": true, "uint": true, "uint8": true,
+	"uint16": true, "uint32": true, "uint64": true, "uintptr": true,
 }
 
 func (p *GoParser) parseSelectorCall(
