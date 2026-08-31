@@ -44,6 +44,10 @@ const (
 	goFieldRight              = "right"
 	goNodeParenExpr           = "parenthesized_expression"
 	goNodeAssignmentStmt      = "assignment_statement"
+	goNodeVarSpec             = "var_spec"
+	goNodeTypeSpec            = "type_spec"
+	goOwnerInterface          = "interface"
+	goNodeFuncLiteral         = "func_literal"
 )
 
 // NewGoParser creates a new Go source parser backed by tree-sitter.
@@ -208,10 +212,23 @@ func (p *GoParser) processImportSpec(spec *sitter.Node, src []byte, analysis *Fi
 }
 
 func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+	// Type names first, before any function body is walked: Go imposes no
+	// order between declarations, so a conversion may textually precede the
+	// type it names.
+	for i := 0; i < int(root.ChildCount()); i++ {
+		if child := root.Child(i); child.Type() == "type_declaration" {
+			p.recordGoDeclaredTypeNames(child, src, analysis)
+		}
+	}
+	embeds := make(map[string][]string)
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		if child.Type() == "type_declaration" {
-			p.extractInterfaceMethods(child, src, filePath, packagePath, analysis)
+			p.extractInterfaceMethods(child, src, filePath, packagePath, analysis, embeds)
+			continue
+		}
+		if child.Type() == "var_declaration" {
+			p.extractGoFuncVars(child, src, filePath, packagePath, analysis)
 			continue
 		}
 		switch child.Type() {
@@ -227,6 +244,9 @@ func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, pac
 			}
 		}
 	}
+	if len(embeds) > 0 {
+		flattenGoEmbeddedInterfaces(analysis, embeds, packagePath)
+	}
 }
 
 // extractInterfaceMethods registers each method of an interface declaration as
@@ -237,50 +257,240 @@ func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, pac
 // keys off OwnerType "interface" exactly like Java's interface declarations,
 // never fired for Go. Embedded interfaces (type_elem) are not flattened here;
 // the dispatch expansion matches by name and arity, which does not need them.
-func (p *GoParser) extractInterfaceMethods(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+// flattenGoEmbeddedInterfaces copies the methods of an embedded interface onto
+// its embedder, same file only: `type RecipientWithLabels interface {
+// Recipient; WrapWithLabels(...) }` also has Wrap, and a call through the
+// asserted type had no declaration to join. Runs after every interface in the
+// file is extracted, so declaration order does not matter; one level is
+// flattened per pass, run to the file's nesting depth.
+func flattenGoEmbeddedInterfaces(analysis *FileAnalysis, embeds map[string][]string, packagePath string) {
+	byIface := make(map[string][]FunctionDecl)
+	for i := range analysis.Functions {
+		fn := &analysis.Functions[i]
+		if fn.OwnerType == goOwnerInterface && fn.ID.Package == packagePath {
+			byIface[fn.ID.Type] = append(byIface[fn.ID.Type], *fn)
+		}
+	}
+	for range 4 {
+		added := false
+		for outer, inners := range embeds {
+			if copyGoEmbeddedMethods(analysis, byIface, outer, inners) {
+				added = true
+			}
+		}
+		if !added {
+			break
+		}
+	}
+}
+
+// copyGoEmbeddedMethods copies each not-yet-present method of the embedded
+// interfaces onto the embedder, reporting whether anything was added.
+func copyGoEmbeddedMethods(analysis *FileAnalysis, byIface map[string][]FunctionDecl, outer string, inners []string) bool {
+	have := make(map[string]bool)
+	for i := range byIface[outer] {
+		have[byIface[outer][i].ID.Name] = true
+	}
+	added := false
+	for _, inner := range inners {
+		methods := byIface[inner]
+		for i := range methods {
+			if have[methods[i].ID.Name] {
+				continue
+			}
+			copied := methods[i]
+			copied.ID.Type = outer
+			copied.OwnerName = outer
+			analysis.Functions = append(analysis.Functions, copied)
+			byIface[outer] = append(byIface[outer], copied)
+			have[copied.ID.Name] = true
+			added = true
+		}
+	}
+	return added
+}
+
+func (p *GoParser) extractInterfaceMethods(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, embeds map[string][]string) {
 	for i := 0; i < int(node.NamedChildCount()); i++ {
 		spec := node.NamedChild(i)
-		if spec.Type() != "type_spec" {
+		if spec.Type() != goNodeTypeSpec {
 			continue
 		}
 		typeNode := spec.ChildByFieldName(goFieldType)
 		nameNode := spec.ChildByFieldName("name")
-		if typeNode == nil || nameNode == nil || typeNode.Type() != "interface_type" {
+		if typeNode == nil || nameNode == nil {
+			continue
+		}
+		if typeNode.Type() == "struct_type" {
+			p.extractGoStructFuncFields(spec, src, filePath, packagePath, analysis)
+			continue
+		}
+		if typeNode.Type() != "interface_type" {
 			continue
 		}
 		ifaceName := strings.TrimSpace(nameNode.Content(src))
 		if ifaceName == "" {
 			continue
 		}
-		for j := 0; j < int(typeNode.NamedChildCount()); j++ {
-			elem := typeNode.NamedChild(j)
-			if elem.Type() != "method_elem" {
-				continue
+		p.extractGoInterfaceMembers(typeNode, src, filePath, packagePath, analysis, ifaceName, embeds)
+	}
+}
+
+// extractGoInterfaceMembers walks one interface body: method elements become
+// interface-owned declarations, embedded interfaces are recorded for the
+// same-file flattening pass.
+func (p *GoParser) extractGoInterfaceMembers(typeNode *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, ifaceName string, embeds map[string][]string) {
+	for j := 0; j < int(typeNode.NamedChildCount()); j++ {
+		elem := typeNode.NamedChild(j)
+		if elem.Type() == "type_elem" {
+			if embedded := strings.TrimSpace(elem.Content(src)); embedded != "" && !strings.ContainsAny(embedded, ". |~[") {
+				embeds[ifaceName] = append(embeds[ifaceName], embedded)
 			}
-			methodName := ""
-			if n := elem.ChildByFieldName("name"); n != nil {
-				methodName = strings.TrimSpace(n.Content(src))
-			}
-			if methodName == "" {
-				continue
-			}
-			decl := &FunctionDecl{
-				ID: FunctionID{
-					Package: packagePath,
-					Type:    ifaceName,
-					Name:    methodName,
-				},
-				FilePath:     filePath,
-				StartLine:    int(elem.StartPoint().Row) + 1,
-				EndLine:      int(elem.EndPoint().Row) + 1,
-				OwnerType:    "interface",
-				OwnerName:    ifaceName,
-				FunctionType: "method",
-				Parameters:   p.extractParameterTypes(elem.ChildByFieldName("parameters"), src),
-			}
-			decl.ReturnType = p.extractReturnType(elem.ChildByFieldName("result"), src, analysis)
-			analysis.Functions = append(analysis.Functions, *decl)
+			continue
 		}
+		if elem.Type() != "method_elem" {
+			continue
+		}
+		methodName := ""
+		if n := elem.ChildByFieldName("name"); n != nil {
+			methodName = strings.TrimSpace(n.Content(src))
+		}
+		if methodName == "" {
+			continue
+		}
+		decl := FunctionDecl{
+			ID:           FunctionID{Package: packagePath, Type: ifaceName, Name: methodName},
+			FilePath:     filePath,
+			StartLine:    int(elem.StartPoint().Row) + 1,
+			EndLine:      int(elem.EndPoint().Row) + 1,
+			OwnerType:    goOwnerInterface,
+			OwnerName:    ifaceName,
+			FunctionType: "method",
+			Parameters:   p.extractParameterTypes(elem.ChildByFieldName("parameters"), src),
+		}
+		decl.ReturnType = p.extractReturnType(elem.ChildByFieldName("result"), src, analysis)
+		analysis.Functions = append(analysis.Functions, decl)
+	}
+}
+
+// extractGoStructFuncFields declares each func-typed field of a struct as a
+// member of that type. `type ClientUI struct{ DisplayMessage func(...) error }`
+// makes `ui.DisplayMessage(...)` a real member call whose identity —
+// (*ClientUI).DisplayMessage — is correct; without a declaration behind it the
+// call read as claiming a member that does not exist. Which function runs is
+// still dynamic; declaring the field only anchors the identity.
+func (p *GoParser) extractGoStructFuncFields(spec *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+	typeNode := spec.ChildByFieldName(goFieldType)
+	nameNode := spec.ChildByFieldName("name")
+	if typeNode == nil || nameNode == nil || typeNode.Type() != "struct_type" {
+		return
+	}
+	structName := strings.TrimSpace(nameNode.Content(src))
+	if structName == "" {
+		return
+	}
+	body := typeNode.NamedChild(0) // field_declaration_list
+	if body == nil {
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		field := body.NamedChild(i)
+		if field.Type() != javaNodeFieldDeclaration {
+			continue
+		}
+		ft := field.ChildByFieldName(goFieldType)
+		if ft == nil || ft.Type() != "function_type" {
+			continue
+		}
+		p.declareGoFuncField(field, ft, src, filePath, packagePath, analysis, structName)
+	}
+}
+
+// declareGoFuncField emits the two receiver spellings of one func-typed field.
+func (p *GoParser) declareGoFuncField(field, ft *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, structName string) {
+	for j := 0; j < int(field.NamedChildCount()); j++ {
+		n := field.NamedChild(j)
+		if n.Type() != goNodeFieldIdentifier {
+			continue
+		}
+		fieldName := strings.TrimSpace(n.Content(src))
+		if fieldName == "" {
+			continue
+		}
+		for _, recv := range []string{structName, "*" + structName} {
+			analysis.Functions = append(analysis.Functions, FunctionDecl{
+				ID:           FunctionID{Package: packagePath, Type: recv, Name: fieldName},
+				FilePath:     filePath,
+				StartLine:    int(field.StartPoint().Row) + 1,
+				EndLine:      int(field.EndPoint().Row) + 1,
+				OwnerType:    "struct-field",
+				OwnerName:    structName,
+				FunctionType: "method",
+				Parameters:   p.extractParameterTypes(ft.ChildByFieldName("parameters"), src),
+			})
+		}
+	}
+}
+
+// recordGoDeclaredTypeNames marks each type name this file declares. A bare
+// call whose name is a declared type is a CONVERSION (`WriterFunc(fn)`), not a
+// call — the same shape `int(x)` takes with a predeclared type.
+func (p *GoParser) recordGoDeclaredTypeNames(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	if analysis.DeclaredTypes == nil {
+		analysis.DeclaredTypes = make(map[string]bool)
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		spec := node.NamedChild(i)
+		if spec.Type() != goNodeTypeSpec && spec.Type() != "type_alias" {
+			continue
+		}
+		if name := spec.ChildByFieldName("name"); name != nil {
+			analysis.DeclaredTypes[strings.TrimSpace(name.Content(src))] = true
+		}
+	}
+}
+
+// extractGoFuncVars declares package-level variables that hold functions —
+// a func-typed var (`var hook func()`), a closure, or an alias to another
+// function (`var EncodeToString = b64.EncodeToString`). These are callable
+// package members with a stable identity: age's format.EncodeToString is one,
+// and every one of its nine call sites claimed a corpus identity that no
+// declaration backed. Ordinary data vars are not declared.
+func (p *GoParser) extractGoFuncVars(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		spec := node.NamedChild(i)
+		if spec.Type() != goNodeVarSpec {
+			continue
+		}
+		nameNode := spec.ChildByFieldName("name")
+		if nameNode == nil {
+			continue
+		}
+		callable := false
+		if t := spec.ChildByFieldName(goFieldType); t != nil && t.Type() == "function_type" {
+			callable = true
+		}
+		if v := spec.ChildByFieldName("value"); v != nil && int(v.NamedChildCount()) == 1 {
+			switch v.NamedChild(0).Type() {
+			case goNodeFuncLiteral, goNodeSelectorExpression, goNodeIdentifier:
+				callable = true
+			}
+		}
+		if !callable {
+			continue
+		}
+		name := strings.TrimSpace(nameNode.Content(src))
+		if name == "" || name == "_" {
+			continue
+		}
+		analysis.Functions = append(analysis.Functions, FunctionDecl{
+			ID:           FunctionID{Package: packagePath, Name: name},
+			FilePath:     filePath,
+			StartLine:    int(spec.StartPoint().Row) + 1,
+			EndLine:      int(spec.EndPoint().Row) + 1,
+			OwnerType:    "package",
+			FunctionType: "function",
+		})
 	}
 }
 
@@ -418,7 +628,7 @@ func (p *GoParser) walkGoReturnSources(
 	varTypes map[string]string,
 	sources *[]SourceNode,
 ) {
-	if node.Type() == "func_literal" {
+	if node.Type() == goNodeFuncLiteral {
 		return
 	}
 	if node.Type() == goNodeReturnStatement {
@@ -562,7 +772,12 @@ func (p *GoParser) walkForCalls(
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkForCalls(node.Child(i), src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, calls)
+		child := node.Child(i)
+		childTypes := varTypes
+		if goOpensScope(child.Type()) {
+			childTypes = p.goScopedVarTypes(child, src, varTypes)
+		}
+		p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, childTypes, calls)
 	}
 }
 
@@ -590,6 +805,39 @@ func (p *GoParser) parseCallExpr(
 	case goNodeIdentifier:
 		// Simple call like `doSomething()`
 		name := funcNode.Content(src)
+		if analysis.DeclaredTypes[name] {
+			// `WriterFunc(fn)` where WriterFunc is a type this file declares is
+			// a conversion, exactly like `int(x)` with a predeclared type.
+			return nil
+		}
+		if name == currentReceiverVar && currentReceiverVar != "" {
+			// A method on a named func type calls its own receiver:
+			// `func (f WriterFunc) Write(p []byte) { f(p) }`. Dynamic value,
+			// honest empty identity.
+			call = &FunctionCall{
+				Callee:    FunctionID{Name: name},
+				Raw:       name,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
+			break
+		}
+		if _, isLocal := varTypes[name]; isLocal {
+			// A bare call through a local variable is a func-value call:
+			// `getLine()` where getLine is a closure, `f()` where f arrived as
+			// a parameter. Which function runs is genuinely dynamic, so the
+			// honest empty identity is emitted rather than the caller's
+			// package, which would claim a package function that may not exist.
+			call = &FunctionCall{
+				Callee:    FunctionID{Name: name},
+				Raw:       name,
+				FilePath:  filePath,
+				Line:      line,
+				Arguments: args,
+			}
+			break
+		}
 		if goPredeclaredIdentifiers[name] {
 			// A predeclared identifier belongs to no package: it lives in the
 			// universe scope (go/types, universe.go), which is the root of the
@@ -714,7 +962,7 @@ func goAssignedVarFromParent(node *sitter.Node, src []byte) string {
 			return ""
 		}
 		return goFirstBoundName(left, src)
-	case "var_spec":
+	case goNodeVarSpec:
 		// `var h = sha256.New()`: the names sit directly on the spec.
 		if name := grand.ChildByFieldName("name"); name != nil {
 			return strings.TrimSpace(name.Content(src))
@@ -822,7 +1070,7 @@ func (p *GoParser) parseSelectorCall(
 func (p *GoParser) collectGoVarTypes(paramsNode, body *sitter.Node, src []byte) map[string]string {
 	varTypes := make(map[string]string)
 	p.collectGoParameterTypes(paramsNode, src, varTypes)
-	p.collectGoLocalVarTypes(body, src, varTypes)
+	p.collectGoScopeVarTypes(body, src, varTypes)
 	return varTypes
 }
 
@@ -857,16 +1105,71 @@ func (p *GoParser) collectGoParameterTypes(node *sitter.Node, src []byte, varTyp
 	}
 }
 
-func (p *GoParser) collectGoLocalVarTypes(node *sitter.Node, src []byte, varTypes map[string]string) {
-	if node == nil {
-		return
+// goOpensScope reports whether a node introduces a new declaration scope. Go
+// scopes a local to its block, an if/for/switch initializer binding to that
+// statement, and a literal's parameters to the literal (Go spec, "Declarations
+// and scope"). One flat map per function loses that: the type assertion in
+// `if r, ok := r.(RecipientWithLabels); ok { ... }` rebound r for the WHOLE
+// function, so the outer r's calls after the if were typed against the
+// asserted interface — a silently wrong receiver, the same defect the Java
+// parser had with sibling blocks.
+func goOpensScope(nodeType string) bool {
+	switch nodeType {
+	case goNodeBlock, "if_statement", "for_statement", "expression_switch_statement",
+		"type_switch_statement", "select_statement", goNodeFuncLiteral:
+		return true
+	default:
+		return false
 	}
+}
 
+// collectGoScopeVarTypes records the bindings belonging to ONE scope: the scope
+// node's own plus its descendants', stopping at nested scopes.
+func (p *GoParser) collectGoScopeVarTypes(scope *sitter.Node, src []byte, varTypes map[string]string) {
+	p.collectGoVarTypesAt(scope, src, varTypes)
+	var descend func(n *sitter.Node)
+	descend = func(n *sitter.Node) {
+		if goOpensScope(n.Type()) {
+			return
+		}
+		p.collectGoVarTypesAt(n, src, varTypes)
+		for i := 0; i < int(n.ChildCount()); i++ {
+			descend(n.Child(i))
+		}
+	}
+	for i := 0; i < int(scope.ChildCount()); i++ {
+		descend(scope.Child(i))
+	}
+}
+
+// goScopedVarTypes overlays a scope's own bindings on a copy of the enclosing
+// ones, so an inner declaration shadows outward and nowhere else.
+func (p *GoParser) goScopedVarTypes(node *sitter.Node, src []byte, outer map[string]string) map[string]string {
+	scoped := make(map[string]string, len(outer))
+	for k, v := range outer {
+		scoped[k] = v
+	}
+	p.collectGoScopeVarTypes(node, src, scoped)
+	return scoped
+}
+
+// collectGoVarTypesAt records only the bindings this one node introduces,
+// without descending — the scope-bounded walk controls its own recursion.
+func (p *GoParser) collectGoVarTypesAt(node *sitter.Node, src []byte, varTypes map[string]string) {
 	if node.Type() == goNodeShortVarDeclaration {
 		p.collectGoShortVarTypes(node, src, varTypes)
 	}
 
-	if node.Type() == "var_spec" {
+	if node.Type() == goNodeFuncLiteral {
+		// A literal's parameters are visible to the calls inside it, which the
+		// walk attributes to the enclosing declaration: `yield` in a
+		// range-over-func body, `f` in a callback. The map is function-flat,
+		// so a literal parameter shadowing an outer name follows the same
+		// last-write rule as every other local here.
+		p.collectGoParameterTypes(node.ChildByFieldName("parameters"), src, varTypes)
+	}
+
+	if node.Type() == goNodeVarSpec {
 		text := strings.TrimSpace(node.Content(src))
 		if eq := strings.Index(text, "="); eq >= 0 {
 			text = strings.TrimSpace(text[:eq])
@@ -883,10 +1186,6 @@ func (p *GoParser) collectGoLocalVarTypes(node *sitter.Node, src []byte, varType
 				varTypes[name] = typeText
 			}
 		}
-	}
-
-	for i := 0; i < int(node.ChildCount()); i++ {
-		p.collectGoLocalVarTypes(node.Child(i), src, varTypes)
 	}
 }
 
@@ -907,6 +1206,13 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 		return
 	}
 	count := int(left.NamedChildCount())
+	// A type assertion states its type in its own syntax even in the
+	// two-valued form: `r, ok := x.(RecipientWithLabels)` binds the first
+	// name to the asserted type (the second is the bool).
+	if count == 2 && int(right.NamedChildCount()) == 1 {
+		collectGoAssertionBinding(left, right.NamedChild(0), src, varTypes)
+		return
+	}
 	// Differing counts mean one multi-valued call feeds several names
 	// (`block, err := aes.NewCipher(key)`); the names cannot be paired here.
 	if count == 0 || count != int(right.NamedChildCount()) {
@@ -927,6 +1233,22 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 	}
 }
 
+// collectGoAssertionBinding records the first name of a two-valued `:=` whose
+// right side is a type assertion.
+func collectGoAssertionBinding(left, expr *sitter.Node, src []byte, varTypes map[string]string) {
+	if expr == nil || expr.Type() != "type_assertion_expression" {
+		return
+	}
+	nameNode := left.NamedChild(0)
+	typeNode := expr.ChildByFieldName(goFieldType)
+	if nameNode == nil || nameNode.Type() != goNodeIdentifier || typeNode == nil {
+		return
+	}
+	if name := strings.TrimSpace(nameNode.Content(src)); name != "" && name != "_" {
+		varTypes[name] = strings.TrimSpace(typeNode.Content(src))
+	}
+}
+
 // goSyntacticType returns the type an expression states in its own syntax, or
 // "" when naming it would require resolving something else first.
 func goSyntacticType(expr *sitter.Node, src []byte) string {
@@ -934,6 +1256,14 @@ func goSyntacticType(expr *sitter.Node, src []byte) string {
 		return ""
 	}
 	switch expr.Type() {
+	case "type_assertion_expression":
+		if t := expr.ChildByFieldName(goFieldType); t != nil {
+			return strings.TrimSpace(t.Content(src))
+		}
+	case goNodeFuncLiteral:
+		// A closure has no nameable type; the marker makes a later bare call
+		// through the variable recognizable as a func-value call.
+		return "func"
 	case goNodeCompositeLiteral, goNodeTypeConversion:
 		if t := expr.ChildByFieldName(goFieldType); t != nil {
 			return strings.TrimSpace(t.Content(src))
@@ -947,21 +1277,28 @@ func goSyntacticType(expr *sitter.Node, src []byte) string {
 			return "*" + inner
 		}
 	case goNodeCallExpression:
-		fn := expr.ChildByFieldName("function")
-		args := expr.ChildByFieldName("arguments")
-		if fn == nil || args == nil || fn.Type() != goNodeIdentifier {
-			return ""
-		}
-		first := args.NamedChild(0)
-		if first == nil {
-			return ""
-		}
-		switch strings.TrimSpace(fn.Content(src)) {
-		case "make":
-			return strings.TrimSpace(first.Content(src))
-		case "new":
-			return "*" + strings.TrimSpace(first.Content(src))
-		}
+		return goMakeNewType(expr, src)
+	}
+	return ""
+}
+
+// goMakeNewType names the type a make() or new() call states in its first
+// argument, or "" for any other call.
+func goMakeNewType(expr *sitter.Node, src []byte) string {
+	fn := expr.ChildByFieldName("function")
+	args := expr.ChildByFieldName("arguments")
+	if fn == nil || args == nil || fn.Type() != goNodeIdentifier {
+		return ""
+	}
+	first := args.NamedChild(0)
+	if first == nil {
+		return ""
+	}
+	switch strings.TrimSpace(fn.Content(src)) {
+	case "make":
+		return strings.TrimSpace(first.Content(src))
+	case "new":
+		return "*" + strings.TrimSpace(first.Content(src))
 	}
 	return ""
 }
@@ -993,6 +1330,13 @@ func (p *GoParser) resolveSelectorReceiverType(
 	for strings.HasPrefix(trimmed, "*") {
 		pointerPrefix += "*"
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "*"))
+	}
+
+	// A predeclared type belongs to the universe scope, not to the caller's
+	// package: `err.Error()` with `err error` is interface dispatch on a type
+	// no package owns, and "func" is the marker a closure binding records.
+	if goPredeclaredIdentifiers[trimmed] || trimmed == "func" || strings.HasPrefix(trimmed, "func(") || strings.HasPrefix(trimmed, "func ") {
+		return "", ""
 	}
 
 	if dot := strings.Index(trimmed, "."); dot > 0 {

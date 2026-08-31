@@ -281,3 +281,86 @@ func decrypt(id Identity, data []byte) []byte {
 		}
 	}
 }
+
+// TestGoParser_BlockScopedBindings pins Go lexical scoping (Go spec,
+// "Declarations and scope"). One flat map per function let the type assertion
+// in `if r, ok := r.(RecipientWithLabels); ok { ... }` rebind r for the WHOLE
+// function, so the outer r's calls after the if were typed against the
+// asserted interface — a silently wrong receiver, the same defect the Java
+// parser had with sibling blocks.
+func TestGoParser_BlockScopedBindings(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type Recipient interface {
+	Wrap(fileKey []byte) []byte
+}
+
+type RecipientWithLabels interface {
+	WrapWithLabels(fileKey []byte) []byte
+}
+
+func wrap(r Recipient, fileKey []byte) []byte {
+	if r, ok := r.(RecipientWithLabels); ok {
+		return r.WrapWithLabels(fileKey)
+	}
+	return r.Wrap(fileKey)
+}
+`)
+	assertGoCall(t, g, "app.(RecipientWithLabels).WrapWithLabels")
+	assertGoCall(t, g, "app.(Recipient).Wrap")
+	for _, k := range goCalleeKeys(g) {
+		if k == "app.(RecipientWithLabels).Wrap" {
+			t.Errorf("outer receiver typed against the asserted interface: %q", k)
+		}
+	}
+}
+
+// TestGoParser_ResidueClassesAreHonest pins the remaining shapes: a struct's
+// func-typed field is declared as a member of its type; a conversion to a
+// file-declared type is not a call; a bare call through a local func value or
+// through a func-typed method receiver carries the honest empty identity; and
+// an interface embedded in the same file contributes its methods to the
+// embedder.
+func TestGoParser_ResidueClassesAreHonest(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type WriterFunc func(p []byte) (int, error)
+
+func (f WriterFunc) Write(p []byte) (int, error) { return f(p) }
+
+type Base interface {
+	Wrap(data []byte) []byte
+}
+
+type Labeled interface {
+	Base
+	Labels() []string
+}
+
+type UI struct {
+	DisplayMessage func(msg string) error
+}
+
+func use(ui *UI, l Labeled, data []byte) {
+	ui.DisplayMessage("hello")
+	l.Wrap(data)
+	w := WriterFunc(nil)
+	_ = w
+	getLine := func() []byte { return nil }
+	getLine()
+}
+`)
+	assertGoCall(t, g, "app.(*UI).DisplayMessage")
+	assertGoCall(t, g, "app.(Labeled).Wrap")
+	for _, k := range goCalleeKeys(g) {
+		if strings.HasSuffix(k, ".WriterFunc") {
+			t.Errorf("conversion recorded as a call: %q", k)
+		}
+		if strings.HasSuffix(k, ".getLine") && !strings.HasPrefix(k, ".") {
+			t.Errorf("func-value call claims an owner: %q", k)
+		}
+		if k == "app.f" {
+			t.Errorf("func-typed receiver call claims the package: %q", k)
+		}
+	}
+}
