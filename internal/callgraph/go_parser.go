@@ -15,6 +15,7 @@ import (
 // GoParser extracts function declarations, calls, and imports from Go source files
 // using tree-sitter for fast, accurate parsing.
 type GoParser struct {
+	initSeq      int
 	parser       *sitter.Parser
 	includeTests bool
 }
@@ -44,6 +45,7 @@ const (
 	goFieldRight              = "right"
 	goNodeParenExpr           = "parenthesized_expression"
 	goNodeAssignmentStmt      = "assignment_statement"
+	goNodeTypeAssertion       = "type_assertion_expression"
 	goNodeVarSpec             = "var_spec"
 	goNodeTypeSpec            = "type_spec"
 	goOwnerInterface          = "interface"
@@ -67,6 +69,7 @@ func (p *GoParser) CloneParser() Parser {
 // ParseFile extracts function declarations, imports, and calls from a single Go file.
 // packagePath is the Go import path for the package containing this file.
 func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error) {
+	p.initSeq = 0
 	src, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", filePath, err)
@@ -584,6 +587,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if name == "init" {
+		p.initSeq++
 		// Go allows any number of init functions per package and even per
 		// file; they all run. One shared key would keep only the last one's
 		// calls in the graph — the same silent drop the per-file <varinit>
@@ -594,7 +598,10 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 		if i := strings.LastIndex(base, "/"); i >= 0 {
 			base = base[i+1:]
 		}
-		decl.ID.Name = "<init:" + strings.TrimSuffix(base, ".go") + ">"
+		// Several init functions may share even one FILE (grpc's
+		// service_config.go has two), so the discriminator carries a sequence
+		// number as well.
+		decl.ID.Name = fmt.Sprintf("<init:%s#%d>", strings.TrimSuffix(base, ".go"), p.initSeq)
 	}
 
 	if body != nil {
@@ -934,6 +941,9 @@ func (p *GoParser) parseCallExpr(
 	line := int(node.StartPoint().Row) + 1
 	args := p.extractCallArguments(node, src)
 
+	for funcNode != nil && funcNode.Type() == goNodeParenExpr {
+		funcNode = funcNode.NamedChild(0)
+	}
 	// An explicitly instantiated generic call — RegisterKeySerializer[*Key](x),
 	// or pkg.Register[T](x) — wraps its function in an index_expression. The
 	// type arguments are erased everywhere else, so they are unwrapped here
@@ -948,75 +958,19 @@ func (p *GoParser) parseCallExpr(
 
 	var call *FunctionCall
 	switch funcNode.Type() {
+	case goNodeTypeAssertion:
+		// `fn.(func(string) *Result)(arg)` calls the asserted func value —
+		// grpc wires internal hooks exactly this way. Dynamic, honest.
+		call = goHonestCall("<func-value>", funcNode.Content(src), filePath, line, args)
 	case goNodeFuncLiteral:
 		// An immediately invoked literal — go func(){...}(), defer func(){...}()
 		// — is a real call whose body the walk already visits; the invocation
 		// itself carries the honest empty identity (there is nothing to name).
-		call = &FunctionCall{
-			Callee:    FunctionID{Name: "<func-literal>"},
-			Raw:       "func(){...}()",
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
-		}
+		call = goHonestCall("<func-literal>", "func(){...}()", filePath, line, args)
 	case "selector_expression":
 		call = p.parseSelectorCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes)
 	case goNodeIdentifier:
-		// Simple call like `doSomething()`
-		name := funcNode.Content(src)
-		if analysis.DeclaredTypes[name] {
-			// `WriterFunc(fn)` where WriterFunc is a type this file declares is
-			// a conversion, exactly like `int(x)` with a predeclared type.
-			return nil
-		}
-		if name == currentReceiverVar && currentReceiverVar != "" {
-			// A method on a named func type calls its own receiver:
-			// `func (f WriterFunc) Write(p []byte) { f(p) }`. Dynamic value,
-			// honest empty identity.
-			call = &FunctionCall{
-				Callee:    FunctionID{Name: name},
-				Raw:       name,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
-			}
-			break
-		}
-		if _, isLocal := varTypes[name]; isLocal {
-			// A bare call through a local variable is a func-value call:
-			// `getLine()` where getLine is a closure, `f()` where f arrived as
-			// a parameter. Which function runs is genuinely dynamic, so the
-			// honest empty identity is emitted rather than the caller's
-			// package, which would claim a package function that may not exist.
-			call = &FunctionCall{
-				Callee:    FunctionID{Name: name},
-				Raw:       name,
-				FilePath:  filePath,
-				Line:      line,
-				Arguments: args,
-			}
-			break
-		}
-		if goPredeclaredIdentifiers[name] {
-			// A predeclared identifier belongs to no package: it lives in the
-			// universe scope (go/types, universe.go), which is the root of the
-			// scope tree and exists before any source is read. Emitting it under
-			// the caller's package invents a callee — `internal/callgraph.len` —
-			// that no declaration can ever match, and `int(x)` is not even a call
-			// but a conversion. Neither reaches user code, so neither belongs in
-			// a call graph built to answer reachability.
-			return nil
-		}
-		call = &FunctionCall{
-			Callee: FunctionID{
-				Package: analysis.PackagePath,
-				Name:    name,
-			},
-			Raw:       name,
-			FilePath:  filePath,
-			Line:      line,
-			Arguments: args,
-		}
+		call = p.parseBareCall(funcNode, src, filePath, line, args, analysis, currentReceiverVar, varTypes)
 	}
 	if call != nil {
 		call.ChainID, call.AssignedVar = goCallChainContext(node, src)
@@ -1144,6 +1098,43 @@ func goFirstBoundName(left *sitter.Node, src []byte) string {
 		}
 	}
 	return ""
+}
+
+// parseBareCall handles a call through a bare identifier: a conversion to a
+// file-declared type is not a call; a local func value or the func-typed
+// method receiver is dynamic and honest; anything else is a candidate
+// package-level call, which the builder prunes when a predeclared name has no
+// backing declaration (a package CAN declare its own `new` or `print`).
+func (p *GoParser) parseBareCall(funcNode *sitter.Node, src []byte, filePath string, line int, args []string, analysis *FileAnalysis, currentReceiverVar string, varTypes map[string]string) *FunctionCall {
+	name := funcNode.Content(src)
+	if analysis.DeclaredTypes[name] {
+		return nil
+	}
+	if name == currentReceiverVar && currentReceiverVar != "" {
+		return goHonestCall(name, name, filePath, line, args)
+	}
+	if _, isLocal := varTypes[name]; isLocal {
+		return goHonestCall(name, name, filePath, line, args)
+	}
+	return &FunctionCall{
+		Callee:    FunctionID{Package: analysis.PackagePath, Name: name},
+		Raw:       name,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
+	}
+}
+
+// goHonestCall builds a call with the honest empty identity, for the shapes
+// whose target is genuinely dynamic.
+func goHonestCall(name, raw, filePath string, line int, args []string) *FunctionCall {
+	return &FunctionCall{
+		Callee:    FunctionID{Name: name},
+		Raw:       raw,
+		FilePath:  filePath,
+		Line:      line,
+		Arguments: args,
+	}
 }
 
 func (p *GoParser) parseSelectorCall(
@@ -1422,7 +1413,7 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 // collectGoAssertionBinding records the first name of a two-valued `:=` whose
 // right side is a type assertion.
 func collectGoAssertionBinding(left, expr *sitter.Node, src []byte, varTypes map[string]string) {
-	if expr == nil || expr.Type() != "type_assertion_expression" {
+	if expr == nil || expr.Type() != goNodeTypeAssertion {
 		return
 	}
 	nameNode := left.NamedChild(0)
@@ -1442,7 +1433,7 @@ func goSyntacticType(expr *sitter.Node, src []byte) string {
 		return ""
 	}
 	switch expr.Type() {
-	case "type_assertion_expression":
+	case goNodeTypeAssertion:
 		if t := expr.ChildByFieldName(goFieldType); t != nil {
 			return strings.TrimSpace(t.Content(src))
 		}
@@ -1489,6 +1480,35 @@ func goMakeNewType(expr *sitter.Node, src []byte) string {
 	return ""
 }
 
+// goNormalizeReceiverType strips pointers and type arguments from a receiver
+// type's source text and rejects the shapes that carry no nameable identity: an
+// anonymous composite (`interface{...}`, `struct{...}`, func/map/slice/chan
+// types, whose braces would not survive the FunctionID round-trip) and the
+// predeclared types, which belong to the universe scope, not to any package.
+func goNormalizeReceiverType(typeText string) (name, pointerPrefix string, ok bool) {
+	trimmed := strings.TrimSpace(typeText)
+	for strings.HasPrefix(trimmed, "*") {
+		pointerPrefix += "*"
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "*"))
+	}
+	// Type arguments are erased from every declared identity (a method set is
+	// formed on the bare name), so a receiver typed `Reachable[T]` must erase
+	// too or it joins nothing.
+	if i := strings.Index(trimmed, "["); i > 0 {
+		trimmed = trimmed[:i]
+	}
+	compact := strings.Join(strings.Fields(trimmed), "")
+	for _, p := range []string{"interface{", "struct{", "func(", "map[", "[", "chan"} {
+		if strings.HasPrefix(compact, p) {
+			return "", "", false
+		}
+	}
+	if goPredeclaredIdentifiers[trimmed] || trimmed == "func" {
+		return "", "", false
+	}
+	return trimmed, pointerPrefix, true
+}
+
 func (p *GoParser) resolveSelectorReceiverType(
 	operand string,
 	analysis *FileAnalysis,
@@ -1511,23 +1531,8 @@ func (p *GoParser) resolveSelectorReceiverType(
 		return "", ""
 	}
 
-	trimmed := strings.TrimSpace(typeText)
-	pointerPrefix := ""
-	for strings.HasPrefix(trimmed, "*") {
-		pointerPrefix += "*"
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "*"))
-	}
-	// Type arguments are erased from every declared identity (a method set is
-	// formed on the bare name), so a receiver typed `Reachable[T]` must erase
-	// too or it joins nothing.
-	if i := strings.Index(trimmed, "["); i > 0 {
-		trimmed = trimmed[:i]
-	}
-
-	// A predeclared type belongs to the universe scope, not to the caller's
-	// package: `err.Error()` with `err error` is interface dispatch on a type
-	// no package owns, and "func" is the marker a closure binding records.
-	if goPredeclaredIdentifiers[trimmed] || trimmed == "func" || strings.HasPrefix(trimmed, "func(") || strings.HasPrefix(trimmed, "func ") {
+	trimmed, pointerPrefix, ok := goNormalizeReceiverType(typeText)
+	if !ok {
 		return "", ""
 	}
 

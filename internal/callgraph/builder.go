@@ -149,6 +149,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	callerIndexStart := time.Now()
+	pruneGoPredeclaredCalls(graph, b.ecosystem)
 	b.buildCallerIndex(graph)
 	callerIndexDuration := time.Since(callerIndexStart)
 
@@ -1690,6 +1691,37 @@ func goReceiverTypeFromReturn(decl *FunctionDecl) string {
 		return ""
 	}
 	return qualifiedType(decl.ID.Package, raw)
+}
+
+// pruneGoPredeclaredCalls drops the calls whose bare name is a predeclared
+// identifier and no declaration backs: `len(x)` under the caller's package is
+// the universe scope's len, `int(x)` is a conversion, and neither reaches user
+// code. A package CAN declare its own `new` or `print` — etcd does both — and
+// those calls survive, because their declaration exists; the per-file parser
+// cannot know that (the declaration may live in a sibling file), which is why
+// the pruning happens here, with the whole package in view.
+func pruneGoPredeclaredCalls(graph *CallGraph, ecosystem string) {
+	if ecosystem != ecosystemGo {
+		return
+	}
+	pruned := 0
+	for _, fn := range graph.Functions {
+		kept := fn.Calls[:0]
+		for i := range fn.Calls {
+			call := &fn.Calls[i]
+			if call.Callee.Type == "" && call.Callee.Package != "" && goPredeclaredIdentifiers[BaseFunctionName(call.Callee.Name)] {
+				if _, declared := graph.Functions[call.Callee.String()]; !declared {
+					pruned++
+					continue
+				}
+			}
+			kept = append(kept, fn.Calls[i])
+		}
+		fn.Calls = kept
+	}
+	if pruned > 0 {
+		log.Debug().Int("pruned", pruned).Msg("Pruned predeclared-identifier calls with no backing declaration")
+	}
 }
 
 // respellGoPointerReceivers flips the pointer spelling of a typed callee to

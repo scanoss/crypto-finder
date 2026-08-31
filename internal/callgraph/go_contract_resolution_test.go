@@ -605,3 +605,57 @@ func helper() {}
 		t.Error("immediately invoked func literal was not emitted")
 	}
 }
+
+// TestGoParser_DifferentialRound2Shapes pins the shapes the four-corpus round
+// (grpc, etcd, caddy, cosign) surfaced: two init functions in ONE file keep
+// their calls (grpc's service_config.go — the per-file discriminator alone
+// still collided); a package's own `print` survives the predeclared pruning
+// because its declaration backs it (etcd declares print and new; the pruning
+// therefore lives in the builder, which sees the whole package); and a call
+// of a type-asserted func value (`hook.(func(int) int)(2)`, grpc's internal
+// hook wiring) is emitted honestly instead of vanishing.
+func TestGoParser_DifferentialRound2Shapes(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+import "crypto/sha256"
+
+func init() { sha256.New() }
+
+func init() { helper() }
+
+func helper() {}
+
+func print(args ...any) {}
+
+func report() { print("x") }
+
+var hook any
+
+func use() int {
+	return hook.(func(int) int)(2)
+}
+`)
+	assertGoCall(t, g, "crypto/sha256.New")
+	assertGoCall(t, g, "app.helper")
+	assertGoCall(t, g, "app.print")
+	inits := map[string]bool{}
+	for k := range g.Functions {
+		if strings.HasPrefix(k, "app.<init:") {
+			inits[k] = true
+		}
+	}
+	if len(inits) != 2 {
+		t.Errorf("expected 2 discriminated inits in one file, got %v", inits)
+	}
+	foundAsserted := false
+	for _, fn := range g.Functions {
+		for i := range fn.Calls {
+			if fn.Calls[i].Callee.Name == "<func-value>" {
+				foundAsserted = true
+			}
+		}
+	}
+	if !foundAsserted {
+		t.Error("type-asserted func-value call was not emitted")
+	}
+}

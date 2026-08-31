@@ -8,10 +8,11 @@ import (
 )
 
 // TestGoParser_PredeclaredIdentifiersAreNotCalls pins Go's universe scope: a
-// predeclared identifier belongs to no package, so it must not be recorded as a
-// call into the caller's own package. Attributing them there invented callees
-// like `app.len` that match no declaration and reach no user code — 26% of all
-// call sites on this repository's own source before the fix.
+// predeclared identifier with no backing declaration must not survive as a
+// call into the caller's package — `app.len` matches nothing and reaches no
+// user code (26% of this repository's own call sites before the fix). The
+// pruning lives in the builder so a package that declares its own `new` or
+// `print` (etcd does both) keeps those calls; see the shadowing test below.
 func TestGoParser_PredeclaredIdentifiersAreNotCalls(t *testing.T) {
 	src := `package app
 
@@ -36,17 +37,16 @@ func helper() error { return nil }
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(src), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	analyses, err := NewGoParser().ParseDirectory(dir, "app")
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
 	if err != nil {
-		t.Fatalf("ParseDirectory: %v", err)
+		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
 	var keys []string
-	for _, a := range analyses {
-		for i := range a.Functions {
-			for j := range a.Functions[i].Calls {
-				keys = append(keys, a.Functions[i].Calls[j].Callee.String())
-			}
+	for _, fn := range g.Functions {
+		for j := range fn.Calls {
+			keys = append(keys, fn.Calls[j].Callee.String())
 		}
 	}
 
