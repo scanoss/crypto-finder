@@ -38,7 +38,7 @@ const (
 	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
 	callGraphExportMaxDepth        = 32
-	callGraphExportMaxChains       = 128 // emit budget; graphwalk.PathCountSkipThreshold skips materialization above 100000 paths
+	callGraphExportMaxChains       = graphfrag.DefaultMaxChainsPerOp // emit budget; graphwalk.PathCountSkipThreshold skips materialization above 100000 paths
 	maxExportSourceResolutionDepth = 8
 	constructorMethodName          = "<init>"
 )
@@ -78,6 +78,9 @@ type exportBuildContext struct {
 	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
 	calleeSignatureKeys  map[string]string
 	chainIDsByCallerLine map[string]map[int]string
+	// maxChainsBudget is the per-finding condensed route emit cap (#334).
+	// Zero resolves to callGraphExportMaxChains (128).
+	maxChainsBudget int
 	// reachSetCache memoizes the reverse-reachability answer per containing
 	// function (issue #249): function key → minimum hops, plus which of those
 	// are chain terminals. Findings sharing a containing function share one
@@ -378,6 +381,12 @@ type exportDependencyRoot struct {
 
 // ExportCallGraph writes the current finding-centric callgraph export.
 func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
+	return ExportCallGraphWithMaxChains(path, format, result, 0)
+}
+
+// ExportCallGraphWithMaxChains writes the callgraph export using maxChains as
+// the per-finding emit budget. A maxChains of 0 uses the default of 128.
+func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanResult, maxChains int) error {
 	if result == nil {
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
 	}
@@ -398,10 +407,11 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 		Str("file", path).
 		Str("format", format).
 		Int("finding_assets", totalAssets).
+		Int("max_chains", resolveExportMaxChains(maxChains)).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
-	payload, err := buildCallGraphExportV2ToFile(path, result)
+	payload, err := buildCallGraphExportV2ToFile(path, result, maxChains)
 	buildDuration := time.Since(buildStart)
 	if err != nil {
 		return err
@@ -420,8 +430,8 @@ func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
 	return nil
 }
 
-func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult) (callGraphExportV2, error) {
-	ctx := newExportBuildContext(result)
+func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, maxChains int) (callGraphExportV2, error) {
+	ctx := newExportBuildContextWithMaxChains(result, maxChains)
 	assets := callGraphExportAssets(result.Report)
 	meta := buildCallGraphExportScanMeta(result)
 
@@ -655,8 +665,12 @@ func writeIndentedJSONFile(path string, payload any) error {
 // --- Build pipeline ---
 
 func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
+	return buildCallGraphExportV2WithMaxChains(result, 0)
+}
+
+func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains int) callGraphExportV2 {
 	AssignOccurrenceKeys(result)
-	ctx := newExportBuildContext(result)
+	ctx := newExportBuildContextWithMaxChains(result, maxChains)
 	totalAssets := countExportFindingAssets(result.Report)
 
 	out := callGraphExportV2{
@@ -1274,7 +1288,25 @@ func countExportFindingAssets(report *entities.InterimReport) int {
 	return total
 }
 
+func resolveExportMaxChains(n int) int {
+	if n <= 0 {
+		return callGraphExportMaxChains
+	}
+	return n
+}
+
+func (ctx *exportBuildContext) emitMaxChains() int {
+	if ctx == nil {
+		return callGraphExportMaxChains
+	}
+	return resolveExportMaxChains(ctx.maxChainsBudget)
+}
+
 func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
+	return newExportBuildContextWithMaxChains(result, 0)
+}
+
+func newExportBuildContextWithMaxChains(result *engine.DepScanResult, maxChains int) *exportBuildContext {
 	ctx := &exportBuildContext{
 		graph:                   result.CallGraph,
 		projectRoot:             filepath.Clean(result.ProjectRoot),
@@ -1286,6 +1318,7 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
 		userPackages:            exportUserPackages(result),
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
+		maxChainsBudget:         resolveExportMaxChains(maxChains),
 	}
 	for _, dep := range result.Dependencies {
 		if dep.Dir == "" {
@@ -2868,7 +2901,7 @@ func buildCallChains(
 	truncated := ctx.callChainTruncated[cacheKey]
 	switch {
 	case traced:
-		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
+		expanded := expandCallChainCallSites(ctx.graph, raw, ctx.emitMaxChains())
 		chains = materializeCallChainNodes(ctx, expanded)
 	case truncated:
 		// Path-count ceiling (#292): Count proved routes exist but Routes was
@@ -2950,11 +2983,12 @@ func structuralTracebackChains(
 		return raw
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
+	maxChains := ctx.emitMaxChains()
 	chains, total, truncated := tracer.TraceBackCondensed(
 		containingFn.ID,
 		ctx.userPackages,
 		callGraphExportMaxDepth,
-		callGraphExportMaxChains,
+		maxChains,
 	)
 	// Feed the signal the 6.8 contract reads (analysis.call_chains partial,
 	// reachability downgraded to unknown) rather than tracking truncation
@@ -2966,7 +3000,7 @@ func structuralTracebackChains(
 			Str("function", containingFn.ID.String()).
 			Int("emitted", len(chains)).
 			Int("total_condensed_paths", total).
-			Int("max_chains", callGraphExportMaxChains).
+			Int("max_chains", maxChains).
 			Msg("Truncated condensed call chain export for finding function")
 	}
 	ctx.callChainRawCache[cacheKey] = chains

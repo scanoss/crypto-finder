@@ -76,7 +76,7 @@ func TestCondensedBackwardChains_SkipsRoutesAbovePathCountCeiling(t *testing.T) 
 		prev = layer
 	}
 
-	chains, total, truncated := condensedBackwardChains(op, reverse, entrySet)
+	chains, total, truncated := condensedBackwardChains(op, reverse, entrySet, 1)
 	if total <= graphwalk.PathCountSkipThreshold {
 		t.Fatalf("total = %d, want above PathCountSkipThreshold=%d", total, graphwalk.PathCountSkipThreshold)
 	}

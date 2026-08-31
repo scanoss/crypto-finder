@@ -45,7 +45,9 @@ func condensedBackwardChains(
 	opNode graphNode,
 	reverse map[graphNode][]reverseEdge,
 	entrySet map[graphNode]bool,
+	maxChains int,
 ) (chains []backwardChain, total int, truncated bool) {
+	maxChains = resolveMaxChains(maxChains)
 	callers := make(map[graphNode][]graphNode, len(reverse))
 	inbounds := make(map[callSiteKey]inbound, len(reverse))
 	for target, edges := range reverse {
@@ -80,7 +82,7 @@ func condensedBackwardChains(
 	if total > graphwalk.PathCountSkipThreshold {
 		return nil, total, true
 	}
-	for _, route := range graphwalk.Routes(reach, condensed, stitchMaxChainsPerOp) {
+	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
 		chains = append(chains, materializeBackwardChain(route, inbounds))
 	}
 	return chains, total, len(chains) < total

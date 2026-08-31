@@ -538,6 +538,16 @@ func TestScanCommand_DepMaxDepthFlagRemoved(t *testing.T) {
 	}
 }
 
+func TestScanCommand_ExportCallgraphMaxChainsFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("export-callgraph-max-chains")
+	if flag == nil {
+		t.Fatal("expected --export-callgraph-max-chains flag")
+	}
+	if flag.DefValue != "128" {
+		t.Fatalf("default = %q, want 128", flag.DefValue)
+	}
+}
+
 func TestCountFindings(t *testing.T) {
 	t.Run("nil report", func(t *testing.T) {
 		count := scanutil.CountFindings(nil)

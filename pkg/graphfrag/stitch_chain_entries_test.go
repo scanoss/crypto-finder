@@ -106,6 +106,57 @@ func TestStitchChainEntrySignatures_RestrictsChainsNotTheIndex(t *testing.T) {
 	}
 }
 
+// TestStitchMaxChains_KeepsFullEntryIndex is issue #334: N=1 samples one route
+// but crypto_entry_points still lists every function that reaches the finding.
+func TestStitchMaxChains_KeepsFullEntryIndex(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := chainEntryFixture()
+	module := fragments[root].Module
+
+	full, err := StitchWithOptions(root, deps, fragments, StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("StitchWithOptions (default): %v", err)
+	}
+	one, err := StitchWithOptions(root, deps, fragments, StitchOptions{EntryRootedOnly: true, MaxChains: 1})
+	if err != nil {
+		t.Fatalf("StitchWithOptions (N=1): %v", err)
+	}
+
+	if got := rootFrameSignatures(full); len(got) != 2 {
+		t.Fatalf("default chain heads = %v, want both entries", got)
+	}
+	if got := rootFrameSignatures(one); len(got) != 1 {
+		t.Fatalf("N=1 chain heads = %v, want one sampled route", got)
+	}
+
+	oneExport := one.ToCallgraphExport(root, ScanMeta{RootModule: module, Ecosystem: "java"})
+	if len(oneExport.FindingGraphs) != 1 {
+		t.Fatalf("N=1 FindingGraphs len = %d, want 1", len(oneExport.FindingGraphs))
+	}
+	fg := oneExport.FindingGraphs[0]
+	if len(fg.CallChains) != 1 {
+		t.Fatalf("N=1 CallChains len = %d, want 1", len(fg.CallChains))
+	}
+	if fg.Analysis == nil || fg.Analysis.CallChains != AnalysisPartial {
+		t.Fatalf("N=1 Analysis = %+v, want call_chains partial", fg.Analysis)
+	}
+	if fg.Reachability == ReachabilityUnreachable {
+		t.Fatal("N=1 reachability is unreachable; budget truncation must not claim that")
+	}
+
+	fullIndex := entryPointSignatures(t, full, root, module)
+	oneIndex := entryPointSignatures(t, one, root, module)
+	if len(fullIndex) != len(oneIndex) {
+		t.Fatalf("index shrunk at N=1:\n default %v\n N=1     %v", fullIndex, oneIndex)
+	}
+	for i := range fullIndex {
+		if fullIndex[i] != oneIndex[i] {
+			t.Fatalf("index shrunk at N=1:\n default %v\n N=1     %v", fullIndex, oneIndex)
+		}
+	}
+}
+
 // TestStitchChainEntrySignatures_UnknownSignatureEmitsNoChain guards the
 // fail-quiet direction: a signature naming nothing must yield no routes, and must
 // NOT fall through to the self-chain fallback, which would report the operation

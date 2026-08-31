@@ -52,7 +52,7 @@ type StitchOptions struct {
 	// crypto, this says which routes are worth spending the chain budget on.
 	// Restricting the index instead would reintroduce the bug #249 fixed.
 	//
-	// Why it is needed: chains are capped at stitchMaxChainsPerOp per operation
+	// Why it is needed: chains are capped at DefaultMaxChainsPerOp per operation
 	// and the enumeration spends that budget in traversal order — several routes
 	// from one entry before any route from another. On a dense library the
 	// emitted chains therefore start at a small fraction of the published
@@ -64,6 +64,11 @@ type StitchOptions struct {
 	// becoming a synthetic entry, and a function carrying no canonical signature
 	// cannot be named.
 	ChainEntrySignatures []string
+
+	// MaxChains is the per-operation emit budget for condensed call_chains.
+	// Zero uses DefaultMaxChainsPerOp (128), matching live --export-callgraph
+	// when the CLI flag is omitted. Depth remains stitchMaxDepth (32).
+	MaxChains int
 }
 
 // Defaults applied by forwardCapsFrom when the corresponding StitchOptions
@@ -180,7 +185,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
 			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures),
 			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures, composedRoutes),
-			composedRoutes, ambiguousCandidates, &out)
+			composedRoutes, ambiguousCandidates, resolveMaxChains(opts.MaxChains), &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
 		if opts.ForwardClosure {
 			out.forwardClosures = buildForwardClosures(adjacency, suppressed, opsByNode, supportingByNode, fragments, functionsByNode, forwardCapsFrom(opts))
@@ -1166,15 +1171,22 @@ func indexOperationEntryPoints(closure []ComponentKey, fragments map[ComponentKe
 // ever violated.
 const stitchMaxFrontier = 1_000_000
 
-// stitchMaxDepth and stitchMaxChainsPerOp mirror the bounds the live exporter
-// passes to TraceBackLimited (internal/scan/export.go buildBaseCallChains:
-// maxDepth=32, maxChains=128). The served stitch MUST apply the same caps or it
-// would emit deeper / more numerous chains than a live --export-callgraph run
-// (live silently drops chains past these bounds), breaking the parity contract.
+// stitchMaxDepth and DefaultMaxChainsPerOp mirror the bounds the live exporter
+// passes to TraceBackCondensed (internal/scan/export.go: maxDepth=32,
+// maxChains=DefaultMaxChainsPerOp). The served stitch MUST apply the same caps
+// or it would emit deeper / more numerous chains than a live --export-callgraph
+// run (live silently drops chains past these bounds), breaking the parity contract.
 const (
-	stitchMaxDepth       = 32
-	stitchMaxChainsPerOp = 128
+	stitchMaxDepth        = 32
+	DefaultMaxChainsPerOp = 128
 )
+
+func resolveMaxChains(n int) int {
+	if n <= 0 {
+		return DefaultMaxChainsPerOp
+	}
+	return n
+}
 
 // reverseEdge is one backward step: from a node to one of its callers, carrying
 // the entryCall of the FORWARD edge (caller -> node) so frame EntryCall stamping
@@ -1244,6 +1256,7 @@ func traceBackward(
 	composedFindings map[string]bool,
 	composedRoutes map[string][]graphNode,
 	ambiguousCandidates map[graphNode][]adjacencyEdge,
+	maxChains int,
 	out *Result,
 ) {
 	reverse := reverseAdjacency(adjacency)
@@ -1275,7 +1288,7 @@ func traceBackward(
 		// The route total is counted before enumerating (condensedBackwardChains
 		// returns it) but is not published: the served contract has no field for
 		// it, and this package stays free of a logger by design.
-		chains, _, truncated := condensedBackwardChains(opNode, reverse, chainEntrySet)
+		chains, _, truncated := condensedBackwardChains(opNode, reverse, chainEntrySet, maxChains)
 		if len(chains) == 0 {
 			if truncated {
 				// Path-count ceiling (#292): Count proved entry-reaching routes
@@ -1301,7 +1314,7 @@ func traceBackward(
 			chains = []backwardChain{composedRouteChain(opNode, opsByNode[opNode], composedRoutes, adjacency, ambiguousCandidates, out)}
 		}
 		for _, chain := range chains {
-			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, out)
+			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, truncated, out)
 		}
 	}
 }
@@ -1497,6 +1510,7 @@ func emitChain(
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
 	supportingSeen map[graphNode]bool,
+	chainsTruncated bool,
 	out *Result,
 ) {
 	frames := make([]CallFrame, len(chain.nodes))
@@ -1517,11 +1531,12 @@ func emitChain(
 	for i := range opsByNode[opNode] {
 		op := opsByNode[opNode][i]
 		chainCopy := FindingChain{
-			FindingID:  op.FindingID,
-			RuleID:     op.RuleID,
-			Symbol:     op.Symbol,
-			Frames:     append([]CallFrame(nil), frames...),
-			Confidence: ConfidenceHigh,
+			FindingID:       op.FindingID,
+			RuleID:          op.RuleID,
+			Symbol:          op.Symbol,
+			Frames:          append([]CallFrame(nil), frames...),
+			Confidence:      ConfidenceHigh,
+			ChainsTruncated: chainsTruncated,
 		}
 		// Carry the full CryptoOperation so the converter can emit crypto_call
 		// without re-reading the original fragments.
