@@ -103,8 +103,22 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"rust-demo\"\n"), 0o600); err != nil {
 			t.Fatalf("write Cargo.toml: %v", err)
 		}
-		if got := DetectRootModule(dir, "rust"); got != "rust-demo" {
-			t.Fatalf("DetectRootModule(rust) = %q, want rust-demo", got)
+		if got := DetectRootModule(dir, "rust"); got != "rust_demo" {
+			t.Fatalf("DetectRootModule(rust) = %q, want rust_demo", got)
+		}
+	})
+
+	// A hyphenated manifest name (Cargo allows it) is not the crate identifier
+	// code references -- Cargo itself substitutes underscores -- so scanning
+	// this crate as itself must yield the same identity a consumer's
+	// `use aes_gcm::...` resolves to, or no contract can ever match it.
+	t.Run("rust-hyphenated-name-becomes-the-crate-identifier", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"aes-gcm\"\n"), 0o600); err != nil {
+			t.Fatalf("write Cargo.toml: %v", err)
+		}
+		if got := DetectRootModule(dir, "rust"); got != "aes_gcm" {
+			t.Fatalf("DetectRootModule(rust hyphenated) = %q, want aes_gcm", got)
 		}
 	})
 

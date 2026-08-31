@@ -37,8 +37,13 @@ func DetectRootModule(targetDir, ecosystem string) string {
 			return name
 		}
 	case ecosystemRust:
+		// Cargo lets a manifest's package name use hyphens, but the crate
+		// identifier code actually references is the underscore form (Cargo
+		// itself makes this substitution) -- yielding the same identity a
+		// consumer's `use aes_gcm::...` resolves to, instead of one no
+		// contract can ever match.
 		if name := detectSectionName(filepath.Join(targetDir, "Cargo.toml"), "[package]"); name != "" {
-			return name
+			return strings.ReplaceAll(name, "-", "_")
 		}
 	case ecosystemPython:
 		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]"); name != "" {
