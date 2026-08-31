@@ -8,7 +8,6 @@
 FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
 
 ARG OPENGREP_VERSION=v1.12.1
-ARG OPENGREP_INSTALLER_SHA256=a74388d0aec282eddf15fc8d42884de6531e1fc5a7bdc3ac31863c854e974eee
 ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
 ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
 ARG TARGETARCH
@@ -20,7 +19,7 @@ ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-# Install system dependencies for OpenGrep installer
+# Install system dependencies for downloading the pinned OpenGrep binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl=8.14.1-2+deb13u4 \
     ca-certificates=20250419 \
@@ -29,13 +28,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Semgrep 1.145.0
 RUN pip install --no-cache-dir semgrep==1.145.0
 
-# Install OpenGrep after verifying the version-pinned installer.
-RUN curl -fsSL "https://raw.githubusercontent.com/opengrep/opengrep/${OPENGREP_VERSION}/install.sh" -o /tmp/opengrep-install.sh \
-    && echo "${OPENGREP_INSTALLER_SHA256}  /tmp/opengrep-install.sh" | sha256sum -c - \
-    && bash /tmp/opengrep-install.sh -v "${OPENGREP_VERSION}" \
-    && case "${TARGETARCH}" in amd64) hash="${OPENGREP_AMD64_SHA256}" ;; arm64) hash="${OPENGREP_ARM64_SHA256}" ;; *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
-    && echo "${hash}  /root/.opengrep/cli/${OPENGREP_VERSION}/opengrep" | sha256sum -c - \
-    && rm -f /tmp/opengrep-install.sh
+# Install the pinned opengrep release directly. This avoids the installer's
+# live releases API lookup while retaining binary integrity verification.
+RUN case "${TARGETARCH}" in \
+        amd64) asset="opengrep_manylinux_x86"; hash="${OPENGREP_AMD64_SHA256}" ;; \
+        arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && install_dir="/root/.opengrep/cli/${OPENGREP_VERSION}" \
+    && mkdir -p "${install_dir}" \
+    && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
+    && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
+    && chmod a+x "${install_dir}/opengrep" \
+    && ln -s "${install_dir}" /root/.opengrep/cli/latest
 
 # Copy the pre-built crypto-finder binary from GoReleaser's build context
 COPY crypto-finder /usr/local/bin/crypto-finder
@@ -74,7 +79,7 @@ RUN python -m venv /opt/target-venv
 # user. The scanner/tool installers above run as root and place state under
 # /root, so we must migrate those homes before dropping privileges.
 #
-# OpenGrep needs an extra step: its installer creates an ABSOLUTE symlink at
+# OpenGrep needs an extra step: the install places an ABSOLUTE symlink at
 # /root/.opengrep/cli/latest. After the move that symlink dangles. We locate
 # the real binary and pin a stable /usr/local/bin/opengrep symlink instead.
 RUN groupadd --system crypto && \
@@ -98,8 +103,8 @@ ENV CARGO_HOME=/home/crypto/.cargo
 ENV RUSTUP_HOME=/home/crypto/.rustup
 # Note: opengrep is reached via /usr/local/bin/opengrep (already on $PATH),
 # pinned by the symlink created during user setup above. We deliberately don't
-# append /home/crypto/.opengrep/cli/latest here because the installer creates a
-# root-owned absolute symlink there, which becomes invalid after migration.
+# append /home/crypto/.opengrep/cli/latest here because that path is an
+# absolute symlink that becomes invalid after migration.
 ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/home/crypto/.cargo/bin:$PATH"
 
 # Create workspace directory
