@@ -472,29 +472,29 @@ func streamCallGraphExport(
 	if err := writeCallGraphPrefix(writer, meta); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	index, supportingByID, referencedSupporting, chainRoots, functions, err := streamFindingGraphs(writer, ctx, assets)
+	streamed, err := streamFindingGraphs(writer, ctx, assets)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	if err := writeGraphFragmentArrayField(writer, "functions", functions, false); err != nil {
+	if err := writeGraphFragmentArrayField(writer, "functions", streamed.functions, false); err != nil {
 		return streamedCallGraphExport{}, err
 	}
 
-	supportingCalls := sortedSupportingCalls(supportingByID)
+	supportingCalls := sortedSupportingCalls(streamed.supportingByID)
 	for i := range supportingCalls {
 		supportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, supportingCalls[i].FunctionKey)
-		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
+		if _, ok := streamed.referencedSupporting[supportingCalls[i].SupportingID]; ok {
 			continue
 		}
-		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
+		addSupportingCallToEntryPointIndex(streamed.index, supportingCalls[i])
 	}
 	if err := writeGraphFragmentArrayField(writer, "supporting_calls", supportingCalls, true); err != nil {
 		return streamedCallGraphExport{}, err
 	}
 
-	entryPoints := flattenEntryPointIndex(ctx.kb, index)
+	entryPoints := flattenEntryPointIndex(ctx.kb, streamed.index)
 	for i := range entryPoints {
-		if chainRoots[entryPoints[i].FunctionKey] {
+		if streamed.chainRoots[entryPoints[i].FunctionKey] {
 			entryPoints[i].Root = true
 		}
 		entryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, entryPoints[i].FunctionKey)
@@ -505,7 +505,7 @@ func streamCallGraphExport(
 	if _, err := writer.w.WriteString("\n}\n"); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	return streamedCallGraphExport{functions: functions, supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
+	return streamedCallGraphExport{functions: streamed.functions, supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
 }
 
 func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta) error {
@@ -521,11 +521,19 @@ func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportS
 	return writer.startArrayField("finding_graphs")
 }
 
+type streamedFindingGraphs struct {
+	index                map[string]*entryPointData
+	supportingByID       map[string]callGraphSupportingCall
+	referencedSupporting map[string]struct{}
+	chainRoots           map[string]bool
+	functions            []graphfrag.ExportInternedFunction
+}
+
 func streamFindingGraphs(
 	writer *graphFragmentJSONWriter,
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,
-) (map[string]*entryPointData, map[string]callGraphSupportingCall, map[string]struct{}, map[string]bool, []graphfrag.ExportInternedFunction, error) {
+) (streamedFindingGraphs, error) {
 	index := make(map[string]*entryPointData)
 	supportingByID := make(map[string]callGraphSupportingCall)
 	referencedSupporting := make(map[string]struct{})
@@ -562,14 +570,20 @@ func streamFindingGraphs(
 		}
 		internLiveFindingGraph(&intern, &fg)
 		if err := writer.writeArrayElement(i, fg); err != nil {
-			return nil, nil, nil, nil, nil, err
+			return streamedFindingGraphs{}, err
 		}
 		logCallGraphExportProgress(i+1, len(assets), buildStart)
 	}
 	if err := writer.endArrayField(len(assets)); err != nil {
-		return nil, nil, nil, nil, nil, err
+		return streamedFindingGraphs{}, err
 	}
-	return index, supportingByID, referencedSupporting, chainRoots, intern.Functions(), nil
+	return streamedFindingGraphs{
+		index:                index,
+		supportingByID:       supportingByID,
+		referencedSupporting: referencedSupporting,
+		chainRoots:           chainRoots,
+		functions:            intern.Functions(),
+	}, nil
 }
 
 func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []callGraphSupportingCall) {
@@ -779,12 +793,16 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 		out.SupportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.SupportingCalls[i].FunctionKey)
 	}
 
-	intern := graphfrag.FunctionInterner{}
-	for i := range out.FindingGraphs {
-		internLiveFindingGraph(&intern, &out.FindingGraphs[i])
-	}
-	out.Functions = intern.Functions()
+	out.Functions = internLiveCatalog(out.FindingGraphs)
 	return out
+}
+
+func internLiveCatalog(graphs []callGraphExportFinding) []graphfrag.ExportInternedFunction {
+	intern := graphfrag.FunctionInterner{}
+	for i := range graphs {
+		internLiveFindingGraph(&intern, &graphs[i])
+	}
+	return intern.Functions()
 }
 
 func internLiveFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExportFinding) {

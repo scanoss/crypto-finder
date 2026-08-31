@@ -27,24 +27,24 @@ func TestFunctionInterner_KeepsSameSignatureAcrossDependencies(t *testing.T) {
 
 	var intern FunctionInterner
 	left := intern.Intern(FrameIdentity{
-		FunctionKey:  "sink#0",
-		FunctionName: "com.lib.Sink.run",
-		FilePath:     "Sink.java",
-		StartLine:    10,
+		FunctionKey:    "sink#0",
+		FunctionName:   "com.lib.Sink.run",
+		FilePath:       "Sink.java",
+		StartLine:      10,
 		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:left", Version: "1.0.0", PURL: "pkg:maven/com.lib/left@1.0.0"},
 	})
 	right := intern.Intern(FrameIdentity{
-		FunctionKey:  "sink#0",
-		FunctionName: "com.lib.Sink.run",
-		FilePath:     "Sink.java",
-		StartLine:    10,
+		FunctionKey:    "sink#0",
+		FunctionName:   "com.lib.Sink.run",
+		FilePath:       "Sink.java",
+		StartLine:      10,
 		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:right", Version: "2.0.0", PURL: "pkg:maven/com.lib/right@2.0.0"},
 	})
 	leftAgain := intern.Intern(FrameIdentity{
-		FunctionKey:  "sink#0",
-		FunctionName: "com.lib.Sink.run",
-		FilePath:     "Sink.java",
-		StartLine:    10,
+		FunctionKey:    "sink#0",
+		FunctionName:   "com.lib.Sink.run",
+		FilePath:       "Sink.java",
+		StartLine:      10,
 		DependencyInfo: &ExportDependencyInfo{Module: "com.lib:left", Version: "1.0.0", PURL: "pkg:maven/com.lib/left@1.0.0"},
 	})
 	if left == right {
