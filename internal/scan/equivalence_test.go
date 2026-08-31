@@ -80,6 +80,8 @@ func assertEquivClean(t *testing.T, rep *equiv.DiffReport) {
 func liveCallgraphExport(t *testing.T, file, src string, report *entities.InterimReport) callGraphExportV2 {
 	return liveCallgraphExportWithMaxChains(t, file, src, report, 0)
 }
+
+func liveCallgraphExportWithMaxChains(t *testing.T, file, src string, report *entities.InterimReport, maxChains int) callGraphExportV2 {
 	t.Helper()
 	const importPath = "com.app:app"
 	dir := t.TempDir()
