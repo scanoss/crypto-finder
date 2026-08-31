@@ -1,0 +1,128 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ark-ec
+  coordinates:
+    - ark-ec
+    - ark_ec
+  version_range: ">=0.2.0,<0.7.0"
+  description: "Generic elliptic-curve group and pairing traits for the arkworks stack"
+
+# API read at ark-ec 0.6.0 (src/pairing.rs, src/lib.rs, src/hashing/), with the
+# pre-rename era read at 0.3.0 and 0.2.0 because the matrix range starts there.
+# This crate is where the family's one API break lives:
+#
+#   0.2.0  lib.rs:41 `pub trait PairingEngine`, declared at the CRATE ROOT, with
+#          `pairing` (lib.rs:105, two arguments), `product_of_pairings`
+#          (lib.rs:56, one argument), `miller_loop` and `final_exponentiation`.
+#          The curve traits are `ProjectiveCurve` and `AffineCurve`.
+#   0.3.0  unchanged from 0.2.0.
+#   0.4.0  pairing.rs:23 `pub trait Pairing`, MOVED into a new `pairing` module,
+#          so the resolved key gains a module segment. `product_of_pairings`
+#          becomes `multi_pairing` and `multi_miller_loop` appears;
+#          `ProjectiveCurve`/`AffineCurve` become `CurveGroup`/`AffineRepr`;
+#          and a new `hashing` module appears (hashing/mod.rs:9
+#          `pub trait HashToCurve`).
+#   0.6.0  pairing.rs:23 unchanged since 0.4.0. The 0.5.0 -> 0.6.0 diff touches
+#          only internal arithmetic helpers, none of them contracted here.
+#
+# BOTH ERAS ARE KEYED SEPARATELY AND DELIBERATELY. `ark_ec::PairingEngine.pairing`
+# and `ark_ec::pairing::Pairing.pairing` are different keys, not spellings of
+# one: the trait moved modules, so a single key would resolve on one half of the
+# range and silently produce "(?, ?)" on the other.
+#
+# ARITIES READ FROM THE TRAIT DECLARATIONS: 0.6.0 pairing.rs:117 `fn pairing(p,
+# q)` and :87 `fn multi_pairing(a, b)` take two; :84 `fn final_exponentiation`
+# takes one; 0.3.0 lib.rs:56 `fn product_of_pairings(i)` takes one. `generator()`
+# is nullary (lib.rs:48 AffineRepr, lib.rs:185 CurveGroup).
+#
+# ark-ec defines no curve of its own, so these call sites name no curve. That is
+# why the matching rules emit no ellipticCurve: the concrete curve is reported
+# by the crate that instantiates it. Generic group arithmetic — addition,
+# doubling, `into_affine`, `mul_bigint`, multi-scalar multiplication — is
+# deliberately absent for the same reason it carries no crypto asset.
+#
+# skipped-non-crypto: Add/Sub/Mul/Neg operator impls, VariableBaseMSM::msm,
+#   ScalarMul, the short-Weierstrass and twisted-Edwards model internals, and
+#   CanonicalSerialize/CanonicalDeserialize.
+# parameter_types record the declared trait signature. ark-ec is generic over
+# the curve, so the associated types are named as the trait declares them
+# rather than resolved to a concrete curve, which is genuinely unknown here.
+contracts:
+  # 0.4.0 and later: the trait lives in the `pairing` module.
+  - method: ark_ec::pairing::Pairing.pairing
+    arity: 2
+    return: { type: ark_ec::pairing::PairingOutput, confidence: high }
+    parameter_types: ["ark_ec::pairing::Pairing::G1Prepared", "ark_ec::pairing::Pairing::G2Prepared"]
+    role: operation
+  - method: ark_ec::pairing::Pairing.multi_pairing
+    arity: 2
+    return: { type: ark_ec::pairing::PairingOutput, confidence: high }
+    parameter_types: ["ark_ec::pairing::Pairing::G1Prepared", "ark_ec::pairing::Pairing::G2Prepared"]
+    role: operation
+  - method: ark_ec::pairing::Pairing.miller_loop
+    arity: 2
+    return: { type: ark_ec::pairing::MillerLoopOutput, confidence: high }
+    parameter_types: ["ark_ec::pairing::Pairing::G1Prepared", "ark_ec::pairing::Pairing::G2Prepared"]
+    role: operation
+  - method: ark_ec::pairing::Pairing.multi_miller_loop
+    arity: 2
+    return: { type: ark_ec::pairing::MillerLoopOutput, confidence: high }
+    parameter_types: ["ark_ec::pairing::Pairing::G1Prepared", "ark_ec::pairing::Pairing::G2Prepared"]
+    role: operation
+  - method: ark_ec::pairing::Pairing.final_exponentiation
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["ark_ec::pairing::MillerLoopOutput"]
+    role: operation
+  # 0.2.0 and 0.3.0: the trait is at the crate root and the names differ.
+  - method: ark_ec::PairingEngine.pairing
+    arity: 2
+    return: { type: ark_ec::PairingEngine::Fqk, confidence: high }
+    parameter_types: ["ark_ec::PairingEngine::G1Affine", "ark_ec::PairingEngine::G2Affine"]
+    role: operation
+  - method: ark_ec::PairingEngine.product_of_pairings
+    arity: 1
+    return: { type: ark_ec::PairingEngine::Fqk, confidence: high }
+    parameter_types: ["ark_ec::PairingEngine::G1Prepared"]
+    role: operation
+  - method: ark_ec::PairingEngine.miller_loop
+    arity: 1
+    return: { type: ark_ec::PairingEngine::Fqk, confidence: high }
+    parameter_types: ["ark_ec::PairingEngine::G1Prepared"]
+    role: operation
+  - method: ark_ec::PairingEngine.final_exponentiation
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["ark_ec::PairingEngine::Fqk"]
+    role: operation
+  # hash-to-curve, 0.4.0 and later only.
+  - method: ark_ec::hashing::HashToCurve.hash_to_curve
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: ark_ec::hashing::map_to_curve_hasher::MapToCurveBasedHasher.new
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  # Base-point derivation. Nullary on both curve traits.
+  - method: ark_ec::AffineRepr.generator
+    arity: 0
+    return: { type: ark_ec::AffineRepr, confidence: medium }
+    role: factory
+  - method: ark_ec::CurveGroup.generator
+    arity: 0
+    return: { type: ark_ec::CurveGroup, confidence: medium }
+    role: factory
+  - method: ark_ec::AffineCurve.prime_subgroup_generator
+    arity: 0
+    return: { type: ark_ec::AffineCurve, confidence: medium }
+    role: factory
+  - method: ark_ec::ProjectiveCurve.prime_subgroup_generator
+    arity: 0
+    return: { type: ark_ec::ProjectiveCurve, confidence: medium }
+    role: factory
+
+hierarchy: {}
