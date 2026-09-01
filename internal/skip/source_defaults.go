@@ -30,8 +30,11 @@ var DefaultSkippedDirs = []string{
 	"wheels",
 	"htmlcov",
 	"__pypackages__",
-	"example",
-	"examples",
+	// "example" and "examples" stay out of this list on purpose. They are
+	// fingerprinting-noise filters: a gitignore-style "example" match drops
+	// every path segment of that name, including Java com.example packages
+	// and shipped SDK samples. Crypto inventory has to see those files.
+	// Operators who still want them excluded can pass --exclude.
 	"docs",
 	"doc",
 	"node_modules",
