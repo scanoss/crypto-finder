@@ -142,11 +142,12 @@ Supporting calls (setup/lifecycle/config calls around a crypto object, e.g. `dig
 ### 6. Call-chain sample vs entry-point index
 
 `call_chains` is a capped sample of routes, default 128. Live `--export-callgraph`
-sets N with `--export-callgraph-max-chains`. Stitch sets N with
-`StitchOptions.MaxChains`. Zero or omitted keeps 128 on both paths. Live UIs
-that only need a composed route through dependencies pass 8 or 1. Do not
-silently shrink the default. `crypto_entry_points` is the complete reverse-reach
-set and is never filtered by that budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
+sets N with `--export-callgraph-max-chains`. Omitting the flag keeps 128; values
+below 1 are rejected. Stitch sets N with `StitchOptions.MaxChains`. Zero or
+omitted keeps 128 on the stitch path. Live UIs that only need a composed route
+through dependencies pass 8 or 1. Do not silently shrink the default.
+`crypto_entry_points` is the complete reverse-reach set and is never filtered by
+that budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
 
 ## Schema Versioning
 
