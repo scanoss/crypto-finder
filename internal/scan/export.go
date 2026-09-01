@@ -3225,17 +3225,15 @@ func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult
 	if result.CallGraph == nil {
 		return
 	}
-	projectRoot := filepath.Clean(result.ProjectRoot)
-	if projectRoot == "" || !filepath.IsAbs(projectRoot) {
+	projectRoot := absCleanPath(result.ProjectRoot)
+	if projectRoot == "" {
 		return
 	}
 	depDirs := make([]string, 0, len(result.Dependencies))
 	for _, dep := range result.Dependencies {
-		dir := filepath.Clean(dep.Dir)
-		if dir == "" || !filepath.IsAbs(dir) {
-			continue
+		if dir := absCleanPath(dep.Dir); dir != "" {
+			depDirs = append(depDirs, dir)
 		}
-		depDirs = append(depDirs, dir)
 	}
 	for _, fn := range result.CallGraph.Functions {
 		if fn == nil || fn.ID.Package == "" {
@@ -3249,16 +3247,27 @@ func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult
 }
 
 func isProjectSourceFile(path, projectRoot string, depDirs []string) bool {
-	if path == "" || !filepath.IsAbs(path) {
+	cleaned := absCleanPath(path)
+	if cleaned == "" {
 		return false
 	}
-	cleaned := filepath.Clean(path)
 	for _, depDir := range depDirs {
 		if pathIsInside(cleaned, depDir) {
 			return false
 		}
 	}
 	return pathIsInside(cleaned, projectRoot)
+}
+
+func absCleanPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return abs
 }
 
 func pathIsInside(path, root string) bool {
