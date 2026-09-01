@@ -748,3 +748,35 @@ func TestParseDuration(t *testing.T) {
 		})
 	}
 }
+
+// A C++ header must contribute BOTH the c and cpp ecosystems. The comment in
+// reportOccurrenceKeyEcosystems says why: a C-language detector reports C and
+// C++ sources alike, and both source-only parsers have to be built so a C++
+// header never hides .c anchors.
+//
+// This is a characterisation test. It is written to pass BEFORE the language
+// detector learned to tell a C++ header from a C one, so that the change to the
+// detector cannot quietly drop the c ecosystem on the way past.
+func TestReportOccurrenceKeyEcosystems_CPPHeaderKeepsBothEcosystems(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "crypto.h")
+	if err := os.WriteFile(headerPath, []byte("#pragma once\nnamespace Botan { class HashFunction {}; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both spellings the detector can produce for that same file.
+	for _, language := range []string{"c", "c++"} {
+		report := &entities.InterimReport{
+			Findings: []entities.Finding{{FilePath: headerPath, Language: language}},
+		}
+		got := reportOccurrenceKeyEcosystems(headerPath, report, nil)
+
+		seen := map[string]bool{}
+		for _, ecosystem := range got {
+			seen[ecosystem] = true
+		}
+		if !seen["c"] || !seen[ecosystemCPP] {
+			t.Fatalf("language %q on a C++ header produced %v, want both c and cpp", language, got)
+		}
+	}
+}

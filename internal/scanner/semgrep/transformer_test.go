@@ -1159,3 +1159,112 @@ func TestOpengrep_EndColConventionPinning(t *testing.T) {
 			r.End.Col, r.Start.Col, span, len(matched), matched)
 	}
 }
+
+// Asked by name alone, enry answers these three with the wrong language:
+// .rs -> XML, .cs -> Smalltalk, .php -> Hack. Each extension has several
+// candidates and the tie is broken without looking at the file. The wrong name
+// is then stored on every finding for those languages, and because "xml" is not
+// an ecosystem any consumer recognises it contributes nothing rather than
+// failing loudly -- so nothing surfaces the mistake.
+//
+// Real files, because reading them is the whole point of the fix.
+func TestDetectLanguageResolvesAmbiguousExtensions(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "lib.rs",
+			content: "use std::collections::HashMap;\n\npub fn build() -> HashMap<String, u32> {\n    HashMap::new()\n}\n",
+			want:    "rust",
+		},
+		{
+			name:    "Program.cs",
+			content: "using System;\n\nnamespace Demo {\n    public class Program {\n        public static void Main(string[] args) { Console.WriteLine(\"hi\"); }\n    }\n}\n",
+			want:    "c#",
+		},
+		{
+			name:    "index.php",
+			content: "<?php\nfunction greet($name) {\n    return \"hello \" . $name;\n}\n",
+			want:    "php",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), tc.name)
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := detectLanguage(path); got != tc.want {
+				t.Errorf("detectLanguage(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// A C++ header and a C header share the .h extension. Telling them apart is a
+// consequence of reading content, not the goal, and it is the one place the
+// change alters an answer the codebase already depended on --
+// reportOccurrenceKeyEcosystems keys on it. Pin both directions here so the
+// pairing with that branch stays visible from this side too.
+func TestDetectLanguageDistinguishesCAndCPPHeaders(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		label   string
+		content string
+		want    string
+	}{
+		{"C header", "#ifndef FOO_H\n#define FOO_H\nint add(int a, int b);\n#endif\n", "c"},
+		{"C++ header", "#pragma once\n#include <string>\nclass Foo {\npublic:\n    std::string name() const;\n};\n", "c++"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "crypto.h")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := detectLanguage(path); got != tc.want {
+				t.Errorf("detectLanguage(%s) = %q, want %q", tc.label, got, tc.want)
+			}
+		})
+	}
+}
+
+// An unreadable path must still answer, because a possibly-wrong language is
+// more useful downstream than none. This is also what keeps the existing
+// name-only table test above meaningful: it passes paths that do not exist.
+func TestDetectLanguageFallsBackWhenFileIsUnreadable(t *testing.T) {
+	t.Parallel()
+
+	if got := detectLanguage(filepath.Join(t.TempDir(), "nope", "main.go")); got != "go" {
+		t.Errorf("detectLanguage(missing .go) = %q, want go", got)
+	}
+	if got := detectLanguage(filepath.Join(t.TempDir(), "nope", "file.xyz")); got != "unknown" {
+		t.Errorf("detectLanguage(missing .xyz) = %q, want unknown", got)
+	}
+}
+
+// The read is capped, so a file larger than the cap must still classify: enry's
+// content strategies look at the head of the file, which is what gets read.
+func TestDetectLanguageClassifiesFilesLargerThanTheSniffLimit(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "big.rs")
+	body := "use std::collections::HashMap;\n\npub fn build() -> HashMap<String, u32> {\n    HashMap::new()\n}\n"
+	padding := strings.Repeat("// padding to push this file past the sniff limit\n", 1000)
+	if err := os.WriteFile(path, []byte(body+padding), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(body+padding)) <= languageSniffLimit {
+		t.Fatalf("fixture is %d bytes, which does not exceed the %d-byte cap", len(body+padding), languageSniffLimit)
+	}
+	if got := detectLanguage(path); got != "rust" {
+		t.Errorf("detectLanguage(large .rs) = %q, want rust", got)
+	}
+}
