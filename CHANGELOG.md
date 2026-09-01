@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Callgraph contract KBs for the RustCrypto hash crates — blake2, md-5, ripemd, sha1, sha2, sha3 and whirlpool — so a consumer's hash call sites resolve to a declared signature instead of an empty one. Each covers both eras in its committed range, including sha2's `Sha512Trunc224`/`Sha512Trunc256` to `Sha512_224`/`Sha512_256` rename, blake2's 0.10 swap of the concrete and generic meanings of `Blake2b`, and the two unrelated upstream projects published under the `sha1` crate name.
+- Callgraph contracts for the RustCrypto formats crates: `der` (the zeroizing SecretDocument container), `pkcs8` (the encrypted PKCS#8 decrypt and encrypt operations) and `spki` (the SHA-256 public key fingerprint). `pkcs1` and `sec1` ship documented empty contracts: everything they offer a consumer is a trait method implemented on another crate's key type, so those call sites carry the implementing crate's identity and cannot be typed from here.
 
 ### Changed
 - Live `--export-callgraph` and stitch keep a default `call_chains` sample of 128. Live scans that only need a composed route through dependencies should pass `--export-callgraph-max-chains 8` or `1`. `crypto_entry_points` stays the complete reverse-reach set at any N. The schema 6.x body still includes `call_chains`; `canonical_signature` spelling is unchanged.
