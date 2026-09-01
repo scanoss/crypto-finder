@@ -1,0 +1,71 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: whirlpool
+  coordinates:
+    - whirlpool
+  version_range: ">=0.1.0,<0.12.0"
+  description: "RustCrypto Whirlpool hash"
+
+# Inventory sources: the whirlpool crate's own source at 0.1.0, 0.10.4 and
+# 0.11.0, and the APIs selected by the scanoss/crypto_rules whirlpool rules.
+#
+# One hasher, fixed 512-bit output, unchanged constructor across the range.
+# `input`/`result` are the pre-digest-0.9 spelling of `update`/`finalize`.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: whirlpool::Whirlpool.new
+    arity: 0
+    return: {type: whirlpool::Whirlpool, confidence: high}
+    role: factory
+  - method: whirlpool::Whirlpool.default
+    arity: 0
+    return: {type: whirlpool::Whirlpool, confidence: high}
+    role: factory
+  - method: whirlpool::Whirlpool.new_with_prefix
+    arity: 1
+    return: {type: whirlpool::Whirlpool, confidence: high}
+    role: factory
+  - method: whirlpool::Whirlpool.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: whirlpool::Whirlpool.chain_update
+    arity: 1
+    return: {type: whirlpool::Whirlpool, confidence: high}
+    role: operation
+  - method: whirlpool::Whirlpool.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: whirlpool::Whirlpool.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: whirlpool::Whirlpool.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: whirlpool::Whirlpool.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: whirlpool::Whirlpool.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: whirlpool::Whirlpool.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: whirlpool::Whirlpool.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+
+hierarchy: {}

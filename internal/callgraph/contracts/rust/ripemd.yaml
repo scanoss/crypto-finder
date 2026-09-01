@@ -1,0 +1,192 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ripemd
+  coordinates:
+    - ripemd
+  version_range: ">=0.1.0,<0.3.0"
+  description: "RustCrypto RIPEMD hashes"
+
+# Inventory sources: the ripemd crate's own source at 0.1.0, 0.1.2 and 0.2.0,
+# and the APIs selected by the scanoss/crypto_rules ripemd rules.
+#
+# Four variants, each its own concrete type. `Ripemd128` does not exist before
+# 0.1.2 (0.1.0 src/lib.rs:157-159 declares only 160/256/320); declaring it for
+# the whole range is safe because a call that does not exist cannot be made,
+# and the alternative — two YAMLs split at 0.1.2 — would collide on the three
+# shared types.
+#
+# The range starts at 0.1.0 rather than the matrix's 0.0.0: that release is a
+# name reservation with an empty src/lib.rs and no API to contract.
+#
+# No `input`/`result` era here: the crate's first release already depends on
+# digest 0.10.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: ripemd::Ripemd128.new
+    arity: 0
+    return: {type: ripemd::Ripemd128, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd128.default
+    arity: 0
+    return: {type: ripemd::Ripemd128, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd128.new_with_prefix
+    arity: 1
+    return: {type: ripemd::Ripemd128, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd128.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd128.chain_update
+    arity: 1
+    return: {type: ripemd::Ripemd128, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd128.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd128.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: ripemd::Ripemd128.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd128.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd128.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd160.new
+    arity: 0
+    return: {type: ripemd::Ripemd160, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd160.default
+    arity: 0
+    return: {type: ripemd::Ripemd160, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd160.new_with_prefix
+    arity: 1
+    return: {type: ripemd::Ripemd160, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd160.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd160.chain_update
+    arity: 1
+    return: {type: ripemd::Ripemd160, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd160.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd160.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: ripemd::Ripemd160.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd160.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd160.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd256.new
+    arity: 0
+    return: {type: ripemd::Ripemd256, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd256.default
+    arity: 0
+    return: {type: ripemd::Ripemd256, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd256.new_with_prefix
+    arity: 1
+    return: {type: ripemd::Ripemd256, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd256.chain_update
+    arity: 1
+    return: {type: ripemd::Ripemd256, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: ripemd::Ripemd256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd320.new
+    arity: 0
+    return: {type: ripemd::Ripemd320, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd320.default
+    arity: 0
+    return: {type: ripemd::Ripemd320, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd320.new_with_prefix
+    arity: 1
+    return: {type: ripemd::Ripemd320, confidence: high}
+    role: factory
+  - method: ripemd::Ripemd320.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd320.chain_update
+    arity: 1
+    return: {type: ripemd::Ripemd320, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd320.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd320.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: ripemd::Ripemd320.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: ripemd::Ripemd320.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: ripemd::Ripemd320.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+
+hierarchy: {}

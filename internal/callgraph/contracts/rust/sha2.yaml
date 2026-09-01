@@ -1,0 +1,518 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sha2
+  coordinates:
+    - sha2
+  version_range: ">=0.1.0,<0.12.0"
+  description: "RustCrypto SHA-2 hashes, plus the vendored rust-crypto module path of the 0.1 line"
+
+# Inventory sources: the sha2 crate's own source at 0.1.0, 0.2.0, 0.9.9, 0.10.9
+# and 0.11.0, and the APIs selected by the scanoss/crypto_rules sha2 rules.
+#
+# THE TRUNCATED PAIR WAS RENAMED INSIDE THE RANGE. `Sha512Trunc224` and
+# `Sha512Trunc256` are the 0.2.0-0.9.9 spelling (0.9.9 src/lib.rs:76);
+# `Sha512_224` and `Sha512_256` are the same algorithms from 0.10.0 onwards
+# (0.11.0 src/lib.rs:60,66). All four are declared: a consumer pinned to either
+# side of the rename must resolve, and the two spellings never co-exist in one
+# release, so nothing is ambiguous.
+#
+# THE 0.1.x LINE IS A DIFFERENT UPSTREAM PROJECT. It vendors DaGenix's
+# rust-crypto and re-exports it as a module, so the consumer path is
+# `sha2::sha2::Sha256` (0.1.0 lib.rs:8-9) and the trait is rust-crypto's own
+# `Digest`, whose `result(&mut out)` takes the output buffer as an ARGUMENT and
+# returns nothing — unlike digest's arity-0 `result`, which returns the digest.
+# Those contracts are declared under the doubled module path with the arity that
+# lineage actually uses, so neither lineage can answer for the other.
+#
+# `input`/`result` on the single-module path are the pre-digest-0.9 spelling of
+# `update`/`finalize` (0.2.0 depends on digest 0.2, 0.9.9 on digest 0.9).
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: sha2::Sha224.new
+    arity: 0
+    return: {type: sha2::Sha224, confidence: high}
+    role: factory
+  - method: sha2::Sha224.default
+    arity: 0
+    return: {type: sha2::Sha224, confidence: high}
+    role: factory
+  - method: sha2::Sha224.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha224, confidence: high}
+    role: factory
+  - method: sha2::Sha224.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha224.chain_update
+    arity: 1
+    return: {type: sha2::Sha224, confidence: high}
+    role: operation
+  - method: sha2::Sha224.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha224.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha224.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha224.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha224.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha224.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha256.new
+    arity: 0
+    return: {type: sha2::Sha256, confidence: high}
+    role: factory
+  - method: sha2::Sha256.default
+    arity: 0
+    return: {type: sha2::Sha256, confidence: high}
+    role: factory
+  - method: sha2::Sha256.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha256, confidence: high}
+    role: factory
+  - method: sha2::Sha256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha256.chain_update
+    arity: 1
+    return: {type: sha2::Sha256, confidence: high}
+    role: operation
+  - method: sha2::Sha256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha256.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha384.new
+    arity: 0
+    return: {type: sha2::Sha384, confidence: high}
+    role: factory
+  - method: sha2::Sha384.default
+    arity: 0
+    return: {type: sha2::Sha384, confidence: high}
+    role: factory
+  - method: sha2::Sha384.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha384, confidence: high}
+    role: factory
+  - method: sha2::Sha384.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha384.chain_update
+    arity: 1
+    return: {type: sha2::Sha384, confidence: high}
+    role: operation
+  - method: sha2::Sha384.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha384.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha384.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha384.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha384.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha384.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha384.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512.new
+    arity: 0
+    return: {type: sha2::Sha512, confidence: high}
+    role: factory
+  - method: sha2::Sha512.default
+    arity: 0
+    return: {type: sha2::Sha512, confidence: high}
+    role: factory
+  - method: sha2::Sha512.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha512, confidence: high}
+    role: factory
+  - method: sha2::Sha512.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512.chain_update
+    arity: 1
+    return: {type: sha2::Sha512, confidence: high}
+    role: operation
+  - method: sha2::Sha512.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha512.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc224.new
+    arity: 0
+    return: {type: sha2::Sha512Trunc224, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc224.default
+    arity: 0
+    return: {type: sha2::Sha512Trunc224, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc224.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha512Trunc224, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc224.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc224.chain_update
+    arity: 1
+    return: {type: sha2::Sha512Trunc224, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc224.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc224.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc224.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc224.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc224.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc224.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc256.new
+    arity: 0
+    return: {type: sha2::Sha512Trunc256, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc256.default
+    arity: 0
+    return: {type: sha2::Sha512Trunc256, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc256.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha512Trunc256, confidence: high}
+    role: factory
+  - method: sha2::Sha512Trunc256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc256.chain_update
+    arity: 1
+    return: {type: sha2::Sha512Trunc256, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512Trunc256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512Trunc256.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_224.new
+    arity: 0
+    return: {type: sha2::Sha512_224, confidence: high}
+    role: factory
+  - method: sha2::Sha512_224.default
+    arity: 0
+    return: {type: sha2::Sha512_224, confidence: high}
+    role: factory
+  - method: sha2::Sha512_224.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha512_224, confidence: high}
+    role: factory
+  - method: sha2::Sha512_224.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_224.chain_update
+    arity: 1
+    return: {type: sha2::Sha512_224, confidence: high}
+    role: operation
+  - method: sha2::Sha512_224.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_224.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha512_224.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_224.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_224.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_224.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_256.new
+    arity: 0
+    return: {type: sha2::Sha512_256, confidence: high}
+    role: factory
+  - method: sha2::Sha512_256.default
+    arity: 0
+    return: {type: sha2::Sha512_256, confidence: high}
+    role: factory
+  - method: sha2::Sha512_256.new_with_prefix
+    arity: 1
+    return: {type: sha2::Sha512_256, confidence: high}
+    role: factory
+  - method: sha2::Sha512_256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_256.chain_update
+    arity: 1
+    return: {type: sha2::Sha512_256, confidence: high}
+    role: operation
+  - method: sha2::Sha512_256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::Sha512_256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::Sha512_256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::Sha512_256.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha224.new
+    arity: 0
+    return: {type: sha2::sha2::Sha224, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha224.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha224.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha256.new
+    arity: 0
+    return: {type: sha2::sha2::Sha256, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha256.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha384.new
+    arity: 0
+    return: {type: sha2::sha2::Sha384, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha384.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha384.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha384.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512.new
+    arity: 0
+    return: {type: sha2::sha2::Sha512, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha512.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha512.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512Trunc224.new
+    arity: 0
+    return: {type: sha2::sha2::Sha512Trunc224, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha512Trunc224.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512Trunc224.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha512Trunc224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512Trunc256.new
+    arity: 0
+    return: {type: sha2::sha2::Sha512Trunc256, confidence: high}
+    role: factory
+  - method: sha2::sha2::Sha512Trunc256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha2::sha2::Sha512Trunc256.result
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha2::sha2::Sha512Trunc256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+
+hierarchy: {}
