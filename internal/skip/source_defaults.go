@@ -42,6 +42,28 @@ var DefaultSkippedDirs = []string{
 	"build",
 	"target",
 	"vendor",
+	// Relocated copies of another artifact (Maven shade, grpc-xds Envoy
+	// protobufs). Authored crypto does not live under this segment.
+	"shaded",
+}
+
+// DefaultSkippedGeneratedPatterns are gitignore-style globs for compiler
+// generated stubs that sit beside authored sources. --no-default-exclusions
+// drops these with the rest of the built-in list. Protobuf runtimes that
+// *are* the scanned artifact are kept by NewMatcher, not by omitting these
+// globs.
+var DefaultSkippedGeneratedPatterns = []string{
+	"**/*OuterClass.java",
+	"**/*_pb2.py",
+	"**/*_pb2_grpc.py",
+	"**/*.pb.go",
+	"**/zz_generated*.go",
+	"**/*_pb.js",
+	"**/*_pb.ts",
+	"**/*.pb.cc",
+	"**/*.pb.h",
+	"**/*.grpc.pb.cc",
+	"**/*.grpc.pb.h",
 }
 
 // DefaultSkippedTestPatterns contains gitignore-style patterns for excluding test sources.
@@ -59,7 +81,8 @@ var DefaultSkippedTestPatterns = []string{
 
 // defaultDirMatcher is the shared matcher for DefaultSkippedDirs. Directory
 // walks (language detection, callgraph, crate indexing) consult this instead
-// of per-language skip lists.
+// of per-language skip lists. File-level generated-stub policy lives on
+// NewDefaultMatcher, which includes these directory names.
 var defaultDirMatcher = NewGitIgnoreMatcher(DefaultSkippedDirs)
 
 // DefaultDirMatcher returns the matcher for the built-in skipped directories.
@@ -86,7 +109,17 @@ func NewDefaultsSource() *DefaultsSource {
 //   - []string: Default skip patterns
 //   - error: Always nil (included for interface compatibility)
 func (d *DefaultsSource) Load() ([]string, error) {
-	return DefaultSkippedDirs, nil
+	return DefaultPatterns(), nil
+}
+
+// DefaultPatterns returns the built-in directory names plus generated-stub
+// globs. Callers that currently splice DefaultSkippedDirs should use this
+// when they want the full default skip policy.
+func DefaultPatterns() []string {
+	out := make([]string, 0, len(DefaultSkippedDirs)+len(DefaultSkippedGeneratedPatterns))
+	out = append(out, DefaultSkippedDirs...)
+	out = append(out, DefaultSkippedGeneratedPatterns...)
+	return out
 }
 
 // Name returns a descriptive name for this pattern source.
