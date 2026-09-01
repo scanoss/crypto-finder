@@ -60,22 +60,6 @@ func (p *NodeParser) CloneParser() Parser {
 	return NewNodeParser(WithIncludeTests(p.includeTests))
 }
 
-// SkipDirs returns generated, vendored, and optionally test directories.
-func (p *NodeParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{
-		"node_modules": true,
-		"dist":         true,
-		"build":        true,
-		"coverage":     true,
-	}
-	if !p.includeTests {
-		skip["test"] = true
-		skip["tests"] = true
-		skip["__tests__"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child module path.
 func (p *NodeParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {

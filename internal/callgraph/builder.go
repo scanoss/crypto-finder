@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 const (
@@ -40,8 +41,6 @@ type Parser interface {
 	// ParseDirectory parses all relevant source files in dir.
 	// packagePath is the canonical namespace (Go import path, Java package, etc.).
 	ParseDirectory(dir string, packagePath string) ([]*FileAnalysis, error)
-	// SkipDirs returns directory names to skip during recursive traversal.
-	SkipDirs() map[string]bool
 	// SubPackagePath constructs a child package path from parent + directory name.
 	SubPackagePath(parentPath, dirName string) string
 	// PackageSeparator returns the separator used in package paths ("/" for Go/Node, "." for Java).
@@ -69,6 +68,7 @@ type PackageDir struct {
 type Builder struct {
 	parser       Parser
 	typeResolver TypeResolver
+	skipMatcher  skip.SkipMatcher
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -95,8 +95,18 @@ func NewBuilder(parser Parser) *Builder {
 // results in an empty KB (no contracts), which is valid and does not produce an error.
 func NewBuilderForEcosystem(ecosystem string, parser Parser) *Builder {
 	return &Builder{
-		parser:    parser,
-		ecosystem: ecosystem,
+		parser:      parser,
+		ecosystem:   ecosystem,
+		skipMatcher: skip.DefaultDirMatcher(),
+	}
+}
+
+// SetSkipMatcher replaces the directory matcher used during source traversal.
+// Pass the same matcher the scan uses so callgraph walks honor --exclude,
+// --no-default-exclusions, and --include-tests.
+func (b *Builder) SetSkipMatcher(matcher skip.SkipMatcher) {
+	if matcher != nil {
+		b.skipMatcher = matcher
 	}
 }
 
@@ -261,7 +271,17 @@ func (b *Builder) parserSkipsDir(name string) bool {
 	return ok && p.SkipsDirNamed(name)
 }
 
-func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]bool) []parseDirWork {
+func (b *Builder) skipWalkDirectory(path, name string) bool {
+	if strings.HasPrefix(name, ".") || b.parserSkipsDir(name) {
+		return true
+	}
+	if b.skipMatcher == nil {
+		return false
+	}
+	return b.skipMatcher.ShouldSkip(filepath.ToSlash(path), true)
+}
+
+func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
 	work := []parseDirWork{{dir: dir, importPath: importPath}}
 	entries, readErr := os.ReadDir(dir)
 	if readErr != nil {
@@ -273,12 +293,12 @@ func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]b
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") || skipDirs[name] || b.parserSkipsDir(name) {
+		subDir := filepath.Join(dir, name)
+		if b.skipWalkDirectory(subDir, name) {
 			continue
 		}
-		subDir := filepath.Join(dir, name)
 		subImportPath := b.parser.SubPackagePath(importPath, name)
-		work = append(work, b.collectParseDirs(subDir, subImportPath, skipDirs)...)
+		work = append(work, b.collectParseDirs(subDir, subImportPath)...)
 	}
 	return work
 }
@@ -289,7 +309,7 @@ func (b *Builder) collectParseDirs(dir, importPath string, skipDirs map[string]b
 // on the package's root directory aborts the package with that error (nothing
 // merged), while subdirectory failures are logged and skipped.
 func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, cloner ParserCloner, workers int) error {
-	work := b.collectParseDirs(pkg.Dir, pkg.ImportPath, b.parser.SkipDirs())
+	work := b.collectParseDirs(pkg.Dir, pkg.ImportPath)
 	if workers > len(work) {
 		workers = len(work)
 	}
@@ -548,17 +568,15 @@ func (b *Builder) analyzeSubdirs(dir, importPath string, graph *CallGraph, proje
 		log.Debug().Err(readErr).Str("dir", dir).Msg("Failed to read directory during call graph traversal")
 	}
 
-	skipDirs := b.parser.SkipDirs()
-
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") || skipDirs[name] {
+		subDir := filepath.Join(dir, name)
+		if b.skipWalkDirectory(subDir, name) {
 			continue
 		}
-		subDir := filepath.Join(dir, name)
 		subImportPath := b.parser.SubPackagePath(importPath, name)
 		if err := b.analyzeDir(subDir, subImportPath, graph, projectLocal); err != nil {
 			log.Debug().Err(err).Str("dir", subDir).Msg("Failed to analyze subdirectory")

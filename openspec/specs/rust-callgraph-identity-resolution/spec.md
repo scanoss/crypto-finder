@@ -485,7 +485,7 @@ a default scan.
 
 #### Scenario: Test files are skipped by default and included on request
 
-- Pinned by: `TestRustParser_SkipTestFiles`, `TestRustParser_SkipDirs`, `TestRustParser_IncludeTestsIncludesTestFilesAndDirs`
+- Pinned by: `TestRustParser_SkipTestFiles`, `TestRustParser_IncludeTestsIncludesTestFilesAndDirs`, `TestBuilder_SetSkipMatcherHonorsTestPatterns`
 
 #### Scenario: An inline `#[cfg(test)]` module is skipped by default
 

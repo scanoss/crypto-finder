@@ -13,12 +13,6 @@ func TestJavaParser_Basics(t *testing.T) {
 	if got := p.PackageSeparator(); got != "." {
 		t.Fatalf("PackageSeparator() = %q, want .", got)
 	}
-	skip := p.SkipDirs()
-	for _, dir := range []string{"test", "tests", "META-INF", "target"} {
-		if !skip[dir] {
-			t.Fatalf("SkipDirs missing %q", dir)
-		}
-	}
 	if got := p.SubPackagePath("com.example", "crypto"); got != "com.example.crypto" {
 		t.Fatalf("SubPackagePath() = %q", got)
 	}
@@ -386,9 +380,6 @@ func TestJavaParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
 	}
 	if len(analyses) != 1 {
 		t.Fatalf("expected 1 analysis (test file included), got %d", len(analyses))
-	}
-	if p.SkipDirs()["tests"] {
-		t.Fatal("expected tests dir not to be skipped when includeTests is enabled")
 	}
 }
 

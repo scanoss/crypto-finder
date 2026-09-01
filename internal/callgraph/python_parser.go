@@ -288,21 +288,6 @@ func (p *PythonParser) CloneParser() Parser {
 	return NewPythonParser(WithIncludeTests(p.includeTests))
 }
 
-// SkipDirs returns directory names to skip during Python source traversal.
-func (p *PythonParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{
-		"__pycache__": true,
-		".venv":       true,
-		"venv":        true,
-		".tox":        true,
-	}
-	if !p.includeTests {
-		skip["test"] = true
-		skip["tests"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child module path using "." separator.
 func (p *PythonParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {

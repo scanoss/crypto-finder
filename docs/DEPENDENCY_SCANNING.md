@@ -83,7 +83,6 @@ This is where the architecture gets interesting. The call graph builder uses **s
 ```go
 type Parser interface {
     ParseDirectory(dir string, packagePath string) ([]*FileAnalysis, error)
-    SkipDirs() map[string]bool
     SubPackagePath(parentPath, dirName string) string
     PackageSeparator() string  // "/" for Go, "." for Java/Python, "::" for Rust
 }

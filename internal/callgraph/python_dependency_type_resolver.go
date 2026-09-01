@@ -29,6 +29,8 @@ import (
 	"github.com/rs/zerolog/log"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
+
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // maxPythonDistributionWorkers mirrors maxJavaJARWorkers (row 14,
@@ -49,11 +51,10 @@ const (
 	pythonStubExt   = ".pyi"
 )
 
-// pythonDependencySkipDirs mirrors PythonParser.SkipDirs()'s own skip set
-// (computed once from the zero-value parser, whose includeTests defaults
-// to false — a dependency signature index has no reason to descend into a
-// vendored test suite).
-var pythonDependencySkipDirs = (&PythonParser{}).SkipDirs()
+// pythonDependencySkipMatcher applies the global skip list plus default
+// test-directory patterns. A dependency signature index has no reason to
+// descend into a vendored test suite.
+var pythonDependencySkipMatcher = skip.NewGitIgnoreMatcher(skip.WithDefaultTestPatterns(skip.DefaultSkippedDirs))
 
 // PythonDependencyTypeResolver reads .pyi stubs and annotated .py sources
 // from pip-resolved dependency distributions to extract return-type and
@@ -272,10 +273,11 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") || pythonDependencySkipDirs[name] {
+		child := filepath.Join(dir, name)
+		if strings.HasPrefix(name, ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
 			continue
 		}
-		r.walkDistribution(filepath.Join(dir, name), pythonDependencySubPackagePath(importPath, name), parser, signatures, hierarchy)
+		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), parser, signatures, hierarchy)
 	}
 }
 

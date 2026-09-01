@@ -12,9 +12,11 @@ func TestGoParser_Basics(t *testing.T) {
 	if got := p.PackageSeparator(); got != "/" {
 		t.Fatalf("PackageSeparator() = %q, want /", got)
 	}
-	skip := p.SkipDirs()
-	if !skip["vendor"] || !skip["testdata"] {
-		t.Fatalf("unexpected SkipDirs map: %#v", skip)
+	if !p.SkipsDirNamed("testdata") || !p.SkipsDirNamed("_asm") {
+		t.Fatalf("SkipsDirNamed testdata/_ prefix = %v/%v", p.SkipsDirNamed("testdata"), p.SkipsDirNamed("_asm"))
+	}
+	if p.SkipsDirNamed("vendor") {
+		t.Fatal("vendor is a global skip, not a Go shape skip")
 	}
 	if got := p.SubPackagePath("example.com/root", "sub"); got != "example.com/root/sub" {
 		t.Fatalf("SubPackagePath() = %q", got)

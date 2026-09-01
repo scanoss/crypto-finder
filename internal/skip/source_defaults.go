@@ -57,6 +57,16 @@ var DefaultSkippedTestPatterns = []string{
 	"**/test_*.py",
 }
 
+// defaultDirMatcher is the shared matcher for DefaultSkippedDirs. Directory
+// walks (language detection, callgraph, crate indexing) consult this instead
+// of per-language skip lists.
+var defaultDirMatcher = NewGitIgnoreMatcher(DefaultSkippedDirs)
+
+// DefaultDirMatcher returns the matcher for the built-in skipped directories.
+func DefaultDirMatcher() SkipMatcher {
+	return defaultDirMatcher
+}
+
 // DefaultsSource provides the built-in default skip patterns.
 // These patterns represent commonly excluded directories across projects.
 type DefaultsSource struct{}

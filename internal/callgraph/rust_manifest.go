@@ -15,6 +15,8 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // Cargo lets a manifest bind a dependency to a DIFFERENT name than the crate it
@@ -638,44 +640,57 @@ func (p *RustParser) rustIndexPackagePath(root, crateName, filePath string) stri
 	return rustFileModulePath(path, filepath.Base(filePath), p.rustGlobReExportedModules(filepath.Dir(filePath)))
 }
 
-// crateSourceFiles lists a crate's Rust sources, skipping the directories the
-// parser skips everywhere else and stopping at the file limit.
+// crateSourceFiles lists a crate's Rust sources, applying the global skip
+// matcher and stopping at the file limit.
 func (p *RustParser) crateSourceFiles(root string) []string {
-	skip := p.SkipDirs()
+	matcher := rustCrateDirMatcher(p.includeTests)
 	var paths []string
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			// An unreadable directory is not a reason to abandon the crate; the
-			// index is best effort and the per-file facts still apply.
-			if entry != nil && entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			if path != root && skip[entry.Name()] {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if filepath.Ext(path) == ".rs" {
-			paths = append(paths, path)
-			// Past the cap the whole index is abandoned rather than half
-			// built, so stop walking. A PARTIAL index is worse than none: its
-			// conflict detection sees only the files it read, so a name two
-			// files declare differently looks unambiguous when the second
-			// declaration falls past the cap, and resolves to whichever was
-			// seen. That is a wrong identity produced by a size threshold.
-			if len(paths) > rustCrateIndexFileLimit {
-				return fs.SkipAll
-			}
-		}
-		return nil
+		return rustCrateSourceWalk(root, path, entry, err, matcher, &paths)
 	})
 	if walkErr != nil || len(paths) > rustCrateIndexFileLimit {
 		return nil
 	}
 	return paths
+}
+
+func rustCrateDirMatcher(includeTests bool) skip.SkipMatcher {
+	patterns := append([]string{}, skip.DefaultSkippedDirs...)
+	if !includeTests {
+		patterns = skip.WithDefaultTestPatterns(patterns)
+	}
+	return skip.NewGitIgnoreMatcher(patterns)
+}
+
+func rustCrateSourceWalk(root, path string, entry fs.DirEntry, err error, matcher skip.SkipMatcher, paths *[]string) error {
+	if err != nil {
+		// An unreadable directory is not a reason to abandon the crate; the
+		// index is best effort and the per-file facts still apply.
+		if entry != nil && entry.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if entry.IsDir() {
+		if path != root && (strings.HasPrefix(entry.Name(), ".") || matcher.ShouldSkip(filepath.ToSlash(path), true)) {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if filepath.Ext(path) != ".rs" {
+		return nil
+	}
+	*paths = append(*paths, path)
+	// Past the cap the whole index is abandoned rather than half
+	// built, so stop walking. A PARTIAL index is worse than none: its
+	// conflict detection sees only the files it read, so a name two
+	// files declare differently looks unambiguous when the second
+	// declaration falls past the cap, and resolves to whichever was
+	// seen. That is a wrong identity produced by a size threshold.
+	if len(*paths) > rustCrateIndexFileLimit {
+		return fs.SkipAll
+	}
+	return nil
 }
 
 // qualifyCrateFacts rewrites a file's recorded type texts into paths that mean

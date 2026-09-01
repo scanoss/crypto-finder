@@ -64,13 +64,14 @@ type noopCallgraphParser struct{}
 func (noopCallgraphParser) ParseDirectory(string, string) ([]*callgraph.FileAnalysis, error) {
 	return nil, nil
 }
-func (noopCallgraphParser) SkipDirs() map[string]bool { return nil }
+
 func (noopCallgraphParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {
 		return dirName
 	}
 	return parentPath + "/" + dirName
 }
+
 func (noopCallgraphParser) PackageSeparator() string { return "/" }
 
 func TestNewDependencyScanner(t *testing.T) {

@@ -103,16 +103,6 @@ func (p *JavaParser) CloneParser() Parser {
 	return NewJavaParser(WithIncludeTests(p.includeTests))
 }
 
-// SkipDirs returns directory names to skip during Java source traversal.
-func (p *JavaParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{"META-INF": true, "target": true}
-	if !p.includeTests {
-		skip["test"] = true
-		skip["tests"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child package path using "." separator.
 func (p *JavaParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {
