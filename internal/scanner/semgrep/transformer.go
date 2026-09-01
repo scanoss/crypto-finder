@@ -480,25 +480,39 @@ func sniffLanguageContent(filePath string) []byte {
 // one -- which is why reportOccurrenceKeyEcosystems now tests the C family
 // rather than the literal "c".
 //
-// When the file cannot be read the name-only answer is still returned, because a
-// possibly-wrong language is more useful here than none.
+// CONTENT ONLY EVER REFINES AN ANSWER, IT NEVER ERASES ONE. enry returns the
+// empty string when it decides the bytes are binary, and it decides that for
+// some legitimate sources -- a 2 MB generated tree-sitter parser.c is one, its
+// dense state tables trip the heuristic. Reading content must not turn that file
+// from "c" into "unknown", so each lookup is retried without content whenever
+// the content-informed one comes back empty. The same retry covers a file that
+// cannot be read at all, where a possibly-wrong language beats none, and it is
+// what keeps the name-only cases in TestDetectLanguage meaningful.
 func detectLanguage(filePath string) string {
 	content := sniffLanguageContent(filePath)
 
 	// Try detection by filename first
-	lang := enry.GetLanguage(filepath.Base(filePath), content)
-	if lang != "" {
-		return strings.ToLower(lang)
+	if lang := lookupLanguage(filepath.Base(filePath), content); lang != "" {
+		return lang
 	}
 
 	// Try detection by file extension
-	ext := filepath.Ext(filePath)
-	if ext != "" {
-		lang = enry.GetLanguage(fmt.Sprintf("file%s", ext), content)
-		if lang != "" {
-			return strings.ToLower(lang)
+	if ext := filepath.Ext(filePath); ext != "" {
+		if lang := lookupLanguage(fmt.Sprintf("file%s", ext), content); lang != "" {
+			return lang
 		}
 	}
 
 	return "unknown"
+}
+
+// lookupLanguage asks enry with the content and falls back to asking without it,
+// so a content-informed answer is preferred but an empty one never wins.
+func lookupLanguage(name string, content []byte) string {
+	if len(content) > 0 {
+		if lang := enry.GetLanguage(name, content); lang != "" {
+			return strings.ToLower(lang)
+		}
+	}
+	return strings.ToLower(enry.GetLanguage(name, nil))
 }
