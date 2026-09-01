@@ -173,6 +173,66 @@ func ContractChainIdentities(chains [][]ExportChainNode) {
 	}
 }
 
+// applyCatalogIdentity copies interned identity onto a chain frame. Hop fields
+// (entry_call, crypto_call, entry_resolution) are left untouched.
+func applyCatalogIdentity(n *ExportChainNode, id ExportInternedFunction) {
+	n.FunctionKey = id.FunctionKey
+	n.FunctionName = id.FunctionName
+	n.CanonicalSignature = id.CanonicalSignature
+	n.ReturnType = id.ReturnType
+	n.ParameterTypes = append([]string(nil), id.ParameterTypes...)
+	n.Visibility = id.Visibility
+	n.OwnerVisibility = id.OwnerVisibility
+	n.DisplaySymbol = id.DisplaySymbol
+	n.Aliases = append([]string(nil), id.Aliases...)
+	n.FilePath = id.FilePath
+	n.StartLine = id.StartLine
+	n.DependencyInfo = cloneExportDependencyInfo(id.DependencyInfo)
+}
+
+// HydrateChainIdentities copies catalog identity onto frames whose function_name
+// and canonical_signature are empty. Inlined 6.14 frames are left unchanged.
+// An empty index list is treated as inlined (no-op, true). Returns false when
+// indexes exist but do not reconstruct the same routes.
+func HydrateChainIdentities(catalog []ExportInternedFunction, chains [][]ExportChainNode, indexes [][]int) bool {
+	if len(indexes) == 0 {
+		return true
+	}
+	rebuilt, ok := ReconstructChainIdentities(catalog, indexes)
+	if !ok || len(rebuilt) != len(chains) {
+		return false
+	}
+	for i := range chains {
+		if len(rebuilt[i]) != len(chains[i]) {
+			return false
+		}
+		for j := range chains[i] {
+			n := &chains[i][j]
+			if n.FunctionName != "" || n.CanonicalSignature != "" {
+				continue
+			}
+			applyCatalogIdentity(n, rebuilt[i][j])
+		}
+	}
+	return true
+}
+
+// HydrateChainIdentities fills empty frame identity from Functions and each
+// finding's call_chain_indexes. Returns false if any finding's indexes are
+// present but invalid.
+func (c *CallgraphExport) HydrateChainIdentities() bool {
+	if c == nil {
+		return true
+	}
+	ok := true
+	for i := range c.FindingGraphs {
+		if !HydrateChainIdentities(c.Functions, c.FindingGraphs[i].CallChains, c.FindingGraphs[i].CallChainIndexes) {
+			ok = false
+		}
+	}
+	return ok
+}
+
 // ReconstructChainIdentities rebuilds each route from catalog indexes.
 func ReconstructChainIdentities(catalog []ExportInternedFunction, indexes [][]int) ([][]ExportInternedFunction, bool) {
 	out := make([][]ExportInternedFunction, len(indexes))

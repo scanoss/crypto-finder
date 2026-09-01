@@ -385,7 +385,7 @@ type exportDependencyRoot struct {
 type CallGraphExportOptions struct {
 	MaxChains             int
 	OmitCryptoEntryPoints bool
-	InlinedFrames         bool
+	InternedFrames        bool
 }
 
 // ExportCallGraph writes the current finding-centric callgraph export.
@@ -424,7 +424,7 @@ func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResul
 		Int("finding_assets", totalAssets).
 		Int("max_chains", graphfrag.ResolveMaxChains(options.MaxChains)).
 		Bool("omit_crypto_entry_points", options.OmitCryptoEntryPoints).
-		Bool("inlined_frames", options.InlinedFrames).
+		Bool("interned_frames", options.InternedFrames).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
@@ -464,7 +464,7 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, opt
 	}
 
 	return callGraphExportV2{
-		SchemaVersion:     graphfrag.CallgraphExportSchemaVersion(options.InlinedFrames),
+		SchemaVersion:     graphfrag.CallgraphExportSchemaVersion(options.InternedFrames),
 		ScanMetadata:      meta,
 		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
 		Functions:         streamed.functions,
@@ -486,10 +486,10 @@ func streamCallGraphExport(
 	meta callGraphExportScanMeta,
 	options CallGraphExportOptions,
 ) (streamedCallGraphExport, error) {
-	if err := writeCallGraphPrefix(writer, meta, options.InlinedFrames); err != nil {
+	if err := writeCallGraphPrefix(writer, meta, options.InternedFrames); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints, options.InlinedFrames)
+	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints, options.InternedFrames)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -531,11 +531,11 @@ func streamCallGraphExport(
 	return streamedCallGraphExport{functions: streamed.functions, supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
 }
 
-func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta, inlinedFrames bool) error {
+func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta, internedFrames bool) error {
 	if _, err := writer.w.WriteString("{\n"); err != nil {
 		return err
 	}
-	if err := writer.writeField("schema_version", graphfrag.CallgraphExportSchemaVersion(inlinedFrames)); err != nil {
+	if err := writer.writeField("schema_version", graphfrag.CallgraphExportSchemaVersion(internedFrames)); err != nil {
 		return err
 	}
 	if err := writer.writeField("scan_metadata", meta); err != nil {
@@ -557,7 +557,7 @@ func streamFindingGraphs(
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,
 	buildEntryPointIndex bool,
-	inlinedFrames bool,
+	internedFrames bool,
 ) (streamedFindingGraphs, error) {
 	var index map[string]*entryPointData
 	var referencedSupporting map[string]struct{}
@@ -594,7 +594,7 @@ func streamFindingGraphs(
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
 		markExportedChainHeads(chainRoots, fg.CallChains)
-		internStreamedFindingGraph(&intern, &fg, inlinedFrames)
+		internStreamedFindingGraph(&intern, &fg, internedFrames)
 		if err := writer.writeArrayElement(i, fg); err != nil {
 			return streamedFindingGraphs{}, err
 		}
@@ -623,9 +623,9 @@ func markExportedChainHeads(chainRoots map[string]bool, chains [][]callGraphChai
 	}
 }
 
-func internStreamedFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExportFinding, inlinedFrames bool) {
+func internStreamedFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExportFinding, internedFrames bool) {
 	internLiveFindingGraph(intern, fg)
-	if !inlinedFrames {
+	if internedFrames {
 		contractLiveChainIdentities(fg.CallChains)
 	}
 }
@@ -845,7 +845,6 @@ func internLiveCatalog(graphs []callGraphExportFinding) []graphfrag.ExportIntern
 	intern := graphfrag.FunctionInterner{}
 	for i := range graphs {
 		internLiveFindingGraph(&intern, &graphs[i])
-		contractLiveChainIdentities(graphs[i].CallChains)
 	}
 	return intern.Functions()
 }

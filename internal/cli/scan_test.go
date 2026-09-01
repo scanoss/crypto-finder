@@ -565,10 +565,10 @@ func TestScanCommand_ExportCallgraphEntryPointsFlag(t *testing.T) {
 	}
 }
 
-func TestScanCommand_ExportCallgraphInlinedFramesFlag(t *testing.T) {
-	flag := scanCmd.Flags().Lookup("export-callgraph-inlined-frames")
+func TestScanCommand_ExportCallgraphInternedFramesFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("export-callgraph-interned-frames")
 	if flag == nil {
-		t.Fatal("expected --export-callgraph-inlined-frames flag")
+		t.Fatal("expected --export-callgraph-interned-frames flag")
 	}
 	if flag.DefValue != "false" {
 		t.Fatalf("default = %q, want false", flag.DefValue)

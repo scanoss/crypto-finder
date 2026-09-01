@@ -629,17 +629,15 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 	}
 }
 
-// TestCallgraphSchemaVersion_Is615 pins the canonical callgraph schema version
-// at 6.15 — interned functions[] indexes with contracted call_chains frames.
-// The bump is unconditional: it
-// advances regardless of whether any given export emits the new fields.
-func TestCallgraphSchemaVersion_Is615(t *testing.T) {
+// TestCallgraphSchemaVersion_DefaultIs614InternedIs615 pins the served
+// callgraph schema at 6.14 and the opt-in interned contract at 6.15.
+func TestCallgraphSchemaVersion_DefaultIs614InternedIs615(t *testing.T) {
 	t.Parallel()
 
-	if CallgraphSchemaVersion != "6.15" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.15")
+	if CallgraphSchemaVersion != "6.14" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.14")
 	}
-	if CallgraphInlinedSchemaVersion != "6.14" {
-		t.Fatalf("CallgraphInlinedSchemaVersion = %q, want 6.14", CallgraphInlinedSchemaVersion)
+	if CallgraphInternedSchemaVersion != "6.15" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.15", CallgraphInternedSchemaVersion)
 	}
 }

@@ -74,12 +74,12 @@ func TestToCallgraphExport_ContractsFrameIdentityIntoCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stitch: %v", err)
 	}
-	out := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java"})
-	if out.SchemaVersion != CallgraphSchemaVersion {
-		t.Fatalf("schema_version = %q, want %q", out.SchemaVersion, CallgraphSchemaVersion)
+	out := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java", InternedFrames: true})
+	if out.SchemaVersion != CallgraphInternedSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", out.SchemaVersion, CallgraphInternedSchemaVersion)
 	}
-	if CallgraphSchemaVersion != "6.15" {
-		t.Fatalf("CallgraphSchemaVersion = %q, want 6.15", CallgraphSchemaVersion)
+	if CallgraphInternedSchemaVersion != "6.15" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.15", CallgraphInternedSchemaVersion)
 	}
 	if len(out.FindingGraphs) != 1 {
 		t.Fatalf("FindingGraphs len = %d, want 1", len(out.FindingGraphs))
@@ -146,9 +146,21 @@ func TestToCallgraphExport_ContractsFrameIdentityIntoCatalog(t *testing.T) {
 	if !sawCanonical {
 		t.Fatal("crypto_entry_points missing canonical_signature; join with functions[] would fail")
 	}
+
+	hydrated := out
+	if !hydrated.HydrateChainIdentities() {
+		t.Fatal("HydrateChainIdentities failed on interned export")
+	}
+	for i, chain := range hydrated.FindingGraphs[0].CallChains {
+		for j, frame := range chain {
+			if frame.FunctionName == "" || frame.FilePath == "" {
+				t.Fatalf("hydrated route %d frame %d still empty: %+v", i, j, IdentityFromChainNode(frame))
+			}
+		}
+	}
 }
 
-func TestToCallgraphExport_InlinedFramesIs614CompatibilityRender(t *testing.T) {
+func TestToCallgraphExport_DefaultKeepsInlinedIdentity(t *testing.T) {
 	t.Parallel()
 
 	root, deps, frags := chainEntryFixture()
@@ -156,13 +168,16 @@ func TestToCallgraphExport_InlinedFramesIs614CompatibilityRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stitch: %v", err)
 	}
-	inlined := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java", InlinedFrames: true})
-	contracted := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java"})
-	if inlined.SchemaVersion != CallgraphInlinedSchemaVersion {
-		t.Fatalf("inlined schema_version = %q, want %q", inlined.SchemaVersion, CallgraphInlinedSchemaVersion)
+	inlined := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java"})
+	contracted := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java", InternedFrames: true})
+	if inlined.SchemaVersion != CallgraphSchemaVersion {
+		t.Fatalf("default schema_version = %q, want %q", inlined.SchemaVersion, CallgraphSchemaVersion)
 	}
-	if CallgraphInlinedSchemaVersion != "6.14" {
-		t.Fatalf("CallgraphInlinedSchemaVersion = %q, want 6.14", CallgraphInlinedSchemaVersion)
+	if CallgraphSchemaVersion != "6.14" {
+		t.Fatalf("CallgraphSchemaVersion = %q, want 6.14", CallgraphSchemaVersion)
+	}
+	if contracted.SchemaVersion != CallgraphInternedSchemaVersion {
+		t.Fatalf("interned schema_version = %q, want %q", contracted.SchemaVersion, CallgraphInternedSchemaVersion)
 	}
 	if len(inlined.FindingGraphs) != 1 || len(contracted.FindingGraphs) != 1 {
 		t.Fatalf("finding graphs inlined=%d contracted=%d, want 1 each", len(inlined.FindingGraphs), len(contracted.FindingGraphs))

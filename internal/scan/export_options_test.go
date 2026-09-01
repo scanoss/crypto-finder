@@ -85,7 +85,7 @@ func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {
 	}
 }
 
-func TestExportCallGraphWithOptions_InlinedFrames(t *testing.T) {
+func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 	t.Parallel()
 
 	graph, projectRoot := buildSupportingGraph(t)
@@ -93,20 +93,20 @@ func TestExportCallGraphWithOptions_InlinedFrames(t *testing.T) {
 
 	for _, tc := range []struct {
 		name          string
-		inlined       bool
+		interned      bool
 		wantVersion   string
 		wantFrameName bool
 	}{
 		{
-			name:          "default interned contract",
+			name:          "default inlined 6.14",
 			wantVersion:   graphfrag.CallgraphSchemaVersion,
-			wantFrameName: false,
+			wantFrameName: true,
 		},
 		{
-			name:          "compatibility inlined frames",
-			inlined:       true,
-			wantVersion:   graphfrag.CallgraphInlinedSchemaVersion,
-			wantFrameName: true,
+			name:          "opt-in interned 6.15",
+			interned:      true,
+			wantVersion:   graphfrag.CallgraphInternedSchemaVersion,
+			wantFrameName: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,11 +119,11 @@ func TestExportCallGraphWithOptions_InlinedFrames(t *testing.T) {
 				Ecosystem:   "java",
 				ProjectRoot: projectRoot,
 				RootModule:  "com.app:app",
-			}, CallGraphExportOptions{InlinedFrames: tc.inlined}); err != nil {
+			}, CallGraphExportOptions{InternedFrames: tc.interned}); err != nil {
 				t.Fatalf("ExportCallGraphWithOptions: %v", err)
 			}
 
-			if !tc.inlined {
+			if !tc.interned {
 				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema.json"), outputPath)
 			}
 
@@ -171,20 +171,20 @@ func TestExportCallGraphWithOptions_InternedAndInlinedDescribeSameRoutes(t *test
 
 	internedPath := filepath.Join(t.TempDir(), "interned.json")
 	inlinedPath := filepath.Join(t.TempDir(), "inlined.json")
-	if err := ExportCallGraphWithOptions(internedPath, "json", result, CallGraphExportOptions{}); err != nil {
-		t.Fatalf("interned export: %v", err)
-	}
-	if err := ExportCallGraphWithOptions(inlinedPath, "json", result, CallGraphExportOptions{InlinedFrames: true}); err != nil {
+	if err := ExportCallGraphWithOptions(inlinedPath, "json", result, CallGraphExportOptions{}); err != nil {
 		t.Fatalf("inlined export: %v", err)
+	}
+	if err := ExportCallGraphWithOptions(internedPath, "json", result, CallGraphExportOptions{InternedFrames: true}); err != nil {
+		t.Fatalf("interned export: %v", err)
 	}
 
 	interned := mustDecodeCallGraphExport(t, internedPath)
 	inlined := mustDecodeCallGraphExport(t, inlinedPath)
-	if interned.SchemaVersion != graphfrag.CallgraphSchemaVersion {
-		t.Fatalf("interned schema_version = %q, want %q", interned.SchemaVersion, graphfrag.CallgraphSchemaVersion)
+	if interned.SchemaVersion != graphfrag.CallgraphInternedSchemaVersion {
+		t.Fatalf("interned schema_version = %q, want %q", interned.SchemaVersion, graphfrag.CallgraphInternedSchemaVersion)
 	}
-	if inlined.SchemaVersion != graphfrag.CallgraphInlinedSchemaVersion {
-		t.Fatalf("inlined schema_version = %q, want %q", inlined.SchemaVersion, graphfrag.CallgraphInlinedSchemaVersion)
+	if inlined.SchemaVersion != graphfrag.CallgraphSchemaVersion {
+		t.Fatalf("inlined schema_version = %q, want %q", inlined.SchemaVersion, graphfrag.CallgraphSchemaVersion)
 	}
 	if len(interned.FindingGraphs) != len(inlined.FindingGraphs) {
 		t.Fatalf("finding_graphs interned=%d inlined=%d", len(interned.FindingGraphs), len(inlined.FindingGraphs))
