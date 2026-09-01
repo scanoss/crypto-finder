@@ -10,8 +10,11 @@ readonly OPENGREP_AMD64_SHA256="f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c
 readonly OPENGREP_ARM64_SHA256="078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8"
 readonly OPENGREP_AMD64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
 readonly OPENGREP_ARM64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_aarch64"
-readonly RUSTUP_INSTALLER_URL="https://sh.rustup.rs"
-readonly RUSTUP_INSTALLER_SHA256="6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf"
+readonly RUSTUP_VERSION="1.29.1"
+readonly RUSTUP_AMD64_SHA256="dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+readonly RUSTUP_ARM64_SHA256="15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
+readonly RUSTUP_AMD64_URL="https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+readonly RUSTUP_ARM64_URL="https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/aarch64-unknown-linux-gnu/rustup-init"
 
 DOCKERFILES=(
   Dockerfile
@@ -119,8 +122,13 @@ for file in "${DOCKERFILES[@]}"; do
     grep -q "${OPENGREP_AMD64_SHA256}" "$file" || fail "$file does not pin the amd64 OpenGrep checksum"
     grep -q "${OPENGREP_ARM64_SHA256}" "$file" || fail "$file does not pin the arm64 OpenGrep checksum"
   fi
-  if grep -q 'rustup-init.sh' "$file" && ! grep -q "${RUSTUP_INSTALLER_SHA256}" "$file"; then
-    fail "$file does not pin the rustup installer checksum"
+  if grep -q 'sh.rustup.rs' "$file" || grep -q 'rustup-init.sh' "$file"; then
+    fail "$file uses the live rustup installer; download a pinned rustup-init archive binary instead"
+  fi
+  if grep -q 'rustup-init' "$file"; then
+    grep -q 'static.rust-lang.org/rustup/archive' "$file" || fail "$file does not download the pinned rustup-init archive binary"
+    grep -q "${RUSTUP_AMD64_SHA256}" "$file" || fail "$file does not pin the amd64 rustup-init checksum"
+    grep -q "${RUSTUP_ARM64_SHA256}" "$file" || fail "$file does not pin the arm64 rustup-init checksum"
   fi
 done
 
@@ -136,7 +144,8 @@ if [[ "${1:-}" == "--network" ]]; then
   for pair in \
     "${OPENGREP_AMD64_URL}|${OPENGREP_AMD64_SHA256}" \
     "${OPENGREP_ARM64_URL}|${OPENGREP_ARM64_SHA256}" \
-    "${RUSTUP_INSTALLER_URL}|${RUSTUP_INSTALLER_SHA256}"; do
+    "${RUSTUP_AMD64_URL}|${RUSTUP_AMD64_SHA256}" \
+    "${RUSTUP_ARM64_URL}|${RUSTUP_ARM64_SHA256}"; do
     url=${pair%%|*}
     expected=${pair#*|}
     actual=$(curl --fail --location --silent "$url" | sha256sum | awk '{print $1}')

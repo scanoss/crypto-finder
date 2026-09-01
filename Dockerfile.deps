@@ -50,8 +50,6 @@ ARG OPENGREP_VERSION=v1.12.1
 ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
 ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
 ARG TARGETARCH
-ARG RUST_VERSION=1.88.0
-ARG RUSTUP_INSTALLER_SHA256=6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf
 
 # Install system dependencies for downloading the pinned OpenGrep binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -81,6 +79,12 @@ RUN case "${TARGETARCH}" in \
 # ============================================================================
 FROM scanner-installer
 
+ARG TARGETARCH
+ARG RUST_VERSION=1.88.0
+ARG RUSTUP_VERSION=1.29.1
+ARG RUSTUP_AMD64_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+ARG RUSTUP_ARM64_SHA256=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433
+
 # Copy the crypto-finder binary from builder
 COPY --from=builder /build/crypto-finder /usr/local/bin/crypto-finder
 
@@ -101,10 +105,20 @@ ENV JAVA_HOME=/opt/jdks/jdk21
 ENV SCANOSS_JAVA_JDK_HOMES=8=/opt/jdks/jdk8,11=/opt/jdks/jdk11,17=/opt/jdks/jdk17,21=/opt/jdks/jdk21
 
 # ── Rust/Cargo (for dependency resolution only, not compilation) ──
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
-    && echo "${RUSTUP_INSTALLER_SHA256}  /tmp/rustup-init.sh" | sha256sum -c - \
-    && sh /tmp/rustup-init.sh -y --default-toolchain "${RUST_VERSION}" --profile minimal \
-    && rm -f /tmp/rustup-init.sh
+# Install pinned rustup-init from the versioned archive. This avoids the live
+# rustup installer script, whose checksum changes whenever rustup ships.
+RUN case "${TARGETARCH}" in \
+        amd64) triple="x86_64-unknown-linux-gnu"; hash="${RUSTUP_AMD64_SHA256}" ;; \
+        arm64) triple="aarch64-unknown-linux-gnu"; hash="${RUSTUP_ARM64_SHA256}" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl --proto '=https' --tlsv1.2 -sSf \
+        "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${triple}/rustup-init" \
+        -o /tmp/rustup-init \
+    && echo "${hash}  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --default-toolchain "${RUST_VERSION}" --profile minimal \
+    && rm -f /tmp/rustup-init
 
 # ── Python: isolated virtualenv for target project deps ──
 # Separates project's pip packages from scanner tooling (semgrep, etc.)
