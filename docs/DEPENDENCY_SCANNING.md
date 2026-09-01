@@ -55,7 +55,7 @@ The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dep
 | `Version` | `v0.17.0`                           | `1.77`                           | `42.0.5`                         | `0.17.8`                         | Resolved version                 |
 | `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | `~/.local/lib/python3.x/site-packages/cryptography/` | `~/.cargo/registry/src/.../ring-0.17.8/` | Filesystem path to scan |
 
-The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is used later to determine which packages are "user code" vs. "dependency code".
+The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is the default user-code prefix. For Java, packages of functions whose files live in the scanned project tree are also user code. That matters for Gradle projects that omit `group` and therefore export a project name rather than a Java package prefix.
 
 ### Step 2: Load & Filter Rules
 
@@ -410,7 +410,7 @@ Dependencies:
   golang.org/x/sys          v0.28.0   ~/go/pkg/mod/golang.org/x/sys@v0.28.0
 ```
 
-The `RootModule` (`example.com/crypto-test`) is the key — any package whose import path starts with this prefix is considered **user code**. Everything else is a dependency.
+The `RootModule` (`example.com/crypto-test`) is the Go user-code prefix — any package whose import path starts with it is **user code**. Java additionally treats packages declared in project source files as user code, even when `RootModule` is a Gradle project name rather than a package prefix. Everything else is a dependency.
 
 ### Step 3: Scan Dependencies in Parallel
 
@@ -1106,6 +1106,7 @@ The `GradleResolver` asks Gradle itself for a machine-readable dependency model 
 - Treats included Gradle subprojects as `WorkspaceMembers` rather than external dependencies
 - Captures external module coordinates, versioned dependency edges, compiled JAR paths, and best-effort source archive paths
 - Reuses the shared source extraction cache so Gradle and Maven dependencies flow through the same Java scanning pipeline
+- Reachability still traces from application Java packages when the project has no `group` and `RootModule` is the Gradle project name
 
 #### Multi-Module Project Support
 

@@ -2964,9 +2964,13 @@ func looksLikeEnumConstantExpr(expr string) bool {
 // is a stand-in for the containing function. What that stands for depends on the
 // mode, which is why the caller — not this function — decides what it means:
 //
-//   - with dependencies scanned, ctx.userPackages holds the root module and the
-//     tracer keeps only chains reaching it, so an empty traceback means no path
-//     from user code exists: the crypto is present but unreachable.
+//   - with dependencies scanned, ctx.userPackages holds the root module plus
+//     packages of functions whose files live in the project tree (not a
+//     dependency source dir). The tracer keeps only chains reaching that set,
+//     so an empty traceback means no path from user code exists: the crypto is
+//     present but unreachable. Java Gradle projects often have a project-name
+//     root module that is not a package prefix; the source-path packages are
+//     what make those chains collect.
 //   - on the mine path ctx.userPackages is nil, there is no user code to reach,
 //     and an empty traceback simply means the function is a graph root — which
 //     for a library is its public API, the most valuable entry point of all.
@@ -3206,9 +3210,63 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 	if len(result.Dependencies) == 0 {
 		return nil
 	}
-	return map[string]bool{
+	pkgs := map[string]bool{
 		strings.TrimSpace(result.RootModule): true,
 	}
+	// RootModule is a build-tool coordinate. For Go that is also the import
+	// prefix; for Java it is Maven groupId or, on Gradle with no group, the
+	// project name. The project name is not a Java package, so tracing against
+	// it alone drops every chain that starts in application sources (#372).
+	addProjectSourcePackages(pkgs, result)
+	return pkgs
+}
+
+func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult) {
+	if result.CallGraph == nil {
+		return
+	}
+	projectRoot := filepath.Clean(result.ProjectRoot)
+	if projectRoot == "" || !filepath.IsAbs(projectRoot) {
+		return
+	}
+	depDirs := make([]string, 0, len(result.Dependencies))
+	for _, dep := range result.Dependencies {
+		dir := filepath.Clean(dep.Dir)
+		if dir == "" || !filepath.IsAbs(dir) {
+			continue
+		}
+		depDirs = append(depDirs, dir)
+	}
+	for _, fn := range result.CallGraph.Functions {
+		if fn == nil || fn.ID.Package == "" {
+			continue
+		}
+		if !isProjectSourceFile(fn.FilePath, projectRoot, depDirs) {
+			continue
+		}
+		pkgs[fn.ID.Package] = true
+	}
+}
+
+func isProjectSourceFile(path, projectRoot string, depDirs []string) bool {
+	if path == "" || !filepath.IsAbs(path) {
+		return false
+	}
+	cleaned := filepath.Clean(path)
+	for _, depDir := range depDirs {
+		if pathIsInside(cleaned, depDir) {
+			return false
+		}
+	}
+	return pathIsInside(cleaned, projectRoot)
+}
+
+func pathIsInside(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func exportPackageSeparator(ecosystem string) string {
