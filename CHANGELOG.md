@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Live `--export-callgraph` and stitch keep a default `call_chains` sample of 128. Live scans that only need a composed route through dependencies should pass `--export-callgraph-max-chains 8` or `1`. `crypto_entry_points` stays the complete reverse-reach set at any N. The schema 6.x body still includes `call_chains`; `canonical_signature` spelling is unchanged.
 - Call-graph construction uses the same directory exclusions as language detection (`--exclude`, `--no-default-exclusions`, and `--include-tests`). Per-language skip lists are gone, so Cargo `examples/` and `benches/` are inventoried unless `--exclude` says otherwise.
 ### Fixed
 - Gradle projects that omit a `group` now produce reachability verdicts from their application Java packages, matching the Maven equivalent for the same sources. Previously the Gradle project name was treated as the only user-code identity, so every finding was reported unreachable.

@@ -18,7 +18,9 @@ _Avoid_: Final function, execution method
 
 **Crypto entry point**:
 A dependency callable indexed by canonical signature so consumers can discover
-the crypto findings and supporting calls reachable from it.
+the crypto findings and supporting calls reachable from it. The exported
+`crypto_entry_points` index is the complete reverse-reach set. It is not a
+projection of the sampled `call_chains`.
 _Avoid_: Metadata anchor, execution method, lifecycle role
 
 **Supporting call**:
@@ -44,6 +46,9 @@ _Avoid_: Client invocation sequence, lifecycle graph
 
 **Call chain**:
 One ordered path through a call graph from an anchor to a reachable function.
+Exported `call_chains` are a capped sample of those paths, default 128, not the
+warehouse. Live UIs that need a composed route opt in to 8 or 1. See
+[docs/adr/0002-call-chains-sample-size.md](docs/adr/0002-call-chains-sample-size.md).
 _Avoid_: Fluent chain, receiver lifecycle
 
 **Receiver lifecycle**:
