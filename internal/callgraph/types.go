@@ -226,6 +226,18 @@ type FunctionDecl struct {
 	// always nil for Java/Go/Rust declarations. Used by expandPythonSubclassDispatch
 	// to expand a base-class call site to its concrete subclass overrides.
 	OwnerBases []string
+	// OwnerTraits holds the trait an `impl <Trait> for <Type>` block implements,
+	// with the path resolved through the file's imports
+	// (e.g. ["pkcs8::EncodePrivateKey"] for `impl EncodePrivateKey for MyKey`
+	// under `use pkcs8::EncodePrivateKey;`). Populated by the Rust parser only;
+	// nil for an inherent `impl <Type>` block and for every other ecosystem.
+	//
+	// Deliberately NOT folded into OwnerBases: that field feeds Python subclass
+	// dispatch and the fragment export's type-hierarchy recovery, and a Rust
+	// trait is not a base class. This one is read only where a method's OWNING
+	// CRATE matters — a method declared in `impl <CrateTrait> for <LocalType>`
+	// is the crate's API even though the receiver type is local.
+	OwnerTraits []string
 }
 
 // FunctionParameter describes a declared function parameter.
