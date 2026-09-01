@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A derive-macro import no longer claims a type of the same name; Rust keeps the macro and type namespaces apart.
 - Rust ownership wrappers keep their own identity; only the wrappers implementing `Deref` are seen through.
 - A Rust value wrapper constructed with a bare name (`Vec::from`, `Mutex::new`, `RefCell::new`) resolves to the standard library, instead of the analyzed crate's own package.
+- A Rust generic bound to a zero-method marker trait (`Sized`, `Send`, `Sync`, `Copy`, `Eq`) no longer supplies a called method's identity; the next real bound does, regardless of write order, and a parameter bound only to markers carries no type.
 - Rust crate re-export aliases resolve from sibling files, per directory.
 - A Rust item re-export (`pub use path::Item as Name;`, chained across modules or not) now resolves to the crate that implements it, instead of the intermediate module that merely re-exports it.
 - A Rust single-file module appears in the package path, as its `mod.rs` form already did.
