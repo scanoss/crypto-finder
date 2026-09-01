@@ -27,6 +27,8 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+
+	"github.com/go-enry/go-enry/v2"
 )
 
 func TestResolveMetavars(t *testing.T) {
@@ -1266,5 +1268,27 @@ func TestDetectLanguageClassifiesFilesLargerThanTheSniffLimit(t *testing.T) {
 	}
 	if got := detectLanguage(path); got != "rust" {
 		t.Errorf("detectLanguage(large .rs) = %q, want rust", got)
+	}
+}
+
+// enry answers the empty string when it decides the bytes are binary, and it
+// decides that for some legitimate sources: a generated tree-sitter parser.c,
+// whose dense state tables trip the heuristic, is a real example found in the
+// module cache. Reading content must never turn such a file from "c" into
+// "unknown", so an empty content-informed answer falls back to the name.
+func TestDetectLanguageDoesNotLoseAnAnswerToBinaryHeuristics(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "parser.c")
+	// A NUL byte is enough to make enry call the content binary.
+	body := []byte("#include \"parser.h\"\nstatic const uint16_t ts_parse_table[] = {\x00\x00\x00};\n")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !enry.IsBinary(body) {
+		t.Skip("enry no longer treats this fixture as binary; the guarded path is unreachable")
+	}
+	if got := detectLanguage(path); got != "c" {
+		t.Errorf("detectLanguage(binary-looking .c) = %q, want c", got)
 	}
 }
