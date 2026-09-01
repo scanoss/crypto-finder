@@ -1727,34 +1727,11 @@ func splitRustScopedCallee(analysis *FileAnalysis, prefix, name string) Function
 		prefix = undeclared
 	}
 	if lastTypeSep := strings.LastIndex(prefix, "::"); lastTypeSep > 0 {
-		if typeName := prefix[lastTypeSep+2:]; looksLikeRustTypeName(typeName) {
-			// `Type::AssocType::item` — the segment BEFORE the type is also
-			// type-cased, so what would go in the package field is a type name,
-			// and modules are never spelled that way. The middle segment is an
-			// associated type, whose identity is the implementing type's choice
-			// and is not statically known (Reference, Paths -> associated
-			// items). No identity is the answer, not a type name in the package
-			// field: `Self::Error::InvalidOperation(..)` in sequoia-openpgp
-			// 1.21.2 src/packet/unknown.rs:209 emitted
-			// `Unknown.(Error).InvalidOperation`, and `T::Ref::from_ptr(..)` in
-			// openssl 0.10.81 and boring 4.9.1 src/stack.rs emitted
-			// `T.(Ref).from_ptr` — 21 edges of source text where a resolved
-			// package belongs.
-			owner := prefix[:lastTypeSep]
-			if ownerSep := strings.LastIndex(owner, "::"); ownerSep < 0 && looksLikeRustTypeName(owner) {
-				return FunctionID{Package: analysis.PackagePath, Name: name}
-			} else if ownerSep > 0 && looksLikeRustTypeName(owner[ownerSep+2:]) {
-				return FunctionID{Package: analysis.PackagePath, Name: name}
-			}
-			// owner may itself only re-export typeName: `outer::MyCipher::new(..)`
-			// where outer.rs writes `pub use aes::Aes128 as MyCipher;` is the aes
-			// crate's constructor, not a method the outer module declares.
-			if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, owner, typeName); ok {
-				return FunctionID{Package: reExportPkg, Type: reExportTyp, Name: name}
-			}
-			return FunctionID{Package: owner, Type: typeName, Name: name}
+		typeName := prefix[lastTypeSep+2:]
+		if !looksLikeRustTypeName(typeName) {
+			return FunctionID{Package: prefix, Name: name}
 		}
-		return FunctionID{Package: prefix, Name: name}
+		return rustScopedCalleeThroughType(analysis, prefix, typeName, lastTypeSep, name)
 	}
 
 	// A bare prefix that names a type belongs in the key's TYPE field, with a
@@ -1767,6 +1744,36 @@ func splitRustScopedCallee(analysis *FileAnalysis, prefix, name string) Function
 	}
 
 	return FunctionID{Package: prefix, Name: name}
+}
+
+// rustScopedCalleeThroughType resolves `<owner>::<typeName>::name` once the
+// segment before name is known to be type-cased: either typeName is the
+// receiver of an associated function (`ring::digest::Context::new`), or
+// `Type::AssocType::item` — the segment BEFORE typeName is also type-cased, so
+// what would go in the package field is a type name, and modules are never
+// spelled that way. In the latter case, the middle segment is an associated
+// type whose identity is the implementing type's choice and is not statically
+// known (Reference, Paths -> associated items): no identity is the answer, not
+// a type name in the package field. `Self::Error::InvalidOperation(..)` in
+// sequoia-openpgp 1.21.2 src/packet/unknown.rs:209 emitted
+// `Unknown.(Error).InvalidOperation`, and `T::Ref::from_ptr(..)` in openssl
+// 0.10.81 and boring 4.9.1 src/stack.rs emitted `T.(Ref).from_ptr` — 21 edges
+// of source text where a resolved package belongs.
+func rustScopedCalleeThroughType(analysis *FileAnalysis, prefix, typeName string, lastTypeSep int, name string) FunctionID {
+	owner := prefix[:lastTypeSep]
+	ownerSep := strings.LastIndex(owner, "::")
+	ownerIsTypeCased := ownerSep < 0 && looksLikeRustTypeName(owner) ||
+		ownerSep > 0 && looksLikeRustTypeName(owner[ownerSep+2:])
+	if ownerIsTypeCased {
+		return FunctionID{Package: analysis.PackagePath, Name: name}
+	}
+	// owner may itself only re-export typeName: `outer::MyCipher::new(..)`
+	// where outer.rs writes `pub use aes::Aes128 as MyCipher;` is the aes
+	// crate's constructor, not a method the outer module declares.
+	if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, owner, typeName); ok {
+		return FunctionID{Package: reExportPkg, Type: reExportTyp, Name: name}
+	}
+	return FunctionID{Package: owner, Type: typeName, Name: name}
 }
 
 func looksLikeRustTypeName(name string) bool {
@@ -2145,57 +2152,77 @@ func resolveRustReceiverType(analysis *FileAnalysis, inferredType string) (pkg, 
 	if module, ok := rustModuleDeclaredTypePackage(analysis, inferredType); ok {
 		return module, inferredType
 	}
-	if importedPkg, ok := analysis.Imports[inferredType]; ok {
-		// The import's package may itself name no crate: russh writes
-		// `use cipher::SealingKey;` for its own trait and declares no `cipher`
-		// dependency.
-		if undeclared, ok := rustUndeclaredCratePath(analysis, importedPkg); ok {
-			return undeclared, inferredType
-		}
-		// The imported name may itself be a re-export: `use outer::MyCipher;`
-		// where outer.rs writes `pub use aes::Aes128 as MyCipher;` means the
-		// aes crate's identity, not outer's own path.
-		if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, importedPkg, inferredType); ok {
-			return reExportPkg, reExportTyp
-		}
-		return importedPkg, inferredType
+	if pkg, typ, ok := resolveRustReceiverTypeViaImport(analysis, inferredType); ok {
+		return pkg, typ
 	}
-	// Alias chains resolve transitively: `type A2 = A1; type A1 = Aes128;`
-	// means a call through A2 has aes::Aes128's identity. Following only one
-	// link left the intermediate alias as the identity, which matches nothing.
+	// An alias chain that advances without reaching a definitive answer still
+	// resolves against its own last hop, not the original inferredType:
+	// `type A2 = A1;` with A1 itself unresolvable means the prelude/
+	// local-package fallback below is about A1, not A2.
+	resolvedPkg, lastHop, definitive := resolveRustReceiverTypeViaAliasChain(analysis, inferredType)
+	if definitive {
+		return resolvedPkg, lastHop
+	}
+	// A prelude type inferred from a constructor's return (`let v = Vec::from(p);`)
+	// is in scope everywhere without an import, same as one written in an
+	// annotation, and belongs to the standard library rather than this crate.
+	if rustPreludeTypes[lastHop] {
+		return rustPreludePackage, lastHop
+	}
+	return analysis.PackagePath, lastHop
+}
+
+// resolveRustReceiverTypeViaImport resolves inferredType through a direct
+// import naming it, if one exists.
+func resolveRustReceiverTypeViaImport(analysis *FileAnalysis, inferredType string) (pkg, typ string, ok bool) {
+	importedPkg, isImported := analysis.Imports[inferredType]
+	if !isImported {
+		return "", "", false
+	}
+	// The import's package may itself name no crate: russh writes
+	// `use cipher::SealingKey;` for its own trait and declares no `cipher`
+	// dependency.
+	if undeclared, ok := rustUndeclaredCratePath(analysis, importedPkg); ok {
+		return undeclared, inferredType, true
+	}
+	// The imported name may itself be a re-export: `use outer::MyCipher;`
+	// where outer.rs writes `pub use aes::Aes128 as MyCipher;` means the
+	// aes crate's identity, not outer's own path.
+	if reExportPkg, reExportTyp, ok := rustModuleReExport(analysis, importedPkg, inferredType); ok {
+		return reExportPkg, reExportTyp, true
+	}
+	return importedPkg, inferredType, true
+}
+
+// resolveRustReceiverTypeViaAliasChain follows a chain of local type aliases
+// to a definitive answer. Alias chains resolve transitively: `type A2 = A1;
+// type A1 = Aes128;` means a call through A2 has aes::Aes128's identity.
+// Following only one link left the intermediate alias as the identity, which
+// matches nothing. When no definitive answer is reached, lastHop is the
+// chain's final name (inferredType itself, if there was no alias at all) for
+// the caller's own prelude/local-package fallback.
+func resolveRustReceiverTypeViaAliasChain(analysis *FileAnalysis, inferredType string) (pkg, lastHop string, ok bool) {
 	current := inferredType
 	for hop := 0; hop < rustMaxTypeDepth; hop++ {
-		realPath, ok := analysis.ImportAliases[current]
-		if !ok || realPath == "" {
-			break
+		realPath, hasAlias := analysis.ImportAliases[current]
+		if !hasAlias || realPath == "" {
+			return "", current, false
 		}
 		if qualified, ok := qualifyRustBareType(analysis, realPath); ok {
 			realPath = qualified
 		}
 		if aliasPkg, aliasType, ok := splitQualifiedRustType(realPath); ok {
-			return aliasPkg, aliasType
+			return aliasPkg, aliasType, true
 		}
 		if importedPkg, ok := analysis.Imports[realPath]; ok {
-			return importedPkg, realPath
+			return importedPkg, realPath, true
 		}
 		if realPath == current {
-			break
+			return "", current, false
 		}
 		current = realPath
 	}
-	// A prelude type inferred from a constructor's return (`let v = Vec::from(p);`)
-	// is in scope everywhere without an import, same as one written in an
-	// annotation, and belongs to the standard library rather than this crate.
-	if current != inferredType {
-		if rustPreludeTypes[current] {
-			return rustPreludePackage, current
-		}
-		return analysis.PackagePath, current
-	}
-	if rustPreludeTypes[inferredType] {
-		return rustPreludePackage, inferredType
-	}
-	return analysis.PackagePath, inferredType
+	return "", current, false
 }
 
 // recordRustTypeAlias records a local `type X = a::b::C<..>;` so a call written

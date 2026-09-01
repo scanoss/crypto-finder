@@ -615,43 +615,64 @@ func (f *rustFileFacts) recordTypeOwner(node *sitter.Node, src []byte, modulePat
 // unrecorded rather than guessed, the same discipline every other fact here
 // follows.
 func (f *rustFileFacts) recordDerefTransparentWrapper(node *sitter.Node, src []byte) {
-	traitNode := node.ChildByFieldName("trait")
-	if traitNode == nil {
+	paramName, ok := rustSingleDerefTraitParam(node, src)
+	if !ok {
 		return
 	}
-	traitName := rustTypeHead(traitNode.Content(src))
-	if traitName != "Deref" && traitName != "DerefMut" {
-		return
-	}
-	params := make(map[string]string)
-	collectRustGenericParams(node.ChildByFieldName("type_parameters"), src, params)
-	if len(params) != 1 {
-		return
-	}
-	var paramName string
-	for name := range params {
-		paramName = name
-	}
-	typeNode := node.ChildByFieldName("type")
-	if typeNode == nil || typeNode.Type() != javaNodeGenericType {
-		return
-	}
-	wrapperNameNode := typeNode.ChildByFieldName("type")
-	argsNode := typeNode.ChildByFieldName("type_arguments")
-	if wrapperNameNode == nil || argsNode == nil || int(argsNode.NamedChildCount()) != 1 {
-		return
-	}
-	arg := argsNode.NamedChild(0)
-	if arg.Type() != goNodeTypeIdentifier || arg.Content(src) != paramName {
+	wrapperName, ok := rustDerefWrapperName(node.ChildByFieldName("type"), src, paramName)
+	if !ok {
 		return
 	}
 	body := node.ChildByFieldName("body")
 	if body == nil || !rustImplDeclaresTargetAs(body, src, paramName) {
 		return
 	}
-	if wrapperName := rustTypeHead(wrapperNameNode.Content(src)); wrapperName != "" {
-		f.derefTransparent[wrapperName] = true
+	f.derefTransparent[wrapperName] = true
+}
+
+// rustSingleDerefTraitParam reports the one generic parameter of an
+// `impl<T> Deref for ...` (or DerefMut) block. More than one type parameter
+// leaves no way to tell which one Target forwards, so that case is left
+// unrecorded rather than guessed.
+func rustSingleDerefTraitParam(node *sitter.Node, src []byte) (paramName string, ok bool) {
+	traitNode := node.ChildByFieldName("trait")
+	if traitNode == nil {
+		return "", false
 	}
+	traitName := rustTypeHead(traitNode.Content(src))
+	if traitName != "Deref" && traitName != "DerefMut" {
+		return "", false
+	}
+	params := make(map[string]string)
+	collectRustGenericParams(node.ChildByFieldName("type_parameters"), src, params)
+	if len(params) != 1 {
+		return "", false
+	}
+	for name := range params {
+		paramName = name
+	}
+	return paramName, true
+}
+
+// rustDerefWrapperName reports the wrapper's bare name when typeNode is
+// exactly `Wrapper<paramName>` -- a generic type applied to that single type
+// parameter, verbatim, with no other argument. Anything looser is left
+// unrecorded rather than guessed.
+func rustDerefWrapperName(typeNode *sitter.Node, src []byte, paramName string) (wrapperName string, ok bool) {
+	if typeNode == nil || typeNode.Type() != javaNodeGenericType {
+		return "", false
+	}
+	wrapperNameNode := typeNode.ChildByFieldName("type")
+	argsNode := typeNode.ChildByFieldName("type_arguments")
+	if wrapperNameNode == nil || argsNode == nil || int(argsNode.NamedChildCount()) != 1 {
+		return "", false
+	}
+	arg := argsNode.NamedChild(0)
+	if arg.Type() != goNodeTypeIdentifier || arg.Content(src) != paramName {
+		return "", false
+	}
+	wrapperName = rustTypeHead(wrapperNameNode.Content(src))
+	return wrapperName, wrapperName != ""
 }
 
 // rustImplDeclaresTargetAs reports whether an impl body declares `type Target
