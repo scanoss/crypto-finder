@@ -1,0 +1,182 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: protonmail-go-crypto
+  coordinates:
+    - "github.com/ProtonMail/go-crypto"
+  version_range: ">=1.0.0,<2.0.0"
+  description: "ProtonMail go-crypto, maintained fork of golang.org/x/crypto OpenPGP"
+
+# Inventory source: github.com/ProtonMail/go-crypto v1.4.1 module source from
+# the Go module proxy. Maintained drop-in fork of golang.org/x/crypto/openpgp
+# with an additional openpgp/v2 API (`package v2`) and fork-only EAX/OCB AEAD
+# packages; the x/crypto original is contracted in golang-x-crypto.yaml and
+# the two module paths never share an FQN. The committed version list also
+# carries -proton suffixed tags of the same API.
+#
+# Dispositions for the remaining public surface: openpgp/armor and clearsign
+# are encoding wrappers (skipped-non-crypto); openpgp/packet, s2k, ecdh,
+# ecdsa, eddsa, ed25519/ed448, elgamal, x25519/x448, bitcurves, and brainpool
+# are packet/primitive internals reached through the top-level identities
+# (skipped-non-crypto at the boundary; primitives stay with their own
+# stdlib/xcrypto rules); helper hash-id translators return lookups
+# (skipped-informative-return); Entity/EntityList methods
+# (SerializePrivate, key selection) are lifecycle plumbing behind the
+# declared factories (skipped-non-crypto).
+contracts:
+  # openpgp (v1 API)
+  - method: github.com/ProtonMail/go-crypto/openpgp.Encrypt
+    arity: 5
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: to, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/ProtonMail/go-crypto/openpgp.EncryptText
+    arity: 5
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.EncryptSplit
+    arity: 6
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.EncryptTextSplit
+    arity: 6
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.SymmetricallyEncrypt
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: passphrase, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: github.com/ProtonMail/go-crypto/openpgp.ReadMessage
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp.MessageDetails", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.Sign
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.DetachSign
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.DetachSignText
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.ArmoredDetachSign
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.ArmoredDetachSignText
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.CheckDetachedSignature
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp.Entity", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.CheckArmoredDetachedSignature
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp.Entity", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.VerifyDetachedSignature
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp/packet.Signature", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp.NewEntity
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp.Entity", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/openpgp.ReadEntity
+    arity: 1
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp.Entity", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/openpgp.ReadKeyRing
+    arity: 1
+    return: { type: "github.com/ProtonMail/go-crypto/openpgp.EntityList", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/openpgp.ReadArmoredKeyRing
+    arity: 1
+    return: { type: "github.com/ProtonMail/go-crypto/openpgp.EntityList", confidence: high }
+    role: factory
+
+  # openpgp/v2 API (package v2)
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.Encrypt
+    arity: 6
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: to, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.EncryptWithParams
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.SymmetricallyEncrypt
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: passphrase, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.SymmetricallyEncryptWithParams
+    arity: 3
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: passphrase, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.ReadMessage
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp/v2.MessageDetails", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.Sign
+    arity: 4
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.SignWithParams
+    arity: 3
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.DetachSign
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.DetachSignWithParams
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.VerifyDetachedSignature
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp/packet.Signature", confidence: high }
+    role: operation
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.NewEntity
+    arity: 4
+    return: { type: "*github.com/ProtonMail/go-crypto/openpgp/v2.Entity", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.ReadKeyRing
+    arity: 1
+    return: { type: "github.com/ProtonMail/go-crypto/openpgp/v2.EntityList", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/openpgp/v2.ReadArmoredKeyRing
+    arity: 1
+    return: { type: "github.com/ProtonMail/go-crypto/openpgp/v2.EntityList", confidence: high }
+    role: factory
+
+  # Fork-only AEAD mode constructors
+  - method: github.com/ProtonMail/go-crypto/eax.NewEAX
+    arity: 1
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/eax.NewEAXWithNonceAndTagSize
+    arity: 3
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/ocb.NewOCB
+    arity: 1
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+  - method: github.com/ProtonMail/go-crypto/ocb.NewOCBWithNonceAndTagSize
+    arity: 3
+    return: { type: "crypto/cipher.AEAD", confidence: high }
+    role: factory
+hierarchy: {}
