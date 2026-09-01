@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Default scans skip vendored `shaded/` trees and compiler-generated protobuf stubs (`*_pb2.py`, `*.pb.go`, `*OuterClass.java`, protocol-buffer compiler headers, and the matching JS/TS/C/C++ globs). Authored sources in the same tree stay in the graph. `--no-default-exclusions` disables the new patterns. Protobuf runtimes scanned as the target artifact (`protobuf-java`, `google.protobuf`, `google.golang.org/protobuf`) stay in scope.
 - Call-graph construction uses the same directory exclusions as language detection (`--exclude`, `--no-default-exclusions`, and `--include-tests`). Per-language skip lists are gone, so Cargo `examples/` and `benches/` are inventoried unless `--exclude` says otherwise.
 ### Fixed
 - Gradle projects that omit a `group` now produce reachability verdicts from their application Java packages, matching the Maven equivalent for the same sources. Previously the Gradle project name was treated as the only user-code identity, so every finding was reported unreachable.

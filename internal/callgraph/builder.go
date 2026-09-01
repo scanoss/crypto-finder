@@ -68,7 +68,7 @@ type PackageDir struct {
 type Builder struct {
 	parser       Parser
 	typeResolver TypeResolver
-	skipMatcher  skip.SkipMatcher
+	skipMatcher  skip.SkipMatcher // directory walk plus per-file generated-stub policy
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -97,13 +97,14 @@ func NewBuilderForEcosystem(ecosystem string, parser Parser) *Builder {
 	return &Builder{
 		parser:      parser,
 		ecosystem:   ecosystem,
-		skipMatcher: skip.DefaultDirMatcher(),
+		skipMatcher: skip.NewDefaultMatcher(),
 	}
 }
 
-// SetSkipMatcher replaces the directory matcher used during source traversal.
+// SetSkipMatcher replaces the matcher used during source traversal.
 // Pass the same matcher the scan uses so callgraph walks honor --exclude,
-// --no-default-exclusions, and --include-tests.
+// --no-default-exclusions, and --include-tests. Directory walks and
+// per-file generated-stub filtering both consult it.
 func (b *Builder) SetSkipMatcher(matcher skip.SkipMatcher) {
 	if matcher != nil {
 		b.skipMatcher = matcher
@@ -361,9 +362,19 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLo
 
 func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
 	for _, analysis := range analyses {
+		if b.skipSourceFile(analysis) {
+			continue
+		}
 		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
 		b.mergeAnalysisFunctions(graph, analysis)
 	}
+}
+
+func (b *Builder) skipSourceFile(analysis *FileAnalysis) bool {
+	if analysis == nil || analysis.FilePath == "" || b.skipMatcher == nil {
+		return false
+	}
+	return b.skipMatcher.ShouldSkip(filepath.ToSlash(analysis.FilePath), false)
 }
 
 // applyEcosystemAnalysisHooks runs the per-analysis, ecosystem-specific

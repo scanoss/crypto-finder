@@ -205,6 +205,15 @@ The following patterns are automatically excluded:
 - `*.dylib`
 - `*.bin`
 
+**Generated / vendored stubs:**
+- `shaded/`
+- `*OuterClass.java`
+- `*_pb2.py`, `*_pb2_grpc.py`
+- `*.pb.go`, `zz_generated*.go`
+- `*_pb.js`, `*_pb.ts`
+- `*.pb.cc`, `*.pb.h`, `*.grpc.pb.cc`, `*.grpc.pb.h`
+- Files whose header is the protocol-buffer compiler marker (or prost/bindgen), except protobuf runtimes scanned as the target artifact
+
 For the complete list, see [Default Skip Patterns](../internal/skip/source_defaults.go).
 
 ### Custom Skip Patterns

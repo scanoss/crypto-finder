@@ -87,7 +87,7 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `rules` | Rule source management: remote source, local files/dirs, multi-source merge. |
 | `scan` | Reusable scan utilities shared by CLI commands: flag validation, reachability export, graph-fragment export, supporting-call derivation, conditioned-finding materialization. |
 | `scanner` | Scanner abstraction plus the `opengrep/` and `semgrep/` engine implementations. |
-| `skip` | File/directory exclusion: built-in defaults, `scanoss.json` patterns, `--exclude`, gitignore-style matching. |
+| `skip` | File/directory exclusion: built-in defaults (including `shaded/` and generated protobuf stubs), `scanoss.json` patterns, `--exclude`, gitignore-style matching. |
 | `utils` | Small general-purpose helpers. |
 | `version` | Build/version information for the binary. |
 

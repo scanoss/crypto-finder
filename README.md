@@ -144,7 +144,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `-t`, `--timeout <dur>` | `10m` | Scan timeout (e.g. `10m`, `1h`, `2w`) |
 | `--no-dedup` | off | Disable per-line deduplication of findings |
 | `--include-tests` | off | Include test sources in findings and dependency scans |
-| `--no-default-exclusions` | off | Disable built-in directory exclusions (`vendor`, `node_modules`, `dist`, ...). Slows scans on large repos; combine with `--exclude` to re-add specific dirs |
+| `--no-default-exclusions` | off | Disable built-in exclusions (`vendor`, `node_modules`, `shaded/`, generated protobuf stubs, ...). Slows scans on large repos; combine with `--exclude` to re-add specific paths |
 | `--exclude <glob>` | — | Gitignore-style pattern to skip (repeatable); added on top of the defaults |
 | `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
