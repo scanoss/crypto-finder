@@ -1,0 +1,108 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: p384
+  coordinates:
+    - p384
+  version_range: ">=0.11.0,<0.15.0"
+  description: "NIST P-384 (secp384r1) elliptic curve: ECDSA and ECDH"
+
+# API read at p384 0.13.1.
+#
+# 0.0.0 through 0.10.0 are outside the range deliberately. 0.3.0 DOES have an
+# `ecdsa` module, but it is a re-export shell with no SigningKey and nothing
+# constructible; the usable signing and agreement APIs both arrive at 0.11.0.
+#
+# WHERE THE SIGNATURES COME FROM. For p384, `ecdsa::SigningKey` and
+# `ecdsa::VerifyingKey` are `pub type` aliases onto the generic `ecdsa` crate
+# (p384 0.13.1 src/ecdsa.rs), so the arities and returns below were read from
+# ecdsa 0.16.9 src/signing.rs:87,92,99,123 and src/verifying.rs:92,102,109.
+# The ecdh and key types alias `elliptic-curve`, read at 0.13.8 src/ecdh.rs:60,
+# :105,:120, src/secret_key.rs:94,136,144 and src/public_key.rs:102,126.
+#
+# WHY THIS CONTRACT EXISTS AT ALL. An exported callgraph for a consumer of this
+# crate emitted `canonical_signature: "p384::ecdsa.SigningKey.random(?)"` with
+# empty `parameter_types` — the shape an ABSENT contract takes. The generic
+# ecdsa.yaml does not cover it: its keys are `ecdsa::SigningKey.*`, and the
+# callgraph identifies the call by the re-exporting crate's own module path.
+# elliptic-curve.yaml does not cover it either — that file is the Curve trait
+# and carries `contracts: []`.
+#
+# skipped-non-crypto: byte and DER conversions (to_bytes, as_nonzero_scalar,
+#   to_sec1_bytes), Display/FromStr, serde, and the arithmetic backends.
+contracts:
+  - method: p384::ecdsa::SigningKey.random
+    arity: 1
+    return: {type: "p384::ecdsa::SigningKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+# The era-3 constructor. 0.14 replaces `SigningKey::random(rng)` with a
+# ZERO-ARITY `SigningKey::generate()`, which is a TRAIT method: the crate's own
+# doc example imports `elliptic_curve::Generate` to call it (p384 0.14.0-rc.15
+# src/ecdsa.rs:26,30). It is contracted because this file's version_range covers
+# 0.14.x, and an uncontracted constructor is exactly the `(?)` shape these
+# contracts exist to remove.
+  - method: p384::ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: "p384::ecdsa::SigningKey", confidence: high}
+    role: factory
+  - method: p384::ecdsa::SigningKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&elliptic_curve::FieldBytes"]
+    role: factory
+  - method: p384::ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p384::ecdsa::SigningKey.verifying_key
+    arity: 0
+    return: {type: "&p384::ecdsa::VerifyingKey", confidence: high}
+    role: output
+  - method: p384::ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p384::ecdsa::VerifyingKey.from_encoded_point
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&p384::EncodedPoint"]
+    role: factory
+  - method: p384::ecdsa::VerifyingKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["p384::AffinePoint"]
+    role: factory
+  - method: p384::ecdh::EphemeralSecret.random
+    arity: 1
+    return: {type: "p384::ecdh::EphemeralSecret", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: p384::ecdh::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: {type: "p384::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&p384::PublicKey"]
+    role: operation
+  - method: p384::SecretKey.random
+    arity: 1
+    return: {type: "p384::SecretKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: p384::SecretKey.public_key
+    arity: 0
+    return: {type: "p384::PublicKey", confidence: high}
+    role: output
+  - method: p384::PublicKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p384::PublicKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["p384::AffinePoint"]
+    role: factory
+
+hierarchy: {}
