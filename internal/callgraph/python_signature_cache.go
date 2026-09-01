@@ -272,7 +272,7 @@ func pythonSignatureFingerprintWalkFailure(entry fs.DirEntry) error {
 }
 
 func pythonSignatureFingerprintDir(root, path string, entry fs.DirEntry) error {
-	if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipDirs[entry.Name()]) {
+	if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), true)) {
 		return fs.SkipDir
 	}
 	return nil

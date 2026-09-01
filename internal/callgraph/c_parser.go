@@ -372,16 +372,6 @@ func (p *CParser) cReturnSource(expr *sitter.Node, src []byte, filePath, package
 	return SourceNode{}, false
 }
 
-// SkipDirs returns build and dependency directories excluded from C traversal.
-func (p *CParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{"build": true, "vendor": true}
-	if !p.includeTests {
-		skip["test"] = true
-		skip["tests"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child namespace using path separators.
 func (p *CParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {

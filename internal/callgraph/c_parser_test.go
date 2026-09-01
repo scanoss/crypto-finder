@@ -75,9 +75,6 @@ func TestCParser_Basics(t *testing.T) {
 	if got := p.SubPackagePath("example", "crypto"); got != "example/crypto" {
 		t.Fatalf("SubPackagePath() = %q, want example/crypto", got)
 	}
-	if !p.SkipDirs()["vendor"] || !p.SkipDirs()["build"] {
-		t.Fatalf("SkipDirs() = %#v", p.SkipDirs())
-	}
 	if _, ok := p.CloneParser().(*CParser); !ok {
 		t.Fatalf("CloneParser() = %T, want *CParser", p.CloneParser())
 	}

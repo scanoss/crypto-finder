@@ -121,15 +121,6 @@ func (p *RustParser) CloneParser() Parser {
 	return clone
 }
 
-// SkipDirs returns directory names to skip during Rust source traversal.
-func (p *RustParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{"target": true, "benches": true, "examples": true}
-	if !p.includeTests {
-		skip["tests"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child module path using "::" separator.
 // In Rust, src/ is the crate root directory and does not correspond to a module —
 // it is transparent in the module path. e.g., ring/src/aead/ maps to "ring::aead",

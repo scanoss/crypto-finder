@@ -34,7 +34,7 @@ func TestPrepareReportOccurrenceKeys_UsesParserAnchorsAndExportsThem(t *testing.
 				StartLine: line, EndLine: line, StartCol: 9, EndCol: 35,
 			}},
 		}}}
-		result := prepareReportOccurrenceKeys(dir, report, []string{"java"}, javaRuntime, false, "", nil)
+		result := prepareReportOccurrenceKeys(dir, report, []string{"java"}, javaRuntime, false, "", nil, nil)
 		if result.CallGraph.JavaPlatformSignatures != nil {
 			t.Fatal("report-only occurrence keys must not run Java type resolution")
 		}
@@ -102,7 +102,7 @@ func TestPrepareReportOccurrenceKeys_DegradesOnSourceAnchorFailure(t *testing.T)
 		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 1, EndLine: 1}},
 	}}}
 
-	result := prepareReportOccurrenceKeys(filepath.Join(t.TempDir(), "missing"), report, []string{"java"}, javaRuntime, false, "", nil)
+	result := prepareReportOccurrenceKeys(filepath.Join(t.TempDir(), "missing"), report, []string{"java"}, javaRuntime, false, "", nil, nil)
 	if result != nil || report.Findings[0].CryptographicAssets[0].OccurrenceKey != "" {
 		t.Fatal("source-anchor failure must preserve report output without an occurrence_key")
 	}
@@ -126,7 +126,7 @@ func TestPrepareReportOccurrenceKeys_AssignsKeyToTopLevelCall(t *testing.T) {
 		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 1, EndCol: 20}},
 	}}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"python"}, javaRuntime, false, "", nil)
+	result := prepareReportOccurrenceKeys(dir, report, []string{"python"}, javaRuntime, false, "", nil, nil)
 	if result == nil || result.CallGraph == nil {
 		t.Fatal("report-only enrichment must build source anchors")
 	}
@@ -165,7 +165,7 @@ class Crypto {
 		{FilePath: pythonPath, Language: "python", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 5, EndCol: 25}}},
 	}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"java", "python"}, javaRuntime, false, "", nil)
+	result := prepareReportOccurrenceKeys(dir, report, []string{"java", "python"}, javaRuntime, false, "", nil, nil)
 	if result == nil || result.CallGraph == nil {
 		t.Fatal("report-only enrichment must build source anchors")
 	}
@@ -216,7 +216,7 @@ void run() {
 		{FilePath: cppPath, Language: "c", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 3, EndLine: 3, StartCol: 3, EndCol: 15}}},
 	}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"c"}, javaRuntime, false, "", nil)
+	result := prepareReportOccurrenceKeys(dir, report, []string{"c"}, javaRuntime, false, "", nil, nil)
 	if result == nil || len(result.OccurrenceAnchors) != 2 {
 		t.Fatalf("occurrence anchors = %d, want both C and C++ declarations", len(result.OccurrenceAnchors))
 	}

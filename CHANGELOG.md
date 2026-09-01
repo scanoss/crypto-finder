@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Call-graph construction uses the same directory exclusions as language detection (`--exclude`, `--no-default-exclusions`, and `--include-tests`). Per-language skip lists are gone, so Cargo `examples/` and `benches/` are inventoried unless `--exclude` says otherwise.
 ### Fixed
 - Gradle projects that omit a `group` now produce reachability verdicts from their application Java packages, matching the Maven equivalent for the same sources. Previously the Gradle project name was treated as the only user-code identity, so every finding was reported unreachable.
 - Directories named `example` or `examples` are no longer skipped by default. The old fingerprinting exclusions matched any path segment of those names, so Java `com.example` packages and shipped SDK samples produced no findings and no skip notice. Operators who still want them excluded can pass `--exclude example` / `--exclude examples`.

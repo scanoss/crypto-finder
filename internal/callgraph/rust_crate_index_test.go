@@ -34,7 +34,7 @@ func parseRustCrateFiles(t *testing.T, files map[string]string, importPath strin
 			return
 		}
 		for _, entry := range entries {
-			if entry.IsDir() && !parser.SkipDirs()[entry.Name()] {
+			if entry.IsDir() && !skipCallgraphWalkDir(entry.Name()) {
 				walk(filepath.Join(at, entry.Name()), parser.SubPackagePath(pkg, entry.Name()))
 			}
 		}
@@ -89,7 +89,7 @@ func parseRustCrateAllKeys(t *testing.T, files map[string]string, importPath str
 			return
 		}
 		for _, entry := range entries {
-			if entry.IsDir() && !parser.SkipDirs()[entry.Name()] {
+			if entry.IsDir() && !skipCallgraphWalkDir(entry.Name()) {
 				walk(filepath.Join(at, entry.Name()), parser.SubPackagePath(pkg, entry.Name()))
 			}
 		}

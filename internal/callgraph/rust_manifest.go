@@ -15,6 +15,8 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // Cargo lets a manifest bind a dependency to a DIFFERENT name than the crate it
@@ -638,10 +640,14 @@ func (p *RustParser) rustIndexPackagePath(root, crateName, filePath string) stri
 	return rustFileModulePath(path, filepath.Base(filePath), p.rustGlobReExportedModules(filepath.Dir(filePath)))
 }
 
-// crateSourceFiles lists a crate's Rust sources, skipping the directories the
-// parser skips everywhere else and stopping at the file limit.
+// crateSourceFiles lists a crate's Rust sources, applying the global skip
+// matcher and stopping at the file limit.
 func (p *RustParser) crateSourceFiles(root string) []string {
-	skip := p.SkipDirs()
+	patterns := append([]string{}, skip.DefaultSkippedDirs...)
+	if !p.includeTests {
+		patterns = skip.WithDefaultTestPatterns(patterns)
+	}
+	matcher := skip.NewGitIgnoreMatcher(patterns)
 	var paths []string
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -653,7 +659,7 @@ func (p *RustParser) crateSourceFiles(root string) []string {
 			return nil
 		}
 		if entry.IsDir() {
-			if path != root && skip[entry.Name()] {
+			if path != root && (strings.HasPrefix(entry.Name(), ".") || matcher.ShouldSkip(filepath.ToSlash(path), true)) {
 				return fs.SkipDir
 			}
 			return nil

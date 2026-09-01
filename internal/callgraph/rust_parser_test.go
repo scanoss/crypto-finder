@@ -13,17 +13,6 @@ func TestRustParser_PackageSeparator(t *testing.T) {
 	}
 }
 
-func TestRustParser_SkipDirs(t *testing.T) {
-	p := NewRustParser()
-	skip := p.SkipDirs()
-	expected := []string{"target", "tests", "benches", "examples"}
-	for _, dir := range expected {
-		if !skip[dir] {
-			t.Errorf("SkipDirs() missing %q", dir)
-		}
-	}
-}
-
 func TestRustParser_SubPackagePath(t *testing.T) {
 	p := NewRustParser()
 	tests := []struct {
@@ -168,9 +157,6 @@ func TestRustParser_IncludeTestsIncludesTestFilesAndDirs(t *testing.T) {
 	}
 	if len(analyses) != 1 {
 		t.Fatalf("expected 1 analysis (test file included), got %d", len(analyses))
-	}
-	if p.SkipDirs()["tests"] {
-		t.Fatal("expected tests dir not to be skipped when includeTests is enabled")
 	}
 }
 

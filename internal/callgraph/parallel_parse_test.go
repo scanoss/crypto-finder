@@ -24,7 +24,6 @@ type serialOnlyParser struct {
 func (s *serialOnlyParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
 	return s.inner.ParseDirectory(dir, packagePath)
 }
-func (s *serialOnlyParser) SkipDirs() map[string]bool { return s.inner.SkipDirs() }
 func (s *serialOnlyParser) SubPackagePath(parent, dir string) string {
 	return s.inner.SubPackagePath(parent, dir)
 }

@@ -131,15 +131,10 @@ func (p *GoParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, err
 	return analyses, nil
 }
 
-// SkipsDirNamed mirrors the go tool's rule: a directory whose name begins with
-// "_" is not part of any build.
+// SkipsDirNamed mirrors the go tool: testdata and directories whose names
+// begin with "_" are not part of any build.
 func (p *GoParser) SkipsDirNamed(name string) bool {
-	return strings.HasPrefix(name, "_")
-}
-
-// SkipDirs returns directory names to skip during Go package traversal.
-func (p *GoParser) SkipDirs() map[string]bool {
-	return map[string]bool{"vendor": true, "testdata": true}
+	return name == "testdata" || strings.HasPrefix(name, "_")
 }
 
 // SubPackagePath constructs a child import path by appending the dir name with "/".

@@ -7,12 +7,13 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 type stubParser struct {
 	analyses map[string][]*FileAnalysis
 	errs     map[string]error
-	skip     map[string]bool
 	sep      string
 	seenDirs []string
 }
@@ -26,10 +27,6 @@ func (p *stubParser) ParseDirectory(dir, _ string) ([]*FileAnalysis, error) {
 		return a, nil
 	}
 	return nil, nil
-}
-
-func (p *stubParser) SkipDirs() map[string]bool {
-	return p.skip
 }
 
 func (p *stubParser) SubPackagePath(parentPath, dirName string) string {
@@ -55,8 +52,7 @@ func TestBuilder_BuildFromDirectories(t *testing.T) {
 	}
 
 	parser := &stubParser{
-		sep:  "/",
-		skip: map[string]bool{"vendor": true},
+		sep: "/",
 		analyses: map[string][]*FileAnalysis{
 			root: {
 				{Functions: []FunctionDecl{{
@@ -105,6 +101,49 @@ func TestBuilder_BuildFromDirectories(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(parser.seenDirs, ","), ".git") {
 		t.Fatalf("expected hidden dir to be skipped, seen dirs: %#v", parser.seenDirs)
+	}
+}
+
+func TestBuilder_SkipsVendorFromDefaultsWalksExamples(t *testing.T) {
+	root := t.TempDir()
+	examples := filepath.Join(root, "examples")
+	vendor := filepath.Join(root, "vendor")
+	for _, dir := range []string{examples, vendor} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	parser := &stubParser{sep: "/"}
+	builder := NewBuilder(parser)
+	if _, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil); err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	seen := strings.Join(parser.seenDirs, ",")
+	if strings.Contains(seen, "vendor") {
+		t.Fatalf("expected vendor to be skipped by default matcher, seen dirs: %#v", parser.seenDirs)
+	}
+	if !strings.Contains(seen, "examples") {
+		t.Fatalf("expected examples to be walked, seen dirs: %#v", parser.seenDirs)
+	}
+}
+
+func TestBuilder_SetSkipMatcherHonorsTestPatterns(t *testing.T) {
+	root := t.TempDir()
+	testsDir := filepath.Join(root, "tests")
+	if err := os.MkdirAll(testsDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", testsDir, err)
+	}
+
+	parser := &stubParser{sep: "/"}
+	builder := NewBuilder(parser)
+	builder.SetSkipMatcher(skip.NewGitIgnoreMatcher(skip.WithDefaultTestPatterns(skip.DefaultSkippedDirs)))
+	if _, err := builder.BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "app"}}, nil); err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	if strings.Contains(strings.Join(parser.seenDirs, ","), "tests") {
+		t.Fatalf("expected tests to be skipped by scan matcher, seen dirs: %#v", parser.seenDirs)
 	}
 }
 

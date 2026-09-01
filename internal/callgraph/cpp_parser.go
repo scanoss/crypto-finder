@@ -539,16 +539,6 @@ func cppChainRoot(node *sitter.Node) *sitter.Node {
 	return root
 }
 
-// SkipDirs returns build and dependency directories excluded from C++ traversal.
-func (p *CPPParser) SkipDirs() map[string]bool {
-	skip := map[string]bool{"build": true, "vendor": true}
-	if !p.includeTests {
-		skip["test"] = true
-		skip["tests"] = true
-	}
-	return skip
-}
-
 // SubPackagePath constructs a child namespace using path separators.
 func (p *CPPParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {
