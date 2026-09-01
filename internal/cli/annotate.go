@@ -95,7 +95,7 @@ func init() {
 	annotateCmd.Flags().StringVar(&annotateAPIURL, "api-url", "", "SCANOSS API base URL")
 	annotateCmd.Flags().StringSliceVar(&annotateLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	annotateCmd.Flags().BoolVar(&annotateIncludeTests, "include-tests", false, "Include test sources in detection")
-	annotateCmd.Flags().BoolVar(&annotateNoDefaultExclude, "no-default-exclusions", false, "Disable the built-in default directory exclusions")
+	annotateCmd.Flags().BoolVar(&annotateNoDefaultExclude, "no-default-exclusions", false, "Disable the built-in default exclusions")
 	annotateCmd.Flags().StringSliceVar(&annotateExcludePatterns, "exclude", nil, "Glob pattern to skip during detection (repeatable)")
 }
 
@@ -200,7 +200,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration) (*entities
 
 	skipPatterns, _ := buildSkipPatterns(targetDir, annotateNoDefaultExclude, annotateExcludePatterns)
 	skipPatterns = applyTestSkipPatterns(skipPatterns, annotateIncludeTests)
-	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
+	skipMatcher := skip.NewMatcher(skipPatterns, !annotateNoDefaultExclude)
 
 	if len(languages) == 0 {
 		detected, detectErr := language.NewEnryDetector(skipMatcher).Detect(target)

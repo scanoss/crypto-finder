@@ -87,7 +87,7 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `rules` | Rule source management: remote source, local files/dirs, multi-source merge. |
 | `scan` | Reusable scan utilities shared by CLI commands: flag validation, reachability export, graph-fragment export, supporting-call derivation, conditioned-finding materialization. |
 | `scanner` | Scanner abstraction plus the `opengrep/` and `semgrep/` engine implementations. |
-| `skip` | File/directory exclusion: built-in defaults, `scanoss.json` patterns, `--exclude`, gitignore-style matching. |
+| `skip` | File/directory exclusion: built-in defaults (including `shaded/` and generated protobuf stubs), `scanoss.json` patterns, `--exclude`, gitignore-style matching. |
 | `utils` | Small general-purpose helpers. |
 | `version` | Build/version information for the binary. |
 
@@ -138,6 +138,16 @@ Supporting calls (setup/lifecycle/config calls around a crypto object, e.g. `dig
 ### 5. Reachability must never depend on `metadata.api`
 
 `metadata.api` is informational CBOM metadata only. The matched operation's kind is classified from the matched **source text** (`inferMatchedOperationKind`), and the crypto call is located by **position** — match columns intersected with call-node columns, with a fluent-chain-root tie-break and a line-only fallback (`findCryptoCallNode`). A missing or wrong `api` must never zero out a finding's reachability. Do not re-add api-based selection or classification.
+
+### 6. Call-chain sample vs entry-point index
+
+`call_chains` is a capped sample of routes, default 128. Live `--export-callgraph`
+sets N with `--export-callgraph-max-chains`. Omitting the flag keeps 128; values
+below 1 are rejected. Stitch sets N with `StitchOptions.MaxChains`. Zero or
+omitted keeps 128 on the stitch path. Live UIs that only need a composed route
+through dependencies pass 8 or 1. Do not silently shrink the default.
+`crypto_entry_points` is the complete reverse-reach set and is never filtered by
+that budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
 
 ## Schema Versioning
 

@@ -255,6 +255,9 @@ func pythonSignatureFingerprintVisitor(root string, digest hash.Hash) fs.WalkDir
 		if !pythonSignatureFingerprintEligibleFile(entry) {
 			return nil
 		}
+		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), false) {
+			return nil
+		}
 		data, rel, ok := pythonSignatureFingerprintInput(root, path, entry)
 		if !ok {
 			return nil

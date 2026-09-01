@@ -172,10 +172,10 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
 	scanCmd.Flags().BoolVar(&scanNoDefaultExclusions, "no-default-exclusions", false,
-		"Disable the built-in default directory exclusions (e.g. docs, vendor, node_modules, dist, build, ...). "+
+		"Disable the built-in default exclusions (docs, vendor, node_modules, shaded, generated protobuf stubs, ...). "+
 			"Affects the primary scan only; dependency scans still skip test patterns controlled by --include-tests. "+
 			"Language detection will walk the full tree, which may significantly slow down scans on large repos. "+
-			"Use --exclude to surgically re-add specific directories.")
+			"Use --exclude to surgically re-add specific paths.")
 	scanCmd.Flags().StringSliceVar(&scanExcludePatterns, "exclude", nil,
 		"Glob pattern to skip during scanning (repeatable, e.g. --exclude vendor --exclude \"build/**\"). "+
 			"Same gitignore-style syntax as scanoss.json settings.skip.patterns.scanning. "+
@@ -386,7 +386,7 @@ func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
 // cannot drift.
 //
 // On MultiSource.Load failure the function falls back to:
-//   - skip.DefaultSkippedDirs when !noDefaults
+//   - skip.DefaultPatterns() when !noDefaults
 //   - empty list             when  noDefaults
 //
 // In both cases any user --exclude patterns are merged into the fallback so
@@ -419,7 +419,7 @@ func buildSkipPatterns(targetDir string, noDefaults bool, userExcludes []string)
 
 		var fallback []string
 		if !noDefaults {
-			fallback = append(fallback, skip.DefaultSkippedDirs...)
+			fallback = append(fallback, skip.DefaultPatterns()...)
 		}
 		// Re-merge user excludes — they were in the last source which failed
 		// alongside the others; preserve their explicit intent.
@@ -668,7 +668,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	// Create skip matcher for language detection
-	skipMatcher := skip.NewGitIgnoreMatcher(skipPatterns)
+	skipMatcher := skip.NewMatcher(skipPatterns, !scanNoDefaultExclusions)
 
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(config.InitOptions{
