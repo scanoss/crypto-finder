@@ -1,0 +1,104 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sha1
+  coordinates:
+    - sha1
+  version_range: ">=0.0.1,<0.12.0"
+  description: "SHA-1 hash, both upstream lineages published under the sha1 crate name"
+
+# Inventory sources: the sha1 crate's own source at 0.0.1, 0.6.0, 0.6.1, 0.10.6
+# and 0.11.0, and the APIs selected by the scanoss/crypto_rules sha1 rules.
+#
+# THE CRATE NAME SPANS TWO UNRELATED UPSTREAM PROJECTS and this KB covers both,
+# because a consumer writes the same `sha1::Sha1` path either way:
+#
+#   0.0.1 - 0.6.1    the minimal sha1 crate (mitsuhiko). `new` (0.0.1
+#                    src/lib.rs:52), `update`, the ARITY-0 instance `digest`
+#                    (:164), `hexdigest` (:171) and `output` (:140). Its own
+#                    src/lib.rs:10-12 at 0.6.1 records the handover: the old
+#                    code moved to `sha1_smol`, and the crate name beyond 0.6
+#                    is RustCrypto's.
+#   0.10.0 - 0.11.0  RustCrypto: the digest 0.10 trait surface, including the
+#                    ARITY-1 static one-shot `digest`.
+#
+# `digest` therefore appears TWICE with different arities. That is exactly what
+# the arity key is for: ContractsFor matches method plus arity, so the instance
+# formatter and the static one-shot never resolve to each other. Splitting the
+# lineages into two YAMLs would instead collide on `new`, which both declare
+# with arity 0 and the same return.
+#
+# `sha1_smol` is a different crate and a different PURL: not covered here.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: sha1::Sha1.new
+    arity: 0
+    return: {type: sha1::Sha1, confidence: high}
+    role: factory
+  - method: sha1::Sha1.default
+    arity: 0
+    return: {type: sha1::Sha1, confidence: high}
+    role: factory
+  - method: sha1::Sha1.new_with_prefix
+    arity: 1
+    return: {type: sha1::Sha1, confidence: high}
+    role: factory
+  - method: sha1::Sha1.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha1::Sha1.chain_update
+    arity: 1
+    return: {type: sha1::Sha1, confidence: high}
+    role: operation
+  - method: sha1::Sha1.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha1::Sha1.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha1::Sha1.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha1::Sha1.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha1::Sha1.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha1::Sha1.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha1::Sha1.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha1::Sha1.from
+    arity: 1
+    return: {type: sha1::Sha1, confidence: high}
+    role: factory
+  - method: sha1::Sha1.digest
+    arity: 0
+    return: {type: sha1::Digest, confidence: high}
+    role: output
+  - method: sha1::Sha1.hexdigest
+    arity: 0
+    return: {type: alloc::string::String, confidence: high}
+    role: output
+  - method: sha1::Sha1.output
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+
+hierarchy: {}

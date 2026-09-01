@@ -1,0 +1,533 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sha3
+  coordinates:
+    - sha3
+  version_range: ">=0.1.0,<0.13.0"
+  description: "RustCrypto SHA-3, Keccak and the SHAKE/cSHAKE/TurboSHAKE extendable-output functions"
+
+# Inventory sources: the sha3 crate's own source at 0.10.9 (src/lib.rs:142-209,
+# src/macros.rs), 0.11.0 (src/lib.rs:51-65) and 0.12.0 (src/lib.rs:145-165,
+# README.md:15), and the APIs selected by the scanoss/crypto_rules sha3 rules.
+#
+# The range starts at 0.1.0 rather than the matrix's 0.0.0: that release is a
+# name reservation with an empty src/lib.rs.
+#
+# SHAKE LEFT THE CRATE AT 0.12.0. The newest stable release in the matrix range
+# moved SHAKE128/SHAKE256 to a separate `shake` crate (0.12.0 README.md:15), so
+# the XOF contracts below apply to 0.1.0-0.11.0 only. They stay in this KB
+# because every one of those releases is in range; `pkg:cargo/shake` is NOT in
+# this family's PURL set and gets no contracts here.
+#
+# The XOF surface is not the Digest trait: the terminal read is `finalize_xof`,
+# which returns a reader, and `finalize_boxed(n)` takes the output length in
+# BYTES — declared with argument_byte_length so a consumer derives bits rather
+# than reporting bytes as bits.
+#
+# cSHAKE and TurboSHAKE are reachable only through their Core types. The
+# user-facing `CShake128` is `CoreWrapper<CShake128Core>` (0.10.9
+# src/macros.rs, impl_cshake) with no constructor of its own, so
+# `CShake128Core.new(customization)` is the only factory.
+#   needs-follow-up: `digest::CoreWrapper.from_core`, which lifts a Core into
+#     the user-facing type, belongs to the digest KB. That YAML deliberately
+#     declares no contracts (it is a trait-only crate), so the wrapper call
+#     itself has no identity today and only the inner Core call does. Adding it
+#     is a change to a shared KB rather than to this family.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: sha3::Sha3_224.new
+    arity: 0
+    return: {type: sha3::Sha3_224, confidence: high}
+    role: factory
+  - method: sha3::Sha3_224.default
+    arity: 0
+    return: {type: sha3::Sha3_224, confidence: high}
+    role: factory
+  - method: sha3::Sha3_224.new_with_prefix
+    arity: 1
+    return: {type: sha3::Sha3_224, confidence: high}
+    role: factory
+  - method: sha3::Sha3_224.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_224.chain_update
+    arity: 1
+    return: {type: sha3::Sha3_224, confidence: high}
+    role: operation
+  - method: sha3::Sha3_224.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_224.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Sha3_224.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_224.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_256.new
+    arity: 0
+    return: {type: sha3::Sha3_256, confidence: high}
+    role: factory
+  - method: sha3::Sha3_256.default
+    arity: 0
+    return: {type: sha3::Sha3_256, confidence: high}
+    role: factory
+  - method: sha3::Sha3_256.new_with_prefix
+    arity: 1
+    return: {type: sha3::Sha3_256, confidence: high}
+    role: factory
+  - method: sha3::Sha3_256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_256.chain_update
+    arity: 1
+    return: {type: sha3::Sha3_256, confidence: high}
+    role: operation
+  - method: sha3::Sha3_256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Sha3_256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_384.new
+    arity: 0
+    return: {type: sha3::Sha3_384, confidence: high}
+    role: factory
+  - method: sha3::Sha3_384.default
+    arity: 0
+    return: {type: sha3::Sha3_384, confidence: high}
+    role: factory
+  - method: sha3::Sha3_384.new_with_prefix
+    arity: 1
+    return: {type: sha3::Sha3_384, confidence: high}
+    role: factory
+  - method: sha3::Sha3_384.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_384.chain_update
+    arity: 1
+    return: {type: sha3::Sha3_384, confidence: high}
+    role: operation
+  - method: sha3::Sha3_384.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_384.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Sha3_384.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_384.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_384.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_512.new
+    arity: 0
+    return: {type: sha3::Sha3_512, confidence: high}
+    role: factory
+  - method: sha3::Sha3_512.default
+    arity: 0
+    return: {type: sha3::Sha3_512, confidence: high}
+    role: factory
+  - method: sha3::Sha3_512.new_with_prefix
+    arity: 1
+    return: {type: sha3::Sha3_512, confidence: high}
+    role: factory
+  - method: sha3::Sha3_512.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_512.chain_update
+    arity: 1
+    return: {type: sha3::Sha3_512, confidence: high}
+    role: operation
+  - method: sha3::Sha3_512.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_512.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Sha3_512.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Sha3_512.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Sha3_512.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak224.new
+    arity: 0
+    return: {type: sha3::Keccak224, confidence: high}
+    role: factory
+  - method: sha3::Keccak224.default
+    arity: 0
+    return: {type: sha3::Keccak224, confidence: high}
+    role: factory
+  - method: sha3::Keccak224.new_with_prefix
+    arity: 1
+    return: {type: sha3::Keccak224, confidence: high}
+    role: factory
+  - method: sha3::Keccak224.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak224.chain_update
+    arity: 1
+    return: {type: sha3::Keccak224, confidence: high}
+    role: operation
+  - method: sha3::Keccak224.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak224.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Keccak224.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak224.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak224.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256.new
+    arity: 0
+    return: {type: sha3::Keccak256, confidence: high}
+    role: factory
+  - method: sha3::Keccak256.default
+    arity: 0
+    return: {type: sha3::Keccak256, confidence: high}
+    role: factory
+  - method: sha3::Keccak256.new_with_prefix
+    arity: 1
+    return: {type: sha3::Keccak256, confidence: high}
+    role: factory
+  - method: sha3::Keccak256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak256.chain_update
+    arity: 1
+    return: {type: sha3::Keccak256, confidence: high}
+    role: operation
+  - method: sha3::Keccak256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Keccak256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak384.new
+    arity: 0
+    return: {type: sha3::Keccak384, confidence: high}
+    role: factory
+  - method: sha3::Keccak384.default
+    arity: 0
+    return: {type: sha3::Keccak384, confidence: high}
+    role: factory
+  - method: sha3::Keccak384.new_with_prefix
+    arity: 1
+    return: {type: sha3::Keccak384, confidence: high}
+    role: factory
+  - method: sha3::Keccak384.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak384.chain_update
+    arity: 1
+    return: {type: sha3::Keccak384, confidence: high}
+    role: operation
+  - method: sha3::Keccak384.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak384.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Keccak384.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak384.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak384.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak512.new
+    arity: 0
+    return: {type: sha3::Keccak512, confidence: high}
+    role: factory
+  - method: sha3::Keccak512.default
+    arity: 0
+    return: {type: sha3::Keccak512, confidence: high}
+    role: factory
+  - method: sha3::Keccak512.new_with_prefix
+    arity: 1
+    return: {type: sha3::Keccak512, confidence: high}
+    role: factory
+  - method: sha3::Keccak512.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak512.chain_update
+    arity: 1
+    return: {type: sha3::Keccak512, confidence: high}
+    role: operation
+  - method: sha3::Keccak512.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak512.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Keccak512.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak512.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak512.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256Full.new
+    arity: 0
+    return: {type: sha3::Keccak256Full, confidence: high}
+    role: factory
+  - method: sha3::Keccak256Full.default
+    arity: 0
+    return: {type: sha3::Keccak256Full, confidence: high}
+    role: factory
+  - method: sha3::Keccak256Full.new_with_prefix
+    arity: 1
+    return: {type: sha3::Keccak256Full, confidence: high}
+    role: factory
+  - method: sha3::Keccak256Full.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak256Full.chain_update
+    arity: 1
+    return: {type: sha3::Keccak256Full, confidence: high}
+    role: operation
+  - method: sha3::Keccak256Full.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256Full.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Keccak256Full.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Keccak256Full.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Keccak256Full.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: sha3::Shake128.new
+    arity: 0
+    return: {type: sha3::Shake128, confidence: high}
+    role: factory
+  - method: sha3::Shake128.default
+    arity: 0
+    return: {type: sha3::Shake128, confidence: high}
+    role: factory
+  - method: sha3::Shake128.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Shake128.chain
+    arity: 1
+    return: {type: sha3::Shake128, confidence: high}
+    role: operation
+  - method: sha3::Shake128.finalize_xof
+    arity: 0
+    return: {type: sha3::Shake128Reader, confidence: high}
+    role: output
+  - method: sha3::Shake128.finalize_xof_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Shake128.finalize_boxed
+    arity: 1
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: sha3::Shake128Reader.read
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Shake256.new
+    arity: 0
+    return: {type: sha3::Shake256, confidence: high}
+    role: factory
+  - method: sha3::Shake256.default
+    arity: 0
+    return: {type: sha3::Shake256, confidence: high}
+    role: factory
+  - method: sha3::Shake256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: sha3::Shake256.chain
+    arity: 1
+    return: {type: sha3::Shake256, confidence: high}
+    role: operation
+  - method: sha3::Shake256.finalize_xof
+    arity: 0
+    return: {type: sha3::Shake256Reader, confidence: high}
+    role: output
+  - method: sha3::Shake256.finalize_xof_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::Shake256.finalize_boxed
+    arity: 1
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: sha3::Shake256Reader.read
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: sha3::TurboShake128Core.new
+    arity: 1
+    return: {type: sha3::TurboShake128Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: domain_separation
+        role: metadata-contributing
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: sha3::TurboShake256Core.new
+    arity: 1
+    return: {type: sha3::TurboShake256Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: domain_separation
+        role: metadata-contributing
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: sha3::CShake128Core.new
+    arity: 1
+    return: {type: sha3::CShake128Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: customization
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_bit_length}
+  - method: sha3::CShake128Core.new_with_function_name
+    arity: 2
+    return: {type: sha3::CShake128Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: customization
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_bit_length}
+  - method: sha3::CShake256Core.new
+    arity: 1
+    return: {type: sha3::CShake256Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: customization
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_bit_length}
+  - method: sha3::CShake256Core.new_with_function_name
+    arity: 2
+    return: {type: sha3::CShake256Core, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: customization
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_bit_length}
+
+hierarchy: {}
