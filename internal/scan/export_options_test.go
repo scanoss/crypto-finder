@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {
@@ -79,6 +80,77 @@ func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {
 				if _, ok := document[key]; !ok {
 					t.Errorf("callgraph export missing %q when crypto_entry_points presence is %v", key, hasCryptoEntryPoints)
 				}
+			}
+		})
+	}
+}
+
+func TestExportCallGraphWithOptions_InlinedFrames(t *testing.T) {
+	t.Parallel()
+
+	graph, projectRoot := buildSupportingGraph(t)
+	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
+
+	for _, tc := range []struct {
+		name          string
+		inlined       bool
+		wantVersion   string
+		wantFrameName bool
+	}{
+		{
+			name:          "default interned contract",
+			wantVersion:   graphfrag.CallgraphSchemaVersion,
+			wantFrameName: false,
+		},
+		{
+			name:          "compatibility inlined frames",
+			inlined:       true,
+			wantVersion:   graphfrag.CallgraphInlinedSchemaVersion,
+			wantFrameName: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			outputPath := filepath.Join(t.TempDir(), "callgraph.json")
+			if err := ExportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{
+				Report:      report,
+				CallGraph:   graph,
+				Ecosystem:   "java",
+				ProjectRoot: projectRoot,
+				RootModule:  "com.app:app",
+			}, CallGraphExportOptions{InlinedFrames: tc.inlined}); err != nil {
+				t.Fatalf("ExportCallGraphWithOptions: %v", err)
+			}
+
+			if !tc.inlined {
+				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema.json"), outputPath)
+			}
+
+			data, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatalf("read callgraph export: %v", err)
+			}
+			var payload callGraphExportV2
+			if err := json.Unmarshal(data, &payload); err != nil {
+				t.Fatalf("decode callgraph export: %v", err)
+			}
+			if payload.SchemaVersion != tc.wantVersion {
+				t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, tc.wantVersion)
+			}
+			if len(payload.FindingGraphs) == 0 || len(payload.FindingGraphs[0].CallChains) == 0 {
+				t.Fatal("expected at least one call chain")
+			}
+			frame := payload.FindingGraphs[0].CallChains[0][0]
+			if (frame.FunctionName != "") != tc.wantFrameName {
+				t.Fatalf("frame function_name present = %v, want %v (%q)", frame.FunctionName != "", tc.wantFrameName, frame.FunctionName)
+			}
+			if len(payload.Functions) == 0 {
+				t.Fatal("functions catalog empty")
+			}
+			rebuilt, ok := graphfrag.ReconstructChainIdentities(payload.Functions, payload.FindingGraphs[0].CallChainIndexes)
+			if !ok || len(rebuilt) == 0 || rebuilt[0][0].FunctionName == "" {
+				t.Fatalf("catalog reconstruction failed: ok=%v rebuilt=%#v", ok, rebuilt)
 			}
 		})
 	}

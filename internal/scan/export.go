@@ -296,7 +296,7 @@ type exportSourceLocation struct {
 
 type callGraphChainNode struct {
 	FunctionKey        string                      `json:"function_key,omitempty"`
-	FunctionName       string                      `json:"function_name"`
+	FunctionName       string                      `json:"function_name,omitempty"`
 	CanonicalSignature string                      `json:"canonical_signature,omitempty"`
 	ReturnType         string                      `json:"return_type,omitempty"`
 	ReturnTypeRef      *exportTypeRef              `json:"return_type_ref,omitempty"`
@@ -306,7 +306,7 @@ type callGraphChainNode struct {
 	OwnerVisibility    string                      `json:"owner_visibility,omitempty"`
 	DisplaySymbol      string                      `json:"display_symbol,omitempty"`
 	Aliases            []string                    `json:"aliases,omitempty"`
-	FilePath           string                      `json:"file_path"`
+	FilePath           string                      `json:"file_path,omitempty"`
 	StartLine          int                         `json:"start_line,omitempty"`
 	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
 	EntryCall          *callGraphEntryCall         `json:"entry_call,omitempty"`
@@ -385,6 +385,7 @@ type exportDependencyRoot struct {
 type CallGraphExportOptions struct {
 	MaxChains             int
 	OmitCryptoEntryPoints bool
+	InlinedFrames         bool
 }
 
 // ExportCallGraph writes the current finding-centric callgraph export.
@@ -423,6 +424,7 @@ func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResul
 		Int("finding_assets", totalAssets).
 		Int("max_chains", graphfrag.ResolveMaxChains(options.MaxChains)).
 		Bool("omit_crypto_entry_points", options.OmitCryptoEntryPoints).
+		Bool("inlined_frames", options.InlinedFrames).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
@@ -462,7 +464,7 @@ func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, opt
 	}
 
 	return callGraphExportV2{
-		SchemaVersion:     callGraphSchemaVersion,
+		SchemaVersion:     graphfrag.CallgraphExportSchemaVersion(options.InlinedFrames),
 		ScanMetadata:      meta,
 		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
 		Functions:         streamed.functions,
@@ -484,10 +486,10 @@ func streamCallGraphExport(
 	meta callGraphExportScanMeta,
 	options CallGraphExportOptions,
 ) (streamedCallGraphExport, error) {
-	if err := writeCallGraphPrefix(writer, meta); err != nil {
+	if err := writeCallGraphPrefix(writer, meta, options.InlinedFrames); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints)
+	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints, options.InlinedFrames)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -529,11 +531,11 @@ func streamCallGraphExport(
 	return streamedCallGraphExport{functions: streamed.functions, supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
 }
 
-func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta) error {
+func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta, inlinedFrames bool) error {
 	if _, err := writer.w.WriteString("{\n"); err != nil {
 		return err
 	}
-	if err := writer.writeField("schema_version", callGraphSchemaVersion); err != nil {
+	if err := writer.writeField("schema_version", graphfrag.CallgraphExportSchemaVersion(inlinedFrames)); err != nil {
 		return err
 	}
 	if err := writer.writeField("scan_metadata", meta); err != nil {
@@ -555,6 +557,7 @@ func streamFindingGraphs(
 	ctx *exportBuildContext,
 	assets []callGraphExportAsset,
 	buildEntryPointIndex bool,
+	inlinedFrames bool,
 ) (streamedFindingGraphs, error) {
 	var index map[string]*entryPointData
 	var referencedSupporting map[string]struct{}
@@ -590,14 +593,8 @@ func streamFindingGraphs(
 		} else if buildEntryPointIndex {
 			claimSupportingCalls(referencedSupporting, &fg)
 		}
-		if buildEntryPointIndex {
-			for _, chain := range fg.CallChains {
-				if len(chain) >= 2 && chain[0].FunctionKey != "" {
-					chainRoots[chain[0].FunctionKey] = true
-				}
-			}
-		}
-		internLiveFindingGraph(&intern, &fg)
+		markExportedChainHeads(chainRoots, fg.CallChains)
+		internStreamedFindingGraph(&intern, &fg, inlinedFrames)
 		if err := writer.writeArrayElement(i, fg); err != nil {
 			return streamedFindingGraphs{}, err
 		}
@@ -613,6 +610,24 @@ func streamFindingGraphs(
 		chainRoots:           chainRoots,
 		functions:            intern.Functions(),
 	}, nil
+}
+
+func markExportedChainHeads(chainRoots map[string]bool, chains [][]callGraphChainNode) {
+	if chainRoots == nil {
+		return
+	}
+	for _, chain := range chains {
+		if len(chain) >= 2 && chain[0].FunctionKey != "" {
+			chainRoots[chain[0].FunctionKey] = true
+		}
+	}
+}
+
+func internStreamedFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExportFinding, inlinedFrames bool) {
+	internLiveFindingGraph(intern, fg)
+	if !inlinedFrames {
+		contractLiveChainIdentities(fg.CallChains)
+	}
 }
 
 func indexSupportingCalls(dst map[string]callGraphSupportingCall, supporting []callGraphSupportingCall) {
@@ -830,6 +845,7 @@ func internLiveCatalog(graphs []callGraphExportFinding) []graphfrag.ExportIntern
 	intern := graphfrag.FunctionInterner{}
 	for i := range graphs {
 		internLiveFindingGraph(&intern, &graphs[i])
+		contractLiveChainIdentities(graphs[i].CallChains)
 	}
 	return intern.Functions()
 }
@@ -847,6 +863,26 @@ func internLiveFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExp
 		indexes[i] = idx
 	}
 	fg.CallChainIndexes = indexes
+}
+
+func contractLiveChainIdentities(chains [][]callGraphChainNode) {
+	for i := range chains {
+		for j := range chains[i] {
+			n := &chains[i][j]
+			n.FunctionKey = ""
+			n.FunctionName = ""
+			n.CanonicalSignature = ""
+			n.ReturnType = ""
+			n.ParameterTypes = nil
+			n.Visibility = ""
+			n.OwnerVisibility = ""
+			n.DisplaySymbol = ""
+			n.Aliases = nil
+			n.FilePath = ""
+			n.StartLine = 0
+			n.DependencyInfo = nil
+		}
+	}
 }
 
 func liveFrameIdentity(n callGraphChainNode) graphfrag.FrameIdentity {

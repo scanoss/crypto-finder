@@ -8,10 +8,9 @@ import (
 	"strings"
 )
 
-// ExportInternedFunction is one identity record in the schema-6.14 functions[]
-// catalog. It carries the stable callable identity that inlined call_chains
-// frames repeat. Hop-specific fields (entry_call, crypto_call, entry_resolution)
-// stay on the inlined frames and on the index lists only as integer positions.
+// ExportInternedFunction is one identity record in the functions[] catalog.
+// Schema 6.15 keeps this as the join surface for call-chain frames; hop-specific
+// fields (entry_call, crypto_call, entry_resolution) stay on the frames.
 type ExportInternedFunction struct {
 	FunctionKey        string                `json:"function_key,omitempty"`
 	FunctionName       string                `json:"function_name"`
@@ -150,6 +149,28 @@ func (c *FunctionInterner) Functions() []ExportInternedFunction {
 	out := make([]ExportInternedFunction, len(c.items))
 	copy(out, c.items)
 	return out
+}
+
+// ContractChainIdentities clears interned identity fields from frames so the
+// catalog plus call_chain_indexes are the only copy of function identity.
+func ContractChainIdentities(chains [][]ExportChainNode) {
+	for i := range chains {
+		for j := range chains[i] {
+			n := &chains[i][j]
+			n.FunctionKey = ""
+			n.FunctionName = ""
+			n.CanonicalSignature = ""
+			n.ReturnType = ""
+			n.ParameterTypes = nil
+			n.Visibility = ""
+			n.OwnerVisibility = ""
+			n.DisplaySymbol = ""
+			n.Aliases = nil
+			n.FilePath = ""
+			n.StartLine = 0
+			n.DependencyInfo = nil
+		}
+	}
 }
 
 // ReconstructChainIdentities rebuilds each route from catalog indexes.

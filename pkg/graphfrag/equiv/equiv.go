@@ -71,6 +71,7 @@
 package equiv
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -85,10 +86,24 @@ import (
 // Both A (live scan) and B (stitched) are decoded into this type before
 // comparison so the diff operates on a common representation.
 type CallgraphExportJSON struct {
-	SchemaVersion     string                       `json:"schema_version"`
-	FindingGraphs     []ExportFindingGraphJSON     `json:"finding_graphs"`
-	CryptoEntryPoints []ExportCryptoEntryPointJSON `json:"crypto_entry_points,omitempty"`
-	SupportingCalls   []ExportSupportingCallJSON   `json:"supporting_calls,omitempty"`
+	SchemaVersion     string                             `json:"schema_version"`
+	FindingGraphs     []ExportFindingGraphJSON           `json:"finding_graphs"`
+	Functions         []graphfrag.ExportInternedFunction `json:"functions,omitempty"`
+	CryptoEntryPoints []ExportCryptoEntryPointJSON       `json:"crypto_entry_points,omitempty"`
+	SupportingCalls   []ExportSupportingCallJSON         `json:"supporting_calls,omitempty"`
+}
+
+// UnmarshalJSON hydrates interned 6.15 frames from functions[] so Compare can
+// key routes by canonical_signature / function_name on either schema render.
+func (c *CallgraphExportJSON) UnmarshalJSON(data []byte) error {
+	type alias CallgraphExportJSON
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = CallgraphExportJSON(raw)
+	hydrateInternedFrames(c)
+	return nil
 }
 
 // ExportFindingGraphJSON is one finding_graph entry in a CallgraphExportJSON.
@@ -96,6 +111,7 @@ type ExportFindingGraphJSON struct {
 	FindingID         string                  `json:"finding_id"`
 	SupportingCallIDs []string                `json:"supporting_call_ids,omitempty"`
 	CallChains        [][]ExportChainNodeJSON `json:"call_chains,omitempty"`
+	CallChainIndexes  [][]int                 `json:"call_chain_indexes,omitempty"`
 }
 
 // ExportChainNodeJSON is one node in a schema-6.0 call chain.
@@ -243,6 +259,8 @@ func (o Options) ignoreSet() map[string]bool {
 // opts controls field ignores and lets the caller override the suppression
 // oracle predicate.
 func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, opts Options) *DiffReport {
+	hydrateInternedFrames(&a)
+	hydrateInternedFrames(&b)
 	report := &DiffReport{}
 	ignore := opts.ignoreSet()
 
@@ -278,6 +296,38 @@ func Compare(a, b CallgraphExportJSON, suppressed []graphfrag.SuppressedEdge, op
 	validateSupportingCallIDs(b, report)
 
 	return report
+}
+
+func hydrateInternedFrames(export *CallgraphExportJSON) {
+	if export == nil || len(export.Functions) == 0 {
+		return
+	}
+	for i := range export.FindingGraphs {
+		fg := &export.FindingGraphs[i]
+		rebuilt, ok := graphfrag.ReconstructChainIdentities(export.Functions, fg.CallChainIndexes)
+		if !ok || len(rebuilt) != len(fg.CallChains) {
+			continue
+		}
+		for j := range fg.CallChains {
+			if len(rebuilt[j]) != len(fg.CallChains[j]) {
+				continue
+			}
+			for k := range fg.CallChains[j] {
+				if fg.CallChains[j][k].FunctionName != "" || fg.CallChains[j][k].CanonicalSignature != "" {
+					continue
+				}
+				id := rebuilt[j][k]
+				fg.CallChains[j][k].FunctionKey = id.FunctionKey
+				fg.CallChains[j][k].FunctionName = id.FunctionName
+				fg.CallChains[j][k].CanonicalSignature = id.CanonicalSignature
+				fg.CallChains[j][k].ReturnType = id.ReturnType
+				fg.CallChains[j][k].ParameterTypes = id.ParameterTypes
+				fg.CallChains[j][k].Visibility = id.Visibility
+				fg.CallChains[j][k].OwnerVisibility = id.OwnerVisibility
+				fg.CallChains[j][k].FilePath = id.FilePath
+			}
+		}
+	}
 }
 
 // validateSupportingCallIDs checks that every finding_graph.supporting_call_ids

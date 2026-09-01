@@ -30,7 +30,20 @@ import (
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
-const CallgraphSchemaVersion = "6.14"
+const CallgraphSchemaVersion = "6.15"
+
+// CallgraphInlinedSchemaVersion is the compatibility render that still inlines
+// full function identity on every call_chains frame (schema 6.14). Serve it
+// until API clients parse the interned 6.15 contract.
+const CallgraphInlinedSchemaVersion = "6.14"
+
+// CallgraphExportSchemaVersion returns the stamped schema_version for a render.
+func CallgraphExportSchemaVersion(inlinedFrames bool) string {
+	if inlinedFrames {
+		return CallgraphInlinedSchemaVersion
+	}
+	return CallgraphSchemaVersion
+}
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -64,9 +77,13 @@ const (
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
 	// SchemaVersion overrides the emitted schema_version. Normally left empty:
-	// ToCallgraphExport stamps CallgraphSchemaVersion (the format owns its own
-	// version). Set this only to force a non-canonical value (tests/migration).
+	// ToCallgraphExport stamps CallgraphExportSchemaVersion(InlinedFrames).
+	// Set this only to force a non-canonical value (tests/migration).
 	SchemaVersion string
+	// InlinedFrames selects the schema-6.14 compatibility render: full function
+	// identity remains on every call_chains frame. The default (false) is the
+	// 6.15 interned contract.
+	InlinedFrames bool
 	// RootModule is the Maven/npm/etc. module string for the root component.
 	RootModule string
 	// Ecosystem identifies the language ecosystem (e.g. "java").
@@ -108,10 +125,10 @@ type ExportFindingGraph struct {
 	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 	// CallChains is the set of surviving root-to-crypto paths for this finding.
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
-	// CallChainIndexes is the 6.14 interned form of CallChains: each route is a
+	// CallChainIndexes is the interned form of CallChains: each route is a
 	// list of indexes into the top-level functions[] catalog. Same order and
-	// length as CallChains so a consumer can reconstruct the inlined identity
-	// walk without dropping the 6.x frame objects.
+	// length as CallChains. Schema 6.15 joins identity through this list; the
+	// 6.14 compatibility render still inlines identity on CallChains frames.
 	CallChainIndexes [][]int `json:"call_chain_indexes,omitempty"`
 	// ForwardCalls is the finding anchor's forward call closure (6.3+): what the
 	// matched method transitively calls, with per-call-site argument data-flow.
@@ -365,7 +382,7 @@ type ExportChainNode struct {
 	// FunctionKey is the canonical graph-fragment join key.
 	FunctionKey string `json:"function_key,omitempty"`
 	// FunctionName is the human-readable fully qualified function name.
-	FunctionName string `json:"function_name"`
+	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the canonical function signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
 	// ReturnType is the declared return type.
@@ -381,7 +398,7 @@ type ExportChainNode struct {
 	// Aliases are alternate customer-facing names.
 	Aliases []string `json:"aliases,omitempty"`
 	// FilePath is the source file path.
-	FilePath string `json:"file_path"`
+	FilePath string `json:"file_path,omitempty"`
 	// StartLine is the first line of the function body.
 	StartLine int `json:"start_line,omitempty"`
 	// DependencyInfo is stamped for non-root frames. Nil for root-component frames.
@@ -505,7 +522,7 @@ type ExportSupportingCall struct {
 func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphExport {
 	schemaVersion := meta.SchemaVersion
 	if schemaVersion == "" {
-		schemaVersion = CallgraphSchemaVersion
+		schemaVersion = CallgraphExportSchemaVersion(meta.InlinedFrames)
 	}
 	out := CallgraphExport{
 		SchemaVersion: schemaVersion,
@@ -572,6 +589,9 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	intern := FunctionInterner{}
 	for i := range out.FindingGraphs {
 		out.FindingGraphs[i].CallChainIndexes = intern.InternChains(out.FindingGraphs[i].CallChains)
+		if !meta.InlinedFrames {
+			ContractChainIdentities(out.FindingGraphs[i].CallChains)
+		}
 	}
 	out.Functions = intern.Functions()
 	return out

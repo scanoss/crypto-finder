@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Callgraph export schema `6.15` stops reprinting interned function identity and `dependency_info` on every `call_chains` frame. Frames keep hop-specific fields (`entry_call`, `crypto_call`, `entry_resolution`); join identity through `functions[]` plus `finding_graphs[].call_chain_indexes`, and through `canonical_signature` on entry points and catalog rows. Live `--export-callgraph` and stitch stamp `6.15` together. **Migration:** parsers that only read `call_chains[]` objects must gate on `schema_version` — missing identity fields on frames is breaking for those clients.
+- `--export-callgraph-inlined-frames` emits the schema `6.14` compatibility render with full function identity still inlined on every chain frame, until those clients parse the interned catalog.
 ### Changed
 - Call-graph construction uses the same directory exclusions as language detection (`--exclude`, `--no-default-exclusions`, and `--include-tests`). Per-language skip lists are gone, so Cargo `examples/` and `benches/` are inventoried unless `--exclude` says otherwise.
 ### Fixed

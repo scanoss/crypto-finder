@@ -103,9 +103,10 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.14`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.15`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Schema **`6.14`** remains the compatibility render (`--export-callgraph-inlined-frames`) until parsers that only read inlined `call_chains[]` objects move to the interned catalog. Version history:
 
-- **`6.14`** adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` (0-based positions into that catalog) beside the existing inlined `call_chains`. The index lists reconstruct the same N-sample of routes. Inlined frames keep their previous field names and meaning. `crypto_entry_points` is still the complete reverse-reach set. Live `--export-callgraph` and stitch stamp this version together.
+- **`6.15`** contracts `call_chains` frames: they no longer repeat catalog identity fields (`function_name`, `file_path`, `canonical_signature`, `dependency_info`, and the rest of the interned identity). Join through `functions[]` plus `finding_graphs[].call_chain_indexes`, and through `canonical_signature` on `crypto_entry_points` and catalog rows. Hop-specific fields (`entry_call`, `crypto_call`, `entry_resolution`) stay on the frames. Live `--export-callgraph` and stitch stamp `6.15` together. `--export-callgraph-inlined-frames` stamps `6.14` with the previous inlined identity. Parsers that only read `call_chains[]` objects must gate on `schema_version`.
+- **`6.14`** adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` (0-based positions into that catalog) beside the existing inlined `call_chains`. The index lists reconstruct the same N-sample of routes. Inlined frames keep their previous field names and meaning. `crypto_entry_points` is still the complete reverse-reach set. Live `--export-callgraph` and stitch stamp this version together. This remains the compatibility render.
 - **`6.13`** adds `call_chains[].entry_resolution` and `entry_declared_type`, reporting how the call arriving at each frame was established.
 - **`6.12`** adds the rule-vs-callgraph key-length conflict marker to `supporting_calls[].supporting_call.resolved_key_length`. When a detection rule declares a static `keyLength` and the callgraph resolves a different value for a finding referencing that evidence, the resolved `bits` stay primary, the rule value is retained as `rule_declared_bits`, and `rule_conflict` is `true`. Agreement, an unresolved key length, and a rule that declares no `keyLength` all leave both fields absent. The marker is computed during the scan, so consumers read it directly instead of re-deriving it from rule metadata.
 
@@ -127,8 +128,8 @@ Schema note: call graph export version **`6.14`** is the current customer-facing
 
 - Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call.
-- `functions[]` (schema `6.14`) is the interned identity catalog for those emitted routes. `finding_graphs[].call_chain_indexes` lists the same walks as integer positions into that catalog, without removing the inlined `call_chains` objects.
-- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
+- `functions[]` (schema `6.14`+) is the interned identity catalog for those emitted routes. `finding_graphs[].call_chain_indexes` lists the same walks as integer positions into that catalog. Schema `6.15` joins identity through the catalog; schema `6.14` also inlines those fields on `call_chains` frames.
+- Each chain node carries hop-specific fields: optional `entry_call`, `entry_resolution`, and `crypto_call` on the last node. In schema `6.15`, function identity (`function_name`, `file_path`, `canonical_signature`, `dependency_info`) lives only in `functions[]`. The `6.14` compatibility render still inlines those identity fields on each frame.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
@@ -152,57 +153,69 @@ The published JSON Schemas are [`schemas/interim-report-schema.json`](../schemas
 - Consumers must gate parsing on the artifact's `version` (interim report) or `schema_version` (callgraph), then validate against the matching published schema before processing it.
 - Schema changes and version bumps must update this document, the schema file, generated-export validation, and `CHANGELOG.md` in the same change.
 
-Example:
+Example (schema `6.15`; join identity through `functions[]` and `call_chain_indexes`):
 
 ```json
 {
-  "finding_id": "69669f02",
-  "call_chains": [
-    [
-      {
-        "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
-        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
-        "start_line": 33
-      },
-      {
-        "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
-        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
-        "start_line": 72,
-        "entry_call": {
-          "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
-          "line": 34,
-          "parameters": [
-            {
-              "parameter_index": 0,
-              "type": "io.jsonwebtoken.SignatureAlgorithm",
-              "argument_expression": "SignatureAlgorithm.HS256",
-              "resolved_value": "SignatureAlgorithm.HS256"
-            }
-          ]
-        }
-      },
-      {
-        "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
-        "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
-        "start_line": 43,
-        "dependency_info": {
-          "module": "org.springframework.security:spring-security-core",
-          "version": "5.7.11"
-        },
-        "crypto_call": {
-          "function_name": "java.security.MessageDigest.getInstance",
-          "line": 45,
-          "parameters": [
-            {
-              "parameter_index": 0,
-              "type": "String",
-              "argument_expression": "\"SHA-512\"",
-              "resolved_value": "\"SHA-512\""
-            }
-          ]
-        }
+  "functions": [
+    {
+      "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
+      "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+      "start_line": 33
+    },
+    {
+      "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
+      "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
+      "start_line": 72
+    },
+    {
+      "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
+      "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
+      "start_line": 43,
+      "dependency_info": {
+        "module": "org.springframework.security:spring-security-core",
+        "version": "5.7.11"
       }
-    ]
+    }
+  ],
+  "finding_graphs": [
+    {
+      "finding_id": "69669f02",
+      "call_chain_indexes": [[0, 1, 2]],
+      "call_chains": [
+        [
+          {},
+          {
+            "entry_call": {
+              "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+              "line": 34,
+              "parameters": [
+                {
+                  "parameter_index": 0,
+                  "type": "io.jsonwebtoken.SignatureAlgorithm",
+                  "argument_expression": "SignatureAlgorithm.HS256",
+                  "resolved_value": "SignatureAlgorithm.HS256"
+                }
+              ]
+            }
+          },
+          {
+            "crypto_call": {
+              "function_name": "java.security.MessageDigest.getInstance",
+              "line": 45,
+              "parameters": [
+                {
+                  "parameter_index": 0,
+                  "type": "String",
+                  "argument_expression": "\"SHA-512\"",
+                  "resolved_value": "\"SHA-512\""
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    }
   ]
 }
 ```
@@ -381,7 +394,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
 `Result` into the same two artifacts a live `--scan-dependencies` run produces:
 
 - **`Result.ToCallgraphExport(root, meta)`** — renders the stitched result into
-  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.14`), equivalent to a live
+  a current-schema callgraph (stamps `CallgraphSchemaVersion`, currently `6.15`), equivalent to a live
   `--scan-dependencies --export-callgraph` run. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
