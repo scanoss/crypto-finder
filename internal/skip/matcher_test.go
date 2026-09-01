@@ -137,6 +137,35 @@ func TestMatcherWithDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultSkipPatternsKeepExamplePaths(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"example", "examples"} {
+		if containsPattern(DefaultSkippedDirs, name) {
+			t.Errorf("DefaultSkippedDirs must not contain %q; fingerprinting skips hide shipped crypto", name)
+		}
+	}
+
+	matcher := NewGitIgnoreMatcher(DefaultSkippedDirs)
+	cases := []struct {
+		path  string
+		isDir bool
+	}{
+		{path: "example", isDir: true},
+		{path: "examples", isDir: true},
+		{path: "src/com/example", isDir: true},
+		{path: "src/com/example/earnie/JcaUsage.java", isDir: false},
+		{path: "src/main/java/com/example/crypto/Aes.java", isDir: false},
+		{path: "examples/sdk/demo.go", isDir: false},
+		{path: "src/examples/reference.rs", isDir: false},
+	}
+	for _, tc := range cases {
+		if matcher.ShouldSkip(tc.path, tc.isDir) {
+			t.Errorf("ShouldSkip(%q, %v) = true, want false", tc.path, tc.isDir)
+		}
+	}
+}
+
 func TestDefaultsSource(t *testing.T) {
 	source := NewDefaultsSource()
 
