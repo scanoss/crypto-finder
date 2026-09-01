@@ -24,13 +24,29 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
-// CallgraphSchemaVersion is the canonical schema_version of the callgraph
+// CallgraphSchemaVersion is the default schema_version of the callgraph
 // export envelope (the `--export-callgraph` / stitch reachability format). It is
 // the single source of truth for both the live CLI export (internal/scan) and
 // the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
 // — a consumer that serves stitched output stamps the SAME version a live
 // `--scan-dependencies --export-callgraph` run produces.
+//
+// Default remains 6.14 (identity still inlined on call_chains frames) until
+// Earnie and scanoss.api hydrate from functions[]. Schema 6.15 is opt-in
+// via InternedFrames / --export-callgraph-interned-frames.
 const CallgraphSchemaVersion = "6.14"
+
+// CallgraphInternedSchemaVersion is the interned contract: call_chains frames
+// omit catalog identity and join through functions[] plus call_chain_indexes.
+const CallgraphInternedSchemaVersion = "6.15"
+
+// CallgraphExportSchemaVersion returns the stamped schema_version for a render.
+func CallgraphExportSchemaVersion(internedFrames bool) string {
+	if internedFrames {
+		return CallgraphInternedSchemaVersion
+	}
+	return CallgraphSchemaVersion
+}
 
 // Reachability states stamped on finding_graphs[].reachability (6.8+, issue
 // #242). The legacy `reachable *bool` keeps its semantics through 6.x;
@@ -64,9 +80,12 @@ const (
 // ScanMeta carries the top-level metadata stamped onto a CallgraphExport.
 type ScanMeta struct {
 	// SchemaVersion overrides the emitted schema_version. Normally left empty:
-	// ToCallgraphExport stamps CallgraphSchemaVersion (the format owns its own
-	// version). Set this only to force a non-canonical value (tests/migration).
+	// ToCallgraphExport stamps CallgraphExportSchemaVersion(InternedFrames).
+	// Set this only to force a non-canonical value (tests/migration).
 	SchemaVersion string
+	// InternedFrames selects schema 6.15: catalog identity is omitted from
+	// call_chains frames. The zero value keeps the 6.14 inlined default.
+	InternedFrames bool
 	// RootModule is the Maven/npm/etc. module string for the root component.
 	RootModule string
 	// Ecosystem identifies the language ecosystem (e.g. "java").
@@ -108,10 +127,10 @@ type ExportFindingGraph struct {
 	SupportingCallIDs []string `json:"supporting_call_ids,omitempty"`
 	// CallChains is the set of surviving root-to-crypto paths for this finding.
 	CallChains [][]ExportChainNode `json:"call_chains,omitempty"`
-	// CallChainIndexes is the 6.14 interned form of CallChains: each route is a
+	// CallChainIndexes is the interned form of CallChains: each route is a
 	// list of indexes into the top-level functions[] catalog. Same order and
-	// length as CallChains so a consumer can reconstruct the inlined identity
-	// walk without dropping the 6.x frame objects.
+	// length as CallChains. Schema 6.14 also inlines identity on CallChains
+	// frames; schema 6.15 joins identity through this list alone.
 	CallChainIndexes [][]int `json:"call_chain_indexes,omitempty"`
 	// ForwardCalls is the finding anchor's forward call closure (6.3+): what the
 	// matched method transitively calls, with per-call-site argument data-flow.
@@ -365,7 +384,7 @@ type ExportChainNode struct {
 	// FunctionKey is the canonical graph-fragment join key.
 	FunctionKey string `json:"function_key,omitempty"`
 	// FunctionName is the human-readable fully qualified function name.
-	FunctionName string `json:"function_name"`
+	FunctionName string `json:"function_name,omitempty"`
 	// CanonicalSignature is the canonical function signature.
 	CanonicalSignature string `json:"canonical_signature,omitempty"`
 	// ReturnType is the declared return type.
@@ -381,7 +400,7 @@ type ExportChainNode struct {
 	// Aliases are alternate customer-facing names.
 	Aliases []string `json:"aliases,omitempty"`
 	// FilePath is the source file path.
-	FilePath string `json:"file_path"`
+	FilePath string `json:"file_path,omitempty"`
 	// StartLine is the first line of the function body.
 	StartLine int `json:"start_line,omitempty"`
 	// DependencyInfo is stamped for non-root frames. Nil for root-component frames.
@@ -505,7 +524,7 @@ type ExportSupportingCall struct {
 func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphExport {
 	schemaVersion := meta.SchemaVersion
 	if schemaVersion == "" {
-		schemaVersion = CallgraphSchemaVersion
+		schemaVersion = CallgraphExportSchemaVersion(meta.InternedFrames)
 	}
 	out := CallgraphExport{
 		SchemaVersion: schemaVersion,
@@ -572,6 +591,9 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	intern := FunctionInterner{}
 	for i := range out.FindingGraphs {
 		out.FindingGraphs[i].CallChainIndexes = intern.InternChains(out.FindingGraphs[i].CallChains)
+		if meta.InternedFrames {
+			ContractChainIdentities(out.FindingGraphs[i].CallChains)
+		}
 	}
 	out.Functions = intern.Functions()
 	return out

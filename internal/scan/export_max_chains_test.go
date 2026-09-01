@@ -108,15 +108,16 @@ func TestBuildCallGraphExport_MaxChainsOneKeepsFullEntryIndex(t *testing.T) {
 	if !ok {
 		t.Fatal("live call_chain_indexes pointed outside functions[]")
 	}
+	if len(rebuilt) != len(fg.CallChains) {
+		t.Fatalf("rebuilt routes = %d, want %d", len(rebuilt), len(fg.CallChains))
+	}
 	for i, chain := range fg.CallChains {
 		if len(rebuilt[i]) != len(chain) {
-			t.Fatalf("route %d rebuilt len = %d, inlined len = %d", i, len(rebuilt[i]), len(chain))
+			t.Fatalf("route %d rebuilt len = %d, contracted len = %d", i, len(rebuilt[i]), len(chain))
 		}
-		for j, frame := range chain {
-			got := rebuilt[i][j]
-			if got.FunctionKey != frame.FunctionKey || got.FunctionName != frame.FunctionName || got.FilePath != frame.FilePath {
-				t.Fatalf("live route %d frame %d interned %+v != inlined key=%q name=%q path=%q",
-					i, j, got, frame.FunctionKey, frame.FunctionName, frame.FilePath)
+		for j, got := range rebuilt[i] {
+			if got.FunctionName == "" || got.FilePath == "" {
+				t.Fatalf("live route %d frame %d catalog identity empty: %+v", i, j, got)
 			}
 		}
 	}
@@ -139,4 +140,13 @@ func TestBuildCallGraphExport_DefaultMaxChainsUnchanged(t *testing.T) {
 	if len(plain.FindingGraphs[0].CallChains) != 2 {
 		t.Fatalf("default emit = %d chains, want both diamond routes", len(plain.FindingGraphs[0].CallChains))
 	}
+}
+
+func catalogChains(t *testing.T, payload *callGraphExportV2, fg callGraphExportFinding) [][]graphfrag.ExportInternedFunction {
+	t.Helper()
+	rebuilt, ok := graphfrag.ReconstructChainIdentities(payload.Functions, fg.CallChainIndexes)
+	if !ok {
+		t.Fatal("call_chain_indexes pointed outside functions[]")
+	}
+	return rebuilt
 }

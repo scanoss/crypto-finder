@@ -73,6 +73,11 @@ func TestComposedRouteSpansTheBoundary(t *testing.T) {
 		t.Fatalf("call chains = %d, want 1", len(fg.CallChains))
 	}
 	chain := fg.CallChains[0]
+	rebuilt := mustRebuiltChains(t, cg.Functions, fg.CallChainIndexes)
+	if len(rebuilt) != 1 {
+		t.Fatalf("rebuilt routes = %d, want 1", len(rebuilt))
+	}
+	identities := rebuilt[0]
 
 	want := []string{
 		"org.example.wrapper.(Factory).create#0",
@@ -82,22 +87,22 @@ func TestComposedRouteSpansTheBoundary(t *testing.T) {
 		"org.example.client.(Ssl).init#0",
 	}
 	if len(chain) != len(want) {
-		got := make([]string, 0, len(chain))
-		for _, n := range chain {
+		got := make([]string, 0, len(identities))
+		for _, n := range identities {
 			got = append(got, n.FunctionKey)
 		}
 		t.Fatalf("chain = %v, want %v", got, want)
 	}
 	for i, key := range want {
-		if chain[i].FunctionKey != key {
-			t.Errorf("frame %d = %q, want %q", i, chain[i].FunctionKey, key)
+		if identities[i].FunctionKey != key {
+			t.Errorf("frame %d = %q, want %q", i, identities[i].FunctionKey, key)
 		}
 	}
 
 	// The shared frame appears once. Both legs name it, and a chain that
 	// repeated it would claim a call from a function to itself.
 	seen := map[string]int{}
-	for _, n := range chain {
+	for _, n := range identities {
 		seen[n.FunctionKey]++
 	}
 	for key, n := range seen {

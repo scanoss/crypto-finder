@@ -367,15 +367,16 @@ func TestExportCallGraph(t *testing.T) {
 		if len(fg.CallChains) != 1 || len(fg.CallChains[0]) != 1 {
 			t.Fatalf("expected one self-chain, got %#v", fg.CallChains)
 		}
+		identities := catalogChains(t, &payload, fg)[0]
 		node := fg.CallChains[0][0]
-		if node.FunctionName != "app.main" {
-			t.Fatalf("function_name = %q, want app.main", node.FunctionName)
+		if identities[0].FunctionName != "app.main" {
+			t.Fatalf("function_name = %q, want app.main", identities[0].FunctionName)
 		}
-		if node.FilePath != "main.go" {
-			t.Fatalf("file_path = %q, want main.go", node.FilePath)
+		if identities[0].FilePath != "main.go" {
+			t.Fatalf("file_path = %q, want main.go", identities[0].FilePath)
 		}
-		if node.StartLine != 1 {
-			t.Fatalf("start_line = %d, want 1", node.StartLine)
+		if identities[0].StartLine != 1 {
+			t.Fatalf("start_line = %d, want 1", identities[0].StartLine)
 		}
 		if node.EntryCall != nil {
 			t.Fatalf("self-chain should not include entry_call, got %#v", node.EntryCall)
@@ -727,17 +728,18 @@ func TestExportCallGraph_DependencyPathsAndUnresolvedFallback(t *testing.T) {
 		t.Fatalf("expected dependency self-chain, got %#v", depFG.CallChains)
 	}
 	depNode := depFG.CallChains[0][0]
-	if depNode.FunctionName != "org.example.Digest.compute" {
-		t.Fatalf("function_name = %q", depNode.FunctionName)
+	identities := catalogChains(t, &payload, depFG)[0]
+	if identities[0].FunctionName != "org.example.Digest.compute" {
+		t.Fatalf("function_name = %q", identities[0].FunctionName)
 	}
-	if depNode.FilePath != "org/example/Digest.java" {
-		t.Fatalf("file_path = %q", depNode.FilePath)
+	if identities[0].FilePath != "org/example/Digest.java" {
+		t.Fatalf("file_path = %q", identities[0].FilePath)
 	}
-	if depNode.StartLine != 40 {
-		t.Fatalf("start_line = %d", depNode.StartLine)
+	if identities[0].StartLine != 40 {
+		t.Fatalf("start_line = %d", identities[0].StartLine)
 	}
-	if depNode.DependencyInfo == nil || depNode.DependencyInfo.Module != "org.example:dep" {
-		t.Fatalf("expected dependency context on call chain node, got %#v", depNode.DependencyInfo)
+	if identities[0].DependencyInfo == nil || identities[0].DependencyInfo.Module != "org.example:dep" {
+		t.Fatalf("expected dependency context on call chain node, got %#v", identities[0].DependencyInfo)
 	}
 	if depNode.EntryCall != nil {
 		t.Fatalf("dependency self-chain should not include entry_call, got %#v", depNode.EntryCall)
@@ -1202,20 +1204,21 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 		t.Fatalf("expected one nearest-user-to-dependency call chain of length 2, got %#v", fg.CallChains)
 	}
 	chain := fg.CallChains[0]
-	if chain[0].FunctionName != "example.app.JWTCsrfTokenRepository.generateToken" || chain[1].FunctionName != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith" {
-		t.Fatalf("unexpected call chain: %#v", chain)
+	identities := catalogChains(t, &payload, fg)[0]
+	if identities[0].FunctionName != "example.app.JWTCsrfTokenRepository.generateToken" || identities[1].FunctionName != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith" {
+		t.Fatalf("unexpected call chain: %#v", identities)
 	}
-	if chain[1].CanonicalSignature != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith(SignatureAlgorithm, byte[]): JwtBuilder" {
-		t.Fatalf("unexpected chain canonical signature: %q", chain[1].CanonicalSignature)
+	if identities[1].CanonicalSignature != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith(SignatureAlgorithm, byte[]): JwtBuilder" {
+		t.Fatalf("unexpected chain canonical signature: %q", identities[1].CanonicalSignature)
 	}
-	if chain[1].ReturnType != "JwtBuilder" {
-		t.Fatalf("unexpected chain return_type: %q", chain[1].ReturnType)
+	if identities[1].ReturnType != "JwtBuilder" {
+		t.Fatalf("unexpected chain return_type: %q", identities[1].ReturnType)
 	}
-	if len(chain[1].ParameterTypes) != 2 || chain[1].ParameterTypes[0] != "SignatureAlgorithm" || chain[1].ParameterTypes[1] != "byte[]" {
-		t.Fatalf("unexpected chain parameter_types: %#v", chain[1].ParameterTypes)
+	if len(identities[1].ParameterTypes) != 2 || identities[1].ParameterTypes[0] != "SignatureAlgorithm" || identities[1].ParameterTypes[1] != "byte[]" {
+		t.Fatalf("unexpected chain parameter_types: %#v", identities[1].ParameterTypes)
 	}
-	if chain[0].StartLine != 30 || chain[1].StartLine != 261 {
-		t.Fatalf("unexpected chain start lines: %#v", chain)
+	if identities[0].StartLine != 30 || identities[1].StartLine != 261 {
+		t.Fatalf("unexpected chain start lines: %#v", identities)
 	}
 	if chain[0].EntryCall != nil {
 		t.Fatalf("first chain node should not have entry_call, got %#v", chain[0].EntryCall)
@@ -1254,8 +1257,8 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	if len(dependencyHop.Parameters[1].SourceNodes) != 1 || dependencyHop.Parameters[1].SourceNodes[0].Type != "FIELD" {
 		t.Fatalf("expected source provenance on dependency hop param, got %#v", dependencyHop.Parameters[1].SourceNodes)
 	}
-	if chain[1].DependencyInfo == nil || chain[1].DependencyInfo.Module != "io.jsonwebtoken:jjwt-impl" {
-		t.Fatalf("expected dependency context on last node, got %#v", chain[1].DependencyInfo)
+	if identities[1].DependencyInfo == nil || identities[1].DependencyInfo.Module != "io.jsonwebtoken:jjwt-impl" {
+		t.Fatalf("expected dependency context on last node, got %#v", identities[1].DependencyInfo)
 	}
 	if chain[1].CryptoCall == nil || len(chain[1].CryptoCall.Parameters) != 2 {
 		t.Fatalf("unexpected crypto_call parameters: %#v", chain[1].CryptoCall)
@@ -1437,8 +1440,9 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 	if len(chain) != 2 {
 		t.Fatalf("expected 2-node direct chain from nearest user boundary, got %#v", chain)
 	}
-	if chain[1].StartLine != 35 {
-		t.Fatalf("unexpected repo start_line: %#v", chain[1])
+	identities := catalogChains(t, &payload, payload.FindingGraphs[0])[0]
+	if identities[1].StartLine != 35 {
+		t.Fatalf("unexpected repo start_line: %#v", identities[1])
 	}
 	if chain[1].EntryCall == nil || len(chain[1].EntryCall.Parameters) != 2 {
 		t.Fatalf("expected entry_call on repo node, got %#v", chain[1].EntryCall)
@@ -2023,11 +2027,12 @@ func TestExportCallGraph_CryptoEntryPointsBuiltFromChains(t *testing.T) {
 	if len(chain) < 2 {
 		t.Fatalf("expected chain with at least 2 nodes, got %d", len(chain))
 	}
-	if chain[0].Visibility != callgraph.VisibilityPublic || chain[0].OwnerVisibility != callgraph.VisibilityPublic {
-		t.Fatalf("unexpected controller chain visibilities: %q / %q", chain[0].Visibility, chain[0].OwnerVisibility)
+	identities := catalogChains(t, &payload, payload.FindingGraphs[0])[0]
+	if identities[0].Visibility != callgraph.VisibilityPublic || identities[0].OwnerVisibility != callgraph.VisibilityPublic {
+		t.Fatalf("unexpected controller chain visibilities: %q / %q", identities[0].Visibility, identities[0].OwnerVisibility)
 	}
-	if chain[1].Visibility != callgraph.VisibilityPublic || chain[1].OwnerVisibility != callgraph.VisibilityPackagePrivate {
-		t.Fatalf("unexpected service chain visibilities: %q / %q", chain[1].Visibility, chain[1].OwnerVisibility)
+	if identities[1].Visibility != callgraph.VisibilityPublic || identities[1].OwnerVisibility != callgraph.VisibilityPackagePrivate {
+		t.Fatalf("unexpected service chain visibilities: %q / %q", identities[1].Visibility, identities[1].OwnerVisibility)
 	}
 	// Service.process → Cipher.getInstance is depth 2 (Service node + crypto node)
 	for _, rf := range serviceEP.ReachableFindings {
@@ -2411,8 +2416,9 @@ func TestExportCallGraph_ExposesStructuredGenericParameters(t *testing.T) {
 	}
 
 	entry := chain[0]
-	if entry.ReturnType != "Map" {
-		t.Fatalf("entry return_type = %q, want erased %q", entry.ReturnType, "Map")
+	identities := catalogChains(t, &payload, payload.FindingGraphs[0])[0]
+	if identities[0].ReturnType != "Map" {
+		t.Fatalf("entry return_type = %q, want erased %q", identities[0].ReturnType, "Map")
 	}
 	if entry.ReturnTypeRef == nil {
 		t.Fatalf("entry return_type_ref is nil; expected structured generics")
@@ -2426,8 +2432,8 @@ func TestExportCallGraph_ExposesStructuredGenericParameters(t *testing.T) {
 		t.Fatalf("entry return_type_ref.generic_parameters = %#v, want [String, Digest]", entry.ReturnTypeRef.GenericParameters)
 	}
 
-	if len(entry.ParameterTypes) != 1 || entry.ParameterTypes[0] != "List" {
-		t.Fatalf("entry parameter_types = %#v, want [List]", entry.ParameterTypes)
+	if len(identities[0].ParameterTypes) != 1 || identities[0].ParameterTypes[0] != "List" {
+		t.Fatalf("entry parameter_types = %#v, want [List]", identities[0].ParameterTypes)
 	}
 	if len(entry.ParameterTypeRefs) != 1 {
 		t.Fatalf("entry parameter_type_refs = %#v, want 1 entry", entry.ParameterTypeRefs)

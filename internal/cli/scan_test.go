@@ -29,6 +29,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
+	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestEcosystemFromHints_C(t *testing.T) {
@@ -442,9 +443,11 @@ func Encrypt(key []byte) error {
 	}
 
 	var payload struct {
+		Functions     []graphfrag.ExportInternedFunction `json:"functions"`
 		FindingGraphs []struct {
-			FindingID  string `json:"finding_id"`
-			CallChains [][]struct {
+			FindingID        string  `json:"finding_id"`
+			CallChainIndexes [][]int `json:"call_chain_indexes"`
+			CallChains       [][]struct {
 				FunctionName string `json:"function_name"`
 				FilePath     string `json:"file_path"`
 				CryptoCall   *struct {
@@ -472,11 +475,15 @@ func Encrypt(key []byte) error {
 	if len(chain) != 2 {
 		t.Fatalf("chain length = %d, want 2", len(chain))
 	}
-	if chain[0].FunctionName != "example.com/app.main" {
-		t.Fatalf("chain[0].function_name = %q, want example.com/app.main", chain[0].FunctionName)
+	rebuilt, ok := graphfrag.ReconstructChainIdentities(payload.Functions, payload.FindingGraphs[0].CallChainIndexes)
+	if !ok || len(rebuilt) != 1 || len(rebuilt[0]) != 2 {
+		t.Fatalf("catalog reconstruction failed: ok=%v rebuilt=%#v", ok, rebuilt)
 	}
-	if chain[1].FunctionName != "example.com/app/helper.Encrypt" {
-		t.Fatalf("chain[1].function_name = %q, want example.com/app/helper.Encrypt", chain[1].FunctionName)
+	if rebuilt[0][0].FunctionName != "example.com/app.main" {
+		t.Fatalf("chain[0].function_name = %q, want example.com/app.main", rebuilt[0][0].FunctionName)
+	}
+	if rebuilt[0][1].FunctionName != "example.com/app/helper.Encrypt" {
+		t.Fatalf("chain[1].function_name = %q, want example.com/app/helper.Encrypt", rebuilt[0][1].FunctionName)
 	}
 	if chain[1].CryptoCall == nil || chain[1].CryptoCall.FunctionName != "crypto/aes.NewCipher" {
 		t.Fatalf("unexpected crypto_call: %#v", chain[1].CryptoCall)
@@ -555,6 +562,16 @@ func TestScanCommand_ExportCallgraphEntryPointsFlag(t *testing.T) {
 	}
 	if flag.DefValue != "true" {
 		t.Fatalf("default = %q, want true", flag.DefValue)
+	}
+}
+
+func TestScanCommand_ExportCallgraphInternedFramesFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("export-callgraph-interned-frames")
+	if flag == nil {
+		t.Fatal("expected --export-callgraph-interned-frames flag")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("default = %q, want false", flag.DefValue)
 	}
 }
 

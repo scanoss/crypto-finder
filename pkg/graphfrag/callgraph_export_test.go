@@ -172,23 +172,22 @@ func TestToCallgraphExport_NodeCountAndDependencyInfo(t *testing.T) {
 	if len(chain) != 3 {
 		t.Fatalf("chain node count = %d, want 3", len(chain))
 	}
+	identities := mustRebuiltChains(t, out.Functions, fg.CallChainIndexes)[0]
 
 	// Root frame: no dependency_info.
-	node0 := chain[0]
-	if node0.DependencyInfo != nil {
-		t.Errorf("node[0] (root) DependencyInfo = %#v, want nil", node0.DependencyInfo)
+	if identities[0].DependencyInfo != nil {
+		t.Errorf("node[0] (root) DependencyInfo = %#v, want nil", identities[0].DependencyInfo)
 	}
 
 	// Dep frame: dependency_info.module == the dep fragment's module.
-	node1 := chain[1]
-	if node1.DependencyInfo == nil {
+	if identities[1].DependencyInfo == nil {
 		t.Fatal("node[1] (dep) DependencyInfo is nil, want non-nil")
 	}
-	if node1.DependencyInfo.Module != "net.crypto:lib" {
-		t.Errorf("node[1].DependencyInfo.Module = %q, want net.crypto:lib", node1.DependencyInfo.Module)
+	if identities[1].DependencyInfo.Module != "net.crypto:lib" {
+		t.Errorf("node[1].DependencyInfo.Module = %q, want net.crypto:lib", identities[1].DependencyInfo.Module)
 	}
-	if node1.DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0.0" {
-		t.Errorf("node[1].DependencyInfo.PURL = %q, want pkg:maven/net.crypto/lib@2.0.0", node1.DependencyInfo.PURL)
+	if identities[1].DependencyInfo.PURL != "pkg:maven/net.crypto/lib@2.0.0" {
+		t.Errorf("node[1].DependencyInfo.PURL = %q, want pkg:maven/net.crypto/lib@2.0.0", identities[1].DependencyInfo.PURL)
 	}
 }
 
@@ -530,8 +529,8 @@ func TestToCallgraphExport_DepFindingIDPrefixed(t *testing.T) {
 	}
 
 	// The terminal node's file_path must be prefixed.
-	chain := fg.CallChains[0]
-	last := chain[len(chain)-1]
+	identities := mustRebuiltChains(t, out.Functions, fg.CallChainIndexes)[0]
+	last := identities[len(identities)-1]
 	wantFilePath := "net.crypto:lib@2.0.0/Lib.java"
 	if last.FilePath != wantFilePath {
 		t.Errorf("terminal node FilePath = %q, want %q", last.FilePath, wantFilePath)
@@ -598,8 +597,8 @@ func TestToCallgraphExport_RootFindingIDUnprefixed(t *testing.T) {
 	}
 
 	// Terminal node's file_path must NOT be prefixed.
-	chain := fg.CallChains[0]
-	last := chain[len(chain)-1]
+	identities := mustRebuiltChains(t, out.Functions, fg.CallChainIndexes)[0]
+	last := identities[len(identities)-1]
 	if last.FilePath != rootFilePath {
 		t.Errorf("terminal node FilePath = %q, want %q (unprefixed)", last.FilePath, rootFilePath)
 	}
@@ -630,14 +629,15 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 	}
 }
 
-// TestCallgraphSchemaVersion_Is614 pins the canonical callgraph schema version
-// at 6.14 — interned functions[] beside inlined call_chains.
-// The bump is unconditional: it
-// advances regardless of whether any given export emits the new fields.
-func TestCallgraphSchemaVersion_Is614(t *testing.T) {
+// TestCallgraphSchemaVersion_DefaultIs614InternedIs615 pins the served
+// callgraph schema at 6.14 and the opt-in interned contract at 6.15.
+func TestCallgraphSchemaVersion_DefaultIs614InternedIs615(t *testing.T) {
 	t.Parallel()
 
 	if CallgraphSchemaVersion != "6.14" {
 		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.14")
+	}
+	if CallgraphInternedSchemaVersion != "6.15" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.15", CallgraphInternedSchemaVersion)
 	}
 }

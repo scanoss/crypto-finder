@@ -103,9 +103,10 @@ The report preserves its JSON vocabulary: `severity` is `INFO`, `WARNING`, or `E
 
 When `--export-callgraph <file>` is passed, Crypto Finder also writes a separate finding-centric call graph JSON file to `<file>`. This export contains the reachability slices and value-flow details associated with findings from the interim report.
 
-Schema note: call graph export version **`6.14`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Version history:
+Schema note: call graph export version **`6.14`** is the current customer-facing reachability contract. The version constant is `pkg/graphfrag.CallgraphSchemaVersion`, and every `6.x` change is documented in [CHANGELOG.md](../CHANGELOG.md). Schema **`6.15`** is the opt-in interned render (`--export-callgraph-interned-frames`) until parsers that only read inlined `call_chains[]` objects hydrate from `functions[]`. Version history:
 
-- **`6.14`** adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` (0-based positions into that catalog) beside the existing inlined `call_chains`. The index lists reconstruct the same N-sample of routes. Inlined frames keep their previous field names and meaning. `crypto_entry_points` is still the complete reverse-reach set. Live `--export-callgraph` and stitch stamp this version together.
+- **`6.15`** (opt-in) contracts `call_chains` frames: they no longer repeat catalog identity fields (`function_name`, `file_path`, `canonical_signature`, `dependency_info`, and the rest of the interned identity). Join through `functions[]` plus `finding_graphs[].call_chain_indexes`, and through `canonical_signature` on `crypto_entry_points` and catalog rows. Hop-specific fields (`entry_call`, `crypto_call`, `entry_resolution`) stay on the frames. Enable with `--export-callgraph-interned-frames` or `ScanMeta.InternedFrames`. Default live `--export-callgraph` and stitch stay on `6.14`. Parsers that only read `call_chains[]` objects must gate on `schema_version` or call `HydrateChainIdentities`.
+- **`6.14`** adds a top-level interned `functions[]` catalog and `finding_graphs[].call_chain_indexes` (0-based positions into that catalog) beside the existing inlined `call_chains`. The index lists reconstruct the same N-sample of routes. Inlined frames keep their previous field names and meaning. `crypto_entry_points` is still the complete reverse-reach set. Live `--export-callgraph` and stitch stamp this version together. This remains the compatibility render.
 - **`6.13`** adds `call_chains[].entry_resolution` and `entry_declared_type`, reporting how the call arriving at each frame was established.
 - **`6.12`** adds the rule-vs-callgraph key-length conflict marker to `supporting_calls[].supporting_call.resolved_key_length`. When a detection rule declares a static `keyLength` and the callgraph resolves a different value for a finding referencing that evidence, the resolved `bits` stay primary, the rule value is retained as `rule_declared_bits`, and `rule_conflict` is `true`. Agreement, an unresolved key length, and a rule that declares no `keyLength` all leave both fields absent. The marker is computed during the scan, so consumers read it directly instead of re-deriving it from rule metadata.
 
@@ -127,8 +128,8 @@ Schema note: call graph export version **`6.14`** is the current customer-facing
 
 - Each top-level record preserves `finding_id`. When `occurrence_key` is present, the composite `(finding_id, occurrence_key)` identifies the structural occurrence and joins it back to the interim report. Legacy records without `occurrence_key` use `finding_id` alone.
 - `call_chains` is the primary value-flow structure. Each chain is ordered from the first reachable caller to the function that contains the matched crypto call. The array is a capped sample, not the complete reverse-reach set. The default N is 128 for live `--export-callgraph` when `--export-callgraph-max-chains` is omitted, and for stitch when `StitchOptions.MaxChains` is zero or omitted. Live scans that only need a composed route through dependencies pass `--export-callgraph-max-chains 8` or `1`. Schema 6.x keeps the `call_chains` array and `canonical_signature` spelling. `crypto_entry_points` stays complete at any N. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
-- `functions[]` (schema `6.14`) is the interned identity catalog for those emitted routes. `finding_graphs[].call_chain_indexes` lists the same walks as integer positions into that catalog, without removing the inlined `call_chains` objects.
-- Each chain node contains a fully qualified `function_name`, a normalized `file_path`, `start_line`, optional `dependency_info` (including `purl` when the ecosystem is known), and optional `entry_call`.
+- `functions[]` (schema `6.14`+) is the interned identity catalog for those emitted routes. `finding_graphs[].call_chain_indexes` lists the same walks as integer positions into that catalog. Schema `6.14` also inlines those fields on `call_chains` frames. Schema `6.15` (opt-in) joins identity through the catalog alone.
+- Each chain node carries hop-specific fields: optional `entry_call`, `entry_resolution`, and `crypto_call` on the last node. Default schema `6.14` also inlines function identity (`function_name`, `file_path`, `canonical_signature`, `dependency_info`) on each frame. The opt-in `6.15` interned render keeps that identity only in `functions[]`.
 - `entry_call` describes how execution entered the current node from the previous step. Its `file_path` and `line` refer to the call site in the previous node's source file.
 - The last node in each chain carries `crypto_call`, which is the matched crypto-relevant call for the finding.
 - `entry_call.parameters[]` and `crypto_call.parameters[]` both use the same parameter model: `parameter_index` (always `0`-based), best-effort `type`, `argument_expression`, `resolved_value`, `variable_name` for simple identifiers only, and recursive `source_nodes`.
@@ -145,64 +146,90 @@ Schema note: call graph export version **`6.14`** is the current customer-facing
 
 ### Compatibility and consumer gating
 
-The published JSON Schemas are [`schemas/interim-report-schema.json`](../schemas/interim-report-schema.json) and [`schemas/callgraph-schema.json`](../schemas/callgraph-schema.json). CI validates artifacts generated by the report writer and `--export-callgraph` against them; an undeclared top-level property is a contract failure.
+The published JSON Schemas are [`schemas/interim-report-schema.json`](../schemas/interim-report-schema.json), [`schemas/callgraph-schema.json`](../schemas/callgraph-schema.json) (schema `6.14`, the default inlined render), and [`schemas/callgraph-schema-6.15.json`](../schemas/callgraph-schema-6.15.json) (opt-in interned frames). CI validates default `--export-callgraph` artifacts against the 6.14 schema; an undeclared top-level property is a contract failure. Consumers that enable `--export-callgraph-interned-frames` must validate against the 6.15 schema.
 
 - Adding an optional field requires a schema-version bump, a schema update, and documentation. Consumers must validate an artifact against the published schema for its exact version; an artifact with no matching published schema must fail closed with a clear upgrade message.
 - Removing or renaming a field, changing a field's JSON type or meaning, or making an optional field required is breaking and requires a schema-version bump plus a migration note in `CHANGELOG.md`.
 - Consumers must gate parsing on the artifact's `version` (interim report) or `schema_version` (callgraph), then validate against the matching published schema before processing it.
 - Schema changes and version bumps must update this document, the schema file, generated-export validation, and `CHANGELOG.md` in the same change.
 
-Example:
+Example (default schema `6.14`; identity is inlined on frames and also in `functions[]`):
 
 ```json
 {
-  "finding_id": "69669f02",
-  "call_chains": [
-    [
-      {
-        "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
-        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
-        "start_line": 33
-      },
-      {
-        "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
-        "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
-        "start_line": 72,
-        "entry_call": {
-          "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
-          "line": 34,
-          "parameters": [
-            {
-              "parameter_index": 0,
-              "type": "io.jsonwebtoken.SignatureAlgorithm",
-              "argument_expression": "SignatureAlgorithm.HS256",
-              "resolved_value": "SignatureAlgorithm.HS256"
-            }
-          ]
-        }
-      },
-      {
-        "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
-        "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
-        "start_line": 43,
-        "dependency_info": {
-          "module": "org.springframework.security:spring-security-core",
-          "version": "5.7.11"
-        },
-        "crypto_call": {
-          "function_name": "java.security.MessageDigest.getInstance",
-          "line": 45,
-          "parameters": [
-            {
-              "parameter_index": 0,
-              "type": "String",
-              "argument_expression": "\"SHA-512\"",
-              "resolved_value": "\"SHA-512\""
-            }
-          ]
-        }
+  "functions": [
+    {
+      "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
+      "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+      "start_line": 33
+    },
+    {
+      "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
+      "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
+      "start_line": 72
+    },
+    {
+      "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
+      "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
+      "start_line": 43,
+      "dependency_info": {
+        "module": "org.springframework.security:spring-security-core",
+        "version": "5.7.11"
       }
-    ]
+    }
+  ],
+  "finding_graphs": [
+    {
+      "finding_id": "69669f02",
+      "call_chain_indexes": [[0, 1, 2]],
+      "call_chains": [
+        [
+          {
+            "function_name": "io.jsonwebtoken.jjwtfun.controller.SecretsController.traceToken",
+            "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+            "start_line": 33
+          },
+          {
+            "function_name": "io.jsonwebtoken.jjwtfun.service.SecretService.issueTraceToken",
+            "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/service/SecretService.java",
+            "start_line": 72,
+            "entry_call": {
+              "file_path": "src/main/java/io/jsonwebtoken/jjwtfun/controller/SecretsController.java",
+              "line": 34,
+              "parameters": [
+                {
+                  "parameter_index": 0,
+                  "type": "io.jsonwebtoken.SignatureAlgorithm",
+                  "argument_expression": "SignatureAlgorithm.HS256",
+                  "resolved_value": "SignatureAlgorithm.HS256"
+                }
+              ]
+            }
+          },
+          {
+            "function_name": "org.springframework.security.core.token.Sha512DigestUtils.getSha512Digest",
+            "file_path": "org/springframework/security/core/token/Sha512DigestUtils.java",
+            "start_line": 43,
+            "dependency_info": {
+              "module": "org.springframework.security:spring-security-core",
+              "version": "5.7.11"
+            },
+            "crypto_call": {
+              "function_name": "java.security.MessageDigest.getInstance",
+              "line": 45,
+              "parameters": [
+                {
+                  "parameter_index": 0,
+                  "type": "String",
+                  "argument_expression": "\"SHA-512\"",
+                  "resolved_value": "\"SHA-512\""
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    }
   ]
 }
 ```

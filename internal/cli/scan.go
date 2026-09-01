@@ -104,6 +104,7 @@ var (
 	scanExportCgFormat           string
 	scanExportCallgraphMaxChains int
 	scanExportEntryPoints        bool
+	scanExportInternedFrames     bool
 	scanExportGraphFragment      string
 	scanExportGfFormat           string
 	scanDepWorkers               int
@@ -190,6 +191,8 @@ func init() {
 		"Per-finding call-chain sample size for --export-callgraph (default 128). crypto_entry_points stays the full reverse-reach set when enabled. Depth cap remains 32.")
 	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", true,
 		"Include the full crypto_entry_points reverse-reachability index in --export-callgraph")
+	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", false,
+		"Emit schema 6.15 with function identity only in functions[] (opt-in). Default schema 6.14 still inlines identity on every call_chains frame.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
 	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
@@ -1124,6 +1127,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		if exportErr := scanutil.ExportCallGraphWithOptions(scanExportCallgraph, scanExportCgFormat, callGraphResult, scanutil.CallGraphExportOptions{
 			MaxChains:             scanExportCallgraphMaxChains,
 			OmitCryptoEntryPoints: !scanExportEntryPoints,
+			InternedFrames:        scanExportInternedFrames,
 		}); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,

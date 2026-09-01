@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://scanoss.com/schemas/callgraph.json",
-  "title": "SCANOSS Crypto-Finder Callgraph Export",
-  "description": "Finding-centric reachability export written by --export-callgraph.",
+  "$id": "https://scanoss.com/schemas/callgraph-6.15.json",
+  "title": "SCANOSS Crypto-Finder Callgraph Export (interned frames)",
+  "description": "Opt-in interned callgraph export written by --export-callgraph-interned-frames. Chain frames omit catalog identity; join through functions[] plus finding_graphs[].call_chain_indexes.",
   "type": "object",
   "required": [
     "schema_version",
@@ -12,9 +12,9 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.14",
+      "const": "6.15",
       "type": "string",
-      "description": "Version of the customer-facing callgraph contract."
+      "description": "Opt-in interned callgraph contract. Default live export remains 6.14."
     },
     "scan_metadata": {
       "$ref": "#/definitions/ScanMetadata"
@@ -35,7 +35,7 @@
     },
     "functions": {
       "type": "array",
-      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array, beside the inlined call_chains objects.",
+      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array. Schema 6.15 keeps catalog identity here instead of on call_chains frames.",
       "items": {
         "type": "object",
         "required": [
@@ -108,10 +108,6 @@
     },
     "CallChainNode": {
       "type": "object",
-      "required": [
-        "function_name",
-        "file_path"
-      ],
       "properties": {
         "function_name": {
           "type": "string"
