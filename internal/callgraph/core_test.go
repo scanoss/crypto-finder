@@ -43,9 +43,9 @@ func (p *stubParser) PackageSeparator() string {
 func TestBuilder_BuildFromDirectories(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "sub")
-	skip := filepath.Join(root, "vendor")
+	vendorDir := filepath.Join(root, "vendor")
 	hidden := filepath.Join(root, ".git")
-	for _, dir := range []string{sub, skip, hidden} {
+	for _, dir := range []string{sub, vendorDir, hidden} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
