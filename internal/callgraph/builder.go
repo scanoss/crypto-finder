@@ -2765,16 +2765,23 @@ func resolveFluentCallsInFunction(
 
 	// Track return type from the last resolved call on each line (fluent chains share a line)
 	lastReturnType := ""
+	// lastReturnQualifier is the module/package the previous link's return type
+	// was DECLARED with, before normalizeLookupTypeName reduced it to a bare
+	// name. See resolveFluentCall for why the bare name alone is not enough.
+	lastReturnQualifier := ""
 	lastLine := -1
 
 	for _, idx := range sortedIndices {
 		call := &fn.Calls[idx]
+		if call.Line != lastLine {
+			lastReturnQualifier = ""
+		}
 		lastReturnType, lastLine = resetFluentLineState(call, lastReturnType, lastLine)
 
-		if updateFluentReturnTypeFromResolvedCall(call, graph, &lastReturnType) {
+		if updateFluentReturnTypeFromResolvedCall(call, graph, &lastReturnType, &lastReturnQualifier) {
 			continue
 		}
-		if resolveFluentCall(call, fn, graph, typePackages, methodsByQualifiedArity, &lastReturnType) {
+		if resolveFluentCall(call, fn, graph, typePackages, methodsByQualifiedArity, &lastReturnType, lastReturnQualifier) {
 			resolved++
 		}
 	}
@@ -2810,15 +2817,37 @@ func resetFluentLineState(call *FunctionCall, lastReturnType string, lastLine in
 	return lastReturnType, lastLine
 }
 
-func updateFluentReturnTypeFromResolvedCall(call *FunctionCall, graph *CallGraph, lastReturnType *string) bool {
+func updateFluentReturnTypeFromResolvedCall(
+	call *FunctionCall,
+	graph *CallGraph,
+	lastReturnType *string,
+	lastReturnQualifier *string,
+) bool {
 	callee, ok := graph.Functions[call.Callee.String()]
 	if !ok {
 		return false
 	}
 	if callee.ReturnType != "" {
 		*lastReturnType = normalizeLookupTypeName(callee.ReturnType)
+		*lastReturnQualifier = declaredTypeQualifier(callee.ReturnType)
 	}
 	return true
+}
+
+// declaredTypeQualifier returns the module/package a declared return type was
+// written with, normalized to dots, or "" for an unqualified name:
+// "ed25519_dalek::Keypair" -> "ed25519_dalek", "Keypair" -> "".
+func declaredTypeQualifier(typeName string) string {
+	normalized := strings.TrimSpace(stripGenericSuffix(typeName))
+	normalized = strings.TrimLeft(normalized, "*")
+	normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "[]"))
+	bare := stripQualifiedTypePrefix(normalized)
+	if bare == "" || bare == normalized {
+		return ""
+	}
+	qualifier := strings.TrimSuffix(normalized, bare)
+	qualifier = strings.TrimRight(qualifier, ":./")
+	return strings.ReplaceAll(qualifier, "::", ".")
 }
 
 func resolveFluentCall(
@@ -2828,12 +2857,29 @@ func resolveFluentCall(
 	typePackages map[string]string,
 	methodsByQualifiedArity map[string][]string,
 	lastReturnType *string,
+	lastReturnQualifier string,
 ) bool {
 	if *lastReturnType == "" || !strings.Contains(call.Raw, ").") {
 		return false
 	}
 	pkg, ok := typePackages[*lastReturnType]
 	if !ok {
+		return false
+	}
+	// typePackages maps a BARE type name to a package, and it indexes only types
+	// the scanned source declares. When the previous link's return type was
+	// declared WITH a module path that is not this package, the propagated type
+	// is a dependency's, not this one's, and rewriting the callee to the
+	// same-named local method is wrong.
+	//
+	// Measured on tlfs-crdt 0.1.0 src/crypto.rs:39, `self.to_keypair().sign(msg)`
+	// inside the crate's own `impl Keypair`: to_keypair is declared
+	// `-> ed25519_dalek::Keypair`, the parser correctly resolved the second link
+	// to ed25519_dalek.Keypair.sign, and this pass overwrote it with
+	// tlfs_crdt::crypto.Keypair.sign — a same-named method on the wrapper. The
+	// call then joins the wrong contract, and any consumer of the call graph that
+	// asks which crate the call belongs to gets the wrapper's answer.
+	if lastReturnQualifier != "" && !qualifierMatchesPackage(lastReturnQualifier, pkg) {
 		return false
 	}
 
@@ -2851,6 +2897,18 @@ func resolveFluentCall(
 		*lastReturnType = normalizeLookupTypeName(candidateFn.ReturnType)
 	}
 	return true
+}
+
+// qualifierMatchesPackage reports whether a declared type's qualifier names the
+// same unit as a graph package. A Rust type is written with the path the author
+// imported it by, which can be shorter than the declaring module
+// ("ed25519_dalek::Keypair" vs package "ed25519_dalek::keypair"), so either side
+// containing the other as a leading module segment counts as a match.
+func qualifierMatchesPackage(qualifier, pkg string) bool {
+	if qualifier == "" || pkg == "" || qualifier == pkg {
+		return qualifier == pkg
+	}
+	return strings.HasPrefix(pkg, qualifier+".") || strings.HasPrefix(qualifier, pkg+".")
 }
 
 // findMethodOnTypeOrParents looks for a method on the given type, falling back to
