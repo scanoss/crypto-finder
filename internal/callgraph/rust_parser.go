@@ -1079,6 +1079,14 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 	// performing AES-128 block encryption. The written path is the answer and
 	// it must not be discarded.
 	selfType := rustImplSelfType(implScope, typeNode, src, typeName)
+	// `impl <Trait> for <Type>` — the receiver identity is the TYPE, but the
+	// methods inside are the TRAIT's API, and the trait can belong to another
+	// crate. apple-codesign 0.16.0 writes
+	// `impl EncodePrivateKey for InMemoryPrivateKey` under
+	// `use pkcs8::EncodePrivateKey`: the type is its own, `to_pkcs8_der` is
+	// pkcs8's. Recording the resolved trait path is what lets a consumer of the
+	// graph tell that apart from a same-named inherent method.
+	implTraits := p.rustImplTraitPaths(implScope, node, src)
 	declPackage := packagePath
 	if qualifiedPkg, _, ok := splitQualifiedRustType(selfType); ok && qualifiedPkg != "" {
 		declPackage = qualifiedPkg
@@ -1090,10 +1098,57 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 			fnScope := p.rustChildImportScope(child.ChildByFieldName("body"), src, implScope, packagePath)
 			decl := p.parseFunctionItemWithGenerics(child, src, filePath, declPackage, typeName, fnScope, implGenerics, selfType)
 			if decl != nil {
+				decl.OwnerTraits = implTraits
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		}
 	}
+}
+
+// rustImplTraitPaths returns the trait an impl header implements, with its path
+// resolved through the file's imports, or nil for an inherent impl block.
+//
+// `impl EncodePrivateKey for MyKey` under `use pkcs8::EncodePrivateKey;` yields
+// "pkcs8::EncodePrivateKey". A header that writes the path itself
+// (`impl pkcs8::EncodePrivateKey for MyKey`) keeps it. A trait the file never
+// imported stays a bare name, which is what it means: a trait of the enclosing
+// module, so the crate implementing it is the one being scanned.
+//
+// Deliberately NOT routed through rustImplSelfType: that function leaves a bare
+// name bare on purpose, because the self type of an unqualified header IS the
+// enclosing module's type. A trait name is the opposite case — it is usually
+// imported, and the import is the only place its owning crate is written.
+func (p *RustParser) rustImplTraitPaths(implScope *FileAnalysis, node *sitter.Node, src []byte) []string {
+	traitNode := node.ChildByFieldName("trait")
+	if traitNode == nil {
+		return nil
+	}
+	written := rustScopedTypeText(traitNode, src)
+	if written == "" {
+		written = p.extractTypeName(traitNode, src)
+	}
+	written = stripRustGenericArgs(written)
+	if written == "" {
+		return nil
+	}
+	if strings.Contains(written, "::") {
+		return []string{written}
+	}
+	if implScope != nil && implScope.Imports != nil {
+		if pkg, ok := implScope.Imports[written]; ok && pkg != "" {
+			return []string{pkg + "::" + written}
+		}
+	}
+	return []string{written}
+}
+
+// stripRustGenericArgs drops a trait's generic arguments: `Signer<Signature>`
+// names the trait `Signer`, and the argument is not part of its identity here.
+func stripRustGenericArgs(name string) string {
+	if i := strings.IndexByte(name, '<'); i >= 0 {
+		return strings.TrimSpace(name[:i])
+	}
+	return strings.TrimSpace(name)
 }
 
 // rustImplSelfType returns the impl block's self type with the path the header
