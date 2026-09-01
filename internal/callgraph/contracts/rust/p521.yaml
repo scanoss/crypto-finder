@@ -1,0 +1,116 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: p521
+  coordinates:
+    - p521
+  version_range: ">=0.13.1,<0.15.0"
+  description: "NIST P-521 (secp521r1) elliptic curve: ECDSA and ECDH"
+
+# API read at p521 0.13.3.
+#
+# 0.0.0 and 0.13.0 are outside the range deliberately: 0.0.0 is a
+# name-reservation placeholder, and 0.13.0 ships `arithmetic` as its ONLY
+# module — no ecdsa, no ecdh. The boundary sits INSIDE the 0.13 line, at 0.13.1.
+#
+# WHERE THE SIGNATURES COME FROM, and why p521 differs. Unlike p256, p384 and
+# k256 — which spell these as `pub type` aliases onto the generic `ecdsa` crate
+# — p521 wraps SigningKey in its OWN newtype: 0.13.3 src/ecdsa.rs:82
+# `pub struct SigningKey(ecdsa_core::SigningKey<NistP521>)`, with inherent
+# `random` at :88, `from_bytes` at :93, `from_slice` at :98, `verifying_key` at
+# :120 (returning VerifyingKey BY VALUE, not the `&VerifyingKey` the aliased
+# crates return) and `sign_prehash` at :134. That distinction is the reason this
+# contract exists per crate rather than being inherited from ecdsa.yaml.
+# The ecdh and key types still alias `elliptic-curve`, read at 0.13.8.
+#
+# WHY THIS CONTRACT EXISTS AT ALL. An exported callgraph for a consumer of this
+# crate emitted `canonical_signature: "p521::ecdsa.SigningKey.random(?)"` with
+# empty `parameter_types` — the shape an ABSENT contract takes. The generic
+# ecdsa.yaml does not cover it: its keys are `ecdsa::SigningKey.*`, and the
+# callgraph identifies the call by the re-exporting crate's own module path.
+# elliptic-curve.yaml does not cover it either — that file is the Curve trait
+# and carries `contracts: []`.
+#
+# skipped-non-crypto: byte and DER conversions (to_bytes, as_nonzero_scalar,
+#   to_sec1_bytes), Display/FromStr, serde, and the arithmetic backends.
+contracts:
+  - method: p521::ecdsa::SigningKey.random
+    arity: 1
+    return: {type: "p521::ecdsa::SigningKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+# The era-3 constructor. 0.14 replaces `SigningKey::random(rng)` with a
+# ZERO-ARITY `SigningKey::generate()`, which is a TRAIT method: the crate's own
+# doc example imports `elliptic_curve::Generate` to call it (p521 0.14.0-rc.15
+# src/ecdsa.rs:26,30). It is contracted because this file's version_range covers
+# 0.14.x, and an uncontracted constructor is exactly the `(?)` shape these
+# contracts exist to remove.
+  - method: p521::ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: "p521::ecdsa::SigningKey", confidence: high}
+    role: factory
+  - method: p521::ecdsa::SigningKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&elliptic_curve::FieldBytes"]
+    role: factory
+  - method: p521::ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p521::ecdsa::SigningKey.verifying_key
+    arity: 0
+    return: {type: "p521::ecdsa::VerifyingKey", confidence: high}
+    role: output
+  - method: p521::ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p521::ecdsa::VerifyingKey.from_encoded_point
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&p521::EncodedPoint"]
+    role: factory
+  - method: p521::ecdsa::VerifyingKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["p521::AffinePoint"]
+    role: factory
+  - method: p521::ecdh::EphemeralSecret.random
+    arity: 1
+    return: {type: "p521::ecdh::EphemeralSecret", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: p521::ecdh::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: {type: "p521::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&p521::PublicKey"]
+    role: operation
+  - method: p521::SecretKey.random
+    arity: 1
+    return: {type: "p521::SecretKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: p521::SecretKey.public_key
+    arity: 0
+    return: {type: "p521::PublicKey", confidence: high}
+    role: output
+  - method: p521::PublicKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: p521::PublicKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["p521::AffinePoint"]
+    role: factory
+  - method: p521::ecdsa::SigningKey.sign_prehash
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+
+hierarchy: {}

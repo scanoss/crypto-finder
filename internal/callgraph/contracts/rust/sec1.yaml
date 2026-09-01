@@ -1,0 +1,33 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sec1
+  coordinates:
+    - sec1
+  version_range: ">=0.1.0,<0.9.0"
+  description: "RustCrypto SEC1 elliptic-curve private key documents"
+
+# API read at sec1 0.8.1 (src/private_key.rs, src/traits.rs) and cross-checked at
+# 0.1.0 and 0.2.0.
+#
+# NO CONTRACTS, AND THE REASON IS STRUCTURAL RATHER THAN AN OMISSION. Everything
+# this crate offers a consumer is a TRAIT method: DecodeEcPrivateKey and
+# EncodeEcPrivateKey (FromEcPrivateKey/ToEcPrivateKey before the 0.2.0 rename)
+# are implemented on other crates' key types -- p256::SecretKey, k256::SecretKey
+# and so on -- so `SecretKey::from_sec1_der(..)` resolves to the implementing
+# crate's package, not to sec1. Verified against an exported call graph for the
+# sibling crates, which keyed the equivalent call to the consumer's package.
+#
+# Its own type, `EcPrivateKey`, is a borrowed ASN.1 view with no public inherent
+# methods -- checked at 0.8.1 src/private_key.rs, where the impl blocks are the
+# der DecodeValue/EncodeValue traits and accessors, not operations.
+#
+# This is the same shape as digest.yaml, elliptic-curve.yaml and
+# crypto-common.yaml: a RustCrypto trait crate whose work is performed through
+# implementations living elsewhere. Detection of those call sites is the rules'
+# job, and the rules do cover them; type inference has nothing to add here.
+#
+# The file exists rather than being omitted so that the family's contract gap is
+# answered explicitly: a reader checking whether sec1 was considered finds this
+# reasoning instead of an absence.
+contracts: []

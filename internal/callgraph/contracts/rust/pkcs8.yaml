@@ -1,0 +1,119 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pkcs8
+  coordinates:
+    - pkcs8
+  version_range: ">=0.6.0,<0.12.0"
+  description: "RustCrypto PKCS#8 private key documents, including encrypted PKCS#8"
+
+# API read at pkcs8 0.11.0 (src/encrypted_private_key_info.rs,
+# src/private_key_info.rs) and cross-checked at 0.1.0, 0.6.0, 0.8.0 and 0.9.0.
+#
+# THE DECODE/ENCODE TRAITS CANNOT BE CONTRACTED HERE, and that is a fact about
+# the call graph rather than a decision. DecodePrivateKey/EncodePrivateKey are
+# implemented on OTHER crates' key types, so a consumer line
+# `SigningKey::from_pkcs8_der(..)` resolves to the CONSUMER's package. Verified
+# by exporting a call graph from a probe consumer: the emitted signature is
+# `keyprobe.SigningKey.from_pkcs8_der(?)`, keyed to `keyprobe`, not to pkcs8.
+# Contracting it here would require enumerating every implementing type in the
+# ecosystem. This is the same situation digest.yaml and elliptic-curve.yaml are
+# in, and it is why those ship `contracts: []`.
+#
+# WHAT IS CONTRACTED IS pkcs8's OWN TYPES -- the encrypted-PKCS#8 operations,
+# which are the family's only true cipher work and are declared on types this
+# crate owns.
+#
+# `encrypt` IS ON PrivateKeyInfo, NOT ON EncryptedPrivateKeyInfo. Read at
+# src/private_key_info.rs:152; only `decrypt` is on EncryptedPrivateKeyInfo
+# (src/encrypted_private_key_info.rs:61). The pairing reads backwards and the
+# first draft of this family's rule metadata got it wrong; it is stated here so
+# the next reader does not repeat it.
+#
+# EVERY TYPE SPELLING IS KEYED SEPARATELY. The parser does not normalize a
+# generic type's variants to its base name: a probe exporting a call graph over
+# PrivateKeyInfo, PrivateKeyInfoRef, EncryptedPrivateKeyInfo and
+# EncryptedPrivateKeyInfoOwned emitted four distinct keys, and only the one this
+# file originally carried resolved. The Ref and Owned spellings are what a 0.10+
+# consumer actually writes, so keying only the base name would contract the
+# spelling nobody uses. Verified by re-exporting the same probe and checking that
+# no signature comes back as `(?)`.
+#
+# VERSION RANGE STARTS AT 0.6.0. EncryptedPrivateKeyInfo's decrypt/encrypt pair
+# arrives there: 0.5.0 declares the TYPE but none of the operations, and
+# 0.1.0-0.4.0 have neither. The family's sample mines 0.6.0 for exactly this
+# boundary.
+#
+# skipped-non-crypto: AlgorithmIdentifier, the Error/Result types, ObjectIdentifier
+#   re-exports, and the Document/SecretDocument re-exports that belong to der.
+contracts:
+  # The construction path into the encrypted type. `try_from` is a generic name,
+  # but the key is type-qualified so it cannot collide; without it the call graph
+  # emits `pkcs8.EncryptedPrivateKeyInfo.try_from(?)` with empty parameter_types,
+  # which is what an absent contract looks like.
+  - method: pkcs8::EncryptedPrivateKeyInfo.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: pkcs8::EncryptedPrivateKeyInfoRef.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: pkcs8::EncryptedPrivateKeyInfoOwned.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: pkcs8::PrivateKeyInfo.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: pkcs8::PrivateKeyInfoRef.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: pkcs8::EncryptedPrivateKeyInfo.decrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>"]
+    role: operation
+  - method: pkcs8::EncryptedPrivateKeyInfoRef.decrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>"]
+    role: operation
+  - method: pkcs8::EncryptedPrivateKeyInfoOwned.decrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>"]
+    role: operation
+  - method: pkcs8::PrivateKeyInfo.encrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>"]
+    role: operation
+  - method: pkcs8::PrivateKeyInfoRef.encrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>"]
+    role: operation
+  - method: pkcs8::PrivateKeyInfo.encrypt_with_rng
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: pkcs8::PrivateKeyInfo.encrypt_with_params
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: pkcs8::PrivateKeyInfoRef.encrypt_with_rng
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: pkcs8::PrivateKeyInfoRef.encrypt_with_params
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
