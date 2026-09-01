@@ -94,7 +94,8 @@ internal/callgraph/contracts/
 └── rust/                  # aes, blowfish, des, cbc, cfb-mode, ctr, aes-gcm, aes-gcm-siv,
                            #   ccm, chacha20poly1305, argon2, pbkdf2, scrypt, dsa, ecdsa,
                            #   ed25519, ghash, poly1305, ring, openssl, rsa, sodiumoxide,
-                           #   crypto-common, digest, aead, elliptic-curve (+ bootstrap)
+                           #   crypto-common, digest, aead, elliptic-curve,
+                           #   der, pkcs1, pkcs8, sec1, spki (+ bootstrap)
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
