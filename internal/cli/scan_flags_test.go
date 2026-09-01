@@ -50,6 +50,11 @@ func TestBuildSkipPatterns(t *testing.T) {
 				t.Errorf("expected %q in patterns, not found. patterns=%v", want, patterns)
 			}
 		}
+		for _, want := range []string{"**/*_pb2.py", "**/*.pb.go", "**/*OuterClass.java"} {
+			if !sliceContains(patterns, want) {
+				t.Errorf("expected generated pattern %q in defaults. patterns=%v", want, patterns)
+			}
+		}
 
 		// sourceLabel must mention both source names
 		if !strings.Contains(label, "defaults") {
@@ -73,6 +78,11 @@ func TestBuildSkipPatterns(t *testing.T) {
 		// With no scanoss.json and noDefaults=true, result must be empty
 		if len(patterns) != 0 {
 			t.Errorf("expected empty patterns with noDefaults=true and no scanoss.json, got %v", patterns)
+		}
+		for _, gen := range []string{"**/*_pb2.py", "**/*.pb.go", "shaded"} {
+			if sliceContains(patterns, gen) {
+				t.Errorf("generated/shaded pattern %q must be absent when noDefaults=true", gen)
+			}
 		}
 	})
 

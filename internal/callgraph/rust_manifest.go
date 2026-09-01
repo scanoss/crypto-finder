@@ -655,11 +655,11 @@ func (p *RustParser) crateSourceFiles(root string) []string {
 }
 
 func rustCrateDirMatcher(includeTests bool) skip.SkipMatcher {
-	patterns := append([]string{}, skip.DefaultSkippedDirs...)
+	patterns := append([]string{}, skip.DefaultPatterns()...)
 	if !includeTests {
 		patterns = skip.WithDefaultTestPatterns(patterns)
 	}
-	return skip.NewGitIgnoreMatcher(patterns)
+	return skip.NewMatcher(patterns, true)
 }
 
 func rustCrateSourceWalk(root, path string, entry fs.DirEntry, err error, matcher skip.SkipMatcher, paths *[]string) error {
@@ -678,6 +678,9 @@ func rustCrateSourceWalk(root, path string, entry fs.DirEntry, err error, matche
 		return nil
 	}
 	if filepath.Ext(path) != ".rs" {
+		return nil
+	}
+	if matcher.ShouldSkip(filepath.ToSlash(path), false) {
 		return nil
 	}
 	*paths = append(*paths, path)
