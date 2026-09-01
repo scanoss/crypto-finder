@@ -157,9 +157,9 @@ Four independent version numbers ship in the outputs — do not conflate them:
 |---------|----------|---------|------------|
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
 | Callgraph export schema | `graphfrag.CallgraphSchemaVersion` | `6.14` | The partner-facing reachability contract changes |
-
-Schema `6.15` is an opt-in interned render (`ScanMeta.InternedFrames` / `--export-callgraph-interned-frames`). Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.13` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-2` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
+
+Schema `6.15` is an opt-in interned render (`ScanMeta.InternedFrames` / `--export-callgraph-interned-frames`). Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 
 Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).

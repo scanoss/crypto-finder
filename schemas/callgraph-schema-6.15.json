@@ -1,0 +1,298 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scanoss.com/schemas/callgraph-6.15.json",
+  "title": "SCANOSS Crypto-Finder Callgraph Export (interned frames)",
+  "description": "Opt-in interned callgraph export written by --export-callgraph-interned-frames. Chain frames omit catalog identity; join through functions[] plus finding_graphs[].call_chain_indexes.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scan_metadata",
+    "finding_graphs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "6.15",
+      "type": "string",
+      "description": "Opt-in interned callgraph contract. Default live export remains 6.14."
+    },
+    "scan_metadata": {
+      "$ref": "#/definitions/ScanMetadata"
+    },
+    "finding_graphs": {
+      "type": "array",
+      "description": "One reachability record per interim-report finding.",
+      "items": {
+        "$ref": "#/definitions/FindingGraph"
+      }
+    },
+    "supporting_calls": {
+      "type": "array",
+      "description": "Lifecycle and context calls associated with findings.",
+      "items": {
+        "$ref": "#/definitions/SupportingCall"
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array. Schema 6.15 keeps catalog identity here instead of on call_chains frames.",
+      "items": {
+        "type": "object",
+        "required": [
+          "function_name",
+          "file_path"
+        ],
+        "properties": {
+          "function_key": {
+            "type": "string"
+          },
+          "function_name": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "crypto_entry_points": {
+      "type": "array",
+      "description": "Reverse-reachability index keyed by callable identity: every function from which a finding is reachable, deliberately broader than the exported call_chains. crypto_entry_points[].root marks the chain roots.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "boolean",
+            "description": "True when this entry point is where a chain starts: the first root-module caller in dependency mode, or an in-degree-zero graph root in standalone mode."
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "FindingGraph": {
+      "type": "object",
+      "required": [
+        "finding_id"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "call_chains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CallChain"
+          }
+        },
+        "call_chain_indexes": {
+          "type": "array",
+          "description": "Index-based routes matching call_chains order. Each inner array lists functions[] indexes for that walk.",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CallChain": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CallChainNode"
+      }
+    },
+    "CallChainNode": {
+      "type": "object",
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "crypto_call": {
+          "$ref": "#/definitions/TerminalCryptoCall"
+        }
+      },
+      "additionalProperties": true
+    },
+    "CryptoCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "parameter_roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "TerminalCryptoCall": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "not": {
+            "required": [
+              "resolved_key_length"
+            ]
+          }
+        }
+      ]
+    },
+    "ResolvedKeyLength": {
+      "type": "object",
+      "required": [
+        "provenance",
+        "source_call"
+      ],
+      "properties": {
+        "bits": {
+          "type": "integer"
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "constant",
+            "unknown"
+          ]
+        },
+        "source_call": {
+          "$ref": "#/definitions/SourceCall"
+        },
+        "rule_declared_bits": {
+          "type": "integer"
+        },
+        "rule_conflict": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line",
+        "parameter_index"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_index": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SupportingCall": {
+      "type": "object",
+      "required": [
+        "supporting_id"
+      ],
+      "properties": {
+        "supporting_id": {
+          "type": "string"
+        },
+        "supporting_call": {
+          "$ref": "#/definitions/SupportingCallDeclaration"
+        }
+      },
+      "additionalProperties": true
+    },
+    "SupportingCallDeclaration": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "resolved_key_length": {
+              "$ref": "#/definitions/ResolvedKeyLength"
+            }
+          }
+        }
+      ]
+    },
+    "ScanMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": {
+          "type": "string"
+        },
+        "root_module": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "exported_at": {
+          "type": "string"
+        },
+        "function_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "java_requested_jdk_major": {
+          "type": "string"
+        },
+        "java_runtime_version": {
+          "type": "string"
+        },
+        "java_platform_signatures_used": {
+          "type": "boolean"
+        },
+        "java_platform_signature_source": {
+          "type": "string"
+        },
+        "java_platform_signature_unavailable_reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -125,6 +125,8 @@ func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 
 			if !tc.interned {
 				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema.json"), outputPath)
+			} else {
+				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema-6.15.json"), outputPath)
 			}
 
 			data, err := os.ReadFile(outputPath)
