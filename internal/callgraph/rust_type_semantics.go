@@ -1321,8 +1321,21 @@ func rustNamedChildOfType(node *sitter.Node, kind string) *sitter.Node {
 	return nil
 }
 
-// rustFirstTraitBound returns the first trait a bound list names, which is the
-// one that gives a generic receiver its identity.
+// rustZeroMethodMarkerTraits are prelude traits that declare no method of
+// their own (auto traits and compiler-known markers). A bound to one of these
+// gives a generic parameter no method to call: `T: Sized + Digest` means `T`
+// answers to `Digest`'s methods, never `Sized`'s, because `Sized` has none.
+// Taking whichever bound comes first in the text fabricated `std.Sized.update`
+// for a real `Digest::update` call, order-dependently -- `T: Digest + Sized`
+// resolved correctly by accident, `T: Sized + Digest` did not.
+var rustZeroMethodMarkerTraits = map[string]bool{
+	"Sized": true, "Send": true, "Sync": true, "Copy": true, "Eq": true,
+}
+
+// rustFirstTraitBound returns the first trait a bound list names that could
+// actually own a called method, which is the one that gives a generic
+// receiver its identity. A zero-method marker trait is skipped rather than
+// returned: it can never be what a method call resolves through.
 func rustFirstTraitBound(bounds *sitter.Node, src []byte) string {
 	if bounds == nil {
 		return ""
@@ -1332,7 +1345,11 @@ func rustFirstTraitBound(bounds *sitter.Node, src []byte) string {
 		child := bounds.NamedChild(i)
 		switch child.Type() {
 		case goNodeTypeIdentifier, javaNodeScopedTypeIdentifier, javaNodeGenericType:
-			return rustScopedTypeText(child, src)
+			name := rustScopedTypeText(child, src)
+			if rustZeroMethodMarkerTraits[rustTypeHead(name)] {
+				continue
+			}
+			return name
 		case "lifetime", "removed_trait_bound":
 			continue
 		}
