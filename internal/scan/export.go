@@ -865,6 +865,10 @@ func internLiveFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExp
 	fg.CallChainIndexes = indexes
 }
 
+// contractLiveChainIdentities clears interned catalog identity from frames.
+// Live-only type evidence (return_type_ref, parameter_type_refs, inferred_return)
+// stays on the hop: those fields are not in functions[] and stripping them
+// would drop data the 6.14 render still carries beside identity.
 func contractLiveChainIdentities(chains [][]callGraphChainNode) {
 	for i := range chains {
 		for j := range chains[i] {

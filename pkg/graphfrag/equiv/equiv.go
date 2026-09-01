@@ -99,7 +99,7 @@ func (c *CallgraphExportJSON) UnmarshalJSON(data []byte) error {
 	type alias CallgraphExportJSON
 	var raw alias
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return fmt.Errorf("equiv: decode callgraph export: %w", err)
 	}
 	*c = CallgraphExportJSON(raw)
 	hydrateInternedFrames(c)
