@@ -209,6 +209,17 @@ type rustFileFacts struct {
 	// `aes::Aes128` which does the encryption — is a wrong identity, not a
 	// missing one.
 	reExports map[string]rustReExportTarget
+	// derefTransparent records a wrapper's bare name when the crate's own
+	// source declares `impl<T> Deref for Wrapper<T> { type Target = T; }` (or
+	// DerefMut) for it: a single type parameter, applied to the impl target
+	// with no other argument, handed back verbatim as Target. That is the only
+	// shape structural evidence can vouch for without guessing which of
+	// several parameters is "the real one" — `secrecy::SecretBox<T>` and
+	// `zeroize`'s wrappers, the pattern crates use to hold key material, take
+	// this exact shape. Box/Arc/Rc stay in the hardcoded rustDerefWrappers
+	// table below: their Deref impl lives in the standard library, whose
+	// source this parser never reads.
+	derefTransparent map[string]bool
 	// conflicting names are declared more than once in the crate with
 	// DIFFERENT types. They resolve to nothing: an ambiguous answer here would
 	// name one algorithm where another is used, which is the failure mode this
@@ -303,6 +314,16 @@ func (f *rustFileFacts) reExportTarget(key string) (pkg, typ string, ok bool) {
 	return f.fallback.reExportTarget(key)
 }
 
+// isDerefTransparent reports whether the crate's own source proved a bare
+// wrapper name transparent to its single generic parameter, via a real
+// `impl<T> Deref for Wrapper<T> { type Target = T; }`.
+func (f *rustFileFacts) isDerefTransparent(name string) bool {
+	if f == nil || name == "" {
+		return false
+	}
+	return f.derefTransparent[name] || f.fallback.isDerefTransparent(name)
+}
+
 // declaresModule reports whether the module at modulePath declares a child
 // module by this name.
 //
@@ -348,6 +369,9 @@ func (f *rustFileFacts) mergeCrateFacts(other *rustFileFacts) {
 	f.mergeReExports(other)
 	for name := range other.localModules {
 		f.localModules[name] = true
+	}
+	for name := range other.derefTransparent {
+		f.derefTransparent[name] = true
 	}
 }
 
@@ -428,14 +452,15 @@ func (f *rustFileFacts) mergeDeclaredTypes(other *rustFileFacts) {
 
 func newRustFileFacts() *rustFileFacts {
 	return &rustFileFacts{
-		structFields: make(map[string]map[string]string),
-		fnReturns:    make(map[string]string),
-		localTypes:   make(map[string]bool),
-		typeModules:  make(map[string]string),
-		localModules: make(map[string]bool),
-		conflicting:  make(map[string]bool),
-		crateAliases: make(map[string]string),
-		reExports:    make(map[string]rustReExportTarget),
+		structFields:     make(map[string]map[string]string),
+		fnReturns:        make(map[string]string),
+		localTypes:       make(map[string]bool),
+		typeModules:      make(map[string]string),
+		localModules:     make(map[string]bool),
+		conflicting:      make(map[string]bool),
+		crateAliases:     make(map[string]string),
+		reExports:        make(map[string]rustReExportTarget),
+		derefTransparent: make(map[string]bool),
 	}
 }
 
@@ -577,8 +602,73 @@ func (f *rustFileFacts) recordTypeOwner(node *sitter.Node, src []byte, modulePat
 		if t := node.ChildByFieldName("type"); t != nil {
 			typeName = rustTypeHead(t.Content(src))
 		}
+		f.recordDerefTransparentWrapper(node, src)
 		f.walkImplBody(node.ChildByFieldName("body"), src, typeName, modulePath)
 	}
+}
+
+// recordDerefTransparentWrapper records a wrapper's bare name when this impl
+// block is exactly `impl<T> Deref for Wrapper<T> { type Target = T; ... }` (or
+// DerefMut): one type parameter, applied verbatim as the impl target's only
+// argument, hand back verbatim as Target. Anything looser -- more than one
+// parameter, or a Target that is not that bare parameter -- is left
+// unrecorded rather than guessed, the same discipline every other fact here
+// follows.
+func (f *rustFileFacts) recordDerefTransparentWrapper(node *sitter.Node, src []byte) {
+	traitNode := node.ChildByFieldName("trait")
+	if traitNode == nil {
+		return
+	}
+	traitName := rustTypeHead(traitNode.Content(src))
+	if traitName != "Deref" && traitName != "DerefMut" {
+		return
+	}
+	params := make(map[string]string)
+	collectRustGenericParams(node.ChildByFieldName("type_parameters"), src, params)
+	if len(params) != 1 {
+		return
+	}
+	var paramName string
+	for name := range params {
+		paramName = name
+	}
+	typeNode := node.ChildByFieldName("type")
+	if typeNode == nil || typeNode.Type() != javaNodeGenericType {
+		return
+	}
+	wrapperNameNode := typeNode.ChildByFieldName("type")
+	argsNode := typeNode.ChildByFieldName("type_arguments")
+	if wrapperNameNode == nil || argsNode == nil || int(argsNode.NamedChildCount()) != 1 {
+		return
+	}
+	arg := argsNode.NamedChild(0)
+	if arg.Type() != goNodeTypeIdentifier || arg.Content(src) != paramName {
+		return
+	}
+	body := node.ChildByFieldName("body")
+	if body == nil || !rustImplDeclaresTargetAs(body, src, paramName) {
+		return
+	}
+	if wrapperName := rustTypeHead(wrapperNameNode.Content(src)); wrapperName != "" {
+		f.derefTransparent[wrapperName] = true
+	}
+}
+
+// rustImplDeclaresTargetAs reports whether an impl body declares `type Target
+// = paramName;` verbatim, the associated type Deref requires.
+func rustImplDeclaresTargetAs(body *sitter.Node, src []byte, paramName string) bool {
+	bodyNamedChildren := int(body.NamedChildCount())
+	for i := 0; i < bodyNamedChildren; i++ {
+		child := body.NamedChild(i)
+		if child.Type() != rustNodeTypeItem {
+			continue
+		}
+		if nodeFieldText(child, "name", src) != "Target" {
+			continue
+		}
+		return nodeFieldText(child, "type", src) == paramName
+	}
+	return false
 }
 
 // recordStruct records a struct or union's declared field types, twice: under
@@ -1435,7 +1525,7 @@ func (c *rustTypeCtx) rustTransparentExprType(node *sitter.Node, depth int) (str
 	case rustSyms.tryExpression:
 		// `?` yields the value INSIDE the Result or Option, which does not
 		// Deref to it.
-		return rustUnwrappedPatternType(c.rustExprType(node.NamedChild(0), depth+1)), true
+		return rustUnwrappedPatternType(c.rustExprType(node.NamedChild(0), depth+1), c.facts), true
 	}
 	return "", false
 }
@@ -1580,7 +1670,7 @@ func (c *rustTypeCtx) rustMethodCallType(fn *sitter.Node, depth int) string {
 	receiver := fn.ChildByFieldName("value")
 	switch {
 	case rustPoisonableAccessors[method]:
-		inner := rustUnwrapWrapperType(c.rustExprType(receiver, depth+1))
+		inner := rustUnwrapWrapperType(c.rustExprType(receiver, depth+1), c.facts)
 		if !rustValueWrappers[rustTypeHead(inner)] {
 			return inner
 		}
@@ -1605,9 +1695,9 @@ func (c *rustTypeCtx) rustMethodCallType(fn *sitter.Node, depth int) string {
 		// `Arc<Mutex<T>>` reaches the Mutex through the Arc — so those are
 		// peeled before asking whether what remains is a wrapper with contents
 		// to hand back.
-		receiverType := rustUnwrapWrapperType(c.rustExprType(receiver, depth+1))
+		receiverType := rustUnwrapWrapperType(c.rustExprType(receiver, depth+1), c.facts)
 		if rustValueWrappers[rustTypeHead(receiverType)] {
-			return rustUnwrappedPatternType(receiverType)
+			return rustUnwrappedPatternType(receiverType, c.facts)
 		}
 		return receiverType
 	case rustTransparentMethods[method], rustContainerPreservingMethods[method]:
@@ -1738,7 +1828,7 @@ func (c *rustTypeCtx) qualifyFactType(typeText string) string {
 	// arm, and the accessor that unwraps it runs long after this point. A tuple
 	// arm — `-> Result<(DecryptionContext, BufferUpdate), Unspecified>` — hands
 	// one identity to each destructured binding, so every element is qualified.
-	unwrapped := rustUnwrapAnyWrapperType(typeText)
+	unwrapped := rustUnwrapAnyWrapperType(typeText, c.facts)
 	if elements, ok := rustTupleElements(unwrapped); ok {
 		for _, element := range elements {
 			typeText = c.qualifyFactHead(typeText, element)
@@ -2132,19 +2222,25 @@ func rustGenericArgument(typeText string) (string, bool) {
 
 // rustUnwrapWrapperType sees through the ownership wrappers to the type that
 // carries the identity: `Arc<Mutex<Aes128>>` is an `Aes128` for every purpose
-// a crypto rule cares about.
-func rustUnwrapWrapperType(typeText string) string {
-	return rustUnwrapTypeWith(typeText, rustDerefWrappers)
+// a crypto rule cares about. facts may be nil, which limits the check to the
+// hardcoded table.
+func rustUnwrapWrapperType(typeText string, facts *rustFileFacts) string {
+	return rustUnwrapTypeWith(typeText, rustDerefWrappers, facts)
 }
 
 // rustUnwrapAnyWrapperType sees through either kind of wrapper, for the
 // positions where the CONTENTS are what is being named — a pattern binding, or
 // the result of an unwrapping accessor.
-func rustUnwrapAnyWrapperType(typeText string) string {
-	return rustUnwrapTypeWith(typeText, rustWrapperTypes)
+func rustUnwrapAnyWrapperType(typeText string, facts *rustFileFacts) string {
+	return rustUnwrapTypeWith(typeText, rustWrapperTypes, facts)
 }
 
-func rustUnwrapTypeWith(typeText string, wrappers map[string]bool) string {
+// rustUnwrapTypeWith peels off a wrapper name known either to the hardcoded
+// table (the standard library's own wrappers, whose Deref impl this parser
+// never reads) or, additionally, to facts.isDerefTransparent — a third-party
+// wrapper the analyzed crate's OWN source proved transparent by declaring a
+// real `impl<T> Deref for Wrapper<T> { type Target = T; }`.
+func rustUnwrapTypeWith(typeText string, wrappers map[string]bool, facts *rustFileFacts) string {
 	t := strings.TrimSpace(typeText)
 	for i := 0; i < rustMaxTypeDepth; i++ {
 		t = strings.TrimSpace(t)
@@ -2160,7 +2256,7 @@ func rustUnwrapTypeWith(typeText string, wrappers map[string]bool) string {
 		if lastSep := strings.LastIndex(head, "::"); lastSep >= 0 {
 			head = head[lastSep+2:]
 		}
-		if !wrappers[head] {
+		if !wrappers[head] && !facts.isDerefTransparent(head) {
 			return t
 		}
 		inner, ok := rustGenericArgument(t)
@@ -2280,9 +2376,10 @@ func rustStripLifetimes(typeText string) string {
 }
 
 // rustTypePathText returns the module path a type text carries, or "" when the
-// source wrote a bare name.
+// source wrote a bare name. No crate facts are in scope here, so this only
+// unwraps the hardcoded wrapper table.
 func rustTypePathText(typeText string) string {
-	unwrapped := rustUnwrapAnyWrapperType(typeText)
+	unwrapped := rustUnwrapAnyWrapperType(typeText, nil)
 	lastSep := strings.LastIndex(unwrapped, "::")
 	if lastSep <= 0 {
 		return ""
@@ -2372,7 +2469,7 @@ func rustIsNameableType(head string) bool {
 // callee key, keeping a path the type text already carries and otherwise
 // resolving the bare name through this file's imports.
 func rustQualifyType(analysis *FileAnalysis, facts *rustFileFacts, typeText string) (pkg, typ string) {
-	unwrapped := rustUnwrapWrapperType(typeText)
+	unwrapped := rustUnwrapWrapperType(typeText, facts)
 	head := rustTypeHead(unwrapped)
 	if head == "" || head == rustSelfType {
 		return "", ""
@@ -3043,8 +3140,8 @@ func (c *rustTypeCtx) bindTupleStructPattern(pattern *sitter.Node, typeText stri
 		path = rustScopedTypeText(pathNode, c.src)
 	}
 	head := rustTypeHead(path)
-	if rustWrapperTypes[head] || head == "Some" || head == "Ok" || head == "Err" {
-		c.bindTupleStructSubPatterns(pattern, pathNode, rustUnwrappedPatternType(typeText), depth)
+	if rustWrapperTypes[head] || c.facts.isDerefTransparent(head) || head == "Some" || head == "Ok" || head == "Err" {
+		c.bindTupleStructSubPatterns(pattern, pathNode, rustUnwrappedPatternType(typeText, c.facts), depth)
 		return
 	}
 	// An enum variant: the variant's own declared field types are the truth,
@@ -3052,16 +3149,16 @@ func (c *rustTypeCtx) bindTupleStructPattern(pattern *sitter.Node, typeText stri
 	if c.bindEnumVariantPattern(pattern, pathNode, path, typeText, depth) {
 		return
 	}
-	c.bindTupleStructSubPatterns(pattern, pathNode, rustUnwrapWrapperType(typeText), depth)
+	c.bindTupleStructSubPatterns(pattern, pathNode, rustUnwrapWrapperType(typeText, c.facts), depth)
 }
 
 // rustUnwrappedPatternType returns what a wrapping pattern binds: the wrapper's
 // type argument when it has one, otherwise the unwrapped type itself.
-func rustUnwrappedPatternType(typeText string) string {
+func rustUnwrappedPatternType(typeText string, facts *rustFileFacts) string {
 	if arg, ok := rustGenericArgument(typeText); ok {
 		return arg
 	}
-	return rustUnwrapAnyWrapperType(typeText)
+	return rustUnwrapAnyWrapperType(typeText, facts)
 }
 
 // bindEnumVariantPattern binds a variant's sub-patterns from the variant's

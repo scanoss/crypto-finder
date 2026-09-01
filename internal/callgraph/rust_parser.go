@@ -1179,7 +1179,7 @@ func rustBoxedSelfType(node *sitter.Node, src []byte) string {
 	if !rustDerefWrappers[head] {
 		return ""
 	}
-	inner := rustTypeHead(rustUnwrapWrapperType(text))
+	inner := rustTypeHead(rustUnwrapWrapperType(text, nil))
 	if inner == "" || inner == head || inner == rustSelfType || !rustIsNameableType(inner) {
 		return ""
 	}
