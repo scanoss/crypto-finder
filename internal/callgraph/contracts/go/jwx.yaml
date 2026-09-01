@@ -1,0 +1,150 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: jwx
+  coordinates:
+    - "github.com/lestrrat-go/jwx"
+  version_range: ">=0.9.0,<2.0.0"
+  description: "lestrrat-go/jwx v0/v1 JOSE implementation (JWA/JWE/JWK/JWS/JWT)"
+
+# Inventory source: github.com/lestrrat-go/jwx v1.2.31 module source from the
+# Go module proxy. The v2 major lives at github.com/lestrrat-go/jwx/v2 and is
+# contracted separately in jwx-v2.yaml; the majors must never cross-attribute.
+# The JOSE algorithm is a jwa constant argument (operation-determining
+# parameter); rules capture its name, contracts carry lifecycle structure.
+# Early v0.9/v1.0 minors expose narrower option sets; identities declared here
+# that a tag lacks simply never match.
+#
+# Dispositions for the remaining public surface: jwa constant registries are
+# values, not callables (not contractable); jws.SignLiteral and the
+# header/message builders are serialization plumbing (skipped-non-crypto);
+# jwt.ParseRequest/ParseHeader/ParseForm are HTTP extraction wrappers over
+# Parse (skipped-non-crypto); jwk.NewSet/AutoRefresh and the typed New*Key
+# constructors build empty containers (skipped-non-crypto); x25519 and the
+# internal subpackages are implementation detail (skipped-non-crypto).
+contracts:
+  - method: github.com/lestrrat-go/jwx/jws.Sign
+    arity: 4
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jws.SignMulti
+    arity: 2
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/lestrrat-go/jwx/jws.Verify
+    arity: 4
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jws.VerifySet
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: set, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jws.VerifyAuto
+    arity: 2
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/lestrrat-go/jwx/jwe.Encrypt
+    arity: 6
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: keyalg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+      - { index: 3, name: contentalg, role: metadata-contributing, contributes: { property: contentEncryption, derivation: argument_value } }
+  - method: github.com/lestrrat-go/jwx/jwe.Decrypt
+    arity: 4
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jwt.Sign
+    arity: 4
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jwt.Parse
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwt.Token", confidence: high }
+    role: operation
+  - method: github.com/lestrrat-go/jwx/jwt.ParseString
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwt.Token", confidence: high }
+    role: operation
+  - method: github.com/lestrrat-go/jwx/jwt.ParseReader
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwt.Token", confidence: high }
+    role: operation
+  - method: github.com/lestrrat-go/jwx/jwt.WithVerify
+    arity: 2
+    return: { type: "github.com/lestrrat-go/jwx/jwt.ParseOption", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jwk.New
+    arity: 1
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Key", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/lestrrat-go/jwx/jwk.Parse
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Set", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: src, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/lestrrat-go/jwx/jwk.ParseKey
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Key", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: data, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/lestrrat-go/jwx/jwk.ParseString
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Set", confidence: high }
+    role: factory
+  - method: github.com/lestrrat-go/jwx/jwk.ParseReader
+    arity: 2
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Set", confidence: high }
+    role: factory
+  - method: github.com/lestrrat-go/jwx/jwk.Fetch
+    arity: 3
+    varargs: true
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Set", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: urlstring, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/lestrrat-go/jwx/jwk.PublicKeyOf
+    arity: 1
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Key", confidence: high }
+    role: output
+  - method: github.com/lestrrat-go/jwx/jwk.PublicSetOf
+    arity: 1
+    return: { type: "github.com/lestrrat-go/jwx/jwk.Set", confidence: high }
+    role: output
+hierarchy: {}
