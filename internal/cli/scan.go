@@ -568,9 +568,15 @@ func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport
 	}
 	add := func(hint string) { addEcosystem(ecosystemFromHint(target, hint)) }
 	for _, finding := range report.Findings {
-		if finding.Language == "c" {
+		if isCFamilyLanguage(finding.Language) {
 			// A C-language detector can report both C and C++ sources. Build both
 			// source-only parsers so a C++ header never hides .c anchors.
+			//
+			// This tests the C FAMILY, not the literal "c". Once the detector
+			// reads file content it can tell a C++ header from a C one and
+			// reports "c++" for the former, which used to fall through to the
+			// generic branch below and add only cpp -- dropping the c ecosystem
+			// this branch exists to guarantee.
 			addEcosystem("c")
 			if isCPPSource(finding.FilePath) || cppHeaderTarget(target) {
 				addEcosystem(ecosystemCPP)
@@ -586,6 +592,17 @@ func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport
 		add(ecosystemFromHints(target, languageHints))
 	}
 	return ecosystems
+}
+
+// isCFamilyLanguage reports whether a detected language is C or C++, which
+// share headers and translation units and so share the anchor treatment above.
+func isCFamilyLanguage(language string) bool {
+	switch language {
+	case "c", "c++", ecosystemCPP:
+		return true
+	default:
+		return false
+	}
 }
 
 func occurrenceAnchorKey(ecosystem, functionID string) string {

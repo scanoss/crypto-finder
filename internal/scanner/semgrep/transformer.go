@@ -19,6 +19,7 @@ package semgrep
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -434,9 +435,53 @@ func normalizeRelatedCryptoKeySizes(asset *entities.CryptographicAsset) {
 }
 
 // detectLanguage uses go-enry to detect the programming language of a file.
+// languageSniffLimit bounds how much of a file is read to disambiguate its
+// language. enry's content strategies look at shebangs, keywords and a handful
+// of declarations, all of which appear far earlier than this; the cap is here so
+// a large generated source costs a bounded read rather than its whole size.
+const languageSniffLimit = 16 * 1024
+
+// sniffLanguageContent returns the leading bytes of filePath, or nil if it
+// cannot be read. nil is a valid input to enry -- it just falls back to deciding
+// on the name alone.
+func sniffLanguageContent(filePath string) []byte {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	buf := make([]byte, languageSniffLimit)
+	n, err := io.ReadFull(file, buf)
+	if n == 0 && err != nil {
+		return nil
+	}
+	return buf[:n]
+}
+
+// detectLanguage names the language of filePath.
+//
+// THE CONTENT IS NOT OPTIONAL. Several extensions map to more than one language,
+// and asked by name alone enry answers with the wrong one:
+//
+//	.rs   -> XML        (candidates: RenderScript, Rust, XML)
+//	.cs   -> Smalltalk  (candidates: C#, Smalltalk)
+//	.php  -> Hack       (candidates: Hack, PHP)
+//
+// Those are silent: the wrong name is stored on every finding and travels
+// downstream, and "xml" is not a language any consumer here recognises, so it
+// simply contributes nothing rather than failing loudly. Passing the file's
+// leading bytes resolves all three, and also lets a C++ header be told from a C
+// one -- which is why reportOccurrenceKeyEcosystems now tests the C family
+// rather than the literal "c".
+//
+// When the file cannot be read the name-only answer is still returned, because a
+// possibly-wrong language is more useful here than none.
 func detectLanguage(filePath string) string {
+	content := sniffLanguageContent(filePath)
+
 	// Try detection by filename first
-	lang := enry.GetLanguage(filepath.Base(filePath), nil)
+	lang := enry.GetLanguage(filepath.Base(filePath), content)
 	if lang != "" {
 		return strings.ToLower(lang)
 	}
@@ -444,7 +489,7 @@ func detectLanguage(filePath string) string {
 	// Try detection by file extension
 	ext := filepath.Ext(filePath)
 	if ext != "" {
-		lang = enry.GetLanguage(fmt.Sprintf("file%s", ext), nil)
+		lang = enry.GetLanguage(fmt.Sprintf("file%s", ext), content)
 		if lang != "" {
 			return strings.ToLower(lang)
 		}
