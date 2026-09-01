@@ -510,12 +510,32 @@ func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, 
 	}
 	for _, ecosystem := range reportOccurrenceKeyEcosystems(target, report, languageHints) {
 		result = addReportOccurrenceKeyAnchors(target, report, ecosystem, javaRuntime, includeTests, compiledArtifact, skipMatcher, result)
+		// A Rust rule anchors its crate with a file-level import guard, which
+		// cannot constrain the receiver of a method call; drop the matches whose
+		// receiver type the scanned source declares itself. This is the only
+		// hook that runs on EVERY scan: the export-path call graph at the top of
+		// runScan is built only under --export-callgraph/--export-graph-fragment,
+		// while this loop builds one per ecosystem whenever there are findings.
+		// It also runs after rule-entrypoint synthesis and conditioned-finding
+		// materialization, so it sees the assets those two passes add.
+		scanutil.FilterForeignReceiverAssets(report, occurrenceEcosystemGraph(result, ecosystem), ecosystem)
 	}
 	if result != nil {
 		result.Report = report
 		scanutil.AssignOccurrenceKeys(result)
 	}
 	return result
+}
+
+// occurrenceEcosystemGraph returns the call graph in result only when it was
+// built for ecosystem. A mixed-language target loops over several ecosystems and
+// keeps the first graph in result.CallGraph, so returning it unconditionally
+// would hand a Java graph to a Rust pass.
+func occurrenceEcosystemGraph(result *engine.DepScanResult, ecosystem string) *callgraph.CallGraph {
+	if result == nil || result.Ecosystem != ecosystem {
+		return nil
+	}
+	return result.CallGraph
 }
 
 func addReportOccurrenceKeyAnchors(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, skipMatcher skip.SkipMatcher, result *engine.DepScanResult) *engine.DepScanResult {
