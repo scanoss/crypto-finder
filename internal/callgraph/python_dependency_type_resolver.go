@@ -51,10 +51,10 @@ const (
 	pythonStubExt   = ".pyi"
 )
 
-// pythonDependencySkipMatcher applies the global skip list plus default
-// test-directory patterns. A dependency signature index has no reason to
-// descend into a vendored test suite.
-var pythonDependencySkipMatcher = skip.NewGitIgnoreMatcher(skip.WithDefaultTestPatterns(skip.DefaultSkippedDirs))
+// pythonDependencySkipMatcher applies the global skip list, generated-stub
+// policy, and default test-directory patterns. A dependency signature index
+// has no reason to descend into a vendored test suite or generated stubs.
+var pythonDependencySkipMatcher = skip.NewMatcher(skip.WithDefaultTestPatterns(skip.DefaultPatterns()), true)
 
 // PythonDependencyTypeResolver reads .pyi stubs and annotated .py sources
 // from pip-resolved dependency distributions to extract return-type and
@@ -265,7 +265,11 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 	}
 
 	for _, name := range selectPythonDistFiles(entries) {
-		r.indexDistributionFile(filepath.Join(dir, name), importPath, parser, signatures, hierarchy)
+		full := filepath.Join(dir, name)
+		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
+			continue
+		}
+		r.indexDistributionFile(full, importPath, parser, signatures, hierarchy)
 	}
 
 	for _, entry := range entries {

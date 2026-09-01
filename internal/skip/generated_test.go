@@ -82,6 +82,15 @@ func TestDefaultMatcherSkipsProtobufCompilerHeader(t *testing.T) {
 	}
 }
 
+func TestDefaultMatcherSkipsVendoredProtobufCopy(t *testing.T) {
+	t.Parallel()
+
+	matcher := NewDefaultMatcher()
+	if !matcher.ShouldSkip("third_party/google/protobuf/descriptor_pb2.py", false) {
+		t.Fatal("vendored google.protobuf copy should be skipped")
+	}
+}
+
 func TestDefaultMatcherSkipsRustGeneratedHeadersBesideSources(t *testing.T) {
 	t.Parallel()
 
@@ -118,6 +127,17 @@ func TestDefaultMatcherKeepsProtobufRuntimeArtifact(t *testing.T) {
 		if matcher.ShouldSkip(path, false) {
 			t.Errorf("protobuf runtime %q should stay in scope", path)
 		}
+	}
+}
+
+func TestGenericDoNotEditHeaderIsNotSkipped(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	authored := filepath.Join(dir, "util.js")
+	writeFile(t, authored, "// GENERATED CODE -- DO NOT EDIT\nexport function encrypt() {}\n")
+	if NewDefaultMatcher().ShouldSkip(authored, false) {
+		t.Fatalf("generic DO NOT EDIT header in %q must not skip authored JS", authored)
 	}
 }
 

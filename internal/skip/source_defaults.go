@@ -91,7 +91,7 @@ func DefaultDirMatcher() SkipMatcher {
 }
 
 // DefaultsSource provides the built-in default skip patterns.
-// These patterns represent commonly excluded directories across projects.
+// These patterns cover excluded directories and generated-stub globs.
 type DefaultsSource struct{}
 
 // NewDefaultsSource creates a new source that returns the built-in default patterns.
@@ -102,7 +102,7 @@ func NewDefaultsSource() *DefaultsSource {
 	return &DefaultsSource{}
 }
 
-// Load returns the default excluded directory patterns.
+// Load returns the built-in skip patterns (directories plus generated-stub globs).
 // This source never fails - it always returns the built-in defaults.
 //
 // Returns:

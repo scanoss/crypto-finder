@@ -174,7 +174,7 @@ func init() {
 		"Disable the built-in default exclusions (docs, vendor, node_modules, shaded, generated protobuf stubs, ...). "+
 			"Affects the primary scan only; dependency scans still skip test patterns controlled by --include-tests. "+
 			"Language detection will walk the full tree, which may significantly slow down scans on large repos. "+
-			"Use --exclude to surgically re-add specific directories.")
+			"Use --exclude to surgically re-add specific paths.")
 	scanCmd.Flags().StringSliceVar(&scanExcludePatterns, "exclude", nil,
 		"Glob pattern to skip during scanning (repeatable, e.g. --exclude vendor --exclude \"build/**\"). "+
 			"Same gitignore-style syntax as scanoss.json settings.skip.patterns.scanning. "+
