@@ -1164,7 +1164,7 @@ func TestOpengrep_EndColConventionPinning(t *testing.T) {
 // .rs -> XML, .cs -> Smalltalk, .php -> Hack. Each extension has several
 // candidates and the tie is broken without looking at the file. The wrong name
 // is then stored on every finding for those languages, and because "xml" is not
-// an ecosystem any consumer recognises it contributes nothing rather than
+// an ecosystem any consumer recognizes it contributes nothing rather than
 // failing loudly -- so nothing surfaces the mistake.
 //
 // Real files, because reading them is the whole point of the fix.

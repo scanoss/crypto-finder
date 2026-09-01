@@ -596,8 +596,8 @@ func reportOccurrenceKeyEcosystems(target string, report *entities.InterimReport
 
 // isCFamilyLanguage reports whether a detected language is C or C++, which
 // share headers and translation units and so share the anchor treatment above.
-func isCFamilyLanguage(language string) bool {
-	switch language {
+func isCFamilyLanguage(lang string) bool {
+	switch lang {
 	case "c", "c++", ecosystemCPP:
 		return true
 	default:

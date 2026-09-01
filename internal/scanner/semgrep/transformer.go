@@ -449,11 +449,16 @@ func sniffLanguageContent(filePath string) []byte {
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
 
 	buf := make([]byte, languageSniffLimit)
-	n, err := io.ReadFull(file, buf)
-	if n == 0 && err != nil {
+	n, readErr := io.ReadFull(file, buf)
+	if closeErr := file.Close(); closeErr != nil {
+		log.Debug().Err(closeErr).Str("path", filePath).Msg("failed to close file after language sniff")
+	}
+	// io.ReadFull reports ErrUnexpectedEOF for any file shorter than the buffer,
+	// which is the common case and not a failure. Only a read that produced
+	// nothing is.
+	if n == 0 && readErr != nil {
 		return nil
 	}
 	return buf[:n]
@@ -469,7 +474,7 @@ func sniffLanguageContent(filePath string) []byte {
 //	.php  -> Hack       (candidates: Hack, PHP)
 //
 // Those are silent: the wrong name is stored on every finding and travels
-// downstream, and "xml" is not a language any consumer here recognises, so it
+// downstream, and "xml" is not a language any consumer here recognizes, so it
 // simply contributes nothing rather than failing loudly. Passing the file's
 // leading bytes resolves all three, and also lets a C++ header be told from a C
 // one -- which is why reportOccurrenceKeyEcosystems now tests the C family
