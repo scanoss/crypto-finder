@@ -590,6 +590,27 @@ About 190 keys carry a single-letter type with the crate's own package. A glob
 can no longer claim one, but a bare parameter reaching the type field with the
 local package is a separate family.
 
+### A method declared only on a supertrait is attributed to the subtrait
+
+`trait Trait1: SuperTrait {}` then `fn f<T: Trait1>(x: T) { x.describe() }`,
+where only `SuperTrait` declares `describe`, resolves in real Rust through
+`SuperTrait` — confirmed against a real `rustc` build and matching
+rust-analyzer's own `super_trait_method_resolution` test. This parser
+attributes the call to `Trait1` instead, the same class of defect the
+zero-method-marker-trait fix above closes (a bound trait given identity for a
+method it does not own), but via a different mechanism: not a trait with zero
+methods, one that legitimately has some, just not this one.
+`TestRustParser_SupertraitBoundMethodIsAKnownUnfixedGap` pins the current
+(fabricated) identity so a fix lands as a deliberate, tracked change. Fixing
+it needs two facts that do not exist today: a trait-declares-method-name table
+independent of return type (`fnReturns` looks reusable but silently omits
+every void method — exactly `update(&mut self, data: &[u8])`'s shape — so
+reusing it would make the fix wrong for the methods that matter most), and a
+supertrait graph to walk when the directly bound trait does not own the
+called method. Not sized against a corpus; confirmed real and
+crypto-relevant in principle (RustCrypto's own hierarchies use supertraits,
+e.g. `AeadInPlace: AeadCore`).
+
 ## Decisions deliberately not implemented
 
 These were measured and declined. **They are settled: do not reopen them
