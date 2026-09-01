@@ -732,7 +732,10 @@ func rustQualifyFactType(analysis *FileAnalysis, typeText string) string {
 		}
 		return typeText
 	}
-	head := rustTypeHead(rustUnwrapAnyWrapperType(typeText))
+	// Called before the crate-wide facts merge completes, so no
+	// derefTransparent evidence from sibling files is available yet here —
+	// this qualifies against the hardcoded wrapper table only.
+	head := rustTypeHead(rustUnwrapAnyWrapperType(typeText, nil))
 	if head == "" {
 		return typeText
 	}
