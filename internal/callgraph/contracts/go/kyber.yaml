@@ -1,0 +1,88 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: kyber
+  coordinates:
+    - "go.dedis.ch/kyber/v3"
+  version_range: ">=3.0.0-pre1,<4.0.0"
+  description: "DEDIS kyber v3 advanced cryptographic toolbox"
+
+# Inventory source: go.dedis.ch/kyber/v3 v3.1.0-alpha module source from the
+# Go module proxy. Contracted boundary per the family audit: the suite
+# registry, the core signature packages (schnorr, eddsa, bls), ECIES, and
+# key-pair generation. The Group/Scalar/Point arithmetic interfaces are
+# generic algebra, not crypto operations (audit: never label generic
+# arithmetic); the threshold/distributed protocol packages (tbls, bdn, dss,
+# cosi, anon, share, proof, shuffle, pairing internals) are bounded protocol
+# children (needs-follow-up); xof/random are supporting primitives reached
+# through the suites (skipped-non-crypto at this boundary).
+contracts:
+  - method: go.dedis.ch/kyber/v3/suites.Find
+    arity: 1
+    return: { type: "go.dedis.ch/kyber/v3/suites.Suite", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: name, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: go.dedis.ch/kyber/v3/suites.MustFind
+    arity: 1
+    return: { type: "go.dedis.ch/kyber/v3/suites.Suite", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: name, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: go.dedis.ch/kyber/v3/sign/schnorr.Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: private, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: go.dedis.ch/kyber/v3/sign/schnorr.Verify
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/sign/schnorr.VerifyWithChecks
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/sign/eddsa.NewEdDSA
+    arity: 1
+    return: { type: "*go.dedis.ch/kyber/v3/sign/eddsa.EdDSA", confidence: high }
+    role: factory
+  - method: go.dedis.ch/kyber/v3/sign/eddsa.(*EdDSA).Sign
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/sign/eddsa.Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/sign/eddsa.VerifyWithChecks
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/sign/bls.Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: go.dedis.ch/kyber/v3/sign/bls.Verify
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: go.dedis.ch/kyber/v3/encrypt/ecies.Encrypt
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: public, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: go.dedis.ch/kyber/v3/encrypt/ecies.Decrypt
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: private, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: go.dedis.ch/kyber/v3/util/key.NewKeyPair
+    arity: 1
+    return: { type: "*go.dedis.ch/kyber/v3/util/key.Pair", confidence: high }
+    role: factory
+hierarchy: {}
