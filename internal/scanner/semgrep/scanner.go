@@ -36,6 +36,9 @@ import (
 // ScannerName is the identifier for the Semgrep scanner.
 const ScannerName = "semgrep"
 
+// unknownResult is the fallback for version and language detection.
+const unknownResult = "unknown"
+
 // Scanner implements the scanner.Scanner interface for Semgrep.
 type Scanner struct {
 	executablePath string
@@ -170,7 +173,7 @@ func (s *Scanner) detectVersion(ctx context.Context) string {
 	cmd := scanner.CommandContext(ctx, s.executablePath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
-		return "unknown" // Non-fatal, continue without version
+		return unknownResult // Non-fatal, continue without version
 	}
 
 	// Parse version from output (e.g., "1.45.0")

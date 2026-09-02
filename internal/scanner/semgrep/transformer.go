@@ -503,7 +503,7 @@ func detectLanguage(filePath string) string {
 		}
 	}
 
-	return "unknown"
+	return unknownResult
 }
 
 // lookupLanguage asks enry with the content and falls back to asking without it,
