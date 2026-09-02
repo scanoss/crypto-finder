@@ -1,0 +1,89 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: go-jose-v3
+  coordinates:
+    - "github.com/go-jose/go-jose/v3"
+  version_range: ">=3.0.0,<4.0.0"
+  description: "go-jose v3 (maintained org path)"
+
+# Inventory source: the newest committed CSV tag of this lineage from the Go
+# module proxy. The four go-jose lineages (square original, gopkg.in v2, org
+# v3, org v4) are contracted separately, one exact import path each, and never
+# share an FQN. Dispositions: the jose.JSONWebKey/JSONWebKeySet types are data
+# containers with JSON marshalling (skipped-non-crypto at this boundary);
+# cryptosigner and jwt.Builder claim/serialization methods are plumbing behind
+# the declared factories (skipped-non-crypto); OpaqueSigner/OpaqueKeyEncrypter
+# adapters are integration points, not algorithm selectors
+# (skipped-non-crypto).
+contracts:
+  - method: github.com/go-jose/go-jose/v3.NewEncrypter
+    arity: 3
+    return: { type: "github.com/go-jose/go-jose/v3.Encrypter", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: enc, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: rcpt, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/go-jose/go-jose/v3.NewMultiEncrypter
+    arity: 3
+    return: { type: "github.com/go-jose/go-jose/v3.Encrypter", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: enc, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/go-jose/go-jose/v3.NewSigner
+    arity: 2
+    return: { type: "github.com/go-jose/go-jose/v3.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sig, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/go-jose/go-jose/v3.NewMultiSigner
+    arity: 2
+    return: { type: "github.com/go-jose/go-jose/v3.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sigs, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/go-jose/go-jose/v3.ParseSigned
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3.JSONWebSignature", confidence: high }
+    role: operation
+  - method: github.com/go-jose/go-jose/v3.ParseEncrypted
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3.JSONWebEncryption", confidence: high }
+    role: operation
+  - method: github.com/go-jose/go-jose/v3.(Encrypter).Encrypt
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3.JSONWebEncryption", confidence: high }
+    role: operation
+  - method: github.com/go-jose/go-jose/v3.(JSONWebEncryption).Decrypt
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: decryptionKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/go-jose/go-jose/v3.(Signer).Sign
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3.JSONWebSignature", confidence: high }
+    role: operation
+  - method: github.com/go-jose/go-jose/v3.(JSONWebSignature).Verify
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: verificationKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/go-jose/go-jose/v3/jwt.Signed
+    arity: 1
+    return: { type: "github.com/go-jose/go-jose/v3/jwt.Builder", confidence: high }
+    role: factory
+  - method: github.com/go-jose/go-jose/v3/jwt.Encrypted
+    arity: 1
+    return: { type: "github.com/go-jose/go-jose/v3/jwt.Builder", confidence: high }
+    role: factory
+  - method: github.com/go-jose/go-jose/v3/jwt.ParseSigned
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3/jwt.JSONWebToken", confidence: high }
+    role: operation
+  - method: github.com/go-jose/go-jose/v3/jwt.ParseEncrypted
+    arity: 1
+    return: { type: "*github.com/go-jose/go-jose/v3/jwt.JSONWebToken", confidence: high }
+    role: operation
+hierarchy: {}
