@@ -1,0 +1,170 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: golang-jwt
+  coordinates:
+    - "github.com/golang-jwt/jwt/v5"
+  version_range: ">=5.0.0-rc.1,<6.0.0"
+  description: "golang-jwt/jwt v5 JWT implementation (maintained lineage)"
+
+# Inventory source: github.com/golang-jwt/jwt/v5 v5.3.1 module source from the
+# Go module proxy. Maintained successor of the archived
+# github.com/dgrijalva/jwt-go lineage, contracted separately in jwt-go.yaml;
+# the two must never cross-attribute. The JWS algorithm is selected by the
+# SigningMethod argument at token creation (rule-side parameterCondition);
+# contracts carry lifecycle structure only. v5 signing-method terminals return
+# []byte where the legacy lineage returned string.
+#
+# Dispositions for the remaining public surface: (*Token).SigningString,
+# (*Parser).ParseUnverified, and (*Parser).DecodeSegment never touch a key or
+# signature (skipped-non-crypto); GetAlgorithms returns registered names only
+# (skipped-informative-return); NewNumericDate and the claims/error helpers are
+# data plumbing (skipped-non-crypto); the ParserOption/TokenOption With*
+# functions configure validation policy, not cryptography, and WithValidMethods
+# is negative-tested at the rule layer (skipped-non-crypto); the SigningMethod
+# package variables are values, not callables (not contractable).
+contracts:
+  # New and NewWithClaims take a trailing ...TokenOption list, which occupies
+  # one slot under the KB varargs convention.
+  - method: github.com/golang-jwt/jwt/v5.New
+    arity: 2
+    varargs: true
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: method, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.NewWithClaims
+    arity: 3
+    varargs: true
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: method, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.(*Token).SignedString
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/golang-jwt/jwt/v5.Parse
+    arity: 3
+    varargs: true
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.ParseWithClaims
+    arity: 4
+    varargs: true
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.NewParser
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/golang-jwt/jwt/v5.Parser", confidence: high }
+    role: factory
+  - method: github.com/golang-jwt/jwt/v5.(*Parser).Parse
+    arity: 2
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*Parser).ParseWithClaims
+    arity: 3
+    return: { type: "*github.com/golang-jwt/jwt/v5.Token", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.GetSigningMethod
+    arity: 1
+    return: { type: "github.com/golang-jwt/jwt/v5.SigningMethod", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.RegisterSigningMethod
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: config
+
+  # Signing-method terminals: the concrete Sign/Verify implementations that
+  # perform the HMAC, RSA, RSA-PSS, ECDSA, and Ed25519 work behind
+  # SignedString/Parse.
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodHMAC).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodHMAC).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodRSA).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodRSA).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodRSAPSS).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodRSAPSS).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodECDSA).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodECDSA).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/golang-jwt/jwt/v5.(*SigningMethodEd25519).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+
+  # PEM key-material parsing.
+  - method: github.com/golang-jwt/jwt/v5.ParseRSAPrivateKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseRSAPrivateKeyFromPEMWithPassword
+    arity: 2
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseRSAPublicKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/rsa.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseECPrivateKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseECPublicKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseEdPrivateKeyFromPEM
+    arity: 1
+    return: { type: "crypto.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/golang-jwt/jwt/v5.ParseEdPublicKeyFromPEM
+    arity: 1
+    return: { type: "crypto.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+hierarchy: {}
