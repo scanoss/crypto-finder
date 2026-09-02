@@ -1,0 +1,158 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ssh2
+  coordinates:
+    - ssh2
+  version_range: ">=0.1.0,<0.10.0"
+  description: "Rust bindings to libssh2 (SSH2 client)"
+
+# API read at ssh2 0.9.5 (src/session.rs, src/knownhosts.rs, src/agent.rs).
+# Every arity below was then checked against the DECLARATION in 0.1.0, 0.2.0,
+# 0.3.3, 0.4.0 and 0.6.0 -- not merely against the method's presence, which is
+# the check that missed the signature change described next.
+#
+# THE 0.4.0 CUTOVER, and it splits this range in two:
+#
+#   handshake   0.1.0        (&mut self, socket: raw::libssh2_socket_t)  arity 1
+#               0.2.0-0.3.3  (&mut self, stream: &TcpStream)             arity 1
+#               0.4.0-0.9.5  (&mut self)                                 arity 0
+#   Session::new  0.1.0-0.3.3  -> Option<Session>
+#                 0.4.0-0.9.5  -> Result<Session, Error>
+#
+# Both arities of `handshake` are therefore recorded: contracts are indexed as
+# `<method>#<arity>`, so they are distinct keys, and recording only the modern
+# one left every consumer below 0.4.0 unresolved for the very call this family
+# is about. `Session::new` keeps one entry because its ARITY does not change;
+# only the return type does, and the modern `Result` is recorded. A pre-0.4.0
+# consumer therefore gets the right key and a return type that names the wrong
+# wrapper -- stated here rather than left for a reader to discover.
+#
+# TWO METHODS DO NOT EXIST ACROSS THE WHOLE RANGE, which costs nothing at match
+# time but is worth stating: `userauth_pubkey_memory` first appears in 0.3.x
+# (absent at 0.3.0, present at 0.3.3) and `userauth_keyboard_interactive` first
+# appears at 0.6.0.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y, and an exported
+# call graph over the crate's own integration tests agreed: the matched
+# operations came back as `ssh2.Session.handshake` and `ssh2.Session.host_key`
+# with nothing typing them.
+#
+# KEY SHAPE, READ OFF THE EXPORTED GRAPH RATHER THAN ASSUMED: call-site FQNs are
+# `ssh2.Session.<method>` -- two dots, which the Rust key normalisation rewrites
+# to the authored `ssh2::Session.<method>`.
+#
+# WHAT THE KnownHosts ENTRIES DO AND DO NOT COVER. They resolve from the two
+# spellings that give the receiver a type -- an explicit annotation
+# (`let known: KnownHosts = sess.known_hosts()?`) and a typed parameter
+# (`fn f(known: &KnownHosts, ..)`) -- both measured. They do NOT resolve when the
+# receiver is bound from a bare method call (`let known = sess.known_hosts()?`),
+# which emits the call against the consumer's own crate because nothing types
+# `known`. Declaring `known_hosts` as a factory was tried and measured not to
+# help, with the return declared both as Result and as the unwrapped type: the
+# Rust parser does not use a contract's return type to type such a receiver.
+# Detection is unaffected either way -- the rules match on syntax and the finding
+# carries the right api -- only call-graph attribution is.
+#
+# `Agent::userauth` HAS THE SAME HOLE AS KnownHosts, and for the same reason:
+# `let agent = sess.agent()?; agent.userauth(u, id)` binds the receiver from a
+# method call, so it emits against the consumer's own crate. That IS the
+# canonical spelling -- it is what the crate's own tests and async-ssh2-lite
+# write -- so this hole costs more here than it does for KnownHosts. The typed
+# spellings resolve, and TestSSH2AgentUserauthResolvesOnlyWhenTheReceiverIsTyped
+# covers both directions.
+#
+# UFCS IS A KNOWN HOLE IN THE ARITY KEYING: `KnownHosts::check(&known, host, key)`
+# counts the explicit receiver, so it emits arity 3 and collides with
+# `check_port`'s key. Recorded rather than worked around; the spelling is rare.
+#
+# THE CHANNEL SURFACE IS DELIBERATELY ABSENT, for the same reason the rules do
+# not match it: `channel_session`, `exec`, `shell`, `read`, `write`, `sftp` and
+# `scp_recv` move bytes over an established session. Typing them here would
+# route ordinary remote-command traffic through the crypto call graph. The
+# negotiation surface -- `method_pref`, `supported_algs` -- is absent on the same
+# grounds the rules give: the algorithm list is a runtime string.
+contracts:
+  - method: ssh2::Session.new
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: ssh2::Session.known_hosts
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: ssh2::Session.agent
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: ssh2::Session.handshake
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: operation
+  # 0.1.0 takes a raw socket, 0.2.0-0.3.3 take &TcpStream; both are arity 1.
+  - method: ssh2::Session.handshake
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&std::net::TcpStream"]
+    role: operation
+  - method: ssh2::Session.userauth_pubkey_file
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "core::option::Option<&std::path::Path>", "&std::path::Path", "core::option::Option<&str>"]
+    role: operation
+  - method: ssh2::Session.userauth_pubkey_memory
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "core::option::Option<&str>", "&str", "core::option::Option<&str>"]
+    role: operation
+  - method: ssh2::Session.userauth_hostbased_file
+    arity: 6
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "&std::path::Path", "&std::path::Path", "core::option::Option<&str>", "&str", "core::option::Option<&str>"]
+    role: operation
+  - method: ssh2::Session.userauth_agent
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str"]
+    role: operation
+  - method: ssh2::Session.userauth_password
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: operation
+  - method: ssh2::Session.userauth_keyboard_interactive
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "&mut P"]
+    role: operation
+  - method: ssh2::Session.host_key
+    arity: 0
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: ssh2::Session.host_key_hash
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["ssh2::HashType"]
+    role: operation
+  - method: ssh2::KnownHosts.check
+    arity: 2
+    return: { type: ssh2::CheckResult, confidence: high }
+    parameter_types: ["&str", "&[u8]"]
+    role: operation
+  - method: ssh2::KnownHosts.check_port
+    arity: 3
+    return: { type: ssh2::CheckResult, confidence: high }
+    parameter_types: ["&str", "u16", "&[u8]"]
+    role: operation
+  - method: ssh2::Agent.userauth
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str", "&ssh2::PublicKey"]
+    role: operation
+
+hierarchy: {}
