@@ -1,0 +1,593 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aes-kw
+  coordinates:
+    - aes-kw
+    - aes_kw
+  version_range: ">=0.1.0,<0.4.0"
+  description: "AES Key Wrap (RFC 3394) and Key Wrap with Padding (RFC 5649)"
+
+# API read at 0.3.1 (src/kw.rs, src/kwp.rs, src/lib.rs) and at 0.2.1 and 0.1.0
+# (src/lib.rs; 0.1.0 keeps it in src/kek.rs). 0.2.0 and 0.3.0 were diffed against 0.2.1 and 0.3.1:
+# every `pub fn` and `pub type` signature is identical, so no arity drifts
+# inside either line.
+#
+# TWO INCOMPATIBLE APIS INSIDE THE DECLARED RANGE, both recorded because both
+# are published and mineable:
+#
+#   0.1.0-0.2.1  `Kek<Aes>` with the `KekAes128/192/256` aliases. Constructed by
+#                `new`, `From` and `TryFrom`. Methods `wrap`/`unwrap` (arity 2)
+#                and `wrap_vec`/`unwrap_vec` (arity 1).
+#   0.3.0-0.3.1  `Kek` is GONE. `AesKw<C>` / `AesKwp<C>` with the
+#                `KwAes128/192/256` and `KwpAes128/192/256` aliases, and methods
+#                `wrap_key`/`unwrap_key` (arity 2) and
+#                `wrap_fixed_key`/`unwrap_fixed_key` (arity 1).
+#
+# THE PADDED FORMS ARRIVE AT 0.2.0. `wrap_with_padding`, its `_vec` form and
+# both unwrap counterparts do not exist in 0.1.0; the entries cover the rest of
+# the range.
+#
+# `new` IS A TRAIT METHOD IN 0.3.x. The 0.3.0 changelog removed the inherent
+# `Kek::new` in favour of implementing `InnerInit`, so `new` now arrives through
+# the blanket `KeyInit` impl that lib.rs re-exports. Arity 1 either way, and the
+# key is what the consumer writes, so the entries are unaffected.
+#
+# `from` DECLARES NO parameter_types, AND THAT IS DELIBERATE. `From` is an
+# OVERLOAD SET here: 0.2.1 lib.rs:95-129 declares six impls, two per alias at
+# arity 1 -- `From<GenericArray<u8, U16|U24|U32>>` and `From<[u8; 16|24|32]>` --
+# and none of them is generic over `Aes`. AGENTS.md says to omit the canonical
+# fields when several same-arity overloads remain possible, so call-site
+# provenance selects the signature instead of this file guessing one. An earlier
+# revision recorded `GenericArray<u8, Aes::KeySize>`, which is the `new`
+# signature's spelling, appears nowhere among the `From` impls, and named the
+# overload the crate's own 12 call sites never use (they all pass `hex!(..)`,
+# i.e. `[u8; N]`).
+#
+# `From` AND `TryFrom` ARE THE IDIOMATIC CONSTRUCTORS ON THE 0.1-0.2 LINE, and
+# leaving them out left that whole factory path untyped. The crate's README and
+# every one of its own tests construct with `Kek::<Aes128>::from(..)` or
+# `try_from(..)` and never with `new`. Measured before they were added: those
+# call sites emitted `aes_kw.Kek.from` / `aes_kw.Kek.try_from` and resolved to
+# nothing. 0.3.x implements neither, so the entries stop at the Kek line.
+#
+# EVERY ALIAS IS ENUMERATED, and that is not padding. The keys were read off an
+# exported call graph, and the parser keys on the alias the CONSUMER wrote: a
+# consumer calling `KwAes128::new(..)` emits `aes_kw.KwAes128.new`, never
+# `aes_kw.AesKw.new`. The aliases are declared inside the crate
+# (`pub type KwAes128 = AesKw<aes::Aes128>;`), so nothing in the consumer's
+# source says what they expand to. rust/aes-gcm.yaml enumerates
+# `Aes128Gcm` / `Aes256Gcm` for the same reason.
+#
+# `KwWrappedKey` AND `KwpWrappedKey` ARE NOT NAMEABLE BY A CONSUMER, and the
+# return types say so with their real paths. They are `pub type` items declared
+# inside the PRIVATE modules `mod kw;` / `mod kwp;` (lib.rs:16-17), and lib.rs
+# re-exports only `AesKw`, `AesKwp` and the error types. A consumer receives a
+# value of that type from `wrap_fixed_key` and can use it, but cannot write the
+# name. Recording them as `aes_kw::KwWrappedKey` would name a path that does not
+# exist, so the module segment is kept.
+#
+# 0.0.0 is outside the range on purpose: it is a yanked, EMPTY placeholder whose
+# src/lib.rs is 0 bytes, so it declares nothing to type.
+contracts:
+# ---- 0.1.0-0.2.1: the Kek line -------------------------------------------
+  - method: aes_kw::Kek.new
+    arity: 1
+    return: { type: aes_kw::Kek, confidence: high }
+    parameter_types: ["&GenericArray<u8, Aes::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::Kek.from
+    arity: 1
+    return: { type: aes_kw::Kek, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::Kek.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::Kek.wrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::Kek.wrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::Kek.unwrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::Kek.unwrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::Kek.wrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::Kek.wrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::Kek.unwrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::Kek.unwrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.new
+    arity: 1
+    return: { type: aes_kw::KekAes128, confidence: high }
+    parameter_types: ["&GenericArray<u8, Aes::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes128.from
+    arity: 1
+    return: { type: aes_kw::KekAes128, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes128.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes128.wrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.wrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.unwrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.unwrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.wrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.wrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.unwrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes128.unwrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.new
+    arity: 1
+    return: { type: aes_kw::KekAes192, confidence: high }
+    parameter_types: ["&GenericArray<u8, Aes::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes192.from
+    arity: 1
+    return: { type: aes_kw::KekAes192, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes192.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes192.wrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.wrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.unwrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.unwrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.wrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.wrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.unwrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes192.unwrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.new
+    arity: 1
+    return: { type: aes_kw::KekAes256, confidence: high }
+    parameter_types: ["&GenericArray<u8, Aes::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes256.from
+    arity: 1
+    return: { type: aes_kw::KekAes256, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes256.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KekAes256.wrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.wrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.unwrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.unwrap_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.wrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.wrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.unwrap_with_padding
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KekAes256.unwrap_with_padding_vec
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+# ---- 0.3.0-0.3.1: AES-KW --------------------------------------------------
+  - method: aes_kw::AesKw.new
+    arity: 1
+    return: { type: aes_kw::AesKw, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::AesKw.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::AesKw.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::AesKw.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kw::KwWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::AesKw.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kw::KwWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwAes128.new
+    arity: 1
+    return: { type: aes_kw::KwAes128, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwAes128.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes128.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes128.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kw::KwWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwAes128.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kw::KwWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwAes192.new
+    arity: 1
+    return: { type: aes_kw::KwAes192, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwAes192.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes192.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes192.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kw::KwWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwAes192.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kw::KwWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwAes256.new
+    arity: 1
+    return: { type: aes_kw::KwAes256, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwAes256.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes256.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwAes256.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kw::KwWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwAes256.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kw::KwWrappedKey<N>"]
+    role: operation
+# ---- 0.3.0-0.3.1: AES-KWP -------------------------------------------------
+  - method: aes_kw::AesKwp.new
+    arity: 1
+    return: { type: aes_kw::AesKwp, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::AesKwp.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::AesKwp.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::AesKwp.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kwp::KwpWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::AesKwp.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kwp::KwpWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwpAes128.new
+    arity: 1
+    return: { type: aes_kw::KwpAes128, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwpAes128.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes128.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes128.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kwp::KwpWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwpAes128.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kwp::KwpWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwpAes192.new
+    arity: 1
+    return: { type: aes_kw::KwpAes192, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwpAes192.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes192.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes192.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kwp::KwpWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwpAes192.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kwp::KwpWrappedKey<N>"]
+    role: operation
+  - method: aes_kw::KwpAes256.new
+    arity: 1
+    return: { type: aes_kw::KwpAes256, confidence: high }
+    parameter_types: ["&Array<u8, C::KeySize>"]
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes_kw::KwpAes256.wrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes256.unwrap_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aes_kw::KwpAes256.wrap_fixed_key
+    arity: 1
+    return: { type: aes_kw::kwp::KwpWrappedKey, confidence: high }
+    parameter_types: ["&Array<u8, N>"]
+    role: operation
+  - method: aes_kw::KwpAes256.unwrap_fixed_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&aes_kw::kwp::KwpWrappedKey<N>"]
+    role: operation
+
+hierarchy: {}
