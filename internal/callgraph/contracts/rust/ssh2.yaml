@@ -14,8 +14,8 @@ library:
 #
 # THE 0.4.0 CUTOVER, and it splits this range in two:
 #
-#   handshake   0.1.0        (&mut self, socket: raw::libssh2_socket_t)  arity 1
-#               0.2.0-0.3.3  (&mut self, stream: &TcpStream)             arity 1
+#   handshake   0.1.0-0.1.7  (&mut self, socket: raw::libssh2_socket_t)  arity 1
+#               0.1.8-0.3.3  (&mut self, stream: &TcpStream)             arity 1
 #               0.4.0-0.9.5  (&mut self)                                 arity 0
 #   Session::new  0.1.0-0.3.3  -> Option<Session>
 #                 0.4.0-0.9.5  -> Result<Session, Error>
@@ -28,10 +28,19 @@ library:
 # consumer therefore gets the right key and a return type that names the wrong
 # wrapper -- stated here rather than left for a reader to discover.
 #
-# TWO METHODS DO NOT EXIST ACROSS THE WHOLE RANGE, which costs nothing at match
-# time but is worth stating: `userauth_pubkey_memory` first appears in 0.3.x
-# (absent at 0.3.0, present at 0.3.3) and `userauth_keyboard_interactive` first
-# appears at 0.6.0.
+# THREE METHODS DO NOT EXIST ACROSS THE WHOLE RANGE, which costs nothing at
+# match time but is worth stating, and each first appearance below was read off
+# the DECLARATION in the crate's own `src/session.rs` at that version:
+#
+#   userauth_agent                  absent 0.1.0-0.1.7, first at 0.1.8
+#   userauth_pubkey_memory          absent 0.3.0-0.3.2, first at 0.3.3
+#   userauth_keyboard_interactive   absent through 0.3.3, first at 0.4.0
+#
+# An earlier revision of this header said `userauth_keyboard_interactive` first
+# appears at 0.6.0 and enumerated only two such methods. Both were wrong: 0.4.0
+# already declares it un-gated, and `userauth_agent` is a third. The list is
+# meant to be exhaustive, so the error mattered even though neither claim
+# affects which call sites resolve.
 #
 # WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y, and an exported
 # call graph over the crate's own integration tests agreed: the matched
@@ -93,11 +102,14 @@ contracts:
     return: { type: core::result::Result, confidence: high }
     parameter_types: []
     role: operation
-  # 0.1.0 takes a raw socket, 0.2.0-0.3.3 take &TcpStream; both are arity 1.
+  # 0.1.0-0.1.7 take a raw socket, 0.1.8-0.3.3 take &TcpStream; both are arity
+  # 1, so method+arity does NOT identify one signature here and there is no
+  # single truthful `parameter_types`. It is omitted rather than declared as
+  # the later of the two, which would be wrong for eight releases -- the same
+  # choice russh.yaml makes for 15 of its 16 entries.
   - method: ssh2::Session.handshake
     arity: 1
     return: { type: core::result::Result, confidence: high }
-    parameter_types: ["&std::net::TcpStream"]
     role: operation
   - method: ssh2::Session.userauth_pubkey_file
     arity: 4
@@ -129,16 +141,20 @@ contracts:
     return: { type: core::result::Result, confidence: high }
     parameter_types: ["&str", "&mut P"]
     role: operation
+  # `output`, not `operation`: both hand back material the session already
+  # holds -- the server's public key and a digest of it -- rather than
+  # performing a step. Matches how the neighbouring Rust KBs classify raw
+  # accessors (ed25519-dalek `to_bytes`, ring `finish`).
   - method: ssh2::Session.host_key
     arity: 0
     return: { type: core::option::Option, confidence: high }
     parameter_types: []
-    role: operation
+    role: output
   - method: ssh2::Session.host_key_hash
     arity: 1
     return: { type: core::option::Option, confidence: high }
     parameter_types: ["ssh2::HashType"]
-    role: operation
+    role: output
   - method: ssh2::KnownHosts.check
     arity: 2
     return: { type: ssh2::CheckResult, confidence: high }

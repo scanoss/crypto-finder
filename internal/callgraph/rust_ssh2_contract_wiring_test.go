@@ -4,8 +4,10 @@
 package callgraph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
@@ -56,8 +58,8 @@ fn inspect_host_key(sess: &Session) {
 		"ssh2.Session.userauth_pubkey_file": {"operation", 4},
 		"ssh2.Session.userauth_agent":       {"operation", 1},
 		"ssh2.Session.userauth_password":    {"operation", 2},
-		"ssh2.Session.host_key":             {"operation", 0},
-		"ssh2.Session.host_key_hash":        {"operation", 1},
+		"ssh2.Session.host_key":             {"output", 0},
+		"ssh2.Session.host_key_hash":        {"output", 1},
 	}
 	seen := map[string]bool{}
 
@@ -130,9 +132,17 @@ func TestSSH2ChannelSurfaceIsAbsentFromTheKB(t *testing.T) {
 // The first version of this test named only seven of the entries and asserted
 // neither parameter_types nor return types. A review showed six entries could be
 // deleted outright and every return type replaced with a bogus one while it
-// still passed -- and that is what let the `handshake` arity defect through. The
-// table below is therefore derived from the KB itself, so an entry cannot be
-// added or removed without this test noticing.
+// still passed -- and that is what let the `handshake` arity defect through.
+//
+// A LITERAL TABLE ONLY CATCHES REMOVALS. A second review pointed out that this
+// comment used to claim the table was "derived from the KB itself, so an entry
+// cannot be added or removed without this test noticing" -- which was false. It
+// is a literal, and an ADDED entry appears in no row, so nothing looked at it:
+// the reviewer added two junk entries mislabelled `role: operation`, including
+// one for ordinary SFTP file I/O, and the suite stayed green. The table is still
+// hand-written, deliberately, because transcribing the declarations from the
+// crate's own source is the point. What is new is the set comparison below,
+// which walks kb.Contracts and fails on any ssh2 key the table does not name.
 func TestSSH2EveryContractEntryIsExercisedAndWellFormed(t *testing.T) {
 	t.Parallel()
 
@@ -154,15 +164,15 @@ func TestSSH2EveryContractEntryIsExercisedAndWellFormed(t *testing.T) {
 		{"ssh2.Session.known_hosts", 0, "factory", 0, "core::result::Result"},
 		{"ssh2.Session.agent", 0, "factory", 0, "core::result::Result"},
 		{"ssh2.Session.handshake", 0, "operation", 0, "core::result::Result"},
-		{"ssh2.Session.handshake", 1, "operation", 1, "core::result::Result"},
+		{"ssh2.Session.handshake", 1, "operation", 0, "core::result::Result"},
 		{"ssh2.Session.userauth_pubkey_file", 4, "operation", 4, "core::result::Result"},
 		{"ssh2.Session.userauth_pubkey_memory", 4, "operation", 4, "core::result::Result"},
 		{"ssh2.Session.userauth_hostbased_file", 6, "operation", 6, "core::result::Result"},
 		{"ssh2.Session.userauth_agent", 1, "operation", 1, "core::result::Result"},
 		{"ssh2.Session.userauth_password", 2, "operation", 2, "core::result::Result"},
 		{"ssh2.Session.userauth_keyboard_interactive", 2, "operation", 2, "core::result::Result"},
-		{"ssh2.Session.host_key", 0, "operation", 0, "core::option::Option"},
-		{"ssh2.Session.host_key_hash", 1, "operation", 1, "core::option::Option"},
+		{"ssh2.Session.host_key", 0, "output", 0, "core::option::Option"},
+		{"ssh2.Session.host_key_hash", 1, "output", 1, "core::option::Option"},
 		{"ssh2.KnownHosts.check", 2, "operation", 2, "ssh2::CheckResult"},
 		{"ssh2.KnownHosts.check_port", 3, "operation", 3, "ssh2::CheckResult"},
 		{"ssh2.Agent.userauth", 2, "operation", 2, "core::result::Result"},
@@ -193,10 +203,36 @@ func TestSSH2EveryContractEntryIsExercisedAndWellFormed(t *testing.T) {
 			t.Errorf("%s/%d return = %q, want %q", w.method, w.arity, c.Return.Type, w.ret)
 		}
 	}
+
+	// THE OTHER DIRECTION: no ssh2 entry may exist that the table does not
+	// name. Without this, adding a contract for ordinary session setup or file
+	// I/O -- neither of which is a crypto operation, and both of which this
+	// family exists to keep out -- passes silently.
+	named := make(map[string]bool, len(want))
+	for _, w := range want {
+		named[fmt.Sprintf("%s#%d", w.method, w.arity)] = true
+	}
+	for key, cs := range kb.Contracts {
+		for _, c := range cs {
+			if c.SourceLibrary != "ssh2" {
+				continue
+			}
+			// kb.Contracts is keyed on the AUTHORED spelling (`ssh2::Session.new#0`),
+			// while the table names the call-site spelling the resolver emits
+			// (`ssh2.Session.new#0`). Compare on the latter: rewriting the last
+			// `::` to a `.` is exactly the normalisation rustAuthoredKey inverts.
+			emitted := strings.Replace(key, "::", ".", 1)
+			if !named[emitted] {
+				t.Errorf("KB holds ssh2 contract %q (emitted %q) that this test does not name; "+
+					"add it to the table with its declared role, parameter count and return, "+
+					"or delete it from the contract", key, emitted)
+			}
+		}
+	}
 }
 
 // `handshake` CHANGED SIGNATURE INSIDE THE DECLARED RANGE, and both spellings
-// must resolve: 0.1.0 takes a raw socket and 0.2.0-0.3.3 take a &TcpStream
+// must resolve: 0.1.0-0.1.7 take a raw socket and 0.1.8-0.3.3 take a &TcpStream
 // (arity 1), while 0.4.0-0.9.5 take nothing (arity 0). The KB declares
 // >=0.1.0, so recording only the modern arity left more than half the range
 // unresolved for the one call this family is named after.
