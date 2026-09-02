@@ -1,0 +1,383 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: microsoft-go-crypto-openssl
+  coordinates:
+    - "github.com/microsoft/go-crypto-openssl"
+  version_range: ">=0.1.0,<1.0.0"
+  description: "Legacy Go OpenSSL v2 cryptographic bindings"
+
+# API inventory source: upstream v2 branch at 9696eb4fdc48b79fdcb0381b341ffbb143d9d942.
+# Capability probes and OpenSSL/FIPS runtime setup are intentionally omitted: they do not
+# construct, configure, or execute a source-visible cryptographic operation.
+contracts:
+  # Symmetric ciphers and MAC/hash factories.
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewAESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewChaCha20Poly1305
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewDESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewTripleDESCipher
+    arity: 1
+    return: {type: crypto/cipher.Block, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewGCMTLS
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: config
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewGCMTLS13
+    arity: 1
+    return: {type: crypto/cipher.AEAD, confidence: high}
+    role: config
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewHMAC
+    arity: 2
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewSHA256
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewSHA512
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewSHA3_256
+    arity: 0
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.Hash, confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewSHAKE128
+    arity: 0
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.SHAKE, confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewCSHAKE128
+    arity: 2
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.SHAKE, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: functionName, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: customization, derivation: argument_value}
+
+  # KDFs and TLS PRF.
+  - method: github.com/microsoft/go-crypto-openssl/openssl.ExtractHKDF
+    arity: 3
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: sharedSecret, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: salt, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.ExpandHKDF
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: info, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.ExpandTLS13KDF
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: label, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: context, derivation: argument_value}
+      - index: 4
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.PBKDF2
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: password, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: salt, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.TLS1PRF
+    arity: 5
+    return: {type: error, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: output, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: sharedSecret, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: label, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: seed, derivation: argument_value}
+      - index: 4
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+
+  # Public key factories and operations.
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPublicKeyRSA
+    arity: 2
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PublicKeyRSA", confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPrivateKeyRSA
+    arity: 8
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyRSA", confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.EncryptRSAOAEP
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_type}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.DecryptRSAOAEP
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.SignRSAPSS
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        role: metadata-contributing
+        contributes: {property: digest, derivation: argument_value}
+      - index: 3
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.VerifyRSAPSS
+    arity: 5
+    return: {type: error, confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPrivateKeyECDSA
+    arity: 4
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyECDSA", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.SignMarshalECDSA
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPrivateKeyEd25519
+    arity: 1
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.SignEd25519
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPrivateKeyECDH
+    arity: 2
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyECDH", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.ECDH
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(*PrivateKeyEd25519).Public
+    arity: 0
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PublicKeyEd25519", confidence: high}
+    role: output
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(*PrivateKeyECDH).PublicKey
+    arity: 0
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PublicKeyECDH", confidence: high}
+    role: output
+
+  # Post-quantum key material and operations.
+  - method: github.com/microsoft/go-crypto-openssl/openssl.GenerateKeyMLKEM768
+    arity: 0
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.DecapsulationKeyMLKEM768, confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewDecapsulationKeyMLKEM768
+    arity: 1
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.DecapsulationKeyMLKEM768, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: seed, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(DecapsulationKeyMLKEM768).Decapsulate
+    arity: 1
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(DecapsulationKeyMLKEM768).EncapsulationKey
+    arity: 0
+    return: {type: github.com/microsoft/go-crypto-openssl/openssl.EncapsulationKeyMLKEM768, confidence: high}
+    role: output
+  - method: github.com/microsoft/go-crypto-openssl/openssl.GenerateKeyMLDSA
+    arity: 1
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyMLDSA", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(*PrivateKeyMLDSA).Sign
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: context, derivation: argument_value}
+  - method: github.com/microsoft/go-crypto-openssl/openssl.(*PrivateKeyMLDSA).PublicKey
+    arity: 0
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PublicKeyMLDSA", confidence: high}
+    role: output
+
+  # DSA and RC4 are stable legacy API identities. They remain modeled without
+  # inferring runtime provider or compliance state.
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPrivateKeyDSA
+    arity: 3
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PrivateKeyDSA", confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewPublicKeyDSA
+    arity: 2
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.PublicKeyDSA", confidence: high}
+    role: factory
+  - method: github.com/microsoft/go-crypto-openssl/openssl.SignDSA
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.VerifyDSA
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.NewRC4Cipher
+    arity: 1
+    return: {type: "*github.com/microsoft/go-crypto-openssl/openssl.RC4Cipher", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+
+  - method: github.com/microsoft/go-crypto-openssl/openssl.EncryptRSAOAEP
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.DecryptRSAOAEP
+    arity: 4
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.EncryptRSAOAEPWithMGF1Hash
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+  - method: github.com/microsoft/go-crypto-openssl/openssl.DecryptRSAOAEPWithMGF1Hash
+    arity: 5
+    return: {type: "[]byte", confidence: high}
+    role: operation
+
+hierarchy: {}
