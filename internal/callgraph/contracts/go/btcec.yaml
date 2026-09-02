@@ -1,0 +1,186 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: btcec
+  coordinates:
+    - "github.com/btcsuite/btcd/btcec/v2"
+  version_range: ">=2.0.0,<3.0.0"
+  description: "btcsuite btcec/v2 Bitcoin secp256k1 facade"
+
+# Inventory source: github.com/btcsuite/btcd/btcec/v2 v2.0.0 and v2.5.0 module
+# sources from the Go module proxy. Layout notes: v2.0.0 ships the ECDSA
+# surface at the package root; the ecdsa and schnorr (BIP-340) subpackages
+# appear at v2.1.0 and ellswift at v2.4.0. Declaring later-added identities
+# across the range is safe (a call that does not exist in an older release
+# cannot appear at a call site compiled against it).
+#
+# Aliasing without duplication: PrivateKey, PublicKey, Signature, FieldVal,
+# ModNScalar, JacobianPoint, and KoblitzCurve are type ALIASES of the Decred
+# secp256k1 module's types, so method calls on them (PubKey, Serialize,
+# Verify, ...) resolve to the Decred identities covered by
+# decred-secp256k1.yaml — only the functions declared in btcec's own
+# namespaces are contracted here. The low-level Jacobian/field arithmetic and
+# schnorr/musig2 stay out per the family scope; IsCompressedPubKey and
+# ToSerialized are format helpers (skipped-non-crypto).
+contracts:
+  - method: github.com/btcsuite/btcd/btcec/v2.NewPrivateKey
+    arity: 0
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/btcsuite/btcd/btcec/v2.PrivKeyFromBytes
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.PrivKeyFromScalar
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.ParsePubKey
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pubKeyStr, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.NewPublicKey
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+  - method: github.com/btcsuite/btcd/btcec/v2.Generator
+    arity: 0
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+  - method: github.com/btcsuite/btcd/btcec/v2.GenerateSharedSecret
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privkey, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: pubkey, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+
+  # v2.0.0 root-layout ECDSA surface.
+  - method: github.com/btcsuite/btcd/btcec/v2.Sign
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.SignCompact
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.RecoverCompact
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/btcsuite/btcd/btcec/v2.ParseSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sigStr, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2.ParseDERSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sigStr, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+
+  # v2.1.0+ ecdsa subpackage.
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.Sign
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.SignCompact
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.RecoverCompact
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.NewSignature
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.ParseSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sigStr, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.ParseDERSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sigStr, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/ecdsa.VerifyLowS
+    arity: 1
+    return: { type: error, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sigStr, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+
+  # v2.1.0+ schnorr subpackage (BIP-340). Sign's SignOption variadic occupies
+  # one slot under the KB varargs convention.
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.Sign
+    arity: 3
+    varargs: true
+    return: { type: "*github.com/btcsuite/btcd/btcec/v2/schnorr.Signature", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privKey, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.NewSignature
+    arity: 2
+    return: { type: "*github.com/btcsuite/btcd/btcec/v2/schnorr.Signature", confidence: high }
+    role: factory
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.ParseSignature
+    arity: 1
+    return: { type: "*github.com/btcsuite/btcd/btcec/v2/schnorr.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sig, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.ParsePubKey
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pubKeyStr, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.SerializePubKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.(*Signature).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 1, name: pubKey, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/btcsuite/btcd/btcec/v2/schnorr.(*Signature).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+  # v2.4.0+ ellswift: uniform-random-looking public key encoding.
+  - method: github.com/btcsuite/btcd/btcec/v2/ellswift.EllswiftCreate
+    arity: 0
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+
+hierarchy: {}
