@@ -1309,6 +1309,30 @@ func traceBackward(
 				// operation is reachable from an entry that does not reach it.
 				continue
 			}
+			// The op node's own frame is the terminal frame of the self-chain
+			// below, and a crypto op the parser attributed to NO containing
+			// function -- a match inside a `#[cfg(test)] mod`, a macro body, a
+			// static initializer -- has nothing to build one from. That chain
+			// would assert a frame with no identity at all: no function key, no
+			// name, no signature.
+			//
+			// Such a frame cannot be expressed in the interned form: identity
+			// lives only in the functions catalog, so the entry holds nothing
+			// to hydrate from, and a consumer that requires hydrated frames
+			// rejects the whole component over one unattributable op.
+			//
+			// SCOPE. This is the empty-key case only. An op whose function key
+			// NAMES a signature the fragment does not declare produces the same
+			// identity-less frame, and is deliberately left alone:
+			// TestComposedRouteFallsBackWithoutADependencyLeg pins that shape
+			// as the documented degradation ("a fragment that named no route
+			// still answers, with the single frame holding the crypto"), so
+			// changing it is a separate decision with its own measurement.
+			if opNode.Function == "" {
+				frame := buildFrame(opNode, inbound{}, fragments, functionsByNode)
+				emitUnattributedFindings(opNode, &frame, opsByNode, supportingByNode, supportingSeen, out)
+				continue
+			}
 			// No backward chain reached an entry (the op node has no callers, or none
 			// of its callers are entries). Mirror live's buildBaseCallChains fallback:
 			// emit a single-node chain so a self-contained crypto call is still
@@ -1318,6 +1342,40 @@ func traceBackward(
 		for _, chain := range chains {
 			emitChain(opNode, chain, opsByNode, supportingByNode, fragments, functionsByNode, supportingSeen, truncated, out)
 		}
+	}
+}
+
+// emitUnattributedFindings records each crypto op on opNode as a finding
+// carrier marked Unattributed. The frame is carried but never exported as a
+// chain (see FindingChain.Unattributed): keeping it is what preserves the
+// finding's purl and its dependency-prefixed finding_id, both of which are
+// derived from the terminal frame's component. Supporting calls on the node are
+// flushed exactly as emitChain would, since they carry their own identity and
+// nothing about them is unexpressible.
+func emitUnattributedFindings(
+	opNode graphNode,
+	frame *CallFrame,
+	opsByNode map[graphNode][]CryptoOperation,
+	supportingByNode map[graphNode][]SupportingCall,
+	supportingSeen map[graphNode]bool,
+	out *Result,
+) {
+	if !supportingSeen[opNode] {
+		supportingSeen[opNode] = true
+		flushSupportingCalls(opNode, frame, supportingByNode, out)
+	}
+	for i := range opsByNode[opNode] {
+		op := opsByNode[opNode][i]
+		opCopy := op
+		out.Chains = append(out.Chains, FindingChain{
+			FindingID:    op.FindingID,
+			RuleID:       op.RuleID,
+			Symbol:       op.Symbol,
+			Frames:       []CallFrame{*frame},
+			Confidence:   ConfidenceHigh,
+			CryptoOp:     &opCopy,
+			Unattributed: true,
+		})
 	}
 }
 

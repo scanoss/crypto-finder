@@ -564,10 +564,14 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			CallChains:        grp.callChains,
 		}
 		anchorByFinding[grp.findingID] = grp.anchorNode
-		if r.forwardClosures != nil {
+		// An unattributed op keeps its frame so its component-derived identity
+		// survives, which also makes its anchor resolvable — but live has no
+		// containing function to walk forward from and emits nothing, so
+		// neither does this.
+		if r.forwardClosures != nil && !grp.unattributed {
 			fg.ForwardCalls = projectForwardClosure(r.forwardClosures[grp.anchorNode], root, meta.Ecosystem)
 		}
-		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated, grp.chainsTruncated)
+		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated, grp.chainsTruncated, grp.unattributed)
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
@@ -614,6 +618,9 @@ type exportChainGroup struct {
 	matchedOp         *ExportMatchedOperation
 	supportingCallIDs []string
 	callChains        [][]ExportChainNode
+	// unattributed marks a finding whose op has no declared containing
+	// function: served with empty call_chains and reachability=not_applicable.
+	unattributed bool
 	// anchorNode is the finding's terminal (crypto op) node — the key into
 	// Result.forwardClosures. Captured from the first chain's terminal frame;
 	// all chains of one finding share the same terminal op node.
@@ -668,6 +675,12 @@ func ingestExportFindingChain(
 		grp.supportingCallIDs = chainSupportingCallIDs(fc)
 	}
 	mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
+	if fc.Unattributed {
+		// The frame exists only to carry component-derived identity; exporting
+		// it as a chain would publish a node with no identity.
+		grp.unattributed = true
+		return groupOrder
+	}
 	if fc.PathCountTruncated {
 		grp.pathCountTruncated = true
 		return groupOrder
@@ -684,7 +697,20 @@ func ingestExportFindingChain(
 // stampStitchedFindingGraph sets reachability and analysis for one finding
 // graph. A path-count ceiling skip (#292) is treated like other caps: unknown
 // reachability and partial call_chains, with empty served chains.
-func stampStitchedFindingGraph(fg *ExportFindingGraph, r *Result, pathCountTruncated, chainsTruncated bool) {
+func stampStitchedFindingGraph(fg *ExportFindingGraph, r *Result, pathCountTruncated, chainsTruncated, unattributed bool) {
+	if unattributed && len(fg.CallChains) == 0 {
+		// The question does not apply: there is no containing function to
+		// reach. This is the state live stamps for the same operation, and
+		// live leaves analysis unset with it.
+		//
+		// The chain-count guard matters when an attributed and an unattributed
+		// op collapse into ONE group — same finding_id and occurrence key,
+		// different function keys. Stamping the group from the flag alone put
+		// `not_applicable` on a finding that had a real, fully identified
+		// chain, and dropped its analysis block with it.
+		fg.Reachability = ReachabilityNotApplicable
+		return
+	}
 	fg.Reachability = stitchedReachability(fg.CallChains, len(r.Suppressed) > 0 || pathCountTruncated)
 	fg.Analysis = stitchedFindingAnalysis(fg)
 	if !pathCountTruncated && !chainsTruncated {
