@@ -74,9 +74,12 @@ import (
 //
 //  1. the rule ID names a crate (rust.<crate>....);
 //  2. the match resolves to a call node;
-//  3. that node's callee resolved to a method the SCANNED SOURCE ITSELF
-//     DECLARES — a free function, an unresolved receiver, or a method that
-//     lives in a dependency is kept;
+//  3. that node's callee resolved to a function the SCANNED SOURCE ITSELF
+//     DECLARES — an unresolved receiver, or a method that lives in a
+//     dependency, is kept. A free function counts: `framing::write_message(..)`
+//     declared in the consumer's own module is the same defect as
+//     `own.sign(..)`, because the rule layer cannot tell the two call shapes
+//     apart (see freeFunctionOwnerFQN);
 //  4. the declaring crate differs from the crate the rule names.
 //
 // Condition 3 asks about the METHOD, not its owning type. A crate may write
@@ -142,6 +145,162 @@ func FilterForeignReceiverAssets(
 func graphDeclaresMethod(graph *callgraph.CallGraph, callee callgraph.FunctionID) bool {
 	decl, ok := graph.Functions[callee.String()]
 	return ok && decl != nil
+}
+
+// candidateOwnerFQN renders the <crate>.<owner> a call is judged by, and reports
+// whether it may be judged at all. A method's owner is its type; a free
+// function's is the module it is declared in.
+//
+// It refuses to judge one shape: a free function whose call carries a
+// path-qualified ARGUMENT. A rule can take the crate's identity from an
+// argument rather than from a receiver — aws-lc-rs names its algorithms
+// `hmac::HMAC_SHA256` and `signature::RSA_PSS_SHA384`, and its rules match
+// wherever one is passed. jwts 0.5.1 and jsonwebtoken-aws-lc 9.3.0 pass those
+// constants into their own `sign_hmac`/`sign_rsa`/`verify_asymmetric` helpers,
+// so the call resolves to a free function the source declares while the
+// algorithm evidence is genuine and belongs to the crate. Measured: judging
+// those calls dropped 13 TRUE positives across the two consumers.
+func candidateOwnerFQN(candidate *callgraph.FunctionCall) (owner string, judgeable bool) {
+	if owner = declaringTypeFQN(candidate.Callee); owner != "" {
+		return owner, true
+	}
+	if callArgumentCarriesAPath(candidate.Arguments) {
+		return "", false
+	}
+	return freeFunctionOwnerFQN(candidate.Callee), true
+}
+
+// callArgumentCarriesAPath reports whether any argument of this call is a
+// path-qualified expression that could name another crate. It is how a rule
+// that identifies its crate through an algorithm CONSTANT rather than a
+// receiver is recognized, so such a match is never judged as the consumer's own
+// call.
+//
+// Deliberately syntactic: the graph carries the raw argument expressions but
+// not the file's imports, so the root segment cannot be resolved back to a
+// crate here, and this filter's standing rule is to keep the asset whenever a
+// step is unresolved. Being syntactic, it has to exclude the `::` occurrences
+// that carry no crate identity at all — measured, each of these re-opened the
+// false positive the free-function judgement exists to close:
+//
+//	framing::write_message(payload, Codec::default())   // the consumer's own type
+//	framing::write_message(crate::PAYLOAD)              // crate:: / self:: / super::
+//	framing::write_message(s.parse::<usize>().unwrap()) // a turbofish is not a path
+//	framing::write_message("a::b")                      // a string is not code
+//
+// A `crate`, `self`, `super` or `Self` root cannot name a dependency by
+// definition. An uppercase-initial root is a TYPE, and a type the scanned
+// source declares is exactly what the caller is being judged for; a type from
+// the claimed crate would have to be imported, and then the receiver-side
+// checks above already keep the asset.
+func callArgumentCarriesAPath(arguments []string) bool {
+	for _, argument := range arguments {
+		if argumentNamesAnotherCrate(argument) {
+			return true
+		}
+	}
+	return false
+}
+
+// argumentNamesAnotherCrate reports whether one argument expression contains a
+// module path whose root could belong to another crate.
+func argumentNamesAnotherCrate(argument string) bool {
+	for _, root := range pathRoots(stripStringLiterals(argument)) {
+		switch root {
+		case "crate", "self", "super", "Self":
+			continue
+		}
+		// A lowercase root is a module or crate name; an uppercase one is a type.
+		if r := rune(root[0]); r >= 'a' && r <= 'z' {
+			return true
+		}
+	}
+	return false
+}
+
+// pathRoots returns the identifier immediately left of each `::` separator,
+// skipping the turbofish form `::<` which is a generic argument list rather than
+// a path segment.
+func pathRoots(expression string) []string {
+	var roots []string
+	for i := 0; i+1 < len(expression); i++ {
+		if expression[i] != ':' || expression[i+1] != ':' {
+			continue
+		}
+		if i+2 < len(expression) && expression[i+2] == '<' {
+			continue // turbofish: `parse::<usize>()`
+		}
+		start := i
+		for start > 0 && isIdentifierByte(expression[start-1]) {
+			start--
+		}
+		if start < i {
+			roots = append(roots, expression[start:i])
+		}
+	}
+	return roots
+}
+
+func isIdentifierByte(b byte) bool {
+	return b == '_' ||
+		(b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
+}
+
+// stripStringLiterals blanks out the contents of double-quoted literals so a
+// path spelled inside a string is not read as code. Escapes are honored; a
+// character literal cannot hold a `::`, so it is left alone.
+func stripStringLiterals(expression string) string {
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(expression); i++ {
+		c := expression[i]
+		switch {
+		case inString && c == '\\' && i+1 < len(expression):
+			i++
+		case c == '"':
+			inString = !inString
+			b.WriteByte(c)
+		case inString:
+			b.WriteByte(' ')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// freeFunctionOwnerFQN renders the MODULE a free function is declared in, as
+// <crate>.<module tail>, so a call with no owning type is judged by the same
+// crate comparison a method gets: "app::handshake" -> "app.handshake".
+//
+// This exists because opengrep's Rust engine cannot tell a method call from a
+// module-path call: `$X.write_message(...)` and `$A::write_message(...)` both
+// match `t.write_message(..)`, `framing::write_message(..)` AND
+// `Codec::write_message(c, ..)` — measured on 1.12.1 and 1.28.0. So a rule
+// guarded on the file's imports also claims the consumer's OWN module-level
+// functions, and no receiver constraint written at the rule layer can separate
+// them; `pattern-not: $A::$B(...)` removes the genuine matches too.
+//
+// The parser does separate them: it resolves `framing::write_message(..)` to
+// app::framing.write_message and declares that function in the graph, while a
+// genuine `hs.write_message(..)` whose receiver it cannot type resolves to
+// app.write_message, which the graph does NOT declare. Condition 3 below is
+// what makes the difference load-bearing: only a function the scanned source
+// actually declares is dropped.
+//
+// A bare crate path with no module segment ("app") gets the trailing separator
+// so crateOfTypeFQN reads the same crate out of both shapes.
+func freeFunctionOwnerFQN(id callgraph.FunctionID) string {
+	if id.Type != "" || id.Package == "" {
+		return ""
+	}
+	owner := strings.ReplaceAll(id.Package, "::", ".")
+	if !strings.Contains(owner, ".") {
+		owner += "."
+	}
+	return owner
 }
 
 // declaringTypeFQN renders the owning type of a FunctionID as <package>.<Type>,
@@ -220,10 +379,12 @@ func foreignSourceReceiver(
 	for _, candidate := range candidates {
 		// The owning type of the RESOLVED callee, e.g. leakprobe.ConsumerOwnType
 		// for `own.sign(..)` and ed25519_dalek.SigningKey for
-		// `self.inner.sign(..)`. Empty for a free function; without a package
-		// segment the parser could not say which crate declares the type, so
-		// neither can this filter.
-		owner := declaringTypeFQN(candidate.Callee)
+		// `self.inner.sign(..)`. A free function has no owning type, and its
+		// crate comes from the module it is declared in instead.
+		owner, judgeable := candidateOwnerFQN(candidate)
+		if !judgeable {
+			return "", false
+		}
 		if owner == "" || !strings.Contains(owner, ".") {
 			continue
 		}

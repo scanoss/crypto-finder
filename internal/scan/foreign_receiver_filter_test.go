@@ -426,3 +426,189 @@ pub fn spki_der(cert: &CapturedX509Certificate) -> Vec<u8> {
 		t.Fatalf("dropped = %d, want 0 (to_public_key_der is not declared here)", got)
 	}
 }
+
+// opengrep's Rust engine does not distinguish a method call from a path call:
+// `$X.write_message(...)` matches `t.write_message(..)`,
+// `framing::write_message(..)` AND `Codec::write_message(c, ..)` — measured on
+// 1.12.1 and 1.28.0. So an import-guarded rule also claims the consumer's OWN
+// module-level functions, and no receiver constraint at the rule layer can
+// separate them: the difference is in the call syntax, not in what the
+// metavariable binds, and `pattern-not: $A::$B(...)` removes the genuine
+// matches too.
+const moduleFreeFunctionSrc = `use snow::Builder;
+
+mod framing {
+    pub fn write_message(_p: &[u8]) {}
+}
+
+fn consumer_code(payload: &[u8], out: &mut [u8]) {
+    framing::write_message(payload);
+    let params = "Noise_XX_25519_AESGCM_SHA256".parse().unwrap();
+    let mut hs = Builder::new(params).build_initiator().unwrap();
+    let _ = hs.write_message(payload, out);
+}
+`
+
+const snowTransportRule = "rust.snow.protocol.noise-patterns.transport-message-write"
+
+func TestForeignReceiverFilter_DropsTheConsumersOwnModuleFunction(t *testing.T) {
+	t.Parallel()
+	graph := buildRustGraphForFilter(t, "app", moduleFreeFunctionSrc)
+	line, sc, ec := lineOf(t, moduleFreeFunctionSrc, "framing::write_message(payload)")
+	report := reportAt(snowTransportRule, line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+		t.Fatalf("dropped = %d, want 1 — the consumer's own module function is claimed by snow's rule", got)
+	}
+	if got := assetCount(report); got != 0 {
+		t.Fatalf("assets left = %d, want 0", got)
+	}
+}
+
+// The cost side of the same extension. A genuine crate call whose receiver the
+// parser could not type resolves to a free function of the SCANNED package that
+// the graph does not declare — `app.write_message` here — and must be kept.
+func TestForeignReceiverFilter_KeepsAnUndeclaredFreeFunctionCall(t *testing.T) {
+	t.Parallel()
+	graph := buildRustGraphForFilter(t, "app", moduleFreeFunctionSrc)
+	line, sc, ec := lineOf(t, moduleFreeFunctionSrc, "hs.write_message(payload, out)")
+	report := reportAt(snowTransportRule, line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+		t.Fatalf("dropped = %d, want 0 — an unresolved receiver is not the consumer's own declaration", got)
+	}
+	if got := assetCount(report); got != 1 {
+		t.Fatalf("assets left = %d, want 1", got)
+	}
+}
+
+// Scanning the library itself: snow's own module-level function is declared
+// under the crate the rule names, so condition 4 fails and the asset stays.
+func TestForeignReceiverFilter_KeepsTheLibrarysOwnModuleFunction(t *testing.T) {
+	t.Parallel()
+	const src = `use crate::params::NoiseParams;
+
+pub mod framing {
+    pub fn write_message(_p: &[u8]) {}
+}
+
+pub fn run(payload: &[u8]) {
+    framing::write_message(payload);
+}
+`
+	graph := buildRustGraphForFilter(t, "snow", src)
+	line, sc, ec := lineOf(t, src, "framing::write_message(payload)")
+	report := reportAt(snowTransportRule, line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+		t.Fatalf("dropped = %d, want 0 — the declaring crate IS the crate the rule names", got)
+	}
+}
+
+func TestForeignReceiverFilter_FreeFunctionOwnerFQN(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		id   callgraph.FunctionID
+		want string
+	}{
+		{callgraph.FunctionID{Package: "app::handshake", Name: "psk"}, "app.handshake"},
+		{callgraph.FunctionID{Package: "app", Name: "psk"}, "app."},
+		{callgraph.FunctionID{Package: "app::a::b", Name: "psk"}, "app.a.b"},
+		// A method has an owning type; declaringTypeFQN answers for it.
+		{callgraph.FunctionID{Package: "app", Type: "Own", Name: "psk"}, ""},
+		// Nothing to say without a package.
+		{callgraph.FunctionID{Name: "psk"}, ""},
+	} {
+		if got := freeFunctionOwnerFQN(tc.id); got != tc.want {
+			t.Errorf("freeFunctionOwnerFQN(%+v) = %q, want %q", tc.id, got, tc.want)
+		}
+		if tc.want != "" && crateOfTypeFQN(tc.want) != strings.Split(tc.id.Package, "::")[0] {
+			t.Errorf("crateOfTypeFQN(%q) did not recover the crate of %q", tc.want, tc.id.Package)
+		}
+	}
+}
+
+// A rule can identify its crate through an algorithm CONSTANT passed as an
+// argument rather than through a receiver. aws-lc-rs names its algorithms
+// `hmac::HMAC_SHA256` and `signature::RSA_PSS_SHA384`, and published consumers
+// pass them into their own helpers: jwts 0.5.1 writes
+// `sign_hmac(data, key, hmac::HMAC_SHA512)`. The call resolves to a free
+// function the source declares, but the algorithm evidence is the crate's and
+// the finding is real — judging these dropped 13 true positives across two
+// published consumers.
+func TestForeignReceiverFilter_KeepsCrateEvidencePassedAsAnArgument(t *testing.T) {
+	t.Parallel()
+	const src = `use aws_lc_rs::hmac;
+
+fn sign_hmac(_a: hmac::Algorithm, _k: &[u8], _m: &[u8]) -> Vec<u8> { vec![] }
+
+fn consumer_code(key: &[u8], message: &[u8]) {
+    let _ = sign_hmac(hmac::HMAC_SHA256, key, message);
+}
+`
+	graph := buildRustGraphForFilter(t, "app", src)
+	line, sc, ec := lineOf(t, src, "sign_hmac(hmac::HMAC_SHA256, key, message)")
+	report := reportAt("rust.aws-lc-rs.algorithm.mac.hmac", line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+		t.Fatalf("dropped = %d, want 0 — the algorithm constant is the crate's own evidence", got)
+	}
+}
+
+// The escape hatch has to recognize a path that could name another crate and
+// nothing else. Each shape below carries a `::` that names no crate, and each
+// one re-opened the false positive when the test was a bare
+// strings.Contains(argument, "::").
+func TestForeignReceiverFilter_ArgumentPathsThatNameNoCrate(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		call string
+		want bool // may the argument name another crate?
+	}{
+		{"a dependency's constant", `framing::write_message(hmac::HMAC_SHA256)`, true},
+		{"the consumer's own type", `framing::write_message(payload, Codec::default())`, false},
+		{"a crate-rooted path", `framing::write_message(crate::PAYLOAD)`, false},
+		{"a self-rooted path", `framing::write_message(self::PAYLOAD)`, false},
+		{"a super-rooted path", `framing::write_message(super::PAYLOAD)`, false},
+		{"a Self-rooted path", `framing::write_message(Self::PAYLOAD)`, false},
+		{"a turbofish", `framing::write_message(s.parse::<usize>().unwrap())`, false},
+		{"a path inside a string", `framing::write_message("a::b")`, false},
+		{"a module path in a nested call", `framing::write_message(signature::RSA_PSS_SHA384.into())`, true},
+		{"no path at all", `framing::write_message(payload)`, false},
+	} {
+		// The argument list as the parser hands it over: everything between the
+		// outermost parentheses, split on the top-level commas.
+		args := splitTopLevelArgs(tc.call[strings.Index(tc.call, "(")+1 : len(tc.call)-1])
+		if got := callArgumentCarriesAPath(args); got != tc.want {
+			t.Errorf("%s: callArgumentCarriesAPath(%q) = %v, want %v", tc.name, args, got, tc.want)
+		}
+	}
+}
+
+// splitTopLevelArgs splits an argument list on commas outside brackets and
+// strings, so the table above can be written as source rather than as slices.
+func splitTopLevelArgs(list string) []string {
+	var args []string
+	depth, start, inString := 0, 0, false
+	for i := 0; i < len(list); i++ {
+		switch c := list[i]; {
+		case inString && c == '\\' && i+1 < len(list):
+			i++
+		case c == '"':
+			inString = !inString
+		case inString:
+		case c == '(' || c == '[' || c == '<':
+			depth++
+		case c == ')' || c == ']' || c == '>':
+			depth--
+		case c == ',' && depth == 0:
+			args = append(args, strings.TrimSpace(list[start:i]))
+			start = i + 1
+		}
+	}
+	if rest := strings.TrimSpace(list[start:]); rest != "" {
+		args = append(args, rest)
+	}
+	return args
+}

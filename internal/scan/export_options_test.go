@@ -88,9 +88,6 @@ func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {
 func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 	t.Parallel()
 
-	graph, projectRoot := buildSupportingGraph(t)
-	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
-
 	for _, tc := range []struct {
 		name          string
 		interned      bool
@@ -111,6 +108,12 @@ func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			// Per subtest, not shared: ExportCallGraphWithOptions assigns
+			// occurrence keys INTO the report, so one fixture across parallel
+			// subtests is two goroutines writing the same asset.
+			graph, projectRoot := buildSupportingGraph(t)
+			report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
 			outputPath := filepath.Join(t.TempDir(), "callgraph.json")
 			if err := ExportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{

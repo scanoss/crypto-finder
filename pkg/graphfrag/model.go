@@ -678,6 +678,18 @@ type FindingChain struct {
 	// (issue #334). The emitted frames are genuine; analysis.call_chains is
 	// still partial because more condensed routes exist.
 	ChainsTruncated bool
+
+	// Unattributed is set when the crypto operation has no containing function
+	// the fragment declares, so the only frame that could be built carries no
+	// identity: no function key, no name, no signature. The chain then carries
+	// the op node purely as a finding carrier -- ToCallgraphExport emits empty
+	// call_chains and reachability=not_applicable, matching what a live scan
+	// emits for the same operation. The frame is still present so the finding's
+	// component-derived identity (its purl and its dependency-prefixed
+	// finding_id) survives; it is never exported as a chain, because an
+	// identity-less frame cannot be expressed in the interned form -- its
+	// catalog entry would hold nothing to hydrate from.
+	Unattributed bool
 }
 
 // SuppressedEdge is one call edge (or grouped call site) the stitcher declined
