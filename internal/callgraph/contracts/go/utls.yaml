@@ -1,0 +1,75 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: utls
+  coordinates:
+    - "github.com/refraction-networking/utls"
+  version_range: ">=0.9.0,<2.0.0"
+  description: "uTLS crypto/tls fork with ClientHello fingerprinting"
+
+# Inventory source: github.com/refraction-networking/utls v1.8.2 module source
+# from the Go module proxy. The fork keeps package name tls; contracts pin the
+# fork import path so the stdlib and the fork never share an FQN. The
+# ClientHelloID names a parroted fingerprint profile, never the negotiated
+# runtime suite (family audit). The forked stdlib surface (Conn read/write,
+# config plumbing, session cache) mirrors crypto/tls semantics and stays
+# uncontracted at this boundary; the dicttls constant tables and extension
+# structs are data (skipped-non-crypto).
+contracts:
+  - method: github.com/refraction-networking/utls.UClient
+    arity: 3
+    return: { type: "*github.com/refraction-networking/utls.UConn", confidence: high }
+    role: factory
+    parameters:
+      - { index: 2, name: clientHelloID, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/refraction-networking/utls.Client
+    arity: 2
+    return: { type: "*github.com/refraction-networking/utls.Conn", confidence: high }
+    role: factory
+  - method: github.com/refraction-networking/utls.Server
+    arity: 2
+    return: { type: "*github.com/refraction-networking/utls.Conn", confidence: high }
+    role: factory
+  - method: github.com/refraction-networking/utls.Dial
+    arity: 3
+    return: { type: "*github.com/refraction-networking/utls.Conn", confidence: high }
+    role: factory
+  - method: github.com/refraction-networking/utls.DialWithDialer
+    arity: 4
+    return: { type: "*github.com/refraction-networking/utls.Conn", confidence: high }
+    role: factory
+  - method: github.com/refraction-networking/utls.(*UConn).Handshake
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/refraction-networking/utls.(*UConn).HandshakeContext
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/refraction-networking/utls.(*UConn).BuildHandshakeState
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+  - method: github.com/refraction-networking/utls.(*UConn).BuildHandshakeStateWithoutSession
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: config
+  - method: github.com/refraction-networking/utls.(*UConn).ApplyPreset
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: p, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/refraction-networking/utls.LoadX509KeyPair
+    arity: 2
+    return: { type: "github.com/refraction-networking/utls.Certificate", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: certFile, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/refraction-networking/utls.X509KeyPair
+    arity: 2
+    return: { type: "github.com/refraction-networking/utls.Certificate", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: certPEMBlock, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+hierarchy: {}
