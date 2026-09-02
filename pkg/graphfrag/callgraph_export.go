@@ -1222,10 +1222,31 @@ func buildExportChain(fc *FindingChain, root ComponentKey, ecosystem string) ([]
 		node := buildExportNode(frame, root, ecosystem)
 		if i == len(fc.Frames)-1 && fc.CryptoOp != nil {
 			resolvedFindingID = applyTerminalCryptoOp(&node, frame, fc.CryptoOp, root)
+			synthesizePackageLevelIdentity(&node, fc.CryptoOp)
 		}
 		nodes = append(nodes, node)
 	}
 	return nodes, resolvedFindingID
+}
+
+// synthesizePackageLevelIdentity stamps identity on a terminal frame whose op
+// anchors at package scope (a finding inside a var/const initializer): the op
+// is keyed to an empty signature, so both the frame Function and Signature are
+// empty. The render path rejects identity-less frames, so the op location
+// becomes the identity.
+func synthesizePackageLevelIdentity(node *ExportChainNode, op *CryptoOperation) {
+	if node.FunctionName != "" || node.CanonicalSignature != "" {
+		return
+	}
+	synth := "<package-level:" + op.FilePath + ":" + strconv.Itoa(op.StartLine) + ">"
+	node.FunctionName = synth
+	node.FunctionKey = synth
+	if node.FilePath == "" {
+		node.FilePath = op.FilePath
+	}
+	if node.StartLine == 0 {
+		node.StartLine = op.StartLine
+	}
 }
 
 func applyTerminalCryptoOp(node *ExportChainNode, frame *CallFrame, op *CryptoOperation, root ComponentKey) string {
@@ -1294,6 +1315,14 @@ func buildExportNode(frame *CallFrame, root ComponentKey, ecosystem string) Expo
 		EntryCall:          exportEntryCall(frame.EntryCall, fn),
 		EntryResolution:    string(frame.EntryResolution),
 		EntryDeclaredType:  frame.EntryDeclaredType,
+	}
+	// A package-level anchor (a finding inside a var/const initializer) has no
+	// resolved Function in the fragment catalog, but the frame still carries
+	// its signature. Fall back to it so no served frame ships without identity
+	// (the render path rejects identity-less frames).
+	if node.FunctionName == "" && node.CanonicalSignature == "" && frame.Signature != "" {
+		node.FunctionKey = frame.Signature
+		node.FunctionName = frame.Signature
 	}
 	// Stamp dependency_info on non-root frames (ADR-4). The module string comes
 	// from the CallFrame.Module (Fragment.Module, set at stitch time), falling
