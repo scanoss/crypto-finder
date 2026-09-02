@@ -1,0 +1,147 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: herumi-bls-eth
+  coordinates:
+    - "github.com/herumi/bls-eth-go-binary"
+  version_range: ">=1.28.1,<2.0.0"
+  description: "herumi bls-eth-go-binary BLS12-381 facade"
+
+# Inventory source: github.com/herumi/bls-eth-go-binary v1.28.1 and v1.37.0
+# module sources from the Go module proxy (the exported bls facade is
+# identical across the committed range). The implementation is a bundled
+# native binary behind cgo; only the Go facade boundary is contracted, per the
+# committed family audit ("do not claim inspection of native implementation
+# code from a Go-only scan").
+#
+# Dispositions: the ID/Fr/G1/G2/GT low-level field and group types, the
+# hex/dec string getters/setters, IsEqual/IsZero/IsValidOrder checks, and the
+# master-key sharing helpers (GetMasterSecretKey, Recover, Set over ID vectors)
+# are structural or secret-sharing plumbing left to the rule layer's
+# operations; serialization is contracted as output on the three main types.
+contracts:
+  - method: github.com/herumi/bls-eth-go-binary/bls.Init
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: curve, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).SetByCSPRNG
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: factory
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).GetPublicKey
+    arity: 0
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.PublicKey", confidence: high }
+    role: output
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).Sign
+    arity: 1
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.Sign", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: m, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).SignByte
+    arity: 1
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.Sign", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: msg, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).SignHash
+    arity: 1
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.Sign", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).GetPop
+    arity: 0
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.Sign", confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pub, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).VerifyByte
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pub, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).VerifyHash
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pub, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).VerifyPop
+    arity: 1
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pub, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).Aggregate
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).AggregateVerify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).AggregateVerifyNoCheck
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).FastAggregateVerify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.MultiVerify
+    arity: 3
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/herumi/bls-eth-go-binary/bls.DHKeyExchange
+    arity: 2
+    return: { type: "github.com/herumi/bls-eth-go-binary/bls.PublicKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sec, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: pub, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.HashAndMapToSignature
+    arity: 1
+    return: { type: "*github.com/herumi/bls-eth-go-binary/bls.Sign", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: buf, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*PublicKey).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*SecretKey).Deserialize
+    arity: 1
+    return: { type: error, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: buf, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*PublicKey).Deserialize
+    arity: 1
+    return: { type: error, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: buf, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/herumi/bls-eth-go-binary/bls.(*Sign).Deserialize
+    arity: 1
+    return: { type: error, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: buf, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+
+hierarchy: {}
