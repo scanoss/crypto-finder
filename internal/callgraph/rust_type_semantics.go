@@ -1601,7 +1601,7 @@ func (c *rustTypeCtx) rustCallType(node *sitter.Node, depth int) string {
 	case goNodeIdentifier:
 		return c.rustPlainCallType(node, fn, depth)
 	case rustNodeFieldExpression:
-		return c.rustMethodCallType(fn, depth)
+		return c.rustMethodCallType(node, fn, depth)
 	}
 	return ""
 }
@@ -1686,7 +1686,7 @@ func (c *rustTypeCtx) rustPlainCallType(node, fn *sitter.Node, depth int) string
 }
 
 // rustMethodCallType types the value a method call produces.
-func (c *rustTypeCtx) rustMethodCallType(fn *sitter.Node, depth int) string {
+func (c *rustTypeCtx) rustMethodCallType(node, fn *sitter.Node, depth int) string {
 	method := nodeFieldText(fn, "field", c.src)
 	receiver := fn.ChildByFieldName("value")
 	switch {
@@ -1730,11 +1730,100 @@ func (c *rustTypeCtx) rustMethodCallType(fn *sitter.Node, depth int) string {
 		if ret, ok := c.lookupReturnIn(rustTypePathText(recv), rustTypeHead(recv)+"::"+method); ok {
 			return ret
 		}
+		// The crate's own facts only describe what the SCANNED source declares.
+		// A method on a THIRD-PARTY type has no such declaration, so a chain
+		// through one used to type as nothing and the next link in the chain
+		// came out owned by the scanned crate. The contracts KB is the
+		// declaration for those, and it is already loaded here.
+		if ret, ok := c.contractReturnType(recv, method, rustCallArity(node)); ok {
+			return ret
+		}
 	}
 	if ret, ok := c.lookupReturn(method); ok {
 		return ret
 	}
 	return ""
+}
+
+// contractReturnType resolves a method call on a THIRD-PARTY receiver through
+// the contracts KB, which is the only declaration of that method available when
+// only the consumer's source is scanned.
+//
+// WHY THIS EXISTS. Builder APIs return `&mut Self` so that calls chain, and
+// chaining is how their own documentation shows them. Measured on
+// security-framework 3.7.0's SecTransform builder:
+//
+//	b.padding(Padding::pkcs7());          // separate statements: both resolved
+//	b.mode(Mode::cbc());
+//
+//	b.padding(Padding::pkcs7()).mode(Mode::cbc());   // chained: `mode` did not
+//
+// The chained `mode` came out as `<scanned crate>.mode` -- the consumer's own
+// package named as the owner of a third-party call, which is a WRONG identity
+// rather than a missing one: it looks resolved and matches no contract.
+//
+// Only an UNCONDITIONAL contract is used. A `when`-guarded one depends on
+// argument values this layer has not evaluated, and picking a branch here would
+// be a guess. `canonical_return_type` is preferred where a contract declares it,
+// because that is the concrete type behind a `Result`/`Option` wrapper.
+func (c *rustTypeCtx) contractReturnType(receiverType, method string, arity int) (string, bool) {
+	if c.parser == nil || c.parser.kb == nil || method == "" {
+		return "", false
+	}
+	pkg, typ := rustQualifyType(c.analysis, c.facts, receiverType)
+	if pkg == "" || typ == "" {
+		return "", false
+	}
+	matches := c.parser.kb.ContractsForTolerant(pkg+"::"+typ+"."+method, arity)
+	for i := range matches {
+		contract := &matches[i]
+		if contract.When != nil {
+			continue
+		}
+		// `return.type` is the RESOLUTION type in this KB and
+		// `canonical_return_type` is the full declared one: cbc.yaml declares
+		// `canonical_return_type: Result<&[u8], PadError>` beside
+		// `return: {type: "&[u8]"}`. Preferring canonical handed `Result` back
+		// as the next receiver and produced `core::result.(Result).is_ok`
+		// edges — a type that is nobody's dependency — on contracts written
+		// long before this change. Canonical is the fallback, not the choice.
+		if contract.Return.Type != "" {
+			return contract.Return.Type, true
+		}
+		if contract.CanonicalReturnType != "" {
+			return contract.CanonicalReturnType, true
+		}
+	}
+	return "", false
+}
+
+// rustCallArity counts a call's arguments, or -1 when the call node is not
+// available, which ContractsFor reads as "any arity".
+//
+// COMMENTS ARE NAMED CHILDREN of the arguments node in tree-sitter-rust, so
+// counting them inflates the arity — and the Rust path of ContractsForTolerant
+// matches an exact arity or nothing, so an inflated count means NO contract and
+// the chain falls back to the wrong-identity output this file exists to remove.
+// `b.padding(/* pkcs7 */ Padding::pkcs7()).mode(..)` regressed to
+// `<scanned crate>.mode` while the comment-free line resolved. rustFirstArgument
+// below already skips the same three node types.
+func rustCallArity(node *sitter.Node) int {
+	if node == nil {
+		return -1
+	}
+	args := node.ChildByFieldName("arguments")
+	if args == nil {
+		return -1
+	}
+	n := 0
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		switch args.NamedChild(i).Type() {
+		case javaNodeLineComment, javaNodeBlockComment, rustNodeDocComment:
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 // rustWrappedArgumentType types a wrapping constructor's result, keeping the
