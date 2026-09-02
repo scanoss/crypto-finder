@@ -1,0 +1,83 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: gnark
+  coordinates:
+    - "github.com/consensys/gnark"
+  version_range: ">=0.5.0,<1.0.0"
+  description: "ConsenSys gnark zk-SNARK proof systems (Groth16, PLONK)"
+
+# Inventory source: github.com/consensys/gnark v0.10.0 module source from the
+# Go module proxy. The declared range starts at v0.5.0: earlier alphas expose
+# the proof systems at different paths and are not importable through the
+# backend/groth16 and backend/plonk identities below. Frontend circuit
+# compilation and witness plumbing carry no algorithm choice
+# (skipped-non-crypto); DummySetup is a test-only API and is deliberately
+# uncontracted (audit: never report test setup as production);
+# serialization ReadFrom/WriteTo methods are container plumbing
+# (skipped-non-crypto); the std/ gadget library is circuit content, not a
+# crypto call boundary (needs-follow-up as its own child if ever required).
+contracts:
+  - method: github.com/consensys/gnark/backend/groth16.Setup
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/groth16.ProvingKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark/backend/groth16.Prove
+    arity: 4
+    varargs: true
+    return: { type: "github.com/consensys/gnark/backend/groth16.Proof", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark/backend/groth16.Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: vk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark/backend/groth16.NewProvingKey
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/groth16.ProvingKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: curveID, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/consensys/gnark/backend/groth16.NewVerifyingKey
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/groth16.VerifyingKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: curveID, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/consensys/gnark/backend/groth16.NewProof
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/groth16.Proof", confidence: high }
+    role: factory
+  - method: github.com/consensys/gnark/backend/plonk.Setup
+    arity: 2
+    return: { type: "github.com/consensys/gnark/backend/plonk.ProvingKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: kzgSrs, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark/backend/plonk.Prove
+    arity: 4
+    varargs: true
+    return: { type: "github.com/consensys/gnark/backend/plonk.Proof", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark/backend/plonk.Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: vk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark/backend/plonk.NewProvingKey
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/plonk.ProvingKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: curveID, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/consensys/gnark/backend/plonk.NewProof
+    arity: 1
+    return: { type: "github.com/consensys/gnark/backend/plonk.Proof", confidence: high }
+    role: factory
+hierarchy: {}
