@@ -1,0 +1,83 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: aws-kms
+  coordinates:
+    - "github.com/aws/aws-sdk-go/service/kms"
+  version_range: ">=1.0.0,<2.0.0"
+  description: "aws-sdk-go v1 KMS service"
+
+# Inventory source: the newest committed CSV tag of github.com/aws/aws-sdk-go/service/kms from the Go module
+# proxy. Every operation runs remotely inside AWS KMS; the algorithm and
+# key-spec live in the request input structs and are exposed as capture-side
+# state, never inferred (family audit: no HSM/provider/certification claims).
+# v1 aws-sdk-go is a 322 MB monorepo module - only the service/kms client is
+# contracted here; other services stay out of scope. Pagers, waiters, request
+# builders, and the generated model/types are structural (skipped-non-crypto).
+contracts:
+  - method: github.com/aws/aws-sdk-go/service/kms.New
+    arity: 2
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.KMS", confidence: high }
+    role: factory
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).Encrypt
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.EncryptOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).ReEncrypt
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.ReEncryptOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).Decrypt
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.DecryptOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).Sign
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.SignOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).Verify
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.VerifyOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).GenerateMac
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.GenerateMacOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).VerifyMac
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.VerifyMacOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).GenerateDataKey
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.GenerateDataKeyOutput", confidence: high }
+    role: factory
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).GenerateDataKeyPair
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.GenerateDataKeyPairOutput", confidence: high }
+    role: factory
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).DeriveSharedSecret
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.DeriveSharedSecretOutput", confidence: high }
+    role: operation
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).GenerateRandom
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.GenerateRandomOutput", confidence: high }
+    role: output
+  - method: github.com/aws/aws-sdk-go/service/kms.(*KMS).CreateKey
+    arity: 1
+    varargs: true
+    return: { type: "*github.com/aws/aws-sdk-go/service/kms.CreateKeyOutput", confidence: high }
+    role: factory
+hierarchy: {}
