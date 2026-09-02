@@ -1,0 +1,425 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: schannel
+  coordinates:
+    - schannel
+  version_range: ">=0.1.8,<0.2.0"
+  description: "Rust bindings to Windows SChannel and CryptoAPI/CNG"
+
+# API read at schannel 0.1.29 (src/tls_stream.rs, src/schannel_cred.rs,
+# src/cert_context.rs, src/crypt_prov.rs), with every arity checked against the
+# DECLARATION at 0.0.1, 0.1.0, 0.1.1, 0.1.3, 0.1.6, 0.1.7, 0.1.8, 0.1.9,
+# 0.1.11, 0.1.12, 0.1.13, 0.1.15, 0.1.16, 0.1.17, 0.1.18 and 0.1.29.
+#
+# WHY THE FLOOR IS 0.1.8. The crate publishes 32 versions from 0.0.1, and this
+# contract cannot claim all of them:
+#
+#   0.0.1, 0.0.2  A DIFFERENT CRATE. The entire source of each is lib.rs plus
+#                 hyperimpl.rs -- no tls_stream, no schannel_cred, no
+#                 cert_context, no crypt_prov.
+#   0.1.0-0.1.7   tls_stream, schannel_cred and cert_context exist, but
+#                 crypt_prov does NOT, so the key-container and private-key
+#                 import entries are unreachable.
+#   0.1.8         crypt_prov arrives, with every method this file declares on
+#                 it, at the same arity.
+#
+# THE FLOOR IS SET BY crypt_prov AND BY NOTHING ELSE. An earlier revision said
+# 0.1.10 and justified it with crypt_prov, crypt_key, key_handle and ncrypt_key
+# together. Three of those four were wrong to cite: crypt_key and ncrypt_key
+# arrive at 0.1.8 alongside crypt_prov, key_handle exists as early as 0.1.1,
+# and -- more to the point -- this contract declares no METHOD on any of the
+# three. crypt_key appears only as a return type. So the floor was two releases
+# too high and three quarters of its stated reason was vacuous. Corrected by
+# reading `ls src/` at each version rather than by re-reading a table.
+#
+# `version_range` HAS NO READER IN THIS REPOSITORY: Load() parses it into
+# Library.VersionRange and nothing consults the field, so the floor is
+# provenance for a human rather than a filter at match time. Worth getting
+# right for that reason alone. The TLS and certificate entries do apply from
+# 0.1.0, so a consumer on 0.1.0-0.1.7 is described by a floor chosen for
+# crypt_prov -- and splitting into two libraries with different ranges is NOT
+# expressible: yamlContract carries no per-entry version field, and
+# validateLibraryUniqueness rejects two files declaring the same library name.
+#
+# FOUR ENTRIES POST-DATE THE FLOOR and are annotated at their declaration
+# rather than left to look as though the 0.1.8 check covered them: use_sni and
+# accept_invalid_hostnames arrive at 0.1.12, TlsStream.peer_certificate at
+# 0.1.13, and negotiated_application_protocol at 0.1.18.
+#
+# WHY THE BUILDER CONFIG METHODS ARE HERE AT ALL, which is the whole point of
+# this file. schannel's API is fluent builders end to end, so almost every
+# cryptographically interesting call sits at hop 2 or later in a chain, and
+# without a declared return type for each link those hops resolve to the
+# SCANNED crate's own name -- a wrong identity rather than a missing one,
+# because it looks resolved and matches no contract.
+#
+# MEASURED on an exported call graph over a realistic consumer, at three points:
+#
+#   before this contract existed          5 of 12 call sites resolved
+#   with role: config links declared      9 of 12
+#   with canonical_return_type added     12 of 12
+#
+# The `role: config` entries -- `domain`, `container`, `new_keyset`, and the
+# ProviderType/HashAlgorithm constructors -- are not crypto operations and are
+# not reported as any. They are the links a chain has to travel to reach one.
+# They are what turns
+#
+#     tls_stream::Builder::new().domain("host").connect(cred, socket)
+#
+# from `<scanned crate>.connect` into `schannel::tls_stream.Builder.connect`.
+#
+# `&mut Builder` IS DECLARED AS `Builder`. Every config method returns
+# `&mut Builder` (tls_stream.rs:58-108, schannel_cred.rs:220-240), and the
+# reference is not part of the type identity the resolver joins on.
+#
+# THE CONCRETE TYPE GOES IN `return`, THE WRAPPER IN `canonical_return_type`,
+# following security-framework.yaml. This is load-bearing rather than cosmetic:
+# with `return: core::result::Result` the chain `prov.import().import(der)`
+# resolved to `core::result.Result.import`, because `.unwrap()` yielded the
+# wrapper and the next link was looked up on it. Declaring the concrete type
+# behind each `io::Result<T>` took that from `core::result.Result.import` to
+# `schannel::crypt_prov.CryptProv.import`, and made every `.unwrap()` in a
+# chain carry the type it actually produces.
+#
+# ARITY EXCLUDES THE RECEIVER, matching every other Rust KB here: `acquire(&self,
+# direction)` is arity 1 and `Builder::new()` is arity 0.
+contracts:
+  # ---- TLS credential: schannel_cred ----
+  - method: schannel::schannel_cred::SchannelCred.builder
+    arity: 0
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    role: factory
+  - method: schannel::schannel_cred::Builder.new
+    arity: 0
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    role: factory
+  # THE TWO MOST CRYPTO-DETERMINING CALLS IN THE CRATE carry `parameters:` so
+  # the selected algorithm and protocol are derivable, instead of being
+  # labelled `config` and left as plumbing next to `silent` and
+  # `machine_keyset`. Both take a SLICE, so `derivation: argument_type` names
+  # what the argument's TYPE says -- which is all this layer can prove without
+  # evaluating the literal.
+  - method: schannel::schannel_cred::Builder.supported_algorithms
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["&[schannel::schannel_cred::Algorithm]"]
+    role: config
+    parameters:
+      - index: 0
+        name: supported_algorithms
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_type }
+  - method: schannel::schannel_cred::Builder.enabled_protocols
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["&[schannel::schannel_cred::Protocol]"]
+    role: config
+    parameters:
+      - index: 0
+        name: enabled_protocols
+        role: metadata-contributing
+        contributes: { property: protocolVersion, derivation: argument_type }
+  - method: schannel::schannel_cred::Builder.cert
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["schannel::cert_context::CertContext"]
+    role: config
+  - method: schannel::schannel_cred::Builder.acquire
+    arity: 1
+    return: { type: "schannel::schannel_cred::SchannelCred", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::schannel_cred::SchannelCred, std::io::Error>"
+    parameter_types: ["schannel::schannel_cred::Direction"]
+    role: operation
+
+  # THE FOUR ENTRIES BELOW ARE DECLARED ON `SchannelCred`, WHICH DOES NOT HAVE
+  # THESE METHODS. They exist because that is the identity the resolver emits,
+  # and a contract keyed on the truthful type joins nothing for real consumer
+  # code. MEASURED on `let mut b = SchannelCred::builder(); b.enabled_protocols(..);
+  # b.supported_algorithms(..); b.acquire(..)`:
+  #
+  #   schannel::schannel_cred.SchannelCred.enabled_protocols
+  #   schannel::schannel_cred.SchannelCred.supported_algorithms
+  #   schannel::schannel_cred.SchannelCred.acquire
+  #
+  # Every hop resolves, and every one under `SchannelCred` rather than
+  # `schannel_cred::Builder`. The cause is that an ASSOCIATED FUNCTION's return
+  # type is taken from the path whose function was called -- right for
+  # `Type::new()`, wrong for a builder accessor -- so `SchannelCred::builder()`
+  # yields `SchannelCred` even though this file declares its return as
+  # `Builder`. `contractReturnType` consults the KB for METHOD calls on
+  # third-party receivers; it is not reached for `Type::assoc_fn()`.
+  #
+  # The truthful `Builder.*` entries above are kept as well: they are what a
+  # reader should see, and they are what will join once the resolver takes an
+  # associated function's return type from its contract. Delete these four then.
+  - method: schannel::schannel_cred::SchannelCred.enabled_protocols
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["&[schannel::schannel_cred::Protocol]"]
+    role: config
+  - method: schannel::schannel_cred::SchannelCred.supported_algorithms
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["&[schannel::schannel_cred::Algorithm]"]
+    role: config
+  - method: schannel::schannel_cred::SchannelCred.cert
+    arity: 1
+    return: { type: "schannel::schannel_cred::Builder", confidence: high }
+    parameter_types: ["schannel::cert_context::CertContext"]
+    role: config
+  - method: schannel::schannel_cred::SchannelCred.acquire
+    arity: 1
+    return: { type: "schannel::schannel_cred::SchannelCred", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::schannel_cred::SchannelCred, std::io::Error>"
+    parameter_types: ["schannel::schannel_cred::Direction"]
+    role: operation
+
+  # ---- TLS handshake: tls_stream ----
+  - method: schannel::tls_stream::Builder.new
+    arity: 0
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    role: factory
+  - method: schannel::tls_stream::Builder.domain
+    arity: 1
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  # Arrives at 0.1.12; absent at 0.1.11. Post-dates the floor.
+  - method: schannel::tls_stream::Builder.use_sni
+    arity: 1
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  # Arrives at 0.1.12; absent at 0.1.11. Post-dates the floor. A hostname
+  # verification kill switch, so worth typing even though it is config.
+  - method: schannel::tls_stream::Builder.accept_invalid_hostnames
+    arity: 1
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::tls_stream::Builder.cert_store
+    arity: 1
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    parameter_types: ["schannel::cert_store::CertStore"]
+    role: config
+  # Arrives at 0.1.18 with the alpn_list module; absent at 0.1.17.
+  - method: schannel::tls_stream::Builder.request_application_protocols
+    arity: 1
+    return: { type: "schannel::tls_stream::Builder", confidence: high }
+    role: config
+  - method: schannel::tls_stream::Builder.connect
+    arity: 2
+    return: { type: "schannel::tls_stream::TlsStream", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::tls_stream::TlsStream, schannel::tls_stream::HandshakeError>"
+    role: operation
+  - method: schannel::tls_stream::Builder.accept
+    arity: 2
+    return: { type: "schannel::tls_stream::TlsStream", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::tls_stream::TlsStream, schannel::tls_stream::HandshakeError>"
+    role: operation
+  # Arrives at 0.1.13; absent at 0.1.12. Post-dates the floor.
+  - method: schannel::tls_stream::TlsStream.peer_certificate
+    arity: 0
+    return: { type: "schannel::cert_context::CertContext", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::cert_context::CertContext, std::io::Error>"
+    role: output
+  # Arrives at 0.1.18 with the alpn_list module; absent at 0.1.17.
+  - method: schannel::tls_stream::TlsStream.negotiated_application_protocol
+    arity: 0
+    return: { type: "core::option::Option", confidence: high }
+    canonical_return_type: "core::result::Result<core::option::Option<alloc::vec::Vec<u8>>, std::io::Error>"
+    role: output
+
+  # ---- Certificates: cert_context ----
+  # `new` from 0.1.0, `from_pem` from 0.1.3, `fingerprint` from 0.1.6,
+  # `private_key` from 0.1.1.
+  - method: schannel::cert_context::CertContext.new
+    arity: 1
+    return: { type: "schannel::cert_context::CertContext", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::cert_context::CertContext, std::io::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: schannel::cert_context::CertContext.from_pem
+    arity: 1
+    return: { type: "schannel::cert_context::CertContext", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::cert_context::CertContext, std::io::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  - method: schannel::cert_context::CertContext.fingerprint
+    arity: 1
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, std::io::Error>"
+    parameter_types: ["schannel::cert_context::HashAlgorithm"]
+    role: operation
+  - method: schannel::cert_context::CertContext.private_key
+    arity: 0
+    return: { type: "schannel::cert_context::AcquirePrivateKeyOptions", confidence: high }
+    role: factory
+  # THE TERMINAL OPERATION OF THAT CHAIN, and its two links. An earlier
+  # revision declared `private_key` and stopped there, so the one chain this
+  # file's own rationale describes -- config links exist so a walk can reach an
+  # operation -- had a root, no links and no operation. All three present since
+  # 0.1.1, the same release as `private_key` (cert_context.rs:492,498,512).
+  - method: schannel::cert_context::AcquirePrivateKeyOptions.compare_key
+    arity: 1
+    return: { type: "schannel::cert_context::AcquirePrivateKeyOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::cert_context::AcquirePrivateKeyOptions.silent
+    arity: 1
+    return: { type: "schannel::cert_context::AcquirePrivateKeyOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::cert_context::AcquirePrivateKeyOptions.acquire
+    arity: 0
+    return: { type: "schannel::cert_context::PrivateKey", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::cert_context::PrivateKey, std::io::Error>"
+    role: operation
+  - method: schannel::cert_context::CertContext.to_der
+    arity: 0
+    return: { type: "&[u8]", confidence: high }
+    role: output
+  - method: schannel::cert_context::CertContext.to_pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, std::io::Error>"
+    role: output
+  # The HashAlgorithm constructors, so a chain reaching a fingerprint through
+  # one of them still types. They are `config`, not operations: naming a hash is
+  # not computing one.
+  - method: schannel::cert_context::HashAlgorithm.md5
+    arity: 0
+    return: { type: "schannel::cert_context::HashAlgorithm", confidence: high }
+    role: config
+  - method: schannel::cert_context::HashAlgorithm.sha1
+    arity: 0
+    return: { type: "schannel::cert_context::HashAlgorithm", confidence: high }
+    role: config
+  - method: schannel::cert_context::HashAlgorithm.sha256
+    arity: 0
+    return: { type: "schannel::cert_context::HashAlgorithm", confidence: high }
+    role: config
+  - method: schannel::cert_context::HashAlgorithm.sha384
+    arity: 0
+    return: { type: "schannel::cert_context::HashAlgorithm", confidence: high }
+    role: config
+  - method: schannel::cert_context::HashAlgorithm.sha512
+    arity: 0
+    return: { type: "schannel::cert_context::HashAlgorithm", confidence: high }
+    role: config
+
+  # ---- Key containers and private keys: crypt_prov (from 0.1.10) ----
+  - method: schannel::crypt_prov::AcquireOptions.new
+    arity: 0
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    role: factory
+  - method: schannel::crypt_prov::AcquireOptions.container
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.provider
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.new_keyset
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.machine_keyset
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.verify_context
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.silent
+    arity: 1
+    return: { type: "schannel::crypt_prov::AcquireOptions", confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: schannel::crypt_prov::AcquireOptions.acquire
+    arity: 1
+    return: { type: "schannel::crypt_prov::CryptProv", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::crypt_prov::CryptProv, std::io::Error>"
+    parameter_types: ["schannel::crypt_prov::ProviderType"]
+    role: operation
+  - method: schannel::crypt_prov::CryptProv.import
+    arity: 0
+    return: { type: "schannel::crypt_prov::ImportOptions", confidence: high }
+    role: factory
+  - method: schannel::crypt_prov::ImportOptions.import
+    arity: 1
+    return: { type: "schannel::crypt_key::CryptKey", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::crypt_key::CryptKey, std::io::Error>"
+    parameter_types: ["&[u8]"]
+    role: operation
+  # `import_pkcs8` arrives at 0.1.16; absent at 0.1.15.
+  - method: schannel::crypt_prov::ImportOptions.import_pkcs8
+    arity: 1
+    return: { type: "schannel::crypt_key::CryptKey", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::crypt_key::CryptKey, std::io::Error>"
+    parameter_types: ["&[u8]"]
+    role: operation
+  # `import_pkcs8_pem` arrives at 0.1.17; absent at 0.1.16. Added after the
+  # published-consumer scan found it called in native-tls-gmssl 0.1.0
+  # (src/imp/schannel.rs:127) while neither the rules nor this contract covered
+  # it.
+  - method: schannel::crypt_prov::ImportOptions.import_pkcs8_pem
+    arity: 1
+    return: { type: "schannel::crypt_key::CryptKey", confidence: high }
+    canonical_return_type: "core::result::Result<schannel::crypt_key::CryptKey, std::io::Error>"
+    parameter_types: ["&[u8]"]
+    role: operation
+  # ProviderType constructors, so a chain reaching `acquire` through one still
+  # types. `config` for the same reason as HashAlgorithm: naming a CSP family is
+  # not a cryptographic operation.
+  - method: schannel::crypt_prov::ProviderType.rsa_full
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.rsa_aes
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.rsa_sig
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.rsa_schannel
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.dss
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.dss_dh
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.dh_schannel
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  # The set is now COMPLETE: all ten constructors the crate declares
+  # (crypt_prov.rs:133-169). An earlier revision omitted these last three with
+  # no note, which reads as a judgement rather than the oversight it was.
+  - method: schannel::crypt_prov::ProviderType.fortezza
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.ms_exchange
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
+  - method: schannel::crypt_prov::ProviderType.ssl
+    arity: 0
+    return: { type: "schannel::crypt_prov::ProviderType", confidence: high }
+    role: config
