@@ -16,7 +16,7 @@ library:
 # `hkdf::Hkdf.new` — `rustAuthoredKey` moves the second-to-last dot. Read off an
 # exported callgraph of a probe consumer, not written from the API.
 #
-# FIVE TYPES, THREE ERAS.
+# SIX TYPES, THREE ERAS.
 #   0.1.0            `Hkdf` is NOT generic: `new(digest: &str, ikm, salt)` picks
 #                    the digest by NAME, and `derive(info, len) -> Vec<u8>` is
 #                    the expand step (hkdf.rs:14,20,35).
@@ -43,9 +43,15 @@ library:
 # from 0.8.0 to 0.13.0 and therefore for the whole supported window bar four
 # releases from 2016-2017.
 #
-# `extract` CHANGED ITS RETURN, NOT ITS ARITY: it returns `Hkdf<D>` in 0.4.0-0.7.1
-# and the tuple `(Output<H>, Self)` from 0.8.0 (hkdf.rs:88). The tuple form is
-# recorded, being the one true from 0.8.0 onward.
+# `extract` CHANGED ITS RETURN AND ITS SALT TYPE, NOT ITS ARITY. It returns
+# `Hkdf<D>` in 0.4.0-0.7.1 and the tuple `(Output<H>, Self)` from 0.8.0
+# (hkdf.rs:88); its salt is a bare `&[u8]` at 0.4.0 (`hkdf.rs:35`) and
+# `Option<&[u8]>` from 0.5.0 (`hkdf.rs:30`). Arity is 2 throughout, so only one
+# signature can be keyed: the 0.8.0+ return and the 0.5.0+ salt are recorded,
+# which together hold for every release from 0.8.0 to 0.13.0 and the salt alone
+# for every release from 0.5.0. **0.4.0 is the one release inside the declared
+# range for which `parameter_types` here is wrong**; it is stated rather than
+# hidden, and it is inert, because a call site is joined by method and arity.
 #
 # `expand` LIKEWISE: `expand(info, length) -> Vec<u8>` in 0.4.0-0.5.0, and
 # `expand(info, okm) -> Result<(), InvalidLength>` from 0.6.0 (hkdf.rs:42). Both
@@ -56,7 +62,12 @@ library:
 # match it — `derive` is far too common a method name to anchor on a receiver —
 # but a contract entry is reached only through a receiver the parser has ALREADY
 # typed as this crate's, so recording it costs no precision and types the expand
-# step for the pre-0.5 line.
+# step for the pre-0.5 line. Its receiver is `&mut self` through 0.3.0 and
+# `&self` from 0.4.0 (`hkdf.rs:35`), and its length parameter is the pre-1.0
+# `uint` at 0.1.0 and `usize` from 0.2.0; `parameter_types` records the `usize`
+# spelling, which holds for three of the four releases that have the method.
+# The receiver is not part of `parameter_types`, so the `&mut self` / `&self`
+# change does not alter the declared signature.
 #
 # `finalize` IS RECORDED AND IS NOT ANCHORED BY ANY RULE, for the same reason:
 # every RustCrypto digest and MAC has a `finalize`, so a rule on that name would
