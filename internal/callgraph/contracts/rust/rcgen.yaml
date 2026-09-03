@@ -1,0 +1,449 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rcgen
+  coordinates:
+    - rcgen
+  version_range: ">=0.1.0,<0.15.0"
+  description: "rcgen X.509 certificate, CSR and CRL generation with signing key management"
+
+# API read at 0.14.8 (`src/lib.rs`, `src/key_pair.rs`, `src/certificate.rs`,
+# `src/csr.rs`, `src/crl.rs`, `src/sign_algo.rs`) and 0.4.0 (`src/lib.rs`), and
+# cross-checked at 0.14.5, 0.14.3, 0.14.0, 0.13.2, 0.13.0, 0.12.1, 0.11.3,
+# 0.10.0, 0.9.3, 0.8.14, 0.8.9, 0.8.5, 0.8.0, 0.7.0, 0.6.0, 0.5.0, 0.4.1,
+# 0.3.1, 0.2.0, 0.1.0 and 0.0.2. Line numbers below name the release they were
+# read at.
+#
+# THE RANGE STARTS AT 0.1.0 AND THAT IS NOT AN OVERSIGHT. Release 0.0.2 — the
+# oldest row in the ecosystem input CSV — publishes only `src/main.rs` and has
+# NO `src/lib.rs` at all, so it exposes no library API for any entry here to
+# join against. It is named as excluded rather than silently covered.
+#
+# KEY SHAPE. Every type below is `pub use`-exported from the crate root
+# (0.14.8 lib.rs:44-65), so the graph emits `rcgen.KeyPair.generate` with no
+# module segment and this file authors `rcgen::KeyPair.generate` —
+# `rustAuthoredKey` (contracts.go:267) moves the second-to-last dot when the
+# lookup runs. THE ONE EXCEPTION IS THE FREE FUNCTION: the graph emits
+# `rcgen.generate_simple_self_signed`, which carries a single dot, and
+# `rustAuthoredKey` returns a key with fewer than two dots UNCHANGED. It is
+# authored in the dot form on purpose, and `ContractsFor` tries the raw key
+# first (contracts.go:204), so that is the form that resolves. Every key here
+# was read off an exported call graph of a probe consumer, not written from the
+# API.
+#
+# THREE ERAS, AND THE SIGNING ENTRY POINT MOVES IN EACH. This is why several
+# methods are recorded at TWO ARITIES: the method+arity index keys the eras
+# apart, and an entry for a shape the scanned version does not have is inert
+# rather than wrong.
+#   0.1.0-0.12.1  `Certificate::from_params(params)` (0.12.1 lib.rs:1484);
+#                 `serialize_der_with_signer(&ca)` / `serialize_pem_with_signer`
+#                 (lib.rs:1510,1545); `serialize_request_der/pem` (lib.rs:1514,
+#                 1552); `KeyPair::generate(alg)` at ARITY 1 (key_pair.rs:181);
+#                 `CertificateParams::from_ca_cert_pem(pem, key_pair)` at
+#                 ARITY 2 (0.5.0 lib.rs:273).
+#   0.13.0-0.13.3 the verb moves onto the params: `self_signed(&key)` at arity 1
+#                 and `signed_by(&pubkey, &issuer_cert, &issuer_key)` at
+#                 ARITY 3 (0.13.2 certificate.rs:177,150); the CSR and CRL
+#                 `signed_by(&issuer_cert, &issuer_key)` at ARITY 2
+#                 (csr.rs:202, crl.rs:189); `KeyPair::generate()` at ARITY 0
+#                 (key_pair.rs:77); `from_ca_cert_pem(pem)` drops to ARITY 1
+#                 (certificate.rs:198).
+#   0.14.0-0.14.8 an explicit `Issuer<S>` absorbs the issuer key, so every
+#                 `signed_by` loses one argument: `CertificateParams` ARITY 2
+#                 (certificate.rs:140), CSR and CRL ARITY 1 (csr.rs:201,
+#                 crl.rs:187). `CertifiedIssuer` — an `Issuer` that also holds
+#                 its own certificate — arrives at 0.14.3 (absent at 0.14.0,
+#                 present at 0.14.3 lib.rs:138) with `self_signed` at ARITY 2
+#                 and `signed_by` at ARITY 3 (0.14.8 lib.rs:145,153). Both are
+#                 ASSOCIATED FUNCTIONS taking the params, not methods on them,
+#                 which is why their arities exceed the `CertificateParams`
+#                 equivalents by one.
+#
+# RETURN TYPES FOLLOW THE `hkdf.yaml` / `balloon.yaml` CONVENTION: `return.type`
+# is the SEMANTIC inner type and `canonical_return_type` carries the declared
+# one, so a fallible constructor reads `rcgen::KeyPair` plus
+# `core::result::Result<..>` rather than putting the Result in `return.type`.
+# `Return.Type` is what chain resolution propagates to the next link, and the
+# useful value there is the crypto object rather than its wrapper.
+#
+# TWO RETURNS CHANGE ACROSS THE DECLARED RANGE WITHOUT CHANGING ARITY, and
+# `version_range` is declared per LIBRARY rather than per entry, so a field that
+# is true of only one era is OMITTED rather than declared as that era's and
+# wrong for the other:
+#  * `Certificate::from_params` returns `Self` in 0.1.0-0.3.1 and
+#    `Result<Self, Error>` from 0.4.0 (0.3.1 lib.rs:308 vs 0.4.0 lib.rs:412).
+#    `return.type` is `rcgen::Certificate` in BOTH eras, so it stands; the
+#    `canonical_return_type` differs and is therefore not declared.
+#  * `generate_simple_self_signed` returns a bare `Certificate` in 0.1.0-0.3.1,
+#    `Result<Certificate, Error>` in 0.4.0-0.12.1, and `Result<CertifiedKey, Error>`
+#    from 0.13.0 (0.13.2 lib.rs:126). Its `canonical_return_type` is likewise not
+#    declared. `return.type` records `rcgen::CertifiedKey`, the 0.13.0+ form,
+#    which is the one every current consumer meets — this is the single field in
+#    this file that is true of part of the range rather than all of it, and it is
+#    named here rather than hidden.
+#
+# THE ENCODING METHODS ARE RECORDED WITH `role: output` AND ARE ANCHORED BY NO
+# RULE, and the asymmetry is deliberate. `serialize_der` means opposite things
+# on the two receivers this crate publishes: on a `Certificate` in 0.1.0-0.12.1
+# it SIGNS, being `self.serialize_der_with_signer(&self)` (0.12.1 lib.rs:1507),
+# while on a `KeyPair` it only encodes bytes that already exist
+# (0.12.1 key_pair.rs:285). A RULE cannot tell the two receivers apart and so
+# claims neither; a CONTRACT entry is reached only through a receiver the parser
+# has ALREADY typed as this crate's, so recording both costs no precision and
+# types the tail of the chain. The `output` role states that moving bytes is not
+# itself a cryptographic operation.
+#
+# WHAT IS DELIBERATELY NOT RECORDED:
+#  * `TryFrom<&[u8]> for KeyPair` and its three siblings (0.14.8 key_pair.rs:502,
+#    513,524,533). A consumer writes `KeyPair::try_from(der)` or
+#    `der.try_into()?`; neither spelling names this crate, and `try_into` in
+#    particular takes the OUTERMOST link as its identity, so no entry could join.
+#  * The `SignatureAlgorithm` constants themselves. They are values, not calls,
+#    and the algorithm they carry is recorded by the rules at the generation
+#    site instead.
+
+contracts:
+# ---- KeyPair: generating a signing key --------------------------------------
+  - method: rcgen::KeyPair.generate
+    arity: 0
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: []
+    role: factory
+  - method: rcgen::KeyPair.generate
+    arity: 1
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&'static rcgen::SignatureAlgorithm"]
+    role: factory
+  - method: rcgen::KeyPair.generate_for
+    arity: 1
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&'static rcgen::SignatureAlgorithm"]
+    role: factory
+  - method: rcgen::KeyPair.generate_rsa_for
+    arity: 2
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&'static rcgen::SignatureAlgorithm", "rcgen::RsaKeySize"]
+    role: factory
+
+# ---- KeyPair: loading an existing signing key -------------------------------
+  - method: rcgen::KeyPair.from_pem
+    arity: 1
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  - method: rcgen::KeyPair.from_der
+    arity: 1
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: rcgen::KeyPair.from_remote
+    arity: 1
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["alloc::boxed::Box<dyn rcgen::RemoteKeyPair + Send + Sync>"]
+    role: factory
+  - method: rcgen::KeyPair.from_pem_and_sign_algo
+    arity: 2
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&str", "&'static rcgen::SignatureAlgorithm"]
+    role: factory
+  - method: rcgen::KeyPair.from_der_and_sign_algo
+    arity: 2
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&[u8]", "&'static rcgen::SignatureAlgorithm"]
+    role: factory
+  - method: rcgen::KeyPair.from_pkcs8_pem_and_sign_algo
+    arity: 2
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&str", "&'static rcgen::SignatureAlgorithm"]
+    role: factory
+  - method: rcgen::KeyPair.from_pkcs8_der_and_sign_algo
+    arity: 2
+    return: { type: "rcgen::KeyPair", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::KeyPair, rcgen::Error>"
+    parameter_types: ["&[u8]", "&'static rcgen::SignatureAlgorithm"]
+    role: factory
+
+# ---- The one-call entry point ----------------------------------------------
+# Authored in the DOT form: a single-dot key is returned unchanged by
+# rustAuthoredKey, and the raw key is what resolves.
+  - method: rcgen.generate_simple_self_signed
+    arity: 1
+    return: { type: "rcgen::CertifiedKey", confidence: high }
+    parameter_types: ["impl Into<alloc::vec::Vec<alloc::string::String>>"]
+    role: factory
+
+# ---- Certificate: the 0.1.0-0.12.1 era --------------------------------------
+  - method: rcgen::Certificate.from_params
+    arity: 1
+    return: { type: "rcgen::Certificate", confidence: high }
+    parameter_types: ["rcgen::CertificateParams"]
+    role: factory
+  - method: rcgen::Certificate.serialize_der_with_signer
+    arity: 1
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, rcgen::Error>"
+    parameter_types: ["&rcgen::Certificate"]
+    role: operation
+  - method: rcgen::Certificate.serialize_pem_with_signer
+    arity: 1
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, rcgen::Error>"
+    parameter_types: ["&rcgen::Certificate"]
+    role: operation
+  - method: rcgen::Certificate.serialize_request_der
+    arity: 0
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, rcgen::Error>"
+    parameter_types: []
+    role: operation
+  - method: rcgen::Certificate.serialize_request_pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, rcgen::Error>"
+    parameter_types: []
+    role: operation
+
+# ---- CertificateParams: the 0.13.0+ signing verbs ---------------------------
+  - method: rcgen::CertificateParams.self_signed
+    arity: 1
+    return: { type: "rcgen::Certificate", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Certificate, rcgen::Error>"
+    parameter_types: ["&impl rcgen::SigningKey"]
+    role: operation
+  - method: rcgen::CertificateParams.signed_by
+    arity: 2
+    return: { type: "rcgen::Certificate", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Certificate, rcgen::Error>"
+    parameter_types: ["&impl rcgen::PublicKeyData", "&rcgen::Issuer<impl rcgen::SigningKey>"]
+    role: operation
+  - method: rcgen::CertificateParams.signed_by
+    arity: 3
+    return: { type: "rcgen::Certificate", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Certificate, rcgen::Error>"
+    parameter_types: ["&impl rcgen::PublicKeyData", "&rcgen::Certificate", "&rcgen::KeyPair"]
+    role: operation
+  # The subject-key parameter is `&KeyPair` in 0.13.x (0.13.2 certificate.rs:533,
+  # 551) and `&impl SigningKey` from 0.14.0 (0.14.8 certificate.rs:321,339).
+  # Method plus arity does not identify one signature across the range, so
+  # `parameter_types` is omitted rather than declared as one era's and wrong for
+  # the other — the same rule that governs the two returns above.
+  - method: rcgen::CertificateParams.serialize_request
+    arity: 1
+    return: { type: "rcgen::CertificateSigningRequest", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequest, rcgen::Error>"
+    role: operation
+  - method: rcgen::CertificateParams.serialize_request_with_attributes
+    arity: 2
+    return: { type: "rcgen::CertificateSigningRequest", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequest, rcgen::Error>"
+    role: operation
+  - method: rcgen::CertificateParams.from_ca_cert_pem
+    arity: 1
+    return: { type: "rcgen::CertificateParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateParams, rcgen::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  - method: rcgen::CertificateParams.from_ca_cert_pem
+    arity: 2
+    return: { type: "rcgen::CertificateParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateParams, rcgen::Error>"
+    parameter_types: ["&str", "rcgen::KeyPair"]
+    role: factory
+  - method: rcgen::CertificateParams.from_ca_cert_der
+    arity: 1
+    return: { type: "rcgen::CertificateParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateParams, rcgen::Error>"
+    parameter_types: ["&rustls_pki_types::CertificateDer"]
+    role: factory
+  - method: rcgen::CertificateParams.from_ca_cert_der
+    arity: 2
+    return: { type: "rcgen::CertificateParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateParams, rcgen::Error>"
+    parameter_types: ["&[u8]", "rcgen::KeyPair"]
+    role: factory
+
+# ---- Issuer: the 0.14.0+ holder of the issuing key --------------------------
+  - method: rcgen::Issuer.new
+    arity: 2
+    return: { type: "rcgen::Issuer", confidence: high }
+    parameter_types: ["rcgen::CertificateParams", "impl rcgen::SigningKey"]
+    role: factory
+  - method: rcgen::Issuer.from_params
+    arity: 2
+    return: { type: "rcgen::Issuer", confidence: high }
+    parameter_types: ["&rcgen::CertificateParams", "impl rcgen::SigningKey"]
+    role: factory
+  - method: rcgen::Issuer.from_ca_cert_pem
+    arity: 2
+    return: { type: "rcgen::Issuer", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Issuer<impl rcgen::SigningKey>, rcgen::Error>"
+    parameter_types: ["&str", "impl rcgen::SigningKey"]
+    role: factory
+  - method: rcgen::Issuer.from_ca_cert_der
+    arity: 2
+    return: { type: "rcgen::Issuer", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Issuer<impl rcgen::SigningKey>, rcgen::Error>"
+    parameter_types: ["&rustls_pki_types::CertificateDer", "impl rcgen::SigningKey"]
+    role: factory
+
+# ---- CertifiedIssuer: an Issuer that also holds its own certificate, 0.14.3+ -
+# The rules match both of these, so both are contracted: an `api` naming a type
+# the entry does not cover, or an emitted key with no entry behind it, is the
+# same defect as a wrong key.
+  - method: rcgen::CertifiedIssuer.self_signed
+    arity: 2
+    return: { type: "rcgen::CertifiedIssuer", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertifiedIssuer<impl rcgen::SigningKey>, rcgen::Error>"
+    parameter_types: ["rcgen::CertificateParams", "impl rcgen::SigningKey"]
+    role: operation
+  - method: rcgen::CertifiedIssuer.signed_by
+    arity: 3
+    return: { type: "rcgen::CertifiedIssuer", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertifiedIssuer<impl rcgen::SigningKey>, rcgen::Error>"
+    parameter_types: ["rcgen::CertificateParams", "impl rcgen::SigningKey", "&rcgen::Issuer<impl rcgen::SigningKey>"]
+    role: operation
+
+# ---- Certificate signing requests -------------------------------------------
+  - method: rcgen::CertificateSigningRequest.from_pem
+    arity: 1
+    return: { type: "rcgen::CertificateSigningRequest", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequest, rcgen::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  - method: rcgen::CertificateSigningRequest.from_der
+    arity: 1
+    return: { type: "rcgen::CertificateSigningRequest", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequest, rcgen::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: rcgen::CertificateSigningRequestParams.from_pem
+    arity: 1
+    return: { type: "rcgen::CertificateSigningRequestParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequestParams, rcgen::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  - method: rcgen::CertificateSigningRequestParams.from_der
+    arity: 1
+    return: { type: "rcgen::CertificateSigningRequestParams", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateSigningRequestParams, rcgen::Error>"
+    parameter_types: ["&rustls_pki_types::CertificateSigningRequestDer"]
+    role: factory
+  - method: rcgen::CertificateSigningRequestParams.signed_by
+    arity: 1
+    return: { type: "rcgen::Certificate", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Certificate, rcgen::Error>"
+    parameter_types: ["&rcgen::Issuer<impl rcgen::SigningKey>"]
+    role: operation
+  - method: rcgen::CertificateSigningRequestParams.signed_by
+    arity: 2
+    return: { type: "rcgen::Certificate", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::Certificate, rcgen::Error>"
+    parameter_types: ["&rcgen::Certificate", "&rcgen::KeyPair"]
+    role: operation
+
+# ---- Certificate revocation lists -------------------------------------------
+  - method: rcgen::CertificateRevocationList.from_params
+    arity: 1
+    return: { type: "rcgen::CertificateRevocationList", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateRevocationList, rcgen::Error>"
+    parameter_types: ["rcgen::CertificateRevocationListParams"]
+    role: factory
+  - method: rcgen::CertificateRevocationListParams.signed_by
+    arity: 1
+    return: { type: "rcgen::CertificateRevocationList", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateRevocationList, rcgen::Error>"
+    parameter_types: ["&rcgen::Issuer<impl rcgen::SigningKey>"]
+    role: operation
+  - method: rcgen::CertificateRevocationListParams.signed_by
+    arity: 2
+    return: { type: "rcgen::CertificateRevocationList", confidence: high }
+    canonical_return_type: "core::result::Result<rcgen::CertificateRevocationList, rcgen::Error>"
+    parameter_types: ["&rcgen::Certificate", "&rcgen::KeyPair"]
+    role: operation
+
+# ---- Encoding: moving bytes, not cryptography -------------------------------
+# No rule anchors any of these; see the header for why a contract entry is safe
+# where a rule is not.
+  - method: rcgen::Certificate.serialize_der
+    arity: 0
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, rcgen::Error>"
+    parameter_types: []
+    role: output
+  - method: rcgen::Certificate.serialize_pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, rcgen::Error>"
+    parameter_types: []
+    role: output
+  - method: rcgen::Certificate.der
+    arity: 0
+    return: { type: "rustls_pki_types::CertificateDer", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::Certificate.pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::KeyPair.serialize_der
+    arity: 0
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "alloc::vec::Vec<u8>"
+    parameter_types: []
+    role: output
+  - method: rcgen::KeyPair.serialized_der
+    arity: 0
+    return: { type: "&[u8]", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::KeyPair.serialize_pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::KeyPair.public_key_der
+    arity: 0
+    return: { type: "alloc::vec::Vec", confidence: high }
+    canonical_return_type: "alloc::vec::Vec<u8>"
+    parameter_types: []
+    role: output
+  - method: rcgen::KeyPair.public_key_pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::CertificateSigningRequest.pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, rcgen::Error>"
+    parameter_types: []
+    role: output
+  - method: rcgen::CertificateSigningRequest.der
+    arity: 0
+    return: { type: "rustls_pki_types::CertificateSigningRequestDer", confidence: high }
+    parameter_types: []
+    role: output
+  - method: rcgen::CertificateRevocationList.pem
+    arity: 0
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, rcgen::Error>"
+    parameter_types: []
+    role: output
+  - method: rcgen::CertificateRevocationList.der
+    arity: 0
+    return: { type: "rustls_pki_types::CertificateRevocationListDer", confidence: high }
+    parameter_types: []
+    role: output
+
+hierarchy: {}
