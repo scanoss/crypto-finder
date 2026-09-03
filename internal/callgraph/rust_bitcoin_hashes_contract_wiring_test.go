@@ -136,7 +136,8 @@ func TestBitcoinHashesContractSetIsExact(t *testing.T) {
 		{"bitcoin_hashes::siphash24::Hash.hash", 1, "output", "bitcoin_hashes::siphash24::Hash", []string{"&[u8]"}},
 		{"bitcoin_hashes::siphash24::Hash.hash_with_keys", 3, "output", "bitcoin_hashes::siphash24::Hash", []string{"u64", "u64", "&[u8]"}},
 		{"bitcoin_hashes::siphash24::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
-		{"bitcoin_hashes::siphash24::HashEngine.with_keys", 2, "factory", "bitcoin_hashes::siphash24::HashEngine", []string{"u64", "u64"}}}
+		{"bitcoin_hashes::siphash24::HashEngine.with_keys", 2, "factory", "bitcoin_hashes::siphash24::HashEngine", []string{"u64", "u64"}},
+	}
 
 	render := func(r row) string {
 		return fmt.Sprintf("%s#%d role=%s ret=%s params=[%s] conf=high",
@@ -212,7 +213,7 @@ func TestBitcoinHashesKeysUseTheAuthoredShape(t *testing.T) {
 // With the authored key shape the parser types the engine, so `input` is keyed
 // on HashEngine and `from_engine` takes its argument. This pins both, because an
 // earlier revision recorded the opposite as facts about the analyzer when they
-// were artefacts of a wrong key.
+// were artifacts of a wrong key.
 func TestBitcoinHashesStreamingIdentitiesAreTyped(t *testing.T) {
 	t.Parallel()
 
