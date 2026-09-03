@@ -1,0 +1,39 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: biscuit-jwks-ignore-kid
+  coordinates:
+    - biscuit
+  version_range: ">=0.7.0,<0.9.0"
+  description: "biscuit's kid-ignoring JWK Set decoder (0.7.0 and later)"
+
+# A THIRD ERA FOR ONE METHOD, WHICH LOOKS LIKE OVERKILL AND IS NOT.
+# `decode_with_jwks_ignore_kid` reads like a sibling of `decode_with_jwks` and
+# was originally filed with it under `>=0.5.0`. Measured against the extracted
+# sources, it is absent at 0.5.0 and 0.6.0 and first appears at 0.7.0
+# (0.8.0 src/jws/compact.rs:225):
+#
+#   0.5.0  decode_with_jwks yes   ignore_kid no
+#   0.6.0  decode_with_jwks yes   ignore_kid no
+#   0.7.0  decode_with_jwks yes   ignore_kid yes
+#   0.8.0  decode_with_jwks yes   ignore_kid yes
+#
+# `version_range` is declared per LIBRARY and may only claim versions for which
+# EVERY entry in the file is true, so one entry with a later bound needs its own
+# file. Leaving it under `>=0.5.0` was not merely mis-documentation: the range
+# is parsed and never consulted at lookup, so a 0.5.0 consumer would have been
+# served a signature for a method that does not exist in the version they
+# actually build against, with nothing anywhere to flag it.
+contracts:
+  - method: biscuit::JWT.decode_with_jwks_ignore_kid
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWKSet"]
+    role: operation
+  - method: biscuit::jws::Compact.decode_with_jwks_ignore_kid
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWKSet"]
+    role: operation
