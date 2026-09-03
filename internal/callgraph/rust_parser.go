@@ -1241,6 +1241,10 @@ func (p *RustParser) extractCalls(body *sitter.Node, ctx *rustTypeCtx, filePath 
 		}
 		if call := p.parseCallExpr(node, nodeCtx, filePath); call != nil {
 			setFunctionCallASTAnchor(call, node)
+			// Chain identity is a property of the syntax, not of how the callee
+			// resolved, so it is stamped here for every shape parseCallExpr
+			// returns rather than in each of its seventeen constructors.
+			call.ChainID, call.AssignedVar = rustCallChainContext(node, nodeCtx.src)
 			calls = append(calls, *call)
 		}
 		return true
@@ -1855,6 +1859,12 @@ func (p *RustParser) parseFieldCall(node *sitter.Node, ctx *rustTypeCtx, filePat
 				FilePath:  filePath,
 				Line:      line,
 				Arguments: args,
+				// A RESOLVED receiver is exactly the one whose lifecycle is
+				// worth recovering, and it was the only shape leaving this
+				// field empty: deriveObjectLifecycleCalls walks up from the
+				// terminal's ReceiverVar, so `cipher.encrypt(..)` without it
+				// never reaches the `Aes256Gcm::new(..)` that produced cipher.
+				ReceiverVar: rustReceiverVarIdentity(receiver, src),
 			}
 		}
 	}
