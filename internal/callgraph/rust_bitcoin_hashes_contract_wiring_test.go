@@ -4,19 +4,24 @@
 package callgraph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
-// bitcoin_hashes emits TWO key shapes at once, and keying either one like the
-// other loads cleanly and resolves nothing. Read off an exported call graph:
+// The KB is asserted as a SET, not as a sample.
 //
-//	bitcoin_hashes::sha256.Hash.hash     — one module per algorithm, `::` kept
-//	bitcoin_hashes.HmacEngine.new        — crate-root re-export, flat
-func TestBitcoinHashesContractsResolveParsedCallIdentities(t *testing.T) {
+// An earlier revision listed a handful of keys and checked them one by one. A
+// review's mutation sweep put 164 of 496 mutations through it — 17 entries were
+// asserted by nothing at all, and every entry's parameter-type STRINGS and
+// confidence were free to change. Comparing the whole set means an entry cannot
+// be added, removed or altered without this test saying so.
+func TestBitcoinHashesContractSetIsExact(t *testing.T) {
 	t.Parallel()
 
 	kb, err := contracts.LoadEmbedded("rust")
@@ -24,32 +29,199 @@ func TestBitcoinHashesContractsResolveParsedCallIdentities(t *testing.T) {
 		t.Fatalf("LoadEmbedded(rust): %v", err)
 	}
 
-	dir := t.TempDir()
-	src := `use bitcoin_hashes::{sha256, sha512, ripemd160, hash160, siphash24, Hash, HashEngine, Hmac, HmacEngine};
+	type row struct {
+		method string
+		arity  int
+		role   string
+		ret    string
+		params []string
+	}
+	want := []row{
+		{"bitcoin_hashes::Hash160.finalize", 0, "output", "bitcoin_hashes::hash160::Hash", []string{}},
+		{"bitcoin_hashes::Hash160.hash", 1, "output", "bitcoin_hashes::hash160::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::HkdfSha256.expand", 2, "operation", "core::result::Result", []string{"&[u8]", "&mut [u8]"}},
+		{"bitcoin_hashes::HkdfSha256.expand_to_len", 2, "output", "core::result::Result", []string{"&[u8]", "usize"}},
+		{"bitcoin_hashes::HkdfSha256.new", 2, "factory", "bitcoin_hashes::hkdf::Hkdf", []string{"&[u8]", "&[u8]"}},
+		{"bitcoin_hashes::HkdfSha512.expand", 2, "operation", "core::result::Result", []string{"&[u8]", "&mut [u8]"}},
+		{"bitcoin_hashes::HkdfSha512.expand_to_len", 2, "output", "core::result::Result", []string{"&[u8]", "usize"}},
+		{"bitcoin_hashes::HkdfSha512.new", 2, "factory", "bitcoin_hashes::hkdf::Hkdf", []string{"&[u8]", "&[u8]"}},
+		{"bitcoin_hashes::Ripemd160.finalize", 0, "output", "bitcoin_hashes::ripemd160::Hash", []string{}},
+		{"bitcoin_hashes::Ripemd160.hash", 1, "output", "bitcoin_hashes::ripemd160::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha1.finalize", 0, "output", "bitcoin_hashes::sha1::Hash", []string{}},
+		{"bitcoin_hashes::Sha1.hash", 1, "output", "bitcoin_hashes::sha1::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha256.finalize", 0, "output", "bitcoin_hashes::sha256::Hash", []string{}},
+		{"bitcoin_hashes::Sha256.hash", 1, "output", "bitcoin_hashes::sha256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha256d.finalize", 0, "output", "bitcoin_hashes::sha256d::Hash", []string{}},
+		{"bitcoin_hashes::Sha256d.hash", 1, "output", "bitcoin_hashes::sha256d::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha384.finalize", 0, "output", "bitcoin_hashes::sha384::Hash", []string{}},
+		{"bitcoin_hashes::Sha384.hash", 1, "output", "bitcoin_hashes::sha384::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha3_256.finalize", 0, "output", "bitcoin_hashes::sha3_256::Hash", []string{}},
+		{"bitcoin_hashes::Sha3_256.hash", 1, "output", "bitcoin_hashes::sha3_256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha512.finalize", 0, "output", "bitcoin_hashes::sha512::Hash", []string{}},
+		{"bitcoin_hashes::Sha512.hash", 1, "output", "bitcoin_hashes::sha512::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Sha512_256.finalize", 0, "output", "bitcoin_hashes::sha512_256::Hash", []string{}},
+		{"bitcoin_hashes::Sha512_256.hash", 1, "output", "bitcoin_hashes::sha512_256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::Siphash24.finalize", 0, "output", "bitcoin_hashes::siphash24::Hash", []string{}},
+		{"bitcoin_hashes::Siphash24.hash", 1, "output", "bitcoin_hashes::siphash24::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::hash160::Hash.engine", 0, "factory", "bitcoin_hashes::sha256::HashEngine", []string{}},
+		{"bitcoin_hashes::hash160::Hash.finalize", 0, "output", "bitcoin_hashes::hash160::Hash", []string{}},
+		{"bitcoin_hashes::hash160::Hash.from_engine", 1, "output", "bitcoin_hashes::hash160::Hash", []string{"bitcoin_hashes::sha256::HashEngine"}},
+		{"bitcoin_hashes::hash160::Hash.hash", 1, "output", "bitcoin_hashes::hash160::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::hash160::HashEngine.finalize", 0, "output", "bitcoin_hashes::hash160::Hash", []string{}},
+		{"bitcoin_hashes::hash160::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::hkdf::Hkdf.expand", 2, "operation", "core::result::Result", []string{"&[u8]", "&mut [u8]"}},
+		{"bitcoin_hashes::hkdf::Hkdf.expand_to_len", 2, "output", "core::result::Result", []string{"&[u8]", "usize"}},
+		{"bitcoin_hashes::hkdf::Hkdf.new", 2, "factory", "bitcoin_hashes::hkdf::Hkdf", []string{"&[u8]", "&[u8]"}},
+		{"bitcoin_hashes::hmac::Hmac.engine", 0, "factory", "bitcoin_hashes::hmac::HmacEngine", []string{}},
+		{"bitcoin_hashes::hmac::Hmac.from_engine", 1, "output", "bitcoin_hashes::hmac::Hmac", []string{"bitcoin_hashes::hmac::HmacEngine"}},
+		{"bitcoin_hashes::hmac::HmacEngine.from_inner_engines", 2, "factory", "bitcoin_hashes::hmac::HmacEngine", []string{"T::Engine", "T::Engine"}},
+		{"bitcoin_hashes::hmac::HmacEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::hmac::HmacEngine.new", 1, "factory", "bitcoin_hashes::hmac::HmacEngine", []string{"&[u8]"}},
+		{"bitcoin_hashes::ripemd160::Hash.engine", 0, "factory", "bitcoin_hashes::ripemd160::HashEngine", []string{}},
+		{"bitcoin_hashes::ripemd160::Hash.finalize", 0, "output", "bitcoin_hashes::ripemd160::Hash", []string{}},
+		{"bitcoin_hashes::ripemd160::Hash.from_engine", 1, "output", "bitcoin_hashes::ripemd160::Hash", []string{"bitcoin_hashes::ripemd160::HashEngine"}},
+		{"bitcoin_hashes::ripemd160::Hash.hash", 1, "output", "bitcoin_hashes::ripemd160::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::ripemd160::HashEngine.finalize", 0, "output", "bitcoin_hashes::ripemd160::Hash", []string{}},
+		{"bitcoin_hashes::ripemd160::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha1::Hash.engine", 0, "factory", "bitcoin_hashes::sha1::HashEngine", []string{}},
+		{"bitcoin_hashes::sha1::Hash.finalize", 0, "output", "bitcoin_hashes::sha1::Hash", []string{}},
+		{"bitcoin_hashes::sha1::Hash.from_engine", 1, "output", "bitcoin_hashes::sha1::Hash", []string{"bitcoin_hashes::sha1::HashEngine"}},
+		{"bitcoin_hashes::sha1::Hash.hash", 1, "output", "bitcoin_hashes::sha1::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha1::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha1::Hash", []string{}},
+		{"bitcoin_hashes::sha1::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256::Hash.engine", 0, "factory", "bitcoin_hashes::sha256::HashEngine", []string{}},
+		{"bitcoin_hashes::sha256::Hash.finalize", 0, "output", "bitcoin_hashes::sha256::Hash", []string{}},
+		{"bitcoin_hashes::sha256::Hash.from_engine", 1, "output", "bitcoin_hashes::sha256::Hash", []string{"bitcoin_hashes::sha256::HashEngine"}},
+		{"bitcoin_hashes::sha256::Hash.hash", 1, "output", "bitcoin_hashes::sha256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha256::Hash", []string{}},
+		{"bitcoin_hashes::sha256::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256d::Hash.engine", 0, "factory", "bitcoin_hashes::sha256::HashEngine", []string{}},
+		{"bitcoin_hashes::sha256d::Hash.finalize", 0, "output", "bitcoin_hashes::sha256d::Hash", []string{}},
+		{"bitcoin_hashes::sha256d::Hash.from_engine", 1, "output", "bitcoin_hashes::sha256d::Hash", []string{"bitcoin_hashes::sha256::HashEngine"}},
+		{"bitcoin_hashes::sha256d::Hash.hash", 1, "output", "bitcoin_hashes::sha256d::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256d::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha256d::Hash", []string{}},
+		{"bitcoin_hashes::sha256d::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256t::Hash.engine", 0, "factory", "bitcoin_hashes::sha256::HashEngine", []string{}},
+		{"bitcoin_hashes::sha256t::Hash.finalize", 0, "output", "bitcoin_hashes::sha256t::Hash", []string{}},
+		{"bitcoin_hashes::sha256t::Hash.from_engine", 1, "output", "bitcoin_hashes::sha256t::Hash", []string{"bitcoin_hashes::sha256::HashEngine"}},
+		{"bitcoin_hashes::sha256t::Hash.hash", 1, "output", "bitcoin_hashes::sha256t::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha256t::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha256t::Hash", []string{}},
+		{"bitcoin_hashes::sha256t::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha384::Hash.engine", 0, "factory", "bitcoin_hashes::sha384::HashEngine", []string{}},
+		{"bitcoin_hashes::sha384::Hash.finalize", 0, "output", "bitcoin_hashes::sha384::Hash", []string{}},
+		{"bitcoin_hashes::sha384::Hash.from_engine", 1, "output", "bitcoin_hashes::sha384::Hash", []string{"bitcoin_hashes::sha384::HashEngine"}},
+		{"bitcoin_hashes::sha384::Hash.hash", 1, "output", "bitcoin_hashes::sha384::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha384::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha384::Hash", []string{}},
+		{"bitcoin_hashes::sha384::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha3_256::Hash.engine", 0, "factory", "bitcoin_hashes::sha3_256::HashEngine", []string{}},
+		{"bitcoin_hashes::sha3_256::Hash.finalize", 0, "output", "bitcoin_hashes::sha3_256::Hash", []string{}},
+		{"bitcoin_hashes::sha3_256::Hash.hash", 1, "output", "bitcoin_hashes::sha3_256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha3_256::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha3_256::Hash", []string{}},
+		{"bitcoin_hashes::sha3_256::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha512::Hash.engine", 0, "factory", "bitcoin_hashes::sha512::HashEngine", []string{}},
+		{"bitcoin_hashes::sha512::Hash.finalize", 0, "output", "bitcoin_hashes::sha512::Hash", []string{}},
+		{"bitcoin_hashes::sha512::Hash.from_engine", 1, "output", "bitcoin_hashes::sha512::Hash", []string{"bitcoin_hashes::sha512::HashEngine"}},
+		{"bitcoin_hashes::sha512::Hash.hash", 1, "output", "bitcoin_hashes::sha512::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha512::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha512::Hash", []string{}},
+		{"bitcoin_hashes::sha512::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha512_256::Hash.engine", 0, "factory", "bitcoin_hashes::sha512_256::HashEngine", []string{}},
+		{"bitcoin_hashes::sha512_256::Hash.finalize", 0, "output", "bitcoin_hashes::sha512_256::Hash", []string{}},
+		{"bitcoin_hashes::sha512_256::Hash.from_engine", 1, "output", "bitcoin_hashes::sha512_256::Hash", []string{"bitcoin_hashes::sha512_256::HashEngine"}},
+		{"bitcoin_hashes::sha512_256::Hash.hash", 1, "output", "bitcoin_hashes::sha512_256::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::sha512_256::HashEngine.finalize", 0, "output", "bitcoin_hashes::sha512_256::Hash", []string{}},
+		{"bitcoin_hashes::sha512_256::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::siphash24::Hash.engine", 0, "factory", "bitcoin_hashes::siphash24::HashEngine", []string{}},
+		{"bitcoin_hashes::siphash24::Hash.engine", 2, "factory", "bitcoin_hashes::siphash24::HashEngine", []string{"u64", "u64"}},
+		{"bitcoin_hashes::siphash24::Hash.from_engine", 1, "output", "bitcoin_hashes::siphash24::Hash", []string{"bitcoin_hashes::siphash24::HashEngine"}},
+		{"bitcoin_hashes::siphash24::Hash.hash", 1, "output", "bitcoin_hashes::siphash24::Hash", []string{"&[u8]"}},
+		{"bitcoin_hashes::siphash24::Hash.hash_with_keys", 3, "output", "bitcoin_hashes::siphash24::Hash", []string{"u64", "u64", "&[u8]"}},
+		{"bitcoin_hashes::siphash24::HashEngine.input", 1, "operation", "()", []string{"&[u8]"}},
+		{"bitcoin_hashes::siphash24::HashEngine.with_keys", 2, "factory", "bitcoin_hashes::siphash24::HashEngine", []string{"u64", "u64"}}}
 
-fn one_shot(d: &[u8]) {
-    let _a = bitcoin_hashes::sha256::Hash::hash(d);
-    let _b = bitcoin_hashes::sha512::Hash::hash(d);
-    let _c = bitcoin_hashes::ripemd160::Hash::hash(d);
-    let _e = bitcoin_hashes::hash160::Hash::hash(d);
-    let _f = bitcoin_hashes::sha256d::Hash::hash(d);
+	render := func(r row) string {
+		return fmt.Sprintf("%s#%d role=%s ret=%s params=[%s] conf=high",
+			r.method, r.arity, r.role, r.ret, strings.Join(r.params, ","))
+	}
+
+	wantSet := map[string]bool{}
+	for _, r := range want {
+		wantSet[render(r)] = true
+	}
+
+	gotSet := map[string]bool{}
+	for _, list := range kb.Contracts {
+		for _, c := range list {
+			if c.SourceLibrary != "bitcoin_hashes" {
+				continue
+			}
+			gotSet[fmt.Sprintf("%s#%d role=%s ret=%s params=[%s] conf=%s",
+				c.Method, c.Arity, c.Role, c.Return.Type,
+				strings.Join(c.ParameterTypes, ","), c.Return.Confidence)] = true
+		}
+	}
+
+	var missing, unexpected []string
+	for k := range wantSet {
+		if !gotSet[k] {
+			missing = append(missing, k)
+		}
+	}
+	for k := range gotSet {
+		if !wantSet[k] {
+			unexpected = append(unexpected, k)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(unexpected)
+	for _, m := range missing {
+		t.Errorf("missing from the KB: %s", m)
+	}
+	for _, u := range unexpected {
+		t.Errorf("present in the KB but not declared here: %s", u)
+	}
 }
 
-fn streaming(d: &[u8]) {
+// The keys must be authored in the CONVENTION shape
+// `bitcoin_hashes::<module>::Type.method`, not in the shape the call graph
+// emits. rustAuthoredKey bridges the emitted form onto this one; authoring the
+// emitted form leaves the entry unreachable from the parser's own lookup, and
+// the graph then misreports both the engine's type and from_engine's arity.
+func TestBitcoinHashesKeysUseTheAuthoredShape(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(rust): %v", err)
+	}
+	for _, list := range kb.Contracts {
+		for _, c := range list {
+			if c.SourceLibrary != "bitcoin_hashes" {
+				continue
+			}
+			head := c.Method
+			if i := strings.LastIndex(head, "."); i > 0 {
+				head = head[:i]
+			}
+			if strings.Contains(head, ".") {
+				t.Errorf("%s: module path uses '.', want '::' (the authored shape)", c.Method)
+			}
+		}
+	}
+}
+
+// With the authored key shape the parser types the engine, so `input` is keyed
+// on HashEngine and `from_engine` takes its argument. This pins both, because an
+// earlier revision recorded the opposite as facts about the analyzer when they
+// were artefacts of a wrong key.
+func TestBitcoinHashesStreamingIdentitiesAreTyped(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := `use bitcoin_hashes::{sha256, Hash, HashEngine};
+fn f(d: &[u8]) {
     let mut e = bitcoin_hashes::sha256::Hash::engine();
     e.input(d);
     let _h = bitcoin_hashes::sha256::Hash::from_engine(e);
-}
-
-fn keyed(k: &[u8], d: &[u8]) {
-    let _s = bitcoin_hashes::siphash24::Hash::hash_with_keys(1, 2, d);
-    let mut m = HmacEngine::<sha256::Hash>::new(k);
-    let _t = Hmac::<sha256::Hash>::from_engine(m);
-}
-
-fn derive(salt: &[u8], ikm: &[u8], info: &[u8]) {
-    let h = bitcoin_hashes::HkdfSha256::new(salt, ikm);
-    let _o = h.expand_to_len(info, 32);
 }
 `
 	if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte(src), 0o644); err != nil {
@@ -59,117 +231,26 @@ fn derive(salt: &[u8], ikm: &[u8], info: &[u8]) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	type key struct {
-		method string
-		arity  int
-	}
-	want := map[key]string{
-		{"bitcoin_hashes::sha256.Hash.hash", 1}:    "operation",
-		{"bitcoin_hashes::sha512.Hash.hash", 1}:    "operation",
-		{"bitcoin_hashes::ripemd160.Hash.hash", 1}: "operation",
-		{"bitcoin_hashes::hash160.Hash.hash", 1}:   "operation",
-		{"bitcoin_hashes::sha256d.Hash.hash", 1}:   "operation",
-		{"bitcoin_hashes::sha256.Hash.engine", 0}:  "factory",
-		// from_engine emits at arity 0: the engine argument is taken as the
-		// receiver, so the explicit argument is not counted.
-		{"bitcoin_hashes::sha256.Hash.from_engine", 0}: "operation",
-		// input is keyed on Hash, not HashEngine, though it is declared on
-		// the engine.
-		{"bitcoin_hashes::sha256.Hash.input", 1}:             "operation",
-		{"bitcoin_hashes::siphash24.Hash.hash_with_keys", 3}: "operation",
-		{"bitcoin_hashes.HmacEngine.new", 1}:                 "factory",
-		{"bitcoin_hashes.Hmac.from_engine", 1}:               "operation",
-		{"bitcoin_hashes.HkdfSha256.new", 2}:                 "factory",
-	}
-	seen := map[key]bool{}
-
-	for _, analysis := range analyses {
-		for _, fn := range analysis.Functions {
-			for _, call := range fn.Calls {
-				callee := call.Callee
-				method, _ := splitMethodArity(&callee)
-				k := key{method, len(call.Arguments)}
-				wantRole, ok := want[k]
-				if !ok {
-					continue
-				}
-				got := kb.ContractsFor(k.method, k.arity)
-				if len(got) != 1 {
-					t.Fatalf("ContractsFor(%q, %d) = %d, want exactly one", k.method, k.arity, len(got))
-				}
-				if got[0].SourceLibrary != "bitcoin_hashes" {
-					t.Fatalf("%s came from %q, want bitcoin_hashes", k.method, got[0].SourceLibrary)
-				}
-				if got[0].Role != wantRole {
-					t.Fatalf("%s/%d role = %q, want %q", k.method, k.arity, got[0].Role, wantRole)
-				}
-				seen[k] = true
+	seen := map[string]int{}
+	for _, a := range analyses {
+		for _, fn := range a.Functions {
+			for _, c := range fn.Calls {
+				callee := c.Callee
+				m, _ := splitMethodArity(&callee)
+				seen[m] = len(c.Arguments)
 			}
 		}
 	}
-	for k := range want {
-		if !seen[k] {
-			t.Fatalf("parsed calls did not cover %q at arity %d; seen = %v", k.method, k.arity, seen)
-		}
+	if _, ok := seen["bitcoin_hashes::sha256.HashEngine.input"]; !ok {
+		t.Errorf("engine.input is not keyed on HashEngine; seen = %v", seen)
 	}
-}
-
-// Every algorithm module carries the same four entries, and each declares its
-// own return types. A missing module is a whole algorithm going untyped.
-func TestBitcoinHashesEveryAlgorithmModuleIsTyped(t *testing.T) {
-	t.Parallel()
-
-	kb, err := contracts.LoadEmbedded("rust")
-	if err != nil {
-		t.Fatalf("LoadEmbedded(rust): %v", err)
-	}
-
-	for _, algo := range []string{
-		"sha1", "sha256", "sha256d", "sha256t", "sha384", "sha512",
-		"sha512_256", "sha3_256", "ripemd160", "hash160", "muhash", "siphash24",
-	} {
-		for _, tc := range []struct {
-			method string
-			arity  int
-			role   string
-			ret    string
-		}{
-			{"Hash.hash", 1, "operation", "bitcoin_hashes::" + algo + "::Hash"},
-			{"Hash.engine", 0, "factory", "bitcoin_hashes::" + algo + "::HashEngine"},
-			{"Hash.from_engine", 0, "operation", "bitcoin_hashes::" + algo + "::Hash"},
-			{"Hash.input", 1, "operation", "()"},
-		} {
-			key := "bitcoin_hashes::" + algo + "." + tc.method
-			got := kb.ContractsFor(key, tc.arity)
-			if len(got) != 1 {
-				t.Errorf("ContractsFor(%q, %d) = %d, want one", key, tc.arity, len(got))
-				continue
-			}
-			c := got[0]
-			if c.SourceLibrary != "bitcoin_hashes" {
-				t.Errorf("%s came from %q", key, c.SourceLibrary)
-			}
-			if c.Role != tc.role {
-				t.Errorf("%s role = %q, want %q", key, c.Role, tc.role)
-			}
-			if c.Return.Type != tc.ret {
-				t.Errorf("%s return = %q, want %q", key, c.Return.Type, tc.ret)
-			}
-			if c.Return.Confidence != "high" {
-				t.Errorf("%s confidence = %q, want high", key, c.Return.Confidence)
-			}
-			if len(c.ParameterTypes) != tc.arity {
-				t.Errorf("%s has %d parameter types, want %d", key, len(c.ParameterTypes), tc.arity)
-			}
-		}
+	if n, ok := seen["bitcoin_hashes::sha256.Hash.from_engine"]; !ok || n != 1 {
+		t.Errorf("from_engine emitted at arity %d (present=%v), want 1; seen = %v", n, ok, seen)
 	}
 }
 
 // The encoding surface must stay out: those calls move a digest between
-// representations and perform no hashing. `from_slice` and `from_byte_array`
-// return a Hash value, so typing them would route deserialisation through the
-// crypto call graph.
+// representations and perform no hashing.
 func TestBitcoinHashesEncodingSurfaceIsAbsent(t *testing.T) {
 	t.Parallel()
 
@@ -177,7 +258,6 @@ func TestBitcoinHashesEncodingSurfaceIsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEmbedded(rust): %v", err)
 	}
-
 	for _, tc := range []struct {
 		method string
 		arity  int
@@ -189,10 +269,10 @@ func TestBitcoinHashesEncodingSurfaceIsAbsent(t *testing.T) {
 		{"bitcoin_hashes::sha256.Hash.from_str", 1},
 		{"bitcoin_hashes::sha256.Hash.to_engine", 0},
 		{"bitcoin_hashes::sha256.HashEngine.midstate", 0},
+		{"bitcoin_hashes::muhash.Hash.hash", 1},
 	} {
 		if got := kb.ContractsFor(tc.method, tc.arity); len(got) != 0 {
-			t.Errorf("%s/%d resolved to %d contracts; the encoding surface must stay absent",
-				tc.method, tc.arity, len(got))
+			t.Errorf("%s/%d resolved to %d contracts; it must stay absent", tc.method, tc.arity, len(got))
 		}
 	}
 }
