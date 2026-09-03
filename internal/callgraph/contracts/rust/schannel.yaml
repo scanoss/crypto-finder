@@ -132,48 +132,18 @@ contracts:
     parameter_types: ["schannel::schannel_cred::Direction"]
     role: operation
 
-  # THE FOUR ENTRIES BELOW ARE DECLARED ON `SchannelCred`, WHICH DOES NOT HAVE
-  # THESE METHODS. They exist because that is the identity the resolver emits,
-  # and a contract keyed on the truthful type joins nothing for real consumer
-  # code. MEASURED on `let mut b = SchannelCred::builder(); b.enabled_protocols(..);
-  # b.supported_algorithms(..); b.acquire(..)`:
+  # FOUR ENTRIES DECLARED ON `SchannelCred` USED TO SIT HERE, mirroring the
+  # Builder methods onto a type that does not own them. They existed because the
+  # resolver typed an associated function from the PATH it was called on, so
+  # `SchannelCred::builder()` yielded `SchannelCred` and a contract keyed on the
+  # truthful `Builder` joined nothing for real consumer code.
   #
-  #   schannel::schannel_cred.SchannelCred.enabled_protocols
-  #   schannel::schannel_cred.SchannelCred.supported_algorithms
-  #   schannel::schannel_cred.SchannelCred.acquire
-  #
-  # Every hop resolves, and every one under `SchannelCred` rather than
-  # `schannel_cred::Builder`. The cause is that an ASSOCIATED FUNCTION's return
-  # type is taken from the path whose function was called -- right for
-  # `Type::new()`, wrong for a builder accessor -- so `SchannelCred::builder()`
-  # yields `SchannelCred` even though this file declares its return as
-  # `Builder`. `contractReturnType` consults the KB for METHOD calls on
-  # third-party receivers; it is not reached for `Type::assoc_fn()`.
-  #
-  # The truthful `Builder.*` entries above are kept as well: they are what a
-  # reader should see, and they are what will join once the resolver takes an
-  # associated function's return type from its contract. Delete these four then.
-  - method: schannel::schannel_cred::SchannelCred.enabled_protocols
-    arity: 1
-    return: { type: "schannel::schannel_cred::Builder", confidence: high }
-    parameter_types: ["&[schannel::schannel_cred::Protocol]"]
-    role: config
-  - method: schannel::schannel_cred::SchannelCred.supported_algorithms
-    arity: 1
-    return: { type: "schannel::schannel_cred::Builder", confidence: high }
-    parameter_types: ["&[schannel::schannel_cred::Algorithm]"]
-    role: config
-  - method: schannel::schannel_cred::SchannelCred.cert
-    arity: 1
-    return: { type: "schannel::schannel_cred::Builder", confidence: high }
-    parameter_types: ["schannel::cert_context::CertContext"]
-    role: config
-  - method: schannel::schannel_cred::SchannelCred.acquire
-    arity: 1
-    return: { type: "schannel::schannel_cred::SchannelCred", confidence: high }
-    canonical_return_type: "core::result::Result<schannel::schannel_cred::SchannelCred, std::io::Error>"
-    parameter_types: ["schannel::schannel_cred::Direction"]
-    role: operation
+  # rustScopedCallType now asks the KB for an associated function's return type
+  # before falling back to the path, so `SchannelCred::builder()` types as
+  # `schannel_cred::Builder` and the truthful entries above are the ones that
+  # join. The four mirrors were deleted with that change, as the note they
+  # carried instructed. Do not reintroduce them: a second entry for a method the
+  # type does not have is a wrong identity that looks resolved.
 
   # ---- TLS handshake: tls_stream ----
   - method: schannel::tls_stream::Builder.new
