@@ -1502,9 +1502,19 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 		}
 		pkg, typ := splitQualifiedTypeName(currentType)
 		name := fmt.Sprintf("%s#%d", base, arity)
-		if kb.Ecosystem == ecosystemGo {
+		switch kb.Ecosystem {
+		case ecosystemGo:
 			// Go declarations carry no arity suffix (the language has no
 			// overloading), so the rewritten identity must not either.
+			name = base
+		case ecosystemRust:
+			// Rust separates module path from type with "::", not ".", so the
+			// Java-shaped split above puts the WHOLE path in the type field and
+			// leaves the package empty -- `.schannel::tls_stream::Builder.connect`
+			// instead of `schannel::tls_stream.Builder.connect`, which joins
+			// nothing. Rust callee names carry no arity suffix either, for the
+			// same reason Go's do not.
+			pkg, typ = splitRustQualifiedTypeName(currentType)
 			name = base
 		}
 		rewritten := FunctionID{Package: pkg, Type: typ, Name: name}
@@ -1907,6 +1917,17 @@ func methodBaseArity(name string) (string, int) {
 // splitQualifiedTypeName splits a fully-qualified type name into package and
 // simple type (e.g. "com.password4j.HashBuilder" -> "com.password4j",
 // "HashBuilder").
+// splitRustQualifiedTypeName splits a Rust path-qualified type into the module
+// path and the type name the parser keys a callee with: the contract KB spells
+// a type `schannel::tls_stream::Builder` throughout, and the call-site identity
+// is Package "schannel::tls_stream" plus Type "Builder".
+func splitRustQualifiedTypeName(fqn string) (pkg, typ string) {
+	if idx := strings.LastIndex(fqn, "::"); idx >= 0 {
+		return fqn[:idx], fqn[idx+2:]
+	}
+	return "", fqn
+}
+
 func splitQualifiedTypeName(fqn string) (pkg, typ string) {
 	if idx := strings.LastIndex(fqn, "."); idx >= 0 {
 		return fqn[:idx], fqn[idx+1:]
