@@ -1,0 +1,571 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: bitcoin_hashes
+  coordinates:
+    - bitcoin_hashes
+  version_range: ">=0.7.6,<2.0.0"
+  description: "Bitcoin hash functions: SHA, RIPEMD, HASH160, SipHash, HMAC and HKDF"
+
+# API read at 1.2.0 and 0.14.0, and cross-checked at 0.13.0, 0.11.0 and 0.7.6.
+#
+# KEY SHAPE. Authored as `bitcoin_hashes::<module>::Type.method`, which is the
+# convention every other Rust KB here uses (`sha2::Sha224.new`). The call graph
+# EMITS `bitcoin_hashes::sha256.Hash.hash` and `rustAuthoredKey` bridges the two
+# by rewriting the second-to-last dot; authoring the emitted form instead leaves
+# the key unreachable from the parser's own lookup in rust_type_semantics.go,
+# which builds `pkg + "::" + typ + "." + method`.
+#
+# That is not a cosmetic difference. With the emitted form authored, the parser
+# never types the engine, and the graph then reports `engine.input(..)` against
+# `Hash` and `Hash::from_engine(e)` at arity 0. With the authored form it reports
+# `HashEngine.input` and `from_engine` at arity 1, which is what the source says.
+# An earlier revision of this file recorded those two artefacts as facts about
+# the analyzer; they were facts about the wrong key.
+#
+# TWO ERAS, AND THE TRAIT IS DIFFERENT IN EACH:
+#   0.7.6-0.14.0  Hash: engine, from_engine, from_slice, hash, hash_byte_chunks,
+#                 input, midstate, n_bytes_hashed
+#   1.x           Hash: finalize, hash, input, n_bytes_hashed, with_input
+#                 `engine` and `from_engine` are GONE; the crate-root aliases
+#                 (`Sha256`, `Sha512`, ...) and `hkdf` arrive.
+# An entry for a method the scanned version does not have simply never appears,
+# so era-specific entries are inert rather than wrong. Where an arity genuinely
+# CONFLICTS across the eras it is recorded twice, which the method+arity index
+# keys apart: `siphash24::Hash.engine` takes nothing in 0.x and `(k0, k1)` in
+# 1.x.
+#
+# ALGORITHM SET BY VERSION:
+#   0.7.6-0.11.0  hash160, hmac, ripemd160, sha1, sha256, sha256d, sha256t,
+#                 sha512, siphash24
+#   0.13.0        + sha512_256      0.14.0  + sha384
+#   1.x           + sha3_256, hkdf  (and muhash, which is NOT typed here)
+#
+# muhash IS DELIBERATELY ABSENT. Its module is a wrapper newtype with only
+# `from_bytes_ref` / `from_bytes_mut`; its own documentation says the hash
+# "cannot be computed by this crate". There is no `muhash::HashEngine` type and
+# no hashing entry point to record.
+#
+# sha256d, sha256t and hash160 are SHA-256 CONSTRUCTIONS, and their engine is
+# `sha256::HashEngine` — declared as such in 0.x (`type HashEngine =
+# sha256::HashEngine`). The return types below say so rather than inventing a
+# per-module engine type.
+#
+# THE ENCODING SURFACE IS DELIBERATELY ABSENT, for the same reason the rules do
+# not match it: `from_slice`, `from_byte_array`, `to_byte_array`,
+# `as_byte_array`, `from_str`, `midstate` and `to_engine` move a digest between
+# representations and perform no hashing. `from_slice` and `from_byte_array`
+# return a `Hash` value, so typing them would route deserialisation through the
+# crypto call graph.
+contracts:
+# ---- one module per algorithm --------------------------------------------
+  - method: bitcoin_hashes::sha1::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha1::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha1::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha1::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha1::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha1::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha1::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha1::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha256::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha256::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha256::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha256::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha256::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256d::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha256d::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha256d::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha256::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha256d::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256d::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha256d::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256t::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha256t::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha256t::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha256t::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha256t::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha256::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha256t::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256t::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha256t::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha256t::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256t::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha384::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha384::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha384::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha384::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha384::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha384::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha384::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha384::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha512::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha512::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha512::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha512::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha512::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha512::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha512::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha512::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha512_256::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha512_256::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha512_256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha512_256::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha512_256::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::sha512_256::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha512_256::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha512_256::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha3_256::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha3_256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::sha3_256::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha3_256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::sha3_256::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha3_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::sha3_256::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::sha3_256::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha3_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::ripemd160::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::ripemd160::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::ripemd160::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::ripemd160::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::ripemd160::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::ripemd160::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::ripemd160::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::ripemd160::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::hash160::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::hash160::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::hash160::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::sha256::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::hash160::Hash.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::hash160::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::hash160::HashEngine.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+
+# ---- siphash24 is KEYED: engine takes its keys, and the arity CHANGED ----
+  - method: bitcoin_hashes::siphash24::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::siphash24::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::siphash24::Hash.hash_with_keys
+    arity: 3
+    return: { type: bitcoin_hashes::siphash24::Hash, confidence: high }
+    parameter_types: ["u64", "u64", "&[u8]"]
+    role: output
+  - method: bitcoin_hashes::siphash24::Hash.engine
+    arity: 0
+    return: { type: bitcoin_hashes::siphash24::HashEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::siphash24::Hash.engine
+    arity: 2
+    return: { type: bitcoin_hashes::siphash24::HashEngine, confidence: high }
+    parameter_types: ["u64", "u64"]
+    role: factory
+  - method: bitcoin_hashes::siphash24::Hash.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::siphash24::Hash, confidence: high }
+    parameter_types: ["bitcoin_hashes::siphash24::HashEngine"]
+    role: output
+  - method: bitcoin_hashes::siphash24::HashEngine.with_keys
+    arity: 2
+    return: { type: bitcoin_hashes::siphash24::HashEngine, confidence: high }
+    parameter_types: ["u64", "u64"]
+    role: factory
+  - method: bitcoin_hashes::siphash24::HashEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+
+# ---- crate-root aliases: the spelling the 1.x front page uses -------------
+  - method: bitcoin_hashes::Sha1.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha1.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha256.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha256.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha256d.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha256d.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha256d::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha384.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha384.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha384::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha512.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha512.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha512_256.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha512_256.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha512_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Sha3_256.hash
+    arity: 1
+    return: { type: bitcoin_hashes::sha3_256::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Sha3_256.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::sha3_256::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Ripemd160.hash
+    arity: 1
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Ripemd160.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::ripemd160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Hash160.hash
+    arity: 1
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Hash160.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::hash160::Hash, confidence: high }
+    parameter_types: []
+    role: output
+  - method: bitcoin_hashes::Siphash24.hash
+    arity: 1
+    return: { type: bitcoin_hashes::siphash24::Hash, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: output
+  - method: bitcoin_hashes::Siphash24.finalize
+    arity: 0
+    return: { type: bitcoin_hashes::siphash24::Hash, confidence: high }
+    parameter_types: []
+    role: output
+
+# ---- HMAC. `new` is on the ENGINE; Hmac has none. ------------------------
+  - method: bitcoin_hashes::hmac::HmacEngine.new
+    arity: 1
+    return: { type: bitcoin_hashes::hmac::HmacEngine, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: bitcoin_hashes::hmac::HmacEngine.from_inner_engines
+    arity: 2
+    return: { type: bitcoin_hashes::hmac::HmacEngine, confidence: high }
+    parameter_types: ["T::Engine", "T::Engine"]
+    role: factory
+  - method: bitcoin_hashes::hmac::HmacEngine.input
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: bitcoin_hashes::hmac::Hmac.engine
+    arity: 0
+    return: { type: bitcoin_hashes::hmac::HmacEngine, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: bitcoin_hashes::hmac::Hmac.from_engine
+    arity: 1
+    return: { type: bitcoin_hashes::hmac::Hmac, confidence: high }
+    parameter_types: ["bitcoin_hashes::hmac::HmacEngine"]
+    role: output
+
+# ---- HKDF: 1.x only ------------------------------------------------------
+  - method: bitcoin_hashes::hkdf::Hkdf.new
+    arity: 2
+    return: { type: bitcoin_hashes::hkdf::Hkdf, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: factory
+  - method: bitcoin_hashes::hkdf::Hkdf.expand
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: bitcoin_hashes::hkdf::Hkdf.expand_to_len
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "usize"]
+    role: output
+  - method: bitcoin_hashes::HkdfSha256.new
+    arity: 2
+    return: { type: bitcoin_hashes::hkdf::Hkdf, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: factory
+  - method: bitcoin_hashes::HkdfSha256.expand
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: bitcoin_hashes::HkdfSha256.expand_to_len
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "usize"]
+    role: output
+  - method: bitcoin_hashes::HkdfSha512.new
+    arity: 2
+    return: { type: bitcoin_hashes::hkdf::Hkdf, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: factory
+  - method: bitcoin_hashes::HkdfSha512.expand
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: bitcoin_hashes::HkdfSha512.expand_to_len
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "usize"]
+    role: output
+
+hierarchy: {}
