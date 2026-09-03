@@ -1,0 +1,497 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: blake3
+  coordinates:
+    - blake3
+  version_range: ">=0.1.0,<2.0.0"
+  description: "The official BLAKE3 crate: unkeyed hashing, keyed hashing, key derivation, and the 1.8 hazmat tree primitives"
+
+# EVERY KEY BELOW WAS READ OFF A PARSED CALL, not written from the API. The
+# probe consumer calls each entry point the way real consumers do; the keys are
+# what the Rust parser emits for those calls, and before this file existed each
+# one rendered in an exported callgraph as `name(?)` with empty
+# `parameter_types`.
+#
+# THAT RENDERING IS NOT WHAT SAYS A CONTRACT RESOLVED, and it is worth being
+# precise because the obvious reading is wrong. An external call renders as
+# `name(?, ?)` whether or not a contract exists; what fills the exported
+# signature is `parameter_types` and `canonical_return_type`, which is why they
+# are declared below for every entry whose signature is unambiguous across the
+# range it is reachable in. `bcrypt.yaml` records the same finding. The wiring
+# tests, not the rendering, are what pin the keys.
+#
+# How the table below was produced: parse a probe with
+# `NewRustParser().ParseDirectory`, then for each `fn.Calls` entry print
+# `splitMethodArity(&call.Callee)` for the KEY and `len(call.Arguments)` for the
+# ARITY. The two come from different places on purpose -- `splitMethodArity`
+# reads arity from a `#N` suffix on `FunctionID.Name`, the Rust parser emits no
+# such suffix, so it returns -1 for every Rust call and the argument count is
+# the only real source.
+#
+#   use blake3::Hasher;  Hasher::new()          -> blake3.Hasher.new          /0
+#   blake3::Hasher::new()                       -> blake3.Hasher.new          /0
+#   hasher.update(data)                         -> blake3.Hasher.update       /1
+#   hasher.update_with_join::<RayonJoin>(data)  -> blake3.Hasher.update_with_join /1
+#   reader.set_position(32)                     -> blake3.OutputReader.set_position /1
+#   blake3::hash(data)                          -> blake3.hash                /1
+#   blake3::hazmat::merge_subtrees_root(a,b,m)
+#                            -> blake3::hazmat.merge_subtrees_root            /3
+#   use blake3::hazmat;  hazmat::merge_subtrees_root(a,b,m)
+#                            -> blake3.hazmat.merge_subtrees_root             /3
+#
+# WHAT VARIES IS WHETHER A MODULE SEGMENT IS THERE AT ALL, not which separator
+# spells it. `Hasher`, `OutputReader` and the three free functions are exported
+# from the crate root and carry no segment; everything under `hazmat` carries
+# one. A hazmat key written without it resolves nothing -- indistinguishable
+# from having no contract, which is why it is asserted rather than reviewed.
+#
+# The separator itself is normalized by the lookup: `ContractsFor` returns the
+# same single contract for `blake3::Hasher.update`, `blake3.Hasher.update` and
+# the `blake3.hazmat.*` spelling a `use blake3::hazmat;` consumer produces. So
+# the `::` used below for types and modules is this repository's existing
+# convention (1687 of the 1852 rust keys), not a second fact about the parser.
+#
+# THE TURBOFISH IS STRIPPED BEFORE THE KEY IS BUILT.
+# `update_with_join::<RayonJoin>(input)` keys as `update_with_join` at arity 1,
+# so the 0.2-0.3 join API needs one entry rather than one per join type. That
+# is measured above, not assumed: a per-type key set would have been the
+# obvious authoring mistake here.
+#
+# ARITY IS NOT CARRIED INTO THE LOOKUP ON THE RUST INFERENCE PATH, and the
+# dual-arity `derive_key` entry below is worth less there than it looks.
+# Measured: `ContractsFor("blake3.derive_key", -1)` returns the ARITY-2 entry,
+# because the Rust path looks up at -1 and `rustContractsFor` then falls through
+# to lowest-arity-by-name. So a 0.1.0-0.3.8 three-argument call site infers
+# `[u8; 32]` rather than `void` during inference. The export path passes the
+# real argument count and honors the pair correctly. Recorded rather than
+# worked around: the fix belongs to the inference layer, not to this file, and
+# changing it would affect every ecosystem.
+#
+# `derive_key` IS DECLARED AT TWO ARITIES, which is the family's one API break:
+#
+#   0.1.0 - 0.3.8   derive_key(context, key_material, &mut output) -> ()
+#                   (0.1.0 src/lib.rs:700, 0.3.8 src/lib.rs:781)
+#   1.0.0 - 1.8.x   derive_key(context, key_material) -> [u8; OUT_LEN]
+#                   (1.0.0 src/lib.rs:870, 1.8.5 src/lib.rs:1003)
+#
+# The two never co-exist in one release, so nothing is ambiguous, and a consumer
+# pinned to either side resolves. A published consumer does use the 3-argument
+# form, so declaring only the modern arity would have left real call sites
+# unresolved while looking complete.
+#
+# THE RANGE SPANS THE WHOLE PUBLISHED LINE ABOVE 0.1.0, and most entries do not
+# exist across all of it. That is deliberate and is the same shape `bcrypt.yaml`
+# declares and justifies: a contract for a spelling that does not yet exist
+# simply matches nothing, so a wide range costs nothing, while narrowing it to
+# the intersection would be impossible here -- `update_with_join` is 0.2.0-0.3.8
+# only and `hazmat` is 1.8.0+, which are disjoint.
+#
+# THE OTHER PRECEDENT IN THIS DIRECTORY SAYS THE OPPOSITE, and it was considered
+# rather than overlooked: `balloon.yaml` and the four `biscuit*.yaml` files state
+# that `version_range` may only claim versions for which every entry is true,
+# and biscuit was SPLIT INTO FOUR FILES to honor it. Splitting was rejected
+# here because blake3's windows would need six files for one crate -- the core
+# surface, the 0.x-only join API, the 1.0 renames, the 1.5 io inputs, the 1.8
+# hazmat surface and the trait surface -- which buys nothing measurable:
+# `VersionRange` is parsed and stored (`contracts.go:383`, `:471`) and is never
+# consulted at lookup. What would be a real defect is a range claiming a version
+# where a declared signature is FALSE, and none is. What the range must never do
+# is claim a version for which a declared signature is FALSE, and none is: every
+# parameter type and return declared below was checked at 0.1.0 as well as at
+# 1.8.5 and is unchanged, and the one entry whose signature really did change is
+# split into the two arities above. First reachable release per entry:
+# hash / keyed_hash / derive_key(3) / Hasher::{new,new_keyed,new_derive_key,
+# update,finalize,finalize_xof} / OutputReader::{fill,position,set_position} at
+# 0.1.0; Hasher::{reset,default} at 0.2.0 (0.2.0 src/lib.rs:855, :1181);
+# update_with_join 0.2.0-0.3.8; derive_key(2) and update_rayon at 1.0.0;
+# update_reader / update_mmap / update_mmap_rayon at 1.5.0; every hazmat entry,
+# and the three `HasherExt` methods, at 1.8.0.
+#
+# 0.0.0 IS EXCLUDED ON PURPOSE. That release is a name-reservation stub whose
+# entire `src/lib.rs` is one `#[cfg(test)] mod tests` with no public item, so
+# there is nothing for a contract to describe. The claim is checkable from the
+# published crate itself; nothing outside this repository has to be consulted.
+#
+# Dispositions for the rest of the public surface. This block is the file's
+# contract with the next author, so it names everything it does not contract
+# rather than claiming completeness loosely.
+#   skipped-non-crypto: `Hash::{as_bytes, as_slice, from_bytes, from_slice,
+#     to_hex, from_hex}` and `HexError` move an already-computed digest between
+#     representations. `Hasher::new_from_slice` is NOT one of these -- it is a
+#     keyed constructor and is contracted above.
+#   skipped-non-crypto: `Hasher::clone`, and the `Zeroize` impls on `Hasher`,
+#     `Hash`, `Output`, `ChunkState` and `OutputReader` (1.8.5 src/lib.rs:342,
+#     :478, :609, :1642, :1830). Zeroizing is memory hygiene applied to a value
+#     the graph already knows; it neither performs nor configures an operation.
+#   skipped-non-callable: `OUT_LEN`, `KEY_LEN`, `BLOCK_LEN`, `CHUNK_LEN` and
+#     `MAX_SIMD_DEGREE` are constants, and `hazmat::Mode` and
+#     `IncrementCounter` are enums, so none of them is a call site.
+#   skipped-non-crypto: the `platform` module and the SIMD detection functions,
+#     which are dispatch-level and are not reachable from a consumer's crypto
+#     call; and `join` (public 0.2.0-0.3.8), which supplies the `J` type
+#     parameter to `update_with_join` and carries no operation of its own --
+#     `RayonJoin::join` is a thread-pool call, and the turbofish that names it
+#     is stripped before the key is built, so the family's coverage of that API
+#     is the contracted `update_with_join` itself.
+#   NOT skipped, and the earlier version of this block was WRONG about it:
+#     `traits` is not build-level plumbing. It implements MacMarker and KeyInit
+#     alongside the Digest surface (src/traits.rs:78-86), which makes
+#     `blake3::Hasher` a full RustCrypto MAC -- the crate's own tests there are
+#     named test_mac_trait and test_hmac_compatibility. That surface is
+#     contracted above, on both the keyed and unkeyed sides, as `blake2.yaml`
+#     does for its own hashers. It is reachable only with the crate's
+#     `traits-preview` feature enabled, which is off by default; that is the
+#     real reason it is a smaller consumer surface than the inherent API, and
+#     it is a reason to note rather than to skip it.
+#   skipped-unsupported: `hazmat::{max_subtree_len, left_subtree_len}` and
+#     `guts` (`ChunkState`, `parent_cv`). The `hazmat` pair are integer
+#     arithmetic helpers carrying no crypto identity. `guts` is the PRE-1.8
+#     tree-hashing surface -- public and undeprecated from 0.1.0, deprecated
+#     only at 1.8.5 -- and it is genuinely uncovered by this family: tree
+#     hashing is contracted for 1.8.0+ through hazmat and not for 0.1.0-1.7.x.
+#     Reported on the family's issue rather than closed over silently.
+contracts:
+  # --- unkeyed hashing -------------------------------------------------------
+  - method: blake3.hash
+    arity: 1
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "blake3::Hash"
+    role: output
+  - method: blake3::Hasher.new
+    arity: 0
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  - method: blake3::Hasher.default
+    arity: 0
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  # --- keyed hashing (MAC) ---------------------------------------------------
+  - method: blake3.keyed_hash
+    arity: 2
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: ["&[u8; 32]", "&[u8]"]
+    canonical_return_type: "blake3::Hash"
+    role: output
+  - method: blake3::Hasher.new_keyed
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8; 32]"]
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  # --- key derivation --------------------------------------------------------
+  # The 1.0.0+ returning form.
+  - method: blake3.derive_key
+    arity: 2
+    return: {type: "[u8; 32]", confidence: high}
+    parameter_types: ["&str", "&[u8]"]
+    canonical_return_type: "[u8; 32]"
+    role: output
+  # The 0.1.0-0.3.8 out-parameter form: same name, one more argument, and the
+  # derived bytes go to the caller's buffer instead of being returned.
+  - method: blake3.derive_key
+    arity: 3
+    return: {type: void, confidence: high}
+    parameter_types: ["&str", "&[u8]", "&mut [u8]"]
+    canonical_return_type: "()"
+    role: output
+    # The caller's buffer length IS the derived key length in this era, and it
+    # is the only place that length is knowable -- the 1.0.0+ form returns a
+    # fixed [u8; 32] instead. `bcrypt.yaml` declares the same thing on its own
+    # out-parameter entry.
+    parameters:
+      - index: 2
+        name: output
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: blake3::Hasher.new_derive_key
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&str"]
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  # --- the hasher's lifecycle ------------------------------------------------
+  # These are the calls a consumer writes between the constructor and the
+  # digest. crypto-finder derives them structurally as supporting calls, so no
+  # rule names them; the contract is what gives each one a return type, which is
+  # what keeps a fluent chain on the HASHER resolved to the end. Measured: it
+  # does for these method links, including through `?` on the io forms. It does
+  # NOT extend to a chain rooted on one of the crate-root or hazmat FREE
+  # functions, and the failure is worse than "unresolved": `blake3::hash(x)
+  # .to_hex()` emits `app.to_hex`, naming the SCANNED crate as the owner of a
+  # third-party call -- a wrong identity that looks resolved and matches no
+  # contract, which `rust_type_semantics.go` names as such itself. Same for
+  # `merge_subtrees_root_xof(..).fill(..)` -> `app.fill`. Exposure is narrow:
+  # the two-statement form the crate's own doc example uses (`let mut reader =
+  # merge_subtrees_root_xof(..); reader.fill(..)`) resolves correctly. A
+  # limitation of the inference path, not of these declarations.
+  - method: blake3::Hasher.update
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&mut blake3::Hasher"
+    role: operation
+  - method: blake3::Hasher.update_rayon
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&mut blake3::Hasher"
+    role: operation
+  # 1.5.0 added the reader and mmap inputs (src/lib.rs:1341, :1413, :1465). All
+  # three return `std::io::Result<&mut Self>`; `return.type` is the unwrapped
+  # hasher because that is what the `?` the consumer writes yields and what the
+  # next link in the chain receives, while `canonical_return_type` carries the
+  # full declared type. That split is the shape `balloon.yaml` uses for the same
+  # situation, and it is why confidence is high rather than hedged.
+  - method: blake3::Hasher.update_reader
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["impl std::io::Read"]
+    canonical_return_type: "std::io::Result<&mut blake3::Hasher>"
+    role: operation
+  - method: blake3::Hasher.update_mmap
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["impl AsRef<std::path::Path>"]
+    canonical_return_type: "std::io::Result<&mut blake3::Hasher>"
+    role: operation
+  - method: blake3::Hasher.update_mmap_rayon
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["impl AsRef<std::path::Path>"]
+    canonical_return_type: "std::io::Result<&mut blake3::Hasher>"
+    role: operation
+  # 0.2.0-0.3.8 only: the generic join form, replaced by `update_rayon` at
+  # 1.0.0 (0.3.8 src/lib.rs:1023).
+  - method: blake3::Hasher.update_with_join
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&mut blake3::Hasher"
+    role: operation
+  # `count` and `OutputReader::position` are pure reads -- of input absorbed and
+  # of the XOF cursor. Neither performs crypto; both are contracted so a chain
+  # that passes through them stays typed, which is the only claim made for
+  # them. An earlier version skipped `count` as non-crypto while contracting
+  # `position`, on a distinction that did not survive being written down.
+  - method: blake3::Hasher.count
+    arity: 0
+    return: {type: u64, confidence: high}
+    parameter_types: []
+    canonical_return_type: "u64"
+    role: operation
+  - method: blake3::Hasher.reset
+    arity: 0
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: []
+    canonical_return_type: "&mut blake3::Hasher"
+    role: operation
+  - method: blake3::Hasher.finalize
+    arity: 0
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::Hash"
+    role: output
+  - method: blake3::Hasher.finalize_xof
+    arity: 0
+    return: {type: blake3::OutputReader, confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::OutputReader"
+    role: output
+  # --- the extendable-output reader ------------------------------------------
+  - method: blake3::OutputReader.fill
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    role: output
+    # The buffer length is the XOF output length, chosen by the caller.
+    parameters:
+      - index: 0
+        name: buf
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_byte_length}
+  - method: blake3::OutputReader.position
+    arity: 0
+    return: {type: u64, confidence: high}
+    parameter_types: []
+    canonical_return_type: "u64"
+    role: operation
+  - method: blake3::OutputReader.set_position
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["u64"]
+    canonical_return_type: "()"
+    role: operation
+  # --- hazmat (1.8.0+) -------------------------------------------------------
+  # The tree-hashing primitives Bao-style verified streaming needs. The returns
+  # are NOT uniform and are declared from the source rather than by symmetry:
+  # only `merge_subtrees_non_root` yields a `ChainingValue`; the root form yields
+  # a full `blake3::Hash` (1.8.5 src/hazmat.rs:476) and the xof form an
+  # `OutputReader` (:526).
+  - method: blake3::hazmat.hash_derive_key_context
+    arity: 1
+    return: {type: "blake3::hazmat::ContextKey", confidence: high}
+    parameter_types: ["&str"]
+    canonical_return_type: "blake3::hazmat::ContextKey"
+    role: output
+  - method: blake3::hazmat.merge_subtrees_root
+    arity: 3
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: ["&blake3::hazmat::ChainingValue", "&blake3::hazmat::ChainingValue", "blake3::hazmat::Mode"]
+    canonical_return_type: "blake3::Hash"
+    role: output
+  - method: blake3::hazmat.merge_subtrees_non_root
+    arity: 3
+    return: {type: "blake3::hazmat::ChainingValue", confidence: high}
+    parameter_types: ["&blake3::hazmat::ChainingValue", "&blake3::hazmat::ChainingValue", "blake3::hazmat::Mode"]
+    canonical_return_type: "blake3::hazmat::ChainingValue"
+    role: output
+  - method: blake3::hazmat.merge_subtrees_root_xof
+    arity: 3
+    return: {type: blake3::OutputReader, confidence: high}
+    parameter_types: ["&blake3::hazmat::ChainingValue", "&blake3::hazmat::ChainingValue", "blake3::hazmat::Mode"]
+    canonical_return_type: "blake3::OutputReader"
+    role: output
+  # The `HasherExt` trait (1.8.0, src/hazmat.rs:156), implemented on `Hasher`
+  # itself, so a consumer's calls key under the TYPE and not under the module.
+  # These are the chunk-level entry points a verified-streaming consumer drives
+  # directly, and they are as much this crate's crypto as the free functions
+  # above -- `finalize_non_root` appears in the crate's own doc example.
+  - method: blake3::Hasher.new_from_context_key
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&blake3::hazmat::ContextKey"]
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  - method: blake3::Hasher.set_input_offset
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["u64"]
+    canonical_return_type: "&mut blake3::Hasher"
+    role: operation
+  - method: blake3::Hasher.finalize_non_root
+    arity: 0
+    return: {type: "blake3::hazmat::ChainingValue", confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::hazmat::ChainingValue"
+    role: output
+  # --- the io::Write input path ---------------------------------------------
+  # `impl std::io::Write for Hasher` (1.8.5 src/lib.rs:1627), present since
+  # 0.1.0. Before `update_reader` arrived at 1.5.0 this was THE way to stream a
+  # file into a hasher -- `std::io::copy(&mut file, &mut hasher)` or
+  # `hasher.write_all(data)` -- so it plays the same role as `update` and needs
+  # the same typing for a chain to survive it.
+  - method: blake3::Hasher.write_all
+    arity: 1
+    return: {type: blake3::Hasher, confidence: medium}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "std::io::Result<()>"
+    role: operation
+  - method: blake3::Hasher.flush
+    arity: 0
+    return: {type: blake3::Hasher, confidence: medium}
+    parameter_types: []
+    canonical_return_type: "std::io::Result<()>"
+    role: operation
+  # --- the reader's trait surface -------------------------------------------
+  # `impl XofReader for OutputReader` (src/traits.rs:63) plus `impl Read` and
+  # `impl Seek` (src/lib.rs:1796, :1805). `read`/`read_exact` are the trait
+  # forms of `fill`, and `seek` the trait form of `set_position`; contracting
+  # `fill` and `set_position` while skipping these would cover one spelling of
+  # each operation and not the other.
+  - method: blake3::OutputReader.read
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    role: output
+  - method: blake3::OutputReader.read_exact
+    arity: 1
+    return: {type: void, confidence: medium}
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "std::io::Result<()>"
+    role: output
+  - method: blake3::OutputReader.seek
+    arity: 1
+    return: {type: u64, confidence: medium}
+    parameter_types: ["std::io::SeekFrom"]
+    canonical_return_type: "std::io::Result<u64>"
+    role: operation
+  # --- the RustCrypto digest/Mac surface ------------------------------------
+  # src/traits.rs implements HashMarker, Update, Reset, OutputSizeUser,
+  # FixedOutput, FixedOutputReset, ExtendableOutput, ExtendableOutputReset,
+  # KeySizeUser, BlockSizeUser, MacMarker and KeyInit, so the blanket `Digest`
+  # and `Mac` traits both apply and their provided methods are reachable.
+  # `blake2.yaml` contracts exactly this surface for its own hashers.
+  #
+  # NOTE WHICH SIDE EACH ONE IS. `new_with_prefix`, `chain_update`, `digest`,
+  # `finalize_into`, `finalize_reset`, `finalize_into_reset` and
+  # `finalize_xof_reset` are the UNKEYED (Digest) surface; `new_from_slice` and
+  # `verify_slice` are the KEYED (Mac) surface -- `KeyInit::new` delegates to
+  # `new_keyed` (src/traits.rs:80-86), which is why the detection rules claim
+  # those two as a MAC and not as a hash.
+  - method: blake3::Hasher.new_with_prefix
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "blake3::Hasher"
+    role: factory
+  - method: blake3::Hasher.new_from_slice
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<blake3::Hasher, digest::InvalidLength>"
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: blake3::Hasher.chain_update
+    arity: 1
+    return: {type: blake3::Hasher, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "blake3::Hasher"
+    role: operation
+  - method: blake3::Hasher.digest
+    arity: 1
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "digest::Output<blake3::Hasher>"
+    role: output
+  - method: blake3::Hasher.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["&mut digest::Output<blake3::Hasher>"]
+    canonical_return_type: "()"
+    role: output
+  - method: blake3::Hasher.finalize_into_reset
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["&mut digest::Output<blake3::Hasher>"]
+    canonical_return_type: "()"
+    role: output
+  - method: blake3::Hasher.finalize_reset
+    arity: 0
+    return: {type: blake3::Hash, confidence: high}
+    parameter_types: []
+    canonical_return_type: "digest::Output<blake3::Hasher>"
+    role: output
+  - method: blake3::Hasher.finalize_xof_reset
+    arity: 0
+    return: {type: blake3::OutputReader, confidence: high}
+    parameter_types: []
+    canonical_return_type: "blake3::OutputReader"
+    role: output
+  - method: blake3::Hasher.verify_slice
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<(), digest::MacError>"
+    role: output
