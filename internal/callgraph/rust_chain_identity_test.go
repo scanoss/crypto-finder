@@ -221,3 +221,121 @@ func rustCallsByFunction(t *testing.T, src string) map[string][]FunctionCall {
 	}
 	return out
 }
+
+// TestRustAssociatedFunctionTypeComesFromTheContract pins the third defect.
+// rustScopedCallType typed `Type::assoc()` from the PATH it was called on,
+// which is right for a constructor and wrong for every builder accessor:
+// `SchannelCred::builder()` came out as `SchannelCred`, so the next hop looked
+// for methods on a type that does not have them.
+//
+// The shape below is deliberately NOT a fluent chain. Chain grouping cannot
+// reach it — each call is its own statement — so this is the case that isolates
+// the contract lookup from everything else on this branch.
+//
+// schannel.yaml carried four entries declared on `SchannelCred` for methods
+// that type does not own, solely so the wrong identity would join. They are
+// deleted; if this test fails with `SchannelCred.*` identities, the lookup
+// regressed and those mirrors are the wrong way to bring it back.
+func TestRustAssociatedFunctionTypeComesFromTheContract(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := `use schannel::schannel_cred::{Algorithm, Direction, Protocol, SchannelCred};
+
+fn bound_builder() {
+    let mut b = SchannelCred::builder();
+    b.enabled_protocols(&[Protocol::Tls12]);
+    b.supported_algorithms(&[Algorithm::Aes256]);
+    let _c = b.acquire(Direction::Outbound);
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := NewBuilderForEcosystem("rust", NewRustParser())
+	graph, err := b.BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	want := map[string]bool{
+		// `builder` IS an associated function of SchannelCred, so it keeps that
+		// receiver. Everything after it is a method on the Builder it returns.
+		"schannel::schannel_cred.SchannelCred.builder":         false,
+		"schannel::schannel_cred.Builder.enabled_protocols":    false,
+		"schannel::schannel_cred.Builder.supported_algorithms": false,
+		"schannel::schannel_cred.Builder.acquire":              false,
+	}
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			id := fn.Calls[i].Callee
+			key := id.Package + "." + id.Type + "." + id.Name
+			if _, ok := want[key]; ok {
+				want[key] = true
+			}
+			if id.Type == "SchannelCred" && id.Name != "builder" {
+				t.Errorf("%q kept the path's type; the associated function's "+
+					"contract return was not consulted", key)
+			}
+		}
+	}
+	for key, seen := range want {
+		if !seen {
+			t.Errorf("%q was not produced", key)
+		}
+	}
+}
+
+// TestRustBareWrapperReturnIsNotTakenAsAReceiver pins the guard that makes the
+// contract lookup above safe, and it is the reason the lookup is not
+// unconditional.
+//
+// A KB may honestly declare `blowfish::Blowfish.new_from_slice -> core::result::Result`:
+// that IS the signature, and the contract has no inner type to give. But a bare
+// `Result` is not a receiver anything resolves against, and taking it discards
+// the `Blowfish` the path already supplied — `.unwrap()` cannot recover it
+// either, because rustUnwrappedPatternType needs a generic argument to peel.
+//
+// Without the guard this exact fixture regressed to `core::result.Result.encrypt_block`,
+// and so did the turbofish, re-export and glob-import suites. A wrapper that
+// DOES carry its argument stays usable and is not affected.
+func TestRustBareWrapperReturnIsNotTakenAsAReceiver(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := `use blowfish::Blowfish;
+use blowfish::cipher::KeyInit;
+
+fn roundtrip(key: &[u8], block: &mut [u8]) {
+    let cipher = Blowfish::new_from_slice(key).unwrap();
+    cipher.encrypt_block(block.into());
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := NewBuilderForEcosystem("rust", NewRustParser())
+	graph, err := b.BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	found := false
+	for _, fn := range graph.Functions {
+		for i := range fn.Calls {
+			id := fn.Calls[i].Callee
+			key := id.Package + "." + id.Type + "." + id.Name
+			if key == "blowfish.Blowfish.encrypt_block" {
+				found = true
+			}
+			if id.Type == "Result" && id.Name == "encrypt_block" {
+				t.Errorf("the block cipher was typed as %q: a bare wrapper return "+
+					"was taken as the receiver and the path's type was lost", key)
+			}
+		}
+	}
+	if !found {
+		t.Error("blowfish.Blowfish.encrypt_block was not produced; the receiver " +
+			"lost the type the path supplied")
+	}
+}
