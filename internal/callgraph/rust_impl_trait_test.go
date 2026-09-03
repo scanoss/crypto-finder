@@ -116,12 +116,15 @@ impl MyKey {
 	}
 }
 
-// A braced group nested inside a braced group does not reach the Imports map, so
-// the trait stays bare. This is a KNOWN GAP, pinned here rather than fixed:
-// changing Rust import resolution affects every scan, and the receiver filter
-// that consumes OwnerTraits carries its own fallback for exactly this shape.
+// A braced group nested inside a braced group now reaches the Imports map, so
+// the trait is qualified. This was a known gap, pinned by an earlier revision of
+// this test with the note "if this now resolves to pkcs8::EncodePrivateKey the
+// gap is fixed and this test should assert that instead" -- which is what it
+// does now. The gap closed when processUseDecl learned to descend into a BARE
+// `use { .. };` group; before that the whole declaration was skipped and none of
+// its items were recorded as imports at all.
 // apple-codesign 0.16.0 src/cryptography.rs imports pkcs8 this way.
-func TestRustParser_NestedBracedImportGroupLeavesTheTraitBare(t *testing.T) {
+func TestRustParser_NestedBracedImportGroupQualifiesTheTrait(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeRustTestFile(t, dir, `use {
@@ -143,10 +146,10 @@ impl EncodePrivateKey for MyKey {
 		if fn.ID.Name != "to_pkcs8_der" {
 			continue
 		}
-		if len(fn.OwnerTraits) != 1 || fn.OwnerTraits[0] != "EncodePrivateKey" {
-			t.Errorf("OwnerTraits = %v, want [EncodePrivateKey] (the known gap); "+
-				"if this now resolves to pkcs8::EncodePrivateKey the gap is fixed "+
-				"and this test should assert that instead", fn.OwnerTraits)
+		if len(fn.OwnerTraits) != 1 || fn.OwnerTraits[0] != "pkcs8::EncodePrivateKey" {
+			t.Errorf("OwnerTraits = %v, want [pkcs8::EncodePrivateKey]; a bare "+
+				"`use { .. }` group must bind its items like the one-per-line form",
+				fn.OwnerTraits)
 		}
 	}
 }

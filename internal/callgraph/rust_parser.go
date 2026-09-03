@@ -482,6 +482,37 @@ func (p *RustParser) processUseDecl(node *sitter.Node, src []byte, analysis *Fil
 			if prefix != "" {
 				analysis.Imports[name] = prefix
 			}
+		case "use_list":
+			// A BARE brace group with no path in front of it:
+			//   use {
+			//       crate::config::Version,
+			//       blstrs::{Bls12, G1Affine},
+			//       group::Group,
+			//   };
+			// This is what `rustfmt --config imports_granularity=One` emits and
+			// what the Solana/Agave tree uses throughout. Without this case the
+			// whole declaration was skipped, so NONE of its items were recorded
+			// as imports -- and every type it brought in then resolved to the
+			// scanned crate instead of the crate it came from. Measured on
+			// agave-bls12-381 4.0.3 src/pairing.rs: the call graph emitted
+			// `agave_bls12_381::pairing.Bls12.multi_miller_loop(?)` where the
+			// same code written with one `use` per line emits
+			// `blstrs.Bls12.multi_miller_loop(..)`. That is a WRONG identity
+			// rather than a missing one: no contract can ever join it, and the
+			// receiver of a chained call is mistyped along with it.
+			//
+			// Each item is dispatched back through THIS function rather than
+			// through processRustUseList, because a bare group's items are
+			// exactly a sequence of top-level use items: each carries its own
+			// root, and none of them inherits a prefix from the brace. Routing
+			// them through the list handler instead gave every one of them an
+			// EMPTY prefix and three separate wrong answers -- a plain
+			// `serde_json` item recorded with an empty package, a
+			// `crate::config::Version` item recorded under the literal
+			// "crate::config" rather than resolved against the module, and a
+			// `blstrs::*` item dropped entirely, since the list handler has no
+			// wildcard case. The top-level switch already gets all three right.
+			p.processUseDecl(child, src, analysis, prefix)
 		case "scoped_use_list":
 			// e.g., `use ring::aead::{Aead, AeadCore};`
 			p.processScopedUseList(child, src, analysis, "")
