@@ -1,0 +1,92 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: balloon
+  coordinates:
+    - balloon
+  version_range: ">=0.0.14,<0.1.0"
+  description: "Balloon memory-hard password hashing"
+
+# API read at balloon 0.0.14 src/lib.rs:52-95 (the `Balloon<D>` struct), :205
+# (`balloon`), :238 (`verify`) and :263 (`compare_ct`), and cross-checked at
+# 0.0.1, 0.0.2, 0.0.8, 0.0.11 and 0.0.13 from the committed sample.
+#
+# WHY A CONTRACT EXISTS HERE, AND WHY progress.json SAID OTHERWISE. The matrix
+# reports contract_gap=Y; progress.json carried `finder: not_applicable / n/a`.
+# An exported call graph over a probe consumer settles it against the tree:
+# every call came back as `balloon.balloon(?, ?, ?, ?, ?)`,
+# `balloon.verify(?, ?, ?, ?, ?, ?)` and `balloon.Balloon.new(?, ?, ?)` with
+# empty parameter_types, which is what an absent contract looks like. The
+# matrix is right and the progress row was stale.
+#
+# KEY SHAPE, READ OFF THE EXPORTED GRAPH RATHER THAN ASSUMED. The two free
+# functions emit ONE dot (`balloon.balloon`), which the Rust key normalisation
+# returns unchanged, so they are authored WITH A DOT. The struct's methods emit
+# two (`balloon.Balloon.new`), which is rewritten to the authored
+# `balloon::Balloon.new`. Getting that backwards produces a contract nothing
+# joins to, which is indistinguishable from having no contract at all.
+#
+# WHY THE RANGE STARTS AT 0.0.14 AND NOT EARLIER. Five of the six entries below
+# are already correct at 0.0.13: the `Balloon<D>` struct appears at 0.0.13:50
+# with `new`/`reconfigure`/`process` in their final shape, `balloon` returns
+# `Result<Hash, Error>` at 0.0.13:209 as it does at 0.0.14:211, and
+# `compare_ct` is character-identical from 0.0.11:137 onward. `verify` is the
+# exception and it is the one that sets the bound: it returns
+# `Result<bool, Error>` at 0.0.13:243 and only becomes `Result<(), Error>` at
+# 0.0.14:245. `version_range` is declared per LIBRARY, not per entry, so it
+# cannot cover a version for which any single declared shape is false. 0.0.13
+# and the versions below it are therefore deliberately outside this range even
+# though most of the file would hold there, the same way ctr.yaml excludes
+# 0.7.0/0.8.0. Widening the range means splitting `verify` into its own era
+# file first.
+#
+# NOTE FOR WHOEVER RELIES ON THAT BOUND: `version_range` is parsed
+# (contracts.go:383, :471) and never consulted by any lookup, so it documents
+# the era rather than gating it. A 0.0.13 consumer still gets these signatures
+# served. That makes the bound a claim about what was verified, not a runtime
+# guard -- which is exactly why it has to be true.
+#
+# `compare_ct` IS TYPED BUT CARRIES NO CRYPTO CLAIM, and that is deliberate in
+# both directions. The rules do NOT match it: it is a constant-time slice
+# comparison the crate borrowed from orion, not a Balloon operation, and
+# utility-negative.rs pins that it stays silent. It is contracted because it is
+# `pub` and a consumer can call it DIRECTLY -- a probe consumer calling
+# `balloon::compare_ct(a, b)` joins this entry and resolves
+# `core::option::Option<balloon::Error>`. It is NOT contracted because `verify`
+# calls it internally: chains are built from scanned consumer source and the
+# library body is never walked, so no consumer chain reaches it that way.
+# A contract entry asserts a signature, not cryptography.
+contracts:
+  - method: balloon.balloon
+    arity: 5
+    return: { type: blake3::Hash, confidence: high }
+    canonical_return_type: "core::result::Result<blake3::Hash, balloon::Error>"
+    parameter_types: ["&[u8]", "&[u8]", "usize", "usize", "usize"]
+    role: operation
+  - method: balloon.verify
+    arity: 6
+    return: { type: "()", confidence: high }
+    canonical_return_type: "core::result::Result<(), balloon::Error>"
+    parameter_types: ["&blake3::Hash", "&[u8]", "&[u8]", "usize", "usize", "usize"]
+    role: operation
+  - method: balloon.compare_ct
+    arity: 2
+    return: { type: balloon::Error, confidence: high }
+    canonical_return_type: "core::option::Option<balloon::Error>"
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: output
+  - method: balloon::Balloon.new
+    arity: 3
+    return: { type: balloon::Balloon, confidence: high }
+    parameter_types: ["usize", "usize", "usize"]
+    role: factory
+  - method: balloon::Balloon.reconfigure
+    arity: 3
+    return: { type: "()", confidence: high }
+    parameter_types: ["usize", "usize", "usize"]
+    role: config
+  - method: balloon::Balloon.process
+    arity: 2
+    return: { type: digest::generic_array::GenericArray, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: operation
