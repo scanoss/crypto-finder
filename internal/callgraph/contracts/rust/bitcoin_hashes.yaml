@@ -59,6 +59,21 @@ library:
 # crypto call graph.
 contracts:
 # ---- one module per algorithm --------------------------------------------
+  # THE TRAIT METHOD ITSELF, which the `hash.aliased` rule's `api` names.
+  # `Hash::hash` is real in both eras (0.14.0 lib.rs:195, 1.2.0 lib.rs:192) and
+  # is what a consumer-local alias resolves to: storm-core writes
+  # `pub type ChunkId = sha256::Hash;` then `ChunkId::hash(..)`, and the rule
+  # that covers it cannot name a concrete module because a type argument matches
+  # on its last path segment. Without this entry that rule's `api` joins
+  # nothing and synthesizes an entry point that can never resolve.
+  #
+  # The return is `Self` at the trait level, so no concrete type is knowable
+  # here and the confidence says so rather than guessing one.
+  - method: bitcoin_hashes::Hash.hash
+    arity: 1
+    return: { type: bitcoin_hashes::Hash, confidence: low }
+    parameter_types: ["&[u8]"]
+    role: output
   - method: bitcoin_hashes::sha1::Hash.hash
     arity: 1
     return: { type: bitcoin_hashes::sha1::Hash, confidence: high }
