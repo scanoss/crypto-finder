@@ -1,0 +1,819 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aws-sdk-kms
+  coordinates:
+    - aws-sdk-kms
+  version_range: ">=0.0.22-alpha,<2.0.0"
+  description: "aws-sdk-kms: the generated AWS SDK for Rust client for AWS Key Management Service"
+
+# EVERY ENTRY BELOW WAS EXTRACTED FROM THE SOURCES, PER ERA, NOT COPIED BETWEEN
+# THEM. The modern set is read from `src/operation/<op>/builders.rs` at 1.111.0
+# and the pre-0.39.0 set from the `impl <Op>` blocks in `src/client.rs` at
+# 0.24.0 (identical at 0.9.0). That distinction is not pedantry: a first draft
+# of this file applied the modern method list to the legacy type names and
+# invented 19 entries — `dry_run` and `recipient` appear NOWHERE in the crate
+# before 0.39.0 (0 hits at 0.0.22-alpha, 0.4.1, 0.9.0 and 0.24.0), and
+# `DeriveSharedSecret` does not exist until 1.32.0, long after the legacy
+# module was deleted.
+#
+# THE TWO ERAS NEVER OVERLAP, which is why the legacy block is smaller:
+#   0.0.22-alpha .. 0.24.0   `aws_sdk_kms::client::fluent_builders::<Op>`
+#                            enums in `crate::model`
+#   0.39.0 .. 1.111.0        `aws_sdk_kms::operation::<op>::builders::<Op>FluentBuilder`
+#                            enums in `crate::types`
+# `mod fluent_builders` is gone from 0.39.0 on, so no legacy entry may name an
+# operation that arrived later: GenerateMac and VerifyMac (0.24.0) have legacy
+# keys, DeriveSharedSecret (1.32.0) does not.
+#
+# PARAMETER TYPES ARE ERA-CORRECT. A legacy builder takes
+# `crate::model::EncryptionAlgorithmSpec`; declaring the modern
+# `aws_sdk_kms::types::...` there names a module that, in that era, holds only
+# the smithy primitives re-export.
+#
+# KEYS READ OFF THE EXPORTED GRAPH, NOT ASSUMED (campaign rule 5.5). `Client` is
+# `pub use client::Client` in every version of the range, so its key carries no
+# module segment: `aws_sdk_kms.Client.encrypt`. The fluent builders are NOT
+# re-exported, so theirs carry the whole path.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reports contract_gap=Y and an exported
+# call graph agrees: a probe consumer's chain
+# `client.encrypt().encryption_algorithm(spec).send()` resolves the client
+# method and leaves every later link rendered as the CONSUMER's own package.
+# With this KB those links resolve to the builder.
+#
+# THE VERSION RANGE IS THE PUBLISHED RANGE, and per-entry availability is a
+# property of the crate rather than of the contract: `generate_mac`/`verify_mac`
+# arrive at 0.24.0 and `derive_shared_secret` at 1.32.0, so on an earlier
+# version nothing emits those keys and the entries are inert. What the range
+# must not do is declare a signature that is WRONG for a version it covers, and
+# the per-era split above is what keeps that true.
+#
+# WHAT IS DELIBERATELY NOT DECLARED. `send` returns a future over a
+# `Result<Output, SdkError<..>>` whose inner type a `Result`-shaped return
+# cannot carry (the limitation pkcs8, der, spki and snow all record), and it
+# still resolves through receiver-type propagation from the returns declared
+# here. The key-management surface — create_key, describe_key, the grant and
+# alias calls — is outside this family's planned scope.
+
+contracts:
+  - method: aws_sdk_kms::Client.encrypt
+    arity: 0
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.decrypt
+    arity: 0
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.re_encrypt
+    arity: 0
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.sign
+    arity: 0
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.verify
+    arity: 0
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.generate_mac
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.verify_mac
+    arity: 0
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.generate_data_key
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: aws_sdk_kms::Client.generate_data_key_pair
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: aws_sdk_kms::Client.generate_data_key_without_plaintext
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: aws_sdk_kms::Client.generate_data_key_pair_without_plaintext
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: aws_sdk_kms::Client.generate_random
+    arity: 0
+    return: { type: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::Client.derive_shared_secret
+    arity: 0
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder.plaintext
+    arity: 1
+    return: { type: aws_sdk_kms::operation::encrypt::builders::EncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.ciphertext_blob
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.dry_run_modifiers
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DryRunModifierType"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder.recipient
+    arity: 1
+    return: { type: aws_sdk_kms::operation::decrypt::builders::DecryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::RecipientInfo"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.ciphertext_blob
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.destination_encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.destination_encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.destination_key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.dry_run_modifiers
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DryRunModifierType"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.source_encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.source_encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder.source_key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::re_encrypt::builders::ReEncryptFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.message
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.message_type
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::MessageType"]
+    role: config
+  - method: aws_sdk_kms::operation::sign::builders::SignFluentBuilder.signing_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::sign::builders::SignFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::SigningAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.message
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.message_type
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::MessageType"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.signature
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder.signing_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify::builders::VerifyFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::SigningAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder.mac_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::MacAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder.message
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_mac::builders::GenerateMacFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.mac
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.mac_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::MacAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder.message
+    arity: 1
+    return: { type: aws_sdk_kms::operation::verify_mac::builders::VerifyMacFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.key_spec
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DataKeySpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["i32"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder.recipient
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key::builders::GenerateDataKeyFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::RecipientInfo"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.key_pair_spec
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DataKeyPairSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder.recipient
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair::builders::GenerateDataKeyPairFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::RecipientInfo"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.key_spec
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DataKeySpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_without_plaintext::builders::GenerateDataKeyWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["i32"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder.key_pair_spec
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_data_key_pair_without_plaintext::builders::GenerateDataKeyPairWithoutPlaintextFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::DataKeyPairSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder.custom_key_store_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder, confidence: high }
+    parameter_types: ["i32"]
+    role: config
+  - method: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder.recipient
+    arity: 1
+    return: { type: aws_sdk_kms::operation::generate_random::builders::GenerateRandomFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::RecipientInfo"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.dry_run
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.key_agreement_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::KeyAgreementAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.public_key
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder.recipient
+    arity: 1
+    return: { type: aws_sdk_kms::operation::derive_shared_secret::builders::DeriveSharedSecretFluentBuilder, confidence: high }
+    parameter_types: ["aws_sdk_kms::types::RecipientInfo"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Encrypt.encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Encrypt, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Encrypt.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::Encrypt, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Encrypt.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Encrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Encrypt.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Encrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Encrypt.plaintext
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Encrypt, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Decrypt.ciphertext_blob
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Decrypt, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Decrypt.encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Decrypt, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Decrypt.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::Decrypt, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Decrypt.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Decrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Decrypt.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Decrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.ciphertext_blob
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.destination_encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.destination_encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.destination_key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.source_encryption_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::EncryptionAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.source_encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::ReEncrypt.source_key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::ReEncrypt, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Sign.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Sign, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Sign.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Sign, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Sign.message
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Sign, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Sign.message_type
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Sign, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::MessageType"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Sign.signing_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Sign, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::SigningAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.message
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.message_type
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::MessageType"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.signature
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::Verify.signing_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::Verify, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::SigningAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateMac.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateMac, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateMac.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateMac, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateMac.mac_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateMac, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::MacAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateMac.message
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateMac, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::VerifyMac.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::VerifyMac, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::VerifyMac.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::VerifyMac, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::VerifyMac.mac
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::VerifyMac, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::VerifyMac.mac_algorithm
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::VerifyMac, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::MacAlgorithmSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::VerifyMac.message
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::VerifyMac, confidence: high }
+    parameter_types: ["aws_smithy_types::Blob"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKey.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKey, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKey.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKey, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKey.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKey, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKey.key_spec
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKey, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::DataKeySpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKey.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKey, confidence: high }
+    parameter_types: ["i32"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair.key_pair_spec
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPair, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::DataKeyPairSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext.key_spec
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::DataKeySpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyWithoutPlaintext, confidence: high }
+    parameter_types: ["i32"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext.encryption_context
+    arity: 2
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext, confidence: high }
+    parameter_types: ["&str", "&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext.grant_tokens
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext.key_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext.key_pair_spec
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateDataKeyPairWithoutPlaintext, confidence: high }
+    parameter_types: ["aws_sdk_kms::model::DataKeyPairSpec"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateRandom.custom_key_store_id
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateRandom, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: aws_sdk_kms::client::fluent_builders::GenerateRandom.number_of_bytes
+    arity: 1
+    return: { type: aws_sdk_kms::client::fluent_builders::GenerateRandom, confidence: high }
+    parameter_types: ["i32"]
+    role: config
