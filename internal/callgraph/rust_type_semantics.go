@@ -1653,7 +1653,44 @@ func (c *rustTypeCtx) rustScopedCallType(node, fn *sitter.Node, depth int) strin
 		}
 		return ""
 	}
+	// An ASSOCIATED FUNCTION is not necessarily a constructor. Typing it from
+	// the path it was called on is right for `Type::new()` and wrong for every
+	// builder accessor: `SchannelCred::builder()` returns a
+	// `schannel_cred::Builder`, and answering `SchannelCred` sends the next hop
+	// looking for methods on a type that does not have them.
+	//
+	// The KB is the only place that knows, and until now it was never asked
+	// here -- contractReturnType was reached from the METHOD path alone, which
+	// is why schannel.yaml carries four entries declared on a type that does
+	// not own them, purely to join the identity this line emitted.
+	//
+	// The contract is consulted first and the path is still the fallback, so a
+	// crate with no KB entry, and a constructor the KB agrees returns its own
+	// type, both behave exactly as before.
+	if ret, ok := c.contractReturnType(typeText, nodeFieldText(fn, "name", c.src), rustCallArity(node)); ok &&
+		rustReturnCarriesAType(ret) {
+		return ret
+	}
 	return typeText
+}
+
+// rustReturnCarriesAType rejects a declared return that names a value wrapper
+// with nothing inside it. A KB may honestly declare
+// `blowfish::Blowfish.new_from_slice -> core::result::Result`, because that IS
+// the signature and the crate's own contract has no inner type to give; but a
+// bare `Result` is not a receiver anything can be resolved against, and taking
+// it loses the `Blowfish` the path already told us. `.unwrap()` cannot recover
+// it either -- rustUnwrappedPatternType needs a generic argument to peel.
+//
+// A wrapper that DOES carry its argument (`Result<SchannelCred, Error>`, which
+// schannel declares as canonical_return_type) is kept: the unwrapping methods
+// see through it correctly.
+func rustReturnCarriesAType(ret string) bool {
+	if !rustValueWrappers[rustTypeHead(ret)] {
+		return true
+	}
+	_, ok := rustGenericArgument(ret)
+	return ok
 }
 
 // rustPlainCallType types a call written as a bare name: a free function, a

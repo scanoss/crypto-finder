@@ -103,11 +103,16 @@ fn certs(der: &[u8], pem: &str) {
 	}
 
 	want := map[string]string{
-		// TLS credential. Note the receiver: see the SchannelCred note in the KB.
-		"schannel::schannel_cred.SchannelCred.builder":              "factory",
-		"schannel::schannel_cred.SchannelCred.enabled_protocols":    "config",
-		"schannel::schannel_cred.SchannelCred.supported_algorithms": "config",
-		"schannel::schannel_cred.SchannelCred.acquire":              "operation",
+		// TLS credential. The receiver is the TRUTHFUL one: `builder()` is the
+		// only associated function on SchannelCred, and everything after it is
+		// a method on the Builder it returns. Until rustScopedCallType asked
+		// the KB for an associated function's return type, this block named
+		// SchannelCred for all four, and the KB carried four mirror entries so
+		// that wrong identity would join.
+		"schannel::schannel_cred.SchannelCred.builder":         "factory",
+		"schannel::schannel_cred.Builder.enabled_protocols":    "config",
+		"schannel::schannel_cred.Builder.supported_algorithms": "config",
+		"schannel::schannel_cred.Builder.acquire":              "operation",
 		// TLS handshake.
 		"schannel::tls_stream.Builder.new":     "factory",
 		"schannel::tls_stream.Builder.domain":  "config",
@@ -175,11 +180,7 @@ fn certs(der: &[u8], pem: &str) {
 		// Reachable API this source does not call. Each is declared because a
 		// consumer's chain may travel through it.
 		"schannel::schannel_cred.Builder.new":                            true,
-		"schannel::schannel_cred.Builder.supported_algorithms":           true,
-		"schannel::schannel_cred.Builder.enabled_protocols":              true,
 		"schannel::schannel_cred.Builder.cert":                           true,
-		"schannel::schannel_cred.Builder.acquire":                        true,
-		"schannel::schannel_cred.SchannelCred.cert":                      true,
 		"schannel::tls_stream.Builder.use_sni":                           true,
 		"schannel::tls_stream.Builder.accept_invalid_hostnames":          true,
 		"schannel::tls_stream.Builder.cert_store":                        true,
@@ -336,10 +337,6 @@ func TestSchannelDeclaredAritiesMatchTheCrate(t *testing.T) {
 	// excluded, matching every other Rust KB here.
 	wantArity := map[string]int{
 		"schannel::schannel_cred::SchannelCred.builder":                   0,
-		"schannel::schannel_cred::SchannelCred.enabled_protocols":         1,
-		"schannel::schannel_cred::SchannelCred.supported_algorithms":      1,
-		"schannel::schannel_cred::SchannelCred.cert":                      1,
-		"schannel::schannel_cred::SchannelCred.acquire":                   1,
 		"schannel::schannel_cred::Builder.new":                            0,
 		"schannel::schannel_cred::Builder.supported_algorithms":           1,
 		"schannel::schannel_cred::Builder.enabled_protocols":              1,
