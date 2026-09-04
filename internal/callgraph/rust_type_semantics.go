@@ -3353,11 +3353,22 @@ func (c *rustTypeCtx) bindTupleStructSubPatterns(pattern, pathNode *sitter.Node,
 // both the qualified `Algo::Aes` spelling and the bare `Aes` one that a
 // `use Algo::*` makes legal.
 func rustVariantKey(path, typeText string) string {
-	if strings.Contains(path, "::") {
-		segments := strings.Split(path, "::")
-		if len(segments) >= 2 {
-			return segments[len(segments)-2] + "::" + segments[len(segments)-1]
+	segments := strings.Split(path, "::")
+	if len(segments) >= 2 {
+		enumSegment := segments[len(segments)-2]
+		// `Self::Variant(binding)` names the enclosing type, not the declared
+		// enum, and the variant facts are keyed on the declared name -- so a
+		// `Self`-qualified arm never found its payload types and the binding
+		// fell back to the enum type itself. A receiver bound that way read as
+		// the consumer's own type, and FilterForeignReceiverAssets dropped
+		// genuine dependency calls made through it. Substitute the matched
+		// value's type head.
+		if enumSegment == rustSelfType {
+			if enum := rustTypeHead(typeText); enum != "" {
+				return enum + "::" + segments[len(segments)-1]
+			}
 		}
+		return enumSegment + "::" + segments[len(segments)-1]
 	}
 	enum := rustTypeHead(typeText)
 	if enum == "" {
