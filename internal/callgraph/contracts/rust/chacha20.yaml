@@ -1,0 +1,916 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: chacha20
+  coordinates:
+    - chacha20
+  version_range: ">=0.1.0,<0.11.0"
+  description: "RustCrypto ChaCha20 stream cipher (ChaCha8/12/20, XChaCha, legacy djb variant, and the crate's own rng adapters)"
+
+# API read at chacha20 0.1.0, 0.2.0, 0.3.0, 0.4.3, 0.6.0, 0.7.0, 0.8.2, 0.9.0
+# and 0.10.1. The type names are stable across the whole range -- ChaCha20 from
+# 0.1.0 (src/lib.rs:24), ChaCha20Legacy and XChaCha20 from 0.2.0
+# (src/lib.rs:80,82), ChaCha8/ChaCha12 from 0.3.0, XChaCha8/XChaCha12 from
+# 0.7.0 (src/lib.rs:111) -- so one contract spans the eras, and methods a given
+# version does not have simply never match.
+#
+# Constructor spellings follow the trait crate the release re-exports:
+#   * new(key, nonce)          every era (stream-cipher 0.3.2 src/lib.rs:34,
+#                              cipher 0.4.4 src/stream_wrapper.rs:198)
+#   * new_var(key, nonce)      0.1.0-0.6.0 only (stream-cipher 0.3.2
+#                              src/lib.rs:41, cipher 0.2.5 src/stream.rs:45);
+#                              XChaCha8/XChaCha12 postdate it, so those two
+#                              carry no new_var entry
+#   * new_from_slices(k, n)    0.7.0+ (cipher 0.3.0 src/common.rs:26;
+#                              cipher 0.5.0 still re-exports InvalidLength,
+#                              src/lib.rs:35, so its canonical error arm is
+#                              era-stable)
+# Keystream methods: apply_keystream/try_apply_keystream in every era
+# (stream-cipher 0.3.2 src/lib.rs:65,77; cipher 0.4.4 src/stream.rs:119,93),
+# apply_keystream_b2b only from 0.9.0 (cipher 0.4.4 src/stream.rs:132),
+# seek from stream-cipher 0.3.2 src/lib.rs:86 (the whole range). try_seek is
+# NOT in the early era: SyncStreamCipherSeek declares only current_pos/seek in
+# stream-cipher 0.3.2 (src/lib.rs:81-86) and 0.4.1 (src/lib.rs:95-100), and
+# try_seek first appears in stream-cipher 0.7.1 src/lib.rs:115 -- chacha20
+# 0.5.0 onward (also cipher 0.2.5 src/stream.rs:99, cipher 0.4.4:158). A
+# method a release does not have simply never matches, so the entry spans the
+# declared range without asserting the early era has it.
+#
+# Where method plus arity does NOT identify one declared signature across the
+# range, the era-varying field is omitted rather than declared for one era:
+#   * try_apply_keystream/try_seek/apply_keystream_b2b/new_var declare an
+#     unparameterized core::result::Result canonical return, because the error
+#     arm changes name and module across the trait eras (LoopError through
+#     0.8.x, StreamCipherError from 0.9.0; stream_cipher:: vs cipher:: for
+#     InvalidKeyNonceLength at 0.6.0). Their return.type declares the payload
+#     the chain walk needs -- "()" for the unit operations -- following the
+#     hkdf/ctr convention and rust_type_semantics' contractReturnType note
+#     that handing Result back as the chain type produces identities that are
+#     nobody's dependency.
+#   * apply_keystream_b2b declares NO canonical_return_type: cipher 0.4 returns
+#     Result<(), StreamCipherError> (cipher 0.4.4 src/stream.rs:132) while
+#     cipher 0.5 made it INFALLIBLE -- it returns () and panics on a length
+#     mismatch (cipher 0.5.0 src/stream.rs:199) -- so method plus arity does
+#     not identify one declared return across the range. return.type declares
+#     the payload the chain walk needs.
+#   * the rng adapters' from_rng declares NO canonical_return_type: rand_core
+#     0.5/0.6 (chacha20 0.3.0-0.8.2) declare Result<Self, Error> (rand_core
+#     0.5.1 src/lib.rs:355, 0.6.4:390), rand_core 0.9+ (chacha20 0.10.x)
+#     declares Self (0.9.3:521) -- same key and arity, different declared
+#     return. return.type still names the adapter type. from_entropy is the
+#     0.5/0.6-era constructor (0.5.1:376, 0.6.4:412) and from_os_rng its 0.9+
+#     replacement (0.9.3:555); both are declared, and the era that lacks one
+#     never matches it.
+#   * seek/try_seek declare no parameter_types: the position is generic over
+#     SeekNum (cipher 0.2+), and real consumers pass u32 (sunset 0.1.0
+#     ssh_chapoly.rs:112,118) as well as u64.
+#   * hchacha declares no parameter_types: the 16-byte input is
+#     GenericArray<u8, U16> through 0.9.x and hybrid-array Array<u8, U16> at
+#     0.10.x.
+#
+# The rng feature's adapters (ChaCha8Rng/ChaCha12Rng/ChaCha20Rng) exist
+# 0.3.0-0.8.2 (0.3.0 src/lib.rs:90) and again from 0.10.0 (src/lib.rs:116);
+# 0.9.x has none. rand_chacha publishes the same type names from a different
+# crate; the callee identity carries the consumer's crate path, so those never
+# resolve here.
+#
+# Key and nonce widths are read off the alias definitions: Key 32 bytes
+# (0.9.0 src/lib.rs:146), Nonce 12 (src/lib.rs:149), XNonce 24
+# (src/xchacha.rs:15), LegacyNonce 8 (src/legacy.rs:15). They are contributed
+# from the arguments (argument_bit_length) rather than asserted, since
+# new_from_slices/new_var accept arbitrary slices and the trait rejects wrong
+# lengths at runtime.
+
+contracts:
+  # --- chacha20::ChaCha20 ---
+  - method: chacha20::ChaCha20.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::Nonce"]
+    canonical_return_type: chacha20::ChaCha20
+    return: {type: chacha20::ChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::ChaCha20, cipher::InvalidLength>"
+    return: {type: chacha20::ChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20.new_var
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: chacha20::ChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha20.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha20.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::ChaCha20.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::ChaCha20.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::ChaCha8 ---
+  - method: chacha20::ChaCha8.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::Nonce"]
+    canonical_return_type: chacha20::ChaCha8
+    return: {type: chacha20::ChaCha8, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha8.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::ChaCha8, cipher::InvalidLength>"
+    return: {type: chacha20::ChaCha8, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha8.new_var
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: chacha20::ChaCha8, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha8.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha8.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha8.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::ChaCha8.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::ChaCha8.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::ChaCha12 ---
+  - method: chacha20::ChaCha12.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::Nonce"]
+    canonical_return_type: chacha20::ChaCha12
+    return: {type: chacha20::ChaCha12, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha12.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::ChaCha12, cipher::InvalidLength>"
+    return: {type: chacha20::ChaCha12, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha12.new_var
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: chacha20::ChaCha12, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha12.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha12.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha12.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::ChaCha12.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::ChaCha12.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::XChaCha20 ---
+  - method: chacha20::XChaCha20.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::XNonce"]
+    canonical_return_type: chacha20::XChaCha20
+    return: {type: chacha20::XChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha20.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::XChaCha20, cipher::InvalidLength>"
+    return: {type: chacha20::XChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha20.new_var
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: chacha20::XChaCha20, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha20.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha20.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha20.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::XChaCha20.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::XChaCha20.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::XChaCha8 ---
+  - method: chacha20::XChaCha8.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::XNonce"]
+    canonical_return_type: chacha20::XChaCha8
+    return: {type: chacha20::XChaCha8, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha8.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::XChaCha8, cipher::InvalidLength>"
+    return: {type: chacha20::XChaCha8, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha8.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha8.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha8.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::XChaCha8.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::XChaCha8.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::XChaCha12 ---
+  - method: chacha20::XChaCha12.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::XNonce"]
+    canonical_return_type: chacha20::XChaCha12
+    return: {type: chacha20::XChaCha12, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha12.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::XChaCha12, cipher::InvalidLength>"
+    return: {type: chacha20::XChaCha12, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XChaCha12.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha12.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::XChaCha12.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::XChaCha12.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::XChaCha12.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::ChaCha20Legacy ---
+  - method: chacha20::ChaCha20Legacy.new
+    arity: 2
+    parameter_types: ["&chacha20::Key", "&chacha20::LegacyNonce"]
+    canonical_return_type: chacha20::ChaCha20Legacy
+    return: {type: chacha20::ChaCha20Legacy, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20Legacy.new_from_slices
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<chacha20::ChaCha20Legacy, cipher::InvalidLength>"
+    return: {type: chacha20::ChaCha20Legacy, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20Legacy.new_var
+    arity: 2
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: chacha20::ChaCha20Legacy, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20Legacy.apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha20Legacy.try_apply_keystream
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: data
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: chacha20::ChaCha20Legacy.apply_keystream_b2b
+    arity: 2
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: input
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+      - index: 1
+        name: output
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: chacha20::ChaCha20Legacy.seek
+    arity: 1
+    canonical_return_type: "()"
+    return: {type: "()", confidence: high}
+    role: config
+  - method: chacha20::ChaCha20Legacy.try_seek
+    arity: 1
+    canonical_return_type: "core::result::Result"
+    return: {type: "()", confidence: high}
+    role: config
+  # --- chacha20::ChaCha8Rng (rng feature) ---
+  - method: chacha20::ChaCha8Rng.from_seed
+    arity: 1
+    parameter_types: ["[u8; 32]"]
+    canonical_return_type: chacha20::ChaCha8Rng
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: seed
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha8Rng.seed_from_u64
+    arity: 1
+    parameter_types: ["u64"]
+    canonical_return_type: chacha20::ChaCha8Rng
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha8Rng.from_entropy
+    arity: 0
+    canonical_return_type: chacha20::ChaCha8Rng
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha8Rng.from_os_rng
+    arity: 0
+    canonical_return_type: chacha20::ChaCha8Rng
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha8Rng.from_rng
+    arity: 1
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+  # Reconstructs the generator from a serialized state blob; 0.10.x only
+  # (0.10.1 src/rng.rs:317, alongside serialize_state at :297).
+  - method: chacha20::ChaCha8Rng.deserialize_state
+    arity: 1
+    parameter_types: ["&chacha20::SerializedRngState"]
+    canonical_return_type: chacha20::ChaCha8Rng
+    return: {type: chacha20::ChaCha8Rng, confidence: high}
+    role: factory
+  # --- chacha20::ChaCha12Rng (rng feature) ---
+  - method: chacha20::ChaCha12Rng.from_seed
+    arity: 1
+    parameter_types: ["[u8; 32]"]
+    canonical_return_type: chacha20::ChaCha12Rng
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: seed
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha12Rng.seed_from_u64
+    arity: 1
+    parameter_types: ["u64"]
+    canonical_return_type: chacha20::ChaCha12Rng
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha12Rng.from_entropy
+    arity: 0
+    canonical_return_type: chacha20::ChaCha12Rng
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha12Rng.from_os_rng
+    arity: 0
+    canonical_return_type: chacha20::ChaCha12Rng
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha12Rng.from_rng
+    arity: 1
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+  # Reconstructs the generator from a serialized state blob; 0.10.x only
+  # (0.10.1 src/rng.rs:317, alongside serialize_state at :297).
+  - method: chacha20::ChaCha12Rng.deserialize_state
+    arity: 1
+    parameter_types: ["&chacha20::SerializedRngState"]
+    canonical_return_type: chacha20::ChaCha12Rng
+    return: {type: chacha20::ChaCha12Rng, confidence: high}
+    role: factory
+  # --- chacha20::ChaCha20Rng (rng feature) ---
+  - method: chacha20::ChaCha20Rng.from_seed
+    arity: 1
+    parameter_types: ["[u8; 32]"]
+    canonical_return_type: chacha20::ChaCha20Rng
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: seed
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: chacha20::ChaCha20Rng.seed_from_u64
+    arity: 1
+    parameter_types: ["u64"]
+    canonical_return_type: chacha20::ChaCha20Rng
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha20Rng.from_entropy
+    arity: 0
+    canonical_return_type: chacha20::ChaCha20Rng
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha20Rng.from_os_rng
+    arity: 0
+    canonical_return_type: chacha20::ChaCha20Rng
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+  - method: chacha20::ChaCha20Rng.from_rng
+    arity: 1
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+  # Reconstructs the generator from a serialized state blob; 0.10.x only
+  # (0.10.1 src/rng.rs:317, alongside serialize_state at :297).
+  - method: chacha20::ChaCha20Rng.deserialize_state
+    arity: 1
+    parameter_types: ["&chacha20::SerializedRngState"]
+    canonical_return_type: chacha20::ChaCha20Rng
+    return: {type: chacha20::ChaCha20Rng, confidence: high}
+    role: factory
+  # --- free function: HChaCha subkey derivation (public from 0.7.3,
+  # src/xchacha.rs:114; 0.9.0 src/xchacha.rs:106). A free function has no
+  # module/type separator to move, so the key keeps the single-dot shape.
+  - method: chacha20.hchacha
+    arity: 2
+    canonical_return_type: "chacha20::Key"
+    return: {type: chacha20::Key, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # --- key and nonce material aliases, root-exported by 0.4.3 (src/lib.rs:85-96); from_slice is the GenericArray-era idiom, from the array conversion both eras write ---
+  - method: chacha20::Key.from_slice
+    arity: 1
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&chacha20::Key"
+    return: {type: chacha20::Key, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: chacha20::Key.from
+    arity: 1
+    canonical_return_type: "chacha20::Key"
+    return: {type: chacha20::Key, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: chacha20::Nonce.from_slice
+    arity: 1
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&chacha20::Nonce"
+    return: {type: chacha20::Nonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::Nonce.from
+    arity: 1
+    canonical_return_type: "chacha20::Nonce"
+    return: {type: chacha20::Nonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XNonce.from_slice
+    arity: 1
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&chacha20::XNonce"
+    return: {type: chacha20::XNonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::XNonce.from
+    arity: 1
+    canonical_return_type: "chacha20::XNonce"
+    return: {type: chacha20::XNonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::LegacyNonce.from_slice
+    arity: 1
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "&chacha20::LegacyNonce"
+    return: {type: chacha20::LegacyNonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
+  - method: chacha20::LegacyNonce.from
+    arity: 1
+    canonical_return_type: "chacha20::LegacyNonce"
+    return: {type: chacha20::LegacyNonce, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_bit_length}
