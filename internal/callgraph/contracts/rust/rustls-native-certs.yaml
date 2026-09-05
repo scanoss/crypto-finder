@@ -1,0 +1,114 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rustls-native-certs
+  coordinates:
+    - rustls-native-certs
+    - rustls_native_certs
+  version_range: ">=0.1.0,<0.9.0"
+  description: "Loading the platform's native root certificate store for rustls"
+
+# THIS CRATE CONTAINS NO CRYPTOGRAPHY. Measured across ALL 23 PUBLISHED VERSIONS
+# (0.1.0-0.8.4), each extracted from its own `.crate` archive: `src/` performs no
+# hash, no signature verification, no key generation and no cipher. `src/unix.rs`
+# reads PEM files, `src/macos.rs` calls Apple's `SecTrustSettings`, and
+# `src/windows.rs` calls schannel's certificate store. What is typed here is
+# TRUST ANCHOR SUPPLY: the boundary at which an application's set of root
+# certificates is decided. The TLS algorithm surface belongs to `rustls`, which
+# is a separate family.
+#
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API.
+# A probe consumer calling each entry point the way real consumers do was scanned
+# with `crypto-finder scan --no-remote-rules --rules-dir <rules>
+# --export-callgraph`, and the emitted `canonical_signature` values were:
+#
+#   rustls_native_certs.load_native_certs()          arity 0
+#   rustls_native_certs.build_native_certs(?)        arity 1
+#   rustls_native_certs.load_certs_from_paths(?, ?)  arity 2
+#
+# The `(?)` / `(?, ?)` with empty parameter types is what an ABSENT contract
+# looks like, which is what the matrix reported as `contract_gap=Y`.
+#
+# EVERY KEY IN THIS FAMILY IS AUTHORED WITH A DOT, NOT WITH "::", AND THAT IS THE
+# OPPOSITE OF THE USUAL RUST RULE. All three entry points are FREE FUNCTIONS at
+# the crate root, so each emitted key carries exactly ONE dot.
+# `rustAuthoredKey` (contracts.go:267) moves the second-to-last dot to "::" only
+# when the key has at least two dots, and returns a shorter key UNCHANGED, so for
+# this family the authored key IS the emitted key. Authoring
+# `rustls_native::certs.load_native_certs` -- the mechanical application of the
+# substitution -- would produce a contract that loads without error and joins
+# nothing. tokio-rustls records the same for its crate-root free functions.
+#
+# THE ENTRY POINTS ARE SPLIT ACROSS THREE FILES BECAUSE TWO OF THEM EXIST IN
+# ALMOST NONE OF THE RANGE. `version_range` is declared per LIBRARY
+# (biscuit-jwks.yaml:11-17) and is parsed but never consulted at lookup
+# (biscuit-jwks.yaml:22-24), so a range that
+# over-claims is a silent false statement rather than a caught error. Only
+# `load_native_certs` is true across the whole range and it is the only entry
+# here; `build_native_certs` is 0.5.0-only and `load_certs_from_paths` is
+# 0.8.2-and-later, and each has its own file with its own range.
+#
+# THE RETURN TAKES FIVE DISTINCT FORMS ACROSS SIX ERAS, AND `confidence: low` IS
+# WHAT RECORDS THAT. The method name and arity are identical in every published
+# release, so ONE entry covers them all. Splitting by era is not an option, and
+# the reason is stronger than an earlier revision of this comment claimed: it
+# said several contracts under one (method, arity) key would resolve
+# nondeterministically, but `mergeContractGroup` (contracts.go:936-968, Rule 2)
+# treats same-key entries with divergent returns as a HARD LOAD ERROR naming both
+# libraries -- the KB would refuse to load at all. 0.2.0-0.4.0 and 0.5.0 share a
+# type, so the six eras below are five distinct forms and four changes, each read
+# from its own archive:
+#
+#   0.1.0         Result<rustls::RootCertStore, Error>         linux.rs:29
+#   0.2.0-0.4.0   PartialResult<rustls::RootCertStore, Error>  0.3.0 unix.rs:32
+#   0.5.0         PartialResult<rustls::RootCertStore, Error>  rustls.rs:24
+#   0.6.0-0.6.3   Result<Vec<Certificate>, Error>              0.6.3 lib.rs:57
+#   0.7.0-0.7.3   Result<Vec<CertificateDer<'static>>, Error>  0.7.3 lib.rs:120
+#   0.8.0-0.8.4   CertificateResult                            0.8.4 lib.rs:118
+#
+# BOTH RETURN FIELDS NAME THE CURRENT ERA, AND BOTH ARE FLAGGED `low`. An earlier
+# revision declared `return.type` as `CertificateResult` while OMITTING
+# `canonical_return_type` "rather than guessing", which was incoherent -- the same
+# guess, made in one field and withheld from the other -- and it also made this
+# entry invisible: with no canonical return the exported call graph rendered
+# `rustls_native_certs.load_native_certs()`, byte-identical to the uncontracted
+# form this header calls "what an ABSENT contract looks like", while the two era
+# files rendered full signatures. A KB entry holds one value per method+arity, so
+# the choice is WHICH era to name, not whether to name one. The current era is
+# named because it is what a new consumer compiles against, and `confidence: low`
+# is the field whose purpose is to say the value does not hold across the whole
+# declared range -- bitcoin_hashes established `low` for exactly the case where no
+# concrete type is knowable from key and arity alone. `confidence` is
+# documentation only: `rust_type_resolver.go:40-41` reads `Return.Type` without
+# consulting it.
+#
+# `CertificateResult::expect` AND `::unwrap` (0.8.0 lib.rs:139,147; 0.8.4
+# lib.rs:140,149 -- the pair shifts down at 0.8.2) ARE ABSENT,
+# AND THAT IS A MEASUREMENT. They look like obvious entries -- they are the only
+# way to get the certificates out in the 0.8 line. But an exported call graph of
+# a probe consumer writing `let res = rustls_native_certs::load_native_certs();
+# res.expect("..")` emits `<consumer_crate>.expect(?)` and
+# `<consumer_crate>.unwrap()`, attributed to the CONSUMER, because the parser does
+# not resolve the receiver's type across a `let` binding to a foreign crate's
+# type. A contract keyed `rustls_native_certs::CertificateResult.expect` would
+# never join, so writing one would create the appearance of coverage with none
+# behind it. tokio-rustls records the identical case for its pre-0.8
+# extension-trait methods. Recovering these needs receiver typing, not a contract.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `Certificate` newtype (0.6.x), the `CertificateResult`
+#     / `Error` / `ErrorKind` types (0.8.x) and the `PartialResult` alias
+#     (0.2.0-0.5.0). Naming a type is not a call site.
+#   skipped-inverted-control: `RootStoreBuilder::load_der` and `::load_pem_file`
+#     (0.5.0 lib.rs:38,39) are implemented BY THE CONSUMER and called BY THIS
+#     CRATE. The consumer's `fn load_der` is its own code; the call INTO the crate
+#     is `build_native_certs`, which is typed in rustls-native-certs-0.5.yaml.
+contracts:
+  - method: rustls_native_certs.load_native_certs
+    arity: 0
+    return: {type: rustls_native_certs::CertificateResult, confidence: low}
+    parameter_types: []
+    canonical_return_type: "rustls_native_certs::CertificateResult"
+    role: factory
+
+hierarchy: {}
