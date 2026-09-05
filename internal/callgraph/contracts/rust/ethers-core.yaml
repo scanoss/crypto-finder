@@ -1,0 +1,282 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ethers-core
+  coordinates:
+    - ethers-core
+  version_range: ">=0.1.0-0,<2.1.0"
+  description: "ethers-core Keccak-256 hashing, EIP-191/EIP-712 message and typed-data hashing, and ECDSA-secp256k1 signature recovery and verification"
+
+# The lower bound is `0.1.0-0` rather than `0.1.0` so that the four PRE-RELEASE
+# rows in the committed matrix -- 0.6.4-alpha.1, 0.13.1-alpha.1, 0.17.1-alpha.1
+# and 2.0.1-alpha.1 -- fall inside the range under strict semver, where a
+# prerelease sorts BELOW its release. `version_range` is parsed at
+# contracts.go:471 and not currently consulted at match time, but it is a claim
+# this file makes and a test asserts it.
+#
+# WHY THIS FILE EXISTS AT ALL. progress.json carried `finder: n/a` with
+# disposition `not_applicable` for cargo-ethers-core while the family matrix
+# reported `contract_gap=Y`. Settled against the tree rather than by precedence:
+# a probe consumer calling `utils::keccak256`, `utils::hash_message`,
+# `Signature::{recover,verify}`, `Eip712::encode_eip712` and `PrivateKey::new`
+# was scanned with `--export-callgraph`, and every one of the six ethers-core
+# keys came back with EMPTY `parameter_types` and no return type —
+# `ethers_core::utils.keccak256(?)`, `ethers_core::types.Signature.verify(?, ?)`
+# and so on — while the probe's OWN functions in the same graph resolved fully
+# (`a3probe.recover_addr(&Signature, &str): Result<..>`). That is the documented
+# signature of an absent contract, with its own positive control. The matrix was
+# right and progress.json was stale.
+#
+# Inventory sources, read from the crate's own published sources:
+#   2.0.14  src/utils/hash.rs:14,33; src/types/signature.rs:73,91,120;
+#           src/types/transaction/eip712.rs:65,79,82,87,139,414,425,571
+#   1.5.0   src/types/signature.rs:79 — `recover_typed_data` first appears
+#   0.16.0  src/types/transaction/eip712.rs:619,630 — free `hash_struct`/`hash_type`
+#   0.5.5   src/types/transaction/eip712.rs:69,83,86,91,127,569 — the `Eip712`
+#           trait, `EIP712Domain::separator` and `make_type_hash` first appear
+#   0.2.0   src/types/signature.rs:74,92 — `Signature` moves out of
+#           src/types/crypto/ and `PrivateKey` leaves the crate
+#   0.1.0   src/utils/hash.rs:12,26; src/types/crypto/signature.rs:68,86;
+#           src/types/crypto/keys.rs:79,90,113
+#
+# KEY SHAPE. Read off the exported call graph and then converted per
+# rustAuthoredKey (contracts.go:267), which moves the SECOND-TO-LAST dot to
+# "::" when the file loads. Two shapes are present and they convert differently:
+#   free functions carry ONE dot, so the emitted key `ethers_core::utils.keccak256`
+#     has no second-to-last dot and is authored VERBATIM;
+#   methods carry two, so the emitted `ethers_core::types.Signature.recover`
+#     is authored `ethers_core::types::Signature.recover`.
+# Both spellings are pinned by TestEthersCoreEmittedCallSiteKeysResolve.
+#
+# THE MODULE SEGMENT FOLLOWS THE CONSUMER'S IMPORT and is not uniform in this
+# crate. `Signature` is `pub use`-exported from `types` (src/types/mod.rs:56) so
+# it emits `ethers_core::types.Signature`, while the `Eip712` trait is reached
+# through three submodules and emits
+# `ethers_core::types::transaction::eip712.Eip712`.
+#
+# ARITY EXCLUDES THE RECEIVER. `Signature::verify(&self, message, address)` is
+# arity 2; `Signature::recover(&self, message)` is arity 1;
+# `Eip712::encode_eip712(&self)` is arity 0.
+#
+# THE HASH IS KECCAK-256 WITH ORIGINAL PADDING, NOT FIPS 202 SHA-3. Every
+# digest below is `tiny_keccak::Keccak::v256()` (2.0.14 src/utils/hash.rs:4,36).
+# The crate's `pkg:cargo/sha3` and `pkg:cargo/k256` dependencies have their own
+# merged contracts; the calls contracted here are ethers-core's public wrappers,
+# and a consumer calling k256 or sha3 directly resolves against those files.
+#
+# THE 0.1 LINE IS FOUR OF SIXTY-ONE RELEASES and is the only era carrying a
+# signing or key-generation API: `PrivateKey::{new,sign,sign_transaction}`
+# (0.1.0 src/types/crypto/keys.rs:79,90,113) over the `secp256k1` crate. From
+# 0.2.0 the type is gone. Those three contracts are declared with
+# `confidence: high` because the source is unambiguous, and their absence from
+# 0.2.0 onward is a version fact recorded here rather than a separate range.
+#
+# THE EIP-712 SURFACE IS FEATURE-GATED FOR MOST OF THE RANGE. `pub mod eip712;`
+# carries `#[cfg(feature = "eip712")]` from 0.5.5 to 2.0.2 and loses it at 2.0.3
+# (src/types/transaction/mod.rs:8-9 vs :11). `eip712` is not a default feature in
+# any release that declares it, so those contracts apply only to a consumer that
+# enables it — which is why they are declared and not silently assumed present.
+#
+# THE FOUR `Eip712` ENTRIES JOIN ONE SPELLING AND NOT THE OTHER, AND THAT IS A
+# PROPERTY OF THE TRAIT, NOT AN OMISSION HERE. The callgraph key follows the
+# RECEIVER'S CONCRETE TYPE. A consumer that writes the library-internal idiom --
+# `fn f<T: Eip712>(p: &T) { p.encode_eip712() }`, which is what ethers-signers
+# and ethers-providers write -- emits
+# `ethers_core::types::transaction::eip712.Eip712.encode_eip712` and joins these
+# entries. A consumer that writes the END-USER idiom -- `#[derive(Eip712)]` on
+# its own struct, then `permit.encode_eip712()` -- emits
+# `theircrate.Permit.encode_eip712`, the consumer's OWN crate and type, which no
+# entry in this file can ever equal. Measured on two probe consumers.
+#   The crypto ASSET is still reported for the derive form (the rules match the
+#   call either way); what is lost is the callgraph signature enrichment. There
+#   is nothing to declare for it here: the key names a type this KB does not own.
+#   needs-follow-up: resolving a trait-method call through its `impl` to the
+#   trait's own key is a change to the Rust callgraph, not to this file.
+#
+# RETURN TYPES THAT CANNOT BE STATED CONCRETELY CARRY A LOWER CONFIDENCE rather
+# than a guess. The `Eip712` trait's error half is the implementor's associated
+# `Self::Error` (2.0.14 src/types/transaction/eip712.rs:62), so the Ok half is
+# concrete `[u8; 32]` and the whole `Result` is not: those five entries are
+# `confidence: medium` and their canonical return names `Self::Error` explicitly.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: `utils::id` (the 4-byte ABI function selector),
+#     `utils::to_checksum` / `parse_checksummed` (EIP-55),
+#     `utils::get_contract_address`, `get_create2_address(_from_hash)`,
+#     `raw_public_key_to_address`, `public_key_to_address`,
+#     `secret_key_to_address` — address and ABI derivation, the same boundary
+#     the merged go-ethereum KB draws for `PubkeyToAddress`.
+#   skipped-non-crypto: `Signature::recovery_id` (public from 0.6.4-alpha.1),
+#     `Signature::to_vec`, the `From`/`FromStr`/RLP conversions, the whole `abi`
+#     module, `rlp`, `hex`, and the numeric/byte containers in `types`.
+#   skipped-non-crypto: `Eip712::domain()`, which returns configuration, and
+#     `EIP712WithDomain::{new,set_domain}`, which wrap one.
+contracts:
+  # ---- Keccak-256 free functions. Present in all 61 published releases. ----
+  - method: ethers_core::utils.keccak256
+    arity: 1
+    # parameter_types is OMITTED rather than declared for one era: 0.1.0
+    # src/utils/hash.rs:26 is the NON-generic `keccak256(bytes: &[u8])` and
+    # 0.2.0 onward is generic (`<S: AsRef<[u8]>>`, later `<T: AsRef<[u8]>>`).
+    # Method plus arity does not identify one signature across the declared
+    # range, and a KB entry holds one value per method+arity.
+    canonical_return_type: "[u8; 32]"
+    return: {type: "[u8; 32]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: ethers_core::utils.hash_message
+    arity: 1
+    # Same reason as keccak256 above: the type parameter is spelled `S` in
+    # 0.1.0-1.0.2 and `T` from 1.5.0, so no single declaration is true across
+    # the range. The return type is stable and is declared.
+    canonical_return_type: "ethers_core::types::H256"
+    return: {type: "ethers_core::types::H256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  # ---- ECDSA over secp256k1. `Signature` is exported from the crate's
+  # `types` module in every release, so the module segment is `types` even for
+  # the 0.1 line where the file lives at src/types/crypto/signature.rs. ----
+  - method: ethers_core::types::Signature.recover
+    arity: 1
+    parameter_types: ["M"]
+    canonical_return_type: "core::result::Result<ethers_core::types::Address, ethers_core::types::SignatureError>"
+    return: {type: "ethers_core::types::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: ethers_core::types::Signature.verify
+    arity: 2
+    parameter_types: ["M", "A"]
+    canonical_return_type: "core::result::Result<(), ethers_core::types::SignatureError>"
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: address
+        role: metadata-contributing
+        contributes: {property: keyMaterial, derivation: argument_value}
+
+  - method: ethers_core::types::Signature.recover_typed_data
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<ethers_core::types::Address, ethers_core::types::SignatureError>"
+    return: {type: "ethers_core::types::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: payload
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  # ---- EIP-712 typed-data hashing. 0.5.5 onward, behind the non-default
+  # `eip712` feature until 2.0.3. The error half of every Result is the
+  # implementor's associated `Self::Error`, so confidence is medium. ----
+  - method: ethers_core::types::transaction::eip712::Eip712.encode_eip712
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<[u8; 32], Self::Error>"
+    return: {type: "[u8; 32]", confidence: medium}
+    role: output
+
+  - method: ethers_core::types::transaction::eip712::Eip712.struct_hash
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<[u8; 32], Self::Error>"
+    return: {type: "[u8; 32]", confidence: medium}
+    role: output
+
+  - method: ethers_core::types::transaction::eip712::Eip712.type_hash
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<[u8; 32], Self::Error>"
+    return: {type: "[u8; 32]", confidence: medium}
+    role: output
+
+  - method: ethers_core::types::transaction::eip712::Eip712.domain_separator
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<[u8; 32], Self::Error>"
+    return: {type: "[u8; 32]", confidence: medium}
+    role: output
+
+  - method: ethers_core::types::transaction::eip712::EIP712Domain.separator
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "[u8; 32]"
+    return: {type: "[u8; 32]", confidence: high}
+    role: output
+
+  - method: ethers_core::types::transaction::eip712.hash_struct
+    arity: 3
+    parameter_types: ["&str", "&serde_json::Value", "&ethers_core::types::transaction::eip712::Types"]
+    canonical_return_type: "core::result::Result<[u8; 32], ethers_core::types::transaction::eip712::Eip712Error>"
+    return: {type: "[u8; 32]", confidence: high}
+    role: operation
+
+  - method: ethers_core::types::transaction::eip712.hash_type
+    arity: 2
+    parameter_types: ["&str", "&ethers_core::types::transaction::eip712::Types"]
+    canonical_return_type: "core::result::Result<[u8; 32], ethers_core::types::transaction::eip712::Eip712Error>"
+    return: {type: "[u8; 32]", confidence: high}
+    role: operation
+
+  - method: ethers_core::types::transaction::eip712.make_type_hash
+    arity: 2
+    parameter_types: ["alloc::string::String", "&[(alloc::string::String, ethabi::ParamType)]"]
+    canonical_return_type: "[u8; 32]"
+    return: {type: "[u8; 32]", confidence: high}
+    role: operation
+
+  # ---- The 0.1 line only (0.1.0 - 0.1.3). secp256k1-backed key generation and
+  # signing; gone from 0.2.0 onward. ----
+  - method: ethers_core::types::PrivateKey.new
+    arity: 1
+    parameter_types: ["&mut R"]
+    canonical_return_type: "ethers_core::types::PrivateKey"
+    return: {type: "ethers_core::types::PrivateKey", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: rng
+        role: metadata-contributing
+        contributes: {property: keyMaterial, derivation: argument_type}
+
+  - method: ethers_core::types::PrivateKey.sign
+    arity: 1
+    parameter_types: ["S"]
+    canonical_return_type: "ethers_core::types::Signature"
+    return: {type: "ethers_core::types::Signature", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: ethers_core::types::PrivateKey.sign_transaction
+    arity: 2
+    parameter_types: ["ethers_core::types::TransactionRequest", "core::option::Option<u64>"]
+    canonical_return_type: "core::result::Result<ethers_core::types::Transaction, ethers_core::types::TxError>"
+    return: {type: "ethers_core::types::Transaction", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: chain_id
+        role: metadata-contributing
+        contributes: {property: parameterSet, derivation: argument_value}
+
+hierarchy: {}
