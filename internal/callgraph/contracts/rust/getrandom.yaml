@@ -1,0 +1,126 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: getrandom
+  coordinates:
+    - getrandom
+  version_range: ">=0.1.0,<0.5.0"
+  description: "Interface to the operating system's cryptographic random byte source: the 0.1-0.2 `getrandom`/`getrandom_uninit` surface and the 0.3-0.4 `fill`/`fill_uninit`/`u32`/`u64` surface"
+
+# EVERY KEY BELOW WAS READ OFF A PARSED CALL, not written from the API. A probe
+# consumer calling each entry point the way real consumers do was scanned with
+# `--export-callgraph`; before this file existed all six rendered with empty
+# `parameter_types`:
+#
+#   getrandom::getrandom(&mut b)              -> getrandom.getrandom(?)        /1
+#   getrandom::getrandom_uninit(&mut b)       -> getrandom.getrandom_uninit(?) /1
+#   getrandom::fill(&mut b)                   -> getrandom.fill(?)             /1
+#   use getrandom::fill;  fill(&mut b)        -> getrandom.fill(?)             /1
+#   getrandom::fill_uninit(&mut b)            -> getrandom.fill_uninit(?)      /1
+#   getrandom::u32()                          -> getrandom.u32()               /0
+#   use getrandom::u32 as gr_u32;  gr_u32()   -> getrandom.u32()               /0
+#   getrandom::u64()                          -> getrandom.u64()               /0
+#
+# EVERY ENTRY POINT IS A CRATE-ROOT FREE FUNCTION, so no key carries a module or
+# type segment and `rustAuthoredKey` (contracts.go:267) leaves all six
+# unchanged -- it moves a separator only for keys with two or more dots. The
+# authored key and the emitted key are therefore identical here, which is NOT
+# the general Rust case and is the reason it is stated rather than assumed.
+#
+# THE IMPORT SPELLING DOES NOT CHANGE THE KEY, measured above on both the
+# qualified and the imported (and aliased) forms. That follows from every symbol
+# being exported from the crate root; a crate that re-exports selectively needs
+# both spellings, this one does not.
+#
+# `SysRng` (0.4.x, `sys_rng` feature) HAS NO ENTRY AND MUST NOT GET ONE. It is a
+# unit struct, so `let rng = SysRng;` is a value expression and not a call: the
+# parser emits no callee for it, and an entry keyed on a type name would join
+# nothing. The rule `rust.getrandom.algorithm.drbg.sys-rng` declares
+# `api: getrandom.SysRng`, which names a TYPE rather than a method. An `api`
+# naming a type, a constant or a free function has no method entry to join
+# against and is not expected to have one.
+#
+# WHICH SYMBOL EXISTS IN WHICH RELEASE. The declared range spans both eras
+# because they are disjoint, never alternatives for one call site:
+#
+#   getrandom / getrandom_uninit   0.1.0 - 0.2.17   (uninit from 0.2.9)
+#   fill / fill_uninit / u32 / u64 0.3.0 - 0.4.3
+#
+# `getrandom` is REMOVED in 0.3.0 with no deprecated alias, and `fill` does not
+# exist before it. Read at getrandom-0.1.0/src/lib.rs:247,
+# getrandom-0.2.9/src/lib.rs (first `getrandom_uninit`),
+# getrandom-0.2.17/src/lib.rs:370,400, getrandom-0.3.0/src/lib.rs:65,96,126,140
+# and getrandom-0.4.3/src/lib.rs:87,118,143,157. 0.0.0 is a placeholder release
+# whose `src/lib.rs` contains only a license header and no API at all.
+#
+# THE BUFFER LENGTH IS THE ONLY QUANTITY THESE CALLS CARRY, and it is the number
+# of random BYTES requested -- not a key length. It is contributed as
+# `dataLength`, following `blake3.yaml:313-318`, which declares the same thing
+# for the same out-parameter shape. `keySize` would be wrong here and is not
+# merely a naming preference: `internal/scan/key_length.go:20` consumes exactly
+# that property to emit `resolved_key_length` evidence, so declaring it would
+# publish a key length for bytes that are not a key.
+
+contracts:
+  # --- 0.1.0 - 0.2.17 --------------------------------------------------------
+  - method: getrandom.getrandom
+    arity: 1
+    return: {type: "Result<(), getrandom::Error>", confidence: high}
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "Result<(), getrandom::Error>"
+    role: output
+    parameters:
+      - index: 0
+        name: dest
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_byte_length}
+  - method: getrandom.getrandom_uninit
+    arity: 1
+    return: {type: "Result<&mut [u8], getrandom::Error>", confidence: high}
+    parameter_types: ["&mut [core::mem::MaybeUninit<u8>]"]
+    canonical_return_type: "Result<&mut [u8], getrandom::Error>"
+    role: output
+    parameters:
+      - index: 0
+        name: dest
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_byte_length}
+
+  # --- 0.3.0 - 0.4.3 ---------------------------------------------------------
+  - method: getrandom.fill
+    arity: 1
+    return: {type: "Result<(), getrandom::Error>", confidence: high}
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "Result<(), getrandom::Error>"
+    role: output
+    parameters:
+      - index: 0
+        name: dest
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_byte_length}
+  - method: getrandom.fill_uninit
+    arity: 1
+    return: {type: "Result<&mut [u8], getrandom::Error>", confidence: high}
+    parameter_types: ["&mut [core::mem::MaybeUninit<u8>]"]
+    canonical_return_type: "Result<&mut [u8], getrandom::Error>"
+    role: output
+    parameters:
+      - index: 0
+        name: dest
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_byte_length}
+  # `u32`/`u64` return the bytes by value, so there is no out-parameter and no
+  # caller-chosen length: the width is fixed by the function. No parameters
+  # block, and none should be added.
+  - method: getrandom.u32
+    arity: 0
+    return: {type: "Result<u32, getrandom::Error>", confidence: high}
+    parameter_types: []
+    canonical_return_type: "Result<u32, getrandom::Error>"
+    role: output
+  - method: getrandom.u64
+    arity: 0
+    return: {type: "Result<u64, getrandom::Error>", confidence: high}
+    parameter_types: []
+    canonical_return_type: "Result<u64, getrandom::Error>"
+    role: output
