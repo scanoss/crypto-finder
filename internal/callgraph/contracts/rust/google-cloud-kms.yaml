@@ -1,0 +1,209 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: google-cloud-kms
+  coordinates:
+    - google-cloud-kms
+    - google_cloud_kms
+  version_range: ">=0.1.0,<0.7.0"
+  description: "google-cloud-kms: Google Cloud Key Management Service gRPC client for Rust"
+
+# EVERY KEY BELOW WAS READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API.
+# A probe consumer scanned with `--export-callgraph` emitted, before this file
+# existed, `google_cloud_kms::client.Client.encrypt(?, ?)` and its thirteen
+# siblings with empty parameter_types — the signature of an absent contract. The
+# authored key is the emitted key with the second-to-last dot rewritten to `::`
+# (rustAuthoredKey, contracts.go:267), so the graph's
+# `google_cloud_kms::client.Client.encrypt` is written here as
+# `google_cloud_kms::client::Client.encrypt`. Authoring the emitted form loads
+# without error and joins nothing.
+#
+# THE MODULE SEGMENT IS PART OF THE KEY AND IS NOT UNIFORM. `Client` is NOT
+# re-exported from the crate root — `lib.rs` is `pub mod` lines and nothing
+# else: two of them at 0.1.0 and 0.2.0 (`client`, `grpc`) and three from 0.3.0
+# when `signer` arrives — so every key carries its module. The
+# signer keys carry two: `google_cloud_kms::signer::ethereum::Signer.new`.
+#
+# ARITIES ARE MEASURED, NOT ASSUMED. All ten RPC entries below are arity 2
+# (`req`, `retry`), `Client.new` is arity 1, `Signer.new` arity 4,
+# `Signer.new_with_pubkey` arity 6 and `Signer.sign_digest` arity 1 — each read
+# off the same graph and cross-checked against the source line cited beside it.
+#
+# GOOGLE CLOUD KMS IS REMOTE AND THIS CRATE IMPLEMENTS NO CRYPTOGRAPHY. Every
+# method below marshals a protobuf request onto a gRPC channel; the operation
+# runs inside Cloud KMS on a key Google holds. These contracts therefore type
+# the client surface and say nothing about which algorithm ran, which key size
+# was used, where the key lives, or whether any module is certified.
+#
+# WHICH IS WHY THERE IS NO `parameters:` BLOCK, and the absence is deliberate
+# rather than an omission. A `parameters` entry exists to record that an
+# argument CONTRIBUTES a cryptographic property. No argument here does: the
+# first is an opaque protobuf request whose algorithm-bearing fields, where they
+# exist at all, hold enum values owned by the SEPARATE crate
+# `google-cloud-googleapis`; the second is a retry policy. Declaring a
+# contribution would manufacture a property the call site does not carry.
+#
+# RETURN TYPES. `return.type` is the bare `core::result::Result`, following the
+# nearest merged precedent — rust/azure-security-keyvault-keys, a generated
+# remote key-management client in this same ecosystem — because that is what a
+# receiver-type propagation can use. `canonical_return_type` carries the full
+# generic beside it, quoted: an unquoted YAML flow scalar containing a comma
+# truncates silently, which is present and wrong in at least one merged file.
+#
+# THE RESPONSE TYPES ARE REACHED THROUGH THIS CRATE'S OWN RE-EXPORT PATH.
+# `src/grpc/mod.rs:2` is `pub use google_cloud_googleapis::cloud::kms;` from
+# 0.2.0 onward, so `google_cloud_kms::grpc::kms::v1::EncryptResponse` is a path a
+# consumer can write and is what the crate's own client returns.
+#
+# AT 0.1.0 THAT PATH DOES NOT EXIST, and four entries here are affected rather
+# than none — an earlier revision of this comment claimed otherwise and was
+# wrong. `generate_random_bytes`, `create_crypto_key`, `create_crypto_key_version`
+# and `destroy_crypto_key_version` all exist at 0.1.0
+# (`src/grpc/apiv1/kms_client.rs:54, :81, :108, :162`) and return
+# `GenerateRandomBytesResponse`, `CryptoKey` and `CryptoKeyVersion`. Those are the
+# SAME `google_cloud_googleapis` types at every version; only the path a consumer
+# writes for them differs, and at 0.1.0 it is
+# `google_cloud_googleapis::cloud::kms::v1::…` directly
+# (`src/grpc/apiv1/kms_client.rs:7-9`). So `canonical_return_type` below names the
+# 0.2.0-onward spelling, which is correct for six of the seven versions in range
+# and names the right type — by a path a 0.1.0 consumer would not have written —
+# on the seventh. That is a bounded, stated inaccuracy rather than a silent one;
+# `return.type` and `role`, which are what a chain walk actually consumes, are
+# correct at every version. Naming the underlying
+# `google_cloud_googleapis::..` path instead would be equally true and less
+# useful, since the consumer's import is the one the graph resolves.
+#
+# THE ERA SPLIT, and it is why the range starts where it does. At 0.1.0 the
+# client exposed key management and `generate_random_bytes` only — twelve public
+# methods, `src/grpc/apiv1/kms_client.rs` — and its methods took `&mut self`.
+# The six cryptographic operations (encrypt, decrypt, asymmetric_sign, mac_sign,
+# mac_verify, get_public_key) arrive at 0.2.0
+# (`src/grpc/apiv1/kms_client.rs:263-346`) and are unchanged in shape through
+# 0.6.0. The `signer` module arrives at 0.3.0 (`src/lib.rs:153`,
+# `src/signer/mod.rs`) and its file is BYTE-IDENTICAL at 0.3.0, 0.4.0, 0.5.0,
+# 0.5.1 and 0.6.0. An entry for a method that does not exist in a given version
+# is inert there; what the range must not do is declare a signature that is
+# WRONG for a version it covers, and no signature in this file ever changed.
+#
+# THE UPPER BOUND IS 0.7.0 ON PURPOSE. 0.6.0 is the newest published release
+# (crates.io, all seven versions verified, none yanked) and for a 0.x crate each
+# minor is a breaking-change boundary, so `<1.0.0` would assert these signatures
+# for a 0.7.0 that does not exist.
+#
+# `asymmetric_decrypt` IS NOT DECLARED because this crate never wrapped it. The
+# Cloud KMS service has the RPC; verified absent from all seven published
+# versions, so no key would ever be emitted for it.
+#
+# THE `eth` FEATURE GATES THE SIGNER ENTRIES. `src/signer/mod.rs:1` is
+# `#[cfg(feature = "eth")]`, and `eth` is a real, published, NON-DEFAULT feature
+# (`Cargo.toml` `[features]`). A consumer that does not enable it cannot call
+# these three methods, so no key is emitted and the entries are inert — the same
+# inertness the era split above relies on.
+#
+# A MEASURED LIMITATION, RECORDED RATHER THAN WORKED AROUND. When a consumer
+# writes the chained `Client::new(config).await.unwrap()`, the exported graph
+# emits `google_cloud_kms::client.Client.unwrap()` rather than `.new` — the
+# crypto call resolves to the outermost call in the chain. `unwrap` belongs to
+# `Result`, not to this crate, so declaring it here would be a false statement
+# about the library and it is not declared. The plain `Client::new(config)` and
+# fully-qualified spellings both emit `.new` correctly; measured on the pinned
+# analyzer with the probe in this family's gate evidence.
+contracts:
+  # --- construction ---
+  - method: google_cloud_kms::client::Client.new
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::client::Client, google_cloud_gax::conn::Error>"
+    parameter_types: ["google_cloud_kms::client::ClientConfig"]
+    role: factory
+
+  # --- cryptographic operations, all remote ---
+  # src/grpc/apiv1/kms_client.rs:275 (encrypt) .. :358 (get_public_key) at 0.6.0
+  - method: google_cloud_kms::client::Client.encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::EncryptResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::EncryptRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.decrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::DecryptResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::DecryptRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.asymmetric_sign
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::AsymmetricSignResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::AsymmetricSignRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.mac_sign
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::MacSignResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::MacSignRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.mac_verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::MacVerifyResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::MacVerifyRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.generate_random_bytes
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::GenerateRandomBytesResponse, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::GenerateRandomBytesRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+  - method: google_cloud_kms::client::Client.get_public_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::PublicKey, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::GetPublicKeyRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+
+  # --- key material lifecycle, also remote ---
+  # src/grpc/apiv1/kms_client.rs:77, :96, :138 at 0.6.0
+  - method: google_cloud_kms::client::Client.create_crypto_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::CryptoKey, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::CreateCryptoKeyRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: factory
+  - method: google_cloud_kms::client::Client.create_crypto_key_version
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::CryptoKeyVersion, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::CreateCryptoKeyVersionRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: factory
+  - method: google_cloud_kms::client::Client.destroy_crypto_key_version
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::grpc::kms::v1::CryptoKeyVersion, google_cloud_gax::grpc::Status>"
+    parameter_types: ["google_cloud_kms::grpc::kms::v1::DestroyCryptoKeyVersionRequest", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: operation
+
+  # --- the Ethereum signer, 0.3.0+, behind the non-default `eth` feature ---
+  # src/signer/ethereum.rs:51 (new_with_pubkey), :104 (new), :123 (sign_digest)
+  # The algorithm those three imply — ECDSA / secp256k1 / SHA-256 — is fixed by
+  # this module's own source and is asserted by the rules, not here: a contract
+  # types a call, it does not carry algorithm metadata.
+  - method: google_cloud_kms::signer::ethereum::Signer.new
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<google_cloud_kms::signer::ethereum::Signer, google_cloud_kms::signer::ethereum::Error>"
+    parameter_types: ["google_cloud_kms::client::Client", "&str", "u64", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: factory
+  - method: google_cloud_kms::signer::ethereum::Signer.new_with_pubkey
+    arity: 6
+    return: { type: google_cloud_kms::signer::ethereum::Signer, confidence: high }
+    parameter_types: ["google_cloud_kms::client::Client", "&str", "ethers_core::k256::ecdsa::VerifyingKey", "ethers_core::types::Address", "u64", "core::option::Option<google_cloud_gax::retry::RetrySetting>"]
+    role: factory
+  - method: google_cloud_kms::signer::ethereum::Signer.sign_digest
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<ethers_core::types::Signature, google_cloud_kms::signer::ethereum::Error>"
+    parameter_types: ["&[u8]"]
+    role: operation
+
+hierarchy: {}
