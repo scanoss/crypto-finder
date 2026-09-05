@@ -1,0 +1,56 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rustls-native-certs-0.5
+  coordinates:
+    - rustls-native-certs
+    - rustls_native_certs
+  version_range: ">=0.5.0,<0.6.0"
+  description: "rustls-native-certs 0.5's builder-callback trust store entry point"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT, NOT BECAUSE THE CRATE IS -- the
+# convention biscuit-jwks.yaml:11-17 states. `version_range` is declared per
+# LIBRARY and is parsed but never consulted at lookup, so a file may only claim
+# versions for which EVERY entry in it is true.
+#
+# `build_native_certs` EXISTS IN EXACTLY ONE PUBLISHED VERSION, and this was
+# established by enumerating `pub fn` in `src/` for all 23 releases rather than by
+# reading the newest one. It arrives at 0.5.0 (lib.rs:50, and per-platform at
+# unix.rs:19, macos.rs:11, windows.rs:16) together with the `RootStoreBuilder`
+# trait (lib.rs:37), and it is GONE at 0.6.0, whose lib.rs declares only
+# `load_native_certs` and `Certificate`. It is absent at 0.4.0 and at every
+# earlier release. Reading the API at either neighbour would have missed it
+# entirely; folding it into rustls-native-certs.yaml would force that file's range
+# to 0.5.0-only and drop 22 versions of `load_native_certs`.
+#
+# WHAT IT DOES. The same platform trust store read as `load_native_certs`, with
+# the certificate parsing inverted: instead of returning a `rustls::RootCertStore`
+# it calls back into a caller-supplied `RootStoreBuilder`. That inversion is why
+# 0.5.0 is also the only release where `load_native_certs` sits behind the
+# `rustls` cargo feature (lib.rs:34) -- the builder form is the one available to
+# all users, and the rustls form is a convenience layered on it.
+#
+# ARITY READ FROM THE DECLARATION, self excluded: `build_native_certs(builder)`
+# -> 1. `role: operation` and not `factory`: it returns `Result<(), Error>` and
+# constructs nothing, filling the caller's builder as a side effect.
+#
+# `return.type` IS `()` AND NOT `void`. Both spellings exist in this directory,
+# but every other user of `void` is a RustCrypto digest or MAC crate whose
+# `update()` genuinely returns `()` with no wrapper. For the `Result<(), E>`
+# shape the convention is `()` with the wrapper in `canonical_return_type`, as
+# `security-framework.yaml:226-227` -- this crate's own macOS backend -- and
+# `hkdf.yaml` both do. `void` is not a Rust type token and is propagated verbatim
+# as `fn.ReturnType`.
+#
+# `RootStoreBuilder::load_der` / `::load_pem_file` ARE NOT CONTRACTED. They are
+# implemented by the CONSUMER and called by THIS CRATE, so a consumer's `fn
+# load_der` body is the consumer's own code rather than a call into this library.
+contracts:
+  - method: rustls_native_certs.build_native_certs
+    arity: 1
+    return: {type: (), confidence: high}
+    parameter_types: ["&mut B"]
+    canonical_return_type: "core::result::Result<(), std::io::Error>"
+    role: operation
+
+hierarchy: {}
