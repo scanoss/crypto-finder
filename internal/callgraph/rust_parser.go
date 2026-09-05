@@ -242,7 +242,7 @@ func (p *RustParser) readRustGlobReExportedModules(dir string) map[string]bool {
 		if err != nil {
 			continue
 		}
-		found := rustCollectGlobReExports(tree.RootNode(), src)
+		found := rustCollectGlobReExports(tree.RootNode(), src, name != "mod.rs")
 		tree.Close()
 		if len(found) > 0 {
 			return found
@@ -251,9 +251,27 @@ func (p *RustParser) readRustGlobReExportedModules(dir string) map[string]bool {
 	return nil
 }
 
-// rustCollectGlobReExports reads the `pub use self::x::*;` and `pub use x::*;`
-// declarations of one module file.
-func rustCollectGlobReExports(root *sitter.Node, src []byte) map[string]bool {
+// rustCollectGlobReExports reads the `pub use self::x::*;`, `pub use x::*;` and
+// — at the crate root only — `pub use crate::x::*;` declarations of one module
+// file.
+//
+// THE `crate::` FORM IS ACCEPTED ONLY IN lib.rs / main.rs, and that restriction
+// is the whole reason atCrateRoot exists. From the crate root `crate::x` and
+// `self::x` name the same module, so the re-export is this directory's; from a
+// nested `mod.rs` `crate::x` names a TOP-LEVEL module that is not this
+// directory's child, and treating it as one would strip a segment every item
+// legitimately carries.
+//
+// Measured on rusoto_kms: FOUR of its 26 published versions — 0.39.0, 0.40.0,
+// 0.41.0 and 0.42.0 — write `pub use crate::generated::*;` in lib.rs, where
+// every other version writes `pub use generated::*;` (0.25.0-0.38.0) or
+// `pub use custom::*; pub use generated::*;` (0.43.0-0.48.0). Without this case
+// every item of those four kept a `rusoto_kms::generated` package, so the
+// synthesized entry-point FQN read `rusoto_kms::generated.KmsClient.encrypt`,
+// matched no rule `api`, and all four scanned as zero-finding while 0.38.0
+// produced six entry points and 0.43.0 ten. The idiom is ordinary modern Rust,
+// so the same silent hole was open for any crate written that way.
+func rustCollectGlobReExports(root *sitter.Node, src []byte, atCrateRoot bool) map[string]bool {
 	found := map[string]bool{}
 	rootNamedChildren := int(root.NamedChildCount())
 	for i := 0; i < rootNamedChildren; i++ {
@@ -275,10 +293,14 @@ func rustCollectGlobReExports(root *sitter.Node, src []byte) map[string]bool {
 			continue
 		}
 		// `self::inner::*` and the 2015-edition `inner::*` both name a child;
-		// anything deeper or rooted elsewhere is not this directory's module.
-		if len(segments) == 2 && segments[0] == rustNodeSelf {
+		// `crate::inner::*` does too, but only when read from the crate root.
+		// Anything deeper or rooted elsewhere is not this directory's module.
+		switch {
+		case len(segments) == 2 && segments[0] == rustNodeSelf:
 			found[segments[1]] = true
-		} else if len(segments) == 1 && segments[0] != "" {
+		case len(segments) == 2 && segments[0] == rustNodeCrate && atCrateRoot:
+			found[segments[1]] = true
+		case len(segments) == 1 && segments[0] != "":
 			found[segments[0]] = true
 		}
 	}
