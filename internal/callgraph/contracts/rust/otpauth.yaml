@@ -1,0 +1,100 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: otpauth
+  coordinates:
+    - otpauth
+  version_range: ">=0.2.0,<0.6.0"
+  description: "HOTP/TOTP over HMAC-SHA1 (messense/otpauth-rs), crate-root API"
+
+# API READ AT 0.5.1 (src/hotp.rs, src/totp.rs) AND CROSS-CHECKED AT 0.2.0, 0.3.0,
+# 0.4.0 and 0.4.1 from the committed sample. Every entry here exists, at this
+# arity and with this return type, in every release from 0.2.0 to 0.5.1.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y. An exported
+# call graph over a probe consumer agreed: every call came back as
+# `otpauth.HOTP.generate(?)` / `otpauth.TOTP.verify(?, ?, ?)` with empty
+# parameter_types, which is what an absent contract looks like.
+#
+# KEY SHAPE, READ OFF THE EXPORTED GRAPH RATHER THAN ASSUMED. Call-site FQNs are
+# `otpauth.<Type>.<method>` -- two dots -- which the Rust key normalization
+# rewrites to the authored `otpauth::<Type>.<method>`.
+#
+# THE TYPES ARE `pub use`-EXPORTED FROM THE CRATE ROOT, so the emitted key
+# carries no module segment for a consumer who writes `use otpauth::TOTP`. A
+# consumer on 0.2.0-0.3.0 may instead write `otpauth::totp::TOTP`, and the key
+# then DOES carry the module; those spellings live in
+# `otpauth-0.2-modules.yaml`, because the modules are private from 0.4.0 and a
+# single file could not claim one range for both.
+#
+# THE FAMILY IS SPLIT ACROSS FOUR FILES SO THAT NO `version_range` OVER-CLAIMS:
+#   otpauth.yaml               >=0.2.0,<0.6.0   crate-root HOTP/TOTP core API
+#   otpauth-0.1.yaml           >=0.1.0,<0.2.0   the pre-rename `OtpAuth` type
+#   otpauth-0.2-modules.yaml   >=0.2.0,<0.4.0   the public `hotp`/`totp` modules
+#   otpauth-0.4.1.yaml         >=0.4.1,<0.6.0   from_base32 / from_bytes /
+#                                               base32_secret
+#
+# TWO DECLARED-TYPE SPELLINGS CHANGE INSIDE THIS RANGE WHILE ARITY AND RETURN
+# TYPE DO NOT, and `parameter_types` records the current one:
+#   `new` takes `&str` at 0.2.0-0.2.1 and `S: Into<String>` from 0.2.2 on;
+#   the integer parameters are `usize` at 0.2.0-0.2.7 and `u64` from 0.3.0 on.
+# Neither changes the key, the arity or the return type, so both eras resolve.
+#
+# `to_uri` IS CONTRACTED AND IS NOT MATCHED BY ANY RULE, and that is deliberate
+# in both directions. Formatting an `otpauth://` provisioning string is not
+# cryptography, so the rules stay silent on it (pinned by
+# uri-and-secret-encoding-negative.rs); but a contract entry carries no crypto
+# assertion -- only an arity, a return type and a role -- and typing it keeps a
+# consumer that chains off the receiver resolvable. It is the same line
+# rust/totp-rs draws around `from_url`.
+contracts:
+  - method: otpauth::HOTP.new
+    arity: 1
+    return: { type: otpauth::HOTP, confidence: high }
+    canonical_return_type: otpauth::HOTP
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::HOTP.generate
+    arity: 1
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["u64"]
+    role: operation
+  - method: otpauth::HOTP.verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "u64", "u64"]
+    role: operation
+  - method: otpauth::HOTP.to_uri
+    arity: 3
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: ["S", "S", "u64"]
+    role: output
+  - method: otpauth::TOTP.new
+    arity: 1
+    return: { type: otpauth::TOTP, confidence: high }
+    canonical_return_type: otpauth::TOTP
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::TOTP.generate
+    arity: 2
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["u64", "u64"]
+    role: operation
+  - method: otpauth::TOTP.verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "u64", "u64"]
+    role: operation
+  - method: otpauth::TOTP.to_uri
+    arity: 2
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: ["S", "S"]
+    role: output
+
+hierarchy: {}
