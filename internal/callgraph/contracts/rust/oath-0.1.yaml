@@ -1,0 +1,121 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: oath-0.1
+  coordinates:
+    - oath
+  version_range: ">=0.0.3,<0.2.0"
+  description: "oath's pre-0.10 TOTP surface and its caller-supplied-digest entry points, split out so oath.yaml's range stays true"
+
+# THE 0.0.3-0.1.4 API. Four of these six identifiers do not exist in 0.10.x at
+# all, and the two that share a name there have a different shape, so they are
+# split out rather than declared under oath.yaml's whole-range file.
+#
+# WHAT CHANGES AT 0.10.1, read from the two archives:
+#   `hotp_custom`  REMOVED. 0.10 inlines its body into a private
+#                  `hmac_and_truncate::<D>` (0.10.2 lib.rs:77).
+#   `totp_raw`     REMOVED, replaced by `totp_raw_now` and
+#                  `totp_raw_custom_time`, which take a `&HashType`.
+#   `totp`         REMOVED, replaced by `totp_now` and `totp_custom_time`.
+#   `totp_custom`  KEPT BY NAME ONLY. Here it is arity 6 and takes the digest as
+#                  a constructed VALUE (`hash: D`, 0.1.4 lib.rs:73-75); at 0.10.x
+#                  it is arity 5 and the digest is a TYPE parameter used only
+#                  inside the body, so the caller must write a turbofish.
+#                  Different arities are different keys, so both resolve; the
+#                  0.10 entry lives in oath-0.10.yaml.
+#
+# THIS IS THE ONLY ERA ANY PUBLISHED CONSUMER USES. All eight reverse
+# dependencies of this crate that were downloaded and scanned -- `totp` at three
+# versions, `searchspot` at four and `athtool` -- call `totp_raw(key, digits,
+# epoch, time_step)`. Not one calls a 0.10.x entry point.
+#
+# `totp_raw` AND `totp` HARDCODE SHA-1 (0.1.4 lib.rs:81 and lib.rs:89, via
+# `let hash = Sha1::new()`), so neither takes a hash parameter to declare.
+# `hotp_custom` AND `totp_custom` TAKE THE DIGEST AS A CONSTRUCTED VALUE, so the
+# contributed property uses `argument_type` rather than `argument_value`: the
+# call site writes `Sha1::new()`, and it is the TYPE of that expression, not its
+# value, that names the digest.
+#
+# `digits` IS `usize` AT 0.0.3 AND `u32` FROM 0.1.0 ON (0.1.0 lib.rs:23). The
+# arity and the return type are unchanged, so both spellings resolve against
+# these entries; `parameter_types` records the 0.1.x form.
+contracts:
+  # `totp_raw(key: &[u8], digits: u32, epoch: u64, time_step: u64) -> u64`
+  # 0.1.4 lib.rs:80. The only entry point any published consumer calls.
+  - method: oath.totp_raw
+    arity: 4
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u32", "u64", "u64"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+
+  # `totp(key: &str, digits: u32, epoch: u64, time_step: u64)
+  #   -> Result<u64, &str>` -- the hex-string front end for `totp_raw`.
+  # 0.1.4 lib.rs:86.
+  - method: oath.totp
+    arity: 4
+    return: { type: "core::result::Result<u64, &str>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, &str>"
+    parameter_types: ["&str", "u32", "u64", "u64"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+
+  # `hotp_custom<D: Digest>(key: &[u8], counter: u64, digits: u32, hash: D)
+  #   -> u64` -- 0.1.4 lib.rs:50.
+  - method: oath.hotp_custom
+    arity: 4
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u64", "u32", "D"]
+    role: operation
+    parameters:
+      - index: 2
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_type }
+
+  # `totp_custom<D: Digest>(key: &[u8], digits: u32, epoch: u64, time_step: u64,
+  #   current_time: u64, hash: D) -> u64` -- 0.1.4 lib.rs:73. Arity 6, digest as
+  # a value. The 0.10.x function of the same name is arity 5.
+  - method: oath.totp_custom
+    arity: 6
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u32", "u64", "u64", "u64", "D"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+      - index: 5
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_type }
+
+hierarchy: {}
