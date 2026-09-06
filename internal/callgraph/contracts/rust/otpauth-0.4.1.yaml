@@ -1,0 +1,70 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: otpauth-0.4.1
+  coordinates:
+    - otpauth
+  version_range: ">=0.4.1,<0.6.0"
+  description: "otpauth's 0.4.1 additions: from_base32, from_bytes and base32_secret"
+
+# THE 0.4.1 ADDITIONS, SPLIT OUT SO `otpauth.yaml` DOES NOT OVER-CLAIM ITS RANGE.
+# None of these six entries exists before 0.4.1:
+#
+#   HOTP::from_base32   0.4.1 src/hotp.rs:36    TOTP::from_base32   totp.rs:34
+#   HOTP::from_bytes    0.4.1 src/hotp.rs:42    TOTP::from_bytes    totp.rs:40
+#   HOTP::base32_secret 0.4.1 src/hotp.rs       TOTP::base32_secret totp.rs:82
+#
+# `from_base32` RETURNS AN `Option`, NOT THE TYPE. Both real published consumers
+# write `TOTP::from_base32(secret)` and then unwrap it, so declaring the concrete
+# type here would mistype the receiver of whatever they chain next.
+# `canonical_return_type` carries the full `Option<T>` while `return.type` names
+# the semantic outcome the resolver reads.
+#
+# `base32_secret` IS CONTRACTED AND IS NOT MATCHED BY ANY RULE. It re-encodes a
+# secret the caller already supplied; encoding a secret is not producing one, and
+# matching it would turn every consumer that renders a QR code into one that
+# mints key material. uri-and-secret-encoding-negative.rs pins the silence. The
+# entry types the call so a chain off it still resolves.
+#
+# The module-qualified spellings of these three methods are absent on purpose:
+# the `hotp` and `totp` modules are private from 0.4.0, so
+# `otpauth::hotp::HOTP::from_base32` never existed in any published release.
+contracts:
+  - method: otpauth::HOTP.from_base32
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    canonical_return_type: core::option::Option<otpauth::HOTP>
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::HOTP.from_bytes
+    arity: 1
+    return: { type: otpauth::HOTP, confidence: high }
+    canonical_return_type: otpauth::HOTP
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: otpauth::HOTP.base32_secret
+    arity: 0
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: []
+    role: output
+  - method: otpauth::TOTP.from_base32
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    canonical_return_type: core::option::Option<otpauth::TOTP>
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::TOTP.from_bytes
+    arity: 1
+    return: { type: otpauth::TOTP, confidence: high }
+    canonical_return_type: otpauth::TOTP
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: otpauth::TOTP.base32_secret
+    arity: 0
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: []
+    role: output
+
+hierarchy: {}
