@@ -1,0 +1,146 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls-0.2
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.2.0,<0.3.0"
+  description: "native-tls 0.2's Identity type, default constructors and protocol-version selectors"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT. Every entry here arrives at 0.2.0
+# and none of them exists anywhere in the 0.1 line, established by enumerating
+# `pub fn` in `src/lib.rs` for all 25 published archives in the matrix range:
+# 0.1.5 has no `min_protocol_version`, no `max_protocol_version`, no
+# `TlsConnector::new`, no `TlsAcceptor::new` and no `Identity` — it configures
+# versions through `supported_protocols(&[Protocol])` (0.1.5 lib.rs:341, :439),
+# which was removed at 0.2.0 and is not typed anywhere because no rule matches it
+# and no consumer in the M20 draw writes it.
+#
+# THE PROTOCOL SELECTORS ARE THE ONLY PLACE A PROTOCOL VERSION IS STATICALLY
+# KNOWABLE IN THIS FAMILY, which is why they are the only rules that emit one and
+# why the rest of the crate's surface declares no algorithm.
+#
+# THE FOUR SELECTOR KEYS ARE TYPED HERE AND ARE NOT REACHABLE FROM A RULE
+# FINDING, and that is a stated gap rather than an oversight. `metadata.crypto.api`
+# is per-PATTERN, and one `$BUILDER.min_protocol_version(..)` pattern cannot tell
+# a `TlsConnectorBuilder` receiver from a `TlsAcceptorBuilder` one — the receiver
+# type is exactly what the rule layer does not know. Four keys therefore have no
+# single correct `api` value, so the two protocol-version rules carry none rather
+# than a wrong one, and `12-api-contract-join.sh` cannot see the absence because
+# it is one-directional. schannel's equivalent rules share ONE api because their
+# selector has one contract key; this family has four. `min_protocol_version(Some(Protocol::Tlsv12))`
+# names a version at the call site; everything else about the session is decided
+# by the platform backend at run time.
+#
+# NO DEFAULT IS ENCODED FOR AN OMITTED SELECTOR, AND THAT IS MEASURED. The
+# builder's own default minimum CHANGES INSIDE THIS RANGE: `min_protocol:
+# Some(Protocol::Tlsv10)` at 0.2.0-0.2.14 and `Some(Protocol::Tlsv12)` from
+# 0.2.15, in both the connector and the acceptor builder (0.2.14 src/lib.rs:479
+# against 0.2.15 src/lib.rs:482; enumerated over every published 0.2 archive). There is no single
+# default true for this range, so a consumer that sets no selector gets a version
+# this KB deliberately does not state.
+#
+# THE PARAMETER IS AN `Option`, NOT A `Protocol`. 0.2.18 src/lib.rs:370 and :544
+# declare `fn min_protocol_version(&mut self, protocol: Option<Protocol>)`, so a
+# consumer writes `Some(Protocol::Tlsv12)` and `None` is a legal call meaning
+# "no lower bound". A `parameter_types` of `native_tls::Protocol` would be a false
+# declaration of what the call site passes.
+#
+# THE KEYS NAME THE BUILDER TYPES, AND THE FIRST EXPORT SAID OTHERWISE. Before
+# `TlsConnector::builder` and `TlsAcceptor::builder` were typed, the graph emitted
+# `native_tls.TlsConnector.min_protocol_version`; with them typed the receiver
+# resolves and the key is `native_tls.TlsConnectorBuilder.min_protocol_version`.
+# See native-tls.yaml's header. `TlsAcceptorBuilder.min_protocol_version` and
+# `TlsConnectorBuilder.min_protocol_version` are separate keys with separate
+# returns, so the same method name on the two builders does not collide.
+contracts:
+  - method: native_tls::TlsConnector.new
+    arity: 0
+    return: {type: "native_tls::TlsConnector", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<native_tls::TlsConnector, native_tls::Error>"
+    role: factory
+  - method: native_tls::TlsConnectorBuilder.min_protocol_version
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["core::option::Option<native_tls::Protocol>"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+  - method: native_tls::TlsConnectorBuilder.max_protocol_version
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["core::option::Option<native_tls::Protocol>"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+  - method: native_tls::TlsAcceptor.new
+    arity: 1
+    return: {type: "native_tls::TlsAcceptor", confidence: high}
+    parameter_types: ["native_tls::Identity"]
+    canonical_return_type: "core::result::Result<native_tls::TlsAcceptor, native_tls::Error>"
+    role: factory
+  - method: native_tls::TlsAcceptorBuilder.min_protocol_version
+    arity: 1
+    return: {type: "&mut native_tls::TlsAcceptorBuilder", confidence: high}
+    parameter_types: ["core::option::Option<native_tls::Protocol>"]
+    canonical_return_type: "&mut native_tls::TlsAcceptorBuilder"
+    role: operation
+  - method: native_tls::TlsAcceptorBuilder.max_protocol_version
+    arity: 1
+    return: {type: "&mut native_tls::TlsAcceptorBuilder", confidence: high}
+    parameter_types: ["core::option::Option<native_tls::Protocol>"]
+    canonical_return_type: "&mut native_tls::TlsAcceptorBuilder"
+    role: operation
+  - method: native_tls::Identity.from_pkcs12
+    arity: 2
+    return: {type: "native_tls::Identity", confidence: high}
+    parameter_types: ["&[u8]", "&str"]
+    canonical_return_type: "core::result::Result<native_tls::Identity, native_tls::Error>"
+    role: factory
+  - method: native_tls::TlsConnector.builder
+    arity: 0
+    return: {type: "native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "native_tls::TlsConnectorBuilder"
+    role: factory
+  - method: native_tls::TlsAcceptor.builder
+    arity: 1
+    return: {type: "native_tls::TlsAcceptorBuilder", confidence: high}
+    parameter_types: ["native_tls::Identity"]
+    canonical_return_type: "native_tls::TlsAcceptorBuilder"
+    role: factory
+  - method: native_tls::TlsConnectorBuilder.identity
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["native_tls::Identity"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+  - method: native_tls::TlsConnectorBuilder.add_root_certificate
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["native_tls::Certificate"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+  # DISABLING CERTIFICATE VERIFICATION IS A CONFIGURATION THIS FAMILY DOES CLAIM,
+  # and an earlier revision of native-tls.yaml dispositioned it away. The
+  # reasoning was that these two weaken verification rather than performing it; a
+  # review refuted it against this repository's own standard, since
+  # security-framework.yaml's crate already ships the identical pair as a
+  # CWE-295 WARNING and its own rule comment names native-tls as a crate that
+  # spells it the same way. Both arrive at 0.2.0 (lib.rs:375 and :400) and are
+  # `-> &mut Self` from 0.2.16 onward (0.2.18 lib.rs:423 and :445), which is the
+  # same type spelled differently rather than a divergence.
+  - method: native_tls::TlsConnectorBuilder.danger_accept_invalid_certs
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["bool"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+  - method: native_tls::TlsConnectorBuilder.danger_accept_invalid_hostnames
+    arity: 1
+    return: {type: "&mut native_tls::TlsConnectorBuilder", confidence: high}
+    parameter_types: ["bool"]
+    canonical_return_type: "&mut native_tls::TlsConnectorBuilder"
+    role: operation
+
+hierarchy: {}

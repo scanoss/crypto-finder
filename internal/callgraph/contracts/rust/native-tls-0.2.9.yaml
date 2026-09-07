@@ -1,0 +1,34 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls-0.2.9
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.2.9,<0.3.0"
+  description: "native-tls PKCS#8 identity loading, from the release that introduced it"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT. `Identity::from_pkcs8` arrives at
+# 0.2.9 and is ABSENT at 0.2.8 and every earlier release, established by
+# enumerating `pub fn` in `src/lib.rs` for all 25 published archives in the matrix
+# range. It is present at 0.2.14 (lib.rs:184) and 0.2.18 (lib.rs:178). Declaring
+# it under the crate's whole 0.2 range would serve a 0.2.0 consumer a signature
+# for a function that does not exist there — silently, since `version_range` is
+# never consulted at lookup.
+#
+# THE TWO PARAMETERS ARE BOTH PEM BYTE SLICES AND ARE NOT INTERCHANGEABLE:
+# `from_pkcs8(pem: &[u8], key: &[u8])` takes the CERTIFICATE CHAIN first and the
+# PKCS#8 PRIVATE KEY second (0.2.18 lib.rs:178). native-tls's own
+# `examples/simple-server-pkcs8.rs` writes `Identity::from_pkcs8(&certs, &key)`.
+#
+# NO ALGORITHM IS DECLARED: a PKCS#8 key may be RSA, ECDSA or Ed25519 and the
+# platform backend parses it.
+contracts:
+  - method: native_tls::Identity.from_pkcs8
+    arity: 2
+    return: {type: "native_tls::Identity", confidence: high}
+    parameter_types: ["&[u8]", "&[u8]"]
+    canonical_return_type: "core::result::Result<native_tls::Identity, native_tls::Error>"
+    role: factory
+
+hierarchy: {}

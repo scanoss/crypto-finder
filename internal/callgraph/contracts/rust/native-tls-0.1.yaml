@@ -1,0 +1,40 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls-0.1
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.1.0,<0.2.0"
+  description: "native-tls 0.1's PKCS#12 archive type, replaced by Identity at 0.2.0"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT, NOT BECAUSE THE CRATE IS.
+# `version_range` is declared per LIBRARY and is never consulted at lookup, so a
+# file may only claim versions for which every entry in it is true.
+#
+# `Pkcs12` EXISTS IN THE 0.1 LINE ALONE, established by enumerating `pub struct`
+# and `pub fn` in `src/lib.rs` for all 25 published archives in the matrix range:
+# present at 0.1.0 (lib.rs:168) through 0.1.5 (lib.rs:169), and gone at 0.2.0,
+# whose lib.rs:157 declares `Identity` in its place with `from_pkcs12` as the
+# constructor. Folding this into native-tls.yaml would claim a type for 19
+# releases that do not have it.
+#
+# THE ARITY IS THE DISCRIMINATOR AGAINST `Certificate::from_der`. Both are called
+# `from_der`; `Pkcs12::from_der(der, password)` takes TWO arguments (0.1.5
+# lib.rs:184) and is a private key plus its certificate chain, while
+# `Certificate::from_der(der)` takes one and is a certificate. They are separate
+# keys anyway — the type segment differs — but the rules key on the same
+# distinction, so it is recorded in both places.
+#
+# NO ALGORITHM IS DECLARED. The key inside a PKCS#12 archive may be RSA, ECDSA or
+# Ed25519, and native-tls hands the bytes to the platform stack without
+# inspecting them.
+contracts:
+  - method: native_tls::Pkcs12.from_der
+    arity: 2
+    return: {type: "native_tls::Pkcs12", confidence: high}
+    parameter_types: ["&[u8]", "&str"]
+    canonical_return_type: "core::result::Result<native_tls::Pkcs12, native_tls::Error>"
+    role: factory
+
+hierarchy: {}
