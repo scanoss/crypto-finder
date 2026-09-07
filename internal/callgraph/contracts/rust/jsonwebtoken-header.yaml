@@ -1,0 +1,33 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-header
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=0.1.0,<11.0.0"
+  description: "jsonwebtoken's JWS header constructor, the point at which a signing algorithm is chosen"
+
+# SPLIT OUT BECAUSE ITS RANGE IS THE WHOLE CRATE HISTORY. `version_range` is
+# declared per LIBRARY, not per entry, and `Header::new(algorithm: Algorithm)`
+# is the one entry point whose name, arity, parameter type and return are
+# identical in EVERY published release: 0.1.0 lib.rs:58, 1.1.7 lib.rs:77,
+# 2.0.3 header.rs:45, 6.0.1 header.rs:45, 7.2.0 header.rs:49, 8.3.0 header.rs:71,
+# 10.4.0 header.rs:195. Folding it into jsonwebtoken.yaml would silently
+# under-claim it back to 7.0.0.
+#
+# The emitted key is `jsonwebtoken.Header.new` -- two dots -- so the authored key
+# takes "::" before the type (rustAuthoredKey, contracts.go:267).
+#
+# THE `algorithm` PARAMETER CONTRIBUTES NOTHING, DELIBERATELY. See the note in
+# jsonwebtoken.yaml: `Header::new(alg)` accepts a variable as readily as a
+# literal, and the rules -- not this contract -- are where the literal
+# requirement lives.
+contracts:
+  - method: jsonwebtoken::Header.new
+    arity: 1
+    return: { type: "jsonwebtoken::Header", confidence: high }
+    canonical_return_type: "jsonwebtoken::Header"
+    parameter_types: ["jsonwebtoken::Algorithm"]
+    role: factory
+
+hierarchy: {}

@@ -1,0 +1,55 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-10
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=10.0.0,<11.0.0"
+  description: "the url-safe base64 secret constructor and the detached-JWS entry points jsonwebtoken 10.0 added"
+
+# ONE ERA, THREE ENTRIES. `EncodingKey::from_urlsafe_base64_secret` appears at
+# 10.0.0 (10.0.0 encoding.rs:63, 10.4.0 encoding.rs:45) and `pub mod jws` with it
+# (10.0.0 lib.rs:29); none of the three exists in any earlier release, so they
+# cannot sit in jsonwebtoken.yaml without pulling that file's range up to 10.0.0
+# and under-claiming thirteen entries that have been true since 7.0.0.
+# `DecodingKey` has no `from_urlsafe_base64_secret` counterpart in any published
+# version.
+#
+# `jws::encode` AND `jws::decode` ARE NOT THE CRATE-ROOT PAIR UNDER ANOTHER NAME,
+# and the keys prove it: an exported call graph emits `jsonwebtoken::jws.encode`
+# and `jsonwebtoken::jws.decode`, one dot each, against `jsonwebtoken.encode` and
+# `jsonwebtoken.decode` for the root functions. The signatures differ too --
+# `jws::encode` takes `Option<&T>` claims and returns `Jws<T>` rather than a
+# `String`, and `jws::decode` takes a `&Jws<T>` rather than a token -- so a
+# shared entry would be false for one of them whichever way it was written. The
+# rules keep the two apart as well: the crate-root pair carries two
+# `pattern-not-inside` clauses for the `jws` spelling, because
+# `use jsonwebtoken::decode;` as a guard also matches
+# `use jsonwebtoken::jws::decode;`.
+contracts:
+  - method: jsonwebtoken::EncodingKey.from_urlsafe_base64_secret
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::EncodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  # `jws::encode(header: &Header, claims: Option<&T>, key: &EncodingKey) -> Result<Jws<T>>`
+  # 10.4.0 jws.rs:37.
+  - method: jsonwebtoken::jws.encode
+    arity: 3
+    return: { type: "jsonwebtoken::jws::Jws", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::jws::Jws, jsonwebtoken::errors::Error>"
+    parameter_types: ["&jsonwebtoken::Header", "core::option::Option<&T>", "&jsonwebtoken::EncodingKey"]
+    role: operation
+
+  # `jws::decode(jws: &Jws<T>, key: &DecodingKey, validation: &Validation) -> Result<TokenData<T>>`
+  # 10.4.0 jws.rs:62.
+  - method: jsonwebtoken::jws.decode
+    arity: 3
+    return: { type: "jsonwebtoken::TokenData", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::TokenData, jsonwebtoken::errors::Error>"
+    parameter_types: ["&jsonwebtoken::jws::Jws", "&jsonwebtoken::DecodingKey", "&jsonwebtoken::Validation"]
+    role: operation
+
+hierarchy: {}

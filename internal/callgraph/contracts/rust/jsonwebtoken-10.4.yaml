@@ -1,0 +1,37 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-10.4
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=10.4.0,<11.0.0"
+  description: "jsonwebtoken 10.4's family-shaped validation constructor, which accepts every algorithm in one AlgorithmFamily"
+
+# ONE ENTRY BECAUSE ONE RELEASE HAS IT. `Validation::new_for_family` appears at
+# 10.4.0 (validation.rs:118) and is absent from 10.0.0-10.3.0 -- `grep -c
+# 'pub fn new_for_family' src/validation.rs` returns 0 for 10.0.0 and 1 for
+# 10.4.0. It cannot join jsonwebtoken-10.yaml without raising that file's floor
+# to 10.4.0 and under-claiming the three entries true since 10.0.0, nor
+# jsonwebtoken-validation.yaml without lowering `Validation::new`'s ceiling.
+#
+# WHAT IT MEANS, AND WHY IT IS WEAKER THAN `Validation::new`. It expands the
+# named family to EVERY member (`AlgorithmFamily::algorithms()`,
+# 10.4.0 algorithms.rs:21-36), so `AlgorithmFamily::Rsa` admits all six of
+# RS256/384/512 and PS256/384/512. The four rules that match it therefore declare
+# `algorithmFamily` and no `algorithmName`, and the `Rsa` arm declares neither,
+# because RSASSA-PKCS1 and RSASSA-PSS are separate CycloneDX members and the
+# vocabulary has no value covering both.
+#
+# NO PARAMETER CONTRIBUTES THE FAMILY, for the same reason no entry in this KB
+# contributes the algorithm: the argument can be a variable as readily as a
+# literal, and the rules -- not this contract -- are where the literal
+# requirement lives. See jsonwebtoken.yaml.
+contracts:
+  - method: jsonwebtoken::Validation.new_for_family
+    arity: 1
+    return: { type: "jsonwebtoken::Validation", confidence: high }
+    canonical_return_type: "jsonwebtoken::Validation"
+    parameter_types: ["jsonwebtoken::AlgorithmFamily"]
+    role: factory
+
+hierarchy: {}
