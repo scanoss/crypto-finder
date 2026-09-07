@@ -1,0 +1,176 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rustls-webpki
+  coordinates:
+    - rustls-webpki
+    - rustls_webpki
+  version_range: ">=0.101.2,<0.105.0"
+  description: "X.509 certificate path validation for rustls (the rustls-webpki fork of webpki)"
+
+# THE PACKAGE IS `rustls-webpki`; THE KEYS SAY `webpki`, AND THAT IS CORRECT.
+# Every published release 0.100.0-0.104.0-alpha.7 declares `[lib] name = "webpki"`
+# in its Cargo.toml -- read from the archives, not from documentation -- so a
+# consumer writes `use webpki::...` and the parser emits `webpki.` keys. The
+# crates.io identity lives in `coordinates` above; the call-site spelling lives in
+# the keys below. briansmith/webpki (`pkg:cargo/webpki`, contracts in
+# webpki.yaml) builds a library of the same name, so the two crates are
+# indistinguishable by import path alone.
+#
+# THAT IS WHY ONLY `verify_for_usage` IS TYPED HERE. It is the one call this
+# family claims, and it exists in NO published briansmith/webpki release:
+# `grep -rn verify_for_usage` over webpki 0.21.4 and 0.22.4 `src/` returns
+# nothing, while rustls-webpki has it from 0.101.2 (0.101.7 end_entity.rs:116).
+# The shared surface -- `EndEntityCert::try_from`, `verify_signature`,
+# `verify_is_valid_tls_server_cert`, `verify_is_valid_tls_client_cert` -- is
+# already typed in webpki.yaml under the same keys. A second declaration with a
+# DIVERGENT return, role or parameter set is a HARD LOAD ERROR naming both
+# libraries (contracts.go:936-968, Rule 2). A second declaration with an
+# IDENTICAL signature is NOT: Rule 1 / `contractsEquivalent` (contracts.go:957)
+# merges it silently, and the only thing that catches it is
+# `TestRustRustlsWebpkiDoesNotClaimTheSharedWebpkiSurface`. Measured both ways on
+# a copy of this file. That is why the test asserts BOTH halves -- that this
+# library declares none of the shared keys, and that they still resolve, so the
+# assertion cannot pass by webpki.yaml having dropped them.
+#
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API.
+# A probe consumer calling both arities was scanned with
+# `crypto-finder scan --no-remote-rules --rules-dir <rules> --export-callgraph`
+# and the emitted `canonical_signature` values were exactly:
+#
+#   webpki.EndEntityCert.verify_for_usage(?, ?, ?, ?, ?, ?)
+#   webpki.EndEntityCert.verify_for_usage(?, ?, ?, ?, ?, ?, ?)
+#
+# `(?, ...)` with empty parameter types is what an ABSENT contract looks like,
+# which is what the matrix reported as `contract_gap=Y`. Each emitted key carries
+# TWO dots, so `rustAuthoredKey` (contracts.go:267) rewrites the second-to-last
+# dot to "::" at load time and the file must spell it
+# `webpki::EndEntityCert.verify_for_usage`. Authoring the emitted form produces a
+# contract that loads without error and joins nothing.
+#
+# TWO ARITIES, TWO ERAS, AND THEY ARE DIFFERENT FUNCTIONS. Read from the
+# declarations, `self` excluded:
+#
+#   0.101.2-0.101.7   arity 6   (.., time, usage, crls)
+#                     0.101.7 end_entity.rs:116-125
+#                     returns Result<(), Error>
+#   0.102.0-0.104.x   arity 7   (.., time, usage, revocation, verify_path)
+#                     0.103.13 end_entity.rs:103-111
+#                     returns Result<VerifiedPath<'p>, Error>
+#
+# The CRL argument became `Option<RevocationOptions>` and a `verify_path`
+# callback was appended, and the return stopped being unit. Because the two eras
+# differ in ARITY they are separate keys, so no conflict arises and no era has to
+# be chosen -- which is the case rustls-native-certs.yaml could not have.
+#
+# `TrustAnchor` IS A DIFFERENT CRATE'S TYPE IN THE TWO ERAS, AND THE ENTRIES SAY SO.
+# At 0.101.7 it is re-exported from the webpki root (lib.rs `trust_anchor::TrustAnchor`)
+# and end_entity.rs reaches it through `use crate::{..}`, so the arity-6 entry says
+# `webpki::TrustAnchor`. From 0.102.0 the webpki root re-exports NO TrustAnchor at all
+# and end_entity.rs:17-19 reads `use pki_types::{CertificateDer, ServerName,
+# SignatureVerificationAlgorithm, TrustAnchor, UnixTime};`, so the arity-7 entry says
+# `pki_types::TrustAnchor`. `pki-types` is a RENAME of the `rustls-pki-types` package
+# (0.103.13 Cargo.toml `[dependencies.pki-types] package = "rustls-pki-types"`), and
+# the in-source spelling is what the parameter types record.
+#
+# An earlier revision wrote `webpki::TrustAnchor` on the arity-7 entry. That is the
+# error an exact-set test structurally CANNOT catch: fourteen mutation classes were
+# applied to this file and all fourteen were killed, and the wrong value sat inside
+# the one thing all fourteen agreed on. Only re-reading the declaration in the crate
+# source, per era, finds it.
+#
+# THE `usage` PARAMETER TYPE MOVES WITHIN THE ARITY-7 KEY and the newest era is
+# named. 0.102.0 declares `usage: KeyUsage`; 0.103.0 widens it to
+# `usage: impl ExtendedKeyUsageValidator` (0.103.13 end_entity.rs:109) and
+# 0.104.0-alpha.7 to `usage: &dyn ExtendedKeyUsageValidator`. One value is
+# storable per method+arity, so the 0.103 spelling is written and the divergence
+# is recorded here. Through 0.103.x `KeyUsage` implements that trait and is what
+# every real call site passes. At 0.104.0-alpha.x that is NO LONGER TRUE: the
+# type is renamed `ExtendedKeyUsage` (0.104.0-alpha.7 verify_cert.rs:520) and no
+# `pub struct KeyUsage` remains, so a 0.104 call site passes an
+# `&ExtendedKeyUsage`. The key and arity are unchanged, so the entry still joins.
+#
+# NO `parameters:` BLOCK, AND THAT IS MEASURED RATHER THAN OMITTED. The only
+# argument that could contribute metadata is `usage`, which decides server-auth
+# vs client-auth. Every derivation the schema allows (validDerivation,
+# contracts.go:447) reads a LITERAL argument -- its value, its bit length, its
+# byte length, its type or its curve bits -- and at every real call site this
+# argument is a CALL EXPRESSION, `webpki::KeyUsage::server_auth()`. There is no
+# literal to read, so declaring a contribution here would create the appearance
+# of a resolved EKU with nothing behind it.
+#
+# DISPOSITIONS FOR THE REST OF THE PUBLIC SURFACE:
+#   already-typed-elsewhere: EndEntityCert::try_from, verify_signature,
+#     verify_is_valid_tls_server_cert, verify_is_valid_tls_client_cert. Same keys
+#     in webpki.yaml; see above.
+#   skipped-non-crypto: `anchor_from_trusted_cert` (0.102.0 trust_anchor.rs:27)
+#     and `TrustAnchor::try_from_cert_der` (0.101.7 trust_anchor.rs:53) decode DER
+#     into a TrustAnchor; `BorrowedCertRevocationList::from_der` and
+#     `OwnedCertRevocationList::from_der` decode a CRL;
+#     `RevocationOptionsBuilder::{new,with_depth,with_status_policy,build}`
+#     (0.102.0 crl/mod.rs:53-81) configure revocation checking; `KeyUsage::
+#     {server_auth,client_auth,required,required_if_present}` name an EKU OID.
+#     None performs cryptography. The cryptography is the chain build reached
+#     through verify_for_usage -> verify_cert::ChainOptions::build_chain.
+#   skipped-non-crypto: `verify_is_valid_for_subject_name` compares the
+#     certificate's names against a ServerName. webpki.yaml records the same
+#     disposition for the pre-0.102 `verify_is_valid_for_dns_name` family, and for
+#     the same reason: typing it would route hostname matching through the crypto
+#     call graph.
+#   skipped-unsupported: `VerifiedPath::{end_entity,anchor,
+#     intermediate_certificates}` are reached through a value RETURNED by
+#     verify_for_usage, and the Rust parser does not resolve a receiver's type
+#     across a `let` binding to a foreign crate's type --
+#     rustls-native-certs.yaml records the identical measurement for
+#     `CertificateResult::expect`. A key for them would never join.
+#   skipped-collides-with-a-merged-family: `RawPublicKeyEntity.verify_signature`
+#     (arity 3), the RFC 7250 raw-public-key signature verification at
+#     rpk_entity.rs:37-49. It is NOT returned by verify_for_usage -- it is built
+#     directly, `impl TryFrom<&SubjectPublicKeyInfoDer> for RawPublicKeyEntity`
+#     (0.103.13 rpk_entity.rs:13) -- and it arrives at 0.102.7, not 0.103.0
+#     (rpk_entity.rs absent at 0.102.6, present at 0.102.7). It is genuine
+#     cryptography, absent from every published briansmith/webpki release, and
+#     real consumers call it (rustls 0.23.31 src/webpki/verify.rs:219,222 and
+#     this crate's own 0.102.8 tests/signatures.rs:60-61).
+#
+#     IT IS UNCLAIMED BECAUSE EVERY ANCHORING MEASURED EITHER DOUBLE-ATTRIBUTES
+#     OR CLAIMS NOTHING REAL. Its method name is `verify_signature`, which is
+#     also `EndEntityCert::verify_signature` -- a key webpki.yaml owns and the
+#     merged `webpki` rules already match. A type-anchored rule
+#     (`pattern-inside: webpki::RawPublicKeyEntity::try_from(...); ...` plus
+#     `$RPK.verify_signature($A,$B,$C)`) reaches both real call sites, and on an
+#     adversarial file holding an RPK and a cert in one function it put TWO PURLs
+#     on one line and additionally claimed the neighbouring
+#     `cert.verify_signature(..)`. Restricting to the UFCS spelling
+#     `webpki::RawPublicKeyEntity::verify_signature(..)` collides with nothing and
+#     matches 0 of the 2 real sites, because no consumer writes UFCS. So this is a
+#     STATED RECALL GAP on a discriminating operation, not a wrong-PURL trade-off,
+#     and closing it needs receiver typing rather than a wider pattern.
+contracts:
+  - method: webpki::EndEntityCert.verify_for_usage
+    arity: 6
+    return: { type: core::result::Result, confidence: high }
+    parameter_types:
+      - "&[&webpki::SignatureAlgorithm]"
+      - "&[webpki::TrustAnchor]"
+      - "&[&[u8]]"
+      - "webpki::Time"
+      - "webpki::KeyUsage"
+      - "&[&dyn webpki::CertRevocationList]"
+    canonical_return_type: "core::result::Result<(), webpki::Error>"
+    role: operation
+  - method: webpki::EndEntityCert.verify_for_usage
+    arity: 7
+    return: { type: core::result::Result, confidence: high }
+    parameter_types:
+      - "&[&dyn pki_types::SignatureVerificationAlgorithm]"
+      - "&[pki_types::TrustAnchor]"
+      - "&[pki_types::CertificateDer]"
+      - "pki_types::UnixTime"
+      - "impl webpki::ExtendedKeyUsageValidator"
+      - "core::option::Option<webpki::RevocationOptions>"
+      - "core::option::Option<&dyn Fn(&webpki::VerifiedPath) -> core::result::Result<(), webpki::Error>>"
+    canonical_return_type: "core::result::Result<webpki::VerifiedPath, webpki::Error>"
+    role: operation
+
+hierarchy: {}
