@@ -1,0 +1,154 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.1.0,<0.3.0"
+  description: "Platform-native TLS: the entry points present in every published release"
+
+# THIS CRATE PERFORMS NO CRYPTOGRAPHY OF ITS OWN, and every decision below follows
+# from that. native-tls is a thin facade over the operating system's TLS stack:
+# SChannel on Windows, Secure Transport on macOS and iOS, OpenSSL everywhere else
+# (0.2.18 src/lib.rs:1-40 and the three `src/imp/` backends). It selects a backend
+# and configures a connection; the cipher suite, key exchange and signature
+# algorithm are chosen by that backend at RUN TIME. So NO entry here declares an
+# algorithm, and none can: `algorithmName` on a `TlsConnector` is not knowable
+# from a call site. The one thing that IS statically knowable is the explicit
+# `min_protocol_version` / `max_protocol_version` selector, and that lives in
+# native-tls-0.2.yaml because it does not exist before 0.2.0.
+#
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API, AND
+# THE READ HAD TO BE DONE TWICE. A probe consumer calling the crate the way its
+# own `examples/` do was scanned with `crypto-finder scan --no-remote-rules
+# --rules-dir <rules> --export-callgraph`, and the emitted `canonical_signature`
+# values were read off the result.
+#
+# THE EMITTED KEY FOR A BUILDER METHOD DEPENDS ON WHICH CONTRACTS ARE ALREADY
+# LOADED, AND THAT IS THE TRAP IN THIS FAMILY. With NO contract present the graph
+# emitted `native_tls.TlsConnector.min_protocol_version` and
+# `native_tls.TlsConnector.identity` -- keyed on the type whose associated
+# function produced the receiver, because nothing said what
+# `TlsConnector::builder()` returns. Authoring those keys and re-exporting moved
+# them: with `native_tls::TlsConnector.builder -> native_tls::TlsConnectorBuilder`
+# in the KB the receiver resolves properly and the graph emits
+# `native_tls.TlsConnectorBuilder.min_protocol_version`, which the just-authored
+# keys no longer join. The first reading was an ARTEFACT OF THE ABSENT CONTRACT,
+# not a fact about the parser.
+#
+# So the key list below is a FIXED POINT, reached by exporting, authoring,
+# re-exporting and re-authoring until nothing moved. As of the final export every
+# one of the twenty-two keys renders a full signature; the only native_tls symbols
+# still emitted as `name(?)` are the deliberate exclusions named at the bottom of
+# this header. Anyone extending this family must re-export after editing rather
+# than trusting a key list read before the contract existed.
+#
+# THE FINAL KEYS, all with two dots, so `rustAuthoredKey` (contracts.go:267)
+# moves the second-to-last one and every authored key carries "::" before the
+# type. That is the opposite of the rustls-native-certs case, whose crate-root
+# free functions carry one dot and are authored unchanged.
+#
+#   native_tls.TlsConnector.builder()                arity 0
+#   native_tls.TlsConnector.connect(?, ?)            arity 2
+#   native_tls.TlsAcceptor.accept(?)                 arity 1
+#   native_tls.TlsConnectorBuilder.build()           arity 0
+#   native_tls.TlsConnectorBuilder.identity(?)       arity 1
+#   native_tls.TlsAcceptor.builder(?)                arity 1
+#   native_tls.TlsAcceptor.accept(?)                 arity 1
+#   native_tls.TlsAcceptorBuilder.build()            arity 0
+#
+# THE ERA SPLIT IS FILES AND ONLY FILES, AND NO ENTRY IN THIS FAMILY CARRIES
+# `confidence: low`. `version_range` is declared per LIBRARY, is parsed and is
+# NEVER consulted at lookup, so a file may claim only versions for which EVERY
+# entry in it is true. An earlier revision of this family kept four era-divergent
+# entries here and marked the mismatch with `confidence: low` instead of moving
+# them. That does not work, and the reason is concrete rather than stylistic:
+# `parameter_types` and `canonical_return_type` carry NO confidence field, so
+# what actually reached an exported call graph was
+# `native_tls.TlsAcceptor.builder(native_tls::Identity)` for a 0.1 call site that
+# passes a `Pkcs12`. All four now live in native-tls-0.2.yaml.
+#
+# Splitting into files does NOT let one (method, arity) key carry two returns:
+# `mergeContractGroup` (contracts.go:936-968, Rule 2) treats same-key entries
+# with divergent return, role or parameters as a HARD LOAD ERROR naming both
+# libraries, across files as well as within one. So a divergent key is declared
+# ONCE, in the file whose range it is true for, and the other era is simply not
+# served a signature for it — which is correct, because no correct signature
+# exists for both.
+#
+# THE FOUR ENTRIES HERE ARE BYTE-IDENTICAL IN 0.1.0 AND 0.2.18, which is why this
+# file may claim the whole range:
+#
+#   connect(domain, stream)  0.1.0 lib.rs:338, 0.2.18 lib.rs:514
+#   accept(stream)           0.1.0 lib.rs:417, 0.2.18 lib.rs:645
+#   TlsConnectorBuilder::build()  Result<TlsConnector> in every release
+#   TlsAcceptorBuilder::build()   Result<TlsAcceptor> in every release
+#
+# The four that diverge and therefore live in native-tls-0.2.yaml, each read from
+# its own archive:
+#
+#   TlsConnector::builder    0.1.0 lib.rs:324  Result<TlsConnectorBuilder>
+#                            0.2.0 lib.rs:444  TlsConnectorBuilder
+#   TlsConnectorBuilder::identity
+#                            0.1.0 lib.rs:289  fn(Pkcs12) -> Result<&mut ..>
+#                            0.2.0 lib.rs:330  fn(Identity) -> &mut ..
+#   TlsAcceptor::builder     0.1.0 lib.rs:406  fn(Pkcs12) -> Result<TlsAcceptorBuilder>
+#                            0.2.0 lib.rs:568  fn(Identity) -> TlsAcceptorBuilder
+#   add_root_certificate     0.1.5 lib.rs:353  Result<&mut TlsConnectorBuilder>
+#                            0.2.0 lib.rs:361  &mut TlsConnectorBuilder
+#
+# `unwrap` AND `expect` ARE DELIBERATELY ABSENT, and the reason is measured, not
+# stylistic. The exported graph of the probe emits `native_tls.Certificate.unwrap`,
+# `native_tls.Identity.unwrap` and `native_tls.TlsConnector.unwrap` — the parser
+# attributes a `Result` combinator to the crate type that produced the Result. Those
+# are `core::result::Result`'s methods, not this crate's; typing them here would
+# route every `?`-free call site in every consumer through a native-tls contract.
+# rustls-native-certs records the mirror-image case for the same pair.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: `use_sni`, `request_alpns` (0.2.7+), `disable_built_in_roots`
+#     (0.2.5+), `TlsStream::get_ref` / `get_mut` / `buffered_read_size` /
+#     `negotiated_alpn` / `shutdown`, and the `Error` / `HandshakeError` /
+#     `MidHandshakeTlsStream` types. None carries a key, a suite or an operation.
+#   skipped-not-a-call-site: the `Protocol` enum. Naming a variant is an argument
+#     to `min_protocol_version`, which is where it is typed.
+#   skipped-not-a-call-into-this-crate: `Certificate.len` and the `Result`
+#     combinators above. `certs.len()` on the `Vec<Certificate>` that
+#     `stack_from_pem` returns is attributed to `native_tls.Certificate` by the
+#     same receiver rule that attributes `unwrap`; it is `alloc::vec::Vec`'s
+#     method and typing it here would claim every `.len()` in every consumer.
+#
+# `danger_accept_invalid_certs` AND `danger_accept_invalid_hostnames` ARE NO
+# LONGER SKIPPED. An earlier revision dispositioned them as hostname policy that
+# weakens verification rather than performing it; a review refuted that against
+# this repository's own standard, since security-framework already ships the
+# identical pair as a CWE-295 WARNING. Both are declared in native-tls-0.2.yaml,
+# which is where they arrive.
+contracts:
+  - method: native_tls::TlsConnectorBuilder.build
+    arity: 0
+    return: {type: "native_tls::TlsConnector", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<native_tls::TlsConnector, native_tls::Error>"
+    role: factory
+  - method: native_tls::TlsConnector.connect
+    arity: 2
+    return: {type: "native_tls::TlsStream<S>", confidence: high}
+    parameter_types: ["&str", "S"]
+    canonical_return_type: "core::result::Result<native_tls::TlsStream<S>, native_tls::HandshakeError<S>>"
+    role: operation
+  - method: native_tls::TlsAcceptorBuilder.build
+    arity: 0
+    return: {type: "native_tls::TlsAcceptor", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<native_tls::TlsAcceptor, native_tls::Error>"
+    role: factory
+  - method: native_tls::TlsAcceptor.accept
+    arity: 1
+    return: {type: "native_tls::TlsStream<S>", confidence: high}
+    parameter_types: ["S"]
+    canonical_return_type: "core::result::Result<native_tls::TlsStream<S>, native_tls::HandshakeError<S>>"
+    role: operation
+
+hierarchy: {}
