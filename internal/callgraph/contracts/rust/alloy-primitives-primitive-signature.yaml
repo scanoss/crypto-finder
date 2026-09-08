@@ -1,0 +1,132 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-primitive-signature
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.8.10,<1.5.0"
+  description: "alloy-primitives PrimitiveSignature ECDSA-secp256k1 recovery, the 0.8.10 to 1.4.1 type name"
+
+# THE CRATE RENAMED ITS SIGNATURE TYPE TWICE AND THIS FILE COVERS THE MIDDLE ERA.
+# Read from src/signature/mod.rs in every sampled archive and confirmed by
+# compiling `PrimitiveSignature`'s whole surface against each boundary:
+#   0.8.9 and earlier   `Signature` only. `PrimitiveSignature` does not exist --
+#                       the name first appears at 0.8.10 src/signature/mod.rs:14 (absent at
+#                       0.8.5..0.8.9).
+#   0.8.10 - 0.8.26     BOTH names public and DISTINCT TYPES:
+#                       `pub use primitive_sig::PrimitiveSignature;` (0.8.15
+#                       src/signature/mod.rs:17-18) beside
+#                       `pub use sig::Signature;` (:9-12), the latter
+#                       `#[deprecated]` from 0.8.15 (0.8.15
+#                       src/signature/sig.rs:16). Both
+#                       carry the full recovery surface.
+#   1.0.0-rc.1 - 1.4.1  `Signature` IS the new type and
+#                       `pub type PrimitiveSignature = Signature;` is a
+#                       deprecated ALIAS (1.0.0 src/signature/mod.rs:12), so on
+#                       this line the two names denote the SAME type.
+#   1.5.0 - 1.6.0       REMOVED. Compiling `PrimitiveSignature` against 1.5.7
+#                       fails, which is this file's upper-bound negative control.
+# Hence `>=0.8.10,<1.5.0`, which is exact at both ends.
+#
+# THE KEYS ARE SEPARATE FROM `Signature`'s BECAUSE THE CALLGRAPH KEY FOLLOWS THE
+# CONSUMER'S IMPORT, not what the type resolves to. Measured on one probe:
+# `use alloy_primitives::PrimitiveSignature;` then `s.recover_address_from_msg(m)`
+# emits `alloy_primitives.PrimitiveSignature.recover_address_from_msg`, which no
+# `Signature` key can equal -- so without these entries every consumer on the
+# 0.8.10-1.4.1 line joins nothing. That is nineteen of the 75 committed rows.
+#
+# THE RULES PUT BOTH TYPE NAMES IN ONE RULE PER METHOD rather than one rule each,
+# so a consumer on the 1.0-1.4 line where the names are one type gets ONE crypto
+# asset per call site rather than two. The KB is the other way round -- one entry
+# per (key, arity) -- because the keys genuinely differ. Those are different
+# layers answering different questions and `cross-variant.rs` pins the rule-layer
+# half.
+#
+# THESE FIVE ENTRIES RESOLVE FROM THE GRAPH KEY AND NEVER FROM A RULE'S `api`.
+# The rules put `Signature` and `PrimitiveSignature` in one rule per method, so
+# every pattern in this family stamps an `api` of `alloy_primitives.Signature.<m>`
+# -- verified on an exported call graph, where a `PrimitiveSignature` call emits
+# `alloy_primitives.PrimitiveSignature.<m>` while the asset's api names the
+# `Signature` key. The consequence is bounded and worth stating: the CALL SITE is
+# still enriched, because enrichment resolves the emitted key against these
+# entries; what the api synthesizes is an entry point under the `Signature` key.
+# The rules' header explains why splitting them would trade an M18 double-count
+# for an api that still could not be right for the receiver spelling.
+#
+# `to_k256` IS INCLUDED and the three `_secp256k1` methods are NOT. Their windows
+# are DISJOINT from this file's: `to_k256` arrives at 0.8.1, before this range
+# opens, while `to_secp256k1`, `recover_from_msg_secp256k1` and
+# `recover_from_prehash_secp256k1` arrive at 1.6.0, after it closes -- the
+# `secp256k1` Cargo feature is declared in no release before 1.6.0. A
+# `PrimitiveSignature` x `_secp256k1` entry would name a combination compilable
+# in no published release, and `impossible-combination-negative.rs` pins that the
+# rules are silent on all three pairings too.
+#
+# `parameter_types` IS OMITTED FOR THE TWO `_prehash` METHODS. Unlike the
+# `Signature` file the reason is not a 0.6.0-only by-value spelling -- this range
+# starts well after that -- but the same one-value-per-key constraint applied to
+# `&B256`, which IS stable here; they are omitted for symmetry with the
+# `Signature` entries so the two eras render the same shape rather than
+# differing in a way that reads as a version fact.
+contracts:
+  - method: alloy_primitives::PrimitiveSignature.recover_address_from_msg
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<alloy_primitives::Address, alloy_primitives::SignatureError>"
+    return: {type: "alloy_primitives::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::PrimitiveSignature.recover_address_from_prehash
+    arity: 1
+    canonical_return_type: "core::result::Result<alloy_primitives::Address, alloy_primitives::SignatureError>"
+    return: {type: "alloy_primitives::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: prehash
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::PrimitiveSignature.recover_from_msg
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<k256::ecdsa::VerifyingKey, alloy_primitives::SignatureError>"
+    return: {type: "k256::ecdsa::VerifyingKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::PrimitiveSignature.recover_from_prehash
+    arity: 1
+    canonical_return_type: "core::result::Result<k256::ecdsa::VerifyingKey, alloy_primitives::SignatureError>"
+    return: {type: "k256::ecdsa::VerifyingKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: prehash
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::PrimitiveSignature.to_k256
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<k256::ecdsa::Signature, k256::ecdsa::Error>"
+    return: {type: "k256::ecdsa::Signature", confidence: high}
+    role: operation
+
+hierarchy: {}
