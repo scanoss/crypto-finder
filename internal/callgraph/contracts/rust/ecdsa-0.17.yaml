@@ -1,0 +1,103 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ecdsa-0.17
+  coordinates:
+    - ecdsa
+  version_range: ">=0.17.0,<0.18.0"
+  description: "RustCrypto ECDSA 0.17's Generate-trait key constructor and SEC1 point codec"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT, NOT BECAUSE THE CRATE IS -- the
+# convention biscuit-jwks.yaml:11-17 states. `version_range` is declared per
+# LIBRARY, so a file may only claim versions for which EVERY entry is true.
+#
+# WHY THE 0.16 RANGE COULD NOT SIMPLY BE WIDENED. Two independent reasons, and
+# either alone forces the split:
+#
+#  1. `SigningKey::generate` DOES NOT EXIST AT 0.16.x. Compiling it against
+#     0.16.9 gives E0599, and rustc's own suggestion enumerates that era's whole
+#     constructor set as `random`, `from_bytes`, `from_slice`. It arrives at
+#     0.17.0 as a DEFAULT METHOD on `elliptic_curve`'s re-export of
+#     `crypto_common::Generate` -- `impl<C> Generate for SigningKey<C>`,
+#     signing.rs:130 -- at ARITY 0, while `random(rng)` is arity 1. A KB entry is
+#     keyed on method plus arity, so the two are different entries and a single
+#     range covering both would assert each over versions where it is false.
+#  2. The SEC1 codec is renamed: `VerifyingKey::from_encoded_point`
+#     (0.16.9 verifying.rs:109) becomes `from_sec1_point` (0.17.0
+#     verifying.rs:104), the re-export moving from `sec1::EncodedPoint`
+#     (0.16.9 lib.rs:77) to `sec1::Sec1Point` (0.17.0 lib.rs:55). Each name
+#     compiles in exactly one era (E0599 in the other).
+#
+# `random` IS still present at 0.17.0 (signing.rs:125), carrying
+# `#[deprecated(since = "0.17.0")]` (signing.rs:124), and is declared ONCE -- in
+# `ecdsa.yaml` -- rather than in both files. Declaring it twice merges
+# idempotently under contracts.go `mergeContractGroup` rule 1, but the surviving
+# entry's `SourceLibrary` is then whichever file loaded first, which is a
+# detail of map iteration and file ordering rather than a fact about the crate.
+# One declaration keeps the attribution deterministic.
+#
+# API verified BY COMPILATION against ecdsa 0.17.0 with a concrete curve
+# (p256 0.14.0), not by reading `pub fn`: the arity-0 and arity-1 `Generate`
+# constructors are default trait methods and appear in no `pub fn` listing.
+#
+# THE CURVE IS A TYPE PARAMETER supplied by the concrete curve crate, so no
+# curve metadata is claimed here. The curve crates that re-export this one
+# (`k256::ecdsa`, `p256::ecdsa`, ...) carry their own entries under their own
+# keys -- e.g. `k256::ecdsa::SigningKey.generate` at arity 0 -- and those are
+# different keys, so nothing here collides with them.
+#
+#
+# `return.type` DECLARES THE CONCRETE KEY TYPE EVEN FOR THE FALLIBLE CONSTRUCTORS,
+# and that is deliberate rather than sloppy. `Return.Type` is what
+# `rust_type_resolver.go:41` assigns to `fn.ReturnType`, i.e. it types the
+# RECEIVER for chain resolution, so declaring `core::result::Result` for
+# `try_generate_from_rng(..)?` would lose the key's identity for every call
+# chained off it. Measured across the 119 rust contract files: 195 entries whose
+# declared return is a `Result` name the concrete type here against 94 that name
+# the `Result`, and `boringtun.yaml` records the same reasoning in its own header.
+# The declared `Result<..>` spelling belongs in `canonical_return_type`, which is
+# omitted here for the reason given below.
+#
+# `canonical_return_type` AND `parameter_types` ARE OMITTED, and that is a KNOWN
+# GAP rather than an oversight: with them empty the exported signature renders as
+# `name(?, ?)`, which 5.2.10 notes is byte-identical to having no contract at all.
+# Measured here too -- exporting a call graph before and after these files load
+# gives identical `(?, ?)`. They are left out to stay consistent with the base
+# `dsa.yaml` / `ecdsa.yaml` these merge with globally, and because ecdsa's key
+# type is generic over a curve this file has no way to resolve. The entries are
+# NOT inert regardless: the arity-0 `generate` entry is what lets an exported
+# graph attach the subsequent `sign(..)` hop as a supporting call.
+#
+# skipped-non-crypto: signature encoding and byte conversions, the recovery-id
+# helpers, and the accessors.
+#
+# NOT DECLARED HERE, DELIBERATELY: `sign_prehash_recoverable` keeps arity 1
+# across the boundary while its return changes from `Result<(Signature,
+# RecoveryId)>` (0.16.9 recovery.rs:180) to a bare `(Signature, RecoveryId)`
+# (0.17.0 recovery.rs:204). Contract entries merge GLOBALLY by method+arity, so
+# declaring that key in both eras would be a HARD LOAD ERROR rather than two
+# scoped claims. It is left undeclared in both rather than declared falsely in
+# one.
+contracts:
+  - method: ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.generate_from_rng
+    arity: 1
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.try_generate_from_rng
+    arity: 1
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.try_generate
+    arity: 0
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::VerifyingKey.from_sec1_point
+    arity: 1
+    return: {type: ecdsa::VerifyingKey, confidence: high}
+    role: factory
+
+hierarchy: {}
