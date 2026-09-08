@@ -1,0 +1,115 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-8
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=8.0.0,<11.0.0"
+  description: "the key material and low-level signing surface jsonwebtoken 8.0 added: Ed25519 PEM and DER keys, raw RSA components, and the crypto module's byte-slice signing"
+
+# SPLIT OUT SO jsonwebtoken.yaml's ">=7.0.0" STAYS TRUE. Everything here is
+# absent from the whole 7.x line, and two entries additionally CHANGED shape at
+# 8.0.0 rather than merely appearing:
+#
+#   `DecodingKey::from_rsa_components` returns `Self` in 7.2.0 (decoding.rs:77)
+#     and `Result<Self>` from 8.0.0 (8.3.0 decoding.rs:86). Divergent returns
+#     under one method+arity key are a HARD LOAD ERROR (contracts.go:936-968,
+#     Rule 2), so only the 8.0+ form is declared and this file's range says so.
+#   `crypto::sign` / `crypto::verify` take the message as `&str` in 7.2.0
+#     (crypto/mod.rs:24,65) and as `&[u8]` from 8.0.0 (8.3.0 crypto/mod.rs:25,68).
+#
+# THREE ENTRIES THAT LOOK LIKE THEY BELONG HERE DO NOT, AND THE DIFFERENCE WAS
+# MEASURED RATHER THAN ASSUMED. `DecodingKey::from_ec_components`,
+# `::from_ed_components` and `::from_jwk` arrive at 8.2.0, not 8.0.0: grepping
+# `decoding.rs` for the three names returns nothing in 8.0.0 and 8.1.1 and five
+# hits in 8.2.0, and 8.3.0's own CHANGELOG dates `Add DecodingKey::from_jwk` to
+# 8.2.0. An earlier revision of this file declared them here, which asserted
+# three symbols that exist in no 8.0.0 or 8.1.1 release. A PER-SYMBOL window is
+# INTERSECTED with the file's range, never inherited from it. They live in
+# jsonwebtoken-8.2.yaml.
+#
+# `jsonwebtoken::crypto.sign` CARRIES ONE DOT AND IS AUTHORED UNCHANGED. The
+# exported call graph emits `jsonwebtoken::crypto.sign(?, ?, ?)` for a consumer
+# writing `use jsonwebtoken::crypto::sign;` -- the module segment is already
+# spelled with "::" -- and rustAuthoredKey only rewrites a key carrying at least
+# two dots. Applying the substitution here would produce
+# `jsonwebtoken::crypto::sign`, which loads and joins nothing.
+#
+# NO `algorithm` CONTRIBUTION on `sign`/`verify` either; see jsonwebtoken.yaml.
+contracts:
+  # --- Ed25519 key material ---------------------------------------------------
+  # `EncodingKey::from_ed_pem(key: &[u8]) -> Result<Self>` 8.3.0 encoding.rs:73,
+  # 10.4.0 encoding.rs:91.
+  - method: jsonwebtoken::EncodingKey.from_ed_pem
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::EncodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `EncodingKey::from_ed_der(der: &[u8]) -> Self` 8.3.0 encoding.rs:90,
+  # 10.4.0 encoding.rs:108.
+  - method: jsonwebtoken::EncodingKey.from_ed_der
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::EncodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_ed_pem(key: &[u8]) -> Result<Self>` 8.3.0 decoding.rs:134,
+  # 10.4.0 decoding.rs:169.
+  - method: jsonwebtoken::DecodingKey.from_ed_pem
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_ed_der(der: &[u8]) -> Self` 8.3.0 decoding.rs:160,
+  # 10.4.0 decoding.rs:195.
+  - method: jsonwebtoken::DecodingKey.from_ed_der
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::DecodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # --- RSA component constructors ---------------------------------------------
+  # `DecodingKey::from_rsa_components(modulus: &str, exponent: &str) -> Result<Self>`
+  # 8.3.0 decoding.rs:86, 10.4.0 decoding.rs:121. Returned `Self` in 7.x.
+  - method: jsonwebtoken::DecodingKey.from_rsa_components
+    arity: 2
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&str"]
+    role: factory
+
+  # `DecodingKey::from_rsa_raw_components(modulus: &[u8], exponent: &[u8]) -> Self`
+  # 8.3.0 decoding.rs:96, 10.4.0 decoding.rs:131.
+  - method: jsonwebtoken::DecodingKey.from_rsa_raw_components
+    arity: 2
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::DecodingKey"
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: factory
+
+  # --- the low-level crypto module --------------------------------------------
+  # `crypto::sign(message: &[u8], key: &EncodingKey, algorithm: Algorithm) -> Result<String>`
+  # 8.3.0 crypto/mod.rs:25, 10.4.0 crypto/mod.rs:48.
+  - method: jsonwebtoken::crypto.sign
+    arity: 3
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]", "&jsonwebtoken::EncodingKey", "jsonwebtoken::Algorithm"]
+    role: operation
+
+  # `crypto::verify(signature: &str, message: &[u8], key: &DecodingKey, algorithm: Algorithm) -> Result<bool>`
+  # 8.3.0 crypto/mod.rs:68, 10.4.0 crypto/mod.rs:61.
+  - method: jsonwebtoken::crypto.verify
+    arity: 4
+    return: { type: "bool", confidence: high }
+    canonical_return_type: "core::result::Result<bool, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&[u8]", "&jsonwebtoken::DecodingKey", "jsonwebtoken::Algorithm"]
+    role: operation
+
+hierarchy: {}

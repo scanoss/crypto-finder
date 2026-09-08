@@ -1,0 +1,218 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=7.0.0,<11.0.0"
+  description: "JWT signing and verification for Rust, and the typed key material the 7.0 API introduced"
+
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API.
+# A probe consumer calling every entry point the way real published consumers
+# write them was scanned with `crypto-finder scan --no-remote-rules --rules-dir
+# <rules> --export-callgraph`, and each call came back with empty parameter
+# types, which is what an ABSENT contract looks like and is what the matrix
+# reported as `contract_gap=Y`:
+#
+#   jsonwebtoken.encode(?, ?, ?)                jsonwebtoken.Header.new(?)
+#   jsonwebtoken.decode(?, ?, ?)                jsonwebtoken.Validation.new(?)
+#   jsonwebtoken.EncodingKey.from_secret(?)     jsonwebtoken.DecodingKey.from_secret(?)
+#   jsonwebtoken.EncodingKey.from_rsa_der(?)    jsonwebtoken.DecodingKey.from_rsa_der(?)
+#   jsonwebtoken.EncodingKey.from_ec_der(?)     jsonwebtoken.DecodingKey.from_ec_der(?)
+#   jsonwebtoken.EncodingKey.from_base64_secret(?)
+#   jsonwebtoken.DecodingKey.from_base64_secret(?)
+#
+# TWO KEY SHAPES LIVE IN THIS ONE FILE AND THEY ARE AUTHORED DIFFERENTLY.
+# `rustAuthoredKey` (contracts.go:267) rewrites the second-to-last dot to "::"
+# only when a key carries at least two dots, and returns a shorter key
+# UNCHANGED. `encode` and `decode` are CRATE-ROOT FREE FUNCTIONS and emit
+# exactly one dot, so for them the authored key IS the emitted key and writing
+# `jsonwebtoken::encode` would load without error and join nothing. The type
+# methods emit two dots and are authored with "::" before the type.
+# rust_jsonwebtoken_test.go pins both directions.
+#
+# WHY THIS FILE STARTS AT 7.0.0. `EncodingKey` and `DecodingKey` arrive at 7.0.0
+# (7.0.0 encoding.rs:13, decoding.rs:43); before that `encode`/`decode` took the
+# key as a bare `&[u8]`, so their parameter types differ and a single entry
+# cannot describe both eras -- `mergeContractGroup` (contracts.go:936-968,
+# Rule 2) treats divergent parameter types under one method+arity key as a HARD
+# LOAD ERROR. `encode` and `decode` are ALSO arity 3 in 0.1.0-6.0.1 with
+# different arguments, and in 0.1.0-0.2.0 `decode` even returns `Result<T, _>`
+# rather than `Result<TokenData<T>, _>` (0.1.0 lib.rs:100). Those eras are
+# deliberately NOT declared: `version_range` is parsed but never consulted at
+# lookup, so a pre-7.0 call site resolves against the entries below. That is a
+# known limit of one-entry-per-key, recorded rather than hidden.
+#
+# `decode`'s FIRST PARAMETER IS DECLARED AS `&str`, WHICH IS THE NARROWER OF THE
+# TWO SPELLINGS AND TRUE OF MORE OF THE RANGE. 7.0.0-9.3.1 declare
+# `token: &str` (9.3.1 decoding.rs:257) and 10.0.0 widened it to
+# `token: impl AsRef<[u8]>` (10.4.0 decoding.rs:275). One value per method+arity
+# key, so the choice is which spelling to name, not whether to name one. `&str`
+# is chosen over the current era because it is literally correct for every
+# release from 7.0.0 to 9.3.1 -- some thirty of the thirty-five in this file's
+# range -- and remains ACCEPTED at 10.x, where `&str: AsRef<[u8]>`; every call
+# site in the crate's own tests, its doc examples and all fifteen published
+# consumers read in the M20 corpus passes a `&str`. Naming
+# `impl AsRef<[u8]>` would be right for five releases and a widening of the
+# declared contract for the other thirty. rustls-native-certs.yaml names the
+# CURRENT era for a RETURN type that moves; the direction differs here because
+# the drift is a widening rather than a replacement, so the narrow form stays
+# true at both ends.
+#
+# `decode_header` IS DELIBERATELY ABSENT. It base64-decodes the token header and
+# performs no cryptography (10.4.0 decoding.rs:323), no rule matches it, and the
+# value it returns -- the token's own `alg` -- is chosen by whoever minted the
+# token. Typing it would invite a consumer of this KB to treat that value as the
+# algorithm in use.
+#
+# NO PARAMETER CONTRIBUTES `algorithm`, AND THAT IS THE FAMILY'S CENTRAL CHOICE
+# RATHER THAN AN OMISSION. `Header::new` and `Validation::new` each take the
+# algorithm as argument 0, so a `contributes: { property: algorithm, derivation:
+# argument_value }` looks obviously right. It is not: `Validation::new(header.alg)`
+# -- an idiom that occurs in real published consumers, `jwt-authorizer` 0.2.0
+# among them -- passes the ATTACKER-CONTROLLED `alg` out of the token being
+# checked, and a contribution fires on the argument whatever it holds. The
+# derivation is exported verbatim for a downstream consumer to apply
+# (scan/export.go:1232, fragment_export.go:1728), so this KB cannot bound what
+# that consumer does with a non-literal. The rules name the algorithm exactly
+# where the source states a literal `Algorithm::<VARIANT>` and nowhere else;
+# nothing here widens that. TestJsonwebtokenContributesNoAlgorithmOrKeyMaterial
+# pins it, and it likewise pins that no parameter contributes the secret.
+contracts:
+  # --- the two operations -----------------------------------------------------
+  # `encode(header: &Header, claims: &T, key: &EncodingKey) -> Result<String>`
+  # 7.2.0 encoding.rs:83, unchanged at 10.4.0 encoding.rs:158.
+  - method: jsonwebtoken.encode
+    arity: 3
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jsonwebtoken::errors::Error>"
+    parameter_types: ["&jsonwebtoken::Header", "&T", "&jsonwebtoken::EncodingKey"]
+    role: operation
+
+  # `decode(token, key: &DecodingKey, validation: &Validation) -> Result<TokenData<T>>`
+  # 7.2.0 decoding.rs:152, 10.4.0 decoding.rs:275.
+  - method: jsonwebtoken.decode
+    arity: 3
+    return: { type: "jsonwebtoken::TokenData", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::TokenData, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&jsonwebtoken::DecodingKey", "&jsonwebtoken::Validation"]
+    role: operation
+
+  # --- the algorithm selectors ------------------------------------------------
+  # `Header::new(algorithm: Algorithm) -> Self` 7.2.0 header.rs:49, 10.4.0
+  # header.rs:195. Present at this arity and with this parameter since 0.1.0
+  # (lib.rs:58), which is why it is in its own file with its own range.
+  # `Validation::new(alg: Algorithm) -> Validation` likewise, from 4.0.0.
+  # See jsonwebtoken-header.yaml and jsonwebtoken-validation.yaml.
+
+  # --- key material: the constructors present in every 7.0+ release -----------
+  # `EncodingKey::from_secret(secret: &[u8]) -> Self` 7.2.0 encoding.rs:20,
+  # 10.4.0 encoding.rs:34. Infallible, so the return is the key itself.
+  - method: jsonwebtoken::EncodingKey.from_secret
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::EncodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `EncodingKey::from_base64_secret(secret: &str) -> Result<Self>`
+  # 7.2.0 encoding.rs:25, 10.4.0 encoding.rs:39.
+  - method: jsonwebtoken::EncodingKey.from_base64_secret
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::EncodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  # `EncodingKey::from_rsa_pem(key: &[u8]) -> Result<Self>`
+  # 7.2.0 encoding.rs:32, 10.4.0 encoding.rs:60.
+  - method: jsonwebtoken::EncodingKey.from_rsa_pem
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::EncodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `EncodingKey::from_rsa_der(der: &[u8]) -> Self`
+  # 7.2.0 encoding.rs:47, 10.4.0 encoding.rs:98.
+  - method: jsonwebtoken::EncodingKey.from_rsa_der
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::EncodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `EncodingKey::from_ec_pem(key: &[u8]) -> Result<Self>`
+  # 7.2.0 encoding.rs:40, 10.4.0 encoding.rs:81.
+  - method: jsonwebtoken::EncodingKey.from_ec_pem
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::EncodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `EncodingKey::from_ec_der(der: &[u8]) -> Self`
+  # 7.2.0 encoding.rs:52, 10.4.0 encoding.rs:103.
+  - method: jsonwebtoken::EncodingKey.from_ec_der
+    arity: 1
+    return: { type: "jsonwebtoken::EncodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::EncodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_secret(secret: &[u8]) -> Self`
+  # 7.2.0 decoding.rs:50, 10.4.0 decoding.rs:95. 7.x spells the type
+  # `DecodingKey<'a>`; the lifetime disappears at 8.0.0 and the key is unchanged.
+  - method: jsonwebtoken::DecodingKey.from_secret
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::DecodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_base64_secret(secret: &str) -> Result<Self>`
+  # 7.2.0 decoding.rs:58, 10.4.0 decoding.rs:103.
+  - method: jsonwebtoken::DecodingKey.from_base64_secret
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  # `DecodingKey::from_rsa_pem(key: &[u8]) -> Result<Self>`
+  # 7.2.0 decoding.rs:67, 10.4.0 decoding.rs:111.
+  - method: jsonwebtoken::DecodingKey.from_rsa_pem
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_rsa_der(der: &[u8]) -> Self`
+  # 7.2.0 decoding.rs:98, 10.4.0 decoding.rs:179.
+  - method: jsonwebtoken::DecodingKey.from_rsa_der
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::DecodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_ec_pem(key: &[u8]) -> Result<Self>`
+  # 7.2.0 decoding.rs:88, 10.4.0 decoding.rs:141.
+  - method: jsonwebtoken::DecodingKey.from_ec_pem
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+  # `DecodingKey::from_ec_der(der: &[u8]) -> Self`
+  # 7.2.0 decoding.rs:106, 10.4.0 decoding.rs:187.
+  - method: jsonwebtoken::DecodingKey.from_ec_der
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "jsonwebtoken::DecodingKey"
+    parameter_types: ["&[u8]"]
+    role: factory
+
+hierarchy: {}

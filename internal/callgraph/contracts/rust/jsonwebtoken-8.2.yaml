@@ -1,0 +1,55 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-8.2
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=8.2.0,<11.0.0"
+  description: "the JWK and coordinate-based verification key constructors jsonwebtoken 8.2 added"
+
+# SPLIT OUT OF jsonwebtoken-8.yaml BECAUSE THESE THREE ARRIVE TWO MINORS LATER,
+# AND THAT WAS A REAL DEFECT IN AN EARLIER REVISION RATHER THAN A PRECAUTION.
+# Grepping `decoding.rs` for `from_jwk`, `from_ec_components` and
+# `from_ed_components` returns nothing in 8.0.0 and 8.1.1 and five hits in
+# 8.2.0; 8.3.0's own CHANGELOG dates `Add DecodingKey::from_jwk` to 8.2.0.
+# Declaring them under `>=8.0.0` asserted three symbols that do not exist across
+# 8.0.0-8.1.1 -- the silent false statement this family's file split exists to
+# avoid. A per-symbol window is INTERSECTED with the file's range, never
+# inherited from it.
+#
+# NONE OF THE THREE HAS AN `EncodingKey` COUNTERPART IN ANY PUBLISHED RELEASE: a
+# signing key cannot be assembled from public coordinates, and the JWK path
+# carries no private material here. The absence is the API's, not an omission.
+#
+# `from_jwk` DECLARES NO ALGORITHM FAMILY, and the matching rule does not either:
+# a JWK names its own `kty` at runtime (8.3.0 decoding.rs:177 dispatches on it),
+# so the family is not knowable from the call site.
+contracts:
+  # `DecodingKey::from_ec_components(x: &str, y: &str) -> Result<Self>`
+  # 8.3.0 decoding.rs:116, 10.4.0 decoding.rs:151.
+  - method: jsonwebtoken::DecodingKey.from_ec_components
+    arity: 2
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&str"]
+    role: factory
+  # `DecodingKey::from_ed_components(x: &str) -> Result<Self>`
+  # 8.3.0 decoding.rs:168, 10.4.0 decoding.rs:203.
+  - method: jsonwebtoken::DecodingKey.from_ed_components
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str"]
+    role: factory
+  # `DecodingKey::from_jwk(jwk: &Jwk) -> Result<Self>` 8.3.0 decoding.rs:177,
+  # 10.4.0 decoding.rs:212. The key's algorithm family is decided at runtime from
+  # the JWK's own `kty`, which is why the matching rule declares no
+  # materialAlgorithmFamily.
+  - method: jsonwebtoken::DecodingKey.from_jwk
+    arity: 1
+    return: { type: "jsonwebtoken::DecodingKey", confidence: high }
+    canonical_return_type: "core::result::Result<jsonwebtoken::DecodingKey, jsonwebtoken::errors::Error>"
+    parameter_types: ["&jsonwebtoken::jwk::Jwk"]
+    role: factory
+
+hierarchy: {}
