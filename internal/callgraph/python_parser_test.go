@@ -2046,7 +2046,11 @@ def run(data):
 		fn := fns[i]
 		graph.Functions[fn.ID.String()] = &fn
 	}
-	propagatePythonAssignedVarTypes(graph)
+	// nil KB on purpose: this case resolves entirely from an IN-GRAPH decl's
+	// own return annotation, so it must keep passing with no contract KB
+	// available at all. That is what pins the pre-existing behavior against
+	// the KB fallback added alongside it.
+	propagatePythonAssignedVarTypes(graph, nil)
 
 	run := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
 	if run == nil {
