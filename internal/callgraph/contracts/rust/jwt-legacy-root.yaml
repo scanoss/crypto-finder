@@ -1,0 +1,85 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jwt-legacy-root
+  coordinates:
+    - jwt
+  version_range: ">=0.1.0,<0.6.0"
+  description: "jwt's original crate-root Token API, before the 0.6.0 rewrite moved it under jwt::legacy"
+
+# THE CRATE-ROOT ERA, AND IT IS A SEPARATE FILE FROM THE `jwt::legacy` ONE
+# BECAUSE THE TWO RANGES ARE DISJOINT. `version_range` is declared per LIBRARY,
+# and `jwt::Token.signed` / `.verify` / `.parse` are real ONLY at 0.1.0 - 0.5.0:
+# from 0.6.0 `jwt::Token` is the MODERN `Token<H, C, S>` and carries none of
+# these methods, while the legacy type moves to `jwt::legacy::Token`
+# (`pub mod legacy` arrives at 0.6.0 lib.rs:126 and is removed at 0.10.0).
+# A single `>=0.1.0,<0.10.0` file would have claimed `jwt::Token.signed` for
+# five releases where it does not exist -- which is exactly the argument
+# jwt-store.yaml was split out for over a ONE-version difference, so applying
+# it here is consistency rather than a new rule.
+#
+# Enumerated over every published archive in the range:
+#   0.1.0 lib.rs:34/:43/:55/:69      new / parse / verify / signed
+#   0.1.1 lib.rs:34/:43/:55/:69      identical
+#   0.2.0 lib.rs:60/:69/:81/:95      Token becomes generic in <H, C>
+#   0.3.0 lib.rs:60/:69/:81/:95
+#   0.4.0 lib.rs:60/:69/:81/:95
+#   0.5.0 lib.rs:67/:76/:88/:107     the digest bound moves to a where-clause
+#
+# ARITIES AND RETURNS ARE STABLE ACROSS ALL SIX: `signed(&self, key, digest)`
+# and `verify(&self, key, digest)` are arity 2, `parse(raw)` is arity 1,
+# `verify` returns a bare `bool` rather than a `Result`, and `signed` returns
+# `Result<String, Error>` where `Error` is `crate::error::Error`.
+#
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH. A probe writing
+# `use jwt::{Claims, Header, Token};` emits `jwt.Token.signed`, rewritten at its
+# second-to-last dot to `jwt::Token.signed`. The key follows the CONSUMER'S
+# IMPORT PATH, not what the type resolves to, which is why the other era needs
+# its own entries in jwt-legacy.yaml rather than sharing these.
+#
+# THE DIGEST ARGUMENT IS OPERATION-DETERMINING. In this era it is used
+# directly (`crypt::sign(&*data, key, digest)`, 0.5.0 lib.rs:117), and the
+# contribution is declared as `argument_type` rather than `argument_value`
+# because what names the algorithm is the digest's TYPE -- `Sha256::new()`
+# means HMAC-SHA-256 -- and because the 0.6.0+ era resolves it from the type
+# alone, so one derivation serves both files.
+#
+# `Token::new` IS NOT DECLARED. It performs no cryptography, no rule matches
+# it, and although it does appear in an exported graph as an uncontracted
+# SUPPORTING call, no rule stamps an `api` naming it, so an entry would join
+# nothing that is asked for.
+contracts:
+  - method: jwt::Token.parse
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  - method: jwt::Token.signed
+    arity: 2
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jwt::error::Error>"
+    parameter_types: ["&[u8]", "D"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes:
+          property: algorithmName
+          derivation: argument_type
+
+  - method: jwt::Token.verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    canonical_return_type: "bool"
+    parameter_types: ["&[u8]", "D"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes:
+          property: algorithmName
+          derivation: argument_type
