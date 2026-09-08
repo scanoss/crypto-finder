@@ -135,22 +135,65 @@ func (c *PythonTypeResolverChain) ResolveTypes(graph *CallGraph, sourceRoots []P
 			return err
 		}
 	}
-	propagatePythonAssignedVarTypes(graph)
+	var kb *contracts.KnowledgeBase
+	if c.contract != nil {
+		kb = c.contract.kb
+	}
+	propagatePythonAssignedVarTypes(graph, kb)
 	return nil
 }
 
 // propagatePythonAssignedVarTypes performs one ordered pass over each
 // Python-origin FunctionDecl's own Calls (row 13's resolver half): for a
-// call with a non-empty AssignedVar whose Callee resolves (via
-// graph.Functions, keyed by FunctionID.String()) to an in-graph
-// FunctionDecl with a non-empty ReturnType, that var->type binding is
-// recorded; a LATER call in the SAME decl whose ReceiverVar matches a
-// tracked var has its Callee Package/Type rewritten to the tracked type
-// (Package from the CALLING decl's own package — a Python type annotation
-// is a bare name, never a fully qualified path) and ResolvedReceiverType
-// set. Never crosses FunctionDecl boundaries, matching the parser's own
-// scope-local bounding for partials/callables (row 11) and the parser-half
-// varTypes (row 13 §10.2).
+// call with a non-empty AssignedVar whose Callee has a knowable return
+// type, that var->type binding is recorded; a LATER call in the SAME decl
+// whose ReceiverVar matches a tracked var has its Callee Package/Type
+// rewritten to the tracked type and ResolvedReceiverType set. A rebind whose
+// callee has no knowable return type INVALIDATES the tracked entry, so a
+// stale type cannot reach a later call on the same name.
+//
+// Never crosses FunctionDecl boundaries, matching the parser's own scope-local
+// bounding for partials/callables (row 11) and the parser-half varTypes
+// (row 13 §10.2).
+//
+// THAT BOUND IS NOT LEXICAL-SCOPE CORRECTNESS, and the difference is
+// load-bearing. This pass sees only `fn.Calls`, so a rebind that is not a CALL
+// leaves no trace it can act on: a `for` target, a `with ... as`, a tuple
+// unpack, a comprehension target, or a literal assignment. A nested `def` is
+// also not a separate FunctionDecl — its calls are attributed to the enclosing
+// decl and its parameter list is invisible here — so a nested parameter
+// shadowing an outer name inherits the outer binding. Both shapes are pinned
+// as known limitations by
+// TestPythonAssignedVarTypes_KnownLimitation_RebindWithoutACallIsInvisible.
+// Closing either needs statement-level binding events, or nested defs as their
+// own decls, from the parser.
+//
+// THE RETURN TYPE IS TAKEN FROM THE IN-GRAPH DECL FIRST AND FROM THE
+// CONTRACT KB SECOND. Only the first of those existed originally, and it
+// cannot reach a DEPENDENCY's factory: when a consumer's own code is the
+// scanned tree, the library's `FunctionDecl` is not in `graph.Functions`
+// at all, so `callee == nil` and no binding was ever recorded. The effect
+// was that a contract's `return.type` resolved a receiver only inside a
+// single chained expression — `PrivateKey(secret).sign(msg)` — and never
+// across the assignment real code writes:
+//
+//	key = PrivateKey(secret)   # coincurve.PrivateKey.<init>, contracted
+//	sig = key.sign(message)    # keyed <module>.key.sign — joined nothing
+//
+// Measured on a probe consumer before this fallback existed: the chained
+// form emitted `coincurve.PrivateKey.sign(builtins.bytes)` while the
+// two-line form emitted `consumer2.key.sign(?)`, and the same split shows
+// on the already-merged `ecdsa` contract (`sk = SigningKey.generate()`
+// then `sk.sign(..)` emitted `<module>.sk.sign`). Since the operation
+// entries of every Python contract in the KB hang off a factory's return
+// type, that made most of them unreachable for the dominant call shape.
+//
+// The KB lookup uses ContractsForTolerant, the same entry point the
+// contract resolver above uses, so the arity tolerance Python needs for
+// default arguments and kwargs applies identically. Only an unconditional
+// contract (`When == nil`) with a non-empty return type is used: a
+// conditional return depends on argument VALUES, which this pass does not
+// evaluate.
 //
 // Gated to `.py`/`.pyi`-sourced declarations ONLY (FunctionDecl.FilePath):
 // AssignedVar/ReceiverVar are language-agnostic FunctionCall fields shared
@@ -158,13 +201,54 @@ func (c *PythonTypeResolverChain) ResolveTypes(graph *CallGraph, sourceRoots []P
 // ecosystem's calls on a coincidental variable-name match — unlike the
 // contract resolver above, whose FQN+arity KB lookup is inherently
 // self-limiting to the Python KB's own method names.
-func propagatePythonAssignedVarTypes(graph *CallGraph) {
+func propagatePythonAssignedVarTypes(graph *CallGraph, kb *contracts.KnowledgeBase) {
 	for _, fn := range graph.Functions {
 		if fn == nil || len(fn.Calls) == 0 || !isPythonSourceFile(fn.FilePath) {
 			continue
 		}
-		propagatePythonAssignedVarTypesForDecl(fn, graph)
+		propagatePythonAssignedVarTypesForDecl(fn, graph, kb)
 	}
+}
+
+// pythonCalleeReturnType reports the return type of a call's callee and the
+// package that declared it, preferring an in-graph FunctionDecl and falling
+// back to the contract KB for a callee the scanned tree does not declare.
+//
+// The two sources are deliberately ordered this way: an in-graph decl is the
+// scanned source's own truth and must win, so wiring the KB in cannot change
+// any result that already resolved. The KB is consulted only where the old
+// code returned nothing at all.
+func pythonCalleeReturnType(
+	call *FunctionCall,
+	graph *CallGraph,
+	kb *contracts.KnowledgeBase,
+) (returnType, declPackage string) {
+	if callee := graph.Functions[call.Callee.String()]; callee != nil && callee.ReturnType != "" {
+		return callee.ReturnType, callee.ID.Package
+	}
+	if kb == nil || len(kb.Contracts) == 0 {
+		return "", ""
+	}
+	// NOT call.Callee.String(): FunctionID.String() renders a method as
+	// "pkg.(Type).Name" — parenthesised — while the KB is keyed
+	// "pkg.Type.Name". Looking the KB up with the String() form silently
+	// resolves nothing for every METHOD or constructor, while still working
+	// for a module-level function (empty Type, so no parentheses appear).
+	// That asymmetry is exactly what a "a call was produced" assertion would
+	// have missed, so pythonCallFQN mirrors pythonFunctionFQN instead.
+	contractList := kb.ContractsForTolerant(pythonCallFQN(call), len(call.Arguments))
+	for i := range contractList {
+		c := &contractList[i]
+		if c.When == nil && c.Return.Type != "" {
+			// A contract return type is written fully qualified, so
+			// pythonSplitAssignedType splits it at its last separator and
+			// never consults declPackage. The callee's own package is the
+			// correct fallback for the bare-name case regardless: the type
+			// belongs to the factory's package, not to the caller's.
+			return c.Return.Type, call.Callee.Package
+		}
+	}
+	return "", ""
 }
 
 // pythonTrackedAssignedType records what propagatePythonAssignedVarTypesForDecl
@@ -198,7 +282,11 @@ func pythonSplitAssignedType(tracked pythonTrackedAssignedType) (pkg, typ string
 // propagatePythonAssignedVarTypesForDecl runs propagatePythonAssignedVarTypes's
 // document-order pass for exactly one FunctionDecl, extracted purely to
 // keep the outer function's cyclomatic/cognitive complexity low.
-func propagatePythonAssignedVarTypesForDecl(fn *FunctionDecl, graph *CallGraph) {
+func propagatePythonAssignedVarTypesForDecl(
+	fn *FunctionDecl,
+	graph *CallGraph,
+	kb *contracts.KnowledgeBase,
+) {
 	var varTypes map[string]pythonTrackedAssignedType
 	for i := range fn.Calls {
 		call := &fn.Calls[i]
@@ -213,14 +301,28 @@ func propagatePythonAssignedVarTypesForDecl(fn *FunctionDecl, graph *CallGraph) 
 		if call.AssignedVar == "" {
 			continue
 		}
-		callee := graph.Functions[call.Callee.String()]
-		if callee == nil || callee.ReturnType == "" {
+		returnType, declPackage := pythonCalleeReturnType(call, graph, kb)
+		if returnType == "" {
+			// INVALIDATE ON RE-BIND. This assignment rebinds the variable to
+			// something whose type is not knowable, so any type learned from an
+			// EARLIER assignment to the same name is now stale and must not
+			// reach a later receiver call. Without this delete the previous
+			// binding stayed live and over-propagated:
+			//
+			//	key = PrivateKey(s)   # contracted, binds key -> PrivateKey
+			//	key = helper()        # unknowable; the binding must be dropped
+			//	key.sign(m)           # was keyed coincurve.PrivateKey.sign
+			//
+			// Re-binding to another CONTRACTED factory was always correct,
+			// because the assignment below overwrites the entry — which is what
+			// localizes this to the unknowable-return path alone.
+			delete(varTypes, call.AssignedVar)
 			continue
 		}
 		if varTypes == nil {
 			varTypes = make(map[string]pythonTrackedAssignedType)
 		}
-		varTypes[call.AssignedVar] = pythonTrackedAssignedType{name: callee.ReturnType, declPackage: callee.ID.Package}
+		varTypes[call.AssignedVar] = pythonTrackedAssignedType{name: returnType, declPackage: declPackage}
 	}
 }
 
@@ -229,6 +331,19 @@ func propagatePythonAssignedVarTypesForDecl(fn *FunctionDecl, graph *CallGraph) 
 // files to parse.
 func isPythonSourceFile(filePath string) bool {
 	return strings.HasSuffix(filePath, ".py") || strings.HasSuffix(filePath, ".pyi")
+}
+
+// pythonCallFQN derives the fully-qualified callee name for a FunctionCall in
+// the spelling the Python contracts KB uses: "Package.Type.Name" for a method
+// or constructor, "Package.Name" for a module-level function. It is the
+// call-site mirror of pythonFunctionFQN, and it exists because
+// FunctionID.String() renders a type-qualified id as "Package.(Type).Name",
+// which no KB key matches.
+func pythonCallFQN(call *FunctionCall) string {
+	if call.Callee.Type != "" {
+		return call.Callee.Package + "." + call.Callee.Type + "." + call.Callee.Name
+	}
+	return call.Callee.Package + "." + call.Callee.Name
 }
 
 // pythonFunctionFQN derives the fully-qualified method name for a FunctionDecl
