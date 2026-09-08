@@ -1,0 +1,66 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-utils
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.5.0,<1.7.0"
+  description: "alloy-primitives Keccak-256 and EIP-191 hashing reached through the public utils module"
+
+# THE `utils` MODULE IS PRIVATE UNTIL 0.5.0, and that is what sets this file's
+# lower bound rather than either function's own arrival. Read from the crate's
+# own lib.rs: `mod utils;` at 0.1.0:37, 0.2.0:42, 0.3.3:49, 0.4.0:50 and
+# 0.4.2:53, then `pub mod utils;` at 0.5.0:47 and in every release after. So
+# `alloy_primitives::utils::keccak256(..)` is not compilable Rust in the six
+# oldest committed rows, and a key claiming it there would be a false version
+# claim.
+#
+# WHY THESE KEYS ARE SEPARATE ENTRIES FROM THE CRATE-ROOT ONES. The callgraph key
+# follows the CONSUMER'S IMPORT, not what the type resolves to. Measured on one
+# probe consumer: `use alloy_primitives::keccak256;` emits
+# `alloy_primitives.keccak256` while `alloy_primitives::utils::keccak256(..)`
+# emits `alloy_primitives::utils.keccak256`. Both are real spellings -- the
+# nested-group import real consumers write reaches the function through `utils`
+# (`use alloy_primitives::{Address, B256, hex, utils::eip191_hash_message};`) --
+# so a file declaring only the crate-root key would silently join nothing for
+# them.
+#
+# BOTH KEYS CARRY ONE DOT and are therefore authored VERBATIM: `rustAuthoredKey`
+# rewrites the second-to-last dot only when there are at least two, and
+# `alloy_primitives::utils.keccak256` has one. Applying the substitution anyway
+# would produce `alloy_primitives::utils::keccak256`, which loads and joins
+# nothing.
+#
+# `parameter_types` is omitted for both, for the reason in
+# alloy-primitives.yaml.
+contracts:
+  - method: alloy_primitives::utils.keccak256
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: alloy_primitives::utils.eip191_hash_message
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+hierarchy: {}

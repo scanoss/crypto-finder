@@ -1,0 +1,82 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-keccak-cache
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=1.5.0,<1.7.0"
+  description: "alloy-primitives cached and uncached Keccak-256 hashing, added at 1.5.0"
+
+# `keccak256_cached` AND `keccak256_uncached` ARRIVE AT 1.5.0, not 1.6.0. An
+# earlier reading of this family put them at 1.6.0 and that was wrong: both are
+# present at 1.5.0 src/utils/mod.rs:165 and :180 -- 1.6.0 moves them to :160 and
+# :175 -- and absent at 1.4.1.
+#
+# NEITHER IS FEATURE-GATED AS AN ITEM, which matters because the surrounding code
+# is full of `#[cfg(feature = ...)]` and a `grep` for the module gate reads as if
+# the functions were gated too. Only the BODIES branch: `keccak256_cached`
+# returns `keccak_cache::compute(..)` under `keccak-cache` and `keccak256_impl`
+# otherwise (1.6.0 src/utils/mod.rs:160-165). Both are compilable under default
+# features in every release in this range.
+#
+# THE TWO ARE NOT SYMMETRIC IN HOW THEY CAN BE REACHED, and that is why they have
+# a different number of entries. `keccak256_uncached` IS re-exported at the crate
+# root (1.5.0 src/lib.rs:74, 1.6.0:75), so it emits either
+# `alloy_primitives.keccak256_uncached` or
+# `alloy_primitives::utils.keccak256_uncached` depending on the import.
+# `keccak256_cached` is re-exported at the root in NO release -- checked in 1.5.0,
+# 1.5.7 and 1.6.0 -- so `alloy_primitives::utils.keccak256_cached` is its only
+# reachable key, and the family's rule for it deliberately carries no crate-root
+# pattern.
+#
+# ALL THREE KEYS CARRY ONE DOT and are authored VERBATIM.
+#
+# `parameter_types` is omitted for the reason in alloy-primitives.yaml: all three
+# are generic over `T: AsRef<[u8]>`.
+#
+# THE CACHE DOES NOT CHANGE THE ALGORITHM. `keccak_cache::compute` memoises
+# short inputs and calls the same `keccak256_impl` on a miss, so all three
+# functions produce the identical Keccak-256 digest and none of them is a
+# different primitive.
+contracts:
+  - method: alloy_primitives::utils.keccak256_cached
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: alloy_primitives::utils.keccak256_uncached
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: alloy_primitives.keccak256_uncached
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+hierarchy: {}
