@@ -1,0 +1,120 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: dsa-0.7
+  coordinates:
+    - dsa
+  version_range: ">=0.7.0,<0.8.0"
+  description: "RustCrypto DSA 0.7's Generate-trait key and parameter constructors"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT, NOT BECAUSE THE CRATE IS -- the
+# convention biscuit-jwks.yaml:11-17 states. `version_range` is declared per
+# LIBRARY (contracts.go, `Library.VersionRange`), so a file may only claim
+# versions for which EVERY entry in it is true, and NOTHING here is true before
+# 0.7.0.
+#
+# WHY THE 0.6 RANGE COULD NOT SIMPLY BE WIDENED. `SigningKey::generate` exists
+# in both eras and is a DIFFERENT CALLABLE in each:
+#
+#   0.6.3  SigningKey::generate(rng, components) -> SigningKey   signing_key.rs:53
+#   0.7.0  SigningKey::generate()                -> SigningKey   crypto_common::Generate,
+#                                                                default method on
+#                                                                `impl Generate for SigningKey`
+#                                                                signing_key.rs:182
+#
+# A KB entry is keyed on method PLUS ARITY, so those are two different entries
+# and neither is true across the whole span. Widening `dsa.yaml`'s range to
+# `<0.8.0` would make its `generate` arity-2 entry false for every 0.7 version;
+# moving the arity-0 entry into that file would make it false for every 0.6 one.
+# Splitting is the only form that leaves both files true over the range each
+# declares.
+#
+# API verified BY COMPILATION against dsa 0.7.0, not by reading `pub fn`: the
+# arity-0 and arity-1 constructors are DEFAULT METHODS on `crypto_common::
+# Generate` (re-exported as `dsa::Generate`, lib.rs:64) and therefore appear in
+# no `pub fn` listing of this crate. `SigningKey::generate(rng, components)`
+# fails with E0599 here.
+#
+# FEATURE GATES ARE PART OF THE SYMBOL. `SigningKey` is behind the NON-DEFAULT
+# `hazmat` feature (lib.rs:58-59; `default = ["pkcs8"]`), and the arity-0
+# `generate()` additionally needs `getrandom`. `Components` is NOT hazmat-gated,
+# so its `Generate` impl (components.rs:137) is reachable with default features
+# plus `getrandom`.
+#
+#
+# `return.type` DECLARES THE CONCRETE KEY TYPE EVEN FOR THE FALLIBLE CONSTRUCTORS,
+# and that is deliberate rather than sloppy. `Return.Type` is what
+# `rust_type_resolver.go:41` assigns to `fn.ReturnType`, i.e. it types the
+# RECEIVER for chain resolution, so declaring `core::result::Result` for
+# `try_generate_from_rng(..)?` would lose the key's identity for every call
+# chained off it. Measured across the 119 rust contract files: 195 entries whose
+# declared return is a `Result` name the concrete type here against 94 that name
+# the `Result`, and `boringtun.yaml` records the same reasoning in its own header.
+# The declared `Result<..>` spelling belongs in `canonical_return_type`, which is
+# omitted here for the reason given below.
+#
+# `canonical_return_type` AND `parameter_types` ARE OMITTED, and that is a KNOWN
+# GAP rather than an oversight: with them empty the exported signature renders as
+# `name(?, ?)`, which 5.2.10 notes is byte-identical to having no contract at all.
+# Measured here too -- exporting a call graph before and after these files load
+# gives identical `(?, ?)`. They are left out to stay consistent with the base
+# `dsa.yaml` / `ecdsa.yaml` these merge with globally, and because ecdsa's key
+# type is generic over a curve this file has no way to resolve. The entries are
+# NOT inert regardless: the arity-0 `generate` entry is what lets an exported
+# graph attach the subsequent `sign(..)` hop as a supporting call.
+#
+# skipped-non-crypto: accessors (`p`, `q`, `g`, `x`, `y`, `verifying_key`), the
+# PKCS#8 encoding helpers, and `Components::from_components_unchecked`
+# (components.rs:71) which imports caller-supplied parameters rather than
+# generating any.
+#
+# NOT DECLARED HERE, DELIBERATELY: `SigningKey.from_components` and
+# `VerifyingKey.from_components` are unchanged across both eras and are already
+# declared in `dsa.yaml`. Contract entries are merged GLOBALLY by method+arity
+# (contracts.go `mergeContractGroup`), so re-declaring them here with a
+# different return would be a HARD LOAD ERROR and re-declaring them with the
+# same return would add nothing.
+contracts:
+  - method: dsa::SigningKey.generate
+    arity: 0
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::SigningKey.generate_from_rng
+    arity: 1
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::SigningKey.try_generate_from_rng
+    arity: 1
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::SigningKey.try_generate_from_rng_with_components
+    arity: 2
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::SigningKey.try_generate
+    arity: 0
+    return: {type: dsa::SigningKey, confidence: high}
+    role: factory
+  - method: dsa::Components.generate
+    arity: 0
+    return: {type: dsa::Components, confidence: high}
+    role: factory
+  - method: dsa::Components.generate_from_rng
+    arity: 1
+    return: {type: dsa::Components, confidence: high}
+    role: factory
+  - method: dsa::Components.try_generate_from_rng
+    arity: 1
+    return: {type: dsa::Components, confidence: high}
+    role: factory
+  - method: dsa::Components.try_generate_from_rng_with_key_size
+    arity: 2
+    return: {type: dsa::Components, confidence: high}
+    role: factory
+
+  - method: dsa::Components.try_generate
+    arity: 0
+    return: {type: dsa::Components, confidence: high}
+    role: factory
+
+hierarchy: {}
