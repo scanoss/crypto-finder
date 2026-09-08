@@ -1,0 +1,164 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jwt
+  coordinates:
+    - jwt
+  version_range: ">=0.6.0,<0.17.0"
+  description: "JOSE — JWT and JWS — for Rust, per mikkyang/rust-jwt"
+
+# API read at jwt 0.16.0 and cross-checked at 0.6.0, 0.7.0, 0.8.0, 0.9.0,
+# 0.10.0, 0.13.0 and 0.15.0 — every published release of the modern line:
+#   token/verified.rs:116  `Token::parse_unverified`
+#   token/signed.rs:88     `SignWithKey for Token<H, C, Unsigned>`
+#   token/verified.rs:22   `VerifyWithKey for Token<H, C, Unverified>`
+#   lib.rs:138             `Token::remove_signature`
+#   algorithm/mod.rs:54    `SigningAlgorithm::sign`
+#   algorithm/mod.rs:61    `VerifyingAlgorithm::verify_bytes`
+#   algorithm/mod.rs:63    `VerifyingAlgorithm::verify`
+# `pub mod legacy` is REMOVED at 0.10.0, which is why the legacy surface is a
+# separate file with its own range rather than entries here.
+#
+# EVERY KEY BELOW WAS READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API,
+# and then had its second-to-last dot rewritten to `::` because every one of them
+# carries two or more dots (rustAuthoredKey, contracts.go:267):
+#
+#   Token::parse_unverified(s)                  -> jwt.Token.parse_unverified
+#                                               -> jwt::Token.parse_unverified
+#   Token::new(h, c).sign_with_key(&key)        -> jwt.Token.sign_with_key
+#                                               -> jwt::Token.sign_with_key
+#   jwt::SigningAlgorithm::sign(&key, h, c)     -> jwt.SigningAlgorithm.sign
+#                                               -> jwt::SigningAlgorithm.sign
+#
+# THE EXPORT WAS RE-RUN AFTER AUTHORING AND NOTHING MOVED. That is not a
+# formality: the emitted key depends on which contracts are already loaded, so a
+# key read from a single pre-contract export can stop joining the moment the
+# factory it depends on is contracted.
+#
+# THREE THINGS ARE DELIBERATELY ABSENT, AND EACH ABSENCE IS A MEASUREMENT.
+#
+#   1. `jwt::SignWithKey.sign_with_key` (arity 2) AND
+#      `jwt::VerifyWithKey.verify_with_key` (arity 2) — the TRAIT-PATH spelling
+#      the crate's own `examples/hs256.rs` writes. Both keys really are emitted
+#      by the exported graph, so this is a choice and not an oversight: the
+#      traits are `SignWithKey<T>` / `VerifyWithKey<T>`, generic in the RETURN
+#      type and blanket-implemented over every `ToBase64` / `FromBase64` type
+#      (token/signed.rs:50, token/verified.rs:96), so `T` is the CALLER'S OWN
+#      claims struct and neither the receiver type nor the return type is
+#      knowable. Any value written here would be an invention. The rules still
+#      detect and attribute those call sites; only the contract-derived
+#      signature is absent.
+#
+#   2. `parameter_types` ON THE TWO `*_with_key` ENTRIES. The declared parameter
+#      SPELLING CHANGES INSIDE THIS RANGE: `key: &dyn SigningAlgorithm` at
+#      0.6.0 - 0.8.0 (0.8.0 token/signed.rs:88) and `key: &impl
+#      SigningAlgorithm` from 0.9.0 (0.9.0 token/signed.rs:88), and the same
+#      split on the verifying side. Declaring either spelling would state
+#      something false for roughly half the range, and splitting the file at
+#      0.9.0 to carry one field is not worth a third `version_range` to keep
+#      correct. Omitted, with the boundary recorded here.
+#
+#   3. `jwt::Token.header` AND `jwt::Token.claims` (both arity 0). Emitted by
+#      the graph, and both return the CALLER'S type parameter (`&H` and `&C`,
+#      lib.rs:130 and :134), so there is no type to declare — the same reason
+#      biscuit leaves `unverified_payload` out.
+#
+#   4. THE BLANKET-RECEIVER SPELLING, WHICH IS THE MAJORITY REAL SHAPE, AND
+#      SAYING SO MATTERS MORE THAN THE OTHER THREE. `sign_with_key` and
+#      `verify_with_key` are blanket-implemented over every `ToBase64` /
+#      `FromBase64` type (token/signed.rs:50, token/verified.rs:96), so when a
+#      consumer calls them on its OWN claims value the graph keys the call on
+#      THAT type -- measured, `std::collections.BTreeMap.sign_with_key` for a
+#      `BTreeMap` receiver -- and no entry under a `jwt::` key can join it.
+#      Only the `Token::new(..).sign_with_key(..)` chain emits
+#      `jwt.Token.sign_with_key`, which is what the two entries below serve.
+#      Of the twelve sampled published consumers, axum-util, jwt_boiler,
+#      comproxity's verify path and the crate's OWN `examples/hs256.rs` use the
+#      blanket receiver, while only comproxity's sign path and docusign use the
+#      Token receiver. SO THE CONTRACT JOINS THE MINORITY SHAPE. There is
+#      nothing declarable for the majority one -- the receiver is the caller's
+#      own type and the return is its type parameter -- and the RULES still
+#      detect and correctly attribute every one of those call sites; it is the
+#      contract-derived signature that is absent, not the finding.
+#
+# `PKeyWithDigest` IS ABSENT FOR A DIFFERENT REASON: NO RULE CAN REACH IT.
+# It is a plain struct with two public fields and no constructor function
+# (algorithm/openssl.rs:30-33, unchanged 0.6.0 - 0.16.0), so every consumer
+# builds it with a struct literal — and no Rust struct-literal pattern compiles
+# on the opengrep version crypto-finder pins (1.12.1 rejects
+# `PKeyWithDigest { ... }` with `Stdlib.Parsing.Parse_error`). With no rule
+# match there is no crypto call to contract.
+contracts:
+  # --- the token lifecycle ---------------------------------------------------
+  # `parse_unverified` performs NO CRYPTOGRAPHY: it splits the compact
+  # serialization and base64-decodes the two components (token/verified.rs:
+  # 116-124). It is a `factory` because the `Token<H, C, Unverified>` it returns
+  # is what a `verify_with_key` call is then made on, and that chain is the
+  # whole point of contracting it.
+  - method: jwt::Token.parse_unverified
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  - method: jwt::Token.sign_with_key
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    role: operation
+
+  - method: jwt::Token.verify_with_key
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    role: operation
+
+  # Returns `Token<H, C, Unsigned>` directly — not a `Result` — so the two
+  # return fields are the same string here rather than one wrapping the other.
+  - method: jwt::Token.remove_signature
+    arity: 0
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "jwt::Token"
+    parameter_types: []
+    role: factory
+
+  # `as_str` IS HERE BECAUSE THE FIXED-POINT ITERATION PUT IT HERE, which is the
+  # whole reason 5.5 asks for one. It does not appear in a pre-contract export
+  # at all: the chain `Token::new(h, c).sign_with_store(store)?.as_str()` keys
+  # the last call on the SCANNED CRATE until `sign_with_store` has a contracted
+  # return type, and only then does `jwt.Token.as_str` exist as a key. Read at
+  # 0.16.0 token/signed.rs:129 and present at the same signature in every
+  # release from 0.6.0 (0.6.0 token/signed.rs:81).
+  - method: jwt::Token.as_str
+    arity: 0
+    return: { type: "&str", confidence: high }
+    canonical_return_type: "&str"
+    parameter_types: []
+    role: output
+
+  # --- the low-level algorithm traits ----------------------------------------
+  # ARITY COUNTS THE EXPLICIT RECEIVER, because these keys are emitted by the
+  # TRAIT-PATH spelling `jwt::SigningAlgorithm::sign(&key, header, claims)`,
+  # where `&self` is written as argument 0. The declared signature is
+  # `fn sign(&self, header: &str, claims: &str)` (algorithm/mod.rs:54), i.e.
+  # two named parameters plus the receiver. `parameter_types` is omitted rather
+  # than guessing a spelling for the receiver position, which is `&Self` in the
+  # trait definition and the concrete algorithm type at every call site.
+  - method: jwt::SigningAlgorithm.sign
+    arity: 3
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jwt::error::Error>"
+    role: operation
+
+  - method: jwt::VerifyingAlgorithm.verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    canonical_return_type: "core::result::Result<bool, jwt::error::Error>"
+    role: operation
+
+  - method: jwt::VerifyingAlgorithm.verify_bytes
+    arity: 4
+    return: { type: bool, confidence: high }
+    canonical_return_type: "core::result::Result<bool, jwt::error::Error>"
+    role: operation
