@@ -353,6 +353,8 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 		Imports:       make(map[string]string),
 		ImportedTypes: make(map[string]bool),
 		FromImports:   make(map[string]bool),
+
+		PythonFromImportOriginals: make(map[string]string),
 	}
 
 	// ONE full-file descent (D1, python-parser-parity-2 A1) replaces the
@@ -1200,10 +1202,11 @@ func pythonPartialTarget(pcNode *sitter.Node, src []byte, analysis *FileAnalysis
 	case pythonSyms.identifier:
 		name := arg0.Content(src)
 		if pkg, ok := analysis.Imports[name]; ok {
+			exported := pythonImportedName(analysis, name)
 			if analysis.ImportedTypes[name] {
-				return FunctionID{Package: pkg, Type: name, Name: constructorMethodName}, true
+				return FunctionID{Package: pkg, Type: exported, Name: constructorMethodName}, true
 			}
-			return FunctionID{Package: pkg, Name: name}, true
+			return FunctionID{Package: pkg, Name: exported}, true
 		}
 		return FunctionID{Package: analysis.PackagePath, Name: name}, true
 	case pythonSyms.attribute:
@@ -1217,7 +1220,7 @@ func pythonPartialTarget(pcNode *sitter.Node, src []byte, analysis *FileAnalysis
 		if pkg, ok := analysis.Imports[objText]; ok {
 			resolvedPkg := pkg
 			if analysis.FromImports[objText] {
-				resolvedPkg = pkg + "." + objText
+				resolvedPkg = pkg + "." + pythonImportedName(analysis, objText)
 			}
 			return FunctionID{Package: resolvedPkg, Name: methodText}, true
 		}
@@ -1291,10 +1294,21 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 			recordImportedPythonSymbol(analysis, child.Content(src), modulePath)
 		case pythonNodeAliasedImport:
 			// `from X import name as alias`
+			//
+			// THE KEY IS BUILT FROM THE ORIGINAL NAME, NOT THE ALIAS. Imports
+			// records only the module path, so splicing the local binding into
+			// the callee key produced the consumer's own spelling --
+			// `from eth_hash.auto import keccak as kek; kek(d)` emitted
+			// `eth_hash.auto.kek`. No contract can enumerate a consumer's
+			// aliases, so every aliased call site joined nothing. Measured on
+			// eth-utils 1.9.5 crypto.py:3, which is how web3 and most of the
+			// Ethereum Python stack reach eth-hash.
 			nameNode := child.ChildByFieldName("name")
 			aliasNode := child.ChildByFieldName("alias")
 			if nameNode != nil && aliasNode != nil {
-				recordImportedPythonSymbol(analysis, aliasNode.Content(src), modulePath)
+				alias, original := aliasNode.Content(src), nameNode.Content(src)
+				recordImportedPythonSymbol(analysis, alias, modulePath)
+				recordPythonFromImportOriginal(analysis, alias, original)
 			}
 		}
 	}
@@ -1387,6 +1401,61 @@ func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string)
 	if looksLikePythonTypeName(name) {
 		analysis.ImportedTypes[name] = true
 	}
+}
+
+// recordPythonFromImportOriginal remembers the ORIGINAL symbol name behind an
+// aliased `from X import Sym as Local`, so pythonImportedName can rebuild the
+// library's own spelling instead of the consumer's. Only ever called after
+// recordImportedPythonSymbol, and only when the two names differ; the
+// first-binding-wins rule above is mirrored here so the two maps cannot
+// disagree.
+//
+// The type-ness of the imported symbol follows the ORIGINAL name too, in BOTH
+// directions: it is a property of what the library declares, not of what the
+// consumer called it. `from m import Thing as helper` binds a class, and keying
+// it as a plain function drops the `<init>` suffix a constructor contract
+// declares; `from m import thing as Thing` binds a FUNCTION, and keying it as a
+// constructor appends an `<init>` no contract declares.
+//
+// THE SECOND DIRECTION NEEDS THE DELETE, AND OMITTING IT LEFT THIS HALF-DONE.
+// recordImportedPythonSymbol runs first and has only the ALIAS to go on, so it
+// sets ImportedTypes from the alias's own capitalisation. Adding on a
+// capitalised original without clearing on a lowercase one leaves that entry
+// standing, and the callee key then carries an `<init>` the library has no
+// constructor for. Measured on this branch before the fix:
+// `from eth_hash.auto import keccak as Keccak; Keccak(d)` emitted
+// `eth_hash.auto.keccak.<init>` while the contract declares
+// `eth_hash.auto.keccak`, so that site joined nothing. Both directions are
+// pinned by tests; see python_parser_alias_key_test.go.
+func recordPythonFromImportOriginal(analysis *FileAnalysis, alias, original string) {
+	if alias == original || original == "" {
+		return
+	}
+	if analysis.PythonFromImportOriginals == nil {
+		return
+	}
+	if _, exists := analysis.PythonFromImportOriginals[alias]; exists {
+		return
+	}
+	analysis.PythonFromImportOriginals[alias] = original
+	if looksLikePythonTypeName(original) {
+		analysis.ImportedTypes[alias] = true
+	} else {
+		delete(analysis.ImportedTypes, alias)
+	}
+}
+
+// pythonImportedName maps a local binding back to the name the library exports.
+// Returns local unchanged for every non-aliased import, which is every shape
+// that behaved correctly before this map existed.
+func pythonImportedName(analysis *FileAnalysis, local string) string {
+	if analysis == nil || analysis.PythonFromImportOriginals == nil {
+		return local
+	}
+	if original, ok := analysis.PythonFromImportOriginals[local]; ok {
+		return original
+	}
+	return local
 }
 
 // extractDeclarations walks top-level statements for function and class
@@ -2025,10 +2094,11 @@ func (p *PythonParser) parseCallExpr(node *sitter.Node, src []byte, filePath str
 // reference with no matching rewrite).
 func pythonResolveIdentifierCallee(name string, analysis *FileAnalysis, bindings pythonBindings) FunctionID {
 	if pkg, ok := analysis.Imports[name]; ok && (!bindings.layer.has(name) || bindings.dynamicImports[name]) {
+		exported := pythonImportedName(analysis, name)
 		if analysis.ImportedTypes[name] {
-			return FunctionID{Package: pkg, Type: name, Name: constructorMethodName}
+			return FunctionID{Package: pkg, Type: exported, Name: constructorMethodName}
 		}
-		return FunctionID{Package: pkg, Name: name}
+		return FunctionID{Package: pkg, Name: exported}
 	}
 	if target, ok := bindings.partials[name]; ok {
 		return target
@@ -2423,7 +2493,7 @@ func resolveImportedCall(object, method, raw, filePath string, line, startCol, e
 	if pkg, ok := analysis.Imports[object]; ok {
 		resolvedPkg := pkg
 		if analysis.FromImports[object] {
-			resolvedPkg = pkg + "." + object
+			resolvedPkg = pkg + "." + pythonImportedName(analysis, object)
 		}
 		return &FunctionCall{
 			Callee:      FunctionID{Package: resolvedPkg, Name: method},
@@ -2484,8 +2554,9 @@ func pythonAnnotatedReceiverCall(object, method string, varTypes map[string]stri
 	if !isImport || !analysis.FromImports[typeName] {
 		return nil
 	}
+	exported := pythonImportedName(analysis, typeName)
 	return &FunctionCall{
-		Callee:               FunctionID{Package: pkg + "." + typeName, Name: method},
+		Callee:               FunctionID{Package: pkg + "." + exported, Name: method},
 		ResolvedReceiverType: typeName,
 		Raw:                  raw,
 		FilePath:             filePath,
