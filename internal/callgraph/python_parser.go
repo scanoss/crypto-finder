@@ -1410,10 +1410,23 @@ func recordImportedPythonSymbol(analysis *FileAnalysis, name, modulePath string)
 // first-binding-wins rule above is mirrored here so the two maps cannot
 // disagree.
 //
-// The type-ness of the imported symbol follows the ORIGINAL name too: it is a
-// property of what the library declares, not of what the consumer called it.
-// `from m import Thing as helper` binds a class, and keying it as a plain
-// function drops the `<init>` suffix a constructor contract declares.
+// The type-ness of the imported symbol follows the ORIGINAL name too, in BOTH
+// directions: it is a property of what the library declares, not of what the
+// consumer called it. `from m import Thing as helper` binds a class, and keying
+// it as a plain function drops the `<init>` suffix a constructor contract
+// declares; `from m import thing as Thing` binds a FUNCTION, and keying it as a
+// constructor appends an `<init>` no contract declares.
+//
+// THE SECOND DIRECTION NEEDS THE DELETE, AND OMITTING IT LEFT THIS HALF-DONE.
+// recordImportedPythonSymbol runs first and has only the ALIAS to go on, so it
+// sets ImportedTypes from the alias's own capitalisation. Adding on a
+// capitalised original without clearing on a lowercase one leaves that entry
+// standing, and the callee key then carries an `<init>` the library has no
+// constructor for. Measured on this branch before the fix:
+// `from eth_hash.auto import keccak as Keccak; Keccak(d)` emitted
+// `eth_hash.auto.keccak.<init>` while the contract declares
+// `eth_hash.auto.keccak`, so that site joined nothing. Both directions are
+// pinned by tests; see python_parser_alias_key_test.go.
 func recordPythonFromImportOriginal(analysis *FileAnalysis, alias, original string) {
 	if alias == original || original == "" {
 		return
@@ -1427,6 +1440,8 @@ func recordPythonFromImportOriginal(analysis *FileAnalysis, alias, original stri
 	analysis.PythonFromImportOriginals[alias] = original
 	if looksLikePythonTypeName(original) {
 		analysis.ImportedTypes[alias] = true
+	} else {
+		delete(analysis.ImportedTypes, alias)
 	}
 }
 

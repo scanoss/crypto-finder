@@ -129,6 +129,59 @@ def make(secret):
 	}
 }
 
+// TestPythonAliasedFromImport_UppercaseAliasOfAFunction is the MISSING
+// DIRECTION of the type-ness rule, and it is the one the first revision of this
+// change got wrong.
+//
+// `recordImportedPythonSymbol` runs first and has only the ALIAS to go on, so it
+// sets `ImportedTypes` from the alias's own capitalisation. The first revision
+// only ADDED on a capitalised original and never CLEARED on a lowercase one, so
+// a capitalised alias of a lowercase function kept its constructor binding and
+// the key gained an `<init>` the library has no constructor for. Measured on
+// that revision: `from eth_hash.auto import keccak as Keccak; Keccak(d)` emitted
+// `eth_hash.auto.keccak.<init>(?): keccak` while the contract declares
+// `eth_hash.auto.keccak`, so the site joined nothing; with the clear in place
+// the same probe emits
+// `eth_hash.auto.keccak(typing.Union[bytearray, bytes]): builtins.bytes`.
+//
+// The 170-file python fixture corpus contains this shape NOWHERE, so it cannot
+// contradict it: before and after are byte-identical there (317 resolution sites
+// and 798 distinct occurrence keys either way). A corpus cannot refute a shape
+// it does not hold, which is why this assertion is a unit test and not a corpus
+// measurement.
+func TestPythonAliasedFromImport_UppercaseAliasOfAFunction(t *testing.T) {
+	src := `from eth_hash.auto import keccak as Keccak
+
+def digest(data):
+    return Keccak(data)
+`
+	fn := findPythonFuncByName(parsePythonInline(t, src), "digest")
+	if fn == nil {
+		t.Fatal("digest function not found")
+	}
+	call := findPythonCallByMethod(fn, "keccak")
+	if call == nil {
+		t.Fatalf("no call resolved to the exported name `keccak`; calls: %s", pythonCallKeys(fn))
+	}
+	if got, want := call.Callee.Package, "eth_hash.auto"; got != want {
+		t.Errorf("Package = %q, want %q", got, want)
+	}
+	if got, want := call.Callee.Name, "keccak"; got != want {
+		t.Errorf("Name = %q, want %q", got, want)
+	}
+	// THE ASSERTION THAT WAS MISSING. A capitalised alias must not make a
+	// FUNCTION look like a constructor.
+	if call.Callee.Type != "" {
+		t.Errorf("Type = %q, want empty: `keccak` is a function, and a capitalised "+
+			"ALIAS must not bind it as a type (that appends an `<init>` no "+
+			"contract declares)", call.Callee.Type)
+	}
+	if call.Callee.Name == constructorMethodName {
+		t.Errorf("Name = %q: the key gained an `<init>` from the alias's capitalisation",
+			call.Callee.Name)
+	}
+}
+
 // TestPythonAliasedFromImport_ChainedAttribute covers `kek.new(d)` -- the
 // method-on-an-aliased-instance shape eth-hash's incremental API uses.
 func TestPythonAliasedFromImport_ChainedAttribute(t *testing.T) {
