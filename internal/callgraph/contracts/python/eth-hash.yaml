@@ -43,15 +43,25 @@ library:
 # module-path-qualified spelling, so both forms of both paths are declared.
 # `python/ecdsa` already carries the same pair for `ecdsa.ECDH`.
 #
-# ONE KNOWN GAP, MEASURED AND STATED RATHER THAN PAPERED OVER: an ALIASED
-# from-import emits the LOCAL ALIAS as the key's last segment --
-# `from eth_hash.auto import keccak as kek; kek(d)` emits `eth_hash.auto.kek`,
-# and `from eth_hash.main import Keccak256 as K; K(b)` emits
-# `eth_hash.main.K.<init>`. No contract can enumerate a consumer's aliases, so
-# an aliased call site is detected by the RULES (which do resolve the alias)
-# and joins no contract entry. tronpytool 3.6.82 writes exactly this shape
-# (tronpytool/trx.py:637,:733). Reported as a crypto-finder resolver finding;
-# it is a general Python behavior and not specific to this library.
+# ALIASED from-IMPORTS JOIN THESE KEYS, AND THAT IS WHY THIS FAMILY SHIPS A
+# PARSER FIX ALONGSIDE THE CONTRACT. An earlier revision of this header
+# described the opposite as a known limitation -- that
+# `from eth_hash.auto import keccak as kek; kek(d)` emits `eth_hash.auto.kek`
+# and joins nothing. That WAS true of the resolver before this branch and is
+# false on it: the commit `fix(callgraph/python): key an aliased from-import on
+# the exported symbol name` keys the callee on the name the LIBRARY exports, so
+# the aliased spelling now joins `eth_hash.auto.keccak` like every other. The
+# stale sentence is removed rather than softened -- a shipped known-limitation
+# that is no longer true suppresses the next real investigation into the same
+# area, which costs more than the sentence saved.
+#
+# The shape matters here rather than being academic: eth-utils 1.9.5
+# `eth_utils/crypto.py:3` writes `from eth_hash.auto import keccak as
+# keccak_256`, and eth-utils is how web3 and most of the Ethereum Python stack
+# reach this package; tronpytool 3.6.82 `tronpytool/trx.py:637,:733` writes the
+# function-scoped variant. Both directions of the type-ness rule are pinned in
+# `python_parser_alias_key_test.go`, including a capitalised alias of a
+# lowercase function, which must NOT gain an `<init>`.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-SYMBOL VERSION WINDOWS. `library.version_range` spans the whole matrix
@@ -192,6 +202,17 @@ contracts:
 
   # ── Calling an explicitly-constructed hasher. main.py:39 at 0.8.0,
   # main.py:7 at 0.1.0a3. >=0.1.0a3.
+  #
+  # THIS ENTRY IS CURRENTLY INERT, AND THAT IS STATED RATHER THAN IMPLIED. The
+  # parser emits NO call at all for an instance of a DEPENDENCY class that
+  # declares `__call__` -- measured on a probe consumer, zero supporting calls
+  # and the string `__call__` absent from the whole exported graph -- so nothing
+  # joins this key today. It is kept because the declaration is TRUE of the
+  # library and costs nothing: the day the parser learns the shape, the entry
+  # joins with no further work. `TestPythonInstanceCallIsInvisible_KnownLimitation`
+  # pins exactly that, and says to delete itself if it ever starts passing. The
+  # call SITE is not lost meanwhile: the rules claim the CONSTRUCTION line,
+  # which is where the algorithm is named.
   - method: eth_hash.main.Keccak256.__call__
     arity: 1
     parameter_types: ["typing.Union[bytearray, bytes]"]
