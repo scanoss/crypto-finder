@@ -324,6 +324,119 @@ def digest(data, other):
 	}
 }
 
+// TestPythonModuleLevelShadowOverPropagates_KnownLimitation PINS CURRENT
+// BEHAVIOR for a shape this change makes WORSE, and says so rather than leaving
+// it unpinned.
+//
+// A name rebound at MODULE level -- by a `def`, a `class` or an assignment --
+// still resolves to the import, so the library's key is attributed to a call
+// that goes to the consumer's own object. Only a rebind by ASSIGNMENT INSIDE
+// THE SAME FUNCTION is honored (see
+// TestPythonAliasedFromImport_ShadowedByAnAssignment); a rebind by a nested
+// `def` is invisible for a separate, pre-existing reason
+// (TestPythonNestedDefShadowingIsInvisible_KnownLimitation).
+//
+// THE CLASS IS PRE-EXISTING; WHAT THIS CHANGE DOES IS MAKE IT LAND. Measured on
+// origin/main b6143ab, which has no aliased-import handling at all:
+//
+//	from m import f;      def f(): ...   ->  m.f          (already joined)
+//	from m import f as g; def g(): ...   ->  m.g          (joined nothing)
+//	from m import C as K; class K: ...   ->  m.K.<init>   (joined nothing)
+//
+// and on this branch:
+//
+//	from m import f;      def f(): ...   ->  m.f          (unchanged)
+//	from m import f as g; def g(): ...   ->  m.f          (NOW joins)
+//	from m import C as K; class K: ...   ->  m.C.<init>   (NOW joins)
+//
+// So the unaliased spelling already over-propagated a JOINABLE key before this
+// change and still does; the aliased spelling over-propagated an unjoinable one
+// and now over-propagates a joinable one. The wrong attribution is not new, but
+// it now reaches a contract, which is a real narrowing of the margin and the
+// reason this is disclosed rather than left to be discovered.
+//
+// Fixing it needs module-scope binding the resolver does not track, which is
+// beyond this change. DELETE THIS TEST if it starts failing: that means module
+// scope became visible and the shadow is correctly honored.
+func TestPythonModuleLevelShadowOverPropagates_KnownLimitation(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, wantPkg, wantType, wantName string
+	}{
+		{
+			name: "module-level def shadowing an aliased import",
+			src: `from eth_hash.auto import keccak as kek
+
+
+def kek(x):
+    return x
+
+
+def use(d):
+    return kek(d)
+`,
+			wantPkg: "eth_hash.auto", wantType: "", wantName: "keccak",
+		},
+		{
+			name: "module-level assignment shadowing an aliased import",
+			src: `from eth_hash.auto import keccak as kek
+
+kek = None
+
+
+def use(d):
+    return kek(d)
+`,
+			wantPkg: "eth_hash.auto", wantType: "", wantName: "keccak",
+		},
+		{
+			name: "module-level class shadowing an aliased import",
+			src: `from eth_hash.main import Keccak256 as K
+
+
+class K:
+    pass
+
+
+def use(d):
+    return K(d)
+`,
+			wantPkg: "eth_hash.main", wantType: "Keccak256", wantName: constructorMethodName,
+		},
+		{
+			name: "UNALIASED module-level def shadow -- pre-existing, unchanged",
+			src: `from eth_hash.auto import keccak
+
+
+def keccak(x):
+    return x
+
+
+def use(d):
+    return keccak(d)
+`,
+			wantPkg: "eth_hash.auto", wantType: "", wantName: "keccak",
+		},
+	} {
+		fn := findPythonFuncByName(parsePythonInline(t, tc.src), "use")
+		if fn == nil {
+			t.Errorf("%s: use function not found", tc.name)
+			continue
+		}
+		if len(fn.Calls) == 0 {
+			t.Errorf("%s: no call emitted -- if module scope became visible, DELETE this test", tc.name)
+			continue
+		}
+		c := &fn.Calls[0]
+		if c.Callee.Package != tc.wantPkg || c.Callee.Type != tc.wantType || c.Callee.Name != tc.wantName {
+			t.Errorf("%s: got pkg=%q type=%q name=%q, want pkg=%q type=%q name=%q -- "+
+				"if the module-level shadow is now honored this is the GOOD "+
+				"direction: DELETE this test rather than adjusting it",
+				tc.name, c.Callee.Package, c.Callee.Type, c.Callee.Name,
+				tc.wantPkg, tc.wantType, tc.wantName)
+		}
+	}
+}
+
 // pythonCallKeys renders a decl's resolved callees, so a failure above names
 // what WAS produced instead of only what was expected.
 func pythonCallKeys(fn *FunctionDecl) string {
