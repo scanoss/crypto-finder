@@ -27,16 +27,10 @@ import (
 )
 
 // AlgorithmMapper converts cryptographic algorithm assets to CycloneDX components.
-type AlgorithmMapper struct {
-	oidMapper *OIDMapper
-}
+type AlgorithmMapper struct{}
 
 // NewAlgorithmMapper creates a new algorithm mapper.
-func NewAlgorithmMapper() *AlgorithmMapper {
-	return &AlgorithmMapper{
-		oidMapper: NewOIDMapper(),
-	}
-}
+func NewAlgorithmMapper() *AlgorithmMapper { return &AlgorithmMapper{} }
 
 // MapToComponentWithEvidence converts a cryptographic asset to a CycloneDX component
 // with support for new fields (executionEnvironment, implementationPlatform).
@@ -73,12 +67,10 @@ func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.Cryptograph
 		AlgorithmProperties: algorithmProps,
 	}
 
-	oid := asset.OID
-	if oid == "" {
-		oid = m.oidMapper.ResolveOID(asset)
-	}
-	if oid != "" {
-		cryptoProps.OID = oid
+	// Projection consumes the prepared OID; it never re-resolves a claim after
+	// the terminal disposition has deliberately omitted it.
+	if asset.OID != "" {
+		cryptoProps.OID = asset.OID
 	}
 
 	bomRef := generateBOMRef()

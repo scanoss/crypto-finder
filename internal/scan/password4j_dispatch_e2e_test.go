@@ -86,7 +86,7 @@ func TestStitch_RealParse_Password4j_PBKDF2ChainSurvivesDispatchDisambiguation(t
 	engine.EnsureFindingSources(report)
 	engine.AssignFindingIDs(report)
 
-	export := BuildGraphFragmentExport(&engine.DepScanResult{
+	export := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: password4jSourceDir,

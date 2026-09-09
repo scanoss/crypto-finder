@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 )
 
 // AggregatedAsset represents a cryptographic asset with all its occurrences and detection methods.
@@ -115,12 +116,22 @@ func NewAggregator() *Aggregator {
 // Assets are grouped such that multiple occurrences of the same crypto asset
 // (e.g., SHA-256 used in multiple files) are combined into a single aggregated entry.
 func (a *Aggregator) AggregateAssets(report *entities.InterimReport) ([]AggregatedAsset, error) {
+	return a.aggregateFindings(report.Findings)
+}
+
+// AggregateResolvedAssets reads an OID-resolved report without weakening it to
+// the raw interim type.
+func (a *Aggregator) AggregateResolvedAssets(report *oid.ResolvedReport) ([]AggregatedAsset, error) {
+	return a.aggregateFindings(report.Findings)
+}
+
+func (a *Aggregator) aggregateFindings(findings []entities.Finding) ([]AggregatedAsset, error) {
 	// Map to group assets by their unique key
 	assetMap := make(map[string]*AggregatedAsset)
 
 	// Iterate through all findings and assets
-	for i := range report.Findings {
-		finding := &report.Findings[i]
+	for i := range findings {
+		finding := &findings[i]
 
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]

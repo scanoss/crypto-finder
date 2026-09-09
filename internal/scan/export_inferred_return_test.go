@@ -55,7 +55,7 @@ func TestExportSchema_Is52(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-schema52.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -133,7 +133,7 @@ func TestExportFunctionMetadata_InferredReturnOmittedWhenNil(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-nil-inferred.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestExportFunctionMetadata_InferredReturnPopulated(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-inferred-populated.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -285,7 +285,7 @@ func TestExportFunctionMetadata_InferredReturnPopulated(t *testing.T) {
 		}
 
 		out2 := filepath.Join(t.TempDir(), "cg-join-failed.json")
-		if err := ExportCallGraph(out2, "json", res2); err != nil {
+		if err := exportCallGraph(out2, "json", res2); err != nil {
 			t.Fatalf("ExportCallGraph: %v", err)
 		}
 
@@ -347,7 +347,7 @@ func TestExportSchemaVersionIs53(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-schema53.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -433,7 +433,7 @@ func TestExportFunctionMetadata_SuppressesInferredReturnWhenEqualsDeclared(t *te
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-suppress-equal.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -543,7 +543,7 @@ func TestExportSourceNode_PopulatesCallTargetInferredReturn(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-call-target-inferred.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -647,7 +647,7 @@ func TestExportSourceNode_SuppressesCallTargetInferredReturnWhenEqualsDeclared(t
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-call-target-suppress.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -720,7 +720,7 @@ func TestExportFunctionMetadata_EmitsInferredReturnWhenDifferentFromDeclared(t *
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-emit-different.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 

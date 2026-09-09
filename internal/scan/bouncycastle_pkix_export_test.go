@@ -159,7 +159,7 @@ func TestBuildGraphFragmentExport_Issue185BouncyCastlePkixLifecycle(t *testing.T
 		},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 4 {
 		t.Fatalf("crypto_annotations = %#v, want 4 findings", payload.CryptoAnnotations)
 	}

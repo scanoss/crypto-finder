@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
@@ -47,25 +48,16 @@ func NewJSONWriter() *JSONWriter {
 	}
 }
 
-// Write writes the interim report to JSON format.
-//
-// Destination handling:
-//   - "" (empty) or "-": Write to stdout
-//   - file path: Write atomically with permissions 0600 (rw-------)
-//
-// If writing to a file:
-//   - File will be overwritten if it exists
-//   - Parent directories are created as needed
-func (w *JSONWriter) Write(report *entities.InterimReport, destination string) error {
+// WriteResolved serializes the resolved type-state.
+func (w *JSONWriter) WriteResolved(report *oid.ResolvedReport, destination string) error {
 	// Validate report
 	if report == nil {
 		return fmt.Errorf("output: report cannot be nil")
 	}
-
 	// Determine output destination
 	//nolint:nestif // Separate stdout and file paths are inherently nested
 	if destination == "" || destination == "-" {
-		if err := w.writeJSON(report, os.Stdout); err != nil {
+		if err := w.writeResolvedJSON(report, os.Stdout); err != nil {
 			return fmt.Errorf("output: failed to write JSON to stdout: %w", err)
 		}
 		// Add newline for better terminal output
@@ -81,7 +73,7 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 		}
 
 		if err := utils.WriteFileAtomic(absPath, 0o600, func(file *os.File) error {
-			return w.writeJSON(report, file)
+			return w.writeResolvedJSON(report, file)
 		}); err != nil {
 			return fmt.Errorf("output: failed to write JSON file: %w", err)
 		}
@@ -90,7 +82,7 @@ func (w *JSONWriter) Write(report *entities.InterimReport, destination string) e
 	return nil
 }
 
-func (w *JSONWriter) writeJSON(report *entities.InterimReport, dst io.Writer) error {
+func (w *JSONWriter) writeResolvedJSON(report *oid.ResolvedReport, dst io.Writer) error {
 	payload := *report
 	if payload.Findings == nil {
 		payload.Findings = []entities.Finding{}

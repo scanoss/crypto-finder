@@ -17,6 +17,8 @@
 package converter
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -68,7 +70,7 @@ func TestValidator_Validate(t *testing.T) {
 			// Load fixture and convert to BOM
 			report := loadFixture(t, tt.fixtureFile)
 			converter := NewConverter()
-			bom, err := converter.Convert(report)
+			bom, err := converter.Convert(preparedReport(t, report))
 			if err != nil {
 				t.Fatalf("Failed to convert fixture: %v", err)
 			}
@@ -87,6 +89,37 @@ func TestValidator_Validate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestValidator_ValidateJSONResolvesSchemaBundleOffline(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
+	previousNoProxy, hadNoProxy := os.LookupEnv("NO_PROXY")
+	t.Setenv("NO_PROXY", "")
+	if hadNoProxy {
+		t.Cleanup(func() { _ = os.Setenv("NO_PROXY", previousNoProxy) })
+	}
+
+	report := loadFixture(t, "algorithm_aes256_gcm.json")
+	bom, err := NewConverter().Convert(preparedReport(t, report))
+	if err != nil {
+		t.Fatalf("Convert() error = %v", err)
+	}
+	data, err := json.Marshal(bom)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := NewValidator().ValidateJSON(data); err != nil {
+		t.Fatalf("ValidateJSON() must not fetch schema references: %v", err)
+	}
+}
+
+func TestValidator_OfficialSchemaRejectsMalformedJSON(t *testing.T) {
+	validator := NewValidator()
+	if err := validator.ValidateJSON([]byte(`{"bomFormat":"CycloneDX","specVersion":"1.7","version":"not-a-number"}`)); err == nil {
+		t.Fatal("official CycloneDX 1.7 schema accepted an incomplete document")
 	}
 }
 
@@ -111,7 +144,7 @@ func TestValidator_ValidateStructure(t *testing.T) {
 			name: "Valid structure",
 			bom: &cdx.BOM{
 				BOMFormat:    "CycloneDX",
-				SpecVersion:  cdx.SpecVersion1_6,
+				SpecVersion:  cdx.SpecVersion1_7,
 				SerialNumber: "urn:uuid:test-123",
 				Version:      1,
 			},
@@ -121,7 +154,7 @@ func TestValidator_ValidateStructure(t *testing.T) {
 			name: "Invalid BOM format",
 			bom: &cdx.BOM{
 				BOMFormat:    "Invalid",
-				SpecVersion:  cdx.SpecVersion1_6,
+				SpecVersion:  cdx.SpecVersion1_7,
 				SerialNumber: "urn:uuid:test-123",
 				Version:      1,
 			},
@@ -143,7 +176,7 @@ func TestValidator_ValidateStructure(t *testing.T) {
 			name: "Missing serial number",
 			bom: &cdx.BOM{
 				BOMFormat:    "CycloneDX",
-				SpecVersion:  cdx.SpecVersion1_6,
+				SpecVersion:  cdx.SpecVersion1_7,
 				SerialNumber: "",
 				Version:      1,
 			},
@@ -154,7 +187,7 @@ func TestValidator_ValidateStructure(t *testing.T) {
 			name: "Invalid version",
 			bom: &cdx.BOM{
 				BOMFormat:    "CycloneDX",
-				SpecVersion:  cdx.SpecVersion1_6,
+				SpecVersion:  cdx.SpecVersion1_7,
 				SerialNumber: "urn:uuid:test-123",
 				Version:      0,
 			},
@@ -271,7 +304,7 @@ func TestValidator_ValidateComponent(t *testing.T) {
 					},
 				},
 				Evidence: &cdx.Evidence{
-					Identity: &[]cdx.EvidenceIdentity{
+					Identity: &cdx.EvidenceIdentityChoice{Identities: &[]cdx.EvidenceIdentity{
 						{
 							Confidence: func() *float32 {
 								value := float32(1)
@@ -288,7 +321,7 @@ func TestValidator_ValidateComponent(t *testing.T) {
 								},
 							},
 						},
-					},
+					}},
 				},
 			},
 			wantErr:     true,
@@ -452,6 +485,7 @@ func TestValidator_ValidatePrimitive(t *testing.T) {
 		cdx.CryptoPrimitiveKDF,
 		cdx.CryptoPrimitivePKE,
 		cdx.CryptoPrimitiveKEM,
+		cdx.CryptoPrimitiveKeyWrap,
 		cdx.CryptoPrimitiveDRBG,
 		cdx.CryptoPrimitiveOther,
 	}

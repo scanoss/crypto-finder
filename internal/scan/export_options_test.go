@@ -52,7 +52,7 @@ func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {
 			graph, projectRoot := buildSupportingGraph(t)
 			report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 			outputPath := filepath.Join(t.TempDir(), "callgraph.json")
-			if err := ExportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{
+			if err := exportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{
 				Report:      report,
 				CallGraph:   graph,
 				Ecosystem:   "java",
@@ -116,7 +116,7 @@ func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 			report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
 			outputPath := filepath.Join(t.TempDir(), "callgraph.json")
-			if err := ExportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{
+			if err := exportCallGraphWithOptions(outputPath, "json", &engine.DepScanResult{
 				Report:      report,
 				CallGraph:   graph,
 				Ecosystem:   "java",
@@ -176,10 +176,10 @@ func TestExportCallGraphWithOptions_InternedAndInlinedDescribeSameRoutes(t *test
 
 	internedPath := filepath.Join(t.TempDir(), "interned.json")
 	inlinedPath := filepath.Join(t.TempDir(), "inlined.json")
-	if err := ExportCallGraphWithOptions(inlinedPath, "json", result, CallGraphExportOptions{}); err != nil {
+	if err := exportCallGraphWithOptions(inlinedPath, "json", result, CallGraphExportOptions{}); err != nil {
 		t.Fatalf("inlined export: %v", err)
 	}
-	if err := ExportCallGraphWithOptions(internedPath, "json", result, CallGraphExportOptions{InternedFrames: true}); err != nil {
+	if err := exportCallGraphWithOptions(internedPath, "json", result, CallGraphExportOptions{InternedFrames: true}); err != nil {
 		t.Fatalf("interned export: %v", err)
 	}
 

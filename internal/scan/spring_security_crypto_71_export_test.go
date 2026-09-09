@@ -131,7 +131,7 @@ func TestBuildGraphFragmentExport_Issue182SpringSecurityCrypto71EncoderLifecycle
 		},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 3 {
 		t.Fatalf("crypto_annotations = %#v, want 3 findings", payload.CryptoAnnotations)
 	}

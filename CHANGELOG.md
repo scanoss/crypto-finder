@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- CycloneDX CBOM output now declares and validates schema 1.7, including the `key-wrap` primitive. Exact registered OIDs are shared by interim JSON, CBOM, graph fragments, annotations, and callgraph matched operations; ambiguous family and branch identifiers are omitted.
+
 ### Fixed
 - A Rust crate root that writes `pub use crate::x::*;` now re-exports that module, as `pub use self::x::*;` and the 2015-edition `pub use x::*;` already did. Every item of a crate written the third way previously kept the declaring module's segment, so its synthesized API entry-point FQN carried an extra path component, matched no rule `api`, and the crate scanned as zero-finding. Measured on rusoto_kms, four of whose 26 published versions are written that way: 0.39.0 through 0.42.0 produced 0 entry points against 6 for the 0.38.0 immediately before them, and produce 6 with the fix. The `crate::` form is accepted at the crate root only — from a nested `mod.rs` it names a top-level module rather than a child, and treating it as one would strip a segment other crates' items legitimately carry.
 

@@ -27,10 +27,20 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
+
+func mustPrepareOIDReport(t testing.TB, report *entities.InterimReport) *oid.ResolvedReport {
+	t.Helper()
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		t.Fatalf("prepare OID report: %v", err)
+	}
+	return prepared.ReportClone()
+}
 
 func TestEcosystemFromHints_C(t *testing.T) {
 	if got := ecosystemFromHints(t.TempDir(), []string{"c"}); got != "c" {
@@ -433,7 +443,7 @@ func Encrypt(key []byte) error {
 	engine.AssignFindingIDs(report)
 
 	out := filepath.Join(t.TempDir(), "callgraph.json")
-	if err := scanutil.ExportCallGraph(out, "json", result); err != nil {
+	if err := scanutil.ExportCallGraph(out, "json", result, mustPrepareOIDReport(t, report)); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 

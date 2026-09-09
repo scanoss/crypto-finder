@@ -59,7 +59,7 @@ func TestMinePathFragment_StructuralCompleteness(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			payload := BuildGraphFragmentExport(tc.result)
+			payload := buildGraphFragmentExport(tc.result)
 			assertFragmentStructuralCompleteness(t, &payload)
 		})
 	}
@@ -67,7 +67,7 @@ func TestMinePathFragment_StructuralCompleteness(t *testing.T) {
 
 func assertMinePathFragmentMatchesOracle(t *testing.T, result *engine.DepScanResult) {
 	t.Helper()
-	got := BuildGraphFragmentExport(result)
+	got := buildGraphFragmentExport(result)
 	ctx := newExportBuildContext(result)
 	wantAnn, wantSupp, wantEntry := oracleMinePathFragmentCrypto(ctx, result)
 

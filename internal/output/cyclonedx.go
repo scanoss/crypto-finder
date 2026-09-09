@@ -26,12 +26,12 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/converter"
-	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // CycloneDXWriter implements the Writer interface for CycloneDX CBOM format.
-// It converts interim format to CycloneDX 1.6 CBOM and validates the output.
+// It converts interim format to CycloneDX 1.7 CBOM and validates the output.
 type CycloneDXWriter struct {
 	// PrettyPrint enables indented formatting. Default: true
 	PrettyPrint bool
@@ -52,22 +52,8 @@ func NewCycloneDXWriter() *CycloneDXWriter {
 	}
 }
 
-// Write converts the interim report to CycloneDX CBOM format and writes it.
-//
-// The conversion process:
-// 1. Transforms interim format to CycloneDX 1.6 BOM
-// 2. Applies strict mapping (skips incomplete assets)
-// 3. Validates against CycloneDX 1.6 schema
-// 4. Writes to destination (stdout or file)
-//
-// Destination handling:
-//   - "" (empty) or "-": Write to stdout
-//   - file path: Write atomically with permissions 0600 (rw-------)
-//
-// If writing to a file:
-//   - File will be overwritten if it exists
-//   - Parent directories are created as needed
-func (w *CycloneDXWriter) Write(report *entities.InterimReport, destination string) error {
+// WriteResolved converts an already prepared report to CycloneDX.
+func (w *CycloneDXWriter) WriteResolved(report *oid.ResolvedReport, destination string) error {
 	// Validate report
 	if report == nil {
 		return fmt.Errorf("report cannot be nil")

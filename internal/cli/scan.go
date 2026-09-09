@@ -36,11 +36,11 @@ import (
 	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/language"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
@@ -499,6 +499,21 @@ func buildStandaloneCallGraphResultForEcosystem(target string, report *entities.
 		Ecosystem:   ecosystem,
 		ProjectRoot: targetDir,
 	}, nil
+}
+
+// prepareScanOIDProjection returns the only report used by OID projections.
+// All mutable finding identity and output-version state is finalized first.
+func prepareScanOIDProjection(report *entities.InterimReport, assignFindingIDs bool) (*oid.ResolvedReport, error) {
+	engine.EnsureFindingSources(report)
+	if assignFindingIDs {
+		engine.AssignFindingIDs(report)
+	}
+	report.Version = entities.InterimFormatVersion
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		return nil, err
+	}
+	return prepared.ReportClone(), nil
 }
 
 // prepareReportOccurrenceKeys reuses source-only callgraphs for normal findings
@@ -1140,14 +1155,17 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
-	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
+	// Finalize all non-OID report metadata before preparation. The resolved
+	// object below is the sole report passed to OID-consuming projections.
+	needsFindingIDs := scanExportCallgraph != "" || scanExportGraphFragment != ""
+	if needsFindingIDs {
 		engine.AssignFindingIDs(report)
-		if callGraphResult != nil {
-			callGraphResult.Report = report
-		}
 	}
-
 	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, callGraphResult)
+	resolved, err := prepareScanOIDProjection(report, false)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeUnknown, failure.StageScan, "prepare exact OID report")
+	}
 
 	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
 		if err := startExport(); err != nil {
@@ -1161,7 +1179,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Str("file", scanExportCallgraph).
 			Str("format", scanExportCgFormat).
 			Msg("Starting call graph export")
-		if exportErr := scanutil.ExportCallGraphWithOptions(scanExportCallgraph, scanExportCgFormat, callGraphResult, scanutil.CallGraphExportOptions{
+		if exportErr := scanutil.ExportResolvedCallGraph(scanExportCallgraph, scanExportCgFormat, callGraphResult, resolved, scanutil.CallGraphExportOptions{
 			MaxChains:             scanExportCallgraphMaxChains,
 			OmitCryptoEntryPoints: !scanExportEntryPoints,
 			InternedFrames:        scanExportInternedFrames,
@@ -1185,7 +1203,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Str("file", scanExportGraphFragment).
 			Str("format", scanExportGfFormat).
 			Msg("Starting graph fragment export")
-		if exportErr := scanutil.ExportGraphFragment(scanExportGraphFragment, scanExportGfFormat, callGraphResult); exportErr != nil {
+		if exportErr := scanutil.ExportResolvedGraphFragment(scanExportGraphFragment, scanExportGfFormat, callGraphResult, resolved); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,
 				failure.CodeCallGraphExportFailed,
@@ -1212,16 +1230,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
-	report.Version = entities.InterimFormatVersion
-
-	oidEnricher := enricher.NewOIDEnricher()
-	oidStart := time.Now()
-	log.Info().Msg("Starting OID enrichment")
-	oidEnricher.EnrichReport(report)
-	log.Info().
-		Dur("duration", time.Since(oidStart)).
-		Msg("OID enrichment finished")
-
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter(scanFormat)
 	if err != nil {
@@ -1239,21 +1247,20 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		Str("destination", scanOutput).
 		Str("format", scanFormat).
 		Msg("Writing scan output")
-	if err := writer.Write(report, scanOutput); err != nil {
-		return failure.WrapUnknown(
-			err,
-			failure.CodeOutputWriteFailed,
-			failure.StageOutput,
-			"failed to write output",
-		)
+	writeErr := writer.WriteResolved(resolved, scanOutput)
+	if writeErr != nil {
+		return failure.WrapUnknown(writeErr, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write output")
 	}
 	log.Info().
 		Str("destination", scanOutput).
 		Dur("duration", time.Since(writeStart)).
 		Msg("Scan output write complete")
 
-	findingsCount := scanutil.CountFindings(report)
-	filesCount := len(report.Findings)
+	findingsCount := 0
+	for _, finding := range resolved.Findings {
+		findingsCount += len(finding.CryptographicAssets)
+	}
+	filesCount := len(resolved.Findings)
 
 	if normalizedErrorOutputFormat() != formatJSON {
 		err = scanutil.PrintSummary(scanOutput, filesCount, findingsCount)

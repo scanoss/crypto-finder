@@ -100,7 +100,7 @@ func TestResolvedKeyLength_JavaFixtureParserToLiveAndStitchedExports(t *testing.
 		assertSupportingKeyLength(t, live, finding.FindingID, expected.initLine, expected.provenance, expected.bits, expected.wantAbsent)
 	}
 
-	fragmentExport := BuildGraphFragmentExport(result)
+	fragmentExport := buildGraphFragmentExport(result)
 	fragmentBytes, err := json.Marshal(fragmentExport)
 	if err != nil {
 		t.Fatalf("json.Marshal fragment: %v", err)
@@ -110,7 +110,7 @@ func TestResolvedKeyLength_JavaFixtureParserToLiveAndStitchedExports(t *testing.
 	if err != nil {
 		t.Fatalf("DecodeFragment: %v", err)
 	}
-	annotated := BuildAnnotateExport(report, fragment)
+	annotated := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 	for i := range report.Findings[0].CryptographicAssets {
 		finding := &report.Findings[0].CryptographicAssets[i]
 		expected := want[finding.StartLine]

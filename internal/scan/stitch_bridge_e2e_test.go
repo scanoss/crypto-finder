@@ -43,7 +43,7 @@ func buildModuleFragmentFor(
 	if report == nil {
 		report = &entities.InterimReport{}
 	}
-	export := BuildGraphFragmentExport(&engine.DepScanResult{
+	export := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: importPath, Ecosystem: ecosystem,
 	})
 	raw, err := json.Marshal(export)
