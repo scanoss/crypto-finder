@@ -1,0 +1,305 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: eth-hash
+  coordinates:
+    - eth-hash
+    - eth_hash
+  version_range: ">=0.1.0a3,<0.9"
+  description: >-
+    eth-hash lifecycle contracts - the Keccak-256 one-shot digest, the
+    incremental preimage hasher, the explicit-backend Keccak256 hasher and the
+    two backend modules' own keccak256/preimage handles. Authored against
+    eth-hash 0.8.0 and cross-checked against ALL 22 committed CSV sdists
+    (0.1.0a2 through 0.8.0b1).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THESE KEYS WERE OBTAINED, AND WHY THEY ARE NOT THE RULES' `api` VALUES.
+#
+# Every key below was read off an EXPORTED CALL GRAPH, never written from the
+# API, and re-exported after each edit until nothing moved:
+#
+#   crypto-finder scan --no-remote-rules --rules-dir <rules> --languages python \
+#     --export-callgraph /tmp/cg.json <a probe consumer package>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# For Python the emitted key is the CONSUMER'S IMPORT PATH, dots throughout,
+# with no module/type separator rewrite; the Rust `rustAuthoredKey` "::"
+# substitution is reached only from `rustContractsFor` and must not be copied
+# here.
+#
+# THE IMPORT SPELLING DECIDES THE KEY, SO SEVERAL SPELLINGS OF ONE CALLABLE
+# NEED SEVERAL ENTRIES. Measured on this library, one call per line, with
+# crypto-finder built from the branch under test:
+#
+#   from eth_hash import Keccak256;      Keccak256(b)  -> eth_hash.Keccak256.<init>
+#   import eth_hash;          eth_hash.Keccak256(b)   -> eth_hash.Keccak256
+#   from eth_hash.main import Keccak256; Keccak256(b)  -> eth_hash.main.Keccak256.<init>
+#   import eth_hash.main; eth_hash.main.Keccak256(b)  -> eth_hash.main.Keccak256
+#
+# The `<init>` suffix appears for the from-import spelling and NOT for the
+# module-path-qualified spelling, so both forms of both paths are declared.
+# `python/ecdsa` already carries the same pair for `ecdsa.ECDH`.
+#
+# ONE KNOWN GAP, MEASURED AND STATED RATHER THAN PAPERED OVER: an ALIASED
+# from-import emits the LOCAL ALIAS as the key's last segment --
+# `from eth_hash.auto import keccak as kek; kek(d)` emits `eth_hash.auto.kek`,
+# and `from eth_hash.main import Keccak256 as K; K(b)` emits
+# `eth_hash.main.K.<init>`. No contract can enumerate a consumer's aliases, so
+# an aliased call site is detected by the RULES (which do resolve the alias)
+# and joins no contract entry. tronpytool 3.6.82 writes exactly this shape
+# (tronpytool/trx.py:637,:733). Reported as a crypto-finder resolver finding;
+# it is a general Python behavior and not specific to this library.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-SYMBOL VERSION WINDOWS. `library.version_range` spans the whole matrix
+# from the first release that has any API; each symbol's own window is narrower
+# and is stated on its entry. Derived by parsing every `def`, `class` and
+# module-level assignment out of all 22 committed sdists, not from the docs.
+#
+#   0.1.0a2  ships an EMPTY eth_hash/__init__.py and NO other module. The
+#            package has no API whatsoever, which is why the range starts at
+#            0.1.0a3 and not at the matrix's oldest row.
+#   0.1.0a3  Keccak256 (__init__/__call__), auto.keccak, both backends'
+#            free-function keccak256.
+#   0.1.0a4  Keccak256.new arrives, with main.PreImage as its return.
+#   0.1.1    eth_hash/preimage.py arrives; both backends gain a `preimage`
+#            CLASS of that name; the declared return becomes BasePreImage.
+#   0.1.2    eth_hash/backends/auto.py and AutoBackend arrive.
+#   0.3.0    eth_hash/abc.py arrives with BackendAPI/PreImageAPI; the backends
+#            are rewritten as CryptodomeBackend/PySha3Backend classes and each
+#            module gains a `backend` singleton plus keccak256/preimage aliases
+#            of its bound methods. This is the shape 13 of the 22 releases have.
+#   0.6.0    __version__ is added. No API change.
+#   0.7.1    first PEP 625 sdist filename (eth_hash-0.7.1.tar.gz). Packaging
+#            only; no API change.
+#
+# THE PREIMAGE RETURN TYPE IS DECLARED FOR THE 0.3.0+ ERA. The annotation is
+# `eth_hash.abc.PreImageAPI` in 0.3.0-0.8.0; it was `eth_hash.preimage.BasePreImage`
+# in 0.1.1-0.2.0 and `eth_hash.main.PreImage` in 0.1.0a4-0.1.0. A divergent
+# return on one (method, arity) key is a hard load error, so one value is
+# declared -- the current era's -- and the two earlier names are recorded here.
+# The concrete classes in every era implement the same three-method protocol,
+# so the update/digest/copy entries below hold across all of them.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# API AUDIT. Disposition legend: contracted | skipped-non-crypto |
+# skipped-unsupported.
+#
+# eth_hash.main.Keccak256 (eth_hash/main.py)
+#   <init>(backend)     contracted (factory)   -> Keccak256
+#   __call__(preimage)  contracted (operation) -> builtins.bytes  (the emitted
+#                         key for `h = Keccak256(b); h(d)` -- see the
+#                         Keccak256.__call__ entry)
+#   new(preimage)       contracted (factory)   -> PreImageAPI     (>=0.1.0a4)
+#   _hasher_first_run / _preimage_first_run
+#                       skipped-non-crypto     - private first-run trampolines
+#                         that rebind self.hasher (main.py:13-37 at 0.8.0)
+#
+# eth_hash.auto (eth_hash/auto.py)
+#   keccak              contracted (operation) -> builtins.bytes. A MODULE-LEVEL
+#                         Keccak256 INSTANCE, not a function: auto.py:8 binds
+#                         `keccak = Keccak256(AutoBackend())`. A consumer calls
+#                         it directly, so the emitted key is
+#                         `eth_hash.auto.keccak` and `eth_hash.auto.keccak.new`.
+#
+# eth_hash.abc.PreImageAPI (eth_hash/abc.py, >=0.3.0)
+#   update(value)       contracted (operation) -> builtins.NoneType
+#   digest()            contracted (output)    -> builtins.bytes
+#   copy()              contracted (factory)   -> PreImageAPI
+#   __init__(value)     skipped-unsupported    - the abstract base's own
+#                         constructor is never the consumer's callee; the
+#                         concrete Cryptodome/Pysha3 preimages are reached only
+#                         through a factory, never named by a consumer.
+#
+# eth_hash.backends.pycryptodome / .pysha3 (eth_hash/backends/*.py)
+#   keccak256(prehash)  contracted (operation) -> builtins.bytes
+#   preimage(prehash)   contracted (factory)   -> PreImageAPI      (>=0.1.1)
+#   backend             contracted via `backend.keccak256` /
+#                         `backend.preimage` (>=0.3.0)
+#   CryptodomeBackend / PySha3Backend / CryptodomePreimage / Pysha3Preimage
+#                       skipped-non-crypto     - constructing a backend
+#                         computes nothing; the crypto is the keccak256 and
+#                         preimage handles, which are contracted above
+#
+# eth_hash.utils, eth_hash.backends.auto, eth_hash.backends.SUPPORTED_BACKENDS
+#   auto_choose_backend / get_backend_in_environment / load_backend /
+#   load_environment_backend / choose_available_backend / AutoBackend
+#                       skipped-non-crypto     - backend SELECTION. These pick
+#                         which library hashes and hash nothing themselves
+#                         (utils.py:13-74, backends/auto.py:10-24 at 0.8.0).
+#
+# eth_hash.backends.pysha3._keccak_256, eth_hash.backends.pycryptodome.keccak
+#                       skipped-non-crypto HERE - these are the BACKENDS'
+#                         symbols (`sha3.keccak_256`, `Crypto.Hash.keccak`).
+#                         pycryptodome and pycryptodomex are separate merged
+#                         families; claiming their calls under eth-hash would
+#                         be a wrong-package attribution.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── The documented one-shot digest. auto.py:8 at 0.8.0 (and at 0.1.0a3).
+  # >=0.1.0a3.
+  - method: eth_hash.auto.keccak
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── The incremental factory reached through the auto instance. main.py:48 at
+  # 0.8.0. >=0.1.0a4.
+  - method: eth_hash.auto.keccak.new
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  # ── Explicit-backend construction. Four keys for one class: two import paths
+  # (the __init__.py re-export and the defining module) times two spellings
+  # (from-import, which emits <init>, and module-qualified, which does not).
+  # main.py:7 and __init__.py:5-7 at 0.8.0. >=0.1.0a3.
+  - method: eth_hash.Keccak256.<init>
+    arity: 1
+    parameter_types: ["eth_hash.abc.BackendAPI"]
+    canonical_return_type: eth_hash.main.Keccak256
+    return: { type: eth_hash.main.Keccak256, confidence: high }
+    role: factory
+
+  - method: eth_hash.Keccak256
+    arity: 1
+    parameter_types: ["eth_hash.abc.BackendAPI"]
+    canonical_return_type: eth_hash.main.Keccak256
+    return: { type: eth_hash.main.Keccak256, confidence: high }
+    role: factory
+
+  - method: eth_hash.main.Keccak256.<init>
+    arity: 1
+    parameter_types: ["eth_hash.abc.BackendAPI"]
+    canonical_return_type: eth_hash.main.Keccak256
+    return: { type: eth_hash.main.Keccak256, confidence: high }
+    role: factory
+
+  - method: eth_hash.main.Keccak256
+    arity: 1
+    parameter_types: ["eth_hash.abc.BackendAPI"]
+    canonical_return_type: eth_hash.main.Keccak256
+    return: { type: eth_hash.main.Keccak256, confidence: high }
+    role: factory
+
+  # ── Calling an explicitly-constructed hasher. main.py:39 at 0.8.0,
+  # main.py:7 at 0.1.0a3. >=0.1.0a3.
+  - method: eth_hash.main.Keccak256.__call__
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── The incremental factory on an explicitly-constructed hasher.
+  # main.py:48 at 0.8.0. >=0.1.0a4.
+  - method: eth_hash.main.Keccak256.new
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  # ── The preimage protocol. abc.py:7-22 at 0.8.0 declares all three; the
+  # concrete Cryptodome/Pysha3 implementations are at
+  # backends/pycryptodome.py:23-31 and backends/pysha3.py:15-24. No RULE
+  # anchors these names -- `update` and `digest` are already anchored by four
+  # other merged python families and a bare or tainted sink here would be a
+  # pure liability with zero measured call sites. They are contracted so the
+  # graph can resolve them from the factory's declared return type instead.
+  # >=0.3.0 under this key; the same three methods exist under
+  # eth_hash.preimage.BasePreImage (0.1.1-0.2.0) and eth_hash.main.PreImage
+  # (0.1.0a4-0.1.0).
+  - method: eth_hash.abc.PreImageAPI.update
+    arity: 1
+    parameter_types: ["builtins.bytes"]
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  - method: eth_hash.abc.PreImageAPI.digest
+    arity: 0
+    parameter_types: []
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: eth_hash.abc.PreImageAPI.copy
+    arity: 0
+    parameter_types: []
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  # ── The pycryptodome backend module's own handles. These are eth-hash's
+  # module attributes, not pycryptodome's API: a free function at
+  # backends/pycryptodome.py:6 in 0.1.0a3, an alias of the bound method at :44
+  # in 0.8.0. >=0.1.0a3.
+  - method: eth_hash.backends.pycryptodome.keccak256
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # backends/pycryptodome.py:45 at 0.8.0. >=0.1.1.
+  - method: eth_hash.backends.pycryptodome.preimage
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  # The `backend` singleton spelling. backends/pycryptodome.py:43 binds it and
+  # utils.py:31 reads it, so it is the canonical public handle. >=0.3.0.
+  - method: eth_hash.backends.pycryptodome.backend.keccak256
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  - method: eth_hash.backends.pycryptodome.backend.preimage
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  # ── The pysha3 backend module, same four handles. backends/pysha3.py:6 in
+  # 0.1.0a3, :35-37 in 0.8.0.
+  - method: eth_hash.backends.pysha3.keccak256
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  - method: eth_hash.backends.pysha3.preimage
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
+
+  - method: eth_hash.backends.pysha3.backend.keccak256
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  - method: eth_hash.backends.pysha3.backend.preimage
+    arity: 1
+    parameter_types: ["typing.Union[bytearray, bytes]"]
+    canonical_return_type: eth_hash.abc.PreImageAPI
+    return: { type: eth_hash.abc.PreImageAPI, confidence: high }
+    role: factory
