@@ -323,7 +323,7 @@ func TestNonContractedFluentChain_InlineComment_DoesNotLeakIntoSignatures(t *tes
 	// Export-level: the graph-fragment external calls (the mine-path surface
 	// where the leak was observed) must not carry comment tokens or newlines
 	// in their emitted names/signatures.
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:    &entities.InterimReport{},
 		CallGraph: graph,
 		Ecosystem: "java",

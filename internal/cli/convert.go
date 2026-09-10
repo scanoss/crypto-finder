@@ -35,7 +35,7 @@ var convertOutput string
 var convertCmd = &cobra.Command{
 	Use:   "convert [input-file]",
 	Short: "Convert interim JSON format to CycloneDX CBOM",
-	Long: `Convert crypto-finder interim format to CycloneDX 1.6 CBOM format.
+	Long: `Convert crypto-finder interim format to CycloneDX 1.7 CBOM format.
 
 The convert command transforms scan results from the interim JSON format to
 CycloneDX CBOM (Cryptography Bill of Materials) format. It applies strict
@@ -51,7 +51,7 @@ Output Destinations:
   - File: --output cbom.json
 
 Validation:
-  The converter always validates output against CycloneDX 1.6 schema.
+  The converter always validates output against CycloneDX 1.7 schema.
   Conversion fails if the generated CBOM is invalid.
 
 Examples:
@@ -138,8 +138,13 @@ func runConvert(_ *cobra.Command, args []string) error {
 		Msg("Interim format parsed successfully")
 
 	oidEnricher := enricher.NewOIDEnricher()
-	oidEnricher.EnrichReport(&report)
-
+	prepared, err := oidEnricher.PrepareReport(&report)
+	if err != nil {
+		return fmt.Errorf("prepare exact OID report: %w", err)
+	}
+	if prepared == nil {
+		return fmt.Errorf("prepare exact OID report: nil report")
+	}
 	// Convert to CycloneDX using the writer
 	factory := output.NewWriterFactory()
 	writer, err := factory.GetWriter("cyclonedx")
@@ -153,8 +158,8 @@ func runConvert(_ *cobra.Command, args []string) error {
 		outputDest = "-" // stdout
 	}
 
-	// Perform conversion and write
-	if err := writer.Write(&report, outputDest); err != nil {
+	// Perform conversion and write.
+	if err := writer.WriteResolved(prepared.ReportClone(), outputDest); err != nil {
 		return fmt.Errorf("conversion failed: %w", err)
 	}
 

@@ -57,7 +57,7 @@ func TestBuildGraphFragmentExport_ResolvesSelectorThroughWrapperAndReturn(t *tes
 		},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 2 {
 		t.Fatalf("crypto annotations = %#v", payload.CryptoAnnotations)
 	}
@@ -93,7 +93,7 @@ func TestBuildGraphFragmentExport_LeavesAmbiguousSelectorUnresolved(t *testing.T
 	}}
 	report := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "DigestFlow.java", Language: "java", CryptographicAssets: []entities.CryptographicAsset{{FindingID: "digest-dynamic", StartLine: 31, EndLine: 31, Match: "MessageDigest.getInstance(algorithm)", Rules: []entities.RuleInfo{{ID: "java.digest.dynamic"}}, Metadata: map[string]string{"api": "java.security.MessageDigest.getInstance"}}}}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 1 || payload.CryptoAnnotations[0].CryptoCall == nil {
 		t.Fatalf("crypto annotations = %#v", payload.CryptoAnnotations)
 	}

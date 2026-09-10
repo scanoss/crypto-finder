@@ -52,7 +52,7 @@ func buildPythonModuleFragment(t *testing.T, file, src string, report *entities.
 	engine.EnsureFindingSources(report)
 	engine.AssignFindingIDs(report)
 
-	return BuildGraphFragmentExport(&engine.DepScanResult{
+	return buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: dir,

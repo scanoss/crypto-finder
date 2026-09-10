@@ -80,7 +80,7 @@ func TestJcaKeygenKeyLength_EntryPointsResolveConstantBits(t *testing.T) {
 
 	live := buildCallGraphExportV2(result)
 
-	fragmentBytes, err := json.Marshal(BuildGraphFragmentExport(result))
+	fragmentBytes, err := json.Marshal(buildGraphFragmentExport(result))
 	if err != nil {
 		t.Fatalf("json.Marshal fragment: %v", err)
 	}

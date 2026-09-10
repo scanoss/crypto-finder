@@ -122,7 +122,7 @@ func TestAssignOccurrenceKeys_TopLevelFallbackPropagatesToExports(t *testing.T) 
 	}
 	key := callgraphExport.FindingGraphs[0].OccurrenceKey
 
-	fragmentExport := BuildGraphFragmentExport(result)
+	fragmentExport := buildGraphFragmentExport(result)
 	if got := fragmentExport.CryptoAnnotations[0].OccurrenceKey; got != key {
 		t.Fatalf("graph-fragment occurrence_key = %q, want %q", got, key)
 	}

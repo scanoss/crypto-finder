@@ -68,7 +68,7 @@ func TestBuildGraphFragmentExport13_DerivesSupportingCallsFromObjectLifecycle(t 
 		}},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:     report,
 		CallGraph:  graph,
 		RootModule: "com.acme:digest-app",
@@ -147,7 +147,7 @@ func TestBuildGraphFragmentExport_Issue138ExportsXMLCipherLifecycle(t *testing.T
 		}},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 1 {
 		t.Fatalf("crypto_annotations = %#v, want one finding", payload.CryptoAnnotations)
 	}

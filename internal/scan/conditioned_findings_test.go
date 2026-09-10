@@ -88,7 +88,7 @@ func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
 		asset := &report.Findings[0].CryptographicAssets[i]
 		asset.FindingID = asset.Rules[0].ID
 	}
-	fragment := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	fragment := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	for entryID, wantFinding := range map[string]string{
 		firstID.String():  "java.pgp.aes128",
 		secondID.String(): "java.pgp.des",

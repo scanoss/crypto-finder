@@ -52,7 +52,7 @@ func TestBuildGraphFragmentExport_CarriesResolvedReceiverType(t *testing.T) {
 	}
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), ifaceID.String(), res)] = res
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
 	edge := findInternalEdge(&payload, callerID.String(), ifaceID.String())
 	if edge == nil {
@@ -165,7 +165,7 @@ func TestBuildGraphFragmentExport_OmitsResolvedReceiverTypeWhenUnresolved(t *tes
 	}
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), ifaceID.String(), res)] = res
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
 	edge := findInternalEdge(&payload, callerID.String(), ifaceID.String())
 	if edge == nil {

@@ -20,6 +20,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
@@ -31,6 +32,7 @@ const (
 	// --export-callgraph CLI path and the stitch path (ToCallgraphExport) always
 	// stamp the same schema_version — single source of truth, no drift.
 	callGraphSchemaVersion         = graphfrag.CallgraphSchemaVersion
+	callGraphJSONFormat            = "json"
 	matchedOperationCall           = "call"
 	sourceNodeTypeParameter        = "PARAMETER"
 	sourceNodeTypeValue            = "VALUE"
@@ -233,6 +235,9 @@ type exportTypeRef struct {
 type callGraphMatchedOperation struct {
 	Kind   string `json:"kind"`
 	Symbol string `json:"symbol,omitempty"`
+	// OID is the prepared exact algorithm identity. It is intentionally kept on
+	// the finding operation, not inferred by this exporter or a callgraph node.
+	OID string `json:"oid,omitempty"`
 	// DisplaySymbol is the customer-facing symbol, with constructor aliases
 	// (ClassName.ClassName). Derived from Symbol; empty for non-constructors.
 	DisplaySymbol string `json:"display_symbol,omitempty"`
@@ -389,19 +394,75 @@ type CallGraphExportOptions struct {
 }
 
 // ExportCallGraph writes the current finding-centric callgraph export.
-func ExportCallGraph(path, format string, result *engine.DepScanResult) error {
-	return ExportCallGraphWithOptions(path, format, result, CallGraphExportOptions{})
+// ExportCallGraph writes an OID-prepared callgraph projection.
+func ExportCallGraph(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
+	return ExportCallGraphWithOptions(path, format, result, report, CallGraphExportOptions{})
 }
 
-// ExportCallGraphWithMaxChains writes the callgraph export using maxChains as
-// the per-finding emit budget. A maxChains of 0 uses the default of 128.
-func ExportCallGraphWithMaxChains(path, format string, result *engine.DepScanResult, maxChains int) error {
-	return ExportCallGraphWithOptions(path, format, result, CallGraphExportOptions{MaxChains: maxChains})
+// exportCallGraph is the raw fixture helper; production must use ExportCallGraph.
+func exportCallGraph(path, format string, result *engine.DepScanResult) error {
+	return exportCallGraphWithOptions(path, format, result, CallGraphExportOptions{})
+}
+
+// ExportResolvedCallGraph is the OID-safe projection entry point used by
+// commands. It keeps the prepared type-state at the public seam while the
+// legacy result-shaped helper remains available for non-OID fixture plumbing.
+func ExportResolvedCallGraph(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) error {
+	if report == nil {
+		return fmt.Errorf("cannot export call graph: resolved report is nil")
+	}
+	if result == nil {
+		return fmt.Errorf("cannot export call graph: dep scan result is nil")
+	}
+	return exportResolvedCallGraphProjection(path, format, result, report, options)
 }
 
 // ExportCallGraphWithOptions writes the callgraph export with explicit
 // optional-section and per-finding controls.
-func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
+func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) error {
+	return ExportResolvedCallGraph(path, format, result, report, options)
+}
+
+// exportResolvedCallGraphProjection is a pure projection from ResolvedReport.
+func exportResolvedCallGraphProjection(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) error {
+	if result.CallGraph == nil {
+		return fmt.Errorf("cannot export call graph: result.CallGraph is nil")
+	}
+	if format != callGraphJSONFormat {
+		return fmt.Errorf("unsupported call graph format %q (supported: "+callGraphJSONFormat+")", format)
+	}
+	payload, err := buildResolvedCallGraphExportV2ToFile(path, result, report, options)
+	if err != nil {
+		return err
+	}
+	log.Info().Str("file", path).Int("findings", len(payload.FindingGraphs)).Msg("Exported resolved integration call graph")
+	return nil
+}
+
+func buildResolvedCallGraphExportV2ToFile(path string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) (callGraphExportV2, error) {
+	ctx := newExportBuildContextWithFindings(result, report.Findings, options.MaxChains)
+	assets := callGraphExportAssetsFromFindings(report.Findings)
+	meta := buildResolvedCallGraphExportScanMeta(result, report)
+	var streamed streamedCallGraphExport
+	if err := utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		bw := bufio.NewWriterSize(file, 1<<20)
+		writer := graphFragmentJSONWriter{w: bw}
+		var writeErr error
+		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta, options)
+		return finishBufferedOutput(bw, writeErr)
+	}); err != nil {
+		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
+	}
+	return callGraphExportV2{SchemaVersion: graphfrag.CallgraphExportSchemaVersion(options.InternedFrames), ScanMetadata: meta, FindingGraphs: make([]callGraphExportFinding, len(assets)), Functions: streamed.functions, SupportingCalls: streamed.supportingCalls, CryptoEntryPoints: streamed.entryPoints}, nil
+}
+
+func exportCallGraphWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
+	AssignOccurrenceKeys(result)
+	return exportCallGraphProjectionWithOptions(path, format, result, options)
+}
+
+// exportCallGraphProjectionWithOptions reads a finalized report without modifying it.
+func exportCallGraphProjectionWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
 	if result == nil {
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
 	}
@@ -411,11 +472,10 @@ func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResul
 	if result.Report == nil {
 		return fmt.Errorf("cannot export call graph: result.Report is nil")
 	}
-	if format != "json" {
-		return fmt.Errorf("unsupported call graph format %q (supported: json)", format)
+	if format != callGraphJSONFormat {
+		return fmt.Errorf("unsupported call graph format %q (supported: "+callGraphJSONFormat+")", format)
 	}
 
-	AssignOccurrenceKeys(result)
 	exportStart := time.Now()
 	totalAssets := countExportFindingAssets(result.Report)
 	log.Info().
@@ -675,8 +735,12 @@ func callGraphExportAssets(report *entities.InterimReport) []callGraphExportAsse
 	if report == nil {
 		return nil
 	}
+	return callGraphExportAssetsFromFindings(report.Findings)
+}
+
+func callGraphExportAssetsFromFindings(findings []entities.Finding) []callGraphExportAsset {
 	var assets []callGraphExportAsset
-	for _, finding := range report.Findings {
+	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			assets = append(assets, callGraphExportAsset{finding: finding, asset: finding.CryptographicAssets[i]})
 		}
@@ -693,6 +757,12 @@ func sortedSupportingCalls(values map[string]callGraphSupportingCall) []callGrap
 		return out[i].SupportingID < out[j].SupportingID
 	})
 	return out
+}
+
+func buildResolvedCallGraphExportScanMeta(result *engine.DepScanResult, report *oid.ResolvedReport) callGraphExportScanMeta {
+	meta := buildCallGraphExportScanMeta(result)
+	meta.ToolName, meta.ToolVersion = report.Tool.Name, report.Tool.Version
+	return meta
 }
 
 func buildCallGraphExportScanMeta(result *engine.DepScanResult) callGraphExportScanMeta {
@@ -1438,6 +1508,14 @@ func newExportBuildContext(result *engine.DepScanResult) *exportBuildContext {
 }
 
 func newExportBuildContextWithMaxChains(result *engine.DepScanResult, maxChains int) *exportBuildContext {
+	var findings []entities.Finding
+	if result != nil && result.Report != nil {
+		findings = result.Report.Findings
+	}
+	return newExportBuildContextWithFindings(result, findings, maxChains)
+}
+
+func newExportBuildContextWithFindings(result *engine.DepScanResult, findings []entities.Finding, maxChains int) *exportBuildContext {
 	ctx := &exportBuildContext{
 		graph:                   result.CallGraph,
 		projectRoot:             filepath.Clean(result.ProjectRoot),
@@ -1464,7 +1542,7 @@ func newExportBuildContextWithMaxChains(result *engine.DepScanResult, maxChains 
 	sort.SliceStable(ctx.dependencies, func(i, j int) bool {
 		return len(ctx.dependencies[i].Dir) > len(ctx.dependencies[j].Dir)
 	})
-	ctx.populateCallChainUsageCounts(result.Report)
+	ctx.populateCallChainUsageCounts(findings)
 
 	// Load contracts + index method definitions so synthesized terminal entry
 	// points can attach their fluent lifecycle methods as supporting calls.
@@ -2138,6 +2216,7 @@ func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedO
 	return &callGraphMatchedOperation{
 		Kind:          inferMatchedOperationKind(expression),
 		Symbol:        symbol,
+		OID:           asset.OID,
 		DisplaySymbol: graphfrag.ConstructorDisplayFromSymbol(symbol),
 		Expression:    expression,
 		Line:          line,
@@ -3328,12 +3407,12 @@ func exportPackageSeparator(ecosystem string) string {
 	}
 }
 
-func (ctx *exportBuildContext) populateCallChainUsageCounts(report *entities.InterimReport) {
-	if ctx == nil || ctx.graph == nil || report == nil {
+func (ctx *exportBuildContext) populateCallChainUsageCounts(findings []entities.Finding) {
+	if ctx == nil || ctx.graph == nil {
 		return
 	}
 
-	for _, finding := range report.Findings {
+	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
 			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
