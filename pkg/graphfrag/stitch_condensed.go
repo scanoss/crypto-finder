@@ -41,15 +41,29 @@ type callSiteKey struct {
 // condensedBackwardChains returns one chain per (route, entry) pair plus the exact
 // total, counted before any chain is built so a truncated result can state how
 // much it left out.
+//
+// It rebuilds callers/inbounds from reverse on every call — fine for a single
+// lookup, wasteful when traceBackward calls this once per crypto operation on a
+// large component. condensedBackwardChainsFast takes those pre-built once and
+// is what the hot loop actually uses; this wrapper stays for callers with only
+// reverse in hand (tests, one-off lookups).
 func condensedBackwardChains(
 	opNode graphNode,
 	reverse map[graphNode][]reverseEdge,
 	entrySet map[graphNode]bool,
 	maxChains int,
 ) (chains []backwardChain, total int, truncated bool) {
-	maxChains = ResolveMaxChains(maxChains)
-	callers := make(map[graphNode][]graphNode, len(reverse))
-	inbounds := make(map[callSiteKey]inbound, len(reverse))
+	callers, inbounds := flattenReverse(reverse)
+	return condensedBackwardChainsFast(opNode, callers, inbounds, entrySet, maxChains)
+}
+
+// flattenReverse converts the edge-list reverse adjacency into the plain
+// caller lists and call-site index condensedBackwardChainsFast walks. Callers
+// that invoke it once per traceBackward run (rather than once per operation)
+// avoid rebuilding the same maps for every crypto op on the component.
+func flattenReverse(reverse map[graphNode][]reverseEdge) (callers map[graphNode][]graphNode, inbounds map[callSiteKey]inbound) {
+	callers = make(map[graphNode][]graphNode, len(reverse))
+	inbounds = make(map[callSiteKey]inbound, len(reverse))
 	for target, edges := range reverse {
 		list := make([]graphNode, 0, len(edges))
 		for _, edge := range edges {
@@ -58,7 +72,20 @@ func condensedBackwardChains(
 		}
 		callers[target] = list
 	}
+	return callers, inbounds
+}
 
+// condensedBackwardChainsFast is condensedBackwardChains against pre-flattened
+// callers/inbounds, so a caller walking many operations over the same reverse
+// graph (traceBackward) builds them once instead of per operation.
+func condensedBackwardChainsFast(
+	opNode graphNode,
+	callers map[graphNode][]graphNode,
+	inbounds map[callSiteKey]inbound,
+	entrySet map[graphNode]bool,
+	maxChains int,
+) (chains []backwardChain, total int, truncated bool) {
+	maxChains = ResolveMaxChains(maxChains)
 	reach := graphwalk.Reach(opNode, graphwalk.Options[graphNode]{
 		Callers:    func(n graphNode) []graphNode { return callers[n] },
 		Less:       nodeLess,

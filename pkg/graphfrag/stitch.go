@@ -1284,13 +1284,34 @@ func traceBackward(
 	plainReverse := callersWithoutCallSites(reverse)
 	recordAllReachEntries(plainReverse, opsByNode, entrySet, fragments, functionsByNode, out)
 
+	// callers/inbounds back every condensedBackwardChainsFast call below; built
+	// once here instead of once per operation (condensedBackwardChains rebuilt
+	// them from reverse on every call, which dominated runtime on components
+	// with thousands of crypto operations — e.g. bcpg-jdk18on pulling in
+	// bcprov-jdk18on's full graph).
+	callers, inbounds := flattenReverse(reverse)
+
+	// reachableFromChainEntry is every node some entry in chainEntrySet can
+	// reach by forward calls. An entry reaches opNode forward iff opNode's
+	// backward walk (condensedBackwardChainsFast) reaches that entry, so this
+	// single O(V+E) pass tells us in advance, for every operation, whether that
+	// walk can possibly find a boundary — without running it. On a component
+	// scoped to a few requested entries (ChainEntrySignatures), most operations
+	// are not downstream of any of them; skipping the walk for those is what
+	// turns an O(operations × graph size) worst case back into O(graph size).
+	reachableFromChainEntry := forwardReachableSet(adjacency, chainEntrySet)
+
 	for _, opNode := range sortedNodes(opsByNode) {
 		// Enumerate the routes over the collapsed graph, so the served chains
 		// report the same routes live does for the same map.
 		// The route total is counted before enumerating (condensedBackwardChains
 		// returns it) but is not published: the served contract has no field for
 		// it, and this package stays free of a logger by design.
-		chains, _, truncated := condensedBackwardChains(opNode, reverse, chainEntrySet, maxChains)
+		var chains []backwardChain
+		var truncated bool
+		if reachableFromChainEntry[opNode] {
+			chains, _, truncated = condensedBackwardChainsFast(opNode, callers, inbounds, chainEntrySet, maxChains)
+		}
 		if len(chains) == 0 {
 			if truncated {
 				// Path-count ceiling (#292): Count proved entry-reaching routes
@@ -1555,6 +1576,66 @@ func reverseAdjacency(adjacency map[graphNode][]adjacencyEdge) map[graphNode][]r
 		})
 	}
 	return reverse
+}
+
+// forwardReachableSet returns every node reachable by forward calls from any
+// node in sources, via a single multi-source BFS over adjacency. Used to test,
+// in O(1) after one O(V+E) pass, whether some entry can reach a given crypto
+// operation — the same question a per-operation backward walk answers, but
+// without paying for a full walk on every operation that turns out to have no
+// path at all.
+func forwardReachableSet(adjacency map[graphNode][]adjacencyEdge, sources map[graphNode]bool) map[graphNode]bool {
+	seen := make(map[graphNode]bool, len(sources))
+	queue := make([]graphNode, 0, len(sources))
+	for n := range sources {
+		if !seen[n] {
+			seen[n] = true
+			queue = append(queue, n)
+		}
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, edge := range adjacency[n] {
+			if !seen[edge.target] {
+				seen[edge.target] = true
+				queue = append(queue, edge.target)
+			}
+		}
+	}
+	return seen
+}
+
+// forwardReachableSetAll is forwardReachableSet over adjacency plus
+// ambiguousCandidates — the forward-edge counterpart of composeReverseMaps'
+// reverseAll, for callers that need the "may reach via ambiguous dispatch"
+// question answered instead of the precise one.
+func forwardReachableSetAll(adjacency, ambiguousCandidates map[graphNode][]adjacencyEdge, sources map[graphNode]bool) map[graphNode]bool {
+	seen := make(map[graphNode]bool, len(sources))
+	queue := make([]graphNode, 0, len(sources))
+	for n := range sources {
+		if !seen[n] {
+			seen[n] = true
+			queue = append(queue, n)
+		}
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, edge := range adjacency[n] {
+			if !seen[edge.target] {
+				seen[edge.target] = true
+				queue = append(queue, edge.target)
+			}
+		}
+		for _, edge := range ambiguousCandidates[n] {
+			if !seen[edge.target] {
+				seen[edge.target] = true
+				queue = append(queue, edge.target)
+			}
+		}
+	}
+	return seen
 }
 
 // emitChain materializes one completed backward chain into a FindingChain and
@@ -1982,6 +2063,45 @@ func sortedNodes(opsByNode map[graphNode][]CryptoOperation) []graphNode {
 // Only the root component's externally callable surface (public function on a
 // public owner) plus its in-degree-zero graph roots are emitted — that is the
 // join surface a consumer resolves its own code against by canonical_signature.
+//
+// composeOneDependencyEntryPoint handles a single dependency entry point:
+// projectEntryPoint (below) discards every reachFrom(seed, ...) result node
+// whose Component isn't root — on a dependency with a large mined entry-point
+// surface (a crypto provider can easily publish thousands), a per-seed
+// backward walk over the WHOLE closure usually produces nothing but discarded
+// non-root ancestors. An entry reaches root some.Function iff some.Function
+// forward-reaches that entry (same graph, opposite direction), so the
+// caller's shared forward pass from root's own functions (provenFromRoot /
+// mayReachFromRoot) tells this function in advance whether the backward walk
+// could possibly hit root at all — skipping it entirely when it can't.
+func composeOneDependencyEntryPoint(
+	root, dep ComponentKey,
+	ep *CryptoEntryPoint,
+	translate map[string]string,
+	reverse, reverseAll map[graphNode][]graphNode,
+	provenFromRoot, mayReachFromRoot map[graphNode]bool,
+	rootFunctions map[string]Function,
+	hasIncoming map[graphNode]bool,
+	composed map[string]*composedEntry,
+) {
+	if len(ep.ReachableFindings) == 0 {
+		return
+	}
+	seed := graphNode{Component: dep, Function: ep.FunctionKey}
+	var proven graphwalk.Reachable[graphNode]
+	if provenFromRoot[seed] {
+		proven = reachFrom(seed, reverse)
+		projectEntryPoint(root, dep, ep, translate, proven, true, rootFunctions, hasIncoming, composed)
+	}
+	if mayReachFromRoot[seed] {
+		mayReach := reachFrom(seed, reverseAll)
+		for node := range proven.Depth {
+			delete(mayReach.Depth, node)
+		}
+		projectEntryPoint(root, dep, ep, translate, mayReach, false, rootFunctions, hasIncoming, composed)
+	}
+}
+
 func composeDependencyEntryPoints(
 	root ComponentKey,
 	closure []ComponentKey,
@@ -1999,8 +2119,23 @@ func composeDependencyEntryPoints(
 	}
 	hasIncoming := incomingNodes(adjacency)
 
-	composed := make(map[string]*composedEntry)
+	// projectEntryPoint (below) discards every reachFrom(seed, ...) result node
+	// whose Component isn't root — on a dependency with a large mined entry-point
+	// surface (a crypto provider can easily publish thousands), most of those
+	// per-seed backward walks over the WHOLE closure end up producing nothing
+	// but discarded non-root ancestors. An entry reaches root some.Function iff
+	// some.Function forward-reaches that entry (same graph, opposite direction),
+	// so one shared forward pass from root's own functions tells us in advance,
+	// for every seed, whether its backward walk could possibly hit root at
+	// all — skipping the walk entirely for every seed it can't.
+	rootSeeds := make(map[graphNode]bool, len(rootFragment.Functions))
+	for i := range rootFragment.Functions {
+		rootSeeds[graphNode{Component: root, Function: rootFragment.Functions[i].Signature}] = true
+	}
+	provenFromRoot := forwardReachableSet(adjacency, rootSeeds)
+	mayReachFromRoot := forwardReachableSetAll(adjacency, ambiguousCandidates, rootSeeds)
 
+	composed := make(map[string]*composedEntry)
 	for _, dep := range closure {
 		if dep == root {
 			continue
@@ -2008,18 +2143,8 @@ func composeDependencyEntryPoints(
 		fragment := fragments[dep]
 		translate := servedFindingIDs(dep, &fragment)
 		for i := range fragment.CryptoEntryPoints {
-			ep := &fragment.CryptoEntryPoints[i]
-			if len(ep.ReachableFindings) == 0 {
-				continue
-			}
-			seed := graphNode{Component: dep, Function: ep.FunctionKey}
-			proven := reachFrom(seed, reverse)
-			projectEntryPoint(root, dep, ep, translate, proven, true, rootFunctions, hasIncoming, composed)
-			mayReach := reachFrom(seed, reverseAll)
-			for node := range proven.Depth {
-				delete(mayReach.Depth, node)
-			}
-			projectEntryPoint(root, dep, ep, translate, mayReach, false, rootFunctions, hasIncoming, composed)
+			composeOneDependencyEntryPoint(root, dep, &fragment.CryptoEntryPoints[i], translate,
+				reverse, reverseAll, provenFromRoot, mayReachFromRoot, rootFunctions, hasIncoming, composed)
 		}
 	}
 	if len(composed) == 0 {
