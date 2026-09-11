@@ -2893,6 +2893,18 @@ func isPythonAttributeCallNode(node *sitter.Node) bool {
 //   - `self.cipher = Cipher(a, m)` / `cls.cipher = Cipher(a, m)` — attribute target,
 //     canonicalized to "self.cipher" (see pythonAssignmentTargetIdentity)
 //   - direct assignment in a block
+//   - `with Cipher(a, m) as cipher:` — an as_pattern binding, which is an
+//     ASSIGNMENT for typing purposes in exactly the way the three shapes above
+//     are: the name holds the call's result and a later `cipher.method(...)`
+//     must resolve through it. Before this case existed the walker BOUND the
+//     name (recordPythonWalkBinder's asPattern arm marks it a local) but
+//     recorded no AssignedVar, so propagatePythonAssignedVarTypesForDecl had
+//     nothing to attach the callee's return type to and every receiver call on
+//     a context-manager binding stayed uncontracted. Context managers are the
+//     documented idiom for a whole class of crypto libraries — liboqs-python's
+//     own examples use nothing else — so the gap was systematic rather than
+//     incidental. `except E as e:` reaches this arm too and is equally correct:
+//     if the bound value is a call, its return type is what `e` holds.
 func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	parent := node.Parent()
 	if parent == nil {
@@ -2900,6 +2912,14 @@ func pythonAssignedVarFromParent(node *sitter.Node, src []byte) string {
 	}
 	if parent.Type() == pythonNodeAssignment {
 		return pythonAssignmentTargetIdentity(parent.ChildByFieldName("left"), src)
+	}
+	if parent.Symbol() == pythonSyms.asPattern {
+		if alias := parent.ChildByFieldName("alias"); alias != nil {
+			if ident := firstIdentifierChild(alias); ident != nil {
+				return ident.Content(src)
+			}
+		}
+		return ""
 	}
 	// expression_statement wrapping an assignment. "expression_statement" is a
 	// generic tree-sitter node name shared across grammars (Python's grammar
