@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - A callgraph contract KB for the `python-gnupg` PyPI package, so a consumer's OpenPGP call sites resolve to a declared signature instead of an uncataloged frame. python-gnupg implements no cryptography -- it builds an argv and runs the `gpg` binary -- so these entries type the consumer's REQUEST and every return type is one of the library's own status-line parsers (`Crypt`, `Sign`, `Verify`, `GenKey`, `AddSubkey`, `ImportResult`, `ListKeys`, `ScanKeys`, `SearchKeys`, `SendResult`, `AutoLocateKey`). The whole distribution is one module, so there is no submodule spelling to declare, but the constructor still needs TWO keys: `import gnupg; gnupg.GPG(...)` emits no `.<init>` while `from gnupg import GPG; GPG(...)` does, and both are ordinary consumer code. Those two entries are what makes the other 116 join -- without them the graph emits the consumer's own variable name. 118 entries for 24 methods because arity is an exact match key for Python and eight of these methods forward `**kwargs` to a `_file` sibling, so one method is callable at up to nine argument counts; every method's range is derived from its declared signature. `export_keys` carries `confidence: low` and no `canonical_return_type`, because it returns `str` or `bytes` depending on its `armor` argument. Key deletion, ownertrust writes, recipient listing and the argv/validation helpers are deliberately not contracted.
+### Changed
+- The `pyjwt` callgraph contract now covers the PyJWS layer, the `PyJWT`/`PyJWS`
+  constructors under both import spellings, and the algorithm-registry
+  configuration calls, and labels `encode`/`decode` as `operation` rather than
+  `output`. A consumer that builds an instance into a local variable
+  (`inst = jwt.PyJWT(); inst.encode(..)`) previously had that call keyed on its
+  own variable path and joined nothing; the factory entries give it the
+  library's key. The `>=2.0,<3.0` range is unchanged and is bound by the return
+  type — `encode` returns `bytes` in the 1.x line and `str` from 2.0.0.
 
 ## [0.26.0] - 2026-09-10
 ### Fixed
