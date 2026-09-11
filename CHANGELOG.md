@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- A callgraph contract KB for the `python-gnupg` PyPI package, so a consumer's OpenPGP call sites resolve to a declared signature instead of an uncataloged frame. python-gnupg implements no cryptography -- it builds an argv and runs the `gpg` binary -- so these entries type the consumer's REQUEST and every return type is one of the library's own status-line parsers (`Crypt`, `Sign`, `Verify`, `GenKey`, `AddSubkey`, `ImportResult`, `ListKeys`, `ScanKeys`, `SearchKeys`, `SendResult`, `AutoLocateKey`). The whole distribution is one module, so there is no submodule spelling to declare, but the constructor still needs TWO keys: `import gnupg; gnupg.GPG(...)` emits no `.<init>` while `from gnupg import GPG; GPG(...)` does, and both are ordinary consumer code. Those two entries are what makes the other 116 join -- without them the graph emits the consumer's own variable name. 118 entries for 24 methods because arity is an exact match key for Python and eight of these methods forward `**kwargs` to a `_file` sibling, so one method is callable at up to nine argument counts; every method's range is derived from its declared signature. `export_keys` carries `confidence: low` and no `canonical_return_type`, because it returns `str` or `bytes` depending on its `armor` argument. Key deletion, ownertrust writes, recipient listing and the argv/validation helpers are deliberately not contracted.
 
 ## [0.26.0] - 2026-09-10
 ### Fixed
