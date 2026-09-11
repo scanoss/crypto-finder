@@ -1,0 +1,940 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: python-gnupg
+  coordinates:
+    - python-gnupg
+    - python_gnupg
+    - gnupg
+  version_range: ">=0.3.3,<0.6"
+  description: >-
+    python-gnupg lifecycle contracts - the `GPG` subprocess wrapper and every
+    cryptographic entry point on it. python-gnupg IMPLEMENTS NO CRYPTOGRAPHY:
+    it builds an argv and runs the `gpg` executable, so these entries type the
+    consumer's REQUEST rather than any computation this library performs.
+    Authored against python-gnupg 0.5.6 and cross-checked against ALL 25
+    archived sdists (0.3.3 through 0.5.6).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THESE KEYS WERE OBTAINED.
+#
+# Every key below was read off an EXPORTED CALL GRAPH, never written from the
+# API, and re-exported after each edit until nothing moved:
+#
+#   crypto-finder scan --no-remote-rules \
+#     --rules-dir semgrep-rules/python/python-gnupg \
+#     --export-callgraph /tmp/cg.json <a probe consumer PACKAGE>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# For Python the emitted key is the CONSUMER'S IMPORT PATH, dots throughout,
+# with no module/type separator rewrite; the Rust `rustAuthoredKey` "::"
+# substitution is reached only from `rustContractsFor` and must not be copied
+# here.
+#
+# THE PROBE MUST BE A PACKAGE, NOT A LOOSE FILE. A bare `.py` resolves no
+# ecosystem and `crypto-finder scan` over a fixture tree returns 0 assets
+# because opengrep's built-in excludes skip `tests/`. The probe used here is a
+# neutral package with a `setup.py`.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THE TWO CONSTRUCTOR KEYS, MEASURED. python-gnupg is a SINGLE MODULE -- the
+# sdist holds `gnupg.py` and nothing else importable -- so there is no
+# submodule spelling and no directory-versus-import-path divergence to worry
+# about. There are still TWO keys, because the `<init>` suffix follows the
+# consumer's import:
+#
+#   import gnupg;          gnupg.GPG(gnupghome=...)  ->  gnupg.GPG
+#   from gnupg import GPG; GPG(gnupghome=...)        ->  gnupg.GPG.<init>
+#
+# Read off the export, one call per file, with crypto-finder built from the
+# branch under test. The module-qualified spelling emits NO `.<init>`; the
+# from-import spelling does, and it additionally renders `: GPG` on its own,
+# which the module-qualified spelling does not. BOTH are declared, because both
+# are ordinary consumer code -- `pulpcore 3.95.3` pulpcore/app/util.py:402
+# writes the first and `ospd-openvas 22.9.1` ospd_openvas/gpg_sha_verifier.py:40
+# writes the second.
+#
+# THE CONSTRUCTOR ENTRIES ARE WHAT MAKES EVERY OTHER ENTRY JOIN. Without them
+# the graph emits the CONSUMER'S variable name -- measured as
+# `probeconsumer.g.encrypt(?, ?)` with empty `parameter_types`, which is the
+# uncontracted shape -- because the receiver's type is unknown. With
+# `canonical_return_type: gnupg.GPG` on the two constructor keys, the same
+# lines resolve to `gnupg.GPG.encrypt`. That is the fixed point this file was
+# iterated to: export, author, re-export, repeat until nothing moved.
+#
+# A CONSUMER'S `import gnupg as g` ALIAS IS A KNOWN LIMITATION AND IT IS NOT
+# ENCODED HERE. The module alias leaks into the emitted key, so no contract can
+# join it, and encoding a consumer's variable or alias name would be worse than
+# the gap. `from gnupg import GPG as PGP` DOES join: the parser keys an aliased
+# from-import on the exported name `GPG` (python_parser.go, plus the
+# `delete(analysis.ImportedTypes, alias)` that goes with it), which landed on
+# crypto-finder main before this branch was cut.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THERE ARE 118 ENTRIES FOR 24 METHODS: ARITY IS AN EXACT MATCH KEY AND
+# `varargs` DOES NOT HELP FOR PYTHON.
+#
+# `KnowledgeBase.ContractsFor` looks up `method#arity` exactly and, for any
+# ecosystem other than rust, returns nil on a miss (contracts.go:203-211). So a
+# method reachable at five different argument counts needs five entries.
+#
+#   MEASURED: `varargs: true` IS INERT FOR PYTHON. The only consumer of
+#   `Contract.Varargs` is `javaVarargsChainContracts`, and its single call site
+#   is gated on `kb.Ecosystem == ecosystemJava` (builder.go:1562). Marking a
+#   python entry varargs would therefore collapse nothing and would read as
+#   coverage it does not provide. No entry here uses the field.
+#
+# THE ARITY RANGE OF EVERY METHOD IS DERIVED FROM ITS `def` LINE, NOT FROM A
+# CORPUS. min = parameters without a default (self excluded); max = parameters
+# declared, plus the forwarded target's remaining parameters when the method's
+# tail is `**kwargs`. Eight of these methods are thin wrappers that forward
+# `**kwargs` to a `_file` sibling (0.5.6 :2172->:2104, :2202->:2225,
+# :1387->:1442, :1520->:1542, :1628->:1606), which is why their range is wider
+# than their signature reads. Each method's range and its citation are on its
+# own comment below, and `python_gnupg_contract_test.go` holds the same table
+# hand-written from the same source lines.
+#
+#   TWO CAPS ARE A CHOICE RATHER THAN A SIGNATURE, AND BOTH ARE STATED.
+#   `gen_key_input(**kwargs)` (:2016) declares NO parameters and accepts any
+#   gpg `--gen-key` keyword, so its arity is unbounded in principle; it is
+#   capped at 8. The highest arity measured anywhere -- across the 24-package
+#   real-consumer draw, python-gnupg's own test_gnupg.py and the probe -- is 6
+#   (`lime-comb 0.0.9` lime_comb/gpg/__init__.py:46). `recv_keys` (:1638) and
+#   `send_keys` (:1662) take `*keyids`, also unbounded, and are capped at 4
+#   (keyserver plus two key ids plus `extra_args`). A call above either cap does
+#   not resolve; that is a stated recall gap, not an undeclared one.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-SYMBOL VERSION WINDOWS. `library.version_range` spans the whole archived
+# range; each symbol's own window is narrower where it arrives later, and is
+# stated on its entry. Derived by parsing every `class` and `def` out of ALL 25
+# archived sdists, not from a changelog, and each boundary was checked against
+# the release on BOTH sides of it.
+#
+#   0.3.3  the oldest release with ANY published archive. encrypt, encrypt_file,
+#          decrypt, decrypt_file, sign, sign_file, verify, verify_file,
+#          gen_key, gen_key_input, import_keys, export_keys, list_keys,
+#          recv_keys and delete_keys already exist (gnupg.py:1020, 992, 1066,
+#          1072, 685, 692, 723, 743, 922, 941, 772, 858, 875, 825, 846).
+#   0.3.5  search_keys, send_keys, SearchKeys, SendResult. Also the release
+#          where `--cipher-algo` pass-through arrives (:1182) and where the
+#          `Key-Length` default moves from 1024 to 2048 (:1132).
+#   0.3.6  verify_data.
+#   0.3.7  scan_keys, ScanKeys, set_output_without_confirmation.
+#   0.4.2  trust_keys, TrustResult.
+#   0.4.4  is_valid_passphrase.
+#   0.4.8  get_recipients, get_recipients_file, is_valid_file.
+#   0.4.9  add_subkey, AddSubkey, ExportResult.
+#   0.5.0  import_keys_file.
+#   0.5.1  scan_keys_mem.
+#   0.5.3  auto_locate_key, AutoLocateKey.
+#   0.5.6  first PEP 625 sdist filename (`python_gnupg-0.5.6.tar.gz`).
+#          Packaging only; no API change.
+#
+#   PyPI SERVES NO FILES AT ALL FOR NINE OF THE 34 COMMITTED CSV ROWS.
+#   0.2.3, 0.2.4, 0.2.6, 0.2.7, 0.2.8, 0.2.9, 0.3.0, 0.3.1 and 0.3.2 each have
+#   an index entry with an EMPTY file list (checked against
+#   https://pypi.org/pypi/python-gnupg/json). No sdist, no wheel, so no API
+#   could be read and none is claimed. That is why `version_range` starts at
+#   0.3.3 and not at the matrix's oldest row.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THE RETURN TYPES ARE THIS LIBRARY'S OWN RESULT PARSERS, NOT GnuPG'S OUTPUT.
+# `GPG.result_map` (0.5.6 gnupg.py:1082-1097) maps each operation to the class
+# that parses gpg's `--status-fd` lines, and every method returns an instance of
+# its mapped class: 'crypt'->Crypt, 'sign'->Sign, 'verify'->Verify,
+# 'generate'->GenKey, 'addSubkey'->AddSubkey, 'import'->ImportResult,
+# 'send'->SendResult, 'list'->ListKeys, 'scan'->ScanKeys, 'search'->SearchKeys,
+# 'export'->ExportResult, 'auto-locate-key'->AutoLocateKey. Two methods return
+# something else and are declared accordingly: `gen_key_input` returns the
+# rendered parameter block as a `str` (:2039-2045) and `export_keys` returns
+# `result.data`, decoded to `str` only when `armor` is set (:1811-1814).
+#
+#   `export_keys` IS THE ONE DIVERGENT RETURN, AND IT CARRIES NO
+#   `canonical_return_type`. `str` when armored (the default) and `bytes`
+#   otherwise, decided by an argument. A divergent return on one
+#   (method, arity) key is a HARD LOAD ERROR (contracts.go:936-968, Rule 2), so
+#   ONE value is declared -- the default path -- at `confidence: low`, and
+#   `canonical_return_type` is withheld rather than asserting the armored form
+#   holds for every call.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# API AUDIT. Disposition legend: contracted | skipped-non-crypto.
+#
+# gnupg.GPG (0.5.6 gnupg.py:1072)
+#   __init__(...)          contracted (factory) -> gnupg.GPG, both key spellings
+#   encrypt/encrypt_file   contracted (operation) -> Crypt
+#   decrypt/decrypt_file   contracted (operation) -> Crypt
+#   sign/sign_file         contracted (operation) -> Sign
+#   verify/verify_file/verify_data
+#                          contracted (operation) -> Verify
+#   gen_key                contracted (operation) -> GenKey
+#   gen_key_input          contracted (factory)   -> builtins.str
+#   add_subkey             contracted (operation) -> AddSubkey
+#   import_keys/_file      contracted (operation) -> ImportResult
+#   export_keys            contracted (output)    -> builtins.str, low
+#   list_keys              contracted (output)    -> ListKeys
+#   scan_keys/_mem         contracted (output)    -> ScanKeys
+#   search_keys            contracted (output)    -> SearchKeys
+#   send_keys              contracted (operation) -> SendResult
+#   recv_keys              contracted (operation) -> ImportResult
+#   auto_locate_key        contracted (output)    -> AutoLocateKey
+#   delete_keys            skipped-non-crypto - removes a keyring entry and
+#                            produces no material (:1688)
+#   trust_keys             skipped-non-crypto - writes an ownertrust value into
+#                            gpg's trustdb (:2290)
+#   get_recipients / get_recipients_file
+#                          skipped-non-crypto - `--decrypt --list-only`, which
+#                            READS the key ids a message is addressed to
+#                            (:2255, :2271)
+#   make_args              skipped-non-crypto - builds an argv (:1179)
+#   set_output_without_confirmation
+#                          skipped-non-crypto - appends `--output` (:1414)
+#   is_valid_passphrase    skipped-non-crypto - a newline/NUL check (:1429)
+#   is_valid_file          skipped-non-crypto - a file-object check (:1331)
+#
+# The eleven result classes (Crypt, Sign, Verify, GenKey, AddSubkey,
+# ImportResult, ExportResult, ListKeys, ScanKeys, SearchKeys, SendResult,
+# TrustResult, DeleteResult, AutoLocateKey; :228-1071) are NOT contracted as
+# callables. A consumer never constructs one -- `result_map` does -- so there is
+# no consumer call site to key, and their public surface is `handle_status`,
+# which parses gpg's status lines rather than computing anything. They appear
+# here only as the declared RETURN types above, which is what makes a chained
+# `gpg.encrypt(...).data` typed.
+#
+# NO ENTRY HERE DECLARES `parameter_types`. Eight of these methods take
+# `**kwargs` and eight take keyword arguments in any order, so at a given arity
+# the positional types are genuinely not knowable -- `encrypt(data, recipients,
+# armor=False)` and `encrypt(data, recipients, always_trust=True)` are both
+# arity 3 with different third types. Declaring one would assert a signature the
+# library does not have. This follows merged `python/eth-account`, which omits
+# the field on its multi-arity entries for the same reason.
+
+contracts:
+  # ── GPG -- 0.5.6 gnupg.py:1100. Arity 0-8: module-qualified spelling: `import gnupg; gnupg.GPG(...)` emits NO `.<init>`.
+  - method: gnupg.GPG
+    arity: 0
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 1
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 2
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 3
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 4
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 5
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 6
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 7
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG
+    arity: 8
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  # ── <init> -- 0.5.6 gnupg.py:1100. Arity 0-8: from-import spelling: `from gnupg import GPG; GPG(...)` emits `.<init>`.
+  - method: gnupg.GPG.<init>
+    arity: 0
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 1
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 2
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 3
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 4
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 5
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 6
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 7
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.<init>
+    arity: 8
+    canonical_return_type: gnupg.GPG
+    return: { type: gnupg.GPG, confidence: high }
+    role: factory
+
+  # ── encrypt -- 0.5.6 gnupg.py:2172. Arity 2-9: `**kwargs` forward to encrypt_file (:2104, 9 params).
+  - method: gnupg.GPG.encrypt
+    arity: 2
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 3
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 4
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 5
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 6
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 7
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 8
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt
+    arity: 9
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  # ── encrypt_file -- 0.5.6 gnupg.py:2104. Arity 2-9: 9 declared parameters.
+  - method: gnupg.GPG.encrypt_file
+    arity: 2
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 3
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 4
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 5
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 6
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 7
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 8
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.encrypt_file
+    arity: 9
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  # ── decrypt -- 0.5.6 gnupg.py:2202. Arity 1-5: `**kwargs` forward to decrypt_file (:2225, 5 params).
+  - method: gnupg.GPG.decrypt
+    arity: 1
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt
+    arity: 2
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt
+    arity: 3
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt
+    arity: 4
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt
+    arity: 5
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  # ── decrypt_file -- 0.5.6 gnupg.py:2225. Arity 1-5: 5 declared parameters.
+  - method: gnupg.GPG.decrypt_file
+    arity: 1
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt_file
+    arity: 2
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt_file
+    arity: 3
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt_file
+    arity: 4
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.decrypt_file
+    arity: 5
+    canonical_return_type: gnupg.Crypt
+    return: { type: gnupg.Crypt, confidence: high }
+    role: operation
+
+  # ── sign -- 0.5.6 gnupg.py:1387. Arity 1-8: `**kwargs` forward to sign_file (:1442, 8 params).
+  - method: gnupg.GPG.sign
+    arity: 1
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 2
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 3
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 4
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 5
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 6
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 7
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign
+    arity: 8
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  # ── sign_file -- 0.5.6 gnupg.py:1442. Arity 1-8: 8 declared parameters.
+  - method: gnupg.GPG.sign_file
+    arity: 1
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 2
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 3
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 4
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 5
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 6
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 7
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.sign_file
+    arity: 8
+    canonical_return_type: gnupg.Sign
+    return: { type: gnupg.Sign, confidence: high }
+    role: operation
+
+  # ── verify -- 0.5.6 gnupg.py:1520. Arity 1-4: `**kwargs` forward to verify_file (:1542, 4 params).
+  - method: gnupg.GPG.verify
+    arity: 1
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify
+    arity: 2
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify
+    arity: 3
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify
+    arity: 4
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  # ── verify_file -- 0.5.6 gnupg.py:1542. Arity 1-4: 4 declared parameters.
+  - method: gnupg.GPG.verify_file
+    arity: 1
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify_file
+    arity: 2
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify_file
+    arity: 3
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify_file
+    arity: 4
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  # ── verify_data -- 0.5.6 gnupg.py:1581. Arity 2-3: 3 declared parameters.
+  - method: gnupg.GPG.verify_data
+    arity: 2
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.verify_data
+    arity: 3
+    canonical_return_type: gnupg.Verify
+    return: { type: gnupg.Verify, confidence: high }
+    role: operation
+
+  # ── gen_key -- 0.5.6 gnupg.py:2002. Arity 1-1: one parameter, no kwargs.
+  - method: gnupg.GPG.gen_key
+    arity: 1
+    canonical_return_type: gnupg.GenKey
+    return: { type: gnupg.GenKey, confidence: high }
+    role: operation
+
+  # ── gen_key_input -- 0.5.6 gnupg.py:2016. Arity 0-8: `**kwargs` only; the 8 cap is the ONE bounded choice -- see the header.
+  - method: gnupg.GPG.gen_key_input
+    arity: 0
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 1
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 2
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 3
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 4
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 5
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 6
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 7
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: gnupg.GPG.gen_key_input
+    arity: 8
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  # ── add_subkey -- 0.5.6 gnupg.py:2069. Arity 1-5: 5 declared parameters; ARRIVES 0.4.9.
+  - method: gnupg.GPG.add_subkey
+    arity: 1
+    canonical_return_type: gnupg.AddSubkey
+    return: { type: gnupg.AddSubkey, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.add_subkey
+    arity: 2
+    canonical_return_type: gnupg.AddSubkey
+    return: { type: gnupg.AddSubkey, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.add_subkey
+    arity: 3
+    canonical_return_type: gnupg.AddSubkey
+    return: { type: gnupg.AddSubkey, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.add_subkey
+    arity: 4
+    canonical_return_type: gnupg.AddSubkey
+    return: { type: gnupg.AddSubkey, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.add_subkey
+    arity: 5
+    canonical_return_type: gnupg.AddSubkey
+    return: { type: gnupg.AddSubkey, confidence: high }
+    role: operation
+
+  # ── import_keys -- 0.5.6 gnupg.py:1606. Arity 1-3: 3 declared parameters.
+  - method: gnupg.GPG.import_keys
+    arity: 1
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.import_keys
+    arity: 2
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.import_keys
+    arity: 3
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  # ── import_keys_file -- 0.5.6 gnupg.py:1628. Arity 1-3: `**kwargs` forward to import_keys; ARRIVES 0.5.0.
+  - method: gnupg.GPG.import_keys_file
+    arity: 1
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.import_keys_file
+    arity: 2
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.import_keys_file
+    arity: 3
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  # ── export_keys -- 0.5.6 gnupg.py:1743. Arity 1-7: returns str when armor (the default) and bytes otherwise (:1811-1814) -- divergent, so no canonical_return_type.
+  - method: gnupg.GPG.export_keys
+    arity: 1
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 2
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 3
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 4
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 5
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 6
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  - method: gnupg.GPG.export_keys
+    arity: 7
+    return: { type: builtins.str, confidence: low }
+    role: output
+
+  # ── list_keys -- 0.5.6 gnupg.py:1839. Arity 0-3: 3 declared parameters; via _get_list_output (:1833-1837).
+  - method: gnupg.GPG.list_keys
+    arity: 0
+    canonical_return_type: gnupg.ListKeys
+    return: { type: gnupg.ListKeys, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.list_keys
+    arity: 1
+    canonical_return_type: gnupg.ListKeys
+    return: { type: gnupg.ListKeys, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.list_keys
+    arity: 2
+    canonical_return_type: gnupg.ListKeys
+    return: { type: gnupg.ListKeys, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.list_keys
+    arity: 3
+    canonical_return_type: gnupg.ListKeys
+    return: { type: gnupg.ListKeys, confidence: high }
+    role: output
+
+  # ── scan_keys -- 0.5.6 gnupg.py:1883. Arity 1-1: ARRIVES 0.3.7.
+  - method: gnupg.GPG.scan_keys
+    arity: 1
+    canonical_return_type: gnupg.ScanKeys
+    return: { type: gnupg.ScanKeys, confidence: high }
+    role: output
+
+  # ── scan_keys_mem -- 0.5.6 gnupg.py:1909. Arity 1-1: ARRIVES 0.5.1.
+  - method: gnupg.GPG.scan_keys_mem
+    arity: 1
+    canonical_return_type: gnupg.ScanKeys
+    return: { type: gnupg.ScanKeys, confidence: high }
+    role: output
+
+  # ── search_keys -- 0.5.6 gnupg.py:1939. Arity 1-3: 3 declared parameters; ARRIVES 0.3.5.
+  - method: gnupg.GPG.search_keys
+    arity: 1
+    canonical_return_type: gnupg.SearchKeys
+    return: { type: gnupg.SearchKeys, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.search_keys
+    arity: 2
+    canonical_return_type: gnupg.SearchKeys
+    return: { type: gnupg.SearchKeys, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.search_keys
+    arity: 3
+    canonical_return_type: gnupg.SearchKeys
+    return: { type: gnupg.SearchKeys, confidence: high }
+    role: output
+
+  # ── send_keys -- 0.5.6 gnupg.py:1662. Arity 1-4: `*keyids` varargs; the 4 cap is bounded -- see the header. ARRIVES 0.3.5.
+  - method: gnupg.GPG.send_keys
+    arity: 1
+    canonical_return_type: gnupg.SendResult
+    return: { type: gnupg.SendResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.send_keys
+    arity: 2
+    canonical_return_type: gnupg.SendResult
+    return: { type: gnupg.SendResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.send_keys
+    arity: 3
+    canonical_return_type: gnupg.SendResult
+    return: { type: gnupg.SendResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.send_keys
+    arity: 4
+    canonical_return_type: gnupg.SendResult
+    return: { type: gnupg.SendResult, confidence: high }
+    role: operation
+
+  # ── recv_keys -- 0.5.6 gnupg.py:1638. Arity 1-4: `*keyids` varargs; the 4 cap is bounded -- see the header.
+  - method: gnupg.GPG.recv_keys
+    arity: 1
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.recv_keys
+    arity: 2
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.recv_keys
+    arity: 3
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  - method: gnupg.GPG.recv_keys
+    arity: 4
+    canonical_return_type: gnupg.ImportResult
+    return: { type: gnupg.ImportResult, confidence: high }
+    role: operation
+
+  # ── auto_locate_key -- 0.5.6 gnupg.py:1978. Arity 1-3: 2 declared parameters plus extra_args in `**kwargs`; ARRIVES 0.5.3.
+  - method: gnupg.GPG.auto_locate_key
+    arity: 1
+    canonical_return_type: gnupg.AutoLocateKey
+    return: { type: gnupg.AutoLocateKey, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.auto_locate_key
+    arity: 2
+    canonical_return_type: gnupg.AutoLocateKey
+    return: { type: gnupg.AutoLocateKey, confidence: high }
+    role: output
+
+  - method: gnupg.GPG.auto_locate_key
+    arity: 3
+    canonical_return_type: gnupg.AutoLocateKey
+    return: { type: gnupg.AutoLocateKey, confidence: high }
+    role: output
+
