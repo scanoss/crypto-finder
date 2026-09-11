@@ -1,0 +1,635 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: fastecdsa
+  coordinates:
+    - fastecdsa
+  version_range: ">=1.1.0,<4"
+  description: >-
+    fastecdsa — ECDSA over prime-field elliptic curves with the curve and the
+    message digest supplied BY THE CALLER, backed by two C extensions
+    (`_ecdsa`, `curvemath`). Key generation and derivation in `fastecdsa.keys`,
+    sign/verify in `fastecdsa.ecdsa`, seventeen named curve constants in
+    `fastecdsa.curve`, and SEC1 / DER / PEM key and signature encoding under
+    `fastecdsa.encoding`. Read from the sdists of all 46 published releases
+    (1.0.0b1 - 3.0.1), not from documentation.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EVERY KEY HERE WAS READ OFF AN EXPORTED CALL GRAPH, not written from the API.
+#
+#   crypto-finder scan --no-remote-rules --rules-dir <rules>/python/fastecdsa \
+#     --export-callgraph /tmp/cg.json <a probe consumer package>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# Before this file existed that probe emitted, verbatim:
+#
+#   fastecdsa.ecdsa.sign(?, ?, ?, ?)
+#   fastecdsa.ecdsa.verify(?, ?, ?, ?, ?)
+#   fastecdsa.encoding.der.DEREncoder.decode_signature(?)
+#   fastecdsa.encoding.der.DEREncoder.encode_signature(?, ?)
+#   fastecdsa.encoding.sec1.SEC1Encoder.decode_public_key(?, ?)
+#   fastecdsa.encoding.sec1.SEC1Encoder.encode_public_key(?, ?)
+#   fastecdsa.keys.export_key(?, ?, ?)
+#   fastecdsa.keys.export_private_key(?, ?, ?)
+#   fastecdsa.keys.export_public_key(?, ?)
+#   fastecdsa.keys.gen_keypair(?)
+#   fastecdsa.keys.gen_private_key(?)
+#   fastecdsa.keys.get_public_key(?, ?)
+#   fastecdsa.keys.get_public_keys_from_sig(?, ?, ?, ?)
+#   fastecdsa.keys.import_key(?, ?)
+#   fastecdsa.keys.import_private_key(?, ?)
+#   fastecdsa.keys.import_public_key(?, ?, ?)
+#
+# `name(?, ?)` with empty `parameter_types` is exactly the ABSENT-CONTRACT
+# rendering, which is what those keys looked like before this file existed and
+# what they must no longer look like after it.
+#
+# THE KEY IS THE FULL MODULE PATH FOR THIS PACKAGE, and that is worth stating
+# because it is NOT universal. An earlier pypi family measured the parser
+# keying a TYPE on its containing DIRECTORY -- `eth_account/signers/local.py`
+# emitting `eth_account.signers.LocalAccount.sign_message`, dropping the module
+# file name -- and an author who generalised from that would write
+# `fastecdsa.SEC1Encoder.encode_public_key` here and join nothing. Measured on
+# a probe consumer with crypto-finder built from this worktree: the module file
+# is KEPT for both free functions (`fastecdsa.keys.gen_keypair`) and class
+# methods (`fastecdsa.encoding.sec1.SEC1Encoder.encode_public_key`). That is why
+# 5.5 says to read the keys off a graph and count the segments rather than
+# reason about them.
+#
+# ONE SPELLING PER SYMBOL IN `keys` AND `ecdsa`, THREE IN `encoding`, AND BOTH
+# HALVES ARE MEASURED. `fastecdsa/__init__.py` is EMPTY in all 46 sdists --
+# checked file by file -- so there are no package-root re-exports, and for the
+# flat modules every import spelling converges on one key. Measured with one
+# probe function per spelling:
+#
+#   import fastecdsa.keys            -> fastecdsa.keys.gen_keypair
+#   from fastecdsa import keys       -> fastecdsa.keys.gen_keypair
+#   from fastecdsa.keys import ...   -> fastecdsa.keys.gen_keypair
+#   import fastecdsa.keys as fk      -> fastecdsa.keys.gen_keypair
+#   from fastecdsa import keys as ak -> fastecdsa.keys.gen_keypair
+#
+# FIVE spellings, ONE key, so `keys` and `ecdsa` carry one entry per
+# (method, arity). Contrast python/py-ecc, which needs two entries per method
+# because `py_ecc/bls/__init__.py` DOES re-export.
+#
+# `fastecdsa.encoding` IS THE EXCEPTION, AND IT IS THE PACKAGE'S ONLY NESTED
+# PACKAGE. Five of its eight reachable spellings emit a key that DROPS a
+# segment, and each of those joined nothing until it was declared:
+#
+#   from fastecdsa.encoding.sec1 import SEC1Encoder
+#     -> fastecdsa.encoding.sec1.SEC1Encoder.encode_public_key   (the true path)
+#   from fastecdsa.encoding import sec1
+#     -> fastecdsa.encoding.SEC1Encoder.encode_public_key        (`sec1` dropped)
+#   from fastecdsa import encoding
+#     -> fastecdsa.sec1.SEC1Encoder.encode_public_key            (`encoding` dropped)
+#
+# All three are declared for all four encoder methods. THE BEHAVIOUR IS
+# RECORDED, THE MECHANISM IS NOT ASSERTED: a tidy rule fits the encoding rows
+# and is contradicted by the keys rows above, so this file states the matrix it
+# measured rather than a story that half the evidence refutes. The underlying
+# resolver behaviour is NOT fixed here -- it is shared behaviour affecting every
+# python family with a nested package, and 5.4 requires such a change to carry
+# its own commit and a test pinning the previously working cases. It is reported
+# with its probe instead. The full spelling-to-key matrix is reproduced in the
+# `encoding` section of this file, beside the entries it explains.
+#
+# THE ARITY SET IS ENUMERATED FROM EACH SIGNATURE, NOT FROM THE PROBE.
+# A python keyword argument occupies an arity slot, so `sign(msg, d,
+# curve=P256, hashfunc=sha256)` emits arity 4 -- measured. Consumers write
+# every legal count: the 38-consumer corpus contains `sign` at 2, 3 and 4 and
+# `verify` at 3, 4 and 5, including all-keyword calls that no positional
+# pattern matches. Every arity the signature PERMITS is declared, including the
+# ones the corpus happens not to contain, because a missing arity does not
+# fail loudly: `ContractsForTolerant`'s name-only fallback resolves it with
+# ANOTHER entry's parameter_types and the wrong confidence, which reads as a
+# successful join. `varargs` is NOT declared anywhere here -- `builder.go:1562`
+# is Java-gated and the field is inert for python.
+#
+# TWO RETURN TYPES CARRY `confidence: low`, AND BOTH FOR THE SAME REASON.
+# `export_key`, `export_private_key` and `export_public_key` are declared
+# `-> Optional[bytes]`: they return the encoded bytes when `filepath is None`
+# and write to disk returning None otherwise (2.3.2 keys.py:143-151). `bytes`
+# is the useful half rather than the whole truth, so it is declared with `low`
+# confidence rather than asserted as `high` or left empty -- an empty
+# `canonical_return_type` renders identically to no contract at all.
+#
+# `import_key` RETURNS A TUPLE WHOSE FIRST MEMBER MAY BE None:
+# `Tuple[Optional[int], Point]`, "(private key, public key), and if a public
+# key was imported the first value will be None" (2.3.2 keys.py:152-165). The
+# tuple itself is certain, so `builtins.tuple` at `high` is exact here; it is
+# the 3.0.0 SPLIT into `import_private_key -> int` and
+# `import_public_key -> Point` that resolves the ambiguity, and those two are
+# declared with their concrete types.
+#
+# ROLES. `sign` and `verify` are the crypto operations. Everything that
+# PRODUCES key material a later call consumes is `factory` -- `gen_keypair`,
+# `gen_private_key`, `get_public_key`, `get_public_keys_from_sig`, the three
+# import functions and `SEC1Encoder.decode_public_key` /
+# `DEREncoder.decode_signature`, which parse bytes back into a Point or an
+# (r, s) pair. The serialising direction is `output`: the three export
+# functions and `SEC1Encoder.encode_public_key` /
+# `DEREncoder.encode_signature`.
+#
+# WHAT THIS CONTRACT DELIBERATELY DOES NOT DECLARE, so the absences are on the
+# record rather than read as oversights. Each is also a stated non-claim in the
+# matching rule file, and the two documents agree by construction because the
+# rules' `api` values and these method keys were generated from one table:
+#   * `fastecdsa._ecdsa.*` and `fastecdsa.curvemath.*` -- the C extension
+#     primitives. `ecdsa.sign` calls `_ecdsa.sign` itself (3.0.1 ecdsa.py:54),
+#     so contracting both would make one signature two entry points.
+#   * `fastecdsa.point.Point` and its operators -- group arithmetic. `Point`'s
+#     entire public surface is `__init__` plus `__add__`, `__sub__`, `__mul__`,
+#     `__rmul__` and `__neg__` (3.0.1 point.py:23,66,102,123,157,170).
+#   * `fastecdsa.util.RFC6979` / `mod_sqrt`, and
+#     `fastecdsa.encoding.util.bytes_to_int` / `int_to_bytes` / `int_bytelen`
+#     -- nonce derivation already covered by `sign`, and byte plumbing.
+#   * `fastecdsa.curve.Curve` and the 17 curve constants -- fixed public
+#     parameters, not key material.
+#   * `fastecdsa.encoding.pem.PEMEncoder.*` -- reached in practice as the
+#     `encoder=` argument of `export_key` / `import_key`, which ARE declared.
+#   * `fastecdsa.keys.encode_keypair` / `encode_public_key` (1.4.3 - 1.6.1
+#     only, 4 of 46 rows) and `fastecdsa.ecdsa.KeyPair` (1.0.0b1 - 1.0.3, 7 of
+#     46 rows, python 2 only -- 1.0.0b1 ecdsa.py:6 is `from util import
+#     RFC6979`, an implicit relative import that is a SyntaxError under
+#     python 3). The declared `version_range` starts at 1.1.0 for that reason.
+#
+# VERSION WINDOWS PER SYMBOL, measured over all 46 sdists with `ast`; every one
+# is contiguous, so no entry here pairs a symbol with a range it is absent from:
+#   ecdsa.sign / ecdsa.verify                       1.1.0 - 3.0.1   39 rows
+#   keys.gen_keypair / gen_private_key /
+#     get_public_key                                1.1.3 - 3.0.1   36 rows
+#   keys.get_public_keys_from_sig                   1.6.2 - 3.0.1   26 rows
+#   keys.export_key / import_key                    1.6.2 - 2.3.2   24 rows
+#   keys.export_private_key / export_public_key /
+#     import_private_key / import_public_key        3.0.0 - 3.0.1    2 rows
+#   encoding.sec1.SEC1Encoder.encode_public_key /
+#     decode_public_key                             1.7.0 - 3.0.1   22 rows
+#   encoding.der.DEREncoder.encode_signature /
+#     decode_signature                              1.7.0 - 3.0.1   22 rows
+# `export_key` and `export_private_key` NEVER COEXIST: 3.0.0 removed the former
+# and split it in two. Both are declared because a consumer on either side of
+# that boundary must resolve, and the `version_range` is library-level.
+
+contracts:
+  - method: fastecdsa.ecdsa.sign
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+  - method: fastecdsa.ecdsa.sign
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.ecdsa.sign
+    arity: 4
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - builtins.function
+  - method: fastecdsa.ecdsa.sign
+    arity: 5
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - builtins.function
+      - builtins.bool
+  - method: fastecdsa.ecdsa.verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.bool
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.point.Point
+  - method: fastecdsa.ecdsa.verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.bool
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.point.Point
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.ecdsa.verify
+    arity: 5
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.bool
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.point.Point
+      - fastecdsa.curve.Curve
+      - builtins.function
+  - method: fastecdsa.ecdsa.verify
+    arity: 6
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    canonical_return_type: builtins.bool
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.point.Point
+      - fastecdsa.curve.Curve
+      - builtins.function
+      - builtins.bool
+  - method: fastecdsa.keys.gen_keypair
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.gen_private_key
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.int
+    parameter_types:
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.gen_private_key
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.int
+    parameter_types:
+      - fastecdsa.curve.Curve
+      - builtins.function
+  - method: fastecdsa.keys.get_public_key
+    arity: 2
+    return:
+      type: fastecdsa.point.Point
+      confidence: high
+    role: factory
+    canonical_return_type: fastecdsa.point.Point
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.get_public_keys_from_sig
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+  - method: fastecdsa.keys.get_public_keys_from_sig
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.get_public_keys_from_sig
+    arity: 4
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.tuple
+      - builtins.bytes
+      - fastecdsa.curve.Curve
+      - builtins.function
+  - method: fastecdsa.keys.export_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+  - method: fastecdsa.keys.export_key
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.export_key
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - builtins.str
+  - method: fastecdsa.keys.export_key
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - builtins.str
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.keys.import_key
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.str
+  - method: fastecdsa.keys.import_key
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.str
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.keys.import_key
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.str
+      - fastecdsa.curve.Curve
+      - builtins.bool
+  - method: fastecdsa.keys.import_key
+    arity: 4
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.str
+      - fastecdsa.curve.Curve
+      - builtins.bool
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.keys.export_private_key
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.keys.export_private_key
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - fastecdsa.curve.Curve
+      - fastecdsa.encoding.KeyEncoder
+      - builtins.str
+  - method: fastecdsa.keys.export_public_key
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.keys.export_public_key
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+      - fastecdsa.encoding.KeyEncoder
+      - builtins.str
+  - method: fastecdsa.keys.import_private_key
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.int
+    parameter_types:
+      - builtins.str
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.keys.import_public_key
+    arity: 3
+    return:
+      type: fastecdsa.point.Point
+      confidence: high
+    role: factory
+    canonical_return_type: fastecdsa.point.Point
+    parameter_types:
+      - builtins.str
+      - fastecdsa.curve.Curve
+      - fastecdsa.encoding.KeyEncoder
+  - method: fastecdsa.encoding.sec1.SEC1Encoder.encode_public_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+  - method: fastecdsa.encoding.sec1.SEC1Encoder.encode_public_key
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+      - builtins.bool
+  - method: fastecdsa.encoding.sec1.SEC1Encoder.decode_public_key
+    arity: 2
+    return:
+      type: fastecdsa.point.Point
+      confidence: high
+    role: factory
+    canonical_return_type: fastecdsa.point.Point
+    parameter_types:
+      - builtins.bytes
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.encoding.der.DEREncoder.encode_signature
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - builtins.int
+  - method: fastecdsa.encoding.der.DEREncoder.decode_signature
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+  - method: fastecdsa.encoding.SEC1Encoder.encode_public_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+  - method: fastecdsa.encoding.SEC1Encoder.encode_public_key
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+      - builtins.bool
+  - method: fastecdsa.sec1.SEC1Encoder.encode_public_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+  - method: fastecdsa.sec1.SEC1Encoder.encode_public_key
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - fastecdsa.point.Point
+      - builtins.bool
+  - method: fastecdsa.encoding.SEC1Encoder.decode_public_key
+    arity: 2
+    return:
+      type: fastecdsa.point.Point
+      confidence: high
+    role: factory
+    canonical_return_type: fastecdsa.point.Point
+    parameter_types:
+      - builtins.bytes
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.sec1.SEC1Encoder.decode_public_key
+    arity: 2
+    return:
+      type: fastecdsa.point.Point
+      confidence: high
+    role: factory
+    canonical_return_type: fastecdsa.point.Point
+    parameter_types:
+      - builtins.bytes
+      - fastecdsa.curve.Curve
+  - method: fastecdsa.encoding.DEREncoder.encode_signature
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - builtins.int
+  - method: fastecdsa.der.DEREncoder.encode_signature
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    canonical_return_type: builtins.bytes
+    parameter_types:
+      - builtins.int
+      - builtins.int
+  - method: fastecdsa.encoding.DEREncoder.decode_signature
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
+  - method: fastecdsa.der.DEREncoder.decode_signature
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - builtins.bytes
