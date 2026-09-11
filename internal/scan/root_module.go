@@ -46,11 +46,32 @@ func DetectRootModule(targetDir, ecosystem string) string {
 			return strings.ReplaceAll(name, "-", "_")
 		}
 	case ecosystemPython:
-		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]"); name != "" {
-			return name
-		}
+		// A SINGLE TOP-LEVEL PACKAGE DIRECTORY ALREADY SUPPLIES THE PREFIX, so
+		// this check comes BEFORE the manifest one. An sdist laid out as
+		// `<root>/<pkg>/__init__.py` yields declaration FQNs that already start
+		// with `<pkg>`; returning a root module as well prepends it a second
+		// time, and every contract key and rule `api` then fails to join.
+		//
+		// This ordering used to be the other way round, and the manifest branch
+		// won for any project carrying a PEP 621 `pyproject.toml` -- which is
+		// most modern Python packages. Measured on fastecdsa, which migrated
+		// from setup.py to pyproject.toml at 2.3.0 and changed nothing else
+		// about its layout: with the manifest branch first, 2.3.0, 3.0.0 and
+		// 3.0.1 synthesized ZERO crypto API entry points while 1.6.2 - 2.2.3
+		// synthesized 8 to 12. Deleting pyproject.toml from the 2.3.0 tree and
+		// changing nothing else restored all 12, with byte-identical
+		// function_count (64) and edge_count (318) -- so the call graph was
+		// never the problem, only the prefix.
+		//
+		// The manifest is still consulted for the layouts where the path does
+		// NOT carry the package name: a src-layout project (`src/<pkg>/`) has
+		// no top-level package directory, and a distribution shipping several
+		// top-level packages has no unique one.
 		if hasUniquePythonPackageDir(targetDir) {
 			return ""
+		}
+		if name := detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]"); name != "" {
+			return name
 		}
 	}
 
