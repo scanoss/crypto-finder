@@ -1,0 +1,1140 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: pgpy
+  coordinates:
+    - pgpy
+  version_range: ">=0.1.0,<0.7"
+  description: >-
+    PGPy - a pure-Python OpenPGP implementation. PGPKey / PGPMessage /
+    PGPSignature lifecycle: asymmetric key generation, OpenPGP signing,
+    verification, certification, revocation and binding, public-key and
+    passphrase-based symmetric encryption and decryption, private-key
+    passphrase protection, key and signature material loading, and session-key
+    generation. Read from the sdists of 0.1.0, 0.2.3, 0.3.0, 0.4.0, 0.4.1,
+    0.4.2, 0.4.3, 0.5.0, 0.5.4 and 0.6.0 (pgpy/pgp.py, pgpy/types.py,
+    pgpy/constants.py, pgpy/keys.py, pgpy/packet/*.py), never from
+    documentation.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE KEYS BELOW WERE READ OFF AN EXPORTED CALL GRAPH AND THEN RE-EXPORTED
+# UNTIL NOTHING MOVED. They were not written from the API. The probe consumer
+# is a three-module package, one module per import spelling, scanned with
+# crypto-finder built from this worktree:
+#
+#     crypto-finder scan --no-remote-rules --rules-dir <rules>/semgrep-rules \
+#       --export-callgraph /tmp/cg.json <probe consumer>
+#
+# BOTH MODULE SPELLINGS ARE DECLARED FOR EVERY TYPE, AND THAT IS NOT
+# REDUNDANCY. Measured on that probe:
+#
+#     from pgpy import PGPKey        -> pgpy.PGPKey.new
+#     import pgpy; pgpy.PGPKey.new   -> pgpy.PGPKey.new        (same key)
+#     from pgpy.pgp import PGPKey    -> pgpy.pgp.PGPKey.new    (DIFFERENT key)
+#
+# The key follows the CONSUMER'S import, and neither spelling resolves the
+# other. `pgpy/__init__.py` re-exports PGPKey, PGPKeyring, PGPMessage,
+# PGPSignature and PGPUID from the package root while they are defined in
+# `pgpy/pgp.py`, and both spellings occur in real code, so each method carries
+# two entries with the return type spelled to match its own key. Chains then
+# close within one spelling.
+#
+# NOTE WHAT DID **NOT** HAPPEN, because an earlier revision of the campaign
+# prompt predicts it: there is no `.<init>` / no-`.<init>` split here. Every
+# factory in this file is a CLASSMETHOD (`new`, `from_file`, `from_blob`), and
+# a classmethod call emits the same key whether the consumer wrote
+# `from pgpy import PGPKey; PGPKey.new(..)` or `import pgpy;
+# pgpy.PGPKey.new(..)` -- measured on both spellings. The `<init>` entries that
+# ARE present cover the genuine zero-argument constructor `PGPKey()`, which is
+# a separate shape.
+#
+# THE FACTORY RETURN TYPES ARE WHAT MAKE THE RECEIVER METHODS RESOLVE AT ALL.
+# Before this file existed the same probe emitted `probe.key.sign(?)`,
+# `probe.key.encrypt(?, ?)`, `probe.ring.sign(?)` -- the CONSUMER'S VARIABLE
+# PATH, which no contract can ever join. The factory entries are therefore load
+# bearing for every operation entry below them.
+#
+# ARITY: ONE ENTRY PER METHOD, AT ITS REQUIRED-ARGUMENT COUNT. `ContractsForTolerant`
+# tries an exact-arity match and, for a Python KB, falls back to a name-only
+# match with the lowest-arity candidate as the deterministic tiebreak --
+# precisely because Python keyword arguments mean one call site appears at
+# several arities. `PGPKey.new` takes an optional `created=` from 0.5.0,
+# `sign`/`certify`/`revoke`/`bind`/`encrypt` take `**prefs`, and `encrypt` also
+# takes `sessionkey=`, so real call sites appear at two and three arguments and
+# the tolerant fallback covers them. Declaring one entry per observed arity
+# would multiply this file and change nothing.
+#
+# NO `parameters:` BLOCK ON `PGPKey.new`, AND THE REASON IS IN THE SIGNATURE.
+# `keySize` from `argument_value` on index 1 looks obviously right and is
+# wrong: `key_size` is POLYMORPHIC. PGPy's own docstring says
+# ":type key_size: ``int`` or :py:obj:`~constants.EllipticCurveOID`"
+# (0.6.0 pgpy/pgp.py:1588-1600), and `ECDSAPriv._generate`/`ECDHPriv._generate`
+# read it as a curve OID (pgpy/packet/fields.py:1477-1486, 1600-1619). A single
+# `argument_value` derivation on that index would publish a curve OID as a key
+# size on every EC call. A `when:` conditional could split it, but the size is
+# already published by the rules, per stated algorithm, at the one place the
+# algorithm is knowable -- so a contributed property here would add a second,
+# weaker source for a value that already has an exact one.
+#
+# TWO RETURN TYPES ARE SEMANTIC RATHER THAN DECLARED, and both are marked.
+#   `PGPKey.from_file` / `from_blob` return a 2-TUPLE `(key, others)`:
+#   `Armorable.from_file` returns `(obj, po)` when `parse` yields leftovers,
+#   and `PGPKey.parse` returns its `keys` dict (0.6.0 pgpy/types.py,
+#   pgpy/pgp.py:2676). Real code therefore writes
+#   `key, _ = PGPKey.from_file(path)`. `canonical_return_type` records the
+#   tuple; `return.type` records the semantic element, which is what a receiver
+#   binds. `PGPMessage.parse` and `PGPSignature.parse` return None, so THEIR
+#   `from_file`/`from_blob` return the object itself and carry no tuple.
+#   `PGPKeyring.key` and `PGPKey.unlock` are `@contextlib.contextmanager`
+#   generators: the declared return is a context manager and the SEMANTIC
+#   return is what `with ... as` binds -- `self._get_key(identifier)`, a
+#   PGPKey, at 0.6.0 pgpy/pgp.py:2837, and `self` at pgpy/pgp.py:1800. Both are
+#   marked `confidence: medium` for that reason.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# TWO INCOMPATIBLE ERAS SHARE THIS `version_range`, AND EVERY ENTRY BELOW SAYS
+# WHICH ONE IT BELONGS TO. The committed CSV lists 15 releases, 0.1.0 - 0.6.0,
+# and the public surface is not continuous across them:
+#
+#   0.1.0 - 0.2.3   `pgpy/__init__.py` exports `PGPKeyring` from `pgpy/keys.py`
+#                   and NOTHING ELSE crypto-relevant (0.2.3 pgpy/__init__.py).
+#                   Signing and verification go THROUGH the keyring:
+#                   `PGPKeyring.sign(subject, inline=False)` and
+#                   `.verify(subject, signature)` (0.2.3 pgpy/keys.py:551,706;
+#                   0.1.0 pgpy/keys.py:226,309). There is no `PGPKey`
+#                   lifecycle object, no `pgpy.constants`, no key generation.
+#   0.3.0           `pgpy/keys.py` is DELETED and `pgpy/constants.py` arrives.
+#                   `PGPKey`, `PGPMessage`, `PGPSignature`, `PGPUID` and a new
+#                   `PGPKeyring` (no `sign`, no `verify`) are exported from
+#                   `pgpy/pgp.py`. `PGPKey.new` and `PGPKey.protect` exist but
+#                   both raise `NotImplementedError`
+#                   (0.3.0 pgpy/pgp.py:1210-1212, 1300-1301).
+#   0.4.0           `PGPKey.new(key_algorithm, key_size)` and
+#                   `PGPKey.protect(passphrase, enc_alg, hash_alg)` become real
+#                   (0.4.0 pgpy/pgp.py:1344, 1475). `EllipticCurveOID` arrives.
+#   0.4.1           `pgpy/_curves.py` arrives, giving the three Brainpool
+#                   members a curve class and therefore `can_gen`.
+#   0.5.0           X25519 and Ed25519 gain curve classes, so ECDH over
+#                   Curve25519 and EdDSA over Ed25519 become generatable, and
+#                   `PubKeyAlgorithm.can_gen` gains EdDSA. `created=` is added
+#                   to `PGPKey.new` and `PGPSignature.new`.
+#   0.6.0           No public-surface change relevant to this file; the
+#                   `pgpy.pgp.PGPKeyring.unload` method and
+#                   `SecurityIssues` diagnostics are additions.
+#
+# ONE TRAP WORTH NAMING: `pgpy.pgp.PGPKey` EXISTS IN BOTH ERAS AND IS TWO
+# DIFFERENT CLASSES. At 0.1.0 - 0.2.3 `pgpy/pgp.py:379` declares
+# `class PGPKey(PGPBlock)` -- a parsed key FILE with no `new`, `sign` or
+# `encrypt`. The `pgpy.pgp.PGPKey.*` entries below describe the 0.3.0-onward
+# class only. Nothing can be keyed to disambiguate them, and nothing needs to
+# be: the legacy class declares none of the methods declared here, so an entry
+# for a method it does not have cannot resolve against it.
+#
+# `SignatureVerification` MOVED MODULE INSIDE THE RANGE. It is
+# `pgpy.types.SignatureVerification` from 0.2.3 (0.2.3 pgpy/types.py:141,
+# 0.6.0 pgpy/types.py:563) and `pgpy.signature.SignatureVerification` at 0.1.0
+# (0.1.0 pgpy/signature.py:5). The `verify` entries name the 0.2.3-onward
+# spelling with `confidence: medium` rather than declaring one era's type as if
+# it held for all of them.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DISPOSITION OF THE REST OF THE PUBLIC SURFACE
+#
+#   PGPKey.pubkey, .fingerprint,
+#   .key_algorithm, .key_size,
+#   .is_public, .is_protected,
+#   .is_unlocked, .is_expired,
+#   .subkeys, .userids, .signers,
+#   PGPSignature.hash_algorithm,
+#   .key_algorithm, .type,
+#   PGPMessage.is_encrypted,
+#   .is_signed, .message, .signatures
+#                            skipped-informative-return -- PROPERTIES, not
+#                            calls, so no contract can key them and no rule can
+#                            anchor them. The rules reach `pubkey` as an acute
+#                            ATTRIBUTE PATH on a taint-bound receiver instead
+#                            (`$RECV.pubkey.verify(...)`).
+#   PGPKey.add_uid / del_uid,
+#   PGPUID.new, PGPUID.*     skipped-non-crypto -- User ID packet management.
+#                            `add_uid(uid, selfsign=True, **prefs)` DOES take
+#                            `hashes=`, `ciphers=` and `compression=` keyword
+#                            lists, but those declare the key owner's
+#                            PREFERENCES for future operations, not an
+#                            algorithm this call performs. Publishing them
+#                            would report an algorithm nothing executed.
+#   PGPKey.revoker           skipped-non-crypto at the contract layer -- it
+#                            issues a designated-revoker signature and reads
+#                            the same `hash=` pref (0.6.0 pgpy/pgp.py:2288),
+#                            but it is key-management metadata rather than a
+#                            distinct primitive, and no rule anchors it.
+#   PGPKeyring.fingerprints,
+#   .unload, .load           `load` IS contracted below (it is how a keyring
+#                            acquires its keys and it returns the fingerprint
+#                            list a consumer then indexes); `fingerprints` and
+#                            `unload` are skipped-non-crypto -- set arithmetic
+#                            over already-parsed keys.
+#   PGPMessage.new           contracted below (factory). Its `compression=`
+#                            keyword selects a CompressionAlgorithm, which is
+#                            not cryptography and is not published anywhere.
+#   PGPSignature.new         contracted below (factory) -- it DOES name a
+#                            public-key algorithm and a digest positionally
+#                            (0.6.0 pgpy/pgp.py:324-325), and it is contracted
+#                            so that a consumer building a signature packet by
+#                            hand resolves. NO RULE anchors it: `PGPKey.sign`
+#                            is its only caller inside PGPy
+#                            (0.6.0 pgpy/pgp.py:2053) and it is passed values
+#                            read off the signing key rather than chosen by the
+#                            consumer. If a real consumer is found calling it,
+#                            the rule is the thing to add, not this entry.
+#   PGPKey.parse,
+#   PGPMessage.parse,
+#   PGPSignature.parse,
+#   Armorable.ascii_unarmor,
+#   PGPObject.text_to_bytes  skipped-non-crypto -- packet and armor parsing.
+#   str(obj) / bytes(obj)    skipped-non-crypto -- `__str__`/`__bytes__`
+#                            re-encode an already-built object.
+#   pgpy.symenc._encrypt,
+#   pgpy.symenc._decrypt     skipped-non-crypto AT THIS LAYER -- private
+#                            helpers (leading underscore, and `__all__` names
+#                            them only for internal import). They are also
+#                            where PGPy calls `cryptography`
+#                            (0.6.0 pgpy/symenc.py:29), and claiming the layer
+#                            below is exactly what this family must not do.
+#   pgpy.constants           enum MEMBERS are values, not calls. The two
+#                            METHODS on `SymmetricKeyAlgorithm` are contracted
+#                            below; `HashAlgorithm.hasher`,
+#                            `.digest_size`, `EllipticCurveOID.key_size`,
+#                            `.kdf_halg`, `.kek_alg`, `PubKeyAlgorithm.can_gen`
+#                            and the `is_*` diagnostics are
+#                            skipped-informative-return properties.
+#   pgpy.errors.*            skipped-non-crypto -- exception types.
+#
+# A DISCLOSED KEY-SHAPE LIMITATION, MEASURED RATHER THAN PREDICTED.
+# `gen_key` and `gen_iv` are methods on an enum MEMBER, and the emitted key
+# carries the member rather than the class:
+#
+#     from pgpy.constants import SymmetricKeyAlgorithm
+#     SymmetricKeyAlgorithm.AES256.gen_key()   -> pgpy.constants.AES256.gen_key
+#     pgpy.constants.SymmetricKeyAlgorithm.CAST5.gen_key()
+#                                              -> pgpy.constants.SymmetricKeyAlgorithm.CAST5.gen_key
+#
+# Two shapes, both member-qualified, and the first DROPS the enum class name
+# entirely. Neither equals the `pgpy.constants.SymmetricKeyAlgorithm.gen_key`
+# entry below, so that entry serves the rules' `api` join -- which is keyed on
+# the DEFINITION FQN when PGPy itself is mined -- and does NOT resolve a
+# consumer call site. Covering the call sites would need one entry per (member,
+# spelling, method): 11 x 2 x 2 = 44 entries whose only contribution is a
+# `builtins.bytes` return on a random-byte generator. Disclosed instead of
+# encoded, and the two `gen_*` entries below are marked accordingly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+
+
+  # ── pgpy.PGPKey — root re-export ─────────────────────────────
+
+  # >= 0.4.0. At 0.3.0 the body is `raise NotImplementedError` and the
+  # signature has no `key_size` (0.3.0 pgpy/pgp.py:1210-1212); the
+  # two-positional form arrives at 0.4.0 (0.4.0 pgpy/pgp.py:1344) and gains an
+  # optional `created=` at 0.5.0, which the tolerant arity fallback covers.
+  # `key_size` is intentionally not modelled as a contributed property — see the
+  # header.
+  - method: pgpy.PGPKey.new
+    arity: 2
+    return:
+      type: pgpy.PGPKey
+      confidence: high
+    role: factory
+
+  # Returns `(key, others)`. `Armorable.from_file` returns `(obj, po)` when
+  # `parse` yields leftovers (0.6.0 pgpy/types.py) and `PGPKey.parse` returns its
+  # `keys` dict (0.6.0 pgpy/pgp.py:2676), so real code writes
+  # `key, _ = PGPKey.from_file(path)`. `canonical_return_type` records the tuple;
+  # `return.type` records the element a receiver binds.
+  #
+  # A TUPLE-UNPACKED TARGET IS NOT TYPED BY THE RESOLVER, AND THE ACCURATE
+  # DECLARATION COSTS NOTHING. Measured both ways with crypto-finder built from
+  # this worktree: `loaded, _ = PGPKey.from_file("k.asc")` then
+  # `loaded.sign(msg)` emits `probe.loaded.sign(?)` WITH the
+  # `canonical_return_type: builtins.tuple` line and WITHOUT it, identically. So
+  # dropping the tuple to try to make the receiver resolve buys nothing and would
+  # publish a return type the method does not have. The wrong behaviour is pinned
+  # by TestPGPyContract_KnownLimitation_TupleUnpackedTargetIsNotTyped. Note the
+  # OPENGREP layer does reach this shape — the rules' taint sinks match
+  # `loaded.sign(...)` — so the call is detected; it is the call GRAPH that keys
+  # it on the consumer's variable. >= 0.3.0.
+  - method: pgpy.PGPKey.from_file
+    arity: 1
+    return:
+      type: pgpy.PGPKey
+      confidence: high
+    canonical_return_type: builtins.tuple
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same 2-tuple shape as `from_file` (0.6.0 pgpy/types.py). >= 0.3.0.
+  - method: pgpy.PGPKey.from_blob
+    arity: 1
+    return:
+      type: pgpy.PGPKey
+      confidence: high
+    canonical_return_type: builtins.tuple
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # The genuine zero-argument constructor: an empty shell with
+  # `self._key = None` (0.6.0 pgpy/pgp.py:1627-1636), populated afterwards by
+  # `parse`. It is declared because it TYPES A RECEIVER — `k = PGPKey(); k.parse(t);
+  # k.sign(m)` is the spelling PGPy's own `unlock` docstring uses — not because
+  # the empty shell is itself an asset. >= 0.3.0.
+  - method: pgpy.PGPKey.<init>
+    arity: 0
+    return:
+      type: pgpy.PGPKey
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPKey()` — the module-attribute call spelling, which
+  # emits the key WITHOUT the `.<init>` segment. Both are needed; the already
+  # merged python/ecdsa and python/coincurve contracts record the same split.
+  - method: pgpy.PGPKey
+    arity: 0
+    return:
+      type: pgpy.PGPKey
+      confidence: high
+    role: factory
+
+  # `sign(subject, **prefs)` (0.6.0 pgpy/pgp.py:2007). Real call sites appear at
+  # arity 1 and 2 (`hash=`), covered by the tolerant fallback. The signature's
+  # public-key algorithm comes from `self.key_algorithm`
+  # (0.6.0 pgpy/pgp.py:2053), not from the call — which is why the rules publish
+  # no algorithm name here. >= 0.3.0.
+  - method: pgpy.PGPKey.sign
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: operation
+
+  # `certify(subject, level=SignatureType.Generic_Cert, **prefs)` (0.6.0 pgpy/pgp.py:2058). >= 0.3.0.
+  - method: pgpy.PGPKey.certify
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: operation
+
+  # `revoke(target, **prefs)` (0.6.0 pgpy/pgp.py:2225). >= 0.3.0.
+  - method: pgpy.PGPKey.revoke
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: operation
+
+  # `bind(key, **prefs)` (0.6.0 pgpy/pgp.py:2307). >= 0.3.0.
+  - method: pgpy.PGPKey.bind
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: operation
+
+  # `verify(subject, signature=None)` (0.6.0 pgpy/pgp.py:2414), returning the
+  # `SignatureVerification` built at pgpy/pgp.py:2469 and returned at :2496.
+  # `confidence: medium` because the type MOVED MODULE inside `version_range`:
+  # `pgpy.types.SignatureVerification` from 0.2.3 (0.2.3 pgpy/types.py:141) but
+  # `pgpy.signature.SignatureVerification` at 0.1.0 (0.1.0 pgpy/signature.py:5).
+  # Naming the 0.2.3-onward spelling at high confidence would assert one era's
+  # type for all of them. >= 0.3.0 for this receiver.
+  - method: pgpy.PGPKey.verify
+    arity: 1
+    return:
+      type: pgpy.types.SignatureVerification
+      confidence: medium
+    role: operation
+
+  # `encrypt(message, sessionkey=None, **prefs)` (0.6.0 pgpy/pgp.py:2499),
+  # returning a new `PGPMessage` carrying the ciphertext. Call sites appear at
+  # arity 1, 2 and 3 (`cipher=`, `sessionkey=`). >= 0.3.0.
+  - method: pgpy.PGPKey.encrypt
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: operation
+
+  # `decrypt(message)` (0.6.0 pgpy/pgp.py:2567). >= 0.3.0.
+  - method: pgpy.PGPKey.decrypt
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: operation
+
+  # `protect(passphrase, enc_alg, hash_alg)` (0.6.0 pgpy/pgp.py:1734). Mutates
+  # the key in place and returns None: it loops over the primary key and every
+  # subkey calling `sk._key.protect(...)` (0.6.0 pgpy/pgp.py:1760-1761), which
+  # reaches `encrypt_keyblob` (pgpy/packet/packets.py:935). >= 0.4.0 — at 0.3.0
+  # the method takes no arguments and raises (0.3.0 pgpy/pgp.py:1300-1301).
+  - method: pgpy.PGPKey.protect
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # `@contextlib.contextmanager def unlock(self, passphrase)`
+  # (0.6.0 pgpy/pgp.py:1765-1766), which decrypts the protected private key
+  # material for the duration of the block and yields `self`
+  # (0.6.0 pgpy/pgp.py:1800). The declared return is a context manager and the
+  # SEMANTIC return is what `with ... as` binds, hence `confidence: medium`.
+  #
+  # IT DOES NOT CURRENTLY RESOLVE A RECEIVER, AND AN EARLIER REVISION OF THIS
+  # COMMENT CLAIMED IT DID. Measured on a probe consumer with crypto-finder built
+  # from this worktree: `with protected.unlock("pw") as opened: opened.sign(msg)`
+  # emits `probe.opened.sign(?)` — the consumer's variable path — with this entry
+  # loaded. The python resolver does not type a `with ... as` binding from the
+  # context manager's contracted return. The entry is kept because the
+  # declaration is TRUE and becomes live the day that pass changes; the wrong
+  # behaviour is pinned by
+  # TestPGPyContract_KnownLimitation_WithAsBindingIsNotTyped so nobody has to
+  # rediscover it.
+  #
+  # NO RULE anchors `unlock` itself, because the call states no algorithm — the
+  # cipher and S2K digest were chosen at `protect` time and are read out of the
+  # packet. >= 0.3.0.
+  - method: pgpy.PGPKey.unlock
+    arity: 1
+    return:
+      type: pgpy.PGPKey
+      confidence: medium
+    role: operation
+
+
+  # ── pgpy.PGPMessage ────────────────────────────────────────────
+
+  # `new(message, **kwargs)` (0.6.0 pgpy/pgp.py:1097). The `compression=`
+  # keyword selects a `CompressionAlgorithm`, which is not cryptography and is
+  # published nowhere. >= 0.3.0.
+  - method: pgpy.PGPMessage.new
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: factory
+
+  # NO TUPLE HERE, unlike PGPKey: `PGPMessage.parse` returns None
+  # (0.6.0 pgpy/pgp.py:1269-1296), so `Armorable.from_file` falls through to
+  # `return obj` (0.6.0 pgpy/types.py). >= 0.3.0.
+  - method: pgpy.PGPMessage.from_file
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same single-object return as `from_file`. >= 0.3.0.
+  - method: pgpy.PGPMessage.from_blob
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  - method: pgpy.PGPMessage.<init>
+    arity: 0
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPMessage()` — the module-attribute call spelling.
+  - method: pgpy.PGPMessage
+    arity: 0
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: factory
+
+  # `encrypt(passphrase, sessionkey=None, **prefs)` (0.6.0 pgpy/pgp.py:1189),
+  # the passphrase/S2K path. Returns a NEW `PGPMessage` holding the ciphertext.
+  # Call sites appear at arity 1, 2 and 3. >= 0.3.0.
+  - method: pgpy.PGPMessage.encrypt
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: operation
+
+  # `decrypt(passphrase)` (0.6.0 pgpy/pgp.py:1239). >= 0.3.0.
+  - method: pgpy.PGPMessage.decrypt
+    arity: 1
+    return:
+      type: pgpy.PGPMessage
+      confidence: high
+    role: operation
+
+
+  # ── pgpy.PGPSignature ──────────────────────────────────────────
+
+  # Single-object return: `PGPSignature.parse` returns None
+  # (0.6.0 pgpy/pgp.py:573-594). >= 0.3.0 for this spelling — 0.1.0 - 0.2.3 also
+  # declare a `pgpy.pgp.PGPSignature`, a `PGPBlock` subclass
+  # (0.2.3 pgpy/pgp.py:269), which shares the inherited `FileLoader` loading but
+  # none of the modern accessors.
+  - method: pgpy.PGPSignature.from_file
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same single-object return as `from_file`. >= 0.3.0.
+  - method: pgpy.PGPSignature.from_blob
+    arity: 1
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # `new(sigtype, pkalg, halg, signer, created=None)`
+  # (0.6.0 pgpy/pgp.py:324-325); the `created=` argument arrives at 0.5.0, so the
+  # declared arity is the required-argument count and the tolerant fallback
+  # covers arity 5. CONTRACTED WITHOUT A RULE, deliberately — see the header.
+  # >= 0.3.0.
+  - method: pgpy.PGPSignature.new
+    arity: 4
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: factory
+
+  - method: pgpy.PGPSignature.<init>
+    arity: 0
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPSignature()` — the module-attribute call spelling.
+  - method: pgpy.PGPSignature
+    arity: 0
+    return:
+      type: pgpy.PGPSignature
+      confidence: high
+    role: factory
+
+
+  # ── pgpy.pgp.PGPKey — `from pgpy.pgp import ...` submodule spelling ─────────────────────────────
+
+  # >= 0.4.0. At 0.3.0 the body is `raise NotImplementedError` and the
+  # signature has no `key_size` (0.3.0 pgpy/pgp.py:1210-1212); the
+  # two-positional form arrives at 0.4.0 (0.4.0 pgpy/pgp.py:1344) and gains an
+  # optional `created=` at 0.5.0, which the tolerant arity fallback covers.
+  # `key_size` is intentionally not modelled as a contributed property — see the
+  # header.
+  - method: pgpy.pgp.PGPKey.new
+    arity: 2
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: high
+    role: factory
+
+  # Returns `(key, others)`. `Armorable.from_file` returns `(obj, po)` when
+  # `parse` yields leftovers (0.6.0 pgpy/types.py) and `PGPKey.parse` returns its
+  # `keys` dict (0.6.0 pgpy/pgp.py:2676), so real code writes
+  # `key, _ = PGPKey.from_file(path)`. `canonical_return_type` records the tuple;
+  # `return.type` records the element a receiver binds.
+  #
+  # A TUPLE-UNPACKED TARGET IS NOT TYPED BY THE RESOLVER, AND THE ACCURATE
+  # DECLARATION COSTS NOTHING. Measured both ways with crypto-finder built from
+  # this worktree: `loaded, _ = PGPKey.from_file("k.asc")` then
+  # `loaded.sign(msg)` emits `probe.loaded.sign(?)` WITH the
+  # `canonical_return_type: builtins.tuple` line and WITHOUT it, identically. So
+  # dropping the tuple to try to make the receiver resolve buys nothing and would
+  # publish a return type the method does not have. The wrong behaviour is pinned
+  # by TestPGPyContract_KnownLimitation_TupleUnpackedTargetIsNotTyped. Note the
+  # OPENGREP layer does reach this shape — the rules' taint sinks match
+  # `loaded.sign(...)` — so the call is detected; it is the call GRAPH that keys
+  # it on the consumer's variable. >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.from_file
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: high
+    canonical_return_type: builtins.tuple
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same 2-tuple shape as `from_file` (0.6.0 pgpy/types.py). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.from_blob
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: high
+    canonical_return_type: builtins.tuple
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # The genuine zero-argument constructor: an empty shell with
+  # `self._key = None` (0.6.0 pgpy/pgp.py:1627-1636), populated afterwards by
+  # `parse`. It is declared because it TYPES A RECEIVER — `k = PGPKey(); k.parse(t);
+  # k.sign(m)` is the spelling PGPy's own `unlock` docstring uses — not because
+  # the empty shell is itself an asset. >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.<init>
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPKey()` — the module-attribute call spelling, which
+  # emits the key WITHOUT the `.<init>` segment. Both are needed; the already
+  # merged python/ecdsa and python/coincurve contracts record the same split.
+  - method: pgpy.pgp.PGPKey
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: high
+    role: factory
+
+  # `sign(subject, **prefs)` (0.6.0 pgpy/pgp.py:2007). Real call sites appear at
+  # arity 1 and 2 (`hash=`), covered by the tolerant fallback. The signature's
+  # public-key algorithm comes from `self.key_algorithm`
+  # (0.6.0 pgpy/pgp.py:2053), not from the call — which is why the rules publish
+  # no algorithm name here. >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.sign
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: operation
+
+  # `certify(subject, level=SignatureType.Generic_Cert, **prefs)` (0.6.0 pgpy/pgp.py:2058). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.certify
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: operation
+
+  # `revoke(target, **prefs)` (0.6.0 pgpy/pgp.py:2225). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.revoke
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: operation
+
+  # `bind(key, **prefs)` (0.6.0 pgpy/pgp.py:2307). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.bind
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: operation
+
+  # `verify(subject, signature=None)` (0.6.0 pgpy/pgp.py:2414), returning the
+  # `SignatureVerification` built at pgpy/pgp.py:2469 and returned at :2496.
+  # `confidence: medium` because the type MOVED MODULE inside `version_range`:
+  # `pgpy.types.SignatureVerification` from 0.2.3 (0.2.3 pgpy/types.py:141) but
+  # `pgpy.signature.SignatureVerification` at 0.1.0 (0.1.0 pgpy/signature.py:5).
+  # Naming the 0.2.3-onward spelling at high confidence would assert one era's
+  # type for all of them. >= 0.3.0 for this receiver.
+  - method: pgpy.pgp.PGPKey.verify
+    arity: 1
+    return:
+      type: pgpy.types.SignatureVerification
+      confidence: medium
+    role: operation
+
+  # `encrypt(message, sessionkey=None, **prefs)` (0.6.0 pgpy/pgp.py:2499),
+  # returning a new `PGPMessage` carrying the ciphertext. Call sites appear at
+  # arity 1, 2 and 3 (`cipher=`, `sessionkey=`). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.encrypt
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: operation
+
+  # `decrypt(message)` (0.6.0 pgpy/pgp.py:2567). >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.decrypt
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: operation
+
+  # `protect(passphrase, enc_alg, hash_alg)` (0.6.0 pgpy/pgp.py:1734). Mutates
+  # the key in place and returns None: it loops over the primary key and every
+  # subkey calling `sk._key.protect(...)` (0.6.0 pgpy/pgp.py:1760-1761), which
+  # reaches `encrypt_keyblob` (pgpy/packet/packets.py:935). >= 0.4.0 — at 0.3.0
+  # the method takes no arguments and raises (0.3.0 pgpy/pgp.py:1300-1301).
+  - method: pgpy.pgp.PGPKey.protect
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # `@contextlib.contextmanager def unlock(self, passphrase)`
+  # (0.6.0 pgpy/pgp.py:1765-1766), which decrypts the protected private key
+  # material for the duration of the block and yields `self`
+  # (0.6.0 pgpy/pgp.py:1800). The declared return is a context manager and the
+  # SEMANTIC return is what `with ... as` binds, hence `confidence: medium`.
+  #
+  # IT DOES NOT CURRENTLY RESOLVE A RECEIVER, AND AN EARLIER REVISION OF THIS
+  # COMMENT CLAIMED IT DID. Measured on a probe consumer with crypto-finder built
+  # from this worktree: `with protected.unlock("pw") as opened: opened.sign(msg)`
+  # emits `probe.opened.sign(?)` — the consumer's variable path — with this entry
+  # loaded. The python resolver does not type a `with ... as` binding from the
+  # context manager's contracted return. The entry is kept because the
+  # declaration is TRUE and becomes live the day that pass changes; the wrong
+  # behaviour is pinned by
+  # TestPGPyContract_KnownLimitation_WithAsBindingIsNotTyped so nobody has to
+  # rediscover it.
+  #
+  # NO RULE anchors `unlock` itself, because the call states no algorithm — the
+  # cipher and S2K digest were chosen at `protect` time and are read out of the
+  # packet. >= 0.3.0.
+  - method: pgpy.pgp.PGPKey.unlock
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: medium
+    role: operation
+
+
+  # ── pgpy.pgp.PGPMessage ────────────────────────────────────────────
+
+  # `new(message, **kwargs)` (0.6.0 pgpy/pgp.py:1097). The `compression=`
+  # keyword selects a `CompressionAlgorithm`, which is not cryptography and is
+  # published nowhere. >= 0.3.0.
+  - method: pgpy.pgp.PGPMessage.new
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: factory
+
+  # NO TUPLE HERE, unlike PGPKey: `PGPMessage.parse` returns None
+  # (0.6.0 pgpy/pgp.py:1269-1296), so `Armorable.from_file` falls through to
+  # `return obj` (0.6.0 pgpy/types.py). >= 0.3.0.
+  - method: pgpy.pgp.PGPMessage.from_file
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same single-object return as `from_file`. >= 0.3.0.
+  - method: pgpy.pgp.PGPMessage.from_blob
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  - method: pgpy.pgp.PGPMessage.<init>
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPMessage()` — the module-attribute call spelling.
+  - method: pgpy.pgp.PGPMessage
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: factory
+
+  # `encrypt(passphrase, sessionkey=None, **prefs)` (0.6.0 pgpy/pgp.py:1189),
+  # the passphrase/S2K path. Returns a NEW `PGPMessage` holding the ciphertext.
+  # Call sites appear at arity 1, 2 and 3. >= 0.3.0.
+  - method: pgpy.pgp.PGPMessage.encrypt
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: operation
+
+  # `decrypt(passphrase)` (0.6.0 pgpy/pgp.py:1239). >= 0.3.0.
+  - method: pgpy.pgp.PGPMessage.decrypt
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPMessage
+      confidence: high
+    role: operation
+
+
+  # ── pgpy.pgp.PGPSignature ──────────────────────────────────────────
+
+  # Single-object return: `PGPSignature.parse` returns None
+  # (0.6.0 pgpy/pgp.py:573-594). >= 0.3.0 for this spelling — 0.1.0 - 0.2.3 also
+  # declare a `pgpy.pgp.PGPSignature`, a `PGPBlock` subclass
+  # (0.2.3 pgpy/pgp.py:269), which shares the inherited `FileLoader` loading but
+  # none of the modern accessors.
+  - method: pgpy.pgp.PGPSignature.from_file
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # Same single-object return as `from_file`. >= 0.3.0.
+  - method: pgpy.pgp.PGPSignature.from_blob
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+
+  # `new(sigtype, pkalg, halg, signer, created=None)`
+  # (0.6.0 pgpy/pgp.py:324-325); the `created=` argument arrives at 0.5.0, so the
+  # declared arity is the required-argument count and the tolerant fallback
+  # covers arity 5. CONTRACTED WITHOUT A RULE, deliberately — see the header.
+  # >= 0.3.0.
+  - method: pgpy.pgp.PGPSignature.new
+    arity: 4
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: factory
+
+  - method: pgpy.pgp.PGPSignature.<init>
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: factory
+
+  # `import pgpy; pgpy.PGPSignature()` — the module-attribute call spelling.
+  - method: pgpy.pgp.PGPSignature
+    arity: 0
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: high
+    role: factory
+
+
+  # ── PGPKeyring — the modern era, 0.3.0 onward ──────────────────────────────
+  #
+  # `pgpy/pgp.py`'s PGPKeyring declares `load`, `key`, `fingerprints` and
+  # `unload` and NO `sign` or `verify` (0.6.0 pgpy/pgp.py:2679 onward). The
+  # legacy keyring is a different class in a different module and is declared
+  # separately below.
+
+  # `__init__(self, *args)` (0.6.0 pgpy/pgp.py:2680). Declared at ARITY 1 with
+  # `varargs: true` because the variadic parameter occupies exactly one arity
+  # slot per the KB convention — and because the loader refuses `varargs` at
+  # arity 0 outright (`varargs requires arity >= 1`, contracts.go). Consumers
+  # call it with none, one or several paths; the arity-tolerant Python fallback
+  # resolves the zero-argument and many-argument spellings onto this entry.
+  - method: pgpy.PGPKeyring.<init>
+    arity: 1
+    return:
+      type: pgpy.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # The module-attribute call spelling of the same constructor.
+  - method: pgpy.PGPKeyring
+    arity: 1
+    return:
+      type: pgpy.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # `load(*args)` returns `list(loaded)` — the fingerprints of the keys it
+  # ingested (0.6.0 pgpy/pgp.py:110, returning at :139). Contracted because it is
+  # how a keyring acquires keys and because consumers index its result.
+  - method: pgpy.PGPKeyring.load
+    arity: 1
+    return:
+      type: builtins.list
+      confidence: high
+    role: factory
+    varargs: true
+
+  # `@contextlib.contextmanager def key(self, identifier)`
+  # (0.6.0 pgpy/pgp.py:2819-2820), yielding `self._get_key(identifier)` — a
+  # PGPKey — at pgpy/pgp.py:2837. `confidence: medium`: the declared return is a
+  # context manager and the semantic return is what `with ... as` binds.
+  #
+  # LIKE `PGPKey.unlock`, THIS DOES NOT CURRENTLY RESOLVE A RECEIVER. An earlier
+  # revision of this comment said this entry "lets the call graph type `k` in
+  # `with keyring.key(fp) as k: k.sign(m)`". That was written from the
+  # declaration rather than from a probe, and it is false: the python resolver
+  # does not type a `with ... as` binding. It is doubly unobservable for this
+  # shape, because the RULE layer deliberately does not claim it either — the
+  # keyring sign/verify rules sanitize `$RING.key(...)`, since taint flowing
+  # through it had them publishing a `PGPKey.sign` call under the keyring's join
+  # key and dating 0.3.0-onward code to the legacy era. So the line reaches no
+  # rule, produces no asset, and there is no chain for this entry to type.
+  # Kept as a true declaration; pinned by
+  # TestPGPyContract_KnownLimitation_WithAsBindingIsNotTyped.
+  - method: pgpy.PGPKeyring.key
+    arity: 1
+    return:
+      type: pgpy.PGPKey
+      confidence: medium
+    role: operation
+
+  # `__init__(self, *args)` (0.6.0 pgpy/pgp.py:2680). Declared at ARITY 1 with
+  # `varargs: true` because the variadic parameter occupies exactly one arity
+  # slot per the KB convention — and because the loader refuses `varargs` at
+  # arity 0 outright (`varargs requires arity >= 1`, contracts.go). Consumers
+  # call it with none, one or several paths; the arity-tolerant Python fallback
+  # resolves the zero-argument and many-argument spellings onto this entry.
+  - method: pgpy.pgp.PGPKeyring.<init>
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # The module-attribute call spelling of the same constructor.
+  - method: pgpy.pgp.PGPKeyring
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # `load(*args)` returns `list(loaded)` — the fingerprints of the keys it
+  # ingested (0.6.0 pgpy/pgp.py:110, returning at :139). Contracted because it is
+  # how a keyring acquires keys and because consumers index its result.
+  - method: pgpy.pgp.PGPKeyring.load
+    arity: 1
+    return:
+      type: builtins.list
+      confidence: high
+    role: factory
+    varargs: true
+
+  # `@contextlib.contextmanager def key(self, identifier)`
+  # (0.6.0 pgpy/pgp.py:2819-2820), yielding `self._get_key(identifier)` — a
+  # PGPKey — at pgpy/pgp.py:2837. `confidence: medium`: the declared return is a
+  # context manager and the semantic return is what `with ... as` binds.
+  #
+  # LIKE `PGPKey.unlock`, THIS DOES NOT CURRENTLY RESOLVE A RECEIVER. An earlier
+  # revision of this comment said this entry "lets the call graph type `k` in
+  # `with keyring.key(fp) as k: k.sign(m)`". That was written from the
+  # declaration rather than from a probe, and it is false: the python resolver
+  # does not type a `with ... as` binding. It is doubly unobservable for this
+  # shape, because the RULE layer deliberately does not claim it either — the
+  # keyring sign/verify rules sanitize `$RING.key(...)`, since taint flowing
+  # through it had them publishing a `PGPKey.sign` call under the keyring's join
+  # key and dating 0.3.0-onward code to the legacy era. So the line reaches no
+  # rule, produces no asset, and there is no chain for this entry to type.
+  # Kept as a true declaration; pinned by
+  # TestPGPyContract_KnownLimitation_WithAsBindingIsNotTyped.
+  - method: pgpy.pgp.PGPKeyring.key
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPKey
+      confidence: medium
+    role: operation
+
+
+  # THE LEGACY KEYRING'S ROOT SPELLING CARRIES `sign` AND `verify` TOO, AND THAT
+  # IS NOT A DUPLICATE OF THE `pgpy.keys.` ENTRIES BELOW. Two different joins need
+  # two different keys:
+  #
+  #   a consumer's CALL SITE     `from pgpy.keys import PGPKeyring; kr.sign(m)`
+  #                              -> pgpy.keys.PGPKeyring.sign  (declared below)
+  #   the METHOD DEFINITION      pgpy/keys.py, keyed on its containing DIRECTORY
+  #                              -> pgpy.(PGPKeyring).sign, which the entry-point
+  #                                 synthesis normalises to pgpy.PGPKeyring.sign
+  #
+  # Measured on the extracted 0.1.0 and 0.2.3 sdists with crypto-finder built from
+  # this worktree. `from pgpy import PGPKeyring; kr.sign(m)` is also the spelling
+  # the 0.2.3 README uses, so the root key is a genuine call-site key for that era
+  # as well.
+  #
+  # THE FIX MADE THE JOIN POSSIBLE AND DID NOT CHANGE THE MINED COUNT, and an
+  # earlier revision of this comment claimed otherwise. Re-mined with the
+  # corrected key, 0.1.0 still synthesizes ZERO pgpy entry points, which is
+  # CORRECT: `SynthesizeRuleCryptoEntryPoints` skips a method whose body already
+  # carries a detected crypto finding, and both legacy methods hash inside
+  # themselves (mined 0.1.0 payload: a hashlib SHA-512 asset at pgpy/keys.py:284
+  # inside `sign`, a digest-output asset at :356 inside `verify`). The `pgpy.keys.`
+  # spelling was unjoinable by construction; that is what was wrong with it.
+  #
+  # BOUNDED ABOVE BY 0.2.3, LIKE EVERYTHING IN THE LEGACY BLOCK. The modern
+  # `pgpy.pgp.PGPKeyring` declares neither method, so a 0.3.0-onward consumer
+  # writing `pgpy.PGPKeyring(..).sign(..)` would resolve against these two entries
+  # for code that cannot run. That is a hypothetical-only resolution on a method
+  # the class does not have, and `version_range` covers both eras because the
+  # committed CSV does; it is recorded here rather than papered over. No
+  # `pgpy.pgp.PGPKeyring.sign` entry is declared, because there the absence is
+  # real.
+
+  # 0.1.0 - 0.2.3. The root re-export of `pgpy/keys.py`'s `sign(subject,
+  # inline=False)` (0.2.3 pgpy/keys.py:551; 0.1.0 keys.py:226), and the key the
+  # METHOD DEFINITION emits. See the block comment above.
+  - method: pgpy.PGPKeyring.sign
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: medium
+    role: operation
+
+  # 0.1.0 - 0.2.3. The root re-export of `verify(subject, signature)`
+  # (0.2.3 pgpy/keys.py:706; 0.1.0 keys.py:309), and the key the METHOD DEFINITION
+  # emits.
+  - method: pgpy.PGPKeyring.verify
+    arity: 2
+    return:
+      type: pgpy.types.SignatureVerification
+      confidence: medium
+    role: operation
+
+
+  # ── pgpy.keys.PGPKeyring — the legacy era, 0.1.0 - 0.2.3 ONLY ─────────────
+  #
+  # `pgpy/keys.py` is deleted at 0.3.0, so every entry here is bounded above by
+  # 0.2.3 and the module path itself is the discriminator. This is the only
+  # crypto-relevant surface those five committed CSV rows have.
+
+  # 0.1.0 - 0.2.3. `PGPKeyring(*args)` (0.2.3 pgpy/keys.py:315 onward). Arity 1
+  # with `varargs: true` for the reason given on the modern keyring above.
+  - method: pgpy.keys.PGPKeyring.<init>
+    arity: 1
+    return:
+      type: pgpy.keys.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # The module-attribute call spelling. 0.1.0 - 0.2.3.
+  - method: pgpy.keys.PGPKeyring
+    arity: 1
+    return:
+      type: pgpy.keys.PGPKeyring
+      confidence: high
+    role: factory
+    varargs: true
+
+  # 0.1.0 - 0.2.3. `load(*args)` (0.2.3 pgpy/keys.py:357; 0.1.0 keys.py:133)
+  # ingests key files into the collection and returns nothing — unlike the modern
+  # `PGPKeyring.load`, which returns the loaded fingerprints. `confidence: medium`
+  # because the two eras disagree and this entry describes the legacy one.
+  - method: pgpy.keys.PGPKeyring.load
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: medium
+    role: factory
+    varargs: true
+
+  # 0.1.0 - 0.2.3. `@contextlib.contextmanager def key(self, fp=None)` SELECTS a
+  # key for the duration of the block and yields `self`, the keyring
+  # (0.2.3 pgpy/keys.py:436, yielding at :479) — NOT a key object, which is the
+  # whole reason the legacy era signs through the keyring. `confidence: medium`
+  # for the context-manager reason given above.
+  - method: pgpy.keys.PGPKeyring.key
+    arity: 1
+    return:
+      type: pgpy.keys.PGPKeyring
+      confidence: medium
+    role: operation
+
+  # 0.1.0 - 0.2.3 ONLY, and the method's ABSENCE from the modern class is what
+  # bounds it. `sign(subject, inline=False)` (0.2.3 pgpy/keys.py:551;
+  # 0.1.0 keys.py:226) signs with the keyring's SELECTED key
+  # (`@managed(selection_required=True, priv_required=True)`), so no key
+  # algorithm and no digest is stated at the call site. It returns the signature
+  # object built in that method (0.2.3 pgpy/keys.py:703); the class is
+  # `pgpy.pgp.PGPSignature`, a `PGPBlock` subclass in that era
+  # (0.2.3 pgpy/pgp.py:269; 0.1.0 pgpy/pgp.py:265), hence `confidence: medium`.
+  - method: pgpy.keys.PGPKeyring.sign
+    arity: 1
+    return:
+      type: pgpy.pgp.PGPSignature
+      confidence: medium
+    role: operation
+
+  # 0.1.0 - 0.2.3 ONLY. `verify(subject, signature)`
+  # (0.2.3 pgpy/keys.py:706; 0.1.0 keys.py:309). The type is
+  # `pgpy.types.SignatureVerification` at 0.2.3 (0.2.3 pgpy/types.py:141) and
+  # `pgpy.signature.SignatureVerification` at 0.1.0 (0.1.0 pgpy/signature.py:5) —
+  # the module moved inside the legacy era itself, so `confidence: medium` and the
+  # later spelling is named.
+  - method: pgpy.keys.PGPKeyring.verify
+    arity: 2
+    return:
+      type: pgpy.types.SignatureVerification
+      confidence: medium
+    role: operation
+
+  # 0.2.3 only. `export_key(pub=True, priv=False)` (0.2.3 pgpy/keys.py:491)
+  # ASCII-armors the selected key. Declared as `output` so a chain ending in an
+  # export resolves; 0.1.0 has no such method, hence `confidence: medium`. No
+  # rule anchors it — armoring an already-built key performs no cryptography.
+  - method: pgpy.keys.PGPKeyring.export_key
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: medium
+    role: output
+
+
+  # ── pgpy.constants.SymmetricKeyAlgorithm — the two enum METHODS ───────────
+  #
+  # >= 0.3.0, with `pgpy/constants.py` itself. READ THE HEADER'S KEY-SHAPE
+  # DISCLOSURE BEFORE RELYING ON THESE TWO: a consumer call site emits a
+  # MEMBER-qualified key (`pgpy.constants.AES256.gen_key`, or
+  # `pgpy.constants.SymmetricKeyAlgorithm.CAST5.gen_key` written out), so these
+  # entries serve the rules' `api` join against the DEFINITION FQN and do not
+  # resolve a call site.
+
+  # `gen_key(self)` returns `os.urandom(self.key_size // 8)`
+  # (0.6.0 pgpy/constants.py:243-245), with `key_size` from PGPy's own table at
+  # constants.py:223-234.
+  - method: pgpy.constants.SymmetricKeyAlgorithm.gen_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # `gen_iv(self)` returns `os.urandom(self.block_size // 8)`
+  # (0.6.0 pgpy/constants.py:240-242). `block_size` forwards to the
+  # `cryptography` algorithm class the member delegates to (constants.py:218-220),
+  # which is why no size is published for it anywhere in this family.
+  - method: pgpy.constants.SymmetricKeyAlgorithm.gen_iv
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
