@@ -1,41 +1,209 @@
 schema_version: "2"
 ecosystem: python
+
 library:
   name: pyjwt
   coordinates:
     - PyJWT
+    - pyjwt
   version_range: ">=2.0,<3.0"
-  description: "PyJWT encode/decode API contracts"
+  description: >-
+    PyJWT JWT/JWS lifecycle contracts — module-level encode/decode/decode_complete,
+    the PyJWT and PyJWS objects behind them, and the algorithm registry
+    configuration calls. Read at PyJWT 2.13.0 (jwt/api_jwt.py, jwt/api_jws.py,
+    jwt/algorithms.py, jwt/__init__.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NAMESPACE OWNERSHIP. The bare `jwt.*` FQN belongs to this file. python-jose is
+# reached as `from jose import jwt` (-> jose.jwt.*) and Authlib as
+# `from authlib.jose import jwt` (-> authlib.jose.jwt.*); authlib.yaml states the
+# same rule from its side and declines to declare the bare spelling, because its
+# encode returns BYTES where PyJWT's returns str and divergent returns on one
+# (method, arity) key are a hard load error.
+# `TestLoadEmbedded_Python_BareJWTNamespaceStaysPyjwt` pins `jwt.encode#2` and
+# `jwt.decode#1` to this library at EXACT arity; both entries below are load
+# bearing for that test and must not be renumbered away.
+#
+# VERSION RANGE. `>=2.0,<3.0` is bound by the RETURN TYPE, not by how far back
+# the rules match: `encode` returns `bytes` in the 1.x line and `str` from 2.0.0
+# (jwt/api_jwt.py). Widening the range to cover 1.x would publish a false return
+# type for every 1.x consumer, so the range stays at 2.x even though the
+# `algorithm=` keyword itself exists from 0.1.1 and `algorithms=` from 1.0.0.
+#
+# ARITY. `ContractsForTolerant` falls back to a name-only, lowest-arity lookup
+# for python (contracts.go:292-342), so one entry per (method, spelling) joins
+# every call arity. Extra arities are declared ONLY where a reader would
+# otherwise expect them to differ; they do not, so they are not multiplied.
+#
+# ROLES. Every crypto-performing call is `operation`, not `output`: `output`
+# understates `encode`/`decode`, which are the calls that actually sign, MAC and
+# verify. The constructors are `factory` (they type a local, which is what lets
+# `inst = jwt.PyJWT(); inst.encode(...)` rekey onto the class method), and the
+# registry mutators are `config`.
+#
+# TWO SPELLINGS PER CONSTRUCTOR. `import jwt; jwt.PyJWT()` emits `jwt.PyJWT`
+# while `from jwt import PyJWT; PyJWT()` emits `jwt.PyJWT.<init>`; both are
+# declared, as authlib and gpg do for the same reason. Module-level FUNCTIONS do
+# not split this way — measured on an exported callgraph, `import jwt;
+# jwt.encode(...)` and `from jwt import encode; encode(...)` both emit
+# `jwt.encode`, so one entry serves both.
 
 contracts:
+  # ── module-level JWT API (jwt/api_jwt.py, re-exported by jwt/__init__.py) ────
   - method: jwt.encode
     arity: 2
     return: { type: builtins.str, confidence: high }
-    role: output
+    canonical_return_type: builtins.str
+    role: operation
+  - method: jwt.encode
+    arity: 3
+    parameter_types:
+      - builtins.dict
+      - builtins.str
+      - builtins.str
+    return: { type: builtins.str, confidence: high }
+    canonical_return_type: builtins.str
+    role: operation
+    parameters:
+      - index: 2
+        name: algorithm
+        role: operation-determining
   - method: jwt.decode
     arity: 1
     return: { type: builtins.dict, confidence: high }
-    role: output
+    canonical_return_type: builtins.dict
+    role: operation
+  - method: jwt.decode
+    arity: 3
+    return: { type: builtins.dict, confidence: high }
+    canonical_return_type: builtins.dict
+    role: operation
+    parameters:
+      - index: 2
+        name: algorithms
+        role: operation-determining
   - method: jwt.decode_complete
     arity: 1
     return: { type: builtins.dict, confidence: high }
-    role: output
+    canonical_return_type: builtins.dict
+    role: operation
+
+  # ── the PyJWT object behind them ────────────────────────────────────────────
+  - method: jwt.PyJWT
+    arity: 0
+    return: { type: jwt.api_jwt.PyJWT, confidence: high }
+    canonical_return_type: jwt.api_jwt.PyJWT
+    role: factory
+  - method: jwt.PyJWT.<init>
+    arity: 0
+    return: { type: jwt.api_jwt.PyJWT, confidence: high }
+    canonical_return_type: jwt.api_jwt.PyJWT
+    role: factory
+  - method: jwt.api_jwt.PyJWT
+    arity: 0
+    return: { type: jwt.api_jwt.PyJWT, confidence: high }
+    canonical_return_type: jwt.api_jwt.PyJWT
+    role: factory
+  - method: jwt.api_jwt.PyJWT.<init>
+    arity: 0
+    return: { type: jwt.api_jwt.PyJWT, confidence: high }
+    canonical_return_type: jwt.api_jwt.PyJWT
+    role: factory
   - method: jwt.api_jwt.PyJWT.encode
     arity: 2
     return: { type: builtins.str, confidence: high }
-    role: output
+    canonical_return_type: builtins.str
+    role: operation
   - method: jwt.api_jwt.PyJWT.decode
     arity: 1
     return: { type: builtins.dict, confidence: high }
-    role: output
+    canonical_return_type: builtins.dict
+    role: operation
   - method: jwt.api_jwt.PyJWT.decode_complete
     arity: 1
     return: { type: builtins.dict, confidence: high }
-    role: output
+    canonical_return_type: builtins.dict
+    role: operation
+
+  # ── the JWS layer (jwt/api_jws.py). Present since 1.5.0, when api_jws.py split
+  #    out of api.py; the module-level names are bound from a PyJWS singleton at
+  #    jwt/api_jws.py:449-456, so they key on `jwt.api_jws.*`. `encode` returns
+  #    str from 2.0.0, matching the JWT layer.
+  - method: jwt.PyJWS
+    arity: 0
+    return: { type: jwt.api_jws.PyJWS, confidence: high }
+    canonical_return_type: jwt.api_jws.PyJWS
+    role: factory
+  - method: jwt.PyJWS.<init>
+    arity: 0
+    return: { type: jwt.api_jws.PyJWS, confidence: high }
+    canonical_return_type: jwt.api_jws.PyJWS
+    role: factory
+  - method: jwt.api_jws.PyJWS
+    arity: 0
+    return: { type: jwt.api_jws.PyJWS, confidence: high }
+    canonical_return_type: jwt.api_jws.PyJWS
+    role: factory
+  - method: jwt.api_jws.PyJWS.<init>
+    arity: 0
+    return: { type: jwt.api_jws.PyJWS, confidence: high }
+    canonical_return_type: jwt.api_jws.PyJWS
+    role: factory
+  - method: jwt.api_jws.PyJWS.encode
+    arity: 2
+    return: { type: builtins.str, confidence: high }
+    canonical_return_type: builtins.str
+    role: operation
+  - method: jwt.api_jws.PyJWS.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    canonical_return_type: builtins.dict
+    role: operation
+  - method: jwt.api_jws.encode
+    arity: 2
+    return: { type: builtins.str, confidence: high }
+    canonical_return_type: builtins.str
+    role: operation
+  - method: jwt.api_jws.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    canonical_return_type: builtins.dict
+    role: operation
+
+  # ── algorithm registry (jwt/api_jws.py:449-456, jwt/algorithms.py). These
+  #    CONFIGURE which algorithms the library will accept; they perform no
+  #    crypto themselves, so they are `config`, not `operation`.
+  - method: jwt.register_algorithm
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    canonical_return_type: builtins.NoneType
+    role: config
+  - method: jwt.unregister_algorithm
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    canonical_return_type: builtins.NoneType
+    role: config
+  - method: jwt.get_algorithm_by_name
+    arity: 1
+    return: { type: jwt.algorithms.Algorithm, confidence: high }
+    canonical_return_type: jwt.algorithms.Algorithm
+    role: factory
+    parameters:
+      - index: 0
+        name: alg_name
+        role: operation-determining
 
 hierarchy:
   builtins.str:
     - builtins.object
   builtins.dict:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  jwt.api_jwt.PyJWT:
+    - builtins.object
+  jwt.api_jws.PyJWS:
+    - builtins.object
+  jwt.algorithms.Algorithm:
     - builtins.object
   builtins.object: []
