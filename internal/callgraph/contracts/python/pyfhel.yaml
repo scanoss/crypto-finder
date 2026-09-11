@@ -1,0 +1,1027 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: Pyfhel
+  coordinates:
+    - pyfhel
+    - Pyfhel
+  version_range: ">=2.0.0a2,<4"
+  description: >-
+    Pyfhel lifecycle contracts - the `Pyfhel` context object and every
+    cryptographic entry point on it. Pyfhel is a Cython wrapper over a C++
+    homomorphic-encryption backend (Microsoft SEAL in every archived release),
+    so these entries type the consumer's request through the PYTHON API and
+    claim none of the backend's symbols. Authored against 3.5.0 and
+    cross-checked against ALL 32 archived sdists (2.0.0a2 through 3.5.0).
+
+# ---------------------------------------------------------------------------
+# HOW THESE KEYS WERE OBTAINED.
+#
+# Every key below was read off an EXPORTED CALL GRAPH, never written from the
+# API, and re-exported after each edit until nothing moved:
+#
+#   crypto-finder scan --no-remote-rules --rules-dir <rules> \
+#     --export-callgraph /tmp/cg.json <a probe consumer PACKAGE>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# THE PROBE MUST BE A PACKAGE, NOT A LOOSE FILE. A bare `.py` resolves no
+# ecosystem. The probe used here is a neutral package with a `setup.py`.
+#
+# For python the emitted key is the CONSUMER'S IMPORT PATH with dots throughout
+# and no separator rewrite. The Rust `rustAuthoredKey` "::" substitution is
+# reached only from `rustContractsFor` and must NOT be applied here.
+#
+# ---------------------------------------------------------------------------
+# THERE ARE **THREE** CONSTRUCTOR KEYS, NOT TWO, AND THAT IS THIS LIBRARY'S
+# PARTICULAR TRAP: THE PACKAGE AND THE CLASS SHARE THE NAME `Pyfhel`.
+#
+# `Pyfhel/__init__.py` re-exports the class from a same-named submodule
+# (3.5.0: `from .Pyfhel import Pyfhel`; 2.0.0a2: `from Pyfhel.Pyfhel import
+# Pyfhel`), so a consumer has three qualified spellings and each emits a
+# DIFFERENT key. Read off the export, one call per file:
+#
+#   import Pyfhel;                  Pyfhel.Pyfhel()  -> Pyfhel.Pyfhel
+#   from Pyfhel import Pyfhel;      Pyfhel()         -> Pyfhel.Pyfhel.<init>
+#   from Pyfhel.Pyfhel import Pyfhel; Pyfhel()       -> Pyfhel.Pyfhel.Pyfhel.<init>
+#
+# The module-qualified spelling emits NO `.<init>`; the two from-import
+# spellings do, and the submodule one carries FOUR segments. All three are
+# declared, because all three are ordinary consumer code and the distribution's
+# own `__init__.py` writes the third.
+#
+# THE CONSTRUCTOR ENTRIES ARE WHAT MAKES EVERY OTHER ENTRY JOIN. Without them
+# the graph emits the CONSUMER'S variable name - measured as
+# `pyfhelprobe.he.contextGen(?, ?, ?)` with empty `parameter_types`, the
+# uncontracted shape - because the receiver's type is unknown. With
+# `canonical_return_type: Pyfhel.Pyfhel` on the constructor keys the same lines
+# resolve to `Pyfhel.Pyfhel.contextGen`. That is the fixed point this file was
+# iterated to: export, author, re-export, repeat until nothing moved.
+#
+# ---------------------------------------------------------------------------
+# ARITY IS AN EXACT MATCH KEY AND `varargs` DOES NOT HELP FOR PYTHON.
+#
+# `KnowledgeBase.ContractsFor` looks up `method#arity` exactly and, for any
+# ecosystem other than rust, returns nil on a miss (contracts.go:203-211). So a
+# method reachable at four different argument counts needs four entries.
+#
+#   `varargs: true` IS INERT FOR PYTHON. The only consumer of `Contract.Varargs`
+#   is `javaVarargsChainContracts`, gated on `kb.Ecosystem == ecosystemJava`
+#   (builder.go:1562). No entry here uses the field.
+#
+# EVERY ARITY RANGE IS DERIVED FROM THE `def`/`cpdef` LINE, NOT FROM A CORPUS:
+# min = parameters without a default (`self` excluded), max = parameters
+# declared. Where the signature CHANGES across the 2.x/3.x boundary the range is
+# the union, and the reason is stated on the entry. `python_pyfhel_test.go`
+# holds the same table hand-written from the same source lines.
+#
+# ---------------------------------------------------------------------------
+# PER-SYMBOL VERSION WINDOWS. `library.version_range` spans every archived
+# release; each symbol's own window is narrower where it arrives or disappears,
+# and every window was derived by parsing all 32 sdists rather than from a
+# changelog. The two boundaries that matter:
+#
+#   3.0.0b1  the whole 2.x API is replaced. `contextGen` gains its `scheme`
+#            parameter; the key I/O is renamed camelCase -> snake_case and the
+#            old spellings are GONE; `encryptComplex`, the vectorized
+#            `encryptA*`/`decryptA*` family and the `save_*`/`load_*`/
+#            `to_bytes_*` key surface all arrive.
+#   3.4.0    the BGV surface arrives (`encryptBGV`, `encryptABGV`,
+#            `decryptBGV`, `decryptABGV`).
+#
+# ---------------------------------------------------------------------------
+# RETURN TYPES, AND THE THREE THAT DIVERGE ACROSS THE ERA BOUNDARY.
+#
+# A divergent return on one (method, arity) key is a HARD LOAD ERROR
+# (contracts.go:936-968, Rule 2), so where 2.x and 3.x genuinely return
+# different types at the SAME arity, ONE value is declared at
+# `confidence: low` and `canonical_return_type` is WITHHELD rather than
+# asserting one era's type holds for both:
+#
+#   decryptInt   2.x returns a python int (2.3.1 Pyfhel.pyx:409
+#                `cpdef int64_t decryptInt`), 3.x returns a numpy array
+#                (3.5.0 :523 `cpdef np.ndarray[int64_t, ndim=1]`). Arity 1 in
+#                both. Declared `numpy.ndarray`, confidence low, no canonical.
+#   decryptFrac  same shape: 2.3.1 :432 `cpdef double`, 3.5.0 :546
+#                `cpdef np.ndarray[double, ndim=1]`. Same treatment.
+#   decrypt      returns a decoded array OR a `PyPtxt` depending on the
+#                `decode` argument (3.5.0 Pyfhel.pyx:643-682). Same treatment.
+#
+# The `save_*` / `from_bytes_*` families do NOT need this: 2.x returns `bool`
+# and 3.x returns `size_t`, but they are DIFFERENT METHOD NAMES
+# (`savepublicKey` vs `save_public_key`), so each key carries one type.
+#
+# NO ENTRY DECLARES `parameter_types`. Most of these methods take keyword
+# arguments in any order - `contextGen(scheme, n, t_bits, t, sec, scale,
+# scale_bits, qi_sizes, qi)` is nine keywords - so at a given arity the
+# positional types are genuinely not knowable: `contextGen('bfv', 8192,
+# t_bits=20)` and `contextGen('ckks', 8192, scale=2**30)` are both arity 3 with
+# different third types. Declaring one would assert a signature the library does
+# not have. This follows merged `python/eth-account` and `python/python-gnupg`,
+# which omit the field on their multi-arity entries for the same reason.
+#
+# ---------------------------------------------------------------------------
+# API AUDIT. Disposition legend: contracted | skipped-evaluation |
+# skipped-non-crypto. The dispositions match the sibling rule files exactly.
+#
+# Pyfhel.Pyfhel (3.5.0 Pyfhel/Pyfhel.pyx:49 `cdef class Pyfhel`)
+#   __init__                 contracted (factory) -> Pyfhel.Pyfhel, 3 key spellings
+#   contextGen               contracted (operation) -> builtins.str
+#   keyGen/relinKeyGen/rotateKeyGen
+#                            contracted (operation) -> builtins.NoneType
+#   encrypt*                 contracted (operation) -> Pyfhel.PyCtxt / numpy.ndarray
+#   decrypt*                 contracted (operation) -> numpy.ndarray / Pyfhel.PyPtxt
+#   save_*/load_* key I/O    contracted (operation) -> builtins.int
+#   to_bytes_* key I/O       contracted (output)    -> builtins.bytes
+#   from_bytes_* key I/O     contracted (operation) -> builtins.int
+#   the 2.x camelCase key I/O
+#                            contracted, -> builtins.bool / builtins.bytes
+#   add/add_plain/sub/sub_plain/multiply/multiply_plain/square/negate/power/
+#   rotate/flip/cumul_add/scalar_prod/scalar_prod_plain/relinearize/
+#   rescale_to_next/mod_switch_to_next*/align_mod_n_scale/polyEval*/poly_*
+#                            skipped-evaluation - homomorphic evaluation over
+#                              existing ciphertext. It creates no key material
+#                              and names no algorithm the contextGen and key
+#                              entries do not already carry, and CycloneDX v1.7
+#                              has no `operation` member for it. Stated in the
+#                              rule headers with the same reason.
+#   encode*/decode*          skipped-non-crypto - the encoder packs a value into
+#                              a plaintext polynomial and uses no key. 3.5.0
+#                              Pyfhel.pyx:739 `encodeInt` calls `afseal.encode_i`
+#                              and stops; :361-362 `encryptInt` calls `encode_i`
+#                              AND `afseal.encrypt`.
+#   save_context/load_context/to_bytes_context/from_bytes_context/saveContext/
+#   restoreContext           skipped-non-crypto - the context is the scheme's
+#                              PUBLIC PARAMETERS and holds no key material.
+#   noise_level/noiseLevel/batchEnabled/get_*/is_*_empty/sizeof_*/maxBitCount/
+#   multDepth/total_coeff_modulus_bit_count/relinBitCount
+#                            skipped-non-crypto - property readers.
+#
+# `PyCtxt`, `PyPtxt` and `PyPoly` are NOT contracted as callables. They appear
+# here only as declared RETURN types, which is what makes a chained
+# `HE.encryptInt(a).to_bytes()` typed. Their own operator overloads are
+# skipped-evaluation for the reason above.
+
+contracts:
+
+  # -- the constructor, module-qualified `import Pyfhel; Pyfhel.Pyfhel(...)` -- emits NO `.<init>`.
+  # 3.5.0 Pyfhel/Pyfhel.pyx:67 `def __init__(self, context_params=None,
+  # key_gen=False, pub_key_file=None, sec_key_file=None)`. Arity 0-4.
+  # BEFORE 2.3.1 THE CONSTRUCTOR TAKES NO ARGUMENTS AT ALL: 2.2.5 declares only
+  # `def __cinit__(self)` and no `__init__`, so arities 1-4 are unreachable on
+  # those 14 releases. They are declared anyway -- an entry that never matches
+  # costs nothing, and omitting them would break 2.3.1-3.5.0.
+  - method: Pyfhel.Pyfhel
+    arity: 0
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel
+    arity: 1
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel
+    arity: 2
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel
+    arity: 3
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel
+    arity: 4
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+
+  # -- the constructor, `from Pyfhel import Pyfhel; Pyfhel(...)`.
+  # 3.5.0 Pyfhel/Pyfhel.pyx:67 `def __init__(self, context_params=None,
+  # key_gen=False, pub_key_file=None, sec_key_file=None)`. Arity 0-4.
+  # BEFORE 2.3.1 THE CONSTRUCTOR TAKES NO ARGUMENTS AT ALL: 2.2.5 declares only
+  # `def __cinit__(self)` and no `__init__`, so arities 1-4 are unreachable on
+  # those 14 releases. They are declared anyway -- an entry that never matches
+  # costs nothing, and omitting them would break 2.3.1-3.5.0.
+  - method: Pyfhel.Pyfhel.<init>
+    arity: 0
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.<init>
+    arity: 1
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.<init>
+    arity: 2
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.<init>
+    arity: 3
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.<init>
+    arity: 4
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+
+  # -- the constructor, `from Pyfhel.Pyfhel import Pyfhel; Pyfhel(...)` -- the submodule spelling the distribution's own __init__.py writes.
+  # 3.5.0 Pyfhel/Pyfhel.pyx:67 `def __init__(self, context_params=None,
+  # key_gen=False, pub_key_file=None, sec_key_file=None)`. Arity 0-4.
+  # BEFORE 2.3.1 THE CONSTRUCTOR TAKES NO ARGUMENTS AT ALL: 2.2.5 declares only
+  # `def __cinit__(self)` and no `__init__`, so arities 1-4 are unreachable on
+  # those 14 releases. They are declared anyway -- an entry that never matches
+  # costs nothing, and omitting them would break 2.3.1-3.5.0.
+  - method: Pyfhel.Pyfhel.Pyfhel.<init>
+    arity: 0
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.Pyfhel.<init>
+    arity: 1
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.Pyfhel.<init>
+    arity: 2
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.Pyfhel.<init>
+    arity: 3
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+  - method: Pyfhel.Pyfhel.Pyfhel.<init>
+    arity: 4
+    canonical_return_type: Pyfhel.Pyfhel
+    return: { type: Pyfhel.Pyfhel, confidence: high }
+    role: factory
+
+
+  # -- `contextGen` -- the scheme's public parameters. Returns the SEAL validation string (3.5.0 Pyfhel.pyx:194 `cpdef string contextGen`). Arity 1-9: the 2.x signature needs only `p` (2.3.1 :182), the 3.x one needs `scheme` and `n` and declares nine parameters (3.5.0 :194-196). All 32 releases.
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 1
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 2
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 3
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 4
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 5
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 6
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 7
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 8
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.contextGen
+    arity: 9
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+
+  # -- `keyGen` -- 3.5.0 Pyfhel.pyx:290 `cpdef void keyGen(self)`. Arity 0 in every one of the 32 releases -- which is why no rule publishes a key size.
+  - method: Pyfhel.Pyfhel.keyGen
+    arity: 0
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+
+  # -- `relinKeyGen` -- 3.5.0 Pyfhel.pyx:323 `cpdef void relinKeyGen(self)`, arity 0. 2.x REQUIRES TWO ARGUMENTS: 2.3.1 :602 `cpdef void relinKeyGen(self, int bitCount, int size)`. Union 0-2. All 32 releases.
+  - method: Pyfhel.Pyfhel.relinKeyGen
+    arity: 0
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.relinKeyGen
+    arity: 1
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.relinKeyGen
+    arity: 2
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+
+  # -- `rotateKeyGen` -- 3.5.0 Pyfhel.pyx:303 `cpdef void rotateKeyGen(self, vector[int] rot_steps ={})`, arity 0-1. 2.x REQUIRES one: 2.3.1 :583 `rotateKeyGen(self, int bitCount)`. All 32 releases.
+  - method: Pyfhel.Pyfhel.rotateKeyGen
+    arity: 0
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.rotateKeyGen
+    arity: 1
+    canonical_return_type: builtins.NoneType
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+
+  # -- `encrypt` -- the type-dispatching front door, 3.5.0 Pyfhel.pyx:491. All 32 releases.
+  - method: Pyfhel.Pyfhel.encrypt
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encrypt
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encrypt
+    arity: 3
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptInt` -- 3.5.0 Pyfhel.pyx:343. All 32 releases.
+  - method: Pyfhel.Pyfhel.encryptInt
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptInt
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptFrac` -- 3.5.0 Pyfhel.pyx:366, arity 1-4 (`arr, ctxt, scale, scale_bits`); 2.3.1 :260 takes only `value, ctxt`. All 32 releases.
+  - method: Pyfhel.Pyfhel.encryptFrac
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptFrac
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptFrac
+    arity: 3
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptFrac
+    arity: 4
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptComplex` -- 3.5.0 Pyfhel.pyx:397. 3.0.0b1-3.5.0, 17 of 32.
+  - method: Pyfhel.Pyfhel.encryptComplex
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptComplex
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptComplex
+    arity: 3
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptComplex
+    arity: 4
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptPtxt` -- 3.5.0 Pyfhel.pyx:428. All 32 releases.
+  - method: Pyfhel.Pyfhel.encryptPtxt
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptPtxt
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptBGV` -- 3.5.0 Pyfhel.pyx:454. 3.4.0-3.5.0, 5 of 32.
+  - method: Pyfhel.Pyfhel.encryptBGV
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptBGV
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptAInt` -- 3.5.0 Pyfhel.pyx:476. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.encryptAInt
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `encryptAFrac` -- 3.5.0 Pyfhel.pyx:479. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.encryptAFrac
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptAFrac
+    arity: 2
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptAFrac
+    arity: 3
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `encryptAComplex` -- 3.5.0 Pyfhel.pyx:482. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.encryptAComplex
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptAComplex
+    arity: 2
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptAComplex
+    arity: 3
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `encryptAPtxt` -- 3.5.0 Pyfhel.pyx:485. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.encryptAPtxt
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `encryptABGV` -- 3.5.0 Pyfhel.pyx:488. 3.4.0-3.5.0.
+  - method: Pyfhel.Pyfhel.encryptABGV
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `encryptBatch` -- 2.3.1 Pyfhel.pyx:286. 2.0.0a2-2.3.1 ONLY, 15 of 32; removed at 3.0.0b1.
+  - method: Pyfhel.Pyfhel.encryptBatch
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptBatch
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `encryptArray` -- 2.3.1 Pyfhel.pyx:312. 2.0.0a2-2.3.1 ONLY, 15 of 32.
+  - method: Pyfhel.Pyfhel.encryptArray
+    arity: 1
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.encryptArray
+    arity: 2
+    canonical_return_type: Pyfhel.PyCtxt
+    return: { type: Pyfhel.PyCtxt, confidence: high }
+    role: operation
+
+
+  # -- `decryptComplex` -- 3.5.0 Pyfhel.pyx:569. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptComplex
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptPtxt` -- 3.5.0 Pyfhel.pyx:592. All 32 releases.
+  - method: Pyfhel.Pyfhel.decryptPtxt
+    arity: 1
+    canonical_return_type: Pyfhel.PyPtxt
+    return: { type: Pyfhel.PyPtxt, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.decryptPtxt
+    arity: 2
+    canonical_return_type: Pyfhel.PyPtxt
+    return: { type: Pyfhel.PyPtxt, confidence: high }
+    role: operation
+
+
+  # -- `decryptBGV` -- 3.5.0 Pyfhel.pyx:612. 3.4.0-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptBGV
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptAInt` -- 3.5.0 Pyfhel.pyx:633. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptAInt
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptAFrac` -- 3.5.0 Pyfhel.pyx:635. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptAFrac
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptAComplex` -- 3.5.0 Pyfhel.pyx:637. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptAComplex
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptAPtxt` -- 3.5.0 Pyfhel.pyx:639. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptAPtxt
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptABGV` -- 3.5.0 Pyfhel.pyx:641. 3.4.0-3.5.0.
+  - method: Pyfhel.Pyfhel.decryptABGV
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decryptBatch` -- 2.3.1 Pyfhel.pyx:455. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.decryptBatch
+    arity: 1
+    canonical_return_type: builtins.list
+    return: { type: builtins.list, confidence: high }
+    role: operation
+
+
+  # -- `decryptArray` -- 2.3.1 Pyfhel.pyx:477. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.decryptArray
+    arity: 1
+    canonical_return_type: numpy.ndarray
+    return: { type: numpy.ndarray, confidence: high }
+    role: operation
+
+
+  # -- `decrypt` -- RETURN DIVERGES BY ARGUMENT, so `canonical_return_type` is withheld and the declared value carries `confidence: low`. 3.5.0 Pyfhel.pyx:643 `def decrypt(self, PyCtxt ctxt, bool decode=True, PyPtxt ptxt=None)` returns a decoded numpy array when `decode` is true and a `Pyfhel.PyPtxt` otherwise. All 32 releases.
+  - method: Pyfhel.Pyfhel.decrypt
+    arity: 1
+    return: { type: numpy.ndarray, confidence: low }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.decrypt
+    arity: 2
+    return: { type: numpy.ndarray, confidence: low }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.decrypt
+    arity: 3
+    return: { type: numpy.ndarray, confidence: low }
+    role: operation
+
+
+  # -- `decryptInt` -- RETURN DIVERGES ACROSS THE ERA BOUNDARY at the same arity, so `canonical_return_type` is withheld and confidence is low. 2.3.1 Pyfhel.pyx:409 `cpdef int64_t decryptInt` returns a python int; 3.5.0 :523 `cpdef np.ndarray[int64_t, ndim=1]` returns an array. All 32 releases.
+  - method: Pyfhel.Pyfhel.decryptInt
+    arity: 1
+    return: { type: numpy.ndarray, confidence: low }
+    role: operation
+
+
+  # -- `decryptFrac` -- RETURN DIVERGES ACROSS THE ERA BOUNDARY, same treatment as `decryptInt`. 2.3.1 Pyfhel.pyx:432 `cpdef double`; 3.5.0 :546 `cpdef np.ndarray[double, ndim=1]`. All 32 releases.
+  - method: Pyfhel.Pyfhel.decryptFrac
+    arity: 1
+    return: { type: numpy.ndarray, confidence: low }
+    role: operation
+
+
+  # -- `save_public_key` -- 3.5.0 Pyfhel.pyx:1541. 3.0.0b1-3.5.0, 17 of 32.
+  - method: Pyfhel.Pyfhel.save_public_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.save_public_key
+    arity: 2
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `load_public_key` -- 3.5.0 Pyfhel.pyx:1555. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.load_public_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `save_secret_key` -- 3.5.0 Pyfhel.pyx:1568. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.save_secret_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.save_secret_key
+    arity: 2
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `load_secret_key` -- 3.5.0 Pyfhel.pyx:1582. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.load_secret_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `save_relin_key` -- 3.5.0 Pyfhel.pyx:1595. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.save_relin_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.save_relin_key
+    arity: 2
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `load_relin_key` -- 3.5.0 Pyfhel.pyx:1609. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.load_relin_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `save_rotate_key` -- 3.5.0 Pyfhel.pyx:1622. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.save_rotate_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+  - method: Pyfhel.Pyfhel.save_rotate_key
+    arity: 2
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `load_rotate_key` -- 3.5.0 Pyfhel.pyx:1636. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.load_rotate_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_public_key` -- 3.5.0 Pyfhel.pyx:1693. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.from_bytes_public_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_secret_key` -- 3.5.0 Pyfhel.pyx:1719. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.from_bytes_secret_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_relin_key` -- 3.5.0 Pyfhel.pyx:1745. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.from_bytes_relin_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_rotate_key` -- 3.5.0 Pyfhel.pyx:1771. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.from_bytes_rotate_key
+    arity: 1
+    canonical_return_type: builtins.int
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+
+  # -- `savepublicKey` -- 2.3.1 Pyfhel.pyx:1268. 2.0.0a2-2.3.1 ONLY, 15 of 32.
+  - method: Pyfhel.Pyfhel.savepublicKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `restorepublicKey` -- 2.3.1 Pyfhel.pyx:1281. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.restorepublicKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `savesecretKey` -- 2.3.1 Pyfhel.pyx:1294. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.savesecretKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `restoresecretKey` -- 2.3.1 Pyfhel.pyx:1307. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.restoresecretKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `saverelinKey` -- 2.3.1 Pyfhel.pyx:1320. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.saverelinKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `restorerelinKey` -- 2.3.1 Pyfhel.pyx:1333. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.restorerelinKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `saverotateKey` -- 2.3.1 Pyfhel.pyx:1346. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.saverotateKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `restorerotateKey` -- 2.3.1 Pyfhel.pyx:1359. 2.0.0a2-2.3.1 ONLY.
+  - method: Pyfhel.Pyfhel.restorerotateKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_publicKey` -- 2.3.1 Pyfhel.pyx:1420. 2.3.1 ALONE, 1 of 32.
+  - method: Pyfhel.Pyfhel.from_bytes_publicKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_secretKey` -- 2.3.1 Pyfhel.pyx:1450. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.from_bytes_secretKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_relinKey` -- 2.3.1 Pyfhel.pyx:1480. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.from_bytes_relinKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `from_bytes_rotateKey` -- 2.3.1 Pyfhel.pyx:1510. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.from_bytes_rotateKey
+    arity: 1
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+
+  # -- `to_bytes_public_key` -- 3.5.0 Pyfhel.pyx:1680. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.to_bytes_public_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: Pyfhel.Pyfhel.to_bytes_public_key
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_secret_key` -- 3.5.0 Pyfhel.pyx:1706. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.to_bytes_secret_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: Pyfhel.Pyfhel.to_bytes_secret_key
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_relin_key` -- 3.5.0 Pyfhel.pyx:1732. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.to_bytes_relin_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: Pyfhel.Pyfhel.to_bytes_relin_key
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_rotate_key` -- 3.5.0 Pyfhel.pyx:1758. 3.0.0b1-3.5.0.
+  - method: Pyfhel.Pyfhel.to_bytes_rotate_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: Pyfhel.Pyfhel.to_bytes_rotate_key
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_publicKey` -- 2.3.1 Pyfhel.pyx:1405. 2.3.1 ALONE, 1 of 32.
+  - method: Pyfhel.Pyfhel.to_bytes_publicKey
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_secretKey` -- 2.3.1 Pyfhel.pyx:1435. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.to_bytes_secretKey
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_relinKey` -- 2.3.1 Pyfhel.pyx:1465. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.to_bytes_relinKey
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+
+  # -- `to_bytes_rotateKey` -- 2.3.1 Pyfhel.pyx:1495. 2.3.1 ALONE.
+  - method: Pyfhel.Pyfhel.to_bytes_rotateKey
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+hierarchy:
+  Pyfhel.Pyfhel:
+    - builtins.object
+  Pyfhel.PyCtxt:
+    - builtins.object
+  Pyfhel.PyPtxt:
+    - builtins.object
+  numpy.ndarray:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.int:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []
