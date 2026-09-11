@@ -1,0 +1,500 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: liboqs-python
+  coordinates:
+    - liboqs-python
+    - liboqs_python
+    - oqs
+  version_range: ">=0.7.2,<0.17"
+  description: >-
+    liboqs-python lifecycle contracts - the three post-quantum entry-point
+    classes `KeyEncapsulation`, `Signature` and `StatefulSignature` and every
+    cryptographic method on them. liboqs-python IS A ctypes BINDING: it loads
+    the liboqs C library at import time (0.16.0 oqs/oqs.py:255 `_load_liboqs`,
+    :297 `native`) and every class here is a `ct.Structure` wrapper. These
+    entries type the PYTHON API only; no liboqs C symbol is claimed.
+    Authored against liboqs-python 0.16.0, the only release PyPI currently
+    serves, and cross-checked against the GitHub archives for 0.7.2, 0.8.0,
+    0.9.0, 0.10.0 and 0.12.0.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THESE KEYS WERE OBTAINED.
+#
+# Every key below was read off an EXPORTED CALL GRAPH, never written from the
+# API, and re-exported after each edit until nothing moved:
+#
+#   crypto-finder scan --no-remote-rules \
+#     --rules-dir semgrep-rules/python/liboqs-python \
+#     --export-callgraph /tmp/cg.json <a probe consumer PACKAGE>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# THE PROBE MUST BE A PACKAGE, NOT A LOOSE FILE. A bare `.py` resolves no
+# ecosystem. The probe used here is a neutral package with a `setup.py` and one
+# module PER IMPORT SPELLING, because the emitted key follows the IMPORTING
+# module and a single module cannot tell the spellings apart.
+#
+# WITHOUT THIS FILE the graph emits the CONSUMER'S VARIABLE NAME. Measured on
+# that probe before the contract existed:
+#
+#   probeconsumer.k.encap_secret(?)        <- uncontracted, joins nothing
+#   probeconsumer.s.sign(?)
+#   probeconsumer.t.export_used_keys()
+#
+# With `canonical_return_type` on the constructor keys the same lines resolve
+# to `oqs.KeyEncapsulation.encap_secret`, `oqs.Signature.sign` and
+# `oqs.StatefulSignature.export_used_keys`. THE CONSTRUCTOR ENTRIES ARE WHAT
+# MAKES EVERY OTHER ENTRY JOIN.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THERE ARE FOUR CONSTRUCTOR KEY SPELLINGS PER CLASS, AND ALL FOUR ARE ORDINARY
+# CONSUMER CODE. The `<init>` suffix follows the consumer's IMPORT, and the
+# module path follows it too:
+#
+#   import oqs;          oqs.KeyEncapsulation(..)       -> oqs.KeyEncapsulation
+#   from oqs import KeyEncapsulation; KeyEncapsulation(..)
+#                                                 -> oqs.KeyEncapsulation.<init>
+#   import oqs.oqs;      oqs.oqs.KeyEncapsulation(..)   -> oqs.oqs.KeyEncapsulation
+#   from oqs.oqs import KeyEncapsulation; KeyEncapsulation(..)
+#                                             -> oqs.oqs.KeyEncapsulation.<init>
+#
+# The module-qualified spellings emit NO `.<init>`; the from-import spellings
+# do. All four were read off the export, one spelling per probe module.
+#
+# THE SUBMODULE SPELLINGS ARE NOT HYPOTHETICAL. liboqs-python re-exports every
+# public name from `oqs/oqs.py` through `oqs/__init__.py` (0.16.0 __init__.py
+# lines 1-21, explicit; 0.12.0 __init__.py line 1, `from oqs.oqs import *`), so
+# both `from oqs import X` and `from oqs.oqs import X` are idiomatic, and the
+# rules resolve both as well.
+#
+# THE PYTHON CONTRACT KEY IS THE MODULE PATH AND THERE IS NO `::` REWRITE.
+# `rustAuthoredKey`'s second-to-last-dot substitution (contracts.go:267) is
+# reached only from `rustContractsFor` and must not be copied here. It is also
+# worth stating that this library does NOT hit the directory-versus-import-path
+# divergence the merged `python/eth-account` family records: `KeyEncapsulation`
+# is defined in `oqs/oqs.py`, whose containing directory is `oqs`, so the
+# directory-derived key and the import path coincide.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ARITY IS AN EXACT MATCH KEY AND `varargs` DOES NOT HELP FOR PYTHON.
+#
+# `KnowledgeBase.ContractsFor` looks up `method#arity` exactly. There IS a
+# python-only name-only fallback in `ContractsForTolerant`
+# (contracts.go:292-303), but it is a fallback and not every caller uses it, so
+# each real arity is declared rather than relied upon.
+#
+#   `varargs: true` IS INERT FOR PYTHON. Its only consumer,
+#   `javaVarargsChainContracts`, is gated on `kb.Ecosystem == ecosystemJava`
+#   (builder.go:1562). No entry here uses the field.
+#
+# THE ARITY OF EVERY METHOD IS DERIVED FROM ITS `def` LINE, NOT FROM A CORPUS,
+# and this library makes that easy: not one method takes `*args` or `**kwargs`,
+# so every arity below is exact and none is a cap.
+#
+#   __init__(self, alg_name, secret_key=None)   -> 1, 2   (:398, :638, :1024)
+#   generate_keypair(self)                      -> 0
+#   generate_keypair_seed(self, seed)           -> 1
+#   encap_secret(self, public_key)              -> 1
+#   decap_secret(self, ciphertext)              -> 1
+#   export_secret_key(self)                     -> 0
+#   sign(self, message)                         -> 1
+#   verify(self, message, signature, public_key)-> 3
+#   sign_with_ctx_str(self, message, context)   -> 2
+#   verify_with_ctx_str(self, message, signature, context, public_key) -> 4
+#   export_used_keys(self)                      -> 0
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-SYMBOL VERSION WINDOWS. `library.version_range` spans every release with
+# a readable archive; each symbol's own window is narrower where it arrives
+# later, and is stated on its entry. Read from the `class` and `def` lines of
+# the archives themselves, checked on BOTH sides of each boundary.
+#
+#   0.7.2   the oldest archive read here. KeyEncapsulation (oqs.py:100) and
+#           Signature (:241) already carry generate_keypair, export_secret_key,
+#           encap_secret, decap_secret, sign, verify and free.
+#   0.9.0   `is_KEM_enabled`/`get_*_KEM_mechanisms` are renamed to their
+#           lowercase spellings (CHANGES.md). Not contracted: enumeration
+#           helpers compute nothing.
+#   0.12.0  sign_with_ctx_str (:511) and verify_with_ctx_str (:549) arrive --
+#           the FIPS 204 context-string API.
+#   0.14.0  StatefulSignature, generate_keypair_seed and the stateful
+#           enumeration helpers arrive (CHANGES.md `Version 0.14.0`).
+#   0.16.0  the only release PyPI serves. No API addition; `PYOQS_VERSION`
+#           and packaging changes only.
+#
+#   PyPI SERVES EXACTLY ONE RELEASE OF THIS DISTRIBUTION, AND IT IS NOT EITHER
+#   OF THE TWO ROWS IN THE COMMITTED CSV. `https://pypi.org/pypi/liboqs-python/
+#   json` and the PEP 503 simple index both list 0.16.0 and nothing else;
+#   0.14.1 and 0.15.0 return HTTP 404 from the JSON API, are absent from the
+#   simple index, have no GitHub tag, and appear in liboqs-python's own
+#   CHANGES.md not at all. deps.dev's live API also lists only 0.16.0. The
+#   version_range is therefore stated over the archives that can actually be
+#   READ, which is what a contract can honestly claim.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT IS DELIBERATELY NOT CONTRACTED. Disposition: contracted | skipped-non-crypto.
+#
+# oqs.KeyEncapsulation (0.16.0 oqs/oqs.py:367)
+#   __init__               contracted (factory), all four key spellings
+#   generate_keypair       contracted (operation) -> builtins.bytes
+#   generate_keypair_seed  contracted (operation) -> builtins.bytes, 0.14.0+
+#   encap_secret           contracted (operation) -> builtins.tuple
+#   decap_secret           contracted (operation) -> builtins.bytes
+#   export_secret_key      contracted (output)    -> builtins.bytes
+#   free                   skipped-non-crypto - releases the C structure (:561)
+#   __enter__              contracted (factory) -> oqs.KeyEncapsulation (:444).
+#                            AN EARLIER REVISION OF THIS HEADER CALLED IT
+#                            PLUMBING AND SAID THE CONSTRUCTOR'S OWN
+#                            canonical_return_type ALREADY TYPES THE
+#                            `with ... as k` BINDING. THAT WAS WRONG AND THE
+#                            EXPORT REFUTED IT: with the constructor contracted
+#                            and `__enter__` absent, every call site in the
+#                            context-manager probe module stayed uncontracted
+#                            as `probeconsumer.k.generate_keypair()`. The `as`
+#                            target takes its type from `__enter__`, and `with`
+#                            is THE documented idiom for this library --
+#                            0.16.0 examples/kem.py:21, sig.py:25,
+#                            stfl_sig.py:26 all use it.
+#   __exit__               skipped-non-crypto - calls `free` (:447)
+#
+# oqs.Signature (:607)
+#   __init__               contracted (factory)
+#   generate_keypair / sign / verify / sign_with_ctx_str / verify_with_ctx_str
+#                          contracted (operation)
+#   export_secret_key      contracted (output)
+#   __enter__              contracted (factory) -> oqs.Signature (:683)
+#   free, __exit__         skipped-non-crypto (:862, :686)
+#
+# oqs.StatefulSignature (:991)
+#   __init__               contracted (factory)
+#   generate_keypair / sign / verify   contracted (operation)
+#   export_secret_key      contracted (output)
+#   export_used_keys       contracted (output) -> builtins.list. The one-time
+#                            secret keys already CONSUMED (:1245); re-using one
+#                            breaks the one-time guarantee, so it is material
+#                            leaving the object and not bookkeeping.
+#   sigs_total / sigs_remaining  skipped-non-crypto - read a counter off the
+#                            stateful key and compute nothing (:1224, :1233)
+#   __enter__              contracted (factory) -> oqs.StatefulSignature (:1249)
+#   free, __exit__         skipped-non-crypto (:1262, :1253)
+#
+# Module-level functions, ALL skipped-non-crypto: get_enabled_kem_mechanisms
+# (:592), get_supported_kem_mechanisms (:597), get_enabled_sig_mechanisms
+# (:904), get_supported_sig_mechanisms (:909),
+# get_enabled_stateful_sig_mechanisms (:932),
+# get_supported_stateful_sig_mechanisms (:937), is_kem_enabled (:578),
+# is_sig_enabled (:881), is_stateful_sig_enabled (:918), sig_supports_context
+# (:890), oqs_version (:306), oqs_python_version (:70), native (:297),
+# version (:106). They enumerate or interrogate the loaded library; a consumer
+# calling them has performed no cryptography and named no mechanism.
+#
+# `oqs/rand.py` (`randombytes`, `randombytes_switch_algorithm`) is a genuine
+# DRBG surface and is NOT covered by this family in either repository. It is
+# named here so the boundary is visible rather than inferred.
+#
+# `oqs/serialize.py` IS NOT COVERED EITHER, AND THAT IS A DECISION WITH A
+# MEASUREMENT BEHIND IT RATHER THAN AN OVERSIGHT. Its three public functions --
+# `serialize_stateful_signature_key` (0.16.0 oqs/serialize.py:38),
+# `deserialize_stateful_signature_key` (:67) and
+# `gen_or_load_stateful_signature_key` (:122) -- move stateful signing key
+# material and would be easy to anchor: the module path is qualified and the
+# functions are free functions, so no receiver problem arises. They are left
+# out because the surface is unused in practice: ONE call site in the whole
+# library's own author code (0.16.0 tests/test_stfl_sig.py:8, a file whose
+# NAME makes mining skip it -- internal/skip/source_defaults.go:79 keys the
+# skip on `test_*.py`), and ZERO across 854 files of the 21-package real
+# consumer draw. WHAT WOULD REVERSE THIS: any consumer call site at all. The
+# module is also 0.14.0+, so it did not exist for most of the declared range.
+
+contracts:
+  # ── KeyEncapsulation constructor, spelling: `import oqs; oqs.KeyEncapsulation(..)`. 0.16.0 oqs/oqs.py:398. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.KeyEncapsulation
+    arity: 1
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  - method: oqs.KeyEncapsulation
+    arity: 2
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  # ── KeyEncapsulation constructor, spelling: `from oqs import KeyEncapsulation; KeyEncapsulation(..)`. 0.16.0 oqs/oqs.py:398. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.KeyEncapsulation.<init>
+    arity: 1
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  - method: oqs.KeyEncapsulation.<init>
+    arity: 2
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  # ── KeyEncapsulation constructor, spelling: `import oqs.oqs; oqs.oqs.KeyEncapsulation(..)`. 0.16.0 oqs/oqs.py:398. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.oqs.KeyEncapsulation
+    arity: 1
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.KeyEncapsulation
+    arity: 2
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  # ── KeyEncapsulation constructor, spelling: `from oqs.oqs import KeyEncapsulation; KeyEncapsulation(..)`. 0.16.0 oqs/oqs.py:398. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.oqs.KeyEncapsulation.<init>
+    arity: 1
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.KeyEncapsulation.<init>
+    arity: 2
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  # ── KeyEncapsulation.__enter__. 0.16.0 oqs/oqs.py:444. `def __enter__(self) -> Self`. CONTRACTING THIS IS LOAD-BEARING, not plumbing: `with oqs.<C>(alg) as k` is THE documented idiom (0.16.0 examples/kem.py:21, examples/sig.py:25, examples/stfl_sig.py:26) and the `as k` binding takes its type from `__enter__`, NOT from the constructor. Measured: with the constructor contracted and this entry absent, all four call sites in the context-manager probe module stayed uncontracted as `probeconsumer.k.generate_keypair()`.
+  - method: oqs.KeyEncapsulation.__enter__
+    arity: 0
+    canonical_return_type: oqs.KeyEncapsulation
+    return: { type: oqs.KeyEncapsulation, confidence: high }
+    role: factory
+
+  # ── KeyEncapsulation.generate_keypair. 0.16.0 oqs/oqs.py:488; 0.12.0 :271; 0.7.2 :165. Returns the public key.
+  - method: oqs.KeyEncapsulation.generate_keypair
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── KeyEncapsulation.generate_keypair_seed. ARRIVES AT 0.14.0 (CHANGES.md). 0.16.0 oqs/oqs.py:455. Deterministic ML-KEM keygen from a seed.
+  - method: oqs.KeyEncapsulation.generate_keypair_seed
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── KeyEncapsulation.encap_secret. 0.16.0 oqs/oqs.py:510; 0.12.0 :291; 0.7.2 :180. Returns (ciphertext, shared_secret) -- a TUPLE, declared as builtins.tuple because the element types are not expressible here.
+  - method: oqs.KeyEncapsulation.encap_secret
+    arity: 1
+    canonical_return_type: builtins.tuple
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+
+  # ── KeyEncapsulation.decap_secret. 0.16.0 oqs/oqs.py:537; 0.12.0 :310; 0.7.2 :192.
+  - method: oqs.KeyEncapsulation.decap_secret
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── KeyEncapsulation.export_secret_key. 0.16.0 oqs/oqs.py:506; 0.12.0 :287; 0.7.2 :176.
+  - method: oqs.KeyEncapsulation.export_secret_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ── Signature constructor, spelling: `import oqs; oqs.Signature(..)`. 0.16.0 oqs/oqs.py:638. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.Signature
+    arity: 1
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  - method: oqs.Signature
+    arity: 2
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  # ── Signature constructor, spelling: `from oqs import Signature; Signature(..)`. 0.16.0 oqs/oqs.py:638. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.Signature.<init>
+    arity: 1
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  - method: oqs.Signature.<init>
+    arity: 2
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  # ── Signature constructor, spelling: `import oqs.oqs; oqs.oqs.Signature(..)`. 0.16.0 oqs/oqs.py:638. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.oqs.Signature
+    arity: 1
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.Signature
+    arity: 2
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  # ── Signature constructor, spelling: `from oqs.oqs import Signature; Signature(..)`. 0.16.0 oqs/oqs.py:638. Arity 1-2: `__init__(self, alg_name, secret_key=None)`.
+  - method: oqs.oqs.Signature.<init>
+    arity: 1
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.Signature.<init>
+    arity: 2
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  # ── Signature.__enter__. 0.16.0 oqs/oqs.py:683. `def __enter__(self) -> Self`. CONTRACTING THIS IS LOAD-BEARING, not plumbing: `with oqs.<C>(alg) as k` is THE documented idiom (0.16.0 examples/kem.py:21, examples/sig.py:25, examples/stfl_sig.py:26) and the `as k` binding takes its type from `__enter__`, NOT from the constructor. Measured: with the constructor contracted and this entry absent, all four call sites in the context-manager probe module stayed uncontracted as `probeconsumer.k.generate_keypair()`.
+  - method: oqs.Signature.__enter__
+    arity: 0
+    canonical_return_type: oqs.Signature
+    return: { type: oqs.Signature, confidence: high }
+    role: factory
+
+  # ── Signature.generate_keypair. 0.16.0 oqs/oqs.py:694; 0.12.0 :437; 0.7.2 :302.
+  - method: oqs.Signature.generate_keypair
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Signature.sign. 0.16.0 oqs/oqs.py:718; 0.12.0 :457; 0.7.2 :317.
+  - method: oqs.Signature.sign
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Signature.sign_with_ctx_str. ARRIVES AT 0.12.0 (CHANGES.md). 0.16.0 oqs/oqs.py:773; 0.12.0 :511. FIPS 204 context string.
+  - method: oqs.Signature.sign_with_ctx_str
+    arity: 2
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Signature.verify. 0.16.0 oqs/oqs.py:745; 0.12.0 :484; 0.7.2 :334.
+  - method: oqs.Signature.verify
+    arity: 3
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # ── Signature.verify_with_ctx_str. ARRIVES AT 0.12.0. 0.16.0 oqs/oqs.py:815; 0.12.0 :549.
+  - method: oqs.Signature.verify_with_ctx_str
+    arity: 4
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # ── Signature.export_secret_key. 0.16.0 oqs/oqs.py:714; 0.12.0 :453; 0.7.2 :313.
+  - method: oqs.Signature.export_secret_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ── StatefulSignature constructor, spelling: `import oqs; oqs.StatefulSignature(..)`. 0.16.0 oqs/oqs.py:1024. Arity 1-2: `__init__(self, alg_name, secret_key=None)`. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature
+    arity: 1
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  - method: oqs.StatefulSignature
+    arity: 2
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  # ── StatefulSignature constructor, spelling: `from oqs import StatefulSignature; StatefulSignature(..)`. 0.16.0 oqs/oqs.py:1024. Arity 1-2: `__init__(self, alg_name, secret_key=None)`. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.<init>
+    arity: 1
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  - method: oqs.StatefulSignature.<init>
+    arity: 2
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  # ── StatefulSignature constructor, spelling: `import oqs.oqs; oqs.oqs.StatefulSignature(..)`. 0.16.0 oqs/oqs.py:1024. Arity 1-2: `__init__(self, alg_name, secret_key=None)`. Window: 0.14.0-0.16.0.
+  - method: oqs.oqs.StatefulSignature
+    arity: 1
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.StatefulSignature
+    arity: 2
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  # ── StatefulSignature constructor, spelling: `from oqs.oqs import StatefulSignature; StatefulSignature(..)`. 0.16.0 oqs/oqs.py:1024. Arity 1-2: `__init__(self, alg_name, secret_key=None)`. Window: 0.14.0-0.16.0.
+  - method: oqs.oqs.StatefulSignature.<init>
+    arity: 1
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  - method: oqs.oqs.StatefulSignature.<init>
+    arity: 2
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  # ── StatefulSignature.__enter__. 0.16.0 oqs/oqs.py:1249. `def __enter__(self) -> Self`. CONTRACTING THIS IS LOAD-BEARING, not plumbing: `with oqs.<C>(alg) as k` is THE documented idiom (0.16.0 examples/kem.py:21, examples/sig.py:25, examples/stfl_sig.py:26) and the `as k` binding takes its type from `__enter__`, NOT from the constructor. Measured: with the constructor contracted and this entry absent, all four call sites in the context-manager probe module stayed uncontracted as `probeconsumer.k.generate_keypair()`. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.__enter__
+    arity: 0
+    canonical_return_type: oqs.StatefulSignature
+    return: { type: oqs.StatefulSignature, confidence: high }
+    role: factory
+
+  # ── StatefulSignature.generate_keypair. 0.16.0 oqs/oqs.py:1111. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.generate_keypair
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── StatefulSignature.sign. 0.16.0 oqs/oqs.py:1147. ADVANCES the one-time key state; raises NotImplementedError for LMS (:1157). Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.sign
+    arity: 1
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── StatefulSignature.verify. 0.16.0 oqs/oqs.py:1187. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.verify
+    arity: 3
+    canonical_return_type: builtins.bool
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # ── StatefulSignature.export_secret_key. 0.16.0 oqs/oqs.py:1202. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.export_secret_key
+    arity: 0
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ── StatefulSignature.export_used_keys. 0.16.0 oqs/oqs.py:1245. The one-time secret keys this signer has already consumed. Window: 0.14.0-0.16.0.
+  - method: oqs.StatefulSignature.export_used_keys
+    arity: 0
+    canonical_return_type: builtins.list
+    return: { type: builtins.list, confidence: high }
+    role: output
+
