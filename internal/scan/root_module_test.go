@@ -165,6 +165,72 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
+	// THE COMBINATION NO CASE ABOVE COVERED, WHICH IS WHY THE DEFECT SURVIVED.
+	// Each existing python case exercises EITHER a manifest OR a package
+	// directory, never both; a real sdist normally has both, and the manifest
+	// branch used to win and prepend a prefix the declaration path already
+	// carried. Measured on fastecdsa, which migrated from setup.py to
+	// pyproject.toml at 2.3.0 and changed nothing else: 2.3.0, 3.0.0 and 3.0.1
+	// synthesized ZERO crypto API entry points where 1.6.2 - 2.2.3 synthesized
+	// 8 to 12, and deleting pyproject.toml from the 2.3.0 tree restored all 12
+	// with byte-identical function_count and edge_count.
+	t.Run("python-pyproject-and-unique-package-dir", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = 'fastecdsa'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "fastecdsa"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "fastecdsa", "__init__.py"), []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := DetectRootModule(dir, "python"); got != "" {
+			t.Fatalf("DetectRootModule(python pyproject + unique package dir) = %q, "+
+				"want empty root: the declaration path already starts with the "+
+				"package directory name, so returning the project name prepends it twice", got)
+		}
+	})
+
+	// THE MANIFEST BRANCH MUST STILL BE REACHABLE. A src-layout project has no
+	// TOP-LEVEL package directory, so the path does not supply the prefix and
+	// the manifest is the only source for it.
+	t.Run("python-pyproject-src-layout", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = 'srclayout'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "src", "srclayout"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "src", "srclayout", "__init__.py"), []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := DetectRootModule(dir, "python"); got != "srclayout" {
+			t.Fatalf("DetectRootModule(python src layout) = %q, want srclayout", got)
+		}
+	})
+
+	// And when a distribution ships SEVERAL top-level packages there is no
+	// unique one, so the manifest wins there too.
+	t.Run("python-pyproject-several-package-dirs", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = 'multi'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, pkg := range []string{"alpha", "beta"} {
+			if err := os.MkdirAll(filepath.Join(dir, pkg), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, pkg, "__init__.py"), []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := DetectRootModule(dir, "python"); got != "multi" {
+			t.Fatalf("DetectRootModule(python several package dirs) = %q, want multi", got)
+		}
+	})
+
 	t.Run("fallback", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "repo-name")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
