@@ -16,7 +16,13 @@ func TestDependency(t *testing.T) {
 		{name: "golang", ecosystem: "go", module: "GitHub.com/Example/Crypto", version: "v1.2.3", want: "pkg:golang/github.com/example/crypto@v1.2.3"},
 		{name: "cargo", ecosystem: "rust", module: "ring", version: "0.17.8", want: "pkg:cargo/ring@0.17.8"},
 		{name: "versionless", ecosystem: "python", module: "cryptography", want: "pkg:pypi/cryptography"},
-		{name: "unknown-ecosystem", ecosystem: "node", module: "left-pad", version: "1.3.0"},
+		{name: "npm", ecosystem: "node", module: "left-pad", version: "1.3.0", want: "pkg:npm/left-pad@1.3.0"},
+		// A scoped package keeps the @ in its namespace: the purl npm spec writes
+		// it percent-encoded, and the mining service's own source resolver reads
+		// pkg:npm/%40scope/name when it builds a registry tarball URL.
+		{name: "npm-scoped", ecosystem: "node", module: "@noble/hashes", version: "1.3.0", want: "pkg:npm/%40noble/hashes@1.3.0"},
+		{name: "npm-versionless", ecosystem: "node", module: "node-forge", want: "pkg:npm/node-forge"},
+		{name: "unknown-ecosystem", ecosystem: "elixir", module: "left-pad", version: "1.3.0"},
 		{name: "missing-module", ecosystem: "go", version: "v1.2.3"},
 	}
 
