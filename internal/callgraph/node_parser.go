@@ -18,16 +18,20 @@ import (
 )
 
 const (
-	nodeCallExpression       = "call_expression"
-	nodeMemberExpression     = "member_expression"
-	nodeVariableDeclarator   = "variable_declarator"
-	nodeFunctionDeclaration  = "function_declaration"
-	nodeGeneratorDeclaration = "generator_function_declaration"
-	nodeArrowFunction        = "arrow_function"
-	nodeFunctionExpression   = "function_expression"
-	nodeMethodDefinition     = "method_definition"
-	nodeReturnStatement      = "return_statement"
-	nodeNewExpression        = "new_expression"
+	nodeCallExpression        = "call_expression"
+	nodeMemberExpression      = "member_expression"
+	nodeVariableDeclarator    = "variable_declarator"
+	nodeFunctionDeclaration   = "function_declaration"
+	nodeGeneratorDeclaration  = "generator_function_declaration"
+	nodeArrowFunction         = "arrow_function"
+	nodeFunctionExpression    = "function_expression"
+	nodeMethodDefinition      = "method_definition"
+	nodeReturnStatement       = "return_statement"
+	nodeNewExpression         = "new_expression"
+	nodeClassExpression       = "class"
+	nodeObjectLiteral         = "object"
+	nodeFieldDefinition       = "field_definition"
+	nodePublicFieldDefinition = "public_field_definition"
 )
 
 // NodeParser extracts JavaScript and TypeScript imports, declarations, and calls.
@@ -108,6 +112,35 @@ func isNodeTestFile(name string) bool {
 	return strings.Contains(lower, ".test.") || strings.Contains(lower, ".spec.") || strings.HasPrefix(lower, "test_")
 }
 
+// nodeModulePath scopes a function identity to the FILE rather than to its
+// directory, because in Node a file IS a module: `src/alpha.js` and
+// `src/beta.js` are different modules however they name their exports.
+//
+// Keying on the directory alone puts two same-named functions on one identity,
+// and only one of them survives: `index.js` beside `utils.js`, each exporting a
+// `hash()`, is ordinary Node layout.
+//
+// The extension is dropped so that `a.js`, `a.ts` and `a.tsx` are one module —
+// which is what a Node resolver does — and the separator is "/" so the key
+// reads as the path it is. A file directly in the package root yields the
+// package path unchanged, which keeps single-file packages stable.
+func nodeModulePath(packagePath, filePath string) string {
+	base := filepath.Base(filePath)
+	// A dotfile whose whole name is its extension (".js") keeps that name:
+	// trimming it empties the base, and an empty base falls back to the package
+	// path, which is the key its parent directory's `b.js` already holds.
+	if ext := filepath.Ext(base); ext != "" && ext != base {
+		base = strings.TrimSuffix(base, ext)
+	}
+	if base == "" {
+		return packagePath
+	}
+	if packagePath == "" {
+		return base
+	}
+	return packagePath + "/" + base
+}
+
 // ParseFile parses one JavaScript or TypeScript source file.
 func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error) {
 	src, err := os.ReadFile(filePath)
@@ -132,7 +165,10 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	}
 	root := tree.RootNode()
 	p.extractImports(root, src, analysis)
-	p.extractDeclarations(root, src, filePath, packagePath, analysis)
+	// Identities and same-file call targets are scoped to the module, not the
+	// package: see nodeModulePath. analysis.PackagePath keeps the package so the
+	// import map and the package name are unaffected.
+	p.extractDeclarations(root, src, filePath, nodeModulePath(packagePath, filePath), analysis)
 	return analysis, nil
 }
 
@@ -267,7 +303,7 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 		p.extractAssignedFunctions(node, src, filePath, packagePath, analysis)
 		return
 	case javaNodeClassDeclaration:
-		p.extractClassMethods(node, src, filePath, packagePath, analysis)
+		p.extractClassMethods(node, src, filePath, packagePath, "", analysis)
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -283,25 +319,43 @@ func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, fil
 		}
 		name := declarator.ChildByFieldName("name")
 		value := declarator.ChildByFieldName("value")
-		if name == nil || name.Type() != goNodeIdentifier || value == nil || (value.Type() != nodeArrowFunction && value.Type() != nodeFunctionExpression) {
+		if name == nil || name.Type() != goNodeIdentifier || value == nil {
 			continue
 		}
-		if decl := p.parseNodeFunction(value, src, filePath, packagePath, name.Content(src), "", analysis.Imports); decl != nil {
+		bound := name.Content(src)
+
+		// A class or an object literal bound to a name carries methods written
+		// exactly as a class declaration's are — `const H = class { run() {} }` and
+		// `const o = { run() {} }`. The binding supplies the owner that the shape
+		// itself does not name.
+		switch value.Type() {
+		case nodeClassExpression, javaNodeClassDeclaration:
+			p.extractClassMethods(value, src, filePath, packagePath, bound, analysis)
+			continue
+		case nodeObjectLiteral:
+			p.extractObjectMethods(value, src, filePath, packagePath, bound, analysis)
+			continue
+		}
+
+		if value.Type() != nodeArrowFunction && value.Type() != nodeFunctionExpression {
+			continue
+		}
+		if decl := p.parseNodeFunction(value, src, filePath, packagePath, bound, "", analysis.Imports); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
 		p.extractDeclarations(value.ChildByFieldName("body"), src, filePath, packagePath, analysis)
 	}
 }
 
-func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
-	name := node.ChildByFieldName("name")
-	body := node.ChildByFieldName("body")
-	if name == nil || body == nil {
+// extractObjectMethods walks the shorthand methods of an object literal bound
+// to a name. tree-sitter gives them the same `method_definition` node a class
+// body uses, and the binding names their owner.
+func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePath, packagePath, owner string, analysis *FileAnalysis) {
+	if node == nil || owner == "" {
 		return
 	}
-	owner := name.Content(src)
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		method := body.NamedChild(i)
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		method := node.NamedChild(i)
 		if method.Type() != nodeMethodDefinition {
 			continue
 		}
@@ -309,6 +363,70 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
 	}
+}
+
+// extractClassMethods walks a class body. fallbackOwner names a class that has
+// no name of its own: `const Hasher = class { ... }` is a class_expression, so
+// the owner comes from the binding, which is what a reader calls the type
+// anyway.
+func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath, packagePath, fallbackOwner string, analysis *FileAnalysis) {
+	body := node.ChildByFieldName("body")
+	if body == nil {
+		return
+	}
+	owner := fallbackOwner
+	if name := node.ChildByFieldName("name"); name != nil {
+		owner = name.Content(src)
+	}
+	if owner == "" {
+		return
+	}
+	var fieldInit []*sitter.Node
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		member := body.NamedChild(i)
+		switch member.Type() {
+		case nodeMethodDefinition:
+			if decl := p.parseNodeFunction(member, src, filePath, packagePath, "", owner, analysis.Imports); decl != nil {
+				analysis.Functions = append(analysis.Functions, *decl)
+			}
+		case nodeFieldDefinition, nodePublicFieldDefinition:
+			if value := member.ChildByFieldName("value"); value != nil {
+				fieldInit = append(fieldInit, value)
+			}
+		}
+	}
+	p.appendClassInit(body, fieldInit, src, filePath, packagePath, owner, analysis)
+}
+
+// appendClassInit emits ONE synthetic `<clinit>` for a class whose body holds a
+// field with an initialiser, following the Java parser's precedent for the same
+// problem: an initialiser runs during construction and belongs to no method the
+// reader wrote, so it has no other function to be attributed to.
+//
+// The decl spans the whole class body deliberately: ContainingFunction picks the
+// tightest span for a line, so every real method still wins and only calls that
+// sit directly in initialiser position fall through to `<clinit>`.
+//
+// Calls are collected from the initialiser expressions ONLY, never from method
+// bodies, which own their own.
+func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, src []byte, filePath, packagePath, owner string, analysis *FileAnalysis) {
+	if len(inits) == 0 {
+		return
+	}
+	decl := &FunctionDecl{
+		ID:           FunctionID{Package: packagePath, Type: owner, Name: clinitMethodName},
+		FilePath:     filePath,
+		StartLine:    int(body.StartPoint().Row) + 1,
+		EndLine:      int(body.EndPoint().Row) + 1,
+		OwnerType:    ownerTypeClass,
+		OwnerName:    owner,
+		FunctionType: javaFunctionTypeMethod,
+	}
+	for _, init := range inits {
+		locals := collectNodeLocalNames(nil, init, src)
+		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, analysis.Imports, locals)...)
+	}
+	analysis.Functions = append(analysis.Functions, *decl)
 }
 
 func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, packagePath, fallbackName, owner string, imports map[string]string) *FunctionDecl {

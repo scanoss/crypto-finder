@@ -10,6 +10,9 @@ import (
 	"testing"
 )
 
+// Same-file call targets are keyed on the MODULE, so the expected package here
+// is "example-app/crypto" rather than "example-app": a Node file is its own
+// module. See nodeModulePath.
 func TestNodeParser_ImportsCallsAndLifecycleFields(t *testing.T) {
 	t.Parallel()
 
@@ -67,7 +70,7 @@ export const forgeDigest = (data) => {
 	if got := nodeCallSpan(t, src, create); got != `crypto.createHash("sha256")` {
 		t.Errorf("createHash span = %q", got)
 	}
-	update := nodeCall(t, digest, "example-app", "update", "hash.update")
+	update := nodeCall(t, digest, "example-app/crypto", "update", "hash.update")
 	if update.ReceiverVar != "hash" {
 		t.Errorf("hash.update ReceiverVar = %q, want hash", update.ReceiverVar)
 	}
@@ -78,8 +81,8 @@ export const forgeDigest = (data) => {
 
 	forgeDigest := nodeFunction(t, analysis, "forgeDigest")
 	createLink := nodeCall(t, forgeDigest, "node-forge.md.sha256", "create", "forge.md.sha256.create")
-	updateLink := nodeCall(t, forgeDigest, "example-app", "update", "forge.md.sha256.create().update")
-	digestLink := nodeCall(t, forgeDigest, "example-app", "digest", "forge.md.sha256.create().update(data).digest")
+	updateLink := nodeCall(t, forgeDigest, "example-app/crypto", "update", "forge.md.sha256.create().update")
+	digestLink := nodeCall(t, forgeDigest, "example-app/crypto", "digest", "forge.md.sha256.create().update(data).digest")
 	if createLink.ChainID == "" || createLink.ChainID != updateLink.ChainID || createLink.ChainID != digestLink.ChainID {
 		t.Fatalf("fluent ChainIDs = %q, %q, %q", createLink.ChainID, updateLink.ChainID, digestLink.ChainID)
 	}
@@ -122,7 +125,7 @@ export function encrypt(data: Buffer): Buffer {
 	if call.AssignedVar != "cipher" {
 		t.Errorf("createCipheriv AssignedVar = %q, want cipher", call.AssignedVar)
 	}
-	update := nodeCall(t, encrypt, "example-app", "update", "cipher.update")
+	update := nodeCall(t, encrypt, "example-app/crypto", "update", "cipher.update")
 	if update.ReceiverVar != "cipher" {
 		t.Errorf("cipher.update ReceiverVar = %q, want cipher", update.ReceiverVar)
 	}
@@ -267,11 +270,11 @@ export function digest(crypto, createHash) {
 		t.Fatalf("ParseFile: %v", err)
 	}
 	digest := nodeFunction(t, analysis, "digest")
-	member := nodeCall(t, digest, "example-app", "createHash", "crypto.createHash")
+	member := nodeCall(t, digest, "example-app/shadowed", "createHash", "crypto.createHash")
 	if member.ReceiverVar != "crypto" {
 		t.Errorf("shadowed member ReceiverVar = %q, want crypto", member.ReceiverVar)
 	}
-	_ = nodeCall(t, digest, "example-app", "createHash", "createHash")
+	_ = nodeCall(t, digest, "example-app/shadowed", "createHash", "createHash")
 }
 
 func nodeFunction(t *testing.T, analysis *FileAnalysis, name string) *FunctionDecl {
