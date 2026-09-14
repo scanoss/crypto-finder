@@ -203,20 +203,40 @@ func TestDependencyScanner_HelperFunctions(t *testing.T) {
 	}
 
 	sets := javaDS.collectPackageSets("/user/project", resolvedWorkspace, depResults)
-	// 2 workspace members + 2 successfully scanned deps with source = 4 graphPackages.
-	// dep2 has no crypto findings, but it still needs full source parsing because
-	// it can be a bridge in A -> B(no crypto) -> C(crypto) reachability.
-	if len(sets.graphPackages) != 4 {
-		t.Fatalf("graphPackages len = %d, want 4 (2 workspace + 2 source deps)", len(sets.graphPackages))
+	// 2 workspace members + the workspace ROOT + 2 successfully scanned deps with
+	// source = 5 graphPackages. dep2 has no crypto findings, but it still needs
+	// full source parsing because it can be a bridge in
+	// A -> B(no crypto) -> C(crypto) reachability.
+	//
+	// The root is here because a workspace root carries its own source in some
+	// ecosystems: a Cargo virtual manifest has none and this is a no-op there,
+	// while an npm workspace root routinely has an index.js of its own, and
+	// taking only the members left that file in no package at all.
+	if len(sets.graphPackages) != 5 {
+		t.Fatalf("graphPackages len = %d, want 5 (2 workspace + root + 2 source deps)", len(sets.graphPackages))
+	}
+	rootPkg := sets.graphPackages[2]
+	if rootPkg.Dir != "/user/project" {
+		t.Fatalf("graphPackages[2] should be the workspace root, got %#v", rootPkg)
+	}
+	// Members live under the root, so the root's walk must skip them or each is
+	// parsed twice under a second import path.
+	if len(rootPkg.ExcludeDirs) != len(resolvedWorkspace.WorkspaceMembers) {
+		t.Fatalf("root ExcludeDirs = %v, want one per workspace member", rootPkg.ExcludeDirs)
+	}
+	for i, member := range resolvedWorkspace.WorkspaceMembers {
+		if rootPkg.ExcludeDirs[i] != member.Dir {
+			t.Fatalf("root ExcludeDirs[%d] = %q, want %q", i, rootPkg.ExcludeDirs[i], member.Dir)
+		}
 	}
 	if len(sets.typeOnlyPackages) != 2 {
 		t.Fatalf("typeOnlyPackages len = %d, want 2", len(sets.typeOnlyPackages))
 	}
-	if sets.graphPackages[2].Version != "v1" || sets.graphPackages[3].Version != "v2" {
+	if sets.graphPackages[3].Version != "v1" || sets.graphPackages[4].Version != "v2" {
 		t.Fatalf("unexpected graphPackages versions: %#v", sets.graphPackages)
 	}
-	if sets.graphPackages[3].CompiledArtifactPath != "/artifacts/dep2.jar" {
-		t.Fatalf("expected compiled artifact path to propagate for source-parsed dep, got %#v", sets.graphPackages[3])
+	if sets.graphPackages[4].CompiledArtifactPath != "/artifacts/dep2.jar" {
+		t.Fatalf("expected compiled artifact path to propagate for source-parsed dep, got %#v", sets.graphPackages[4])
 	}
 	if sets.typeOnlyPackages[0].Version != "v3" || sets.typeOnlyPackages[1].Version != "v4" {
 		t.Fatalf("unexpected typeOnlyPackages versions: %#v", sets.typeOnlyPackages)

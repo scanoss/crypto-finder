@@ -62,6 +62,13 @@ type PackageDir struct {
 	DistributionName     string // Dependency coordinate when it differs from ImportPath (Python only)
 	Version              string // Dependency version when applicable (e.g., "1.2.3")
 	CompiledArtifactPath string // Absolute path to a compiled artifact for type-only resolution
+	// ExcludeDirs are absolute directories the walk must not descend into while
+	// analyzing THIS package. A workspace whose members live under the root — an
+	// npm workspace, unlike a Cargo virtual manifest — needs the root walked for
+	// its own source while each member is walked once, as its own package. Without
+	// it the root walk re-parses every member under a second import path, and one
+	// function acquires two identities.
+	ExcludeDirs []string
 }
 
 // Builder constructs a CallGraph from multiple packages using a language-specific parser.
@@ -69,6 +76,12 @@ type Builder struct {
 	parser       Parser
 	typeResolver TypeResolver
 	skipMatcher  skip.SkipMatcher // directory walk plus per-file generated-stub policy
+	// excludeDirs holds the current package's ExcludeDirs for the duration of its
+	// walk. It is per-package state, which is safe ONLY because
+	// BuildFromDirectories analyzes packages sequentially; parallelism lives
+	// inside a package, not across them. TestBuilder_PackageExcludeDirs pins the
+	// behavior this depends on.
+	excludeDirs map[string]struct{}
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -241,6 +254,14 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 // concurrently; results are merged in the exact serial traversal order so the
 // collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
+	b.excludeDirs = nil
+	if len(pkg.ExcludeDirs) > 0 {
+		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
+		for _, dir := range pkg.ExcludeDirs {
+			b.excludeDirs[filepath.Clean(dir)] = struct{}{}
+		}
+		defer func() { b.excludeDirs = nil }()
+	}
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
 	if !ok || workers <= 1 {
@@ -294,6 +315,9 @@ func (b *Builder) parserSkipsDir(name string) bool {
 
 func (b *Builder) skipWalkDirectory(path, name string) bool {
 	if strings.HasPrefix(name, ".") || b.parserSkipsDir(name) {
+		return true
+	}
+	if _, excluded := b.excludeDirs[filepath.Clean(path)]; excluded {
 		return true
 	}
 	if b.skipMatcher == nil {
