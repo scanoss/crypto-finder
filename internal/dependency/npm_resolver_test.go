@@ -277,3 +277,60 @@ func TestNpmResolver_ScopedPackageResolves(t *testing.T) {
 		t.Errorf("scoped Dir %q is wrong: %v", dep.Dir, err)
 	}
 }
+
+// A workspace member is the user's OWN code. npm records it twice in a v3
+// lockfile: once at its real path (`packages/inner`) and once as a symlink entry
+// under node_modules carrying `"link": true` and no version. Reporting either as
+// a dependency attributes the user's own source to an external package, and the
+// link entry has no version to form a coordinate from at all.
+func TestNpmResolver_WorkspaceMembersAreNotDependencies(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"mono","version":"1.0.0","workspaces":["packages/*"],"dependencies":{"inner":"*","node-forge":"^1.4.0"}}`,
+		"package-lock.json": `{
+		  "name":"mono","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"mono","version":"1.0.0","dependencies":{"inner":"*","node-forge":"^1.4.0"}},
+		    "packages/inner":{"name":"inner","version":"1.0.0"},
+		    "node_modules/inner":{"resolved":"packages/inner","link":true},
+		    "node_modules/node-forge":{"version":"1.4.0"}
+		  }
+		}`,
+		"packages/inner/package.json":          `{"name":"inner","version":"1.0.0"}`,
+		"packages/inner/crypto.js":             "module.exports = 1;\n",
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+	if err := os.MkdirAll(filepath.Join(root, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "packages", "inner"), filepath.Join(root, "node_modules", "inner")); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	for _, d := range result.Dependencies {
+		if d.Module == "inner" {
+			t.Errorf("workspace member reported as a dependency at %q", d.Dir)
+		}
+		if d.Version == "" {
+			t.Errorf("dependency %q has no version, so it has no coordinate: dir=%q", d.Module, d.Dir)
+		}
+	}
+	if len(result.Dependencies) != 1 {
+		t.Errorf("Dependencies = %d, want 1 (node-forge only): %+v", len(result.Dependencies), result.Dependencies)
+	}
+
+	if len(result.WorkspaceMembers) != 1 {
+		t.Fatalf("WorkspaceMembers = %d, want 1: %+v", len(result.WorkspaceMembers), result.WorkspaceMembers)
+	}
+	member := result.WorkspaceMembers[0]
+	if member.Name != "inner" {
+		t.Errorf("member name = %q, want inner", member.Name)
+	}
+	if _, statErr := os.Stat(filepath.Join(member.Dir, "crypto.js")); statErr != nil {
+		t.Errorf("member Dir %q is not the real source: %v", member.Dir, statErr)
+	}
+}
