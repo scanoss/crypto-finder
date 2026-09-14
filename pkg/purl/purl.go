@@ -80,6 +80,9 @@ func Dependency(ecosystem, module, version string) string {
 		namespace, name = splitModule(module)
 	case "rust":
 		typ, name = packageurl.TypeCargo, module
+	case "node":
+		typ = packageurl.TypeNPM
+		namespace, name = splitNpmModule(module)
 	default:
 		return ""
 	}
@@ -92,6 +95,23 @@ func Dependency(ecosystem, module, version string) string {
 		return ""
 	}
 	return p.ToString()
+}
+
+// splitNpmModule separates an npm scope from the package name. The scope keeps
+// its leading "@": the purl npm spec writes it percent-encoded
+// (pkg:npm/%40noble/hashes), and the mining service's source resolver reads that
+// form back when it builds a registry tarball URL. An unscoped name has no
+// namespace at all, so splitModule's last-slash rule is wrong here — an npm name
+// without a scope never contains a slash, and one with a scope has exactly one.
+func splitNpmModule(module string) (namespace, name string) {
+	if !strings.HasPrefix(module, "@") {
+		return "", module
+	}
+	scope, rest, ok := strings.Cut(module[1:], "/")
+	if !ok || scope == "" || rest == "" {
+		return "", module
+	}
+	return "@" + scope, rest
 }
 
 func splitModule(module string) (namespace, name string) {

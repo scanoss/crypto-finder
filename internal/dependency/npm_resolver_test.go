@@ -220,10 +220,16 @@ func TestNpmResolver_MissingLockfileIsNamed(t *testing.T) {
 	}
 }
 
-// Dev dependencies are build tooling: including them multiplies the scanned tree
-// without adding anything that ships. The exclusion is deliberate, so it is
-// pinned rather than left to be rediscovered.
-func TestNpmResolver_DevDependenciesAreExcluded(t *testing.T) {
+// Dev dependencies are RESOLVED, matching the three ecosystems that already do:
+// CargoResolver runs bare `cargo metadata` and appends every package, GoResolver
+// runs `go list -m -json all`, and PipResolver lists the whole environment. Only
+// the two Java resolvers narrow to compile scope.
+//
+// The reason is not consistency for its own sake. A crypto inventory that skips
+// dev dependencies cannot see cryptography that exists only there, and that is
+// not hypothetical: jsonwebtoken as a devDependency brings a jwa subtree calling
+// crypto.createHmac and crypto.createSign.
+func TestNpmResolver_DevDependenciesAreResolved(t *testing.T) {
 	root := writeTree(t, map[string]string{
 		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"},"devDependencies":{"tap":"^16.0.0"}}`,
 		"package-lock.json": `{
@@ -242,11 +248,38 @@ func TestNpmResolver_DevDependenciesAreExcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if _, dev := depsByModule(result)["tap"]; dev {
-		t.Errorf("dev dependency tap was resolved: %+v", result.Dependencies)
+	byMod := depsByModule(result)
+	if _, dev := byMod["tap"]; !dev {
+		t.Errorf("dev dependency tap was dropped: %+v", result.Dependencies)
 	}
-	if _, prod := depsByModule(result)["node-forge"]; !prod {
+	if _, prod := byMod["node-forge"]; !prod {
 		t.Errorf("production dependency node-forge missing: %+v", result.Dependencies)
+	}
+}
+
+// An uninstalled dev package is ordinary: `npm install --omit=dev` is a normal
+// production image. It must not fail the scan the way a missing required
+// package does.
+func TestNpmResolver_UninstalledDevDependencyDoesNotFail(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"},"devDependencies":{"tap":"^16.0.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0"},
+		    "node_modules/node-forge":{"version":"1.4.0"},
+		    "node_modules/tap":{"version":"16.0.0","dev":true}
+		  }
+		}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("an omitted dev dependency must not fail the scan: %v", err)
+	}
+	if len(result.Dependencies) != 1 {
+		t.Errorf("Dependencies = %d, want 1: %+v", len(result.Dependencies), result.Dependencies)
 	}
 }
 
@@ -332,5 +365,239 @@ func TestNpmResolver_WorkspaceMembersAreNotDependencies(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(member.Dir, "crypto.js")); statErr != nil {
 		t.Errorf("member Dir %q is not the real source: %v", member.Dir, statErr)
+	}
+}
+
+// Platform packages are optional and gated on os/cpu, so a healthy linux-x64
+// tree is missing most of them BY DESIGN. Counting them made the warning fire on
+// every real project: `npm install esbuild` alone left 25 of 26 @esbuild/*
+// packages absent. A warning that always fires is the same as no warning.
+func TestNpmResolver_AbsentOptionalPlatformPackagesAreNotAFailure(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"esbuild":"^0.20.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0","dependencies":{"esbuild":"^0.20.0"}},
+		    "node_modules/esbuild":{"version":"0.20.0","optionalDependencies":{"@esbuild/linux-x64":"0.20.0","@esbuild/darwin-arm64":"0.20.0"}},
+		    "node_modules/@esbuild/linux-x64":{"version":"0.20.0","optional":true},
+		    "node_modules/@esbuild/darwin-arm64":{"version":"0.20.0","optional":true}
+		  }
+		}`,
+		"node_modules/esbuild/package.json":            `{"name":"esbuild","version":"0.20.0"}`,
+		"node_modules/@esbuild/linux-x64/package.json": `{"name":"@esbuild/linux-x64","version":"0.20.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("an absent optional platform package must not fail the scan: %v", err)
+	}
+	if _, ok := depsByModule(result)["@esbuild/darwin-arm64"]; ok {
+		t.Error("the uninstalled darwin package was reported as resolved")
+	}
+	// The optional edge that DID install is still an edge.
+	edges := result.Graph["esbuild"]
+	if len(edges) != 1 || edges[0] != "@esbuild/linux-x64" {
+		t.Errorf("Graph[esbuild] = %v, want [@esbuild/linux-x64]", edges)
+	}
+}
+
+// A missing REQUIRED production package is the incomplete install worth failing
+// on. Failing only at exactly zero let a tree missing 48 of 50 required packages
+// resolve 2 and exit 0.
+func TestNpmResolver_AbsentRequiredPackageFailsAndIsNamed(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0","safe-buffer":"^5.2.1"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0"},
+		    "node_modules/node-forge":{"version":"1.4.0"},
+		    "node_modules/safe-buffer":{"version":"5.2.1"}
+		  }
+		}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	_, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err == nil {
+		t.Fatal("a partially installed tree resolved without error")
+	}
+	if !strings.Contains(err.Error(), "safe-buffer") {
+		t.Errorf("error %q does not name the missing package, so it is not actionable", err)
+	}
+}
+
+// An aliased install makes the install path the ALIAS and the entry's name the
+// real package. The coordinate must be the real package, and the graph edge must
+// carry the same name, or the edge joins nothing.
+func TestNpmResolver_AliasedInstallNamesTheRealPackageOnBothSides(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"forge-alias":"npm:node-forge@1.4.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0","dependencies":{"forge-alias":"npm:node-forge@1.4.0"}},
+		    "node_modules/forge-alias":{"name":"node-forge","version":"1.4.0"}
+		  }
+		}`,
+		"node_modules/forge-alias/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if _, ok := depsByModule(result)["node-forge"]; !ok {
+		t.Fatalf("aliased install did not resolve to the real package: %+v", result.Dependencies)
+	}
+	children := result.Graph["app"]
+	if len(children) != 1 || children[0] != "node-forge" {
+		t.Fatalf("Graph[app] = %v, want [node-forge]: the edge must name what the Dependency names", children)
+	}
+	if edges := result.VersionedGraph["app@1.0.0"]; len(edges) != 1 || edges[0].Key() != "node-forge@1.4.0" {
+		t.Errorf("VersionedGraph[app@1.0.0] = %v, want [node-forge@1.4.0]", edges)
+	}
+}
+
+// A peer dependency is a real edge. Without it, a bridge package on a
+// user -> crypto path is not on any chain and the chain cannot be built.
+func TestNpmResolver_PeerDependencyEdgesArePresent(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"bridge":"1.0.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0","dependencies":{"bridge":"1.0.0"}},
+		    "node_modules/bridge":{"version":"1.0.0","peerDependencies":{"node-forge":"^1.4.0"}},
+		    "node_modules/node-forge":{"version":"1.4.0"}
+		  }
+		}`,
+		"node_modules/bridge/package.json":     `{"name":"bridge","version":"1.0.0"}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := result.Graph["bridge"]; len(got) != 1 || got[0] != "node-forge" {
+		t.Errorf("Graph[bridge] = %v, want [node-forge] through the peer edge", got)
+	}
+}
+
+// The graph must hold nodes only for source that is on disk. Walking the
+// lockfile instead put nodes in for packages `ls` could not find.
+func TestNpmResolver_GraphHoldsNoNodeForAnUninstalledPackage(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"installed":"1.0.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0","dependencies":{"installed":"1.0.0"}},
+		    "node_modules/installed":{"version":"1.0.0","optionalDependencies":{"ghost":"1.0.0"}},
+		    "node_modules/ghost":{"version":"1.0.0","optional":true,"dependencies":{"ghost-child":"1.0.0"}},
+		    "node_modules/ghost-child":{"version":"1.0.0","optional":true}
+		  }
+		}`,
+		"node_modules/installed/package.json": `{"name":"installed","version":"1.0.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, phantom := range []string{"ghost", "ghost-child"} {
+		if _, ok := result.Graph[phantom]; ok {
+			t.Errorf("graph has a node for %q, which is not on disk", phantom)
+		}
+		for parent, children := range result.Graph {
+			for _, child := range children {
+				if child == phantom {
+					t.Errorf("edge %s -> %s points at a package that is not on disk", parent, phantom)
+				}
+			}
+		}
+	}
+}
+
+// In a workspace, a member is a graph parent like any other. Its dependencies
+// are edges the consumer wrote; omitting them left every one of them an orphan
+// with no path from the root, which makes reachability pruning vacuous.
+func TestNpmResolver_WorkspaceMemberEdgesArePresent(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"ws-root","version":"1.0.0","workspaces":["packages/*"]}`,
+		"package-lock.json": `{
+		  "name":"ws-root","version":"1.0.0","lockfileVersion":3,
+		  "packages":{
+		    "":{"name":"ws-root","version":"1.0.0"},
+		    "packages/app":{"name":"@ws/app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"}},
+		    "node_modules/@ws/app":{"resolved":"packages/app","link":true},
+		    "node_modules/node-forge":{"version":"1.4.0"}
+		  }
+		}`,
+		"packages/app/package.json":            `{"name":"@ws/app","version":"1.0.0"}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := result.Graph["@ws/app"]; len(got) != 1 || got[0] != "node-forge" {
+		t.Errorf("Graph[@ws/app] = %v, want [node-forge]", got)
+	}
+	if edges := result.VersionedGraph["@ws/app@1.0.0"]; len(edges) != 1 || edges[0].Key() != "node-forge@1.4.0" {
+		t.Errorf("VersionedGraph[@ws/app@1.0.0] = %v, want [node-forge@1.4.0]", edges)
+	}
+}
+
+// npm 5.0 and 5.1 wrote `"requires": true`. The code claims to support v1, so
+// that shape must not abort the whole dependency scan.
+func TestNpmResolver_LockfileV1BooleanRequiresIsTolerated(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"1.4.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":1,
+		  "dependencies":{"node-forge":{"version":"1.4.0","requires":true}}
+		}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("a v1 lockfile with a boolean requires aborted the scan: %v", err)
+	}
+	if _, ok := depsByModule(result)["node-forge"]; !ok {
+		t.Errorf("node-forge missing: %+v", result.Dependencies)
+	}
+}
+
+// A v2 lockfile carries BOTH shapes. The doc comment claims `packages` wins;
+// nothing tested it.
+func TestNpmResolver_LockfileV2PrefersThePackagesMap(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":2,
+		  "packages":{
+		    "":{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"}},
+		    "node_modules/node-forge":{"version":"1.4.0"}
+		  },
+		  "dependencies":{"node-forge":{"version":"0.0.0-stale"}}
+		}`,
+		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
+	})
+
+	result, err := NewNpmResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	dep, ok := depsByModule(result)["node-forge"]
+	if !ok {
+		t.Fatalf("node-forge missing: %+v", result.Dependencies)
+	}
+	if dep.Version != "1.4.0" {
+		t.Errorf("version = %q, want 1.4.0 from the packages map, not the legacy dependencies block", dep.Version)
 	}
 }
