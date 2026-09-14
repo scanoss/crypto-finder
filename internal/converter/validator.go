@@ -18,15 +18,32 @@ package converter
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/rs/zerolog/log"
+	"github.com/xeipuuv/gojsonschema"
 )
 
-// Validator validates CycloneDX BOMs against the 1.6 schema.
+// Validator validates CycloneDX BOMs against the 1.7 schema.
+//
+//go:embed schema/bom-1.7.schema.json
+var cycloneDX17Schema string
+
+//go:embed schema/jsf-0.82.schema.json
+var cycloneDX17JSFSchema string
+
+//go:embed schema/spdx.schema.json
+var cycloneDX17SPDXSchema string
+
+//go:embed schema/cryptography-defs.schema.json
+var cycloneDX17CryptographySchema string
+
+// Validator validates emitted JSON against the official CycloneDX 1.7 schema.
 type Validator struct{}
 
 // NewValidator creates a new BOM validator.
@@ -34,13 +51,13 @@ func NewValidator() *Validator {
 	return &Validator{}
 }
 
-// Validate checks if a BOM conforms to the CycloneDX 1.6 schema.
+// Validate checks if a BOM conforms to the CycloneDX 1.7 schema.
 func (v *Validator) Validate(bom *cdx.BOM) error {
 	if bom == nil {
 		return fmt.Errorf("BOM cannot be nil")
 	}
 
-	log.Debug().Msg("Starting BOM validation against CycloneDX 1.6 schema")
+	log.Debug().Msg("Starting BOM validation against CycloneDX 1.7 schema")
 
 	// Marshal BOM to JSON for validation
 	var buf bytes.Buffer
@@ -51,7 +68,13 @@ func (v *Validator) Validate(bom *cdx.BOM) error {
 		return fmt.Errorf("failed to encode BOM to JSON: %w", err)
 	}
 
-	// Basic structural validation
+	// Validate against the unmodified official CycloneDX 1.7 JSON schema before
+	// applying repository-specific diagnostics. Custom checks alone cannot prove
+	// standards conformance.
+	if err := v.ValidateJSON(buf.Bytes()); err != nil {
+		return err
+	}
+
 	if err := v.validateStructure(bom); err != nil {
 		return fmt.Errorf("structural validation failed: %w", err)
 	}
@@ -69,6 +92,46 @@ func (v *Validator) Validate(bom *cdx.BOM) error {
 	return nil
 }
 
+// ValidateJSON validates raw output with the official, embedded CycloneDX 1.7
+// schema. It is exported so integration tests can prove malformed documents do
+// not pass a repository-only structural check.
+func (v *Validator) ValidateJSON(document []byte) error {
+	schema, err := cycloneDX17OfflineSchema()
+	if err != nil {
+		return fmt.Errorf("official CycloneDX 1.7 schema bundle: %w", err)
+	}
+	result, err := schema.Validate(gojsonschema.NewBytesLoader(document))
+	if err != nil {
+		return fmt.Errorf("official CycloneDX 1.7 schema validation failed: %w", err)
+	}
+	if result.Valid() {
+		return nil
+	}
+	issues := make([]string, 0, len(result.Errors()))
+	for _, issue := range result.Errors() {
+		issues = append(issues, issue.String())
+	}
+	return fmt.Errorf("official CycloneDX 1.7 schema rejected BOM: %s", strings.Join(issues, "; "))
+}
+
+// cycloneDX17OfflineSchema binds every external reference used by the official
+// schema before compilation. The root schema's absolute $id would otherwise
+// make gojsonschema resolve relative references through HTTP at runtime.
+func cycloneDX17OfflineSchema() (*gojsonschema.Schema, error) {
+	loader := gojsonschema.NewSchemaLoader()
+	for url, content := range map[string]string{
+		"http://cyclonedx.org/schema/jsf-0.82.schema.json":          cycloneDX17JSFSchema,
+		"http://cyclonedx.org/schema/spdx.schema.json":              cycloneDX17SPDXSchema,
+		"http://cyclonedx.org/schema/cryptography-defs.schema.json": cycloneDX17CryptographySchema,
+		"http://cyclonedx.org/schema/bom-1.7.schema.json":           cycloneDX17Schema,
+	} {
+		if err := loader.AddSchema(url, gojsonschema.NewStringLoader(content)); err != nil {
+			return nil, err
+		}
+	}
+	return loader.Compile(gojsonschema.NewReferenceLoader("http://cyclonedx.org/schema/bom-1.7.schema.json"))
+}
+
 // validateStructure checks basic BOM structure requirements.
 func (v *Validator) validateStructure(bom *cdx.BOM) error {
 	// Check BOM format
@@ -77,8 +140,8 @@ func (v *Validator) validateStructure(bom *cdx.BOM) error {
 	}
 
 	// Check spec version
-	if bom.SpecVersion != cdx.SpecVersion1_6 {
-		return fmt.Errorf("specVersion must be 1.6, got '%s'", bom.SpecVersion)
+	if bom.SpecVersion != cdx.SpecVersion1_7 {
+		return fmt.Errorf("specVersion must be 1.7, got '%s'", bom.SpecVersion)
 	}
 
 	// Check serial number format
@@ -197,6 +260,7 @@ func (v *Validator) validatePrimitive(primitive cdx.CryptoPrimitive) error {
 		cdx.CryptoPrimitiveKEM,
 		cdx.CryptoPrimitiveDRBG,
 		cdx.CryptoPrimitiveKeyAgree,
+		cdx.CryptoPrimitiveKeyWrap,
 		cdx.CryptoPrimitiveCombiner,
 		cdx.CryptoPrimitiveXOF,
 		cdx.CryptoPrimitiveOther,
@@ -221,7 +285,7 @@ func (v *Validator) validateEvidence(evidence *cdx.Evidence) error {
 		return nil
 	}
 
-	for i, identity := range *evidence.Identity {
+	for i, identity := range *evidence.Identity.Identities {
 		if identity.Field == "" {
 			return fmt.Errorf("evidence.identity[%d].field is required", i)
 		}

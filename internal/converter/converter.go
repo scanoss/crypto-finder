@@ -28,9 +28,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 )
 
-// Asset type constants matching CycloneDX 1.6 cryptographic asset type enum.
+// Asset type constants matching CycloneDX 1.7 cryptographic asset type enum.
 const (
 	// AssetTypeAlgorithm represents cryptographic algorithms (AES, RSA, SHA-256, etc.)
 	AssetTypeAlgorithm = "algorithm"
@@ -70,15 +71,16 @@ func NewConverter() *Converter {
 // Convert transforms an interim report to a CycloneDX BOM.
 // It aggregates assets by identity and builds evidence for each occurrence.
 // Returns the BOM and any validation errors.
-func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
+// Convert consumes only a report which has crossed oid.PrepareReport. A raw
+// InterimReport is intentionally not assignable here.
+func (c *Converter) Convert(report *oid.ResolvedReport) (*cdx.BOM, error) {
 	if report == nil {
 		return nil, fmt.Errorf("report cannot be nil")
 	}
-
 	log.Info().Msg("Starting conversion to CycloneDX CBOM format")
 
 	// Aggregate assets by identity
-	aggregatedAssets, err := c.aggregator.AggregateAssets(report)
+	aggregatedAssets, err := c.aggregator.AggregateResolvedAssets(report)
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate assets: %w", err)
 	}
@@ -86,17 +88,17 @@ func (c *Converter) Convert(report *entities.InterimReport) (*cdx.BOM, error) {
 	c.aggregator.SortAssets(aggregatedAssets)
 
 	log.Info().
-		Int("total_occurrences", countTotalAssets(report)).
+		Int("total_occurrences", countResolvedTotalAssets(report)).
 		Int("unique_assets", len(aggregatedAssets)).
 		Msg("Asset aggregation complete")
 
 	// Create BOM with metadata
 	bom := &cdx.BOM{
 		BOMFormat:    "CycloneDX",
-		SpecVersion:  cdx.SpecVersion1_6,
+		SpecVersion:  cdx.SpecVersion1_7,
 		SerialNumber: generateSerialNumber(),
 		Version:      1,
-		Metadata:     c.buildMetadata(report),
+		Metadata:     c.buildResolvedMetadata(report),
 	}
 
 	// Convert aggregated assets to components
@@ -176,10 +178,11 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 			cdx.CryptoProtocolTypeSSTP,
 			cdx.CryptoProtocolTypeWPA,
 			cdx.CryptoProtocolTypeOther,
-			cdx.CryptoProtocolTypeUnknown:
+			cdx.CryptoProtocolTypeUnknown,
+			cdx.CryptoProtocolTypeDTLS, cdx.CryptoProtocolTypeQUIC, cdx.CryptoProtocolTypeEAPAKA, cdx.CryptoProtocolTypeEAPAKAPrime, cdx.CryptoProtocolTypePRINS, cdx.CryptoProtocolType5GAKA:
 			protocolProperties.Type = cdx.CryptoProtocolType(protocolType)
 		default:
-			// CycloneDX 1.6 has no enum value for this protocol, so preserve the
+			// CycloneDX 1.7 has no enum value for this protocol, so preserve the
 			// source value as a SCANOSS property instead of inventing an enum.
 		}
 
@@ -346,29 +349,18 @@ func (c *Converter) buildEvidence(aggregated *AggregatedAsset) *cdx.Evidence {
 	}
 
 	if len(identities) > 0 {
-		evidence.Identity = &identities
+		evidence.Identity = &cdx.EvidenceIdentityChoice{Identities: &identities}
 	}
 
 	return evidence
 }
 
-// buildMetadata creates BOM metadata with tool information.
-func (c *Converter) buildMetadata(report *entities.InterimReport) *cdx.Metadata {
+// buildResolvedMetadata reads only the resolved report projection.
+func (c *Converter) buildResolvedMetadata(report *oid.ResolvedReport) *cdx.Metadata {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	return &cdx.Metadata{
-		Timestamp: timestamp,
-		Tools: &cdx.ToolsChoice{
-			Components: &[]cdx.Component{
-				{
-					Type:    cdx.ComponentTypeApplication,
-					Name:    report.Tool.Name,
-					Version: report.Tool.Version,
-					Group:   "SCANOSS",
-				},
-			},
-		},
-	}
+	return &cdx.Metadata{Timestamp: timestamp, Tools: &cdx.ToolsChoice{Components: &[]cdx.Component{{
+		Type: cdx.ComponentTypeApplication, Name: report.Tool.Name, Version: report.Tool.Version, Group: "SCANOSS",
+	}}}}
 }
 
 // generateSerialNumber creates a unique BOM serial number.
@@ -384,8 +376,16 @@ func generateBOMRef() string {
 
 // countTotalAssets counts all cryptographic assets in the report.
 func countTotalAssets(report *entities.InterimReport) int {
+	return countFindingsAssets(report.Findings)
+}
+
+func countResolvedTotalAssets(report *oid.ResolvedReport) int {
+	return countFindingsAssets(report.Findings)
+}
+
+func countFindingsAssets(findings []entities.Finding) int {
 	count := 0
-	for _, finding := range report.Findings {
+	for _, finding := range findings {
 		count += len(finding.CryptographicAssets)
 	}
 	return count

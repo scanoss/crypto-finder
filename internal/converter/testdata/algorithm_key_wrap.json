@@ -1,0 +1,30 @@
+{
+  "tool": {
+    "name": "crypto-finder",
+    "version": "0.1.0"
+  },
+  "findings": [
+    {
+      "file_path": "src/crypto/key_wrap.go",
+      "cryptographic_assets": [
+        {
+          "line_number": 42,
+          "rules": [
+            {
+              "id": "go-crypto-aes-key-wrap",
+              "severity": "info"
+            }
+          ],
+          "metadata": {
+            "assetType": "algorithm",
+            "algorithmPrimitive": "key-wrap",
+            "algorithmFamily": "AES",
+            "algorithmParameterSetIdentifier": "256",
+            "library": "crypto/aes",
+            "api": "cipher.NewKeyWrap"
+          }
+        }
+      ]
+    }
+  ]
+}

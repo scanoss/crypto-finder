@@ -24,6 +24,8 @@ import (
 )
 
 // mapPrimitiveToCycloneDX maps interim primitive string to CycloneDX primitive enum.
+//
+//nolint:gocyclo // Registry primitive vocabulary is intentionally explicit.
 func mapPrimitiveToCycloneDX(primitive string) (cdx.CryptoPrimitive, error) {
 	// Normalize to lowercase for comparison
 	primitiveLower := strings.ToLower(strings.TrimSpace(primitive))
@@ -51,6 +53,8 @@ func mapPrimitiveToCycloneDX(primitive string) (cdx.CryptoPrimitive, error) {
 		return cdx.CryptoPrimitiveXOF, nil
 	case "key-agree":
 		return cdx.CryptoPrimitiveKeyAgree, nil
+	case "key-wrap":
+		return cdx.CryptoPrimitiveKeyWrap, nil
 	case "combiner":
 		return cdx.CryptoPrimitiveCombiner, nil
 	case "drbg":
@@ -58,6 +62,6 @@ func mapPrimitiveToCycloneDX(primitive string) (cdx.CryptoPrimitive, error) {
 	case "other":
 		return cdx.CryptoPrimitiveOther, nil
 	default:
-		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, xof, key-agree, combiner, drbg, other)", primitive)
+		return "", fmt.Errorf("unknown primitive type: %s (supported: ae, block-cipher, stream-cipher, hash, signature, mac, kdf, pke, kem, xof, key-agree, key-wrap, combiner, drbg, other)", primitive)
 	}
 }

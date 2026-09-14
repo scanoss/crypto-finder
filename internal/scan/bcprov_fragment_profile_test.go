@@ -90,7 +90,7 @@ func TestProfileBcprovGraphFragment(t *testing.T) {
 	engine.EnsureFindingSources(report)
 	engine.AssignFindingIDs(report)
 
-	export := BuildGraphFragmentExport(&engine.DepScanResult{
+	export := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: dir,

@@ -323,8 +323,8 @@ func TestExportCallGraph(t *testing.T) {
 
 	t.Run("json", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "cg.json")
-		if err := ExportCallGraph(out, "json", result); err != nil {
-			t.Fatalf("ExportCallGraph(json): %v", err)
+		if err := exportCallGraph(out, "json", result); err != nil {
+			t.Fatalf("exportCallGraph(json): %v", err)
 		}
 
 		data, err := os.ReadFile(out)
@@ -390,7 +390,7 @@ func TestExportCallGraph(t *testing.T) {
 	})
 
 	t.Run("unsupported-format", func(t *testing.T) {
-		err := ExportCallGraph(filepath.Join(t.TempDir(), "x.out"), "yaml", result)
+		err := exportCallGraph(filepath.Join(t.TempDir(), "x.out"), "yaml", result)
 		if err == nil || !strings.Contains(err.Error(), "unsupported call graph format") {
 			t.Fatalf("expected unsupported format error, got: %v", err)
 		}
@@ -398,7 +398,7 @@ func TestExportCallGraph(t *testing.T) {
 
 	t.Run("creates-parent-directory", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "missing", "cg.json")
-		if err := ExportCallGraph(out, "json", result); err != nil {
+		if err := exportCallGraph(out, "json", result); err != nil {
 			t.Fatalf("ExportCallGraph: %v", err)
 		}
 		if _, err := os.Stat(out); err != nil {
@@ -413,7 +413,7 @@ func TestExportCallGraph(t *testing.T) {
 			RootModule: "example.com/app",
 			Ecosystem:  "go",
 		}
-		err := ExportCallGraph(filepath.Join(t.TempDir(), "cg.json"), "json", nilReportResult)
+		err := exportCallGraph(filepath.Join(t.TempDir(), "cg.json"), "json", nilReportResult)
 		if err == nil || !strings.Contains(err.Error(), "result.Report is nil") {
 			t.Fatalf("expected nil report error, got: %v", err)
 		}
@@ -564,8 +564,8 @@ func TestExportCallGraph_NonCallMatchedOperationOmitsCryptoCall(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -694,8 +694,8 @@ func TestExportCallGraph_DependencyPathsAndUnresolvedFallback(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	data, err := os.ReadFile(out)
@@ -845,8 +845,8 @@ func TestExportCallGraph_UsesExternalSignatureFallbackForParameterTypes(t *testi
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-external-signatures.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -945,8 +945,8 @@ func TestExportCallGraph_UnresolvedExternalCallLeavesTypeEmpty(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-best-effort.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -1029,8 +1029,8 @@ func TestExportCallGraph_JavaScanMetadataRecordsUnavailablePlatformSignatures(t 
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-java-metadata.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -1179,8 +1179,8 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-overload.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	data, err := os.ReadFile(out)
@@ -1420,8 +1420,8 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-direct-prop.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -1619,8 +1619,8 @@ func TestExportCallGraph_PropagatesReceiverProvenanceWithinCallResult(t *testing
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-dep-call-result.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -1952,7 +1952,7 @@ func TestExportCallGraph_CryptoEntryPointsBuiltFromChains(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-entry-points.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -2129,7 +2129,7 @@ func TestExportCallGraph_CryptoEntryPointsPreservesOverloadedFunctions(t *testin
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-entry-points-overloaded.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -2224,8 +2224,8 @@ func TestExportCallGraph_NormalizesExternalConstructorReturnType(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-constructor-normalization.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	var payload callGraphExportV2
@@ -2286,7 +2286,7 @@ func TestExportCallGraph_CryptoEntryPointsEmptyWhenNoChains(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-no-chains.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
+	if err := exportCallGraph(out, "json", result); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -2394,8 +2394,8 @@ func TestExportCallGraph_ExposesStructuredGenericParameters(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "cg-generics.json")
-	if err := ExportCallGraph(out, "json", result); err != nil {
-		t.Fatalf("ExportCallGraph(json): %v", err)
+	if err := exportCallGraph(out, "json", result); err != nil {
+		t.Fatalf("exportCallGraph(json): %v", err)
 	}
 
 	data, err := os.ReadFile(out)

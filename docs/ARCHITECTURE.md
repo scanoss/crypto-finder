@@ -40,7 +40,7 @@ target source tree
    (internal/scan)         (ReceiverVar / AssignedVar / ChainID — see invariants below)
    │
    ▼
-6. Enrichment + export    OID enrichment (internal/enricher); writers (internal/output,
+6. Enrichment + export    Exact OID preparation (internal/oid); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
                             internal/scan,         --export-callgraph emits the schema-6.14 reachability export;
                             pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.13 fragment
@@ -73,12 +73,12 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `callgraph` | Function-level call graph construction: per-ecosystem tree-sitter parsers, type inference, and the contracts knowledge base (`contracts/`). |
 | `cli` | Cobra commands (`scan`, `annotate`, `convert`, `configure`, `version`), flag wiring, terminal error rendering. |
 | `config` | Configuration management: env vars, config file, flag overrides. |
-| `converter` | Interim JSON → CycloneDX 1.6 CBOM transformation. |
+| `converter` | Interim JSON → CycloneDX 1.7 CBOM transformation with exact-only OID projection. |
 | `deadcode` | Filters findings inside C/C++ preprocessor dead-code blocks (`#if 0 ... #endif`). |
 | `deduplicator` | Per-line deduplication of cryptographic assets (multiple rules on one line → one asset with a `rules[]` array). |
 | `dependency` | Dependency resolvers: Go modules, Java (Maven/Gradle), Python (pip), Rust (Cargo). |
 | `engine` | Scan orchestration: language detection → rules → scanner → report; the dependency scanner and its findings cache (disk/postgres); finding-ID assignment; rule-driven entry-point synthesis. |
-| `enricher` | OID enrichment of findings (algorithm → Object Identifier). |
+| `enricher` | Compatibility adapter for exact OID preparation of findings (algorithm → Object Identifier). |
 | `entities` | Scanner input structures and compatibility aliases for the public interim report contract. |
 | `failure` | Compatibility aliases for the public structured terminal error contract. |
 | `javaruntime` | Java JDK selection (`--java-jdk-major` / `--java-jdk-home`) for platform-signature type enrichment. |

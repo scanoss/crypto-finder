@@ -25,7 +25,61 @@ import (
 	cdx "github.com/CycloneDX/cyclonedx-go"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 )
+
+func preparedReport(t *testing.T, report *entities.InterimReport) *oid.ResolvedReport {
+	t.Helper()
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prepared.ReportClone()
+}
+
+func TestKeyWrapCBOMRoundTripAndOfflineValidation(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "")
+
+	bom, err := NewConverter().Convert(preparedReport(t, loadFixture(t, "algorithm_key_wrap.json")))
+	if err != nil {
+		t.Fatalf("Convert() error = %v", err)
+	}
+	if bom.Components == nil || len(*bom.Components) != 1 {
+		t.Fatalf("components = %#v, want one key-wrap component", bom.Components)
+	}
+	component := (*bom.Components)[0]
+	if component.CryptoProperties == nil || component.CryptoProperties.AlgorithmProperties == nil {
+		t.Fatalf("key-wrap component has no algorithm properties: %#v", component)
+	}
+	if got := component.CryptoProperties.AlgorithmProperties.Primitive; got != cdx.CryptoPrimitiveKeyWrap {
+		t.Fatalf("mapped primitive = %q, want %q", got, cdx.CryptoPrimitiveKeyWrap)
+	}
+
+	serialized, err := json.Marshal(bom)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var roundTrip cdx.BOM
+	if err := json.Unmarshal(serialized, &roundTrip); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if roundTrip.Components == nil || len(*roundTrip.Components) != 1 {
+		t.Fatalf("round-trip components = %#v, want one key-wrap component", roundTrip.Components)
+	}
+	if got := (*roundTrip.Components)[0].CryptoProperties.AlgorithmProperties.Primitive; got != cdx.CryptoPrimitiveKeyWrap {
+		t.Fatalf("round-trip primitive = %q, want %q", got, cdx.CryptoPrimitiveKeyWrap)
+	}
+	validator := NewValidator()
+	if err := validator.Validate(&roundTrip); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if err := validator.ValidateJSON(serialized); err != nil {
+		t.Fatalf("offline CycloneDX 1.7 schema validation failed: %v", err)
+	}
+}
 
 func TestConverter_Convert(t *testing.T) {
 	converter := NewConverter()
@@ -108,7 +162,7 @@ func TestConverter_Convert(t *testing.T) {
 			report := loadFixture(t, tt.fixtureFile)
 
 			// Run conversion
-			bom, err := converter.Convert(report)
+			bom, err := converter.Convert(preparedReport(t, report))
 
 			// Check error expectation
 			if (err != nil) != tt.wantErr {
@@ -126,8 +180,8 @@ func TestConverter_Convert(t *testing.T) {
 			}
 
 			// Check spec version
-			if bom.SpecVersion.String() != "1.6" {
-				t.Errorf("Spec version = %q, want %q", bom.SpecVersion, "1.6")
+			if bom.SpecVersion.String() != "1.7" {
+				t.Errorf("Spec version = %q, want %q", bom.SpecVersion, "1.7")
 			}
 
 			// Check serial number
@@ -181,7 +235,7 @@ func TestConverter_EmptyReport(t *testing.T) {
 		Findings: []entities.Finding{},
 	}
 
-	bom, err := converter.Convert(report)
+	bom, err := converter.Convert(preparedReport(t, report))
 	if err != nil {
 		t.Fatalf("Convert() unexpected error: %v", err)
 	}
@@ -344,7 +398,7 @@ func TestConverter_ConvertAggregatedAsset_ErrorPaths(t *testing.T) {
 
 func TestConverter_ConvertProtocolAndCertificateProperties(t *testing.T) {
 	converter := NewConverter()
-	bom, err := converter.Convert(loadFixture(t, "all_asset_types.json"))
+	bom, err := converter.Convert(preparedReport(t, loadFixture(t, "all_asset_types.json")))
 	if err != nil {
 		t.Fatalf("Convert() unexpected error: %v", err)
 	}
@@ -532,7 +586,7 @@ func TestConverter_MultipleRulesOnSameLine(t *testing.T) {
 	report := loadFixture(t, "multi_rule_same_line.json")
 
 	// Run conversion
-	bom, err := converter.Convert(report)
+	bom, err := converter.Convert(preparedReport(t, report))
 	if err != nil {
 		t.Fatalf("Convert() unexpected error: %v", err)
 	}
@@ -560,11 +614,11 @@ func TestConverter_MultipleRulesOnSameLine(t *testing.T) {
 	}
 
 	// Verify identity contains rule IDs (not code)
-	if component.Evidence.Identity == nil || len(*component.Evidence.Identity) == 0 {
+	if component.Evidence.Identity == nil || len(*component.Evidence.Identity.Identities) == 0 {
 		t.Fatal("Component missing Evidence.Identity")
 	}
 
-	identities := *component.Evidence.Identity
+	identities := *component.Evidence.Identity.Identities
 	if len(identities) != 2 {
 		t.Errorf("Expected 2 identity entries (one per rule), got %d", len(identities))
 	}
@@ -644,7 +698,7 @@ func TestConverter_MergesCryptoFunctionsForSharedAPIDifferentOperation(t *testin
 		},
 	}
 
-	bom, err := converter.Convert(report)
+	bom, err := converter.Convert(preparedReport(t, report))
 	if err != nil {
 		t.Fatalf("Convert() unexpected error: %v", err)
 	}

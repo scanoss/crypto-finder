@@ -14,6 +14,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
@@ -25,7 +26,13 @@ import (
 
 // ExportGraphFragment writes the dependency scan result's call graph as a
 // graph-fragment export in the requested format.
-func ExportGraphFragment(path, format string, result *engine.DepScanResult) error {
+// ExportGraphFragment writes an OID-prepared graph-fragment projection.
+func ExportGraphFragment(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
+	return ExportResolvedGraphFragment(path, format, result, report)
+}
+
+// exportGraphFragment is the raw fixture helper; production must use ExportGraphFragment.
+func exportGraphFragment(path, format string, result *engine.DepScanResult) error {
 	if result == nil {
 		return fmt.Errorf("scan: cannot export graph fragment: dep scan result is nil")
 	}
@@ -43,6 +50,37 @@ func ExportGraphFragment(path, format string, result *engine.DepScanResult) erro
 	return nil
 }
 
+// ExportResolvedGraphFragment is the OID-safe graph-fragment command seam.
+func ExportResolvedGraphFragment(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
+	if report == nil {
+		return fmt.Errorf("scan: cannot export graph fragment: resolved report is nil")
+	}
+	if result == nil {
+		return fmt.Errorf("scan: cannot export graph fragment: dep scan result is nil")
+	}
+	if result.CallGraph == nil {
+		return fmt.Errorf("scan: cannot export graph fragment: result.CallGraph is nil")
+	}
+	if format != "json" {
+		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
+	}
+	if err := writeResolvedGraphFragmentJSONFile(path, result, report); err != nil {
+		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeResolvedGraphFragmentJSONFile(path string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
+	return utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
+		bw := bufio.NewWriterSize(file, 1<<20)
+		writer := graphFragmentJSONWriter{w: bw}
+		if err := writer.writeResolvedResult(result, report); err != nil {
+			return err
+		}
+		return bw.Flush()
+	})
+}
+
 func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error {
 	return utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
 		bw := bufio.NewWriterSize(file, 1<<20)
@@ -57,6 +95,44 @@ func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error
 type graphFragmentJSONWriter struct {
 	w         *bufio.Writer
 	needComma bool
+}
+
+func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResult, report *oid.ResolvedReport) error {
+	if _, err := w.w.WriteString("{\n"); err != nil {
+		return err
+	}
+	if err := w.writeField("schema_version", graphfrag.SchemaVersion); err != nil {
+		return err
+	}
+	ctx := newExportBuildContextWithFindings(result, report.Findings, 0)
+	meta := buildResolvedGraphFragmentScanMetadata(result, report)
+	functionIndex, count, err := w.writeFunctions(ctx)
+	if err != nil {
+		return err
+	}
+	meta.FunctionCount = count
+	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex)
+	if err != nil {
+		return err
+	}
+	annotations, supporting, entries := materializeGraphFragmentCryptoFromFindings(ctx, result, report.Findings, functionIndex)
+	meta.CryptoOps = len(annotations)
+	if err := writeGraphFragmentArrayField(w, "crypto_annotations", annotations, true); err != nil {
+		return err
+	}
+	meta.SupportingCalls = len(supporting)
+	if err := writeGraphFragmentArrayField(w, "supporting_calls", supporting, true); err != nil {
+		return err
+	}
+	meta.CryptoEntryPoints = len(entries)
+	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", entries, true); err != nil {
+		return err
+	}
+	if err := w.writeField("scan_metadata", meta); err != nil {
+		return err
+	}
+	_, err = w.w.WriteString("\n}\n")
+	return err
 }
 
 func (w *graphFragmentJSONWriter) writeResult(result *engine.DepScanResult) error {
@@ -325,8 +401,46 @@ func (w *trailingNewlineTrimmer) Flush() error {
 
 // BuildGraphFragmentExport projects a dependency scan result onto the public
 // graph-fragment export schema.
-func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
+// BuildGraphFragmentExport builds an OID-prepared graph fragment.
+func BuildGraphFragmentExport(result *engine.DepScanResult, report *oid.ResolvedReport) graphfrag.GraphFragmentExport {
+	if result == nil || report == nil {
+		return graphfrag.GraphFragmentExport{}
+	}
+	return buildResolvedGraphFragmentProjection(result, report)
+}
+
+func buildResolvedGraphFragmentProjection(result *engine.DepScanResult, report *oid.ResolvedReport) graphfrag.GraphFragmentExport {
+	out := graphfrag.GraphFragmentExport{SchemaVersion: graphfrag.SchemaVersion, ScanMetadata: buildResolvedGraphFragmentScanMetadata(result, report)}
+	if result.CallGraph == nil {
+		return out
+	}
+	ctx := newExportBuildContextWithFindings(result, report.Findings, 0)
+	functionKeys := make([]string, 0, len(result.CallGraph.Functions))
+	for key := range result.CallGraph.Functions {
+		functionKeys = append(functionKeys, key)
+	}
+	sort.Strings(functionKeys)
+	functionIndex := make(map[string]int, len(functionKeys))
+	for _, key := range functionKeys {
+		decl := result.CallGraph.Functions[key]
+		functionIndex[key] = len(out.Functions)
+		out.Functions = append(out.Functions, buildGraphFragmentFunction(ctx, decl.ID, decl))
+	}
+	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
+	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCryptoFromFindings(ctx, result, report.Findings, functionIndex)
+	out.ScanMetadata.FunctionCount, out.ScanMetadata.InternalEdges, out.ScanMetadata.ExternalCalls = len(out.Functions), len(out.InternalEdges), len(out.ExternalCalls)
+	out.ScanMetadata.CryptoOps, out.ScanMetadata.SupportingCalls, out.ScanMetadata.CryptoEntryPoints = len(out.CryptoAnnotations), len(out.SupportingCalls), len(out.CryptoEntryPoints)
+	return out
+}
+
+// buildGraphFragmentExport is the raw fixture helper; production must use BuildGraphFragmentExport.
+func buildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
 	AssignOccurrenceKeys(result)
+	return buildGraphFragmentProjection(result)
+}
+
+// buildGraphFragmentProjection reads finalized report data without mutating it.
+func buildGraphFragmentProjection(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
 		ScanMetadata:  buildGraphFragmentScanMetadata(result),
@@ -362,6 +476,12 @@ func BuildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragm
 	out.ScanMetadata.SupportingCalls = len(out.SupportingCalls)
 	out.ScanMetadata.CryptoEntryPoints = len(out.CryptoEntryPoints)
 	return out
+}
+
+func buildResolvedGraphFragmentScanMetadata(result *engine.DepScanResult, report *oid.ResolvedReport) graphfrag.GraphFragmentScanMetadata {
+	meta := buildGraphFragmentScanMetadata(result)
+	meta.ToolName, meta.ToolVersion, meta.RulesVersion = report.Tool.Name, report.Tool.Version, report.Rules.Version
+	return meta
 }
 
 func buildGraphFragmentScanMetadata(result *engine.DepScanResult) graphfrag.GraphFragmentScanMetadata {
@@ -1285,16 +1405,31 @@ func materializeGraphFragmentCrypto(
 	[]graphfrag.GraphFragmentSupporting,
 	[]graphfrag.GraphFragmentCryptoEntryPoint,
 ) {
-	if result == nil || result.Report == nil || result.CallGraph == nil {
+	if result == nil || result.Report == nil {
 		return nil, nil, nil
 	}
+	return materializeGraphFragmentCryptoFromFindings(ctx, result, result.Report.Findings, functionIndex)
+}
 
+func materializeGraphFragmentCryptoFromFindings(
+	ctx *exportBuildContext,
+	result *engine.DepScanResult,
+	findings []entities.Finding,
+	functionIndex map[string]int,
+) (
+	[]graphfrag.GraphFragmentCryptoOp,
+	[]graphfrag.GraphFragmentSupporting,
+	[]graphfrag.GraphFragmentCryptoEntryPoint,
+) {
+	if result == nil || result.CallGraph == nil {
+		return nil, nil, nil
+	}
 	var annotations []graphfrag.GraphFragmentCryptoOp
 	var supportingOut []graphfrag.GraphFragmentSupporting
 	supportingSeen := make(map[string]bool)
 	entries := make(map[string]*graphFragmentEntryPointData)
 
-	for _, finding := range result.Report.Findings {
+	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
 			op := buildGraphFragmentCryptoAnnotation(ctx, finding, asset)

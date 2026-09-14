@@ -27,6 +27,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
@@ -39,10 +40,14 @@ func TestGeneratedExportsMatchSchemas(t *testing.T) {
 	callgraphPath := filepath.Join(tempDir, "callgraph.json")
 	graph, projectRoot := buildSupportingGraph(t)
 	report := populatedExportReport(t)
-	if err := output.NewJSONWriter().Write(report, reportPath); err != nil {
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		t.Fatalf("prepare report: %v", err)
+	}
+	if err := output.NewJSONWriter().WriteResolved(prepared.ReportClone(), reportPath); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
-	if err := ExportCallGraph(callgraphPath, "json", &engine.DepScanResult{
+	if err := exportCallGraph(callgraphPath, "json", &engine.DepScanResult{
 		CallGraph:   graph,
 		Report:      report,
 		Ecosystem:   "java",

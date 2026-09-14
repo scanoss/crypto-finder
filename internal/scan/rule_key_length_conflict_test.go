@@ -43,7 +43,7 @@ func TestRuleKeyLengthConflict_JavaFixtureAcrossExports(t *testing.T) {
 			result := &engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java", ProjectRoot: fixtureDir}
 
 			live := buildCallGraphExportV2(result)
-			fragmentExport := BuildGraphFragmentExport(result)
+			fragmentExport := buildGraphFragmentExport(result)
 			fragmentBytes, err := json.Marshal(fragmentExport)
 			if err != nil {
 				t.Fatalf("json.Marshal fragment: %v", err)
@@ -53,7 +53,7 @@ func TestRuleKeyLengthConflict_JavaFixtureAcrossExports(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DecodeFragment: %v", err)
 			}
-			annotated := BuildAnnotateExport(report, fragment)
+			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 			stitched, err := graphfrag.Stitch(component, graphfrag.DependencyGraph{component: nil}, map[graphfrag.ComponentKey]graphfrag.Fragment{component: fragment})
 			if err != nil {
 				t.Fatalf("Stitch: %v", err)
@@ -200,7 +200,7 @@ func TestRuleKeyLengthConflict_AnnotateRecomputesAgainstRefreshedRules(t *testin
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cachedReport, graph, fixtureDir := ruleKeyLengthConflictFixture(t, tc.cached)
-			fragmentExport := BuildGraphFragmentExport(&engine.DepScanResult{
+			fragmentExport := buildGraphFragmentExport(&engine.DepScanResult{
 				Report: cachedReport, CallGraph: graph, Ecosystem: "java", ProjectRoot: fixtureDir,
 			})
 			fragmentBytes, err := json.Marshal(fragmentExport)
@@ -215,7 +215,7 @@ func TestRuleKeyLengthConflict_AnnotateRecomputesAgainstRefreshedRules(t *testin
 			cachedEvidence := fragmentKeyLengthByID(fragment)
 
 			refreshedReport, _, _ := ruleKeyLengthConflictFixture(t, tc.refreshed)
-			annotated := BuildAnnotateExport(refreshedReport, fragment)
+			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, refreshedReport), fragment)
 
 			resolvedID := findingIDForLine(t, refreshedReport, 10)
 			assertConflictMarker(t, "annotate", annotated, resolvedID, intPointer(256), tc.wantConflict, tc.wantDeclaredBits)
@@ -250,7 +250,7 @@ func TestRuleKeyLengthConflict_SharedSupportingCallKeepsEveryConflict(t *testing
 			result := &engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java", ProjectRoot: fixtureDir}
 
 			live := buildCallGraphExportV2(result)
-			fragmentExport := BuildGraphFragmentExport(result)
+			fragmentExport := buildGraphFragmentExport(result)
 			fragmentBytes, err := json.Marshal(fragmentExport)
 			if err != nil {
 				t.Fatalf("json.Marshal fragment: %v", err)
@@ -260,7 +260,7 @@ func TestRuleKeyLengthConflict_SharedSupportingCallKeepsEveryConflict(t *testing
 			if err != nil {
 				t.Fatalf("DecodeFragment: %v", err)
 			}
-			annotated := BuildAnnotateExport(report, fragment)
+			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 
 			// Both assets share one supporting call, so both finding IDs must
 			// resolve to the same evidence: a conflict, reporting the smallest

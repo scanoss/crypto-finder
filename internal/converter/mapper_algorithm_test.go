@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 )
@@ -307,6 +308,7 @@ func TestAlgorithmMapper_CryptoFunctions(t *testing.T) {
 			asset := &entities.CryptographicAsset{
 				Metadata: metadata,
 			}
+			asset.OID = oid.NewDefaultResolver().ResolveAsset(asset).OID
 
 			component, err := mapper.MapToComponentWithEvidence(asset)
 			if err != nil {
@@ -365,6 +367,7 @@ func TestAlgorithmMapper_SetsRawCryptoFunctionProperty(t *testing.T) {
 			"operation":          "sign",
 		},
 	}
+	asset.OID = oid.NewDefaultResolver().ResolveAsset(asset).OID
 
 	component, err := mapper.MapToComponentWithEvidence(asset)
 	if err != nil {
@@ -427,22 +430,22 @@ func TestAlgorithmMapper_OIDResolution(t *testing.T) {
 			wantOIDNonEmpty: true,
 		},
 		{
-			name:            "RSA with family OID fallback",
+			name:            "RSA family omission",
 			algoName:        "RSA-2048",
 			family:          "RSA",
 			paramSet:        "2048",
 			primitive:       "pke",
-			wantOID:         OIDRSA,
-			wantOIDNonEmpty: true,
+			wantOID:         "",
+			wantOIDNonEmpty: false,
 		},
 		{
-			name:            "ECDSA with family OID fallback",
+			name:            "ECDSA family omission",
 			algoName:        "ECDSA-P-256",
 			family:          "ECDSA",
 			paramSet:        "P-256",
 			primitive:       "signature",
-			wantOID:         OIDECPublicKey,
-			wantOIDNonEmpty: true,
+			wantOID:         "",
+			wantOIDNonEmpty: false,
 		},
 	}
 
@@ -458,6 +461,7 @@ func TestAlgorithmMapper_OIDResolution(t *testing.T) {
 					"algorithmMode":                   tt.mode,
 				},
 			}
+			asset.OID = oid.NewDefaultResolver().ResolveAsset(asset).OID
 
 			component, err := mapper.MapToComponentWithEvidence(asset)
 			if err != nil {
@@ -494,6 +498,7 @@ func TestAlgorithmMapper_OIDUnknownAlgorithm(t *testing.T) {
 			"algorithmMode":                   "XYZ",
 		},
 	}
+	asset.OID = oid.NewDefaultResolver().ResolveAsset(asset).OID
 
 	component, err := mapper.MapToComponentWithEvidence(asset)
 	if err != nil {
@@ -524,6 +529,7 @@ func TestAlgorithmMapper_OIDFormat(t *testing.T) {
 			"algorithmMode":                   "CBC",
 		},
 	}
+	asset.OID = oid.NewDefaultResolver().ResolveAsset(asset).OID
 
 	component, err := mapper.MapToComponentWithEvidence(asset)
 	if err != nil {
@@ -534,26 +540,26 @@ func TestAlgorithmMapper_OIDFormat(t *testing.T) {
 		t.Fatal("CryptoProperties is nil")
 	}
 
-	oid := component.CryptoProperties.OID
-	if oid == "" {
+	oidValue := component.CryptoProperties.OID
+	if oidValue == "" {
 		t.Fatal("OID is empty")
 	}
 
 	// OID should be in the format: 2.16.840.1.101.3.4.1.2 (dot-separated numbers)
-	parts := strings.Split(oid, ".")
+	parts := strings.Split(oidValue, ".")
 	if len(parts) < 2 {
-		t.Errorf("OID format invalid: %q (expected at least 2 parts)", oid)
+		t.Errorf("OID format invalid: %q (expected at least 2 parts)", oidValue)
 	}
 
 	// Each part should be numeric
 	for _, part := range parts {
 		if part == "" {
-			t.Errorf("OID %q has empty part", oid)
+			t.Errorf("OID %q has empty part", oidValue)
 			continue
 		}
 		for _, r := range part {
 			if r < '0' || r > '9' {
-				t.Errorf("OID %q has non-numeric part: %q", oid, part)
+				t.Errorf("OID %q has non-numeric part: %q", oidValue, part)
 				break
 			}
 		}

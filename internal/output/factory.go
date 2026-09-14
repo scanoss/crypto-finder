@@ -32,19 +32,19 @@ import (
 //	if err != nil {
 //	    return err
 //	}
-//	writer.Write(report, "/path/to/output.json")
+//	writer.WriteResolved(report, "/path/to/output.json")
 type WriterFactory struct {
-	writers map[string]Writer
+	writers map[string]ResolvedWriter
 }
 
 // NewWriterFactory creates a factory with all supported output format writers registered.
 //
 // Currently supported formats:
 //   - json: Standard JSON output (pretty-printed by default)
-//   - cyclonedx: CycloneDX 1.6 CBOM format
+//   - cyclonedx: CycloneDX 1.7 CBOM format
 func NewWriterFactory() *WriterFactory {
 	return &WriterFactory{
-		writers: map[string]Writer{
+		writers: map[string]ResolvedWriter{
 			"json":      NewJSONWriter(),
 			"cyclonedx": NewCycloneDXWriter(),
 		},
@@ -57,9 +57,9 @@ func NewWriterFactory() *WriterFactory {
 //   - format: The output format name (e.g., "json", "csv", "html")
 //
 // Returns:
-//   - Writer implementation for the format
+//   - resolved writer implementation for the format
 //   - Error if format is not supported
-func (f *WriterFactory) GetWriter(format string) (Writer, error) {
+func (f *WriterFactory) GetWriter(format string) (ResolvedWriter, error) {
 	writer, ok := f.writers[format]
 	if !ok {
 		return nil, fmt.Errorf("unsupported output format '%s' (supported: %v)", format, f.SupportedFormats())

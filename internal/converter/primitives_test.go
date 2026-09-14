@@ -85,6 +85,12 @@ func TestMapPrimitiveToCycloneDX(t *testing.T) {
 			wantErr:   false,
 		},
 		{
+			name:      "Key Wrap",
+			primitive: "key-wrap",
+			want:      cdx.CryptoPrimitiveKeyWrap,
+			wantErr:   false,
+		},
+		{
 			name:      "Deterministic Random Bit Generator",
 			primitive: "drbg",
 			want:      cdx.CryptoPrimitiveDRBG,
@@ -207,6 +213,7 @@ func TestAllPrimitivesAreCovered(t *testing.T) {
 		{"kdf", cdx.CryptoPrimitiveKDF},
 		{"pke", cdx.CryptoPrimitivePKE},
 		{"kem", cdx.CryptoPrimitiveKEM},
+		{"key-wrap", cdx.CryptoPrimitiveKeyWrap},
 		{"drbg", cdx.CryptoPrimitiveDRBG},
 		{"other", cdx.CryptoPrimitiveOther},
 	}
@@ -228,7 +235,7 @@ func TestPrimitiveRoundTrip(t *testing.T) {
 	// Test that mapping and back produces consistent results
 	primitives := []string{
 		"ae", "block-cipher", "stream-cipher", "hash",
-		"signature", "mac", "kdf", "pke", "kem", "drbg", "other",
+		"signature", "mac", "kdf", "pke", "kem", "key-wrap", "drbg", "other",
 	}
 
 	for _, primitive := range primitives {

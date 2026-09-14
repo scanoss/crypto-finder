@@ -120,7 +120,7 @@ func TestBuildGraphFragmentExport_Issue184NimbusJoseJwt1002JSONLifecycle(t *test
 		},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 2 {
 		t.Fatalf("crypto_annotations = %#v, want 2 findings", payload.CryptoAnnotations)
 	}

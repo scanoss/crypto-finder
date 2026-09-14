@@ -23,7 +23,19 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 )
+
+var _ func(*WriterFactory, string) (ResolvedWriter, error) = (*WriterFactory).GetWriter
+
+func preparedReport(t *testing.T, report *entities.InterimReport) *oid.ResolvedReport {
+	t.Helper()
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prepared.ReportClone()
+}
 
 func createTestReport() *entities.InterimReport {
 	return &entities.InterimReport{
@@ -68,7 +80,7 @@ func TestJSONWriter_WriteToFile(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "output.json")
 
 	writer := &JSONWriter{}
-	err := writer.Write(report, outputFile)
+	err := writer.WriteResolved(preparedReport(t, report), outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -106,7 +118,7 @@ func TestJSONWriter_WriteToStdout(t *testing.T) {
 
 	writer := &JSONWriter{}
 	// Write to stdout (empty string)
-	err := writer.Write(report, "")
+	err := writer.WriteResolved(preparedReport(t, report), "")
 	if err != nil {
 		t.Fatalf("Write() to stdout failed: %v", err)
 	}
@@ -119,10 +131,22 @@ func TestJSONWriter_WriteNilReport(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "output.json")
 
 	writer := &JSONWriter{}
-	err := writer.Write(nil, outputFile)
+	err := writer.WriteResolved(nil, outputFile)
 
 	if err == nil {
 		t.Fatal("Expected error for nil report")
+	}
+}
+
+func TestJSONWriter_RejectsUnpreparedOIDClaims(t *testing.T) {
+	report := createTestReport()
+	report.Findings[0].CryptographicAssets[0].OID = "1.2.840.113549.2"
+	prepared := preparedReport(t, report)
+	if got := prepared.Findings[0].CryptographicAssets[0].OID; got != "" {
+		t.Fatalf("prepared report retained rejected OID claim %q", got)
+	}
+	if err := NewJSONWriter().WriteResolved(prepared, filepath.Join(t.TempDir(), "report.json")); err != nil {
+		t.Fatalf("WriteResolved() error = %v", err)
 	}
 }
 
@@ -134,7 +158,7 @@ func TestJSONWriter_CompactFormat(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "compact.json")
 
 	writer := &JSONWriter{PrettyPrint: false}
-	err := writer.Write(report, outputFile)
+	err := writer.WriteResolved(preparedReport(t, report), outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -171,7 +195,7 @@ func TestJSONWriter_CreatesParentDir(t *testing.T) {
 	outputFile := filepath.Join(t.TempDir(), "nested", "output.json")
 
 	writer := NewJSONWriter()
-	if err := writer.Write(report, outputFile); err != nil {
+	if err := writer.WriteResolved(preparedReport(t, report), outputFile); err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
 	if _, err := os.Stat(outputFile); err != nil {
@@ -192,7 +216,7 @@ func TestJSONWriter_WriteFileError(t *testing.T) {
 
 	writer := NewJSONWriter()
 	// Attempting to write to a directory path will fail deterministically
-	err := writer.Write(report, dirPath)
+	err := writer.WriteResolved(preparedReport(t, report), dirPath)
 	if err == nil {
 		t.Fatal("Expected error when writing to directory path")
 	}
@@ -205,7 +229,7 @@ func TestCycloneDXWriter_CreatesParentDir(t *testing.T) {
 	outputFile := filepath.Join(t.TempDir(), "nested", "output.cdx.json")
 
 	writer := NewCycloneDXWriter()
-	if err := writer.Write(report, outputFile); err != nil {
+	if err := writer.WriteResolved(preparedReport(t, report), outputFile); err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
 	if _, err := os.Stat(outputFile); err != nil {
@@ -226,7 +250,7 @@ func TestCycloneDXWriter_WriteFileError(t *testing.T) {
 
 	writer := NewCycloneDXWriter()
 	// Attempting to write to a directory path will fail deterministically
-	err := writer.Write(report, dirPath)
+	err := writer.WriteResolved(preparedReport(t, report), dirPath)
 	if err == nil {
 		t.Fatal("Expected error when writing to directory path")
 	}
@@ -240,7 +264,7 @@ func TestCycloneDXWriter_WriteToFile(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "output.cdx.json")
 
 	writer := NewCycloneDXWriter()
-	err := writer.Write(report, outputFile)
+	err := writer.WriteResolved(preparedReport(t, report), outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -282,7 +306,7 @@ func TestCycloneDXWriter_WriteToStdout(t *testing.T) {
 
 	writer := NewCycloneDXWriter()
 	// Write to stdout (empty string)
-	err := writer.Write(report, "")
+	err := writer.WriteResolved(preparedReport(t, report), "")
 	if err != nil {
 		t.Fatalf("Write() to stdout failed: %v", err)
 	}
@@ -295,7 +319,7 @@ func TestCycloneDXWriter_WriteNilReport(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "output.cdx.json")
 
 	writer := NewCycloneDXWriter()
-	err := writer.Write(nil, outputFile)
+	err := writer.WriteResolved(nil, outputFile)
 
 	if err == nil {
 		t.Fatal("Expected error for nil report")
@@ -367,7 +391,7 @@ func TestJSONWriter_EmptyFindings(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "empty.json")
 
 	writer := &JSONWriter{}
-	err := writer.Write(report, outputFile)
+	err := writer.WriteResolved(preparedReport(t, report), outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}
@@ -404,7 +428,7 @@ func TestCycloneDXWriter_EmptyFindings(t *testing.T) {
 	outputFile := filepath.Join(tempDir, "empty.cdx.json")
 
 	writer := NewCycloneDXWriter()
-	err := writer.Write(report, outputFile)
+	err := writer.WriteResolved(preparedReport(t, report), outputFile)
 	if err != nil {
 		t.Fatalf("Write() failed: %v", err)
 	}

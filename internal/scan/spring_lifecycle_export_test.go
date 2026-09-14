@@ -48,7 +48,7 @@ func TestBuildGraphFragmentExport_Issue137ExportsRsaSecretEncryptorOperations(t 
 		}},
 	}}}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: "java"})
 	if len(payload.CryptoAnnotations) != 1 {
 		t.Fatalf("crypto_annotations = %#v, want one finding", payload.CryptoAnnotations)
 	}

@@ -88,7 +88,7 @@ func TestBuildGraphFragmentExport_PreservesSupportingOverloadsAcrossRepeatedExpo
 			decl := declarations[index]
 			graph.Functions[decl.ID.String()] = decl
 		}
-		payload := BuildGraphFragmentExport(&engine.DepScanResult{
+		payload := buildGraphFragmentExport(&engine.DepScanResult{
 			Report: report, CallGraph: graph, Ecosystem: "java",
 		})
 		catalogIDs := make(map[string]struct{}, len(payload.SupportingCalls))
@@ -154,7 +154,7 @@ func TestBuildGraphFragmentExport_ExportsHierarchyCompatibleCanonicalSignatures(
 		},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 	var concrete *graphfrag.GraphFragmentFunction
 	for i := range payload.Functions {
 		if payload.Functions[i].Key == concreteID.String() {
@@ -210,7 +210,7 @@ func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "nested", "fragment.json")
 
-	if err := ExportGraphFragment(path, "json", &engine.DepScanResult{
+	if err := exportGraphFragment(path, "json", &engine.DepScanResult{
 		CallGraph:  graph,
 		RootModule: "org.example:cipher-factory",
 		Ecosystem:  "java",
@@ -301,7 +301,7 @@ func TestBuildGraphFragmentExport_SeparatesInternalAndExternalCalls(t *testing.T
 		},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		CallGraph:  graph,
 		RootModule: "org.bridge:b-bridge",
 		Ecosystem:  "java",
@@ -351,7 +351,7 @@ class Bridge {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		CallGraph:   graph,
 		ProjectRoot: dir,
 		RootModule:  "org.bridge:b-bridge",
@@ -413,7 +413,7 @@ func TestBuildGraphFragmentExport_AttachesCryptoAnnotationToContainingFunction(t
 		}},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: t.TempDir(),
@@ -474,7 +474,7 @@ func TestBuildGraphFragmentExport_UsesResolvedCallerIndexEdges(t *testing.T) {
 		},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
 	if !hasInternalEdge(&payload, controllerID.String(), apiID.String()) {
 		t.Fatalf("expected direct caller-index edge to API method: %#v", payload.InternalEdges)
@@ -520,7 +520,7 @@ func TestBuildGraphFragmentExport_CarriesEdgeResolution(t *testing.T) {
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(controllerID.String(), implID.String(), ifaceRes)] = ifaceRes
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(controllerID.String(), extID.String(), extRes)] = extRes
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
 	exact := findInternalEdge(&payload, controllerID.String(), ifaceID.String())
 	if exact == nil || exact.Resolution != string(callgraph.EdgeKindExact) {
@@ -581,7 +581,7 @@ func TestBuildGraphFragmentExport_EntryCallUsesMatchingCallSiteLine(t *testing.T
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), calleeID.String(), resLine3)] = resLine3
 	graph.EdgeResolutions[callgraph.EdgeResolutionKey(callerID.String(), calleeID.String(), resLine9)] = resLine9
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
 
 	gotByLine := make(map[int]*graphfrag.GraphFragmentCallSite)
 	for i := range payload.InternalEdges {
@@ -698,7 +698,7 @@ func TestBuildGraphFragmentExport_EdgeEntryCallEqualsBuiltParams(t *testing.T) {
 		RootModule:  "com.app:app",
 		Ecosystem:   "java",
 	}
-	payload := BuildGraphFragmentExport(result)
+	payload := buildGraphFragmentExport(result)
 
 	// Find the internal edge caller→callee.
 	edge := findInternalEdge(&payload, callerID.String(), calleeID.String())
@@ -787,7 +787,7 @@ func TestBuildGraphFragmentExport_CryptoOpCryptoCallIdentityMatchesFunctionDecl(
 		}},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: t.TempDir(),
@@ -856,7 +856,7 @@ func TestBuildGraphFragmentExport_CryptoOpAssetMetadataPopulated(t *testing.T) {
 		}},
 	}
 
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		Report:      report,
 		CallGraph:   graph,
 		ProjectRoot: t.TempDir(),
@@ -911,7 +911,7 @@ class App {
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
-	payload := BuildGraphFragmentExport(&engine.DepScanResult{
+	payload := buildGraphFragmentExport(&engine.DepScanResult{
 		CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 

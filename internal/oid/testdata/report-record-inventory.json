@@ -1,0 +1,5951 @@
+{
+  "inventory_schema": "report-record-inventory/v1",
+  "records": [
+    {
+      "source_id": "3DES-CBC",
+      "object_identifier": "1.2.840.113549.3.7",
+      "registered": {
+        "name": "3DES-CBC",
+        "identifier": "1.2.840.113549.3.7"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc3058.html"
+    },
+    {
+      "source_id": "AES-128-CBC",
+      "object_identifier": "2.16.840.1.101.3.4.1.2",
+      "registered": {
+        "name": "AES-128-CBC",
+        "identifier": "2.16.840.1.101.3.4.1.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CBC",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-CCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.7",
+      "registered": {
+        "name": "AES-128-CCM",
+        "identifier": "2.16.840.1.101.3.4.1.7"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CCM",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-CFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.4",
+      "registered": {
+        "name": "AES-128-CFB",
+        "identifier": "2.16.840.1.101.3.4.1.4"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CFB",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-ECB",
+      "object_identifier": "2.16.840.1.101.3.4.1.1",
+      "registered": {
+        "name": "AES-128-ECB",
+        "identifier": "2.16.840.1.101.3.4.1.1"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "ECB",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-GCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.6",
+      "registered": {
+        "name": "AES-128-GCM",
+        "identifier": "2.16.840.1.101.3.4.1.6"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GCM",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-GMAC",
+      "object_identifier": "2.16.840.1.101.3.4.1.9",
+      "registered": {
+        "name": "AES-128-GMAC",
+        "identifier": "2.16.840.1.101.3.4.1.9"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GMAC",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-OFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.3",
+      "registered": {
+        "name": "AES-128-OFB",
+        "identifier": "2.16.840.1.101.3.4.1.3"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "OFB",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-WRAP",
+      "object_identifier": "2.16.840.1.101.3.4.1.5",
+      "registered": {
+        "name": "AES-128-WRAP",
+        "identifier": "2.16.840.1.101.3.4.1.5"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-128-WRAP-PAD",
+      "object_identifier": "2.16.840.1.101.3.4.1.8",
+      "registered": {
+        "name": "AES-128-WRAP-PAD",
+        "identifier": "2.16.840.1.101.3.4.1.8"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP-PAD",
+        "key_size": "128",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-CBC",
+      "object_identifier": "2.16.840.1.101.3.4.1.22",
+      "registered": {
+        "name": "AES-192-CBC",
+        "identifier": "2.16.840.1.101.3.4.1.22"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CBC",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-CCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.27",
+      "registered": {
+        "name": "AES-192-CCM",
+        "identifier": "2.16.840.1.101.3.4.1.27"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CCM",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-CFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.24",
+      "registered": {
+        "name": "AES-192-CFB",
+        "identifier": "2.16.840.1.101.3.4.1.24"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CFB",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-ECB",
+      "object_identifier": "2.16.840.1.101.3.4.1.21",
+      "registered": {
+        "name": "AES-192-ECB",
+        "identifier": "2.16.840.1.101.3.4.1.21"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "ECB",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-GCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.26",
+      "registered": {
+        "name": "AES-192-GCM",
+        "identifier": "2.16.840.1.101.3.4.1.26"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GCM",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-GMAC",
+      "object_identifier": "2.16.840.1.101.3.4.1.29",
+      "registered": {
+        "name": "AES-192-GMAC",
+        "identifier": "2.16.840.1.101.3.4.1.29"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GMAC",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-OFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.23",
+      "registered": {
+        "name": "AES-192-OFB",
+        "identifier": "2.16.840.1.101.3.4.1.23"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "OFB",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-WRAP",
+      "object_identifier": "2.16.840.1.101.3.4.1.25",
+      "registered": {
+        "name": "AES-192-WRAP",
+        "identifier": "2.16.840.1.101.3.4.1.25"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-192-WRAP-PAD",
+      "object_identifier": "2.16.840.1.101.3.4.1.28",
+      "registered": {
+        "name": "AES-192-WRAP-PAD",
+        "identifier": "2.16.840.1.101.3.4.1.28"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP-PAD",
+        "key_size": "192",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-CBC",
+      "object_identifier": "2.16.840.1.101.3.4.1.42",
+      "registered": {
+        "name": "AES-256-CBC",
+        "identifier": "2.16.840.1.101.3.4.1.42"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CBC",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-CCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.47",
+      "registered": {
+        "name": "AES-256-CCM",
+        "identifier": "2.16.840.1.101.3.4.1.47"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CCM",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-CFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.44",
+      "registered": {
+        "name": "AES-256-CFB",
+        "identifier": "2.16.840.1.101.3.4.1.44"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "CFB",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-ECB",
+      "object_identifier": "2.16.840.1.101.3.4.1.41",
+      "registered": {
+        "name": "AES-256-ECB",
+        "identifier": "2.16.840.1.101.3.4.1.41"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "ECB",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-GCM",
+      "object_identifier": "2.16.840.1.101.3.4.1.46",
+      "registered": {
+        "name": "AES-256-GCM",
+        "identifier": "2.16.840.1.101.3.4.1.46"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GCM",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-GMAC",
+      "object_identifier": "2.16.840.1.101.3.4.1.49",
+      "registered": {
+        "name": "AES-256-GMAC",
+        "identifier": "2.16.840.1.101.3.4.1.49"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "GMAC",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-OFB",
+      "object_identifier": "2.16.840.1.101.3.4.1.43",
+      "registered": {
+        "name": "AES-256-OFB",
+        "identifier": "2.16.840.1.101.3.4.1.43"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "OFB",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-WRAP",
+      "object_identifier": "2.16.840.1.101.3.4.1.45",
+      "registered": {
+        "name": "AES-256-WRAP",
+        "identifier": "2.16.840.1.101.3.4.1.45"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "AES-256-WRAP-PAD",
+      "object_identifier": "2.16.840.1.101.3.4.1.48",
+      "registered": {
+        "name": "AES-256-WRAP-PAD",
+        "identifier": "2.16.840.1.101.3.4.1.48"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "AES",
+        "mode": "WRAP-PAD",
+        "key_size": "256",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily",
+          "algorithmMode",
+          "algorithmParameterSetIdentifier"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ARIA-128-CBC",
+      "object_identifier": "1.2.410.200046.1.1.4",
+      "registered": {
+        "name": "ARIA-128-CBC",
+        "identifier": "1.2.410.200046.1.1.4"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-CCM",
+      "object_identifier": "1.2.410.200046.1.1.37",
+      "registered": {
+        "name": "ARIA-128-CCM",
+        "identifier": "1.2.410.200046.1.1.37"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-CFB",
+      "object_identifier": "1.2.410.200046.1.1.7",
+      "registered": {
+        "name": "ARIA-128-CFB",
+        "identifier": "1.2.410.200046.1.1.7"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-CMAC",
+      "object_identifier": "1.2.410.200046.1.1.21",
+      "registered": {
+        "name": "ARIA-128-CMAC",
+        "identifier": "1.2.410.200046.1.1.21"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-CTR",
+      "object_identifier": "1.2.410.200046.1.1.13",
+      "registered": {
+        "name": "ARIA-128-CTR",
+        "identifier": "1.2.410.200046.1.1.13"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-ECB",
+      "object_identifier": "1.2.410.200046.1.1.1",
+      "registered": {
+        "name": "ARIA-128-ECB",
+        "identifier": "1.2.410.200046.1.1.1"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-GCM",
+      "object_identifier": "1.2.410.200046.1.1.34",
+      "registered": {
+        "name": "ARIA-128-GCM",
+        "identifier": "1.2.410.200046.1.1.34"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-KW",
+      "object_identifier": "1.2.410.200046.1.1.40",
+      "registered": {
+        "name": "ARIA-128-KW",
+        "identifier": "1.2.410.200046.1.1.40"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-KWP",
+      "object_identifier": "1.2.410.200046.1.1.43",
+      "registered": {
+        "name": "ARIA-128-KWP",
+        "identifier": "1.2.410.200046.1.1.43"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-OCB2",
+      "object_identifier": "1.2.410.200046.1.1.31",
+      "registered": {
+        "name": "ARIA-128-OCB2",
+        "identifier": "1.2.410.200046.1.1.31"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-128-OFB",
+      "object_identifier": "1.2.410.200046.1.1.10",
+      "registered": {
+        "name": "ARIA-128-OFB",
+        "identifier": "1.2.410.200046.1.1.10"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-CBC",
+      "object_identifier": "1.2.410.200046.1.1.5",
+      "registered": {
+        "name": "ARIA-192-CBC",
+        "identifier": "1.2.410.200046.1.1.5"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-CCM",
+      "object_identifier": "1.2.410.200046.1.1.38",
+      "registered": {
+        "name": "ARIA-192-CCM",
+        "identifier": "1.2.410.200046.1.1.38"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-CFB",
+      "object_identifier": "1.2.410.200046.1.1.8",
+      "registered": {
+        "name": "ARIA-192-CFB",
+        "identifier": "1.2.410.200046.1.1.8"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-CMAC",
+      "object_identifier": "1.2.410.200046.1.1.22",
+      "registered": {
+        "name": "ARIA-192-CMAC",
+        "identifier": "1.2.410.200046.1.1.22"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-CTR",
+      "object_identifier": "1.2.410.200046.1.1.14",
+      "registered": {
+        "name": "ARIA-192-CTR",
+        "identifier": "1.2.410.200046.1.1.14"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-ECB",
+      "object_identifier": "1.2.410.200046.1.1.2",
+      "registered": {
+        "name": "ARIA-192-ECB",
+        "identifier": "1.2.410.200046.1.1.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-GCM",
+      "object_identifier": "1.2.410.200046.1.1.35",
+      "registered": {
+        "name": "ARIA-192-GCM",
+        "identifier": "1.2.410.200046.1.1.35"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-KW",
+      "object_identifier": "1.2.410.200046.1.1.41",
+      "registered": {
+        "name": "ARIA-192-KW",
+        "identifier": "1.2.410.200046.1.1.41"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-KWP",
+      "object_identifier": "1.2.410.200046.1.1.44",
+      "registered": {
+        "name": "ARIA-192-KWP",
+        "identifier": "1.2.410.200046.1.1.44"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-OCB2",
+      "object_identifier": "1.2.410.200046.1.1.32",
+      "registered": {
+        "name": "ARIA-192-OCB2",
+        "identifier": "1.2.410.200046.1.1.32"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-192-OFB",
+      "object_identifier": "1.2.410.200046.1.1.11",
+      "registered": {
+        "name": "ARIA-192-OFB",
+        "identifier": "1.2.410.200046.1.1.11"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-CBC",
+      "object_identifier": "1.2.410.200046.1.1.6",
+      "registered": {
+        "name": "ARIA-256-CBC",
+        "identifier": "1.2.410.200046.1.1.6"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-CCM",
+      "object_identifier": "1.2.410.200046.1.1.39",
+      "registered": {
+        "name": "ARIA-256-CCM",
+        "identifier": "1.2.410.200046.1.1.39"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-CFB",
+      "object_identifier": "1.2.410.200046.1.1.9",
+      "registered": {
+        "name": "ARIA-256-CFB",
+        "identifier": "1.2.410.200046.1.1.9"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-CMAC",
+      "object_identifier": "1.2.410.200046.1.1.23",
+      "registered": {
+        "name": "ARIA-256-CMAC",
+        "identifier": "1.2.410.200046.1.1.23"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-CTR",
+      "object_identifier": "1.2.410.200046.1.1.15",
+      "registered": {
+        "name": "ARIA-256-CTR",
+        "identifier": "1.2.410.200046.1.1.15"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-ECB",
+      "object_identifier": "1.2.410.200046.1.1.3",
+      "registered": {
+        "name": "ARIA-256-ECB",
+        "identifier": "1.2.410.200046.1.1.3"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-GCM",
+      "object_identifier": "1.2.410.200046.1.1.36",
+      "registered": {
+        "name": "ARIA-256-GCM",
+        "identifier": "1.2.410.200046.1.1.36"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-KW",
+      "object_identifier": "1.2.410.200046.1.1.42",
+      "registered": {
+        "name": "ARIA-256-KW",
+        "identifier": "1.2.410.200046.1.1.42"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-KWP",
+      "object_identifier": "1.2.410.200046.1.1.45",
+      "registered": {
+        "name": "ARIA-256-KWP",
+        "identifier": "1.2.410.200046.1.1.45"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-OCB2",
+      "object_identifier": "1.2.410.200046.1.1.33",
+      "registered": {
+        "name": "ARIA-256-OCB2",
+        "identifier": "1.2.410.200046.1.1.33"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ARIA-256-OFB",
+      "object_identifier": "1.2.410.200046.1.1.12",
+      "registered": {
+        "name": "ARIA-256-OFB",
+        "identifier": "1.2.410.200046.1.1.12"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ARIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2B-160",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.1.5",
+      "registered": {
+        "name": "BLAKE2B-160",
+        "identifier": "1.3.6.1.4.1.1722.12.2.1.5"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2B-256",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.1.8",
+      "registered": {
+        "name": "BLAKE2B-256",
+        "identifier": "1.3.6.1.4.1.1722.12.2.1.8"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2B-384",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.1.12",
+      "registered": {
+        "name": "BLAKE2B-384",
+        "identifier": "1.3.6.1.4.1.1722.12.2.1.12"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2B-512",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.1.16",
+      "registered": {
+        "name": "BLAKE2B-512",
+        "identifier": "1.3.6.1.4.1.1722.12.2.1.16"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2S-128",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.2.4",
+      "registered": {
+        "name": "BLAKE2S-128",
+        "identifier": "1.3.6.1.4.1.1722.12.2.2.4"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2S-160",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.2.5",
+      "registered": {
+        "name": "BLAKE2S-160",
+        "identifier": "1.3.6.1.4.1.1722.12.2.2.5"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2S-224",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.2.7",
+      "registered": {
+        "name": "BLAKE2S-224",
+        "identifier": "1.3.6.1.4.1.1722.12.2.2.7"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "BLAKE2S-256",
+      "object_identifier": "1.3.6.1.4.1.1722.12.2.2.8",
+      "registered": {
+        "name": "BLAKE2S-256",
+        "identifier": "1.3.6.1.4.1.1722.12.2.2.8"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-128-CBC",
+      "object_identifier": "1.2.392.200011.61.1.1.1.2",
+      "registered": {
+        "name": "CAMELLIA-128-CBC",
+        "identifier": "1.2.392.200011.61.1.1.1.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-128-WRAP",
+      "object_identifier": "1.2.392.200011.61.1.1.3.2",
+      "registered": {
+        "name": "CAMELLIA-128-WRAP",
+        "identifier": "1.2.392.200011.61.1.1.3.2"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-192-CBC",
+      "object_identifier": "1.2.392.200011.61.1.1.1.3",
+      "registered": {
+        "name": "CAMELLIA-192-CBC",
+        "identifier": "1.2.392.200011.61.1.1.1.3"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-192-WRAP",
+      "object_identifier": "1.2.392.200011.61.1.1.3.3",
+      "registered": {
+        "name": "CAMELLIA-192-WRAP",
+        "identifier": "1.2.392.200011.61.1.1.3.3"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-256-CBC",
+      "object_identifier": "1.2.392.200011.61.1.1.1.4",
+      "registered": {
+        "name": "CAMELLIA-256-CBC",
+        "identifier": "1.2.392.200011.61.1.1.1.4"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAMELLIA-256-WRAP",
+      "object_identifier": "1.2.392.200011.61.1.1.3.4",
+      "registered": {
+        "name": "CAMELLIA-256-WRAP",
+        "identifier": "1.2.392.200011.61.1.1.3.4"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "CAMELLIA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAST5-CBC",
+      "object_identifier": "1.2.840.113533.7.66.10",
+      "registered": {
+        "name": "CAST5-CBC",
+        "identifier": "1.2.840.113533.7.66.10"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAST5-MAC",
+      "object_identifier": "1.2.840.113533.7.66.11",
+      "registered": {
+        "name": "CAST5-MAC",
+        "identifier": "1.2.840.113533.7.66.11"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CAST5-WRAP",
+      "object_identifier": "1.2.840.113533.7.66.15",
+      "registered": {
+        "name": "CAST5-WRAP",
+        "identifier": "1.2.840.113533.7.66.15"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "CHACHA20-POLY1305",
+      "object_identifier": "1.2.840.113549.1.9.16.3.18",
+      "registered": {
+        "name": "CHACHA20-POLY1305",
+        "identifier": "1.2.840.113549.1.9.16.3.18"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DES-CBC",
+      "object_identifier": "1.3.14.3.2.7",
+      "registered": {
+        "name": "DES-CBC",
+        "identifier": "1.3.14.3.2.7"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DES-CFB",
+      "object_identifier": "1.3.14.3.2.9",
+      "registered": {
+        "name": "DES-CFB",
+        "identifier": "1.3.14.3.2.9"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DES-ECB",
+      "object_identifier": "1.3.14.3.2.6",
+      "registered": {
+        "name": "DES-ECB",
+        "identifier": "1.3.14.3.2.6"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DES-OFB",
+      "object_identifier": "1.3.14.3.2.8",
+      "registered": {
+        "name": "DES-OFB",
+        "identifier": "1.3.14.3.2.8"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DSA-SHA1",
+      "object_identifier": "1.2.840.10040.4.3",
+      "registered": {
+        "name": "DSA-SHA1",
+        "identifier": "1.2.840.10040.4.3"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "DSA-SHA224",
+      "object_identifier": "2.16.840.1.101.3.4.3.1",
+      "registered": {
+        "name": "DSA-SHA224",
+        "identifier": "2.16.840.1.101.3.4.3.1"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA256",
+      "object_identifier": "2.16.840.1.101.3.4.3.2",
+      "registered": {
+        "name": "DSA-SHA256",
+        "identifier": "2.16.840.1.101.3.4.3.2"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA3-224",
+      "object_identifier": "2.16.840.1.101.3.4.3.5",
+      "registered": {
+        "name": "DSA-SHA3-224",
+        "identifier": "2.16.840.1.101.3.4.3.5"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA3-256",
+      "object_identifier": "2.16.840.1.101.3.4.3.6",
+      "registered": {
+        "name": "DSA-SHA3-256",
+        "identifier": "2.16.840.1.101.3.4.3.6"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA3-384",
+      "object_identifier": "2.16.840.1.101.3.4.3.7",
+      "registered": {
+        "name": "DSA-SHA3-384",
+        "identifier": "2.16.840.1.101.3.4.3.7"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA3-512",
+      "object_identifier": "2.16.840.1.101.3.4.3.8",
+      "registered": {
+        "name": "DSA-SHA3-512",
+        "identifier": "2.16.840.1.101.3.4.3.8"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA384",
+      "object_identifier": "2.16.840.1.101.3.4.3.3",
+      "registered": {
+        "name": "DSA-SHA384",
+        "identifier": "2.16.840.1.101.3.4.3.3"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "DSA-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.4",
+      "registered": {
+        "name": "DSA-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.4"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ECDSA-SHA1",
+      "object_identifier": "1.2.840.10045.4.1",
+      "registered": {
+        "name": "ECDSA-SHA1",
+        "identifier": "1.2.840.10045.4.1"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ECDSA-SHA224",
+      "object_identifier": "1.2.840.10045.4.3.1",
+      "registered": {
+        "name": "ECDSA-SHA224",
+        "identifier": "1.2.840.10045.4.3.1"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ECDSA-SHA256",
+      "object_identifier": "1.2.840.10045.4.3.2",
+      "registered": {
+        "name": "ECDSA-SHA256",
+        "identifier": "1.2.840.10045.4.3.2"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ECDSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ECDSA-SHA3-224",
+      "object_identifier": "2.16.840.1.101.3.4.3.9",
+      "registered": {
+        "name": "ECDSA-SHA3-224",
+        "identifier": "2.16.840.1.101.3.4.3.9"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ECDSA-SHA3-256",
+      "object_identifier": "2.16.840.1.101.3.4.3.10",
+      "registered": {
+        "name": "ECDSA-SHA3-256",
+        "identifier": "2.16.840.1.101.3.4.3.10"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ECDSA-SHA3-384",
+      "object_identifier": "2.16.840.1.101.3.4.3.11",
+      "registered": {
+        "name": "ECDSA-SHA3-384",
+        "identifier": "2.16.840.1.101.3.4.3.11"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ECDSA-SHA3-512",
+      "object_identifier": "2.16.840.1.101.3.4.3.12",
+      "registered": {
+        "name": "ECDSA-SHA3-512",
+        "identifier": "2.16.840.1.101.3.4.3.12"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ECDSA-SHA384",
+      "object_identifier": "1.2.840.10045.4.3.3",
+      "registered": {
+        "name": "ECDSA-SHA384",
+        "identifier": "1.2.840.10045.4.3.3"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ECDSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ECDSA-SHA512",
+      "object_identifier": "1.2.840.10045.4.3.4",
+      "registered": {
+        "name": "ECDSA-SHA512",
+        "identifier": "1.2.840.10045.4.3.4"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "ECDSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ECDSA-SHAKE128",
+      "object_identifier": "1.3.6.1.5.5.7.6.32",
+      "registered": {
+        "name": "ECDSA-SHAKE128",
+        "identifier": "1.3.6.1.5.5.7.6.32"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ECDSA-SHAKE256",
+      "object_identifier": "1.3.6.1.5.5.7.6.33",
+      "registered": {
+        "name": "ECDSA-SHAKE256",
+        "identifier": "1.3.6.1.5.5.7.6.33"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "ECMQV-PUBLIC-KEY",
+      "object_identifier": "1.3.132.1.13",
+      "registered": {
+        "name": "ECMQV-PUBLIC-KEY",
+        "identifier": "1.3.132.1.13"
+      },
+      "classification": 8,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ED25519",
+      "object_identifier": "1.3.101.112",
+      "registered": {
+        "name": "ED25519",
+        "identifier": "1.3.101.112"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "ED448",
+      "object_identifier": "1.3.101.113",
+      "registered": {
+        "name": "ED448",
+        "identifier": "1.3.101.113"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "GOST-2012-256",
+      "object_identifier": "1.2.643.7.1.1.2.2",
+      "registered": {
+        "name": "GOST-2012-256",
+        "identifier": "1.2.643.7.1.1.2.2"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "GOST-2012-512",
+      "object_identifier": "1.2.643.7.1.1.2.3",
+      "registered": {
+        "name": "GOST-2012-512",
+        "identifier": "1.2.643.7.1.1.2.3"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "GOST-28147-89",
+      "object_identifier": "1.2.643.2.2.21",
+      "registered": {
+        "name": "GOST-28147-89",
+        "identifier": "1.2.643.2.2.21"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "GOST-28147-89-MAC",
+      "object_identifier": "1.2.643.2.2.22",
+      "registered": {
+        "name": "GOST-28147-89-MAC",
+        "identifier": "1.2.643.2.2.22"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-128F-WITH-SHA256",
+      "object_identifier": "2.16.840.1.101.3.4.3.36",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-128F-WITH-SHA256",
+        "identifier": "2.16.840.1.101.3.4.3.36"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-128S-WITH-SHA256",
+      "object_identifier": "2.16.840.1.101.3.4.3.35",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-128S-WITH-SHA256",
+        "identifier": "2.16.840.1.101.3.4.3.35"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-192F-WITH-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.38",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-192F-WITH-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.38"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-192S-WITH-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.37",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-192S-WITH-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.37"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-256F-WITH-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.40",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-256F-WITH-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.40"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHA2-256S-WITH-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.39",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHA2-256S-WITH-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.39"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-128F-WITH-SHAKE128",
+      "object_identifier": "2.16.840.1.101.3.4.3.42",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-128F-WITH-SHAKE128",
+        "identifier": "2.16.840.1.101.3.4.3.42"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-128S-WITH-SHAKE128",
+      "object_identifier": "2.16.840.1.101.3.4.3.41",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-128S-WITH-SHAKE128",
+        "identifier": "2.16.840.1.101.3.4.3.41"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-192F-WITH-SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.3.44",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-192F-WITH-SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.3.44"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-192S-WITH-SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.3.43",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-192S-WITH-SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.3.43"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-256F-WITH-SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.3.46",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-256F-WITH-SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.3.46"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASH-SLH-DSA-SHAKE-256S-WITH-SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.3.45",
+      "registered": {
+        "name": "HASH-SLH-DSA-SHAKE-256S-WITH-SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.3.45"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASHML-DSA-44-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.32",
+      "registered": {
+        "name": "HASHML-DSA-44-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.32"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASHML-DSA-65-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.33",
+      "registered": {
+        "name": "HASHML-DSA-65-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.33"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HASHML-DSA-87-SHA512",
+      "object_identifier": "2.16.840.1.101.3.4.3.34",
+      "registered": {
+        "name": "HASHML-DSA-87-SHA512",
+        "identifier": "2.16.840.1.101.3.4.3.34"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HKDF-SHA256",
+      "object_identifier": "1.2.840.113549.1.9.16.3.28",
+      "registered": {
+        "name": "HKDF-SHA256",
+        "identifier": "1.2.840.113549.1.9.16.3.28"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HKDF-SHA384",
+      "object_identifier": "1.2.840.113549.1.9.16.3.29",
+      "registered": {
+        "name": "HKDF-SHA384",
+        "identifier": "1.2.840.113549.1.9.16.3.29"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HKDF-SHA512",
+      "object_identifier": "1.2.840.113549.1.9.16.3.30",
+      "registered": {
+        "name": "HKDF-SHA512",
+        "identifier": "1.2.840.113549.1.9.16.3.30"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HMAC-GOST-2012-256",
+      "object_identifier": "1.2.643.7.1.1.4.1",
+      "registered": {
+        "name": "HMAC-GOST-2012-256",
+        "identifier": "1.2.643.7.1.1.4.1"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HMAC-GOST-2012-512",
+      "object_identifier": "1.2.643.7.1.1.4.2",
+      "registered": {
+        "name": "HMAC-GOST-2012-512",
+        "identifier": "1.2.643.7.1.1.4.2"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "HMAC-SHA1",
+      "object_identifier": "1.2.840.113549.2.7",
+      "registered": {
+        "name": "HMAC-SHA1",
+        "identifier": "1.2.840.113549.2.7"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "HMAC-SHA-1"
+        ],
+        "family": "HMAC",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA224",
+      "object_identifier": "1.2.840.113549.2.8",
+      "registered": {
+        "name": "HMAC-SHA224",
+        "identifier": "1.2.840.113549.2.8"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "HMAC-SHA-224"
+        ],
+        "family": "HMAC",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA256",
+      "object_identifier": "1.2.840.113549.2.9",
+      "registered": {
+        "name": "HMAC-SHA256",
+        "identifier": "1.2.840.113549.2.9"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "HMAC-SHA-256"
+        ],
+        "family": "HMAC",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA3-224",
+      "object_identifier": "2.16.840.1.101.3.4.2.13",
+      "registered": {
+        "name": "HMAC-SHA3-224",
+        "identifier": "2.16.840.1.101.3.4.2.13"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HMAC-SHA3-256",
+      "object_identifier": "2.16.840.1.101.3.4.2.14",
+      "registered": {
+        "name": "HMAC-SHA3-256",
+        "identifier": "2.16.840.1.101.3.4.2.14"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HMAC-SHA3-384",
+      "object_identifier": "2.16.840.1.101.3.4.2.15",
+      "registered": {
+        "name": "HMAC-SHA3-384",
+        "identifier": "2.16.840.1.101.3.4.2.15"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HMAC-SHA3-512",
+      "object_identifier": "2.16.840.1.101.3.4.2.16",
+      "registered": {
+        "name": "HMAC-SHA3-512",
+        "identifier": "2.16.840.1.101.3.4.2.16"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "HMAC-SHA384",
+      "object_identifier": "1.2.840.113549.2.10",
+      "registered": {
+        "name": "HMAC-SHA384",
+        "identifier": "1.2.840.113549.2.10"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "HMAC-SHA-384"
+        ],
+        "family": "HMAC",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA512",
+      "object_identifier": "1.2.840.113549.2.11",
+      "registered": {
+        "name": "HMAC-SHA512",
+        "identifier": "1.2.840.113549.2.11"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "HMAC-SHA-512"
+        ],
+        "family": "HMAC",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA512-224",
+      "object_identifier": "1.2.840.113549.2.12",
+      "registered": {
+        "name": "HMAC-SHA512-224",
+        "identifier": "1.2.840.113549.2.12"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SHA512-256",
+      "object_identifier": "1.2.840.113549.2.13",
+      "registered": {
+        "name": "HMAC-SHA512-256",
+        "identifier": "1.2.840.113549.2.13"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "HMAC-SM3",
+      "object_identifier": "1.2.156.10197.1.401.2",
+      "registered": {
+        "name": "HMAC-SM3",
+        "identifier": "1.2.156.10197.1.401.2"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "HSS-LMS",
+      "object_identifier": "1.2.840.113549.1.9.16.3.17",
+      "registered": {
+        "name": "HSS-LMS",
+        "identifier": "1.2.840.113549.1.9.16.3.17"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "IDEA-CBC",
+      "object_identifier": "1.3.6.1.4.1.188.7.1.1.2",
+      "registered": {
+        "name": "IDEA-CBC",
+        "identifier": "1.3.6.1.4.1.188.7.1.1.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "IDEA-WRAP",
+      "object_identifier": "1.3.6.1.4.1.188.7.1.1.6",
+      "registered": {
+        "name": "IDEA-WRAP",
+        "identifier": "1.3.6.1.4.1.188.7.1.1.6"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "KMAC-WITH-SHAKE128",
+      "object_identifier": "2.16.840.1.101.3.4.2.19",
+      "registered": {
+        "name": "KMAC-WITH-SHAKE128",
+        "identifier": "2.16.840.1.101.3.4.2.19"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "KMAC-WITH-SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.2.20",
+      "registered": {
+        "name": "KMAC-WITH-SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.2.20"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "KMAC128",
+      "object_identifier": "2.16.840.1.101.3.4.2.21",
+      "registered": {
+        "name": "KMAC128",
+        "identifier": "2.16.840.1.101.3.4.2.21"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "KMAC256",
+      "object_identifier": "2.16.840.1.101.3.4.2.22",
+      "registered": {
+        "name": "KMAC256",
+        "identifier": "2.16.840.1.101.3.4.2.22"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "KUZNYECHIK-CTR-ACPKM",
+      "object_identifier": "1.2.643.7.1.1.5.2.1",
+      "registered": {
+        "name": "KUZNYECHIK-CTR-ACPKM",
+        "identifier": "1.2.643.7.1.1.5.2.1"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "KUZNYECHIK-CTR-ACPKM-OMAC",
+      "object_identifier": "1.2.643.7.1.1.5.2.2",
+      "registered": {
+        "name": "KUZNYECHIK-CTR-ACPKM-OMAC",
+        "identifier": "1.2.643.7.1.1.5.2.2"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "MAGMA-CTR-ACPKM",
+      "object_identifier": "1.2.643.7.1.1.5.1.1",
+      "registered": {
+        "name": "MAGMA-CTR-ACPKM",
+        "identifier": "1.2.643.7.1.1.5.1.1"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "MAGMA-CTR-ACPKM-OMAC",
+      "object_identifier": "1.2.643.7.1.1.5.1.2",
+      "registered": {
+        "name": "MAGMA-CTR-ACPKM-OMAC",
+        "identifier": "1.2.643.7.1.1.5.1.2"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "MD2",
+      "object_identifier": "1.2.840.113549.2.2",
+      "registered": {
+        "name": "MD2",
+        "identifier": "1.2.840.113549.2.2"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "MD4",
+      "object_identifier": "1.2.840.113549.2.4",
+      "registered": {
+        "name": "MD4",
+        "identifier": "1.2.840.113549.2.4"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "MD5",
+      "object_identifier": "1.2.840.113549.2.5",
+      "registered": {
+        "name": "MD5",
+        "identifier": "1.2.840.113549.2.5"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "ML-DSA-44",
+      "object_identifier": "2.16.840.1.101.3.4.3.17",
+      "registered": {
+        "name": "ML-DSA-44",
+        "identifier": "2.16.840.1.101.3.4.3.17"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ML-DSA-65",
+      "object_identifier": "2.16.840.1.101.3.4.3.18",
+      "registered": {
+        "name": "ML-DSA-65",
+        "identifier": "2.16.840.1.101.3.4.3.18"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ML-DSA-87",
+      "object_identifier": "2.16.840.1.101.3.4.3.19",
+      "registered": {
+        "name": "ML-DSA-87",
+        "identifier": "2.16.840.1.101.3.4.3.19"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ML-KEM-1024",
+      "object_identifier": "2.16.840.1.101.3.4.4.3",
+      "registered": {
+        "name": "ML-KEM-1024",
+        "identifier": "2.16.840.1.101.3.4.4.3"
+      },
+      "classification": 6,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ML-KEM-512",
+      "object_identifier": "2.16.840.1.101.3.4.4.1",
+      "registered": {
+        "name": "ML-KEM-512",
+        "identifier": "2.16.840.1.101.3.4.4.1"
+      },
+      "classification": 6,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "ML-KEM-768",
+      "object_identifier": "2.16.840.1.101.3.4.4.2",
+      "registered": {
+        "name": "ML-KEM-768",
+        "identifier": "2.16.840.1.101.3.4.4.2"
+      },
+      "classification": 6,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "P-192",
+      "object_identifier": "1.2.840.10045.3.1.1",
+      "registered": {
+        "name": "P-192",
+        "identifier": "1.2.840.10045.3.1.1"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "P-224",
+      "object_identifier": "1.3.132.0.33",
+      "registered": {
+        "name": "P-224",
+        "identifier": "1.3.132.0.33"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "P-256",
+      "object_identifier": "1.2.840.10045.3.1.7",
+      "registered": {
+        "name": "P-256",
+        "identifier": "1.2.840.10045.3.1.7"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "P-384",
+      "object_identifier": "1.3.132.0.34",
+      "registered": {
+        "name": "P-384",
+        "identifier": "1.3.132.0.34"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "P-521",
+      "object_identifier": "1.3.132.0.35",
+      "registered": {
+        "name": "P-521",
+        "identifier": "1.3.132.0.35"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "PBES1-MD2-DES",
+      "object_identifier": "1.2.840.113549.1.5.1",
+      "registered": {
+        "name": "PBES1-MD2-DES",
+        "identifier": "1.2.840.113549.1.5.1"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES1-MD2-RC2",
+      "object_identifier": "1.2.840.113549.1.5.4",
+      "registered": {
+        "name": "PBES1-MD2-RC2",
+        "identifier": "1.2.840.113549.1.5.4"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES1-MD5-DES",
+      "object_identifier": "1.2.840.113549.1.5.3",
+      "registered": {
+        "name": "PBES1-MD5-DES",
+        "identifier": "1.2.840.113549.1.5.3"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES1-MD5-RC2",
+      "object_identifier": "1.2.840.113549.1.5.6",
+      "registered": {
+        "name": "PBES1-MD5-RC2",
+        "identifier": "1.2.840.113549.1.5.6"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES1-SHA1-DES",
+      "object_identifier": "1.2.840.113549.1.5.10",
+      "registered": {
+        "name": "PBES1-SHA1-DES",
+        "identifier": "1.2.840.113549.1.5.10"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES1-SHA1-RC2",
+      "object_identifier": "1.2.840.113549.1.5.11",
+      "registered": {
+        "name": "PBES1-SHA1-RC2",
+        "identifier": "1.2.840.113549.1.5.11"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBES2",
+      "object_identifier": "1.2.840.113549.1.5.13",
+      "registered": {
+        "name": "PBES2",
+        "identifier": "1.2.840.113549.1.5.13"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBKDF2",
+      "object_identifier": "1.2.840.113549.1.5.12",
+      "registered": {
+        "name": "PBKDF2",
+        "identifier": "1.2.840.113549.1.5.12"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "PBKDF2",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "PBMAC1",
+      "object_identifier": "1.2.840.113549.1.5.14",
+      "registered": {
+        "name": "PBMAC1",
+        "identifier": "1.2.840.113549.1.5.14"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #5",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8018.html"
+    },
+    {
+      "source_id": "RC2-CBC",
+      "object_identifier": "1.2.840.113549.3.2",
+      "registered": {
+        "name": "RC2-CBC",
+        "identifier": "1.2.840.113549.3.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc3058.html"
+    },
+    {
+      "source_id": "RC4",
+      "object_identifier": "1.2.840.113549.3.4",
+      "registered": {
+        "name": "RC4",
+        "identifier": "1.2.840.113549.3.4"
+      },
+      "classification": 3,
+      "registration_state": 3,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc3058.html"
+    },
+    {
+      "source_id": "RC5-CBC-PAD",
+      "object_identifier": "1.2.840.113549.3.9",
+      "registered": {
+        "name": "RC5-CBC-PAD",
+        "identifier": "1.2.840.113549.3.9"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc3058.html"
+    },
+    {
+      "source_id": "RESTRICTED-ECDH-PUBLIC-KEY",
+      "object_identifier": "1.3.132.1.12",
+      "registered": {
+        "name": "RESTRICTED-ECDH-PUBLIC-KEY",
+        "identifier": "1.3.132.1.12"
+      },
+      "classification": 8,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "RIPEMD-128",
+      "object_identifier": "1.3.36.3.2.2",
+      "registered": {
+        "name": "RIPEMD-128",
+        "identifier": "1.3.36.3.2.2"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "RIPEMD-160",
+      "object_identifier": "1.3.36.3.2.1",
+      "registered": {
+        "name": "RIPEMD-160",
+        "identifier": "1.3.36.3.2.1"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "RIPEMD-256",
+      "object_identifier": "1.3.36.3.2.3",
+      "registered": {
+        "name": "RIPEMD-256",
+        "identifier": "1.3.36.3.2.3"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "RSA-KEY",
+      "object_identifier": "1.2.840.113549.1.1.1",
+      "registered": {
+        "name": "RSA-KEY",
+        "identifier": "1.2.840.113549.1.1.1"
+      },
+      "classification": 8,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-MD2",
+      "object_identifier": "1.2.840.113549.1.1.2",
+      "registered": {
+        "name": "RSA-MD2",
+        "identifier": "1.2.840.113549.1.1.2"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-MD5",
+      "object_identifier": "1.2.840.113549.1.1.4",
+      "registered": {
+        "name": "RSA-MD5",
+        "identifier": "1.2.840.113549.1.1.4"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-PSS-SHAKE128",
+      "object_identifier": "1.3.6.1.5.5.7.6.30",
+      "registered": {
+        "name": "RSA-PSS-SHAKE128",
+        "identifier": "1.3.6.1.5.5.7.6.30"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "RSA-PSS-SHAKE256",
+      "object_identifier": "1.3.6.1.5.5.7.6.31",
+      "registered": {
+        "name": "RSA-PSS-SHAKE256",
+        "identifier": "1.3.6.1.5.5.7.6.31"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "RSA-SHA1",
+      "object_identifier": "1.2.840.113549.1.1.5",
+      "registered": {
+        "name": "RSA-SHA1",
+        "identifier": "1.2.840.113549.1.1.5"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA224",
+      "object_identifier": "1.2.840.113549.1.1.14",
+      "registered": {
+        "name": "RSA-SHA224",
+        "identifier": "1.2.840.113549.1.1.14"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA256",
+      "object_identifier": "1.2.840.113549.1.1.11",
+      "registered": {
+        "name": "RSA-SHA256",
+        "identifier": "1.2.840.113549.1.1.11"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "SHA256-WITH-RSA"
+        ],
+        "family": "RSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA3-224",
+      "object_identifier": "2.16.840.1.101.3.4.3.13",
+      "registered": {
+        "name": "RSA-SHA3-224",
+        "identifier": "2.16.840.1.101.3.4.3.13"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "RSA-SHA3-256",
+      "object_identifier": "2.16.840.1.101.3.4.3.14",
+      "registered": {
+        "name": "RSA-SHA3-256",
+        "identifier": "2.16.840.1.101.3.4.3.14"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "RSA-SHA3-384",
+      "object_identifier": "2.16.840.1.101.3.4.3.15",
+      "registered": {
+        "name": "RSA-SHA3-384",
+        "identifier": "2.16.840.1.101.3.4.3.15"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "RSA-SHA3-512",
+      "object_identifier": "2.16.840.1.101.3.4.3.16",
+      "registered": {
+        "name": "RSA-SHA3-512",
+        "identifier": "2.16.840.1.101.3.4.3.16"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "RSA-SHA384",
+      "object_identifier": "1.2.840.113549.1.1.12",
+      "registered": {
+        "name": "RSA-SHA384",
+        "identifier": "1.2.840.113549.1.1.12"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "RSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA512",
+      "object_identifier": "1.2.840.113549.1.1.13",
+      "registered": {
+        "name": "RSA-SHA512",
+        "identifier": "1.2.840.113549.1.1.13"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "RSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA512-224",
+      "object_identifier": "1.2.840.113549.1.1.15",
+      "registered": {
+        "name": "RSA-SHA512-224",
+        "identifier": "1.2.840.113549.1.1.15"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSA-SHA512-256",
+      "object_identifier": "1.2.840.113549.1.1.16",
+      "registered": {
+        "name": "RSA-SHA512-256",
+        "identifier": "1.2.840.113549.1.1.16"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSAES-OAEP",
+      "object_identifier": "1.2.840.113549.1.1.7",
+      "registered": {
+        "name": "RSAES-OAEP",
+        "identifier": "1.2.840.113549.1.1.7"
+      },
+      "classification": 5,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSAES-PKCS1-V1-5",
+      "object_identifier": "1.2.840.113549.1.1.1",
+      "registered": {
+        "name": "RSAES-PKCS1-V1-5",
+        "identifier": "1.2.840.113549.1.1.1"
+      },
+      "classification": 5,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "RSASSA-PSS",
+      "object_identifier": "1.2.840.113549.1.1.10",
+      "registered": {
+        "name": "RSASSA-PSS",
+        "identifier": "1.2.840.113549.1.1.10"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF PKCS #1",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc8017.html"
+    },
+    {
+      "source_id": "SCRYPT",
+      "object_identifier": "1.3.6.1.4.1.11591.4.11",
+      "registered": {
+        "name": "SCRYPT",
+        "identifier": "1.3.6.1.4.1.11591.4.11"
+      },
+      "classification": 7,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SCRYPT",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "IETF",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "SEED-CBC",
+      "object_identifier": "1.2.410.200004.1.4",
+      "registered": {
+        "name": "SEED-CBC",
+        "identifier": "1.2.410.200004.1.4"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "SEED-WRAP",
+      "object_identifier": "1.2.410.200004.7.1.1.1",
+      "registered": {
+        "name": "SEED-WRAP",
+        "identifier": "1.2.410.200004.7.1.1.1"
+      },
+      "classification": 10,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "SHA-0",
+      "object_identifier": "1.3.14.3.2.18",
+      "registered": {
+        "name": "SHA-0",
+        "identifier": "1.3.14.3.2.18"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "SHA-1",
+      "object_identifier": "1.3.14.3.2.26",
+      "registered": {
+        "name": "SHA-1",
+        "identifier": "1.3.14.3.2.26"
+      },
+      "classification": 0,
+      "registration_state": 2,
+      "selection": {
+        "aliases": [
+          "SHA1"
+        ],
+        "family": "SHA-1",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "OIW",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "SHA-224",
+      "object_identifier": "2.16.840.1.101.3.4.2.4",
+      "registered": {
+        "name": "SHA-224",
+        "identifier": "2.16.840.1.101.3.4.2.4"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHA-2",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA-256",
+      "object_identifier": "2.16.840.1.101.3.4.2.1",
+      "registered": {
+        "name": "SHA-256",
+        "identifier": "2.16.840.1.101.3.4.2.1"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHA-2",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA-384",
+      "object_identifier": "2.16.840.1.101.3.4.2.2",
+      "registered": {
+        "name": "SHA-384",
+        "identifier": "2.16.840.1.101.3.4.2.2"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHA-2",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA-512",
+      "object_identifier": "2.16.840.1.101.3.4.2.3",
+      "registered": {
+        "name": "SHA-512",
+        "identifier": "2.16.840.1.101.3.4.2.3"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHA-2",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA-512-224",
+      "object_identifier": "2.16.840.1.101.3.4.2.5",
+      "registered": {
+        "name": "SHA-512-224",
+        "identifier": "2.16.840.1.101.3.4.2.5"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA-512-256",
+      "object_identifier": "2.16.840.1.101.3.4.2.6",
+      "registered": {
+        "name": "SHA-512-256",
+        "identifier": "2.16.840.1.101.3.4.2.6"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA3-224",
+      "object_identifier": "2.16.840.1.101.3.4.2.7",
+      "registered": {
+        "name": "SHA3-224",
+        "identifier": "2.16.840.1.101.3.4.2.7"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "SHA-3-224"
+        ],
+        "family": "SHA-3",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA3-256",
+      "object_identifier": "2.16.840.1.101.3.4.2.8",
+      "registered": {
+        "name": "SHA3-256",
+        "identifier": "2.16.840.1.101.3.4.2.8"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "SHA-3-256"
+        ],
+        "family": "SHA-3",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA3-384",
+      "object_identifier": "2.16.840.1.101.3.4.2.9",
+      "registered": {
+        "name": "SHA3-384",
+        "identifier": "2.16.840.1.101.3.4.2.9"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "SHA-3-384"
+        ],
+        "family": "SHA-3",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHA3-512",
+      "object_identifier": "2.16.840.1.101.3.4.2.10",
+      "registered": {
+        "name": "SHA3-512",
+        "identifier": "2.16.840.1.101.3.4.2.10"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [
+          "SHA-3-512"
+        ],
+        "family": "SHA-3",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHAKE128",
+      "object_identifier": "2.16.840.1.101.3.4.2.11",
+      "registered": {
+        "name": "SHAKE128",
+        "identifier": "2.16.840.1.101.3.4.2.11"
+      },
+      "classification": 1,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHAKE",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHAKE128-LEN",
+      "object_identifier": "2.16.840.1.101.3.4.2.17",
+      "registered": {
+        "name": "SHAKE128-LEN",
+        "identifier": "2.16.840.1.101.3.4.2.17"
+      },
+      "classification": 1,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHAKE",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHAKE256",
+      "object_identifier": "2.16.840.1.101.3.4.2.12",
+      "registered": {
+        "name": "SHAKE256",
+        "identifier": "2.16.840.1.101.3.4.2.12"
+      },
+      "classification": 1,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHAKE",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SHAKE256-LEN",
+      "object_identifier": "2.16.840.1.101.3.4.2.18",
+      "registered": {
+        "name": "SHAKE256-LEN",
+        "identifier": "2.16.840.1.101.3.4.2.18"
+      },
+      "classification": 1,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SHAKE",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-128F",
+      "object_identifier": "2.16.840.1.101.3.4.3.21",
+      "registered": {
+        "name": "SLH-DSA-SHA2-128F",
+        "identifier": "2.16.840.1.101.3.4.3.21"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-128S",
+      "object_identifier": "2.16.840.1.101.3.4.3.20",
+      "registered": {
+        "name": "SLH-DSA-SHA2-128S",
+        "identifier": "2.16.840.1.101.3.4.3.20"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-192F",
+      "object_identifier": "2.16.840.1.101.3.4.3.23",
+      "registered": {
+        "name": "SLH-DSA-SHA2-192F",
+        "identifier": "2.16.840.1.101.3.4.3.23"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-192S",
+      "object_identifier": "2.16.840.1.101.3.4.3.22",
+      "registered": {
+        "name": "SLH-DSA-SHA2-192S",
+        "identifier": "2.16.840.1.101.3.4.3.22"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-256F",
+      "object_identifier": "2.16.840.1.101.3.4.3.25",
+      "registered": {
+        "name": "SLH-DSA-SHA2-256F",
+        "identifier": "2.16.840.1.101.3.4.3.25"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHA2-256S",
+      "object_identifier": "2.16.840.1.101.3.4.3.24",
+      "registered": {
+        "name": "SLH-DSA-SHA2-256S",
+        "identifier": "2.16.840.1.101.3.4.3.24"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-128F",
+      "object_identifier": "2.16.840.1.101.3.4.3.27",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-128F",
+        "identifier": "2.16.840.1.101.3.4.3.27"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-128S",
+      "object_identifier": "2.16.840.1.101.3.4.3.26",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-128S",
+        "identifier": "2.16.840.1.101.3.4.3.26"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-192F",
+      "object_identifier": "2.16.840.1.101.3.4.3.29",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-192F",
+        "identifier": "2.16.840.1.101.3.4.3.29"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-192S",
+      "object_identifier": "2.16.840.1.101.3.4.3.28",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-192S",
+        "identifier": "2.16.840.1.101.3.4.3.28"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-256F",
+      "object_identifier": "2.16.840.1.101.3.4.3.31",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-256F",
+        "identifier": "2.16.840.1.101.3.4.3.31"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SLH-DSA-SHAKE-256S",
+      "object_identifier": "2.16.840.1.101.3.4.3.30",
+      "registered": {
+        "name": "SLH-DSA-SHAKE-256S",
+        "identifier": "2.16.840.1.101.3.4.3.30"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "SLH-DSA",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName",
+          "algorithmFamily"
+        ]
+      },
+      "registration_authority": "NIST CSOR",
+      "primary_reference": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration"
+    },
+    {
+      "source_id": "SM2-KEY-EXCHANGE",
+      "object_identifier": "1.2.156.10197.1.301.2",
+      "registered": {
+        "name": "SM2-KEY-EXCHANGE",
+        "identifier": "1.2.156.10197.1.301.2"
+      },
+      "classification": 9,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM2-PKE",
+      "object_identifier": "1.2.156.10197.1.301.3",
+      "registered": {
+        "name": "SM2-PKE",
+        "identifier": "1.2.156.10197.1.301.3"
+      },
+      "classification": 5,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM2-SIGNATURE",
+      "object_identifier": "1.2.156.10197.1.301.1",
+      "registered": {
+        "name": "SM2-SIGNATURE",
+        "identifier": "1.2.156.10197.1.301.1"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM3",
+      "object_identifier": "1.2.156.10197.1.401",
+      "registered": {
+        "name": "SM3",
+        "identifier": "1.2.156.10197.1.401"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CBC",
+      "object_identifier": "1.2.156.10197.1.104.2",
+      "registered": {
+        "name": "SM4-CBC",
+        "identifier": "1.2.156.10197.1.104.2"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CBC-MAC",
+      "object_identifier": "1.2.156.10197.1.104.5.1",
+      "registered": {
+        "name": "SM4-CBC-MAC",
+        "identifier": "1.2.156.10197.1.104.5.1"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CCM",
+      "object_identifier": "1.2.156.10197.1.104.11",
+      "registered": {
+        "name": "SM4-CCM",
+        "identifier": "1.2.156.10197.1.104.11"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CFB",
+      "object_identifier": "1.2.156.10197.1.104.3",
+      "registered": {
+        "name": "SM4-CFB",
+        "identifier": "1.2.156.10197.1.104.3"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CMAC",
+      "object_identifier": "1.2.156.10197.1.104.5",
+      "registered": {
+        "name": "SM4-CMAC",
+        "identifier": "1.2.156.10197.1.104.5"
+      },
+      "classification": 2,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-CTR",
+      "object_identifier": "1.2.156.10197.1.104.6",
+      "registered": {
+        "name": "SM4-CTR",
+        "identifier": "1.2.156.10197.1.104.6"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-EAX",
+      "object_identifier": "1.2.156.10197.1.104.12",
+      "registered": {
+        "name": "SM4-EAX",
+        "identifier": "1.2.156.10197.1.104.12"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-ECB",
+      "object_identifier": "1.2.156.10197.1.104.1",
+      "registered": {
+        "name": "SM4-ECB",
+        "identifier": "1.2.156.10197.1.104.1"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-GCM",
+      "object_identifier": "1.2.156.10197.1.104.10",
+      "registered": {
+        "name": "SM4-GCM",
+        "identifier": "1.2.156.10197.1.104.10"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-HCTR",
+      "object_identifier": "1.2.156.10197.1.104.13",
+      "registered": {
+        "name": "SM4-HCTR",
+        "identifier": "1.2.156.10197.1.104.13"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-OFB",
+      "object_identifier": "1.2.156.10197.1.104.4",
+      "registered": {
+        "name": "SM4-OFB",
+        "identifier": "1.2.156.10197.1.104.4"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM4-XTS",
+      "object_identifier": "1.2.156.10197.1.104.9",
+      "registered": {
+        "name": "SM4-XTS",
+        "identifier": "1.2.156.10197.1.104.9"
+      },
+      "classification": 3,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM9-KEM",
+      "object_identifier": "1.2.156.10197.1.302.4",
+      "registered": {
+        "name": "SM9-KEM",
+        "identifier": "1.2.156.10197.1.302.4"
+      },
+      "classification": 6,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM9-KEY-EXCHANGE",
+      "object_identifier": "1.2.156.10197.1.302.2",
+      "registered": {
+        "name": "SM9-KEY-EXCHANGE",
+        "identifier": "1.2.156.10197.1.302.2"
+      },
+      "classification": 9,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM9-PKE",
+      "object_identifier": "1.2.156.10197.1.302.3",
+      "registered": {
+        "name": "SM9-PKE",
+        "identifier": "1.2.156.10197.1.302.3"
+      },
+      "classification": 5,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "SM9-SIGNATURE",
+      "object_identifier": "1.2.156.10197.1.302.1",
+      "registered": {
+        "name": "SM9-SIGNATURE",
+        "identifier": "1.2.156.10197.1.302.1"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "OSCCA",
+      "primary_reference": "https://www.oscca.gov.cn/sca/xwdt/2023-12/06/content_1061146.shtml"
+    },
+    {
+      "source_id": "WHIRLPOOL",
+      "object_identifier": "1.0.10118.3.0.55",
+      "registered": {
+        "name": "WHIRLPOOL",
+        "identifier": "1.0.10118.3.0.55"
+      },
+      "classification": 0,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "X25519",
+      "object_identifier": "1.3.101.110",
+      "registered": {
+        "name": "X25519",
+        "identifier": "1.3.101.110"
+      },
+      "classification": 9,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "X448",
+      "object_identifier": "1.3.101.111",
+      "registered": {
+        "name": "X448",
+        "identifier": "1.3.101.111"
+      },
+      "classification": 9,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    },
+    {
+      "source_id": "X9.42-DH-PUBLIC-KEY",
+      "object_identifier": "1.2.840.10046.2.1",
+      "registered": {
+        "name": "X9.42-DH-PUBLIC-KEY",
+        "identifier": "1.2.840.10046.2.1"
+      },
+      "classification": 8,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "XMSS",
+      "object_identifier": "1.3.6.1.5.5.7.6.34",
+      "registered": {
+        "name": "XMSS",
+        "identifier": "1.3.6.1.5.5.7.6.34"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "XMSSMT",
+      "object_identifier": "1.3.6.1.5.5.7.6.35",
+      "registered": {
+        "name": "XMSSMT",
+        "identifier": "1.3.6.1.5.5.7.6.35"
+      },
+      "classification": 4,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP160r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.1",
+      "registered": {
+        "name": "brainpoolP160r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.1"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP160t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.2",
+      "registered": {
+        "name": "brainpoolP160t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.2"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP192r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.3",
+      "registered": {
+        "name": "brainpoolP192r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.3"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP192t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.4",
+      "registered": {
+        "name": "brainpoolP192t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.4"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP224r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.5",
+      "registered": {
+        "name": "brainpoolP224r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.5"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP224t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.6",
+      "registered": {
+        "name": "brainpoolP224t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.6"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP256r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.7",
+      "registered": {
+        "name": "brainpoolP256r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.7"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP256t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.8",
+      "registered": {
+        "name": "brainpoolP256t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.8"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP320r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.9",
+      "registered": {
+        "name": "brainpoolP320r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.9"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP320t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.10",
+      "registered": {
+        "name": "brainpoolP320t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.10"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP384r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.11",
+      "registered": {
+        "name": "brainpoolP384r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.11"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP384t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.12",
+      "registered": {
+        "name": "brainpoolP384t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.12"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP512r1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.13",
+      "registered": {
+        "name": "brainpoolP512r1",
+        "identifier": "1.3.36.3.3.2.8.1.1.13"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "brainpoolP512t1",
+      "object_identifier": "1.3.36.3.3.2.8.1.1.14",
+      "registered": {
+        "name": "brainpoolP512t1",
+        "identifier": "1.3.36.3.3.2.8.1.1.14"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "CycloneDX registry",
+      "primary_reference": "https://cyclonedx.org/registry/cryptography/"
+    },
+    {
+      "source_id": "secp256k1",
+      "object_identifier": "1.3.132.0.10",
+      "registered": {
+        "name": "secp256k1",
+        "identifier": "1.3.132.0.10"
+      },
+      "classification": 13,
+      "registration_state": 0,
+      "selection": {
+        "aliases": [],
+        "family": "",
+        "mode": "",
+        "key_size": "",
+        "dimensions": [
+          "algorithmName"
+        ]
+      },
+      "registration_authority": "IETF/ANSI X9.62",
+      "primary_reference": "https://www.rfc-editor.org/rfc/rfc5480.html"
+    }
+  ]
+}

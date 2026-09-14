@@ -98,7 +98,7 @@ func TestAnnotateSupportingCalls_ByteIdenticalToFullExport(t *testing.T) {
 	graph, dir := buildSupportingGraph(t)
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
-	full := BuildGraphFragmentExport(&engine.DepScanResult{
+	full := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 	if len(full.SupportingCalls) == 0 {
@@ -106,7 +106,7 @@ func TestAnnotateSupportingCalls_ByteIdenticalToFullExport(t *testing.T) {
 	}
 
 	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
-	annotate := BuildAnnotateExport(report, fragment)
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 
 	if got, want := marshalSorted(t, annotate.SupportingCalls), marshalSorted(t, full.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("supporting_calls diverge (identity case).\n full:     %s\n annotate: %s", want, got)
@@ -123,14 +123,14 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 
 	// R1: only object A is a finding. The fragment is built from this run.
 	reportR1 := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
-	fullR1 := BuildGraphFragmentExport(&engine.DepScanResult{
+	fullR1 := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: reportR1, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 	fragmentR1 := decodeFragmentForTest(t, marshalSorted(t, fullR1))
 
 	// R2: a new rule now flags object B's terminal (line 10) instead.
 	reportR2 := reportForTerminal(t, 10, "b.execute()", "com.app.Other.execute")
-	fullR2 := BuildGraphFragmentExport(&engine.DepScanResult{
+	fullR2 := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: reportR2, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 	if len(fullR2.SupportingCalls) == 0 {
@@ -138,7 +138,7 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 	}
 
 	// Annotate the R1-era fragment with the R2 report — no live callgraph.
-	annotateR2 := BuildAnnotateExport(reportR2, fragmentR1)
+	annotateR2 := buildAnnotateExport(prepareOIDFixtureReport(t, reportR2), fragmentR1)
 
 	if got, want := marshalSorted(t, annotateR2.SupportingCalls), marshalSorted(t, fullR2.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("changed-rules supporting_calls diverge: a new rule's finding did not re-derive its lifecycle from the cached fragment.\n full@R2:     %s\n annotate@R2: %s", want, got)
@@ -232,7 +232,7 @@ func TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs(t *testing
 	graph, dir := buildSupportingGraph(t)
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
-	full := BuildGraphFragmentExport(&engine.DepScanResult{
+	full := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 	if len(full.CryptoAnnotations) != 1 {
@@ -257,7 +257,7 @@ func TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs(t *testing
 	// the SAME supporting_call_ids — the Option-A precision guarantee end-to-end.
 	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
 	fragment.CryptoOperations = nil // exactly what component_code_graphs stores.
-	annotate := BuildAnnotateExport(report, fragment)
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 	if len(annotate.CryptoAnnotations) != 1 {
 		t.Fatalf("annotate: want 1 crypto annotation, got %d", len(annotate.CryptoAnnotations))
 	}
@@ -276,7 +276,7 @@ func TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment(t *testing.T) {
 	graph, dir := buildSupportingGraph(t)
 	report := reportForTerminal(t, 7, "a.finish()", "com.app.Maker.finish")
 
-	full := BuildGraphFragmentExport(&engine.DepScanResult{
+	full := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: report, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
 	if len(full.CryptoAnnotations) == 0 {
@@ -287,7 +287,7 @@ func TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment(t *testing.T) {
 	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
 	fragment.CryptoOperations = nil
 
-	annotate := BuildAnnotateExport(report, fragment)
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
 
 	if got, want := marshalSorted(t, annotate.CryptoAnnotations), marshalSorted(t, full.CryptoAnnotations); !bytes.Equal(got, want) {
 		t.Fatalf("crypto_annotations diverge from a structural-only fragment (crypto_call not re-derived).\n full:     %s\n annotate: %s", want, got)

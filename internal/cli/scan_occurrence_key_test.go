@@ -12,8 +12,18 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 )
+
+func resolvedReportForOutput(t testing.TB, report *entities.InterimReport) *oid.ResolvedReport {
+	t.Helper()
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		t.Fatalf("prepare report: %v", err)
+	}
+	return prepared.ReportClone()
+}
 
 func TestPrepareReportOccurrenceKeys_UsesParserAnchorsAndExportsThem(t *testing.T) {
 	dir := t.TempDir()
@@ -44,7 +54,7 @@ func TestPrepareReportOccurrenceKeys_UsesParserAnchorsAndExportsThem(t *testing.
 		}
 
 		outputPath := filepath.Join(t.TempDir(), "findings.json")
-		if err := output.NewJSONWriter().Write(report, outputPath); err != nil {
+		if err := output.NewJSONWriter().WriteResolved(resolvedReportForOutput(t, report), outputPath); err != nil {
 			t.Fatalf("write report: %v", err)
 		}
 		encoded, err := os.ReadFile(outputPath)
@@ -106,7 +116,7 @@ func TestPrepareReportOccurrenceKeys_DegradesOnSourceAnchorFailure(t *testing.T)
 	if result != nil || report.Findings[0].CryptographicAssets[0].OccurrenceKey != "" {
 		t.Fatal("source-anchor failure must preserve report output without an occurrence_key")
 	}
-	if err := output.NewJSONWriter().Write(report, filepath.Join(t.TempDir(), "findings.json")); err != nil {
+	if err := output.NewJSONWriter().WriteResolved(resolvedReportForOutput(t, report), filepath.Join(t.TempDir(), "findings.json")); err != nil {
 		t.Fatalf("write report after source-anchor failure: %v", err)
 	}
 }
@@ -170,7 +180,7 @@ class Crypto {
 		t.Fatal("report-only enrichment must build source anchors")
 	}
 	outputPath := filepath.Join(t.TempDir(), "findings.json")
-	if err := output.NewJSONWriter().Write(report, outputPath); err != nil {
+	if err := output.NewJSONWriter().WriteResolved(resolvedReportForOutput(t, report), outputPath); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
 	encoded, err := os.ReadFile(outputPath)

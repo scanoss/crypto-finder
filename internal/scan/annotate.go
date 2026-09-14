@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -40,7 +41,7 @@ import (
 //
 // Functions, internal_edges, and external_calls are intentionally left empty:
 // the structure lives in the imported fragment and is not rebuilt here.
-func BuildAnnotateExport(report *entities.InterimReport, fragment graphfrag.Fragment) graphfrag.GraphFragmentExport {
+func buildAnnotateExport(report *oid.ResolvedReport, fragment graphfrag.Fragment) graphfrag.GraphFragmentExport {
 	out := graphfrag.GraphFragmentExport{
 		SchemaVersion: graphfrag.SchemaVersion,
 		ScanMetadata: graphfrag.GraphFragmentScanMetadata{
@@ -91,6 +92,11 @@ func BuildAnnotateExport(report *entities.InterimReport, fragment graphfrag.Frag
 	out.SupportingCalls = deriveAnnotateSupportingCalls(report, fragment)
 	out.ScanMetadata.SupportingCalls = len(out.SupportingCalls)
 	return out
+}
+
+// BuildAnnotateExport is the OID-safe annotate projection seam.
+func BuildAnnotateExport(report *oid.ResolvedReport, fragment graphfrag.Fragment) graphfrag.GraphFragmentExport {
+	return buildAnnotateExport(report, fragment)
 }
 
 // buildAnnotateCryptoOp builds one crypto annotation from a detection finding +

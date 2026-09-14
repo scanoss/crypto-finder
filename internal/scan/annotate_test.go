@@ -93,7 +93,9 @@ func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing
 	result, component := annotateGoldenFixture(t)
 
 	// 1. Full scan path: build + export the graph fragment (callgraph present).
-	full := BuildGraphFragmentExport(result)
+	// Both paths consume the same prepared OID report.
+	resolved := prepareOIDFixtureReport(t, result.Report)
+	full := BuildGraphFragmentExport(result, resolved)
 	if len(full.CryptoAnnotations) == 0 {
 		t.Fatal("full export produced no crypto annotations; fixture is broken")
 	}
@@ -111,7 +113,7 @@ func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing
 
 	// 3. Annotate-only path: re-run annotation against the imported fragment,
 	//    using the SAME detection report but NO live callgraph.
-	annotate := BuildAnnotateExport(result.Report, fragment)
+	annotate := buildAnnotateExport(resolved, fragment)
 
 	// Invariant: crypto_annotations must be byte-identical.
 	fullJSON, err := json.Marshal(full.CryptoAnnotations)
@@ -134,14 +136,14 @@ func TestBuildAnnotateExport_DoesNotBuildCallgraph(t *testing.T) {
 	t.Parallel()
 
 	result, component := annotateGoldenFixture(t)
-	full := BuildGraphFragmentExport(result)
+	full := buildGraphFragmentExport(result)
 	fragmentJSON, _ := json.Marshal(full)
 	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
 	if err != nil {
 		t.Fatalf("DecodeFragment: %v", err)
 	}
 
-	annotate := BuildAnnotateExport(result.Report, fragment)
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, result.Report), fragment)
 
 	if len(annotate.Functions) != 0 {
 		t.Fatalf("annotate produced %d functions, want 0 (no callgraph)", len(annotate.Functions))
@@ -168,14 +170,14 @@ func TestBuildAnnotateExport_FunctionKeyFromImportedFragment(t *testing.T) {
 	t.Parallel()
 
 	result, component := annotateGoldenFixture(t)
-	full := BuildGraphFragmentExport(result)
+	full := buildGraphFragmentExport(result)
 	fragmentJSON, _ := json.Marshal(full)
 	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
 	if err != nil {
 		t.Fatalf("DecodeFragment: %v", err)
 	}
 
-	annotate := BuildAnnotateExport(result.Report, fragment)
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, result.Report), fragment)
 
 	gotKeys := make([]string, len(annotate.CryptoAnnotations))
 	for i, op := range annotate.CryptoAnnotations {

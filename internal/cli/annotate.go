@@ -32,6 +32,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/language"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
@@ -126,13 +127,12 @@ func runAnnotate(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	resolved, err := prepareAnnotateProjection(report)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeUnknown, failure.StageScan, "prepare exact OID report")
+	}
 
-	// Stamp the same finding source + finding IDs the full scan stamps before
-	// export, so finding_id is byte-identical across both paths.
-	engine.EnsureFindingSources(report)
-	engine.AssignFindingIDs(report)
-
-	payload := scanutil.BuildAnnotateExport(report, fragment)
+	payload := scanutil.BuildAnnotateExport(resolved, fragment)
 
 	if annotateOutput == "" {
 		data, err := scanutil.MarshalAnnotateExport(&payload)
@@ -152,6 +152,19 @@ func runAnnotate(_ *cobra.Command, _ []string) error {
 		Int("crypto_annotations", len(payload.CryptoAnnotations)).
 		Msg("Annotation written")
 	return nil
+}
+
+// prepareAnnotateProjection finalizes finding identity before exact OID resolution.
+// The returned report is the single object used by the annotation projection.
+func prepareAnnotateProjection(report *entities.InterimReport) (*oid.ResolvedReport, error) {
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	report.Version = entities.InterimFormatVersion
+	prepared, err := oid.NewDefaultResolver().PrepareReport(report)
+	if err != nil {
+		return nil, err
+	}
+	return prepared.ReportClone(), nil
 }
 
 func loadImportedFragment(path string) (graphfrag.Fragment, error) {

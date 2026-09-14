@@ -9,6 +9,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -92,7 +93,7 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 // siblings with the shared isLifecycleSibling policy, then build each entry with
 // the same id-based metadata helpers, so the output matches a full
 // `scan --export-graph-fragment` for the same source + rules.
-func deriveAnnotateSupportingCalls(report *entities.InterimReport, fragment graphfrag.Fragment) []graphfrag.GraphFragmentSupporting {
+func deriveAnnotateSupportingCalls(report *oid.ResolvedReport, fragment graphfrag.Fragment) []graphfrag.GraphFragmentSupporting {
 	if report == nil {
 		return nil
 	}
