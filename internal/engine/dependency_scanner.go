@@ -589,12 +589,28 @@ func (ds *DependencyScanner) collectPackageSets(
 
 	if len(resolved.WorkspaceMembers) > 0 {
 		// Workspace project: each member is a separate package root
+		memberDirs := make([]string, 0, len(resolved.WorkspaceMembers))
 		for _, member := range resolved.WorkspaceMembers {
+			memberDirs = append(memberDirs, member.Dir)
 			sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 				Dir:        member.Dir,
 				ImportPath: member.Name,
 			})
 		}
+		// The root itself carries source in some ecosystems. A Cargo workspace
+		// root is a virtual manifest with nothing to parse, so this is a no-op
+		// there; an npm workspace root routinely has its own index.js AND its own
+		// dependencies, and taking only the members left that file in no package
+		// at all — the finding was still reported, with no chain behind it.
+		//
+		// Members are excluded from the root's walk because they live UNDER the
+		// root: without that the root re-parses each member under a second import
+		// path, and one function acquires two identities.
+		sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
+			Dir:         userTarget,
+			ImportPath:  resolved.RootModule,
+			ExcludeDirs: memberDirs,
+		})
 	} else {
 		// Single-project: the target directory is the package root
 		sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
