@@ -48,6 +48,10 @@ type npmLockPackage struct {
 	Version      string            `json:"version"`
 	Dependencies map[string]string `json:"dependencies"`
 	Dev          bool              `json:"dev"`
+	// Link marks a node_modules entry that is a symlink to a workspace member.
+	// It carries no version of its own: the real entry is keyed by the member's
+	// own path elsewhere in the same map.
+	Link bool `json:"link"`
 }
 
 // npmLockV1Entry is one entry of a v1 `dependencies` map, which nests instead of
@@ -91,7 +95,7 @@ func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResu
 		return nil, err
 	}
 
-	packages, rootDeps := npmPackagesByInstallPath(manifest, lock)
+	packages, workspacePaths, rootDeps := npmPackagesByInstallPath(manifest, lock)
 
 	result := &ResolveResult{
 		RootModule:     npmRootModule(manifest, lock),
@@ -100,6 +104,7 @@ func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResu
 		VersionedGraph: make(map[string][]Ref),
 	}
 
+	appendNpmWorkspaceMembers(result, targetDir, workspacePaths)
 	missing := appendNpmDependencies(result, targetDir, packages)
 	if len(result.Dependencies) == 0 && len(packages) > 0 {
 		return nil, fmt.Errorf(
@@ -166,9 +171,9 @@ func npmRootModule(manifest *npmManifestFile, lock *npmLockFile) string {
 func npmPackagesByInstallPath(
 	manifest *npmManifestFile,
 	lock *npmLockFile,
-) (map[string]npmLockPackage, []string) {
-	packages := make(map[string]npmLockPackage)
-	var rootDeps []string
+) (packages, workspacePaths map[string]npmLockPackage, rootDeps []string) {
+	packages = make(map[string]npmLockPackage)
+	workspacePaths = make(map[string]npmLockPackage)
 
 	if len(lock.Packages) > 0 {
 		for installPath, pkg := range lock.Packages {
@@ -176,7 +181,17 @@ func npmPackagesByInstallPath(
 				rootDeps = sortedKeys(pkg.Dependencies)
 				continue
 			}
-			if pkg.Dev {
+			if pkg.Dev || pkg.Link {
+				// A link entry is the symlink npm drops in node_modules for a
+				// workspace member. Its target is already keyed by its own path,
+				// and the entry itself has no version, so taking it would report
+				// the same source twice and once without a coordinate.
+				continue
+			}
+			if !strings.HasPrefix(installPath, npmModulesSlash) {
+				// A path outside node_modules is the user's OWN package in a
+				// workspace, not something installed for them.
+				workspacePaths[installPath] = pkg
 				continue
 			}
 			packages[installPath] = pkg
@@ -184,11 +199,11 @@ func npmPackagesByInstallPath(
 		if len(rootDeps) == 0 {
 			rootDeps = sortedKeys(manifest.Dependencies)
 		}
-		return packages, rootDeps
+		return packages, workspacePaths, rootDeps
 	}
 
 	collectNpmV1Entries("", lock.Dependencies, packages)
-	return packages, sortedKeys(manifest.Dependencies)
+	return packages, workspacePaths, sortedKeys(manifest.Dependencies)
 }
 
 // collectNpmV1Entries flattens the nested v1 shape into install paths, which is
@@ -226,6 +241,23 @@ func appendNpmDependencies(result *ResolveResult, targetDir string, packages map
 		})
 	}
 	return missing
+}
+
+// appendNpmWorkspaceMembers records the user's own packages. They are source the
+// consumer wrote, so attributing them to an external coordinate would put author
+// code under a dependency's name.
+func appendNpmWorkspaceMembers(result *ResolveResult, targetDir string, workspacePaths map[string]npmLockPackage) {
+	for _, installPath := range sortedPackagePaths(workspacePaths) {
+		pkg := workspacePaths[installPath]
+		dir := filepath.Join(targetDir, filepath.FromSlash(installPath))
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			continue
+		}
+		result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
+			Name: npmModuleName(installPath, pkg),
+			Dir:  dir,
+		})
+	}
 }
 
 func populateNpmGraph(result *ResolveResult, packages map[string]npmLockPackage, rootDeps []string) {
