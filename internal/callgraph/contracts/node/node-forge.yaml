@@ -1,0 +1,238 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: node-forge
+  coordinates:
+    - node-forge
+  version_range: ">=1.0.0"
+  description: "node-forge PKI, message digest, cipher and key-material APIs"
+
+# Every `method` key below was read off an EXPORTED CALL GRAPH, not written from
+# the node-forge documentation. Scanning three real published consumers
+# (selfsigned 4.0.1, acme-client 5.4.0, node-opcua-pki 2.0.2) with
+# --export-callgraph shows the parser emits a node-forge entry point as the
+# import-bound path it is written with -- `forge.pki.certificateFromPem` --
+# because the receiver is the binding the import created.
+#
+# The `return` types are what carry the second half. A consumer writes
+# `const cert = forge.pki.createCertificate(); cert.setSubject(attrs);` and the
+# method call on the returned object is the shape the parser cannot type on its
+# own: measured on the same corpus, `clientp7.addCertificate` and
+# `cert.setSubject` are emitted against the CONSUMER's own module. Declaring the
+# return type is what gives those calls an owner.
+contracts:
+  # --- message digests -------------------------------------------------------
+  - method: forge.md.md5.create
+    arity: 0
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: factory
+  - method: forge.md.sha1.create
+    arity: 0
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: factory
+  - method: forge.md.sha256.create
+    arity: 0
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: factory
+  - method: forge.md.sha384.create
+    arity: 0
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: factory
+  - method: forge.md.sha512.create
+    arity: 0
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: factory
+  - method: node-forge.MessageDigest.update
+    arity: 1
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: operation
+  - method: node-forge.MessageDigest.update
+    arity: 2
+    return: { type: node-forge.MessageDigest, confidence: high }
+    role: operation
+  - method: node-forge.MessageDigest.digest
+    arity: 0
+    return: { type: node-forge.ByteBuffer, confidence: high }
+    role: output
+  - method: node-forge.ByteBuffer.toHex
+    arity: 0
+    return: { type: builtins.string, confidence: high }
+    role: output
+
+  # --- MAC -------------------------------------------------------------------
+  - method: forge.hmac.create
+    arity: 0
+    return: { type: node-forge.Hmac, confidence: high }
+    role: factory
+  - method: node-forge.Hmac.start
+    arity: 2
+    return: { type: node-forge.Hmac, confidence: high }
+    role: config
+  - method: node-forge.Hmac.digest
+    arity: 0
+    return: { type: node-forge.ByteBuffer, confidence: high }
+    role: output
+
+  # --- block ciphers ---------------------------------------------------------
+  - method: forge.cipher.createCipher
+    arity: 2
+    return: { type: node-forge.Cipher, confidence: high }
+    role: factory
+  - method: forge.cipher.createDecipher
+    arity: 2
+    return: { type: node-forge.Cipher, confidence: high }
+    role: factory
+  - method: node-forge.Cipher.start
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: config
+  - method: node-forge.Cipher.update
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: operation
+  - method: node-forge.Cipher.finish
+    arity: 0
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+  # --- KDF -------------------------------------------------------------------
+  - method: forge.pkcs5.pbkdf2
+    arity: 4
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: forge.pkcs5.pbkdf2
+    arity: 5
+    return: { type: builtins.string, confidence: high }
+    role: output
+
+  # --- RSA key material ------------------------------------------------------
+  - method: forge.pki.rsa.generateKeyPair
+    arity: 1
+    return: { type: node-forge.KeyPair, confidence: high }
+    role: factory
+  - method: forge.pki.rsa.generateKeyPair
+    arity: 2
+    return: { type: node-forge.KeyPair, confidence: high }
+    role: factory
+  - method: forge.pki.rsa.setPublicKey
+    arity: 2
+    return: { type: node-forge.PublicKey, confidence: high }
+    role: factory
+  - method: forge.pki.privateKeyFromPem
+    arity: 1
+    return: { type: node-forge.PrivateKey, confidence: high }
+    role: factory
+  - method: forge.pki.privateKeyToPem
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: forge.pki.publicKeyFromPem
+    arity: 1
+    return: { type: node-forge.PublicKey, confidence: high }
+    role: factory
+  - method: forge.pki.publicKeyToPem
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+
+  # --- certificates and certification requests -------------------------------
+  - method: forge.pki.createCertificate
+    arity: 0
+    return: { type: node-forge.Certificate, confidence: high }
+    role: factory
+  - method: forge.pki.certificateFromPem
+    arity: 1
+    return: { type: node-forge.Certificate, confidence: high }
+    role: factory
+  - method: forge.pki.certificateToPem
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: forge.pki.createCertificationRequest
+    arity: 0
+    return: { type: node-forge.CertificationRequest, confidence: high }
+    role: factory
+  - method: forge.pki.certificationRequestFromPem
+    arity: 1
+    return: { type: node-forge.CertificationRequest, confidence: high }
+    role: factory
+  - method: forge.pki.certificationRequestToPem
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: forge.pki.createCaStore
+    arity: 1
+    return: { type: node-forge.CaStore, confidence: high }
+    role: factory
+  - method: forge.pki.verifyCertificateChain
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: node-forge.Certificate.setSubject
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: config
+  - method: node-forge.Certificate.setIssuer
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: config
+  - method: node-forge.Certificate.setExtensions
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: config
+  - method: node-forge.Certificate.sign
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: operation
+  - method: node-forge.Certificate.sign
+    arity: 2
+    return: { type: builtins.void, confidence: high }
+    role: operation
+  - method: node-forge.CertificationRequest.sign
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: operation
+  - method: node-forge.CertificationRequest.sign
+    arity: 2
+    return: { type: builtins.void, confidence: high }
+    role: operation
+
+  # --- PKCS#7 ----------------------------------------------------------------
+  - method: forge.pkcs7.createSignedData
+    arity: 0
+    return: { type: node-forge.Pkcs7SignedData, confidence: high }
+    role: factory
+  - method: forge.pkcs7.messageToPem
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: forge.pkcs7.messageToPem
+    arity: 2
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: node-forge.Pkcs7SignedData.addCertificate
+    arity: 1
+    return: { type: builtins.void, confidence: high }
+    role: operation
+
+  # --- Ed25519 ---------------------------------------------------------------
+  - method: forge.pki.ed25519.generateKeyPair
+    arity: 0
+    return: { type: node-forge.Ed25519KeyPair, confidence: high }
+    role: factory
+  - method: forge.pki.ed25519.sign
+    arity: 1
+    return: { type: node-forge.ByteBuffer, confidence: high }
+    role: operation
+  - method: forge.pki.ed25519.verify
+    arity: 1
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # --- RNG -------------------------------------------------------------------
+  - method: forge.random.getBytesSync
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+
+hierarchy: {}
