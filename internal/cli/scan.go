@@ -181,7 +181,7 @@ func init() {
 			"Same gitignore-style syntax as scanoss.json settings.skip.patterns.scanning. "+
 			"Patterns are added on top of the built-in defaults unless --no-default-exclusions is also set. "+
 			"Duplicates are removed automatically.")
-	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, python, rust")
+	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, node, python, rust")
 
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8; Java max 2)")
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
@@ -970,6 +970,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			depRegistry.Register("java", dependency.NewJavaResolver())
 			depRegistry.Register("python", dependency.NewPipResolver())
 			depRegistry.Register("rust", dependency.NewCargoResolver())
+			depRegistry.Register(ecosystemNode, dependency.NewNpmResolver())
 
 			resolver, resolverErr := depRegistry.Get(ecosystem)
 			if resolverErr != nil {
