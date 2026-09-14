@@ -12,11 +12,40 @@ library:
 # concrete curve crate, so it is not resolvable here and no curve metadata is
 # claimed.
 #
+# ADDED FOR THE 0.16 ERA'S ACTUAL CONSTRUCTORS. `random` is the ONLY key
+# generator this era has -- verified by compiling against ecdsa 0.16.9, where
+# `SigningKey::generate` fails with E0599 and rustc enumerates the era's whole
+# constructor set as `random`, `from_bytes`, `from_slice` (signing.rs:87/:92/:99).
+# `from_encoded_point` (verifying.rs:109) is this era's SEC1 point decoder; it is
+# renamed to `from_sec1_point` at 0.17.0 and so belongs to this file only.
+#
+# THE ENTRIES ADDED HERE DECLARE THE CONCRETE KEY TYPE in `return.type` even though
+# each constructor returns a `Result`. `Return.Type` is what
+# `rust_type_resolver.go:41` assigns to `fn.ReturnType`, i.e. it types the RECEIVER
+# for chain resolution, so `core::result::Result` would lose the key's identity for
+# anything chained off it; the `Result<..>` spelling belongs in
+# `canonical_return_type`. Measured across the rust contract directory: 195 entries
+# whose declared return is a `Result` name the concrete type against 94 that name the
+# `Result`. The pre-existing `from_slice` entry below is one of the 94 and is LEFT
+# UNCHANGED -- it is delivered, and correcting it is not this change's to make.
+#
 # skipped-non-crypto: Signature encoding and byte conversions.
 contracts:
   - method: ecdsa::SigningKey.generate
     arity: 1
     return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.random
+    arity: 1
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::SigningKey.from_bytes
+    arity: 1
+    return: {type: ecdsa::SigningKey, confidence: high}
+    role: factory
+  - method: ecdsa::VerifyingKey.from_encoded_point
+    arity: 1
+    return: {type: ecdsa::VerifyingKey, confidence: high}
     role: factory
   - method: ecdsa::SigningKey.from_slice
     arity: 1

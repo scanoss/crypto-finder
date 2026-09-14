@@ -1,0 +1,438 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: certbot
+  coordinates:
+    - certbot
+  # DELIBERATELY BROADER THAN ANY SINGLE ENTRY, AND THAT IS A STATED DEVIATION
+  # RATHER THAN AN OVERSIGHT. This range spans the package's whole matrix range,
+  # but the entries below do NOT all hold across it: `make_csr` is 0.6.0-0.13.0,
+  # `read_csr_file` is 5.3.0+, `init_save_key`/`init_save_csr` are 0.6.0-1.32.0,
+  # the two `pyopenssl_*` helpers are 0.6.0-3.3.0, and `certbot.ocsp` has two
+  # holes (absent 0.6.0-0.9.3 and 1.0.0-1.2.0). No single range is true of every
+  # entry, so the rust convention would be to split this into one file per
+  # window.
+  #
+  # Not done here, and the reason is measured rather than assumed: `VersionRange`
+  # is PARSED AND NEVER CONSULTED. Its only three occurrences in the analyzer are
+  # the struct field (contracts.go:60), the yaml tag (:383) and the assignment
+  # from the parsed document (:471); no call site compares, filters or resolves
+  # against it. So splitting would change no served answer and would triple the
+  # file count for documentation alone, while the per-symbol windows — which are
+  # what a reader actually needs — are already stated exhaustively below and are
+  # each traced to that version's own crypto_util.py.
+  #
+  # If `VersionRange` ever becomes load-bearing, this file MUST be split before
+  # that lands, because the range asserted here would then over-claim five
+  # separate symbols.
+  version_range: ">=0.6.0,<6.0"
+  description: "certbot — ACME client key, CSR, certificate and OCSP helpers"
+
+# EVERY key below was READ OFF AN EXPORTED CALL GRAPH, not written from the API.
+# The pre-contract export of a probe consumer emitted exactly these
+# `certbot.crypto_util.<fn>` and `certbot.ocsp.<Type>.<method>` spellings with
+# `(?, ?)` signatures and empty parameter_types, which is what an absent
+# contract looks like; the same export after this file resolves them.
+#
+# PYTHON KEYS NEED NO SEPARATOR SUBSTITUTION. `rustAuthoredKey` rewrites the
+# second-to-last dot to "::" for Rust, and `rustContractsFor` — the only caller
+# — returns early unless `kb.Ecosystem == "rust"` (contracts.go:207-210). So a
+# python contract is authored in exactly the dotted form the parser emits.
+#
+# ARITY: python resolution is arity-TOLERANT (ContractsForTolerant, plus
+# lowestArityByName) — exact arity first, then name-only with a lowest-arity
+# tiebreak, which resolves call sites BOTH above and below the declared arity.
+# certbot's API is almost entirely keyword arguments with defaults, so each
+# method is declared ONCE at the arity that names its meaningful positional
+# arguments, and every other arity resolves through that fallback. That is not
+# always the "minimum callable" arity: from 1.16.0 every make_key parameter has
+# a default, so make_key is callable at arity 0 while the entry below declares
+# 1. The probe emits make_key at arity 1 and 2 and generate_key at 3 and 4, and
+# all four resolve. The ONE method that needs two entries is
+# RevocationChecker.ocsp_revoked, because its arity change carries a different
+# parameter TYPE — see the note there.
+#
+# PER-SYMBOL VERSION WINDOWS. library.version_range spans the whole matrix, but
+# the symbols do not, and each window below was read from that version's own
+# crypto_util.py rather than from a changelog:
+#   make_key                      0.6.0+          (RSA-only until 1.16.0)
+#   generate_key                  1.16.0+         (absent from 1.15.0)
+#   init_save_key                 0.6.0-1.32.0    (absent from 2.0.0)
+#   generate_csr                  1.16.0+         (absent from 1.15.0)
+#   init_save_csr                 0.6.0-1.32.0    (absent from 2.0.0)
+#   make_csr                      0.6.0-0.13.0    (absent from 0.14.0)
+#   valid_csr, valid_privkey,
+#     csr_matches_pubkey          0.6.0+
+#   import_csr_file               0.7.0+          (absent from 0.6.0)
+#   read_csr_file                 5.3.0+          (absent from 5.2.1)
+#   sha256sum                     0.15.0+         (absent from 0.14.0)
+#   verify_renewable_cert,
+#     verify_renewable_cert_sig,
+#     verify_fullchain,
+#     verify_cert_matches_priv_key 0.15.0+        (absent from 0.14.0)
+#   verify_signed_payload         0.32.0+         (absent from 0.31.0)
+#   cert_and_chain_from_fullchain 0.22.0+         (absent from 0.21.0)
+#   find_chain_with_issuer        1.6.0+          (absent from 1.5.0)
+#   pyopenssl_load_certificate,
+#     dump_pyopenssl_chain        0.6.0-3.3.0     (absent from 4.0.0)
+#   certbot.ocsp.RevocationChecker  0.10.0-0.40.1 and 1.3.0+, with TWO holes:
+#     the module is absent from 0.6.0-0.9.3 and again from 1.0.0-1.2.0, where
+#     the 1.0 reorganisation moved it to the private certbot/_internal/ocsp.py.
+#     From 5.5.0 certbot/ocsp.py is a DEPRECATED re-export of
+#     certbot._internal.ocsp and still resolves the same coordinate. Measured by
+#     listing every sdist; an earlier draft said 0.6.0+ and was wrong.
+
+contracts:
+  # ── private-key generation ──────────────────────────────────────────────────
+  # make_key returns the PEM bytes; generate_key and init_save_key wrap it and
+  # return certbot's Key namedtuple (5.6.0 src/certbot/crypto_util.py:240, :53;
+  # 1.32.0 certbot/crypto_util.py:104 for init_save_key).
+  #
+  # The 0.6.0 docstring says ":rtype: str" for make_key, but the value comes
+  # from OpenSSL.crypto.dump_privatekey, which is bytes on python 3; every
+  # annotated release says `-> bytes`. Declared as bytes rather than carrying a
+  # python-2-era docstring forward.
+  - method: certbot.crypto_util.make_key
+    arity: 1
+    parameter_types: ["builtins.int"]
+    canonical_return_type: builtins.bytes
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: certbot.crypto_util.generate_key
+    arity: 2
+    parameter_types: ["builtins.int", "builtins.str"]
+    canonical_return_type: certbot.util.Key
+    return:
+      type: certbot.util.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: certbot.crypto_util.init_save_key
+    arity: 2
+    parameter_types: ["builtins.int", "builtins.str"]
+    canonical_return_type: certbot.util.Key
+    return:
+      type: certbot.util.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  # ── certificate signing requests ────────────────────────────────────────────
+  # generate_csr and init_save_csr return certbot's CSR namedtuple. The
+  # signature over the CSR is produced by acme.crypto_util.make_csr, a different
+  # package (5.6.0 src/certbot/crypto_util.py:120), so no signature algorithm is
+  # declared here.
+  #
+  # make_csr is the 0.6.0-0.13.0 predecessor and is the one CSR entry point that
+  # signed in certbot's OWN source: 0.6.0 certbot/crypto_util.py:123 calls
+  # req.sign(pkey, "sha256"). It returns a (PEM, DER) tuple rather than a CSR
+  # object, which is why it is a separate entry and not an alias.
+  - method: certbot.crypto_util.generate_csr
+    arity: 3
+    parameter_types: ["certbot.util.Key", "builtins.list", "builtins.str"]
+    canonical_return_type: certbot.util.CSR
+    return:
+      type: certbot.util.CSR
+      confidence: high
+    role: factory
+
+  - method: certbot.crypto_util.init_save_csr
+    arity: 3
+    parameter_types: ["certbot.util.Key", "builtins.set", "builtins.str"]
+    canonical_return_type: certbot.util.CSR
+    return:
+      type: certbot.util.CSR
+      confidence: high
+    role: factory
+
+  - method: certbot.crypto_util.make_csr
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.list"]
+    canonical_return_type: builtins.tuple
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+
+  - method: certbot.crypto_util.read_csr_file
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.bytes"]
+    canonical_return_type: certbot.util.CSR
+    return:
+      type: certbot.util.CSR
+      confidence: high
+    role: output
+
+  # import_csr_file returns a 3-tuple (format, CSR, domains) — 5.6.0 line 202.
+  # read_csr_file, added at 5.3.0, returns the CSR object alone; the two are
+  # NOT interchangeable and the difference is only visible in the source.
+  - method: certbot.crypto_util.import_csr_file
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.bytes"]
+    canonical_return_type: builtins.tuple
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: output
+
+  # ── validation and correspondence checks ────────────────────────────────────
+  - method: certbot.crypto_util.valid_csr
+    arity: 1
+    parameter_types: ["builtins.bytes"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  # 1.32.0 crypto_util.py:321 annotates `privkey: str`; 5.6.0:287 widens it to
+  # Union[str, bytes]. `str` is the better single choice for the range, and a
+  # one-arm parameter_types cannot express the union.
+  - method: certbot.crypto_util.valid_privkey
+    arity: 1
+    parameter_types: ["builtins.str"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  - method: certbot.crypto_util.csr_matches_pubkey
+    arity: 2
+    parameter_types: ["builtins.bytes", "builtins.bytes"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  # ── signature verification ──────────────────────────────────────────────────
+  # All five raise on failure and return None, so the useful contract data is the
+  # role and the parameter types rather than a return value. verify_signed_payload
+  # branches on the public-key type at runtime (5.6.0 line 365-371 — RSA/PKCS1v15
+  # or ECDSA), which is why no algorithm is declared for it anywhere.
+  - method: certbot.crypto_util.verify_signed_payload
+    arity: 4
+    parameter_types:
+      # 5.6.0 src/certbot/crypto_util.py:348-352 declares this parameter as a
+      # SEVEN-WAY union (DSA, Ed25519, Ed448, EllipticCurve, RSA, X25519, X448
+      # public keys) and the body branches on it at runtime (:363 RSA/PKCS1v15,
+      # :367 EC/ECDSA). An earlier draft declared RSAPublicKey here, which
+      # contradicted this family's own rule header - it says naming RSA or
+      # ECDSA would be wrong for half the real call sites - and would have
+      # handed every call site an RSA type. The union has no useful common
+      # supertype in this vocabulary, so the neutral object type is declared.
+      - "builtins.object"
+      - "builtins.bytes"
+      - "builtins.bytes"
+      - "cryptography.hazmat.primitives.hashes.HashAlgorithm"
+    canonical_return_type: builtins.NoneType
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: certbot.crypto_util.verify_renewable_cert
+    arity: 1
+    parameter_types: ["certbot.interfaces.RenewableCert"]
+    canonical_return_type: builtins.NoneType
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: certbot.crypto_util.verify_renewable_cert_sig
+    arity: 1
+    parameter_types: ["certbot.interfaces.RenewableCert"]
+    canonical_return_type: builtins.NoneType
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # verify_fullchain PERFORMS NO CRYPTOGRAPHY and deliberately has no rule.
+  # 5.6.0 src/certbot/crypto_util.py:412 reads three files and compares
+  # strings: `if (cert + chain) != fullchain`. No key, no hash, no signature,
+  # not even a certificate parse. It is kept here as a graph node with role
+  # `output` so a chain through it still resolves; an earlier draft declared
+  # `operation` and shipped a rule calling it "chain signature verification",
+  # which was false.
+  - method: certbot.crypto_util.verify_fullchain
+    arity: 1
+    parameter_types: ["certbot.interfaces.RenewableCert"]
+    canonical_return_type: builtins.NoneType
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: output
+
+  # A public/private correspondence check, not a signature check: 5.6.0:383-386
+  # is SSL.Context.use_certificate_file + use_privatekey_file +
+  # check_privatekey(). Its rule lives in related-crypto-material/private-key.
+  - method: certbot.crypto_util.verify_cert_matches_priv_key
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.str"]
+    canonical_return_type: builtins.NoneType
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # ── digest ──────────────────────────────────────────────────────────────────
+  - method: certbot.crypto_util.sha256sum
+    arity: 1
+    parameter_types: ["builtins.str"]
+    canonical_return_type: builtins.str
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+
+  # ── certificate and chain handling ──────────────────────────────────────────
+  # pyopenssl_load_certificate returns (X509, FILETYPE) — 3.0.0 line 393 — and
+  # both it and dump_pyopenssl_chain were removed at 4.0.0 with the pyOpenSSL
+  # dependency, so their declared types name types that no longer exist in the
+  # newest releases in range. That is why the window is stated per symbol above.
+  - method: certbot.crypto_util.pyopenssl_load_certificate
+    arity: 1
+    parameter_types: ["builtins.bytes"]
+    canonical_return_type: builtins.tuple
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: output
+
+  - method: certbot.crypto_util.dump_pyopenssl_chain
+    arity: 1
+    parameter_types: ["builtins.list"]
+    canonical_return_type: builtins.bytes
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: certbot.crypto_util.cert_and_chain_from_fullchain
+    arity: 1
+    parameter_types: ["builtins.str"]
+    canonical_return_type: builtins.tuple
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: output
+
+  - method: certbot.crypto_util.find_chain_with_issuer
+    arity: 2
+    parameter_types: ["builtins.list", "builtins.str"]
+    canonical_return_type: builtins.str
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── OCSP revocation checking ────────────────────────────────────────────────
+  # TWO constructor keys, and both are needed. The parser emits
+  # `certbot.ocsp.RevocationChecker.<init>` at arity 0 for the bare
+  # `RevocationChecker()` spelling under a symbol import, and the plain
+  # `certbot.ocsp.RevocationChecker` for the module-qualified
+  # `certbot.ocsp.RevocationChecker(True)` spelling. Both were read off the
+  # export; declaring only one leaves the other joining nothing.
+  #
+  # The methods are contracted rather than matched by a rule: a receiver-method
+  # pattern was measured claiming an unrelated library's same-named method, and
+  # python has no receiver filter at the serving layer, so supporting calls are
+  # derived structurally from this call graph instead.
+  #
+  # MEASURED, and worth knowing before anyone "fixes" it: the arity-1
+  # `certbot.ocsp.RevocationChecker` entry DOES change the export — the node
+  # gains `parameter_types` and a fully-qualified `return_type`, rendering
+  # `(builtins.bool): certbot.ocsp.RevocationChecker`.
+  #
+  # THE ARITY-0 `.<init>` ENTRY'S RETURN DECLARATION IS INERT FOR THE EXPORT, AND
+  # BOTH FIELDS WERE ISOLATED SEPARATELY TO ESTABLISH THAT. Replacing ONLY
+  # `canonical_return_type` with a marker, then ONLY `return.type` with a marker,
+  # and re-exporting each time: the marker never appears, and the node renders
+  # `(): RevocationChecker` with a bare, unqualified return in all three cases
+  # including the unmodified baseline. The python parser resolves a constructor's
+  # type from its class name before any contract is consulted, so neither field
+  # can reach this node.
+  #
+  # The entry is kept regardless, for a reason that has nothing to do with the
+  # export: the OCSP rule's `crypto.api` is exactly
+  # `certbot.ocsp.RevocationChecker.<init>`, and without a matching entry the
+  # mined payload synthesizes an entry point that can never resolve. It is
+  # pinned by the exact-set test rather than by the export, and the declared
+  # type is what a future parser change would make correct rather than wrong.
+  - method: certbot.ocsp.RevocationChecker.<init>
+    arity: 0
+    parameter_types: []
+    canonical_return_type: certbot.ocsp.RevocationChecker
+    return:
+      type: certbot.ocsp.RevocationChecker
+      confidence: high
+    role: factory
+
+  - method: certbot.ocsp.RevocationChecker
+    arity: 1
+    parameter_types: ["builtins.bool"]
+    canonical_return_type: certbot.ocsp.RevocationChecker
+    return:
+      type: certbot.ocsp.RevocationChecker
+      confidence: high
+    role: factory
+
+  # ocsp_revoked CHANGED ARITY inside the matrix range, so it needs two entries
+  # rather than relying on the tolerant fallback: 0.10.0 certbot/ocsp.py:33 is
+  # `ocsp_revoked(self, cert_path, chain_path)` (two path strings) and from
+  # 0.40.1 certbot/ocsp.py:53 it is `ocsp_revoked(self, cert)` (a
+  # RenewableCert). With only the arity-1 entry an early-window two-argument
+  # call resolved through the fallback and was handed a RenewableCert type for
+  # two strings.
+  - method: certbot.ocsp.RevocationChecker.ocsp_revoked
+    arity: 1
+    parameter_types: ["certbot.interfaces.RenewableCert"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  - method: certbot.ocsp.RevocationChecker.ocsp_revoked
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.str"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  - method: certbot.ocsp.RevocationChecker.ocsp_revoked_by_paths
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.str"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output

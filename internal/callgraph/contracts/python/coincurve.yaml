@@ -1,0 +1,717 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: coincurve
+  coordinates:
+    - coincurve
+  version_range: ">=4.1.3,<22"
+  description: >-
+    coincurve — Python CFFI bindings to libsecp256k1. PrivateKey / PublicKey /
+    PublicKeyXOnly lifecycle: generation, loading, ECDSA signing and
+    verification, recoverable ECDSA, BIP-340 Schnorr, ECDH key agreement and
+    key-material serialization. Read from the sdists of 4.4.0 - 21.0.0 and the
+    4.1.3 wheel (coincurve/keys.py, coincurve/utils.py, coincurve/ecdsa.py;
+    src/coincurve/... from 20.0.0).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE CURVE IS NOT A PARAMETER, so nothing here is conditioned on one. There is
+# no curve argument anywhere in the public API — `grep -i curve
+# src/coincurve/keys.py` at 21.0.0 returns only import lines and a bug-report
+# URL — and every operation calls `coincurve._libsecp256k1.lib.secp256k1_*`.
+#
+# BOTH MODULE SPELLINGS ARE DECLARED, AND THAT IS NOT REDUNDANCY.
+# The Python key the call graph emits follows THE CONSUMER'S IMPORT, measured on
+# a probe consumer with crypto-finder built from this worktree:
+#
+#     from coincurve import PrivateKey        -> coincurve.PrivateKey.<init>
+#     from coincurve.keys import PrivateKey   -> coincurve.keys.PrivateKey.<init>
+#
+# and neither key resolves the other. `coincurve/__init__.py` re-exports
+# GLOBAL_CONTEXT, Context, PrivateKey, PublicKey, PublicKeyXOnly and
+# verify_signature from the package root while they are defined in
+# `coincurve.keys` / `coincurve.utils` / `coincurve.context`, and BOTH spellings
+# occur in real code: the package's own tests import the deep path
+# (21.0.0 tests/test_keys.py:6) while published consumers import the root. So
+# each method carries two entries, one per spelling, with the return type
+# spelled to match its own key so the chains close within one spelling.
+#
+# THE RETURN TYPE IS WHAT MAKES THE RECEIVER METHODS RESOLVE AT ALL. Without a
+# contracted constructor return, the graph keys a receiver call on the
+# CONSUMER'S VARIABLE PATH — measured as `consumer.loaded.sign(?)` before this
+# file existed — which no contract can ever join. The factory entries are
+# therefore load bearing for every operation entry below them, and the keys here
+# were read off an exported call graph and then re-exported until nothing moved,
+# not written from the API.
+#
+# ARITY: ONE ENTRY PER METHOD, AND THAT IS DELIBERATE. `ContractsForTolerant`
+# (internal/callgraph/contracts/contracts.go) tries an exact-arity match and,
+# for a Python KB only, falls back to a name-only match with the lowest-arity
+# candidate as the deterministic tiebreak — precisely because Python default
+# arguments and kwargs mean one crypto call site appears at several arities.
+# Every method below takes optional trailing arguments (`context=GLOBAL_CONTEXT`
+# on the factories, `hasher=sha256` and `custom_nonce=DEFAULT_NONCE` on the
+# signing methods), so the declared arity is the REQUIRED-argument count and the
+# tolerant fallback covers the rest. Declaring one entry per observed arity would
+# multiply this file by four and change nothing.
+#
+# NO `parameters:` BLOCK, AND NO CONTRIBUTED PROPERTY. Nothing in this API
+# derives a metadata value from an argument: the key size is fixed at 32 bytes
+# (`KEY_SIZE = 32`, 21.0.0 src/coincurve/utils.py) and the curve is fixed, so
+# `keySize`/`keyLength` come from the rules as constants rather than from an
+# argument length. A metadata-contributing parameter here would be a fiction.
+#
+# VERSION WINDOWS INSIDE `version_range`. The range covers the 34 committed CSV
+# rows (4.1.3 - 21.0.0), but three symbols arrive later than its lower bound and
+# are marked at their entry below:
+#   `PublicKey.combine_keys`                       >= 5.1.0  (absent in 5.0.1)
+#   `PublicKeyXOnly` and all its methods           >= 18.0.0 (absent in 17.0.0)
+#   `PrivateKey.sign_schnorr`                      >= 18.0.0 (absent in 17.0.0)
+# There is no DISJOINT pair among them: every window is left-bounded and
+# open-ended to 21.0.0, and they nest (4.1.3 contains 5.1.0 contains 18.0.0), so
+# no combination of two symbols here is uncompilable in every release. That is
+# stated rather than pinned by a fixture because there is nothing to pin.
+#
+# DISPOSITION OF THE REST OF THE PUBLIC SURFACE
+#   PrivateKey.add / multiply, PublicKey.add / multiply / combine,
+#   PublicKeyXOnly.tweak_add       skipped-non-crypto — EC point and scalar
+#                                  arithmetic for BIP-32/BIP-341 derivation, not
+#                                  a sign/verify/keygen/key-agree operation.
+#                                  Same disposition as the rust/secp256k1 family.
+#   PrivateKey.to_hex / to_int,
+#   PublicKey.point                skipped-non-crypto — integer and hex
+#                                  re-encodings of the same scalar or point.
+#   coincurve.utils bytes_to_int /
+#   int_to_bytes / int_to_bytes_padded /
+#   hex_to_bytes / pad_hex / chunk_data /
+#   der_to_pem / pem_to_der /
+#   pad_scalar / validate_secret   skipped-non-crypto — byte and range plumbing.
+#   coincurve.utils.sha256         CONTRACTED below — a real SHA-256 digest and
+#                                  the default `hasher` for every signing and
+#                                  verification entry point.
+#   coincurve.utils.__HasherSHA256 skipped-unsupported — the docs-only branch of
+#                                  the COINCURVE_BUILDING_DOCS guard; never the
+#                                  bound symbol in an installed package.
+#   coincurve.utils GROUP_ORDER /
+#   GROUP_ORDER_INT / KEY_SIZE /
+#   ZERO / PEM_HEADER / PEM_FOOTER /
+#   DEFAULT_NONCE                  skipped-non-crypto — module constants.
+#   coincurve.ecdsa cdata_to_der /
+#   der_to_cdata / serialize_compact /
+#   deserialize_compact /
+#   serialize_recoverable /
+#   signature_normalize /
+#   recoverable_convert            skipped-non-crypto — signature re-encoding.
+#   coincurve.der encode_der /
+#   decode_der                     skipped-non-crypto — DER framing helpers, and
+#                                  21.0.0-only.
+#   Context.<init> / reseed,
+#   GLOBAL_CONTEXT, coincurve.flags
+#                                  skipped-non-crypto — a libsecp256k1 scratch
+#                                  buffer. It performs no cryptography and it is
+#                                  not the only knowable anchor: every operation
+#                                  is reachable through a qualified constructor
+#                                  or an acute method name.
+#   PrivateKey.public_key,
+#   PrivateKey.public_key_xonly    skipped-informative-return — attributes, not
+#                                  calls, so a contract cannot key them. The
+#                                  rules reach them as an acute ATTRIBUTE PATH
+#                                  on a taint-bound receiver instead.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── PrivateKey ──────────────────────────────────────────────────────────────
+  # coincurve.PrivateKey — root re-export — `from coincurve import ...`
+
+  # `PrivateKey()` with no argument GENERATES: `self.secret = validate_secret(secret)
+  # if secret is not None else get_valid_secret()` (21.0.0 src/coincurve/keys.py:38),
+  # and `get_valid_secret` is rejection sampling over `urandom(32)`
+  # (src/coincurve/utils.py:83-87). The one-argument load reaches the same key
+  # through the tolerant arity fallback.
+  # `import coincurve...; coincurve.PrivateKey(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.PrivateKey.<init>`, while the written-out
+  # `coincurve.PrivateKey(..)` emits `coincurve.PrivateKey` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.PrivateKey
+    arity: 0
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+
+  - method: coincurve.PrivateKey.<init>
+    arity: 0
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+  - method: coincurve.PrivateKey.from_hex
+    arity: 1
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+  - method: coincurve.PrivateKey.from_int
+    arity: 1
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: coincurve.PrivateKey.from_pem
+    arity: 1
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.PrivateKey.from_der
+    arity: 1
+    return:
+      type: coincurve.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  # ECDSA over secp256k1: `lib.secp256k1_ecdsa_sign` (21.0.0
+  # src/coincurve/keys.py:70), returning DER via `cdata_to_der`. `hasher` defaults
+  # to sha256 and `custom_nonce` to DEFAULT_NONCE, so real call sites appear at
+  # arity 1, 2 and 3 and the tolerant fallback covers all three.
+  - method: coincurve.PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  # Recoverable ECDSA: a 65-byte compact signature carrying the recovery id
+  # (21.0.0 src/coincurve/keys.py:126).
+  - method: coincurve.PrivateKey.sign_recoverable
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  # >= 18.0.0 — absent in 17.0.0. BIP-340: `lib.secp256k1_keypair_create` then
+  # `lib.secp256k1_schnorrsig_sign32` (21.0.0 src/coincurve/keys.py:105,111).
+  # No hasher argument: the message must already be 32 bytes (keys.py:94).
+  - method: coincurve.PrivateKey.sign_schnorr
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  # ECDH over secp256k1: `lib.secp256k1_ecdh` with ffi.NULL for both the hash
+  # function and its data (21.0.0 src/coincurve/keys.py:182), so libsecp256k1
+  # applies its default — sha256 of the compressed public key, which the method's
+  # own note documents (keys.py:167-169). Returns the 32-byte shared secret.
+  - method: coincurve.PrivateKey.ecdh
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.PrivateKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: coincurve.PrivateKey.to_der
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # coincurve.keys.PrivateKey — defining module — `from coincurve.keys import ...`
+
+  # `import coincurve...; coincurve.keys.PrivateKey(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.keys.PrivateKey.<init>`, while the written-out
+  # `coincurve.keys.PrivateKey(..)` emits `coincurve.keys.PrivateKey` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.keys.PrivateKey
+    arity: 0
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+
+  - method: coincurve.keys.PrivateKey.<init>
+    arity: 0
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+  - method: coincurve.keys.PrivateKey.from_hex
+    arity: 1
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.str
+  - method: coincurve.keys.PrivateKey.from_int
+    arity: 1
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: coincurve.keys.PrivateKey.from_pem
+    arity: 1
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.from_der
+    arity: 1
+    return:
+      type: coincurve.keys.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.sign_recoverable
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.sign_schnorr
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.ecdh
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PrivateKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: coincurve.keys.PrivateKey.to_der
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # ── PublicKey ──────────────────────────────────────────────────────────────
+  # coincurve.PublicKey — root re-export — `from coincurve import ...`
+
+  # Parses a formatted key — compressed, uncompressed or hybrid
+  # (21.0.0 src/coincurve/keys.py:340-368). Also accepts an `ffi.CData` pubkey
+  # handle, which is how `coincurve.ecdsa.recover`'s result reaches it.
+  # `import coincurve...; coincurve.PublicKey(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.PublicKey.<init>`, while the written-out
+  # `coincurve.PublicKey(..)` emits `coincurve.PublicKey` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.PublicKey
+    arity: 1
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+
+  - method: coincurve.PublicKey.<init>
+    arity: 1
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+  - method: coincurve.PublicKey.from_secret
+    arity: 1
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  # Identical to `from_secret` except that it skips the range check
+  # (21.0.0 src/coincurve/keys.py:370,399).
+  - method: coincurve.PublicKey.from_valid_secret
+    arity: 1
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.PublicKey.from_point
+    arity: 2
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+  # ECDSA public-key recovery. Verifies the signature as a side effect of
+  # solving for the point (21.0.0 src/coincurve/keys.py:439).
+  - method: coincurve.PublicKey.from_signature_and_message
+    arity: 2
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  # >= 5.1.0 — absent in 5.0.1. Point addition over a list of public keys.
+  # Contracted for the type chain only; the rules do not claim it as an operation
+  # (EC arithmetic, see the disposition list in the header).
+  - method: coincurve.PublicKey.combine_keys
+    arity: 1
+    return:
+      type: coincurve.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.list
+  # ECDSA verification: `lib.secp256k1_ecdsa_verify` (21.0.0
+  # src/coincurve/keys.py:539). `hasher` defaults to sha256, so arity 2 and 3 both
+  # occur.
+  - method: coincurve.PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  # Compressed/uncompressed serialization. Contracted because its result is what
+  # feeds `ecdh` and `verify_signature` in real code, so the chain needs the
+  # return type; the rules do not claim it as an asset.
+  - method: coincurve.PublicKey.format
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # coincurve.keys.PublicKey — defining module — `from coincurve.keys import ...`
+
+  # `import coincurve...; coincurve.keys.PublicKey(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.keys.PublicKey.<init>`, while the written-out
+  # `coincurve.keys.PublicKey(..)` emits `coincurve.keys.PublicKey` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.keys.PublicKey
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+
+  - method: coincurve.keys.PublicKey.<init>
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+  - method: coincurve.keys.PublicKey.from_secret
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PublicKey.from_valid_secret
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PublicKey.from_point
+    arity: 2
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+  - method: coincurve.keys.PublicKey.from_signature_and_message
+    arity: 2
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: coincurve.keys.PublicKey.combine_keys
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.list
+  - method: coincurve.keys.PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: coincurve.keys.PublicKey.format
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # ── PublicKeyXOnly ──────────────────────────────────────────────────────────────
+  # coincurve.PublicKeyXOnly — root re-export — `from coincurve import ...`
+
+  # >= 18.0.0 — the whole PublicKeyXOnly type is absent in 17.0.0.
+  # Parses a 32-byte BIP-340 x-only key (21.0.0 src/coincurve/keys.py:636).
+  # `import coincurve...; coincurve.PublicKeyXOnly(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.PublicKeyXOnly.<init>`, while the written-out
+  # `coincurve.PublicKeyXOnly(..)` emits `coincurve.PublicKeyXOnly` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.PublicKeyXOnly
+    arity: 1
+    return:
+      type: coincurve.PublicKeyXOnly
+      confidence: high
+    role: factory
+
+  - method: coincurve.PublicKeyXOnly.<init>
+    arity: 1
+    return:
+      type: coincurve.PublicKeyXOnly
+      confidence: high
+    role: factory
+  - method: coincurve.PublicKeyXOnly.from_secret
+    arity: 1
+    return:
+      type: coincurve.PublicKeyXOnly
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.PublicKeyXOnly.from_valid_secret
+    arity: 1
+    return:
+      type: coincurve.PublicKeyXOnly
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  # >= 18.0.0. BIP-340 Schnorr verification: `lib.secp256k1_schnorrsig_verify`
+  # (21.0.0 src/coincurve/keys.py:753). No hasher argument.
+  - method: coincurve.PublicKeyXOnly.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: coincurve.PublicKeyXOnly.format
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # coincurve.keys.PublicKeyXOnly — defining module — `from coincurve.keys import ...`
+
+  # `import coincurve...; coincurve.keys.PublicKeyXOnly(...)` — THE MODULE-ATTRIBUTE CALL
+  # SPELLING, WHICH EMITS A DIFFERENT KEY. Measured on a probe consumer with
+  # crypto-finder built from this worktree: `from ... import X; X(..)` emits
+  # `coincurve.keys.PublicKeyXOnly.<init>`, while the written-out
+  # `coincurve.keys.PublicKeyXOnly(..)` emits `coincurve.keys.PublicKeyXOnly` with NO
+  # `.<init>` segment, so the constructor entry above does not cover it and the
+  # receiver stays untyped. The already-merged ecdsa contract records the same
+  # split for `ecdsa.ECDH` versus `ecdsa.ECDH.<init>`.
+  - method: coincurve.keys.PublicKeyXOnly
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKeyXOnly
+      confidence: high
+    role: factory
+
+  - method: coincurve.keys.PublicKeyXOnly.<init>
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKeyXOnly
+      confidence: high
+    role: factory
+  - method: coincurve.keys.PublicKeyXOnly.from_secret
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKeyXOnly
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PublicKeyXOnly.from_valid_secret
+    arity: 1
+    return:
+      type: coincurve.keys.PublicKeyXOnly
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: coincurve.keys.PublicKeyXOnly.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: coincurve.keys.PublicKeyXOnly.format
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # ── Module-level functions ─────────────────────────────────────────────────
+
+  # Free function, re-exported from the package root since 4.1.3
+  # (21.0.0 src/coincurve/utils.py:101, src/coincurve/__init__.py:3). `hasher`
+  # defaults to sha256 and `context` to GLOBAL_CONTEXT, so arity 3, 4 and 5 occur.
+  - method: coincurve.verify_signature
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.bytes
+  - method: coincurve.utils.verify_signature
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.bytes
+  # Rejection sampling over `urandom(KEY_SIZE)` (21.0.0
+  # src/coincurve/utils.py:83-87). NOT re-exported from the package root in any
+  # release inspected, so there is deliberately no `coincurve.get_valid_secret`
+  # entry: it would be a key that resolves nowhere.
+  # `sha256(bytestr)` is the DEFAULT `hasher` for `sign`, `sign_recoverable`,
+  # `PublicKey.verify`, `PublicKey.from_signature_and_message` and
+  # `verify_signature`, and consumers import it directly to pre-hash. It is a
+  # module-level function returning `_sha256(bytestr).digest()` — plain at
+  # 4.4.0/5.1.0 (coincurve/utils.py:71) and, from 17.0.0, the non-docs branch of
+  # an `if environ.get("COINCURVE_BUILDING_DOCS") != "true"` guard
+  # (21.0.0 src/coincurve/utils.py:30).
+  #
+  # THE `__HasherSHA256` CLASS BESIDE IT IS A DOCS-ONLY ARTEFACT and is
+  # deliberately NOT declared: it lives in the `else` branch of that guard, so it
+  # is the bound symbol only when COINCURVE_BUILDING_DOCS is set, which no
+  # installed package does. Declaring it would ship an entry for a symbol that is
+  # never the one a consumer calls.
+  #
+  # No RULE claims this: the family emits no digest metadata at all, because
+  # `hasher` is caller-supplied at every site that takes it. The contract still
+  # declares it so `sha256(msg)` types as bytes for chain resolution.
+  - method: coincurve.utils.sha256
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+
+  - method: coincurve.utils.get_valid_secret
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  # ECDSA public-key recovery (21.0.0 src/coincurve/ecdsa.py:36). The return is
+  # an `ffi.CData` `secp256k1_pubkey *` handle with no importable Python type, so
+  # the declared type is `builtins.object` at `confidence: low` rather than a
+  # fabricated name — and rather than an empty return, which renders identically to
+  # having no contract at all. Consumers pass it straight into `PublicKey(...)`.
+  - method: coincurve.ecdsa.recover
+    arity: 2
+    return:
+      type: builtins.object
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.object
+  # Parses the 65-byte compact recoverable signature into the `ffi.CData` handle
+  # `recover` expects (21.0.0 src/coincurve/ecdsa.py:59). Same opaque-return
+  # reasoning as `recover` above. Contracted for the chain
+  # `sign_recoverable -> deserialize_recoverable -> recover -> PublicKey`; the
+  # rules do not claim it as an asset of its own.
+  - method: coincurve.ecdsa.deserialize_recoverable
+    arity: 1
+    return:
+      type: builtins.object
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.bytes

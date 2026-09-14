@@ -1,0 +1,1194 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: py-ecc
+  coordinates:
+    - py_ecc
+  version_range: ">=1.0.0,<10"
+  description: >-
+    py-ecc — the Ethereum Foundation's pure-python elliptic-curve library. The
+    BLS12-381 signature suite (G2Basic / G2MessageAugmentation /
+    G2ProofOfPossession), bilinear pairings over BN254 (alt_bn128) and
+    BLS12-381 in plain and optimized flavors, hash-to-curve to G1 and G2, and
+    a pure-python ECDSA over secp256k1. Read from the sdists of all 32
+    published releases (1.0.0 - 9.0.0b1), not from documentation.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EVERY KEY HERE WAS READ OFF AN EXPORTED CALL GRAPH AND THEN RE-EXPORTED UNTIL
+# NOTHING MOVED, not written from the API. `crypto-finder scan
+# --export-callgraph` over a probe consumer, then
+#
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature'
+#
+# An absent contract shows there as `name(?, ?)` with empty `parameter_types`,
+# which is exactly what the probe's keys looked like before this file existed.
+#
+# THE COUNT IS PROBE-DEPENDENT, so the probe is named rather than the number
+# left bare: the consumer at e2e/probe/consumer emits 24 distinct signatures and
+# the unaliased variant emits 18, both reproduced on this worktree. Neither is
+# "the number of keys this contract has" -- that is 97 entries over 84 unique
+# method keys, 13 of which carry two arities. A bare "24 signatures" invited
+# exactly that confusion and is stated with its probe here.
+#
+# THE PYTHON KEY FOLLOWS THE CONSUMER'S IMPORT, so a symbol reachable by two
+# module paths needs two entries. Measured on a probe consumer with
+# crypto-finder built from this worktree:
+#
+#   from py_ecc.bls import G2ProofOfPossession
+#     -> py_ecc.bls.G2ProofOfPossession.Sign
+#   from py_ecc.bls.ciphersuites import G2ProofOfPossession
+#     -> py_ecc.bls.ciphersuites.G2ProofOfPossession.Sign
+#
+# and neither resolves the other. `py_ecc/bls/__init__.py` re-exports the three
+# ciphersuite classes from `py_ecc/bls/ciphersuites.py`, and BOTH spellings
+# occur in real code, so each ciphersuite method carries two entries.
+#
+# ONE SPELLING ONLY WHERE THERE IS ONLY ONE. `hash_to_G1` / `hash_to_G2` are
+# NOT re-exported from `py_ecc/bls/__init__.py` in ANY release — it re-exports
+# the three classes and nothing else, checked file by file across all 32
+# archives — so `py_ecc.bls.hash_to_G2` resolves nowhere and declaring it would
+# ship an entry matching code that raises ImportError.
+#
+# TWO SPELLINGS FOR THE CURVE FLAVORS AND FOR secp256k1, and this file once
+# claimed the opposite. An earlier draft asserted that "the graph keys BOTH
+# import spellings on `py_ecc.secp256k1.*`" and that the flavor module covered
+# its deep pairing module, and said the claim was "asserted in the wiring
+# test". IT WAS NOT ASSERTED ANYWHERE, and it was false. The graph keys the
+# CONSUMER'S LITERAL MODULE PATH. Measured with
+# `crypto-finder scan --export-callgraph` over a probe importing each deep path
+# unaliased, on crypto-finder built from this worktree:
+#
+#   from py_ecc.secp256k1.secp256k1 import ecdsa_raw_sign
+#     -> py_ecc.secp256k1.secp256k1.ecdsa_raw_sign(?, ?)   parameter_types ["",""]
+#   from py_ecc.bn128.bn128_pairing import pairing
+#     -> py_ecc.bn128.bn128_pairing.pairing(?, ?)           parameter_types ["",""]
+#
+# `name(?, ?)` with empty `parameter_types` is precisely the ABSENT-CONTRACT
+# rendering described above, and the shallow spellings in the same run came
+# back fully typed (`py_ecc.secp256k1.ecdsa_raw_sign(builtins.bytes,
+# builtins.bytes)`). So the deep paths joined NOTHING while eleven rule arms
+# matched them. All eleven now carry their own entry, and
+# TestPythonPyEccGraphEmitsBothImportSpellings in
+# internal/callgraph/python_py_ecc_contract_wiring_test.go drives every one of
+# them through the real builder so the keys cannot regress silently.
+#
+# A RENAMING IMPORT USED TO EMIT THE CONSUMER'S ALIAS, AND THAT IS FIXED IN THE
+# SAME BRANCH AS THIS FILE. `from py_ecc.bn128 import pairing as bn_p; bn_p(q, p)`
+# emitted `py_ecc.bn128.bn_p`, which no contract can ever join. This family is
+# where it had to be fixed rather than recorded, because py-ecc's four curve
+# flavors export BYTE-IDENTICAL names — a consumer importing two of them MUST
+# alias at least one, so the cross-variant case M18 requires is exactly the
+# case that could not join. The parser now keys a `from X import Y as Z` on Y.
+# See PythonFromImportOriginal and the pinning tests in
+# internal/callgraph/python_from_import_alias_test.go.
+#
+# ARITY: ONE ENTRY PER OBSERVED ARITY, with `ContractsForTolerant`'s name-only
+# fallback covering the rest. Two symbols genuinely change arity inside the
+# declared range and both are declared at BOTH arities rather than at one and
+# hoped for:
+#   `KeyGen`      1 at 2.0.0 (IKM only), 2 from 3.0.0 (IKM + key_info)
+#   `hash_to_G2`  2 at 2.0.0 ONLY, 3 from 3.0.0 (+ hash_function)
+#                 Swept over all 32 sdists: `hash_function` lands in 3.0.0
+#                 (py_ecc/bls/hash_to_curve.py:26). This line previously read
+#                 "2 at 2.0.0 - 7.0.1, 3 from 8.0.0b1", which conflated the
+#                 arity change with hash_to_G1's INTRODUCTION at 8.0.0b1.
+#                 Both arities are declared either way, so no join moved.
+#
+# RETURN TYPES ARE THE LIBRARY'S OWN ANNOTATIONS. py-ecc ships `py.typed` from
+# 1.4.5, so these are read from the signatures rather than inferred:
+# `BLSSignature`, `BLSPubkey` and `Hash32` come from `eth_typing` and are
+# NewType-over-bytes, `KeyGen` returns `int` from 3.0.0, and the point and
+# field types (`G2Uncompressed`, `FQ12`, `PlainPoint2D`) are py-ecc's own.
+# `eth_typing`'s aliases are declared with their own package path, not
+# collapsed to `builtins.bytes`, because that is what the annotations say.
+#
+# NO `parameters:` BLOCK AND NO CONTRIBUTED PROPERTY. Nothing in this API
+# derives a metadata value from an argument. The curve is fixed by the MODULE
+# (py_ecc/fields/field_properties.py:24 and :29 hold the two field moduli), the
+# BLS hash is fixed by the ciphersuite class
+# (`xmd_hash_function = sha256`, 8.0.0 py_ecc/bls/ciphersuites.py:60), and
+# secp256k1's key size is the curve's. A metadata-contributing parameter here
+# would be a fiction. `hash_to_G2`'s `hash_function` argument IS a real
+# metadata input, and it is deliberately not declared as one: the rules emit no
+# `algorithmHashFunction` for hash-to-curve precisely because the caller
+# chooses it, so there is nothing for a parameter to contribute to.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DISPOSITION OF THE REST OF THE PUBLIC SURFACE. py-ecc is a CURVE LIBRARY:
+# most of its exported surface is arithmetic, and contracting arithmetic would
+# synthesize an entry point for every consumer that touches a point.
+#
+#   add / double / neg / multiply / eq /
+#   is_inf / is_on_curve / twist / normalize
+#   (all four curve flavors)      skipped-non-crypto — group arithmetic.
+#                                  `multiply` is what a keygen or a DH is
+#                                  BUILT from and on its own says nothing about
+#                                  which: py-ecc's own privtopub IS
+#                                  `multiply(G1, k)` and its aggregation IS
+#                                  `add`, so contracting it would produce two
+#                                  entry points for one operation.
+#   G1 / G2 / G12 / Z1 / Z2 /
+#   b / b2 / b12 / curve_order /
+#   field_modulus                  skipped-non-crypto — fixed public
+#                                  parameters, and not calls. The same
+#                                  considered call the Rust `bls12_381` crate's
+#                                  rules made for its `generator()`: a base
+#                                  point is a fixed public parameter, not key
+#                                  material.
+#   FQ / FQ2 / FQ12 / FQP,
+#   everything in py_ecc.fields    skipped-non-crypto — field element types and
+#                                  their operators.
+#   py_ecc.bls.point_compression
+#   compress_G1 / compress_G2 /
+#   decompress_G1 / decompress_G2 /
+#   get_flags / is_point_at_infinity /
+#   modular_squareroot_in_FQ2      skipped-non-crypto — the ZCash point
+#                                  encoding. Moves bytes, computes nothing.
+#   py_ecc.bls.g2_primitives
+#   G1_to_pubkey / G2_to_signature /
+#   pubkey_to_G1 / signature_to_G2 skipped-non-crypto — serialization between
+#                                  the wire types and the curve types.
+#   subgroup_check /
+#   pubkey_subgroup_check /
+#   KeyValidate                    skipped-non-crypto — membership and encoding
+#                                  validity checks. `KeyValidate` is a
+#                                  precondition every `Verify` already runs
+#                                  internally (8.0.0 :150-155), so contracting
+#                                  it would double-count a verification.
+#   hash_to_field_FQ / hash_to_field_FQ2 /
+#   hash_to_base_FQ2 / map_to_curve_G1 /
+#   map_to_curve_G2 / clear_cofactor_G1 /
+#   clear_cofactor_G2,
+#   optimized_swu_G1 / optimized_swu_G2 /
+#   iso_map_G1 / iso_map_G2 /
+#   multiply_clear_cofactor_G1 /
+#   multiply_clear_cofactor_G2     skipped-non-crypto — the INTERNAL STEPS of
+#                                  hash-to-curve, exported so the ciphersuites
+#                                  can reach them across module boundaries. The
+#                                  composites are contracted below; a step as
+#                                  well would report several assets for one
+#                                  mapping.
+#   py_ecc.bls.hash.hash_eth2      skipped-non-crypto here — it is a real
+#                                  keccak-256 digest, but it wraps
+#                                  `eth_hash.auto.keccak`, so the primitive
+#                                  belongs to `pkg:pypi/eth-hash` and
+#                                  contracting it under py-ecc would attribute
+#                                  another distribution's hash to this one.
+#                                  Present 1.6.0 - 9.0.0b1.
+#   py_ecc.secp256k1
+#   multiply / add / to_jacobian /
+#   from_jacobian / jacobian_add /
+#   jacobian_double / jacobian_multiply /
+#   inv / bytes_to_int / safe_ord   skipped-non-crypto — arithmetic and byte
+#                                  plumbing, and none of them is re-exported
+#                                  from `py_ecc/secp256k1/__init__.py`.
+#   py_ecc.secp256k1
+#   deterministic_generate_k        skipped-non-crypto, and this one is a
+#                                  judgement call rather than obvious plumbing:
+#                                  it IS cryptography — RFC 6979 HMAC-SHA256
+#                                  nonce derivation (8.0.0 secp256k1.py:200).
+#                                  It is not contracted because it is not
+#                                  re-exported from `__init__.py` in ANY
+#                                  release and is called only from
+#                                  `ecdsa_raw_sign` one line later (:229), so
+#                                  every reachable call site is already an
+#                                  entry point as `sign`. Recorded so the
+#                                  omission does not read as an oversight.
+#   py_ecc.bls.constants,
+#   py_ecc.typing                   skipped-non-crypto — constants and type
+#                                  aliases.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ══ BLS ciphersuites, era 2 (2.0.0 - 9.0.0b1) ══════════════════════════════
+  # TWO MODULE SPELLINGS PER METHOD, and that is not redundancy: the Python key
+  # follows the CONSUMER'S import, so `from py_ecc.bls import G2ProofOfPossession`
+  # emits `py_ecc.bls.G2ProofOfPossession.Sign` while
+  # `from py_ecc.bls.ciphersuites import G2ProofOfPossession` emits
+  # `py_ecc.bls.ciphersuites.G2ProofOfPossession.Sign`, and neither resolves the
+  # other. Both were observed in an exported graph.
+  #
+  # THE SET IS COMPLETE AND SYMMETRIC ON PURPOSE. Every method the base class
+  # declares is declared for all three ciphersuites in both spellings, at every
+  # arity the range contains, because a consumer may write any of them. A
+  # partial set is worse than a wrong one: the missing spellings resolve through
+  # the tolerant fallback with another entry's parameter types, which reads as a
+  # successful join.
+
+  # ── G2Basic ──
+  # `KeyGen(IKM, key_info=b"")` is HKDF-SHA256 over the input keying material
+  # reduced mod the curve order (8.0.0 py_ecc/bls/ciphersuites.py:101-111): the
+  # returned scalar IS the secret key, so `factory` and not `operation`.
+  #
+  # BOTH ARITIES ARE DECLARED because the signature genuinely changes inside
+  # the range: `KeyGen(IKM)` returning `Tuple[BLSPubkey, int]` at 2.0.0
+  # (2.0.0 :53), `KeyGen(IKM, key_info)` returning a plain `int` from 3.0.0
+  # (3.0.0 :55). The 2.0.0 entry carries `low` confidence: its real return is
+  # the tuple, and `int` is the useful half of it rather than the whole truth.
+  # Declaring only the arity-2 form would still resolve an arity-1 call through
+  # `ContractsForTolerant`'s name-only fallback, but with the WRONG
+  # parameter_types and the wrong confidence.
+
+  - method: py_ecc.bls.G2Basic.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2Basic.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.G2Basic.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2Basic.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  # `SkToPk(privkey)` is `G1_to_pubkey(multiply(G1, privkey))` (8.0.0 :87-98):
+  # a derivation from an existing secret, so `factory` for the PUBLIC key.
+  # >= 3.0.0 -- absent at 2.0.0, where the same operation is `PrivToPub`.
+
+  - method: py_ecc.bls.G2Basic.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2Basic.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  # `PrivToPub` is the 2.0.0-ONLY spelling of that derivation (2.0.0 :49),
+  # renamed to `SkToPk` at 3.0.0 and absent from every later release. The two
+  # names are DISJOINT, so they are separate entries rather than one with two
+  # arities -- and a consumer file calling both is compilable in no release.
+
+  - method: py_ecc.bls.G2Basic.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2Basic.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  # `Sign(SK, message)` -> `_CoreSign(SK, message, cls.DST)`: hash the message
+  # to G2, multiply by the secret scalar, serialise (8.0.0 :128-145, :249).
+  # G2MessageAugmentation OVERRIDES it to prepend the public key (:286-289);
+  # only the DST and the augmentation differ, so the key, the arity and the
+  # return are the same for all three.
+
+  - method: py_ecc.bls.G2Basic.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2Basic.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  # `Verify(PK, message, signature)` -> `_CoreVerify`, a two-term Miller loop
+  # compared against `FQ12.one()` (8.0.0 :147-180, :253).
+
+  - method: py_ecc.bls.G2Basic.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2Basic.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  # `Aggregate(signatures)` adds the G2 points and re-serialises
+  # (8.0.0 :182-202). Declared ONCE on the base class and inherited unchanged
+  # by all three, so the six spellings resolve to one definition -- but each is
+  # a distinct KEY, because the Python key follows the CONSUMER'S spelling.
+
+  - method: py_ecc.bls.G2Basic.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.ciphersuites.G2Basic.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  # `AggregateVerify` IS overridden per ciphersuite: G2Basic rejects repeated
+  # messages (8.0.0 :271-279), G2MessageAugmentation augments each message
+  # (:295-304), G2ProofOfPossession delegates (:325-331).
+  #
+  # BOTH ARITIES, for the same reason as KeyGen: 2.0.0 took a single sequence
+  # of (pubkey, message) PAIRS (2.0.0 :126) and 3.0.0 split it into
+  # (PKs, messages, signature) (3.0.0 :135). The arity-2 entry is `low`: its
+  # first argument is a list of tuples, which `builtins.list` describes only
+  # loosely.
+
+  - method: py_ecc.bls.G2Basic.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2Basic.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2Basic.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2Basic.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+
+  # ── G2MessageAugmentation ──
+  - method: py_ecc.bls.G2MessageAugmentation.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.G2MessageAugmentation.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: py_ecc.bls.G2MessageAugmentation.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.G2MessageAugmentation.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.G2MessageAugmentation.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  - method: py_ecc.bls.G2MessageAugmentation.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2MessageAugmentation.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.G2MessageAugmentation.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2MessageAugmentation.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2MessageAugmentation.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+
+  # ── G2ProofOfPossession ──
+  - method: py_ecc.bls.G2ProofOfPossession.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.KeyGen
+    arity: 2
+    return:
+      type: builtins.int
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.G2ProofOfPossession.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.KeyGen
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: low
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: py_ecc.bls.G2ProofOfPossession.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.SkToPk
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.G2ProofOfPossession.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.PrivToPub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.G2ProofOfPossession.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.Sign
+    arity: 2
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+  - method: py_ecc.bls.G2ProofOfPossession.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2ProofOfPossession.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.Aggregate
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.G2ProofOfPossession.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.AggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2ProofOfPossession.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.AggregateVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: low
+    role: operation
+    parameter_types:
+      - builtins.list
+      - eth_typing.BLSSignature
+
+  # ── G2ProofOfPossession only ──
+  # `FastAggregateVerify`, `PopProve` and `PopVerify` are declared on
+  # G2ProofOfPossession ONLY (8.0.0 :359, :334, :339). Neither G2Basic nor
+  # G2MessageAugmentation declares any of them in any release, so entries for
+  # those spellings would match code that raises AttributeError.
+
+  - method: py_ecc.bls.G2ProofOfPossession.FastAggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.FastAggregateVerify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.bytes
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.G2ProofOfPossession.PopProve
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.PopProve
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.G2ProofOfPossession.PopVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - eth_typing.BLSSignature
+  - method: py_ecc.bls.ciphersuites.G2ProofOfPossession.PopVerify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - eth_typing.BLSPubkey
+      - eth_typing.BLSSignature
+
+  # ══ BLS free functions, era 1 (1.6.0 - 1.7.1) ══════════════════════════════
+  # `py_ecc/bls/api.py`, re-exported from `py_ecc/bls/__init__.py`. This era
+  # shares NO symbol with the ciphersuite era, so no entry here can be reached
+  # by a 2.0.0+ consumer and none there by a 1.7.1 one.
+  - method: py_ecc.bls.sign
+    arity: 3
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+  - method: py_ecc.bls.api.sign
+    arity: 3
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+  - method: py_ecc.bls.verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_typing.BLSPubkey
+      - eth_typing.BLSSignature
+      - builtins.int
+  - method: py_ecc.bls.api.verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_typing.BLSPubkey
+      - eth_typing.BLSSignature
+      - builtins.int
+  - method: py_ecc.bls.verify_multiple
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+      - builtins.int
+  - method: py_ecc.bls.api.verify_multiple
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+      - builtins.list
+      - eth_typing.BLSSignature
+      - builtins.int
+  - method: py_ecc.bls.aggregate_signatures
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.api.aggregate_signatures
+    arity: 1
+    return:
+      type: eth_typing.BLSSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.aggregate_pubkeys
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  - method: py_ecc.bls.api.aggregate_pubkeys
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.list
+  # `privtopub(k)` is `G1_to_pubkey(multiply(G1, k))` (1.6.0 api.py:46) — the
+  # era-1 spelling of SkToPk. The name collides with
+  # `py_ecc.secp256k1.privtopub`, a DIFFERENT curve, and the two are separated
+  # by the module path in both the key and the rule.
+  - method: py_ecc.bls.privtopub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+  - method: py_ecc.bls.api.privtopub
+    arity: 1
+    return:
+      type: eth_typing.BLSPubkey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+
+  # ══ hash-to-curve (py_ecc.bls.hash_to_curve) ═══════════════════════════════
+  # ONE module spelling: `bls/__init__.py` re-exports the three ciphersuite
+  # classes and nothing else, in every release, so there is no shallower path.
+  # `hash_to_G2` >= 2.0.0 (arity 2 at 2.0.0 ONLY, arity 3 from 3.0.0);
+  # `hash_to_G1` >= 8.0.0b1 only — and 8.0.0b1 is hash_to_G1's introduction,
+  # NOT hash_to_G2's arity boundary. Measured over all 32 sdists.
+  - method: py_ecc.bls.hash_to_curve.hash_to_G2
+    arity: 3
+    return:
+      type: py_ecc.typing.G2Uncompressed
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.object
+  - method: py_ecc.bls.hash_to_curve.hash_to_G2
+    arity: 2
+    return:
+      type: py_ecc.typing.G2Uncompressed
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.bls.hash_to_curve.hash_to_G1
+    arity: 3
+    return:
+      type: py_ecc.typing.G1Uncompressed
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.object
+
+  # ══ pairings, four curve flavors ══════════════════════════════════════════
+  # The MODULE PATH is what names the curve — the four flavors export
+  # byte-identical names over two different curves — so each flavor is its own
+  # key and no entry is shared.
+  #
+  # ARITY 3 IS REACHABLE ON THE OPTIMIZED FLAVORS ONLY. The
+  # `final_exponentiate=True` keyword is declared by
+  # `optimized_bn128/optimized_pairing.py` and
+  # `optimized_bls12_381/optimized_pairing.py` in EVERY release they exist in,
+  # and by neither `bn128/bn128_pairing.py` nor `bls12_381/bls12_381_pairing.py`
+  # in ANY release — both of those are `def pairing(Q, P)` throughout, swept
+  # over all 32 sdists. So a bn128 or bls12_381 call site can only be arity 2,
+  # while the optimized ones appear at 2 and 3. Arity 2 is declared for all four
+  # as the required-argument count and `ContractsForTolerant`'s name-only
+  # fallback covers the optimized arity-3 form. An earlier version of this
+  # comment quoted the keyword for all four flavors, which was wrong for two.
+  #
+  # bn128 / optimized_bn128: BN254 (alt_bn128), 1.0.0 - 9.0.0b1.
+  - method: py_ecc.bn128.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.optimized_bn128.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.optimized_bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  # `final_exponentiate` >= 1.1.0 through the flavor module; the deep
+  # `optimized_bn128.optimized_pairing` module declares it at 1.0.0 already.
+  # The deep module path is a SEPARATE KEY, not a spelling the flavor entry
+  # covers — measured, see the header — so it carries its own entry below.
+  - method: py_ecc.bn128.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.bn128_FQ12
+  - method: py_ecc.optimized_bn128.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.optimized_bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.optimized_bn128_FQ12
+  # bls12_381 / optimized_bls12_381: BLS12-381, >= 1.4.5. Neither module exists
+  # at 1.4.3.
+  - method: py_ecc.bls12_381.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.optimized_bls12_381.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.optimized_bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.bls12_381.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.bls12_381_FQ12
+  - method: py_ecc.optimized_bls12_381.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.optimized_bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.optimized_bls12_381_FQ12
+
+  # ── the DEEP defining-module path for each flavor ─────────────────────────
+  # `from py_ecc.bn128.bn128_pairing import pairing` is ordinary and appears in
+  # real code; the rules ship an arm for it. The graph keys the consumer's
+  # literal module path, so each deep path is its OWN key and the flavor entry
+  # above does not reach it. Return and parameter types are identical to the
+  # flavor entry — same function object, reached by the path that defines it.
+  - method: py_ecc.bn128.bn128_pairing.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.bn128.bn128_pairing.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.bn128_FQ12
+  - method: py_ecc.optimized_bn128.optimized_pairing.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.optimized_bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.optimized_bn128.optimized_pairing.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.optimized_bn128_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.optimized_bn128_FQ12
+  - method: py_ecc.bls12_381.bls12_381_pairing.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.bls12_381.bls12_381_pairing.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.bls12_381_FQ12
+  - method: py_ecc.optimized_bls12_381.optimized_pairing.pairing
+    arity: 2
+    return:
+      type: py_ecc.fields.optimized_bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.tuple
+      - builtins.tuple
+  - method: py_ecc.optimized_bls12_381.optimized_pairing.final_exponentiate
+    arity: 1
+    return:
+      type: py_ecc.fields.optimized_bls12_381_FQ12
+      confidence: high
+    role: operation
+    parameter_types:
+      - py_ecc.fields.optimized_bls12_381_FQ12
+
+  # ══ secp256k1 ECDSA ════════════════════════════════════════════════════════
+  # Present unchanged at every release, 1.0.0 - 9.0.0b1. `ecdsa_raw_sign` and
+  # `ecdsa_raw_recover` are NOT unique to this distribution —
+  # `eth_keys.backends.native.ecdsa` declares functions of the same names — and
+  # the module path in the key is what separates them.
+  - method: py_ecc.secp256k1.ecdsa_raw_sign
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.secp256k1.ecdsa_raw_recover
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.tuple
+  - method: py_ecc.secp256k1.privtopub
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+
+  # ── the DEEP defining-module path ─────────────────────────────────────────
+  # `py_ecc/secp256k1/__init__.py` re-exports these three from
+  # `py_ecc/secp256k1/secp256k1.py`, and BOTH spellings occur in real code. The
+  # graph keys the consumer's literal module path, so the deep path is its own
+  # key; the shallow entries above do not reach it.
+  - method: py_ecc.secp256k1.secp256k1.ecdsa_raw_sign
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+  - method: py_ecc.secp256k1.secp256k1.ecdsa_raw_recover
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.tuple
+  - method: py_ecc.secp256k1.secp256k1.privtopub
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes

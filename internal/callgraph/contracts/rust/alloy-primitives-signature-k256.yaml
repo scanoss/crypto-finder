@@ -1,0 +1,45 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-signature-k256
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.8.1,<1.7.0"
+  description: "alloy-primitives Signature to k256 ECDSA signature conversion"
+
+# `to_k256` ARRIVES AT 0.8.1, not at 1.0.0. An earlier reading of this family put
+# it at 1.0.0 and that was wrong; bisecting the published archives puts the first
+# occurrence at 0.8.1 src/signature/sig.rs:133, with 0.8.0 carrying none. Behind
+# the non-default `k256` Cargo feature, like the rest of that surface.
+#
+# It is its own file because of that boundary alone: the four recovery methods in
+# alloy-primitives-signature.yaml reach back to 0.6.0, and one file would have to
+# claim the wider range for this method too.
+#
+# `role: operation` RATHER THAN `output`, and `parameter_types: []` because the
+# method takes only `self`. The CRYPTO CLASSIFICATION of this call is
+# related-crypto-material rather than an algorithm operation -- it is
+# `k256::ecdsa::Signature::from_scalars(self.r.to_be_bytes(),
+# self.s.to_be_bytes())` (1.6.0 src/signature/sig.rs:246-248), a pure re-encoding
+# of `r` and `s` that runs no cryptography -- and that judgement lives in the
+# rule metadata, which declares `assetType: related-crypto-material` and
+# `materialType: signature`. The KB role is about how the call graph EMITS the
+# node, and `operation` is what makes a receiver-bearing call emittable.
+#
+# TWO DOTS, so the authored key moves the second-to-last one.
+contracts:
+  - method: alloy_primitives::Signature.to_k256
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<k256::ecdsa::Signature, k256::ecdsa::Error>"
+    return: {type: "k256::ecdsa::Signature", confidence: high}
+    role: operation
+
+hierarchy: {}

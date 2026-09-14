@@ -1,0 +1,784 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: eth-keys
+  coordinates:
+    - eth-keys
+    - eth_keys
+  version_range: ">=0.1.0b1,<0.9"
+  description: >-
+    eth-keys — the common API for Ethereum secp256k1 key operations, a thin
+    layer over a pluggable ECC backend. KeyAPI / PrivateKey / PublicKey /
+    Signature / NonRecoverableSignature lifecycle: key loading, public-key
+    derivation, ECDSA signing over a Keccak-256 message hash or a
+    caller-supplied digest, verification, and public-key recovery. Read from
+    the sdists of 0.1.0b1 - 0.8.0b1 (eth_keys/main.py, eth_keys/datatypes.py,
+    eth_keys/constants.py, eth_keys/backends/).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE CURVE IS NOT A PARAMETER, so nothing here is conditioned on one. No
+# argument anywhere in the public API names a curve. At 0.7.0
+# `grep -rn -i curve eth_keys/` returns 16 lines and NOT ONE of them is in
+# `eth_keys/constants.py`: 15 are the substring `coincurve` under
+# `eth_keys/backends/` and the 16th is a prose comment,
+# `eth_keys/backends/native/ecdsa.py:167`. The curve parameters DO live in
+# `eth_keys/constants.py`, but spelled with the `SECPK1_` prefix
+# (SECPK1_P / _N / _A / _B / _Gx / _Gy), which that grep does not match —
+# `grep -rn SECPK1 eth_keys/constants.py` is the command that finds them. Both
+# backends are secp256k1-only: the native one computes over those constants and
+# the coincurve one binds libsecp256k1.
+#
+# NOTHING HERE CLAIMS THE BACKEND. `eth_keys/backends/coincurve.py` reaches
+# libsecp256k1 through `self.keys = coincurve.keys` (0.7.0 line 48) and
+# `eth_keys/backends/base.py` declares the backend protocol. Those methods
+# belong to `pkg:pypi/coincurve`, whose contract is already merged, and a
+# consumer never calls a backend directly — `KeyAPI` proxies every operation.
+# `BaseECCBackend`, `CoinCurveECCBackend`, `NativeECCBackend`,
+# `get_backend`, `get_backend_class`, `get_default_backend_class` and
+# `is_coincurve_available` are therefore absent from this file by decision, not
+# by oversight.
+#
+# EVERY KEY BELOW WAS READ OFF AN EXPORTED CALL GRAPH AND THEN RE-EXPORTED
+# UNTIL NOTHING MOVED, not written from the API. The probe consumer writes each
+# documented import spelling as its own statement; the keys it emitted before
+# this file existed were `consumer.pk.sign_msg(?)`, `consumer.api.ecdsa_sign(?, ?)`
+# and so on — keyed on the CONSUMER'S VARIABLE PATH, which no contract can ever
+# join. The factory entries are what type those receivers, so they are load
+# bearing for every operation entry under them.
+#
+# FIVE MODULE SPELLINGS ARE DECLARED FOR THE CONSTRUCTORS AND THAT IS NOT
+# REDUNDANCY. The Python call-graph key follows the CONSUMER'S IMPORT, and
+# eth-keys exposes its types five documented ways. Measured, one key per
+# spelling:
+#
+#   from eth_keys.datatypes import PrivateKey; PrivateKey(s)
+#                                       -> eth_keys.datatypes.PrivateKey.<init>
+#   import eth_keys; eth_keys.datatypes.PrivateKey(s)
+#                                       -> eth_keys.datatypes.PrivateKey
+#   from eth_keys import keys; keys.PrivateKey(s)
+#                                       -> eth_keys.keys.PrivateKey
+#   from eth_keys import KeyAPI; KeyAPI.PrivateKey(s)
+#                                       -> eth_keys.KeyAPI.PrivateKey
+#   from eth_keys.main import KeyAPI; KeyAPI.PrivateKey(s)
+#                                       -> eth_keys.main.KeyAPI.PrivateKey
+#
+# and none of them resolves any other. All five are real: `eth_keys/__init__.py`
+# exports `KeyAPI` and `lazy_key_api as keys` from the root while the types are
+# defined in `eth_keys.datatypes`, the README's primary example uses the `keys`
+# instance, the README's own API headings use `KeyAPI.PrivateKey(...)`, and the
+# package's own tests import `eth_keys.datatypes` directly.
+#
+# THE `keys.PublicKey.from_private(..)` SPELLING COLLAPSES ONE SEGMENT, and the
+# collapse follows the IMPORTING module rather than the defining one. Measured:
+# `keys.PublicKey.from_private(pk)` and `KeyAPI.PublicKey.from_private(pk)` both
+# emit `eth_keys.PublicKey.from_private` under a root import, and
+# `eth_keys.main.PublicKey.from_private` under a `from eth_keys.main import
+# KeyAPI`. Both are declared; guessing one would have declared the wrong one.
+#
+# RETURN TYPES ARE UNIFIED ONTO THE `eth_keys.datatypes.*` SPELLING, which is
+# what lets each OPERATION be declared once instead of once per spelling.
+# Measured: with every factory returning `eth_keys.datatypes.PrivateKey`, all
+# five constructor spellings above produce the single receiver key
+# `eth_keys.datatypes.PrivateKey.sign_msg`. python/coincurve declares its
+# operations twice, once per spelling, because it gives each spelling its own
+# return type; unifying is the cheaper equivalent and it was verified by
+# re-export, not assumed.
+#
+# A CONSUMER IMPORT ALIAS IS NOT RESOLVED IN THE KEY, SO NO ENTRY HERE CAN JOIN
+# ONE. Measured on this worktree's binary:
+#   from eth_keys import keys as eth_api        -> eth_keys.eth_api.PrivateKey
+#   from eth_keys.datatypes import PrivateKey as EthPrivateKey
+#                                               -> eth_keys.datatypes.EthPrivateKey.<init>
+#   from eth_keys.main import KeyAPI as MainKeyAPI -> eth_keys.main.MainKeyAPI.<init>
+# The alias is recorded as the binding NAME and the original symbol is dropped
+# (`recordImportedPythonSymbol`, internal/callgraph/python_parser.go:1380, is
+# reached from the `aliased_import` branch at :1295 with the alias content and
+# never the name content). The RULE layer resolves aliases correctly — opengrep
+# matches a qualified pattern through an `as` alias — so an aliased consumer
+# still produces a finding; it is only the entry-point JOIN that is lost. This
+# is a property of the Python resolver and affects every python family in this
+# KB, not eth-keys, so it is reported rather than worked around here: declaring
+# `eth_keys.eth_api.*` would be declaring one consumer's variable name.
+#
+# ARITY: ONE ENTRY PER METHOD. `ContractsForTolerant`
+# (internal/callgraph/contracts/contracts.go) tries an exact-arity match and,
+# for a Python KB only, falls back to a name-only match with the lowest-arity
+# candidate as the deterministic tiebreak — precisely because Python default
+# arguments mean one call site appears at several arities. Every constructor
+# here takes an optional trailing `backend=None` (0.7.0 eth_keys/datatypes.py:150,
+# :239, :352, :424) and `KeyAPI` takes an optional `backend` (main.py), and the
+# `PublicKey` classmethods take an optional trailing `backend`
+# (datatypes.py:161,177,187,197), so the declared arity is the REQUIRED-argument
+# count and the tolerant fallback covers the rest. `KeyAPI` is declared at arity
+# 0 and reached at 0 and 1; both were measured.
+#
+# NO `parameters:` BLOCK AND NO CONTRIBUTED PROPERTY. Nothing in this API
+# derives a metadata value from an argument: the curve is fixed and the key size
+# follows from it — `validate_private_key_bytes` asserts 32 bytes and
+# `validate_uncompressed_public_key_bytes` asserts 64 (eth_keys/validation.py) —
+# so `keySize`/`keyLength` come from the rules as constants. A
+# metadata-contributing parameter here would be a fiction.
+#
+# VERSION WINDOWS INSIDE `version_range`. The range covers the 23 committed CSV
+# rows (0.1.0b1 - 0.8.0b1). One API-shape change falls inside it and the
+# affected entries are marked `>= 0.2.3` below; every boundary was read from the
+# archive of the version named AND from the version on the other side of it:
+#   `KeyAPI.ecdsa_sign_non_recoverable`,
+#   `PrivateKey.sign_msg_non_recoverable`,
+#   `PrivateKey.sign_msg_hash_non_recoverable`,
+#   `NonRecoverableSignature` and all its methods,
+#   `Signature.to_non_recoverable_signature`,
+#   `PublicKey.from_compressed_bytes`,
+#   `PublicKey.to_compressed_bytes`                  >= 0.2.3
+# 0.2.2 declares NONE of them: `grep -c non_recoverable eth_keys/datatypes.py`
+# returns 0 at 0.2.2 and 7 at 0.2.3, and `from_compressed_bytes` first appears
+# in the 0.2.3 archive. Everything else in this file exists from 0.1.0b1
+# (0.1.0b1 eth_keys/main.py, eth_keys/datatypes.py).
+#
+# THERE IS NO DISJOINT PAIR. Every window here is either the whole range or
+# left-bounded at 0.2.3 and open-ended to 0.8.0b1, and the second nests inside
+# the first, so no combination of two symbols in this file is uncompilable in
+# every release. Stated rather than pinned by a fixture because there is nothing
+# to pin.
+#
+# DISPOSITION OF THE REST OF THE PUBLIC SURFACE
+#   PrivateKey.public_key,
+#   Signature.v / r / s / vrs / rs,
+#   BaseSignature.r / s / rs          skipped-informative-return — ATTRIBUTES
+#                                     and properties, not calls, so a contract
+#                                     cannot key them. `PrivateKey.public_key`
+#                                     is assigned in `__init__`
+#                                     (datatypes.py:250); the rules reach it as
+#                                     an acute ATTRIBUTE PATH on a taint-bound
+#                                     receiver instead.
+#   BaseKey.__hash__ / __str__ /
+#   __int__ / __len__ / __getitem__ /
+#   __eq__ / __repr__ / __index__ /
+#   __hex__ / __bytes__              skipped-non-crypto — dunder protocol
+#                                     methods. `__int__` and `__hash__` do call
+#                                     `keccak` (datatypes.py:116,:310) but a
+#                                     consumer never calls them by name.
+#   eth_keys.validation.*            skipped-non-crypto — length and range
+#                                     assertions.
+#   eth_keys.utils.der
+#     two_int_sequence_encoder /
+#     two_int_sequence_decoder       skipped-non-crypto — DER framing helpers
+#                                     used only by the coincurve backend.
+#   eth_keys.utils.numeric
+#     coerce_low_s / int_to_byte,
+#   eth_keys.utils.padding.pad32,
+#   eth_keys.utils.address
+#     public_key_bytes_to_address,
+#   eth_keys.utils.module_loading
+#     import_string,
+#   eth_keys.backends.native.*       skipped-non-crypto — integer, point and
+#                                     import plumbing internal to the package.
+#                                     `public_key_bytes_to_address` truncates a
+#                                     Keccak-256 digest, but it is an identifier
+#                                     derivation and it is not the consumer
+#                                     surface: `PublicKey.to_canonical_address`
+#                                     is, and it is declared below.
+#   eth_keys.constants.SECPK1_*      skipped-non-crypto — module constants.
+#   LazyBackend.backend /
+#   get_backend                      skipped-non-crypto — backend selection.
+#                                     Choosing an implementation computes
+#                                     nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── KeyAPI, the backend-proxying entry point ────────────────────────────────
+  # `eth_keys/__init__.py` re-exports `KeyAPI` from `eth_keys.main`. The two
+  # import spellings emit different keys and neither resolves the other; the
+  # written-out module-attribute call emits the key with NO `.<init>` segment,
+  # so it needs its own entry. All four were measured, not derived.
+  - method: eth_keys.KeyAPI.<init>
+    arity: 0
+    return:
+      type: eth_keys.main.KeyAPI
+      confidence: high
+    role: factory
+  - method: eth_keys.KeyAPI
+    arity: 0
+    return:
+      type: eth_keys.main.KeyAPI
+      confidence: high
+    role: factory
+  - method: eth_keys.main.KeyAPI.<init>
+    arity: 0
+    return:
+      type: eth_keys.main.KeyAPI
+      confidence: high
+    role: factory
+  - method: eth_keys.main.KeyAPI
+    arity: 0
+    return:
+      type: eth_keys.main.KeyAPI
+      confidence: high
+    role: factory
+
+  # The proxy operations on a KeyAPI receiver. `message_hash` is the CALLER'S
+  # digest — `validate_message_hash` only asserts 32 bytes — which is why the
+  # rules emit no hash function for these four.
+  - method: eth_keys.main.KeyAPI.ecdsa_sign
+    arity: 2
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PrivateKey
+  # >= 0.2.3 — absent in 0.2.2.
+  - method: eth_keys.main.KeyAPI.ecdsa_sign_non_recoverable
+    arity: 2
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PrivateKey
+  - method: eth_keys.main.KeyAPI.ecdsa_verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.BaseSignature
+      - eth_keys.datatypes.PublicKey
+  - method: eth_keys.main.KeyAPI.ecdsa_recover
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.main.KeyAPI.private_key_to_public_key
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - eth_keys.datatypes.PrivateKey
+
+  # The SAME five operations reached through `eth_keys.keys`, the module-level
+  # `lazy_key_api` instance (`eth_keys/__init__.py:5-8`,
+  # `eth_keys/main.py:112`). That is an attribute path rather than a local
+  # variable, so the graph keys it on the module and it needs its own entries
+  # rather than being typed by a factory return.
+  - method: eth_keys.keys.ecdsa_sign
+    arity: 2
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PrivateKey
+  # >= 0.2.3 — absent in 0.2.2.
+  - method: eth_keys.keys.ecdsa_sign_non_recoverable
+    arity: 2
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PrivateKey
+  - method: eth_keys.keys.ecdsa_verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.BaseSignature
+      - eth_keys.datatypes.PublicKey
+  - method: eth_keys.keys.ecdsa_recover
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.keys.private_key_to_public_key
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - eth_keys.datatypes.PrivateKey
+
+  # ── PrivateKey ─────────────────────────────────────────────────────────────
+  # THERE IS NO GENERATION ENTRY POINT. `__init__` requires
+  # `private_key_bytes` (0.7.0 eth_keys/datatypes.py:239) and
+  # `grep -rn 'urandom\|secrets\.' eth_keys/` returns nothing, so every factory
+  # here is a LOAD of a secret the caller already holds.
+  - method: eth_keys.datatypes.PrivateKey.<init>
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.PrivateKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.keys.PrivateKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.KeyAPI.PrivateKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.main.KeyAPI.PrivateKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+
+  # `sign_msg` hashes with Keccak-256 and delegates to `sign_msg_hash`
+  # (0.7.0 eth_keys/datatypes.py:252-257).
+  - method: eth_keys.datatypes.PrivateKey.sign_msg
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.PrivateKey.sign_msg_hash
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  # >= 0.2.3 — absent in 0.2.2 (0.7.0 eth_keys/datatypes.py:259-266).
+  - method: eth_keys.datatypes.PrivateKey.sign_msg_non_recoverable
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.PrivateKey.sign_msg_hash_non_recoverable
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.PrivateKey.to_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.PrivateKey.to_hex
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── PublicKey ──────────────────────────────────────────────────────────────
+  # `__init__` takes the 64-byte uncompressed point with the `\x04` prefix
+  # removed (0.7.0 eth_keys/datatypes.py:150-157).
+  - method: eth_keys.datatypes.PublicKey.<init>
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.PublicKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.keys.PublicKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.KeyAPI.PublicKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.main.KeyAPI.PublicKey
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+
+  # Scalar multiplication of the private key by the curve generator, through the
+  # backend (0.7.0 eth_keys/datatypes.py:177-184). The two collapsed spellings
+  # beside it are the `keys.PublicKey.from_private(..)` and
+  # `KeyAPI.PublicKey.from_private(..)` forms, which drop one interior segment
+  # and take it from the IMPORTING module — measured both ways.
+  - method: eth_keys.datatypes.PublicKey.from_private
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - eth_keys.datatypes.PrivateKey
+  - method: eth_keys.PublicKey.from_private
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - eth_keys.datatypes.PrivateKey
+  - method: eth_keys.main.PublicKey.from_private
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - eth_keys.datatypes.PrivateKey
+
+  # >= 0.2.3 — absent in 0.2.2. Decompresses a 33-byte SEC1 point through the
+  # backend (0.7.0 eth_keys/datatypes.py:161-174).
+  - method: eth_keys.datatypes.PublicKey.from_compressed_bytes
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.PublicKey.from_compressed_bytes
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+
+  # Recovery verifies the signature as a side effect of solving for the point
+  # (0.7.0 eth_keys/datatypes.py:187-205). Keccak-256 at :193 for the `_msg`
+  # form; the `_msg_hash` form takes the caller's digest.
+  - method: eth_keys.datatypes.PublicKey.recover_from_msg
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.PublicKey.recover_from_msg
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.datatypes.PublicKey.recover_from_msg_hash
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.PublicKey.recover_from_msg_hash
+    arity: 2
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+
+  # Keccak-256 at datatypes.py:212 for `verify_msg`; `verify_msg_hash` takes the
+  # caller's digest and delegates to `backend.ecdsa_verify` (:215-220).
+  - method: eth_keys.datatypes.PublicKey.verify_msg
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.datatypes.PublicKey.verify_msg_hash
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.Signature
+  - method: eth_keys.datatypes.PublicKey.to_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.PublicKey.to_hex
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+  # >= 0.2.3 — absent in 0.2.2.
+  - method: eth_keys.datatypes.PublicKey.to_compressed_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.PublicKey.to_address
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.PublicKey.to_checksum_address
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.PublicKey.to_canonical_address
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── Signature ──────────────────────────────────────────────────────────────
+  # `__init__` takes either 65 signature bytes or a `vrs` 3-tuple
+  # (0.7.0 eth_keys/datatypes.py:352-382), so the required-argument count is 1
+  # and the tolerant fallback covers the keyword form.
+  - method: eth_keys.datatypes.Signature.<init>
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.Signature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.keys.Signature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.KeyAPI.Signature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.main.KeyAPI.Signature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.Signature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+
+  # Declared on `BaseSignature` (0.7.0 eth_keys/datatypes.py:341-346) and so
+  # reached on both concrete signature types; keyed here under each concrete
+  # type because that is what the factory return types above resolve to.
+  # Keccak-256 at :342 for `verify_msg`.
+  - method: eth_keys.datatypes.Signature.verify_msg
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PublicKey
+  - method: eth_keys.datatypes.Signature.verify_msg_hash
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PublicKey
+  # Only `Signature` declares recovery — a `NonRecoverableSignature` carries no
+  # recovery id (0.7.0 eth_keys/datatypes.py:412-417).
+  - method: eth_keys.datatypes.Signature.recover_public_key_from_msg
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.Signature.recover_public_key_from_msg_hash
+    arity: 1
+    return:
+      type: eth_keys.datatypes.PublicKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  # >= 0.2.3 — absent in 0.2.2 (0.7.0 eth_keys/datatypes.py:419-420).
+  - method: eth_keys.datatypes.Signature.to_non_recoverable_signature
+    arity: 0
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+  - method: eth_keys.datatypes.Signature.to_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.Signature.to_hex
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── NonRecoverableSignature ────────────────────────────────────────────────
+  # >= 0.2.3 — the whole type is absent in 0.2.2. Constructed from an `rs`
+  # 2-tuple or 64 signature bytes (0.7.0 eth_keys/datatypes.py:424-441).
+  - method: eth_keys.datatypes.NonRecoverableSignature.<init>
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.NonRecoverableSignature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.keys.NonRecoverableSignature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.KeyAPI.NonRecoverableSignature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.main.KeyAPI.NonRecoverableSignature
+    arity: 1
+    return:
+      type: eth_keys.datatypes.NonRecoverableSignature
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+  - method: eth_keys.datatypes.NonRecoverableSignature.verify_msg
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PublicKey
+  - method: eth_keys.datatypes.NonRecoverableSignature.verify_msg_hash
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - eth_keys.datatypes.PublicKey
+  - method: eth_keys.datatypes.NonRecoverableSignature.to_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: eth_keys.datatypes.NonRecoverableSignature.to_hex
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output

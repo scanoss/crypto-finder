@@ -1,0 +1,352 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rustls
+  coordinates:
+    - rustls
+  version_range: ">=0.1.0,<0.24.0"
+  description: "TLS client and server configuration, connection establishment and crypto provider selection for the rustls crate"
+
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API, AND
+# THEN RE-READ AFTER EVERY EDIT UNTIL NOTHING MOVED. A probe consumer calling
+# each entry point the way real consumers do was scanned with
+# `crypto-finder scan --no-remote-rules --rules-dir <rules> --export-callgraph`.
+# The first export emitted, among others:
+#
+#   rustls.ClientConfig.builder()                     arity 0
+#   rustls.ClientConfig.with_root_certificates(?)     arity 1
+#   rustls::crypto::ring.default_provider()           arity 0
+#   rustls_cg_probe.with_single_cert(?, ?)            <- attributed to the PROBE
+#
+# THE KEY SHAPE IS NOT UNIFORM ACROSS THIS CRATE, AND BOTH FORMS ARE PRESENT
+# HERE. `rustAuthoredKey` (contracts.go:267) rewrites the second-to-last dot to
+# "::" only when the key has AT LEAST TWO DOTS:
+#
+#   emitted rustls.ClientConfig.builder          2 dots -> rustls::ClientConfig.builder
+#   emitted rustls::crypto::ring.default_provider 1 dot  -> UNCHANGED
+#
+# `default_provider` is a free function inside a module that the graph already
+# spells with "::", so it emits exactly one dot and the authored key IS the
+# emitted key. Mechanically applying the substitution would produce
+# `rustls::crypto.ring.default_provider`, which loads without error and joins
+# nothing. rustls-native-certs and tokio-rustls record the same asymmetry for
+# their crate-root free functions; this crate has BOTH kinds in one file.
+#
+# THE BUILDER-METHOD KEYS MOVED WHEN THE FACTORIES WERE CONTRACTED. THIS IS THE
+# FIXED-POINT RULE, AND IT BIT HERE EXACTLY AS THE CAMPAIGN PROMPT WARNS.
+# An earlier draft of this file asserted that these keys did NOT move and gave a
+# reason (that a generic return is not indexed as a receiver). THAT WAS WRONG,
+# and the iteration below is what refuted it. It is recorded rather than
+# silently corrected, because a plausible wrong reason in a header outlives the
+# session:
+#
+#   iteration 1  no contract loaded
+#                rustls.ClientConfig.with_root_certificates(?)
+#   iteration 2  factories contracted with canonical_return_type
+#                rustls.ConfigBuilder.with_root_certificates(?)      <- KEY MOVED
+#   iteration 3  re-keyed on ConfigBuilder, contract entries added
+#                rustls.ConfigBuilder.with_root_certificates(
+#                    rustls::RootCertStore): rustls::ConfigBuilder<ClientConfig, WantsClientCert>
+#   iteration 4  byte-identical to iteration 3 -> FIXED POINT
+#
+# Exactly three keys moved, all three of them builder methods, and all three are
+# authored below on their post-move key. Had the file been shipped from the
+# iteration-1 export it would have loaded cleanly and joined nothing.
+#
+# A ROLE OUTSIDE {factory, config, output, operation} FAILS THE WHOLE EMBEDDED
+# RUST KB, NOT JUST THIS FILE. A first draft wrote `role: configuration`, and
+# `LoadEmbedded(rust)` then refused the entire directory: every other rust
+# family's contract tests failed with this file's error message. Worth knowing
+# because `crypto-finder scan` still EXITED 0 while printing
+# `ERROR: failed to build call graph for export`, so the export came back empty
+# and nothing but the exit code said otherwise.
+#
+# `with_single_cert` IS CONTRACTED, AND THE FIRST DRAFT OF THIS FILE WAS WRONG
+# TO OMIT IT. That omission was made from the ITERATION-1 export, where the call
+# came back as `<consumer_crate>.with_single_cert(?, ?)` and the reasonable
+# reading was that the parser cannot type the receiver. Re-exporting AFTER the
+# factories were contracted showed otherwise:
+#
+#   rustls::ServerConfig::builder().with_single_cert(c, k)      -> rustls.ConfigBuilder.with_single_cert
+#   let b = rustls::ServerConfig::builder(); b.with_single_cert -> rustls.ConfigBuilder.with_single_cert
+#   builder().with_no_client_auth().with_single_cert(c, k)      -> <consumer>.with_single_cert   STILL UNRESOLVED
+#
+# So contracting the factories is what made two of the three shapes resolvable,
+# and the entry below joins for those two. The third — a receiver arriving
+# through an INTERMEDIATE uncontracted builder call — is still attributed to the
+# consumer crate, and that is the residual, not the whole method. The rule
+# reports the line either way; what varies is whether the callgraph carries an
+# identity for it.
+#
+# ITS RETURN IS SIDE-DEPENDENT BEFORE 0.22 AND THAT IS WHY IT IS `low`. The
+# SERVER builder's `with_single_cert` returns `Result<ServerConfig, Error>` in
+# every release 0.20.0-0.23.41 (0.20.9 src/server/builder.rs:64, 0.23.41
+# src/server/builder.rs:65). A CLIENT builder also had one, returning
+# `Result<ClientConfig, Error>`, from 0.20.0 until it was removed at 0.22.0 —
+# deprecated at 0.21.4 in favor of `with_client_auth_cert`
+# (0.21.12 src/client/builder.rs:108 carries the `#[deprecated(since = "0.21.4")]`
+# attribute). One (method, arity) key cannot hold both returns —
+# `mergeContractGroup` (contracts.go:936-968, Rule 2) makes divergent returns on
+# one key a HARD LOAD ERROR — so the server form is declared, because it is the
+# one true across the whole range and the only one alive from 0.22.0.
+#
+# `set_certificate_verifier` IS A KNOWN UNCONTRACTED GAP, AND CONTRACTING IT
+# WOULD BE A FABRICATION. The rule
+# `rust.rustls.certificate.tls.dangerous-verifier` matches
+# `cfg.dangerous().set_certificate_verifier(v)` -- the spelling rustls' own
+# tests/server_cert_verifier.rs:30-32 uses -- and declares
+# `api: rustls.DangerousClientConfig.set_certificate_verifier`. The exported
+# graph emits `<consumer_crate>.set_certificate_verifier(?)` for it, so an entry
+# under any rustls key would load cleanly and join nothing.
+#
+# THE CHAIN CANNOT BE CONTRACTED INTO RESOLUTION EITHER, AND THAT WAS MEASURED
+# RATHER THAN ASSUMED. The receiver is a BUILT `ClientConfig`, reached through
+# `with_no_client_auth()`. Contracting that method would resolve the chain --
+# except that its return is permanently ambiguous under one (method, arity 0)
+# key: it returns `ClientConfig` on the CLIENT builder and
+# `ConfigBuilder<ServerConfig, WantsServerCert>` on the SERVER builder, in every
+# release from 0.20.9 to 0.23.41 (client/builder.rs and server/builder.rs, both
+# versions read). Two entries on one key with divergent returns are a hard load
+# error (contracts.go:936-968, Rule 2), and one entry would be false for the
+# other side of the API half the time. This is not an era split that a second
+# file could separate -- both spellings are alive simultaneously in every
+# release -- so the gap stays open and is reported.
+#
+# `12-api-contract-join.sh` therefore reports ONE unjoined api value for this
+# family, deliberately. rustls-webpki ships the same shape for
+# `RawPublicKeyEntity::verify_signature`.
+#
+# ================= RETURN TYPES, AND THE TWO THAT ARE ERA-DEPENDENT ==========
+# Read from the archives at the version named, per symbol:
+#
+#   ClientConfig::builder      0.20.9 client_conn.rs:173  ConfigBuilder<Self, WantsCipherSuites>
+#                              0.21.12 client_conn.rs:220 ConfigBuilder<Self, WantsCipherSuites>
+#                              0.22.4  client_conn.rs:246 ConfigBuilder<Self, WantsVerifier>   <- CHANGES
+#                              0.23.41 client_conn.rs:299 ConfigBuilder<Self, WantsVerifier>
+#   ServerConfig::builder      0.23.41 server_conn.rs:459 ConfigBuilder<Self, WantsVerifier>   (same split)
+#   *::builder_with_provider   0.22.4  client_conn.rs:280 ConfigBuilder<Self, WantsVersions>   0.22.0+ only
+#                              0.23.41 client_conn.rs:340 ConfigBuilder<Self, WantsVersions>
+#   *::builder_with_protocol_versions
+#                              0.22.4  client_conn.rs:263 ConfigBuilder<Self, WantsVerifier>   0.22.0+ only
+#                              0.23.41 client_conn.rs:318 ConfigBuilder<Self, WantsVerifier>
+#   ClientConnection::new      0.23.41 client_conn.rs:891 Result<Self, Error>
+#   ServerConnection::new      0.23.41 server_conn.rs:948 Result<Self, Error>
+#   RootCertStore::empty       0.23.41 webpki/anchors.rs:21 Self
+#   ring/aws_lc_rs default_provider
+#                              0.23.41 crypto/ring/mod.rs:31, crypto/aws_lc_rs/mod.rs:42
+#                                                          CryptoProvider
+#
+# THE TWO `builder` ENTRIES CARRY `confidence: low` BECAUSE THEIR RETURN CHANGES
+# INSIDE THE DECLARED RANGE. The typestate parameter moves from
+# `WantsCipherSuites` to `WantsVerifier` at 0.22.0, under one name and one
+# arity, so a single KB entry cannot be true for both. Splitting is not
+# available: `mergeContractGroup` (contracts.go:936-968, Rule 2) treats two
+# entries on one (method, arity) key with divergent returns as a HARD LOAD
+# ERROR. The current era is named, because that is what a new consumer compiles
+# against, and `confidence: low` is the field whose purpose is to say the value
+# does not hold across the whole range — the convention bitcoin_hashes
+# established and rustls-native-certs followed for exactly this shape.
+# `canonical_return_type` is SET rather than withheld: rustls-native-certs
+# measured that omitting it renders the entry byte-identically to having no
+# contract at all.
+#
+# EVERY GENERIC AND TUPLE RETURN IS QUOTED. `ConfigBuilder<ClientConfig,
+# WantsVerifier>` contains a comma, and an unquoted YAML flow-mapping scalar
+# containing a comma TRUNCATES SILENTLY to `type: "ConfigBuilder<ClientConfig"`
+# plus a stray null key. That defect is present in the merged tfhe.yaml on five
+# entries and was found only by reading the loaded values back.
+#
+# ================= WHAT IS DELIBERATELY NOT TYPED ============================
+#   skipped-not-a-call-site: `rustls::version::TLS12` / `TLS13` and the nine
+#     `cipher_suite::*` constants. The rules claim them because naming a suite
+#     or a version IS an application decision, but a constant is not a call and
+#     has no method key to contract.
+#   skipped-negotiated: everything about the live session. The cipher suite and
+#     protocol version in force are chosen by the handshake and appear in no
+#     source position.
+#   skipped-wrong-family: `rustls::pki_types::*` (0.22+) re-exports the separate
+#     `rustls-pki-types` crate; `webpki::*`, including rustls' own internal
+#     `src/webpki/` module, belongs to rustls-webpki. The primitives themselves
+#     come from `ring` and `aws-lc-rs`, both already merged families — a line
+#     that is genuinely theirs stays theirs.
+contracts:
+  # ERA 1-2 (0.1.0-0.19.1). 0.1.0 src/client.rs:181, 0.19.1 src/client/mod.rs:153.
+  - method: rustls::ClientConfig.new
+    arity: 0
+    return: {type: "rustls::ClientConfig", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::ClientConfig"
+    role: factory
+
+  # ERA 1 (0.1.0-0.11.0) arity 0; ERA 2 (0.12.0-0.19.1) arity 1. Two keys, so no
+  # divergent-return conflict: both return `ServerConfig`.
+  - method: rustls::ServerConfig.new
+    arity: 0
+    return: {type: "rustls::ServerConfig", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::ServerConfig"
+    role: factory
+
+  - method: rustls::ServerConfig.new
+    arity: 1
+    return: {type: "rustls::ServerConfig", confidence: high}
+    parameter_types: ["rustls::ClientCertVerifier"]
+    canonical_return_type: "rustls::ServerConfig"
+    role: factory
+
+  # ERA 3-4 (0.20.0+). Return changes at 0.22.0 — see the header.
+  - method: rustls::ClientConfig.builder
+    arity: 0
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsVerifier>", confidence: low}
+    parameter_types: []
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsVerifier>"
+    role: factory
+
+  - method: rustls::ServerConfig.builder
+    arity: 0
+    return: {type: "rustls::ConfigBuilder<ServerConfig, WantsVerifier>", confidence: low}
+    parameter_types: []
+    canonical_return_type: "rustls::ConfigBuilder<ServerConfig, WantsVerifier>"
+    role: factory
+
+  # ERA 4 ONLY (0.22.0+). Stable return across its whole window.
+  - method: rustls::ClientConfig.builder_with_provider
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsVersions>", confidence: high}
+    parameter_types: ["rustls::crypto::CryptoProvider"]
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsVersions>"
+    role: factory
+
+  - method: rustls::ServerConfig.builder_with_provider
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ServerConfig, WantsVersions>", confidence: high}
+    parameter_types: ["rustls::crypto::CryptoProvider"]
+    canonical_return_type: "rustls::ConfigBuilder<ServerConfig, WantsVersions>"
+    role: factory
+
+  - method: rustls::ClientConfig.builder_with_protocol_versions
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsVerifier>", confidence: high}
+    parameter_types: ["rustls::SupportedProtocolVersion"]
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsVerifier>"
+    role: factory
+
+  - method: rustls::ServerConfig.builder_with_protocol_versions
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ServerConfig, WantsVerifier>", confidence: high}
+    parameter_types: ["rustls::SupportedProtocolVersion"]
+    canonical_return_type: "rustls::ConfigBuilder<ServerConfig, WantsVerifier>"
+    role: factory
+
+  # 0.20.0+, arity fixed in every release that has them.
+  - method: rustls::ClientConnection.new
+    arity: 2
+    return: {type: "Result<rustls::ClientConnection, rustls::Error>", confidence: high}
+    parameter_types: ["rustls::ClientConfig", "rustls::pki_types::ServerName"]
+    canonical_return_type: "Result<rustls::ClientConnection, rustls::Error>"
+    role: factory
+
+  - method: rustls::ServerConnection.new
+    arity: 1
+    return: {type: "Result<rustls::ServerConnection, rustls::Error>", confidence: high}
+    parameter_types: ["rustls::ServerConfig"]
+    canonical_return_type: "Result<rustls::ServerConnection, rustls::Error>"
+    role: factory
+
+  # 0.20.0+. Resolvable only once the factories above are contracted — see the
+  # header. `confidence: low` records the pre-0.22 client/server return split.
+  - method: rustls::ConfigBuilder.with_single_cert
+    arity: 2
+    return: {type: "Result<rustls::ServerConfig, rustls::Error>", confidence: low}
+    parameter_types: ["rustls::pki_types::CertificateDer", "rustls::pki_types::PrivateKeyDer"]
+    canonical_return_type: "Result<rustls::ServerConfig, rustls::Error>"
+    role: config
+
+  # Every release 0.1.0-0.23.41. 0.1.0 src/verify.rs:74 -> 0.23.41
+  # src/webpki/anchors.rs:21. The type moves between modules; the key does not,
+  # because it is re-exported at the crate root in every era.
+  - method: rustls::RootCertStore.empty
+    arity: 0
+    return: {type: "rustls::RootCertStore", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::RootCertStore"
+    role: factory
+
+  # THE THREE BUILDER METHODS THE GRAPH DOES RESOLVE. Keyed on the CONFIG type,
+  # which is what the export emits — see the header.
+  - method: rustls::ConfigBuilder.with_root_certificates
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>", confidence: low}
+    parameter_types: ["rustls::RootCertStore"]
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>"
+    role: config
+
+  - method: rustls::ConfigBuilder.with_client_auth_cert
+    arity: 2
+    return: {type: "Result<rustls::ClientConfig, rustls::Error>", confidence: high}
+    parameter_types: ["rustls::pki_types::CertificateDer", "rustls::pki_types::PrivateKeyDer"]
+    canonical_return_type: "Result<rustls::ClientConfig, rustls::Error>"
+    role: config
+
+  - method: rustls::ConfigBuilder.with_custom_certificate_verifier
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>", confidence: high}
+    parameter_types: ["rustls::client::danger::ServerCertVerifier"]
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>"
+    role: config
+
+  # 0.22.0+. Free functions inside a module the graph spells with "::", so ONE
+  # dot and the authored key is the emitted key — see the header.
+  - method: rustls::crypto::ring.default_provider
+    arity: 0
+    return: {type: "rustls::crypto::CryptoProvider", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::crypto::CryptoProvider"
+    role: factory
+
+  - method: rustls::crypto::aws_lc_rs.default_provider
+    arity: 0
+    return: {type: "rustls::crypto::CryptoProvider", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::crypto::CryptoProvider"
+    role: factory
+
+  # 0.22.0+. `dangerous()` ON THE BUILDER, the only route to
+  # `with_custom_certificate_verifier` from 0.22.0 (0.22.4 src/client/builder.rs:66,
+  # 0.23.41 :85). Absent from the server builder in every release checked.
+  - method: rustls::ConfigBuilder.dangerous
+    arity: 0
+    return: {type: "rustls::DangerousClientConfigBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::DangerousClientConfigBuilder"
+    role: factory
+
+  # 0.22.0+. The 0.22-era home of the method (0.22.4 src/client/builder.rs:88,
+  # 0.23.41 :107), inside `impl DangerousClientConfigBuilder`. The pre-0.22 form
+  # on `ConfigBuilder` is a DIFFERENT receiver type and keeps its own entry above.
+  - method: rustls::DangerousClientConfigBuilder.with_custom_certificate_verifier
+    arity: 1
+    return: {type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>", confidence: high}
+    parameter_types: ["rustls::client::danger::ServerCertVerifier"]
+    canonical_return_type: "rustls::ConfigBuilder<ClientConfig, WantsClientCert>"
+    role: config
+
+  # 0.9.0+ (0.9.0 src/client.rs:268), NOT 0.20.0 as an earlier draft of this file
+  # said. `dangerous()` on an ALREADY-BUILT ClientConfig.
+  - method: rustls::ClientConfig.dangerous
+    arity: 0
+    return: {type: "rustls::DangerousClientConfig", confidence: high}
+    parameter_types: []
+    canonical_return_type: "rustls::DangerousClientConfig"
+    role: factory
+
+  # 0.9.0+ (0.9.0 src/client.rs:287, 0.23.41 src/client/client_conn.rs:554).
+  # Returns unit: `Result<(), E>` would be `()`, and this returns nothing at all.
+  - method: rustls::DangerousClientConfig.set_certificate_verifier
+    arity: 1
+    return: {type: "()", confidence: high}
+    parameter_types: ["rustls::client::danger::ServerCertVerifier"]
+    canonical_return_type: "()"
+    role: config
+
+hierarchy: {}

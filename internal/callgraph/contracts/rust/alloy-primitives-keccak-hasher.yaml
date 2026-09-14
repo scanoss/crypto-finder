@@ -1,0 +1,164 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-keccak-hasher
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.6.0,<1.7.0"
+  description: "alloy-primitives incremental Keccak-256 hasher, in both the crate-root and utils import spellings"
+
+# THE INCREMENTAL HASHER ARRIVES AT 0.6.0 (0.6.0 src/utils/mod.rs:118
+# `pub struct Keccak256`, re-exported at src/lib.rs:67) and its `impl` block holds SIX
+# public methods, BYTE-FOR-BYTE THE SAME SET from there to 1.6.0 -- `new`,
+# `update`, `finalize`, `finalize_into`, `finalize_into_array` and the unsafe
+# `finalize_into_raw` -- verified by enumerating the `impl Keccak256` block in
+# every sampled archive (0.6.0 src/utils/mod.rs:155,161,176,182,198 and 1.6.0
+# :288,294,300,315,322,332).
+#
+# `finalize_into_raw` IS THE ONE OF THE SIX THAT IS NOT CONTRACTED, and that is a
+# disposition rather than an oversight:
+#   skipped-non-crypto: `Keccak256::finalize_into_raw(self, output: *mut u8)`
+#     (0.6.0 src/utils/mod.rs:198, 1.6.0 :332) is the same terminal read as
+#     `finalize_into` reached through a raw pointer, it is `unsafe`, and no rule
+#     matches it. An earlier revision of this header said the block held five
+#     methods; it holds six. `default` comes from a
+# hand-written `impl Default` (1.6.0 src/utils/mod.rs:271) present in the same
+# releases. Compiling `alloy_primitives::Keccak256::new()` against 0.5.4 fails
+# with E0433 `cannot find Keccak256`, which is this range's negative control.
+#
+# TWELVE ENTRIES FOR SIX METHODS, because the callgraph key follows the
+# consumer's import and this type is reachable two ways: `use
+# alloy_primitives::Keccak256;` emits `alloy_primitives.Keccak256.new` and
+# `alloy_primitives::utils::Keccak256::default()` emits
+# `alloy_primitives::utils.Keccak256.default`. Both were read off the SAME probe
+# export, so neither is hypothetical. Each carries TWO dots, so `rustAuthoredKey`
+# moves the second-to-last one and the authored keys below are
+# `alloy_primitives::Keccak256.new` and
+# `alloy_primitives::utils::Keccak256.new`.
+#
+# `update` RETURNS `void` RATHER THAN `()`, matching the merged `sha3`, `sha2`
+# and `blake2` KBs for the identical shape: this is a digest hasher whose
+# `update(&mut self, bytes: impl AsRef<[u8]>)` genuinely returns unit. `void` in
+# this directory is reserved for exactly that, and `()` is reserved for the Ok
+# half of a `Result<(), E>`, which none of these methods has.
+#
+# ROLES follow the merged digest convention: the two constructors are
+# `factory`, `update` is `operation`, and the three terminal reads are `output`.
+# `export.go` branches on Role and computes a non-operation role from
+# `receiverType(c.Method)`, so an `output` role on a method with no receiver
+# would be unemittable -- every entry here has one.
+#
+# ARITY EXCLUDES THE RECEIVER: `update(&mut self, bytes)` is 1,
+# `finalize(self)` is 0, `finalize_into(self, output)` is 1.
+#
+# `.update(..)` AND `.finalize()` ARE CONTRACTED HERE AND DELIBERATELY NOT
+# MATCHED BY ANY RULE. They are the RustCrypto `Digest` trait's method names, so
+# a guarded receiver pattern for them would claim every sha2, sha3, blake2,
+# ripemd, md-5, whirlpool and hmac hasher in any file that also imports
+# alloy-primitives. The rules anchor the CONSTRUCTOR instead; these entries exist
+# so that the chain hanging off a matched `Keccak256::new()` renders a signature
+# rather than `update(?)`. Both keys were emitted by the probe, so they are
+# reached in practice.
+contracts:
+  - method: alloy_primitives::Keccak256.new
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::Keccak256"
+    return: {type: "alloy_primitives::Keccak256", confidence: high}
+    role: factory
+
+  - method: alloy_primitives::Keccak256.default
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::Keccak256"
+    return: {type: "alloy_primitives::Keccak256", confidence: high}
+    role: factory
+
+  - method: alloy_primitives::Keccak256.update
+    arity: 1
+    parameter_types: ["impl AsRef<[u8]>"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: alloy_primitives::Keccak256.finalize
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: output
+
+  - method: alloy_primitives::Keccak256.finalize_into
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: output
+
+  - method: alloy_primitives::Keccak256.finalize_into_array
+    arity: 1
+    parameter_types: ["&mut [u8; 32]"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: output
+
+  - method: alloy_primitives::utils::Keccak256.new
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::utils::Keccak256"
+    return: {type: "alloy_primitives::utils::Keccak256", confidence: high}
+    role: factory
+
+  - method: alloy_primitives::utils::Keccak256.default
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::utils::Keccak256"
+    return: {type: "alloy_primitives::utils::Keccak256", confidence: high}
+    role: factory
+
+  - method: alloy_primitives::utils::Keccak256.update
+    arity: 1
+    parameter_types: ["impl AsRef<[u8]>"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+  - method: alloy_primitives::utils::Keccak256.finalize
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: output
+
+  - method: alloy_primitives::utils::Keccak256.finalize_into
+    arity: 1
+    parameter_types: ["&mut [u8]"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: output
+
+  - method: alloy_primitives::utils::Keccak256.finalize_into_array
+    arity: 1
+    parameter_types: ["&mut [u8; 32]"]
+    canonical_return_type: "void"
+    return: {type: void, confidence: high}
+    role: output
+
+hierarchy: {}

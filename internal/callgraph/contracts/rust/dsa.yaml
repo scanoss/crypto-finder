@@ -12,8 +12,17 @@ library:
 # the shared signature::Signer and Verifier traits, so the stable identities here
 # are the key constructors.
 #
+# `Components::generate(rng, key_size)` (components.rs:41) is this era's DSA
+# domain-parameter generator, arity 2 returning `Components` directly. At 0.7.0
+# it becomes an arity-0 `Generate` trait method and so is declared separately in
+# dsa-0.7.yaml.
+#
 # skipped-non-crypto: Components accessors and the PKCS#8 encoding helpers.
 contracts:
+  - method: dsa::Components.generate
+    arity: 2
+    return: {type: dsa::Components, confidence: high}
+    role: factory
   - method: dsa::SigningKey.generate
     arity: 2
     return: {type: dsa::SigningKey, confidence: high}

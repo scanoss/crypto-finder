@@ -345,15 +345,23 @@ type SourceLocation struct {
 
 // FileAnalysis contains all extracted information from a single source file.
 type FileAnalysis struct {
-	FilePath              string
-	PackageName           string
-	PackagePath           string
-	Imports               map[string]string // alias (or last path segment) -> full import path
-	ImportedTypes         map[string]bool   // imported symbol alias -> inferred class/type
-	FromImports           map[string]bool   // symbols introduced via `from X import Y` (Python only)
-	WildcardImports       []string          // wildcard import prefixes (e.g., "java.security")
-	StaticWildcardImports []string          // static wildcard owner types (e.g., "java.util.Collections")
-	DeclaredTypes         map[string]bool   // source-declared fully qualified types (C++ only)
+	FilePath      string
+	PackageName   string
+	PackagePath   string
+	Imports       map[string]string // alias (or last path segment) -> full import path
+	ImportedTypes map[string]bool   // imported symbol alias -> inferred class/type
+	FromImports   map[string]bool   // symbols introduced via `from X import Y` (Python only)
+	// PythonFromImportOriginals maps the LOCAL name an aliased Python
+	// `from X import Sym as Local` binds to the ORIGINAL symbol name `Sym`.
+	// Imports records only the module path, so without this the callee key is
+	// built from the CONSUMER'S alias -- `from eth_hash.auto import keccak as
+	// kek; kek(d)` emitted `eth_hash.auto.kek`, which no contract can declare
+	// and which therefore joined nothing. Populated for Python only, and only
+	// when the alias differs from the original name.
+	PythonFromImportOriginals map[string]string
+	WildcardImports           []string        // wildcard import prefixes (e.g., "java.security")
+	StaticWildcardImports     []string        // static wildcard owner types (e.g., "java.util.Collections")
+	DeclaredTypes             map[string]bool // source-declared fully qualified types (C++ only)
 	// ImportAliases maps a local name that STANDS FOR a real path to that path:
 	// a renaming import (Rust `use a::b::C as D;` -> "D" -> "a::b::C") or a
 	// local type alias (`type D = a::b::C<T>;` -> "D" -> "a::b::C"). It is kept

@@ -1,0 +1,967 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pgp
+  coordinates:
+    - pgp
+  version_range: ">=0.2.0,<0.21.0"
+  description: "rPGP: pure-Rust OpenPGP key generation, message encryption and decryption, and signing"
+
+# API read at pgp 0.20.0, with every divergence checked against 0.2.0, 0.5.0,
+# 0.7.2, 0.10.0, 0.11.0, 0.13.2, 0.14.2, 0.15.0, 0.16.0, 0.17.0, 0.18.0 and
+# 0.19.0 sources. Line references name the version they belong to.
+#
+# WHY THE FLOOR IS 0.2.0. `SecretKeyParamsBuilder`, `SubkeyParamsBuilder`,
+# `StringToKey::new_iterated`, `Message::encrypt_to_keys`,
+# `decrypt_with_password` and the `Deserializable` entry points all exist at
+# 0.2.0 and are contracted here. 0.1.0 is in the matrix range but is a DIFFERENT
+# LIBRARY under the same name: its `src/` holds only `email.rs`, `header.rs`,
+# `pgp.rs` and `types.rs`, with no `composed`, no `crypto` and no key or message
+# API at all. Nothing in this file can join against it, and that is correct
+# rather than a gap.
+#
+# WHERE THE KEYS COME FROM. Not from the documentation: each was read off an
+# exported call graph for a probe consumer, and appeared as `name(?)` or
+# `name(?, ?)` with empty parameter_types before this file existed. The export
+# was then repeated after each authoring pass until nothing moved, because the
+# emitted key depends on which contracts are already loaded.
+#
+# THIS CRATE HAS TWO KEY SPELLINGS AND BOTH ARE NEEDED. Up to and including
+# 0.15.0, `src/lib.rs` re-exports the whole `composed` module at the crate root
+# (0.15.0 lib.rs:53 `pub use self::composed::*;`), so a consumer may write
+# `use pgp::Message;`. At 0.16.0 those re-exports were removed (0.16.0
+# lib.rs:23-32) and the same consumer must write `use pgp::composed::Message;`.
+# The key follows the CONSUMER'S IMPORT, not the version, so the two spellings
+# emit different keys — measured on two probes:
+#
+#   use pgp::composed::SignedSecretKey;  ->  pgp::composed.SignedSecretKey.from_bytes
+#   use pgp::SignedSecretKey;            ->  pgp.SignedSecretKey.from_armor_single
+#
+# Both occur in real published consumers: wicrs_server 0.13.1 writes the
+# `composed` spelling against pgp 0.7, and tugger-rust-toolchain 0.9.0 writes
+# the root one. Both are authored below in the `::` form the rest of this KB
+# uses; the parser emits the receiver separator as a dot and `rustAuthoredKey`
+# (contracts.go:267) rewrites the second-to-last dot back, so the authored
+# spelling stays conventional.
+#
+# THE TWO ENTRIES WHERE THE SUBSTITUTION DOES NOT APPLY are the free function
+# `decrypt_session_key_with_password` in both spellings. `rustAuthoredKey`
+# rewrites the second-to-last dot only when the key has at least TWO dots; the
+# graph emits `pgp::composed.decrypt_session_key_with_password`, which has one,
+# so it is authored with a DOT after `composed` and not a `::`. Authoring it as
+# `pgp::composed::decrypt_session_key_with_password` would load without error
+# and join nothing — the defect cargo-rustls-native-certs measured.
+#
+# `MessageBuilder` IS AN ALIAS AND THE KEY USES THE ALIAS. The type is declared
+# `Builder` and re-exported `Builder as MessageBuilder`
+# (0.20.0 src/composed/message.rs:9). Consumers import the alias and the graph
+# keys on what they imported, so every entry below says `MessageBuilder`.
+#
+# THE PARSER COUNTS A MULTI-PARAMETER CLOSURE LITERAL'S PARAMETERS AS SEPARATE
+# CALL ARGUMENTS, and that is why `verify_many` is declared at two arities.
+# Measured on this family with three probes through the same binary:
+#
+#   m.verify_many(checker)              ->  verify_many(?)          arity 1
+#   m.verify_many(|_i| Ok(()))          ->  verify_many(?)          arity 1
+#   m.verify_many(|_i, _s, _d| Ok(()))  ->  verify_many(?, ?, ?)    arity 3
+#
+# The source signature is arity 1 (0.20.0 src/composed/cleartext.rs:138,
+# `verify_many<F>(&self, verifier: F)`) and the crate's own bound requires
+# `Fn(usize, &Signature, &[u8])`, so the three-parameter closure is the
+# DOCUMENTED idiom and arity 3 is what a real consumer emits. Declaring only the
+# source arity would join nothing for exactly the spelling the crate tells people
+# to write. The cause is `extractRustCallArguments`
+# (internal/callgraph/rust_parser.go:1956), which splits the `arguments` node's
+# TEXT on top-level commas and does not treat a closure's `|a, b|` as a nesting
+# delimiter. That is a parser defect reaching well beyond this family — it would
+# change the arity of every Rust call taking a multi-parameter closure, across
+# every merged rule family — so it is REPORTED rather than fixed here, and this
+# file works around it in the one place this crate needs it.
+#
+# THE FLUENT CHAIN RESOLVES ONLY ONCE THE FACTORY IS CONTRACTED, and this is
+# the reason the keys had to be read as a FIXED POINT rather than from one
+# export. In the crate's documented form —
+# `MessageBuilder::from_bytes(..).seipd_v1(..)`, then `builder.encrypt_to_key(..)`,
+# then `builder.to_vec(..)` — the FIRST export attributed `encrypt_to_key` and
+# `to_vec` to the CONSUMER crate, and the obvious conclusion was that the Rust
+# resolver loses a receiver at chain depth 2. It does not: with
+# `MessageBuilder.from_bytes` and `.seipd_v1` contracted, the SAME probe emits
+# `pgp::composed.MessageBuilder.encrypt_to_key` and `.to_vec`. A third export
+# then moved nothing, which is what makes this a fixed point rather than a
+# snapshot. Recorded because the first reading was written down as a limitation
+# and was wrong.
+contracts:
+  # --- key generation parameter builders ---
+  # derive_builder-generated (0.20.0 src/composed/key/builder.rs:50
+  # `#[derive(Debug, PartialEq, Eq, Builder)]` over `pub struct SecretKeyParams`
+  # at :52, with the `key_type: KeyType` field at :58), so
+  # `default()` is the only constructor and every setter returns `&mut Self`.
+  # Present unchanged from 0.2.0 to 0.20.0. BOTH key spellings are declared: a
+  # consumer on any version may import through `composed`, and one on <=0.15.0
+  # may import from the crate root. Measured on two probes; both spellings occur
+  # in real consumers (wicrs_server 0.13.1 writes the `composed` one against
+  # pgp 0.7, tugger-rust-toolchain 0.9.0 writes the root one).
+  - method: pgp::composed::SecretKeyParamsBuilder.default
+    arity: 0
+    return: {type: "pgp::composed::SecretKeyParamsBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "pgp::composed::SecretKeyParamsBuilder"
+    role: factory
+  - method: pgp::composed::SecretKeyParamsBuilder.key_type
+    arity: 1
+    return: {type: "pgp::composed::SecretKeyParamsBuilder", confidence: high}
+    parameter_types: ["pgp::composed::KeyType"]
+    canonical_return_type: "&mut pgp::composed::SecretKeyParamsBuilder"
+    role: config
+  - method: pgp::composed::SecretKeyParamsBuilder.build
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SecretKeyParams, pgp::composed::SecretKeyParamsBuilderError>"
+    role: factory
+  - method: pgp::composed::SubkeyParamsBuilder.default
+    arity: 0
+    return: {type: "pgp::composed::SubkeyParamsBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "pgp::composed::SubkeyParamsBuilder"
+    role: factory
+  - method: pgp::composed::SubkeyParamsBuilder.key_type
+    arity: 1
+    return: {type: "pgp::composed::SubkeyParamsBuilder", confidence: high}
+    parameter_types: ["pgp::composed::KeyType"]
+    canonical_return_type: "&mut pgp::composed::SubkeyParamsBuilder"
+    role: config
+  - method: pgp::composed::SubkeyParamsBuilder.build
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SubkeyParams, pgp::composed::SubkeyParamsBuilderError>"
+    role: factory
+  - method: pgp::SecretKeyParamsBuilder.default
+    arity: 0
+    return: {type: "pgp::SecretKeyParamsBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "pgp::SecretKeyParamsBuilder"
+    role: factory
+  - method: pgp::SecretKeyParamsBuilder.key_type
+    arity: 1
+    return: {type: "pgp::SecretKeyParamsBuilder", confidence: high}
+    parameter_types: ["pgp::KeyType"]
+    canonical_return_type: "&mut pgp::SecretKeyParamsBuilder"
+    role: config
+  - method: pgp::SecretKeyParamsBuilder.build
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::SecretKeyParams, pgp::SecretKeyParamsBuilderError>"
+    role: factory
+  - method: pgp::SubkeyParamsBuilder.default
+    arity: 0
+    return: {type: "pgp::SubkeyParamsBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "pgp::SubkeyParamsBuilder"
+    role: factory
+  - method: pgp::SubkeyParamsBuilder.key_type
+    arity: 1
+    return: {type: "pgp::SubkeyParamsBuilder", confidence: high}
+    parameter_types: ["pgp::KeyType"]
+    canonical_return_type: "&mut pgp::SubkeyParamsBuilder"
+    role: config
+  - method: pgp::SubkeyParamsBuilder.build
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::SubkeyParams, pgp::SubkeyParamsBuilderError>"
+    role: factory
+
+  # --- transferable key parsing (the `Deserializable` trait) ---
+  # Every entry is arity 1. THE `*_many` FAMILY IS DECLARED TOO, and an earlier
+  # version of this comment was wrong to omit it: it claimed the whole family
+  # (and `from_packets`) diverges from `Box<dyn Iterator<..>>` to
+  # `Result<Box<dyn Iterator<..>>>` and is therefore a hard load error. Measured
+  # at 0.13.2, 0.15.0 and 0.20.0, exactly ONE method does that:
+  #
+  #   from_armor_many, _buf   Result<(Box<dyn Iterator<..>>, Headers)>          stable
+  #   from_reader_many, _buf  Result<(Box<dyn Iterator<..>>, Option<Headers>)>  stable
+  #   from_string_many        Result<(Box<dyn Iterator<..>>, Headers)>          stable
+  #   from_packets            Box<dyn Iterator<..>>                             stable
+  #   from_bytes_many         Box<..> <=0.15  ->  Result<Box<..>> 0.16+         DIVERGES
+  #
+  # So the stable ones carry `confidence: high`, and `from_bytes_many` names the
+  # CURRENT era at `confidence: low` rather than being omitted — which is what
+  # 5.2.10's rustls-native-certs paragraph prescribes for exactly this shape.
+  # Leaving all of them out left 28 of this family's 107 `api` expansions with
+  # no entry to join, invisible to `12-api-contract-join.sh` because it skips
+  # metavariable-shaped api values.
+  #
+  # `from_packets` is still omitted, for a different and narrower reason: it is
+  # not in any rule's `$M` set, so no `api` expansion needs it.
+  #
+  # `from_file` and `from_armor_file` arrive at exactly 0.16.0 (0.16.0
+  # shared.rs:120,127; absent from 0.15.0's), which is the release that removed
+  # the crate-root re-exports, so they appear ONLY under the `composed` key. The
+  # root-key block below omits them deliberately: `pgp::SignedSecretKey.from_armor_file`
+  # is a combination that compiles in no published release.
+  - method: pgp::composed::SignedSecretKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_string
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_armor_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_armor_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_reader_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_reader_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_armor_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  # `verify_bindings` arrives at 0.19.0 (0.20.0 signed_key/public.rs:116
+  # and secret.rs:119). Both receiver types are declared because the rule's
+  # pattern cannot tell them apart; its `api` names the public-key one.
+  - method: pgp::composed::SignedSecretKey.verify_bindings
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::SignedPublicKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_string
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_reader_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_reader_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::composed::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  # `verify_bindings` arrives at 0.19.0 (0.20.0 signed_key/public.rs:116
+  # and secret.rs:119). Both receiver types are declared because the rule's
+  # pattern cannot tell them apart; its `api` names the public-key one.
+  - method: pgp::composed::SignedPublicKey.verify_bindings
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::SignedSecretKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_string
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_armor_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_armor_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedSecretKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_reader_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedSecretKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_reader_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedSecretKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_string
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_armor_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_armor_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedPublicKey, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_reader_single
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedPublicKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_reader_single_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(pgp::SignedPublicKey, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+
+  # The `*_many` entry points, and the two free `decrypt_session_key` arities.
+  # `decrypt_session_key` is PUBLIC only 0.11.0 .. 0.15.0: `message/mod.rs` gains
+  # `pub use self::decrypt::*;` at 0.11.0 and decrypt.rs drops the free function
+  # entirely at 0.16.0. Arity 3 is 0.11.0-0.13.2 (`mpis: &[Mpi]`), arity 4 is
+  # 0.14.0-0.15.0 (`values: &PkeskBytes, typ: EskType`).
+  - method: pgp::composed::SignedSecretKey.from_armor_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_armor_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_string_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_reader_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_reader_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_armor_file_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_file_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedSecretKey.from_bytes_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: low}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedSecretKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_string_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_reader_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_reader_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_armor_file_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_file_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::SignedPublicKey.from_bytes_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: low}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::composed::SignedPublicKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_armor_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_armor_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_string_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_reader_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_reader_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedSecretKey.from_bytes_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: low}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedSecretKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_armor_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_armor_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_string_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_reader_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_reader_many_buf
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, core::option::Option<pgp::armor::Headers>), pgp::errors::Error>"
+    role: factory
+  - method: pgp::SignedPublicKey.from_bytes_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: low}
+    canonical_return_type: "core::result::Result<alloc::boxed::Box<dyn core::iter::Iterator<Item = core::result::Result<pgp::SignedPublicKey, pgp::errors::Error>>>, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed.decrypt_session_key
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&L", "F", "&[pgp::types::Mpi]"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed.decrypt_session_key
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&L", "F", "&pgp::packet::PkeskBytes", "pgp::types::EskType"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+  - method: pgp.decrypt_session_key
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&L", "F", "&[pgp::types::Mpi]"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+  - method: pgp.decrypt_session_key
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&L", "F", "&pgp::packet::PkeskBytes", "pgp::types::EskType"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+
+  # --- message construction and encryption (0.16.0+) ---
+  # `MessageBuilder` is an ALIAS: the type is declared `Builder` and re-exported
+  # `Builder as MessageBuilder` (0.20.0 src/composed/message.rs:9). The graph keys
+  # on what the consumer imported, so every entry says `MessageBuilder`.
+  - method: pgp::composed::MessageBuilder.from_bytes
+    arity: 2
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["impl core::convert::Into", "impl core::convert::Into"]
+    canonical_return_type: "pgp::composed::MessageBuilder"
+    role: factory
+  - method: pgp::composed::MessageBuilder.from_file
+    arity: 1
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["impl core::convert::AsRef"]
+    canonical_return_type: "pgp::composed::MessageBuilder"
+    role: factory
+  - method: pgp::composed::MessageBuilder.from_reader
+    arity: 2
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["impl core::convert::Into", "R"]
+    canonical_return_type: "pgp::composed::MessageBuilder"
+    role: factory
+  - method: pgp::composed::MessageBuilder.seipd_v1
+    arity: 2
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "pgp::crypto::sym::SymmetricKeyAlgorithm"]
+    canonical_return_type: "pgp::composed::MessageBuilder"
+    role: config
+  - method: pgp::composed::MessageBuilder.seipd_v2
+    arity: 4
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "pgp::crypto::sym::SymmetricKeyAlgorithm", "pgp::crypto::aead::AeadAlgorithm", "pgp::composed::ChunkSize"]
+    canonical_return_type: "pgp::composed::MessageBuilder"
+    role: config
+  - method: pgp::composed::MessageBuilder.encrypt_to_key
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "&E"]
+    canonical_return_type: "core::result::Result<&mut pgp::composed::MessageBuilder, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::MessageBuilder.encrypt_to_key_anonymous
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "&E"]
+    canonical_return_type: "core::result::Result<&mut pgp::composed::MessageBuilder, pgp::errors::Error>"
+    role: operation
+  # Declared at BOTH arities because the crate declares it twice: the SEIPDv1
+  # impl takes `(s2k, msg_pw)` (0.20.0 builder.rs:514) and the SEIPDv2 impl
+  # takes `(rng, s2k, msg_pw)` (:683). Neither takes a symmetric algorithm,
+  # which is why the algorithm rules key that name to `Message` instead.
+  - method: pgp::composed::MessageBuilder.encrypt_with_password
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["pgp::types::StringToKey", "&pgp::types::Password"]
+    canonical_return_type: "core::result::Result<&mut pgp::composed::MessageBuilder, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::MessageBuilder.encrypt_with_password
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "pgp::types::StringToKey", "&pgp::types::Password"]
+    canonical_return_type: "core::result::Result<&mut pgp::composed::MessageBuilder, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::MessageBuilder.sign
+    arity: 3
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: ["&dyn pgp::composed::SigningKey", "pgp::types::Password", "pgp::crypto::hash::HashAlgorithm"]
+    canonical_return_type: "&mut pgp::composed::MessageBuilder"
+    role: config
+  - method: pgp::composed::MessageBuilder.sign_binary
+    arity: 0
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "&mut pgp::composed::MessageBuilder"
+    role: config
+  - method: pgp::composed::MessageBuilder.sign_text
+    arity: 0
+    return: {type: "pgp::composed::MessageBuilder", confidence: high}
+    parameter_types: []
+    canonical_return_type: "&mut pgp::composed::MessageBuilder"
+    role: config
+  - method: pgp::composed::MessageBuilder.to_vec
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl rand::CryptoRng"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, pgp::errors::Error>"
+    role: output
+  - method: pgp::composed::MessageBuilder.to_writer
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl rand::CryptoRng", "impl std::io::Write"]
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: output
+
+  # --- message parsing, decryption and inline verification (0.16.0+ keys) ---
+  - method: pgp::composed::Message.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R"]
+    canonical_return_type: "core::result::Result<pgp::composed::Message, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::Message.from_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl core::convert::AsRef"]
+    canonical_return_type: "core::result::Result<pgp::composed::Message, pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::Message.from_armor_file
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl core::convert::AsRef"]
+    canonical_return_type: "core::result::Result<(pgp::composed::Message, pgp::armor::Headers), pgp::errors::Error>"
+    role: factory
+  - method: pgp::composed::Message.decrypt
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&pgp::types::Password", "&pgp::composed::SignedSecretKey"]
+    canonical_return_type: "core::result::Result<pgp::composed::Message, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::Message.decrypt_with_password
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&pgp::types::Password"]
+    canonical_return_type: "core::result::Result<pgp::composed::Message, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::Message.decrypt_with_session_key
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["pgp::composed::PlainSessionKey"]
+    canonical_return_type: "core::result::Result<pgp::composed::Message, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::Message.decrypt_the_ring
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["pgp::composed::TheRing", "bool"]
+    canonical_return_type: "core::result::Result<(pgp::composed::Message, pgp::composed::RingResult), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::Message.verify_nested
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[&dyn pgp::types::PublicKeyTrait]"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<pgp::composed::VerificationResult>, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::Message.verify_read
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&dyn pgp::types::PublicKeyTrait"]
+    canonical_return_type: "core::result::Result<&pgp::packet::Signature, pgp::errors::Error>"
+    role: operation
+  # A crate-MODULE free function, and the ONE key in this file the `::`
+  # substitution does not apply to. `rustAuthoredKey` (contracts.go:267)
+  # rewrites the second-to-last dot only when the key has at least two dots;
+  # the graph emits `pgp::composed.decrypt_session_key_with_password`, which
+  # has one, so it is authored with a DOT after `composed`. Measured on a
+  # probe consumer. Authoring it as `pgp::composed::decrypt_session_key_with_password`
+  # would load without error and join nothing.
+  - method: pgp::composed.decrypt_session_key_with_password
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&pgp::packet::SymKeyEncryptedSessionKey", "&pgp::types::Password"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+
+  # --- message operations on the pre-0.16 crate-root key ---
+  - method: pgp::Message.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: factory
+  # 0.2.0 .. 0.13.2 (0.13.2 src/composed/message/types.rs:326).
+  - method: pgp::Message.encrypt_to_keys
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&mut R", "pgp::crypto::sym::SymmetricKeyAlgorithm", "&[&impl pgp::types::PublicKeyTrait]"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # 0.2.0 .. 0.13.2 (0.13.2 types.rs:350). The 0.16+ builder method of the same
+  # name is a different key AND a different arity.
+  - method: pgp::Message.encrypt_with_password
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&mut R", "pgp::types::StringToKey", "pgp::crypto::sym::SymmetricKeyAlgorithm", "F"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # 0.14.0 .. 0.15.0 only (0.14.2 types.rs:337).
+  - method: pgp::Message.encrypt_to_keys_seipdv1
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "pgp::crypto::sym::SymmetricKeyAlgorithm", "&[&impl pgp::types::PublicKeyTrait]"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # 0.14.0 .. 0.15.0 only (0.14.2 types.rs:365).
+  - method: pgp::Message.encrypt_to_keys_seipdv2
+    arity: 5
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "pgp::crypto::sym::SymmetricKeyAlgorithm", "pgp::crypto::aead::AeadAlgorithm", "u8", "&[&impl pgp::types::PublicKeyTrait]"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # 0.14.0 .. 0.15.0 only (0.14.2 types.rs:394).
+  - method: pgp::Message.encrypt_with_password_seipdv1
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "pgp::types::StringToKey", "pgp::crypto::sym::SymmetricKeyAlgorithm", "F"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # 0.14.0 .. 0.15.0 only (0.14.2 types.rs:421).
+  - method: pgp::Message.encrypt_with_password_seipdv2
+    arity: 6
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "pgp::types::StringToKey", "pgp::crypto::sym::SymmetricKeyAlgorithm", "pgp::crypto::aead::AeadAlgorithm", "u8", "F"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # BOTH arities are declared and they are different eras of the same call.
+  # 0.13.2 types.rs:397 is `(key, key_pw, hash_algorithm)`; 0.14.2 :500 adds a
+  # leading rng. `Message::sign` was REMOVED at 0.16.0, so neither arity
+  # overlaps the builder's. Real code uses it: wicrs_server 0.13.1
+  # src/signing.rs:97 calls it with `HashAlgorithm::SHA2_256`.
+  - method: pgp::Message.sign
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&impl pgp::types::SecretKeyTrait", "F", "pgp::crypto::hash::HashAlgorithm"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  - method: pgp::Message.sign
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "&impl pgp::types::SecretKeyTrait", "F", "pgp::crypto::hash::HashAlgorithm"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  - method: pgp::Message.decrypt_with_password
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["F"]
+    canonical_return_type: "core::result::Result<pgp::Message, pgp::errors::Error>"
+    role: operation
+  # The crate-ROOT spelling of the free function, reachable up to 0.15.0
+  # through `pub use self::composed::*;`. One dot, so no substitution.
+  - method: pgp.decrypt_session_key_with_password
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&pgp::packet::SymKeyEncryptedSessionKey", "F"]
+    canonical_return_type: "core::result::Result<pgp::composed::PlainSessionKey, pgp::errors::Error>"
+    role: operation
+
+  # --- detached and cleartext signatures ---
+  - method: pgp::composed::DetachedSignature.sign_binary_data
+    arity: 5
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::DetachedSignature, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::DetachedSignature.sign_text_data
+    arity: 5
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::DetachedSignature, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::DetachedSignature.sign_binary_data_with_subpackets
+    arity: 6
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::DetachedSignature, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::DetachedSignature.sign_text_data_with_subpackets
+    arity: 6
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<pgp::composed::DetachedSignature, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::DetachedSignature.verify
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&impl pgp::composed::VerifyingKey", "&[u8]"]
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  # `CleartextSignedMessage` HAS THREE LEGAL IMPORT SPELLINGS AND NO CRATE-ROOT
+  # ONE, and each spelling emits its own key. `composed/mod.rs` re-exports the
+  # MODULE `cleartext` and never the type up to 0.15.0, so `pub use
+  # self::composed::*;` puts `pgp::cleartext` at the root but not
+  # `pgp::CleartextSignedMessage`; at 0.16.0 the module goes private
+  # (composed.rs:2) and the TYPE is re-exported (composed.rs:10), inverting it:
+  #
+  #   use pgp::cleartext::CSM            <=0.15  -> pgp::cleartext.CSM.*
+  #   use pgp::composed::cleartext::CSM  <=0.15  -> pgp::composed::cleartext.CSM.*
+  #   use pgp::composed::CSM             0.16+   -> pgp::composed.CSM.*
+  #   pgp::CleartextSignedMessage        NEVER
+  #
+  # All three keys were read off one probe per spelling. An earlier version of
+  # this file declared the fourth, which compiles in no release, and declared
+  # `pgp::composed::CSM.sign` at arity 3 — the composed-TYPE path is 0.16.0+
+  # where the arity is 4, so that pair was disjoint too.
+  #
+  # `sign` is arity 3 at 0.13.x (cleartext.rs:67) and arity 4 from 0.14.0
+  # (0.14.2 cleartext.rs:66) — but only on the MODULE spellings, because the
+  # composed-type spelling does not exist until 0.16.0.
+  - method: pgp::composed::CleartextSignedMessage.sign
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "&str", "&impl pgp::composed::SigningKey", "&pgp::types::Password"]
+    canonical_return_type: "core::result::Result<pgp::composed::CleartextSignedMessage, pgp::errors::Error>"
+    role: operation
+  # DECLARED AT TWO ARITIES BECAUSE THE PARSER COUNTS A MULTI-PARAMETER CLOSURE
+  # LITERAL'S PARAMETERS AS SEPARATE CALL ARGUMENTS. The source signature is
+  # arity 1 (0.20.0 cleartext.rs:138), and the crate's bound is
+  # `Fn(usize, &Signature, &[u8])`, so the documented spelling
+  # `m.verify_many(|i, sig, data| ..)` emits arity 3 while
+  # `m.verify_many(named_fn)` emits arity 1. Measured with three probes through
+  # one binary. See the file header: this is a parser defect, reported rather
+  # than fixed here, and the second entry is the workaround.
+  - method: pgp::composed::CleartextSignedMessage.verify_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["F"]
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::CleartextSignedMessage.verify_many
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: []
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::CleartextSignedMessage.verify
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&impl pgp::composed::VerifyingKey"]
+    canonical_return_type: "core::result::Result<&pgp::packet::Signature, pgp::errors::Error>"
+    role: operation
+
+  # The two pre-0.16 MODULE spellings, keyed as the graph emits them.
+  - method: pgp::cleartext::CleartextSignedMessage.sign
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&impl pgp::types::SecretKeyTrait", "F"]
+    canonical_return_type: "core::result::Result<pgp::cleartext::CleartextSignedMessage, pgp::errors::Error>"
+    role: operation
+  - method: pgp::cleartext::CleartextSignedMessage.sign
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "&str", "&impl pgp::types::SecretKeyTrait", "F"]
+    canonical_return_type: "core::result::Result<pgp::cleartext::CleartextSignedMessage, pgp::errors::Error>"
+    role: operation
+  - method: pgp::cleartext::CleartextSignedMessage.verify_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["F"]
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::cleartext::CleartextSignedMessage.verify_many
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::cleartext::CleartextSignedMessage.sign
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&impl pgp::types::SecretKeyTrait", "F"]
+    canonical_return_type: "core::result::Result<pgp::composed::cleartext::CleartextSignedMessage, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::cleartext::CleartextSignedMessage.sign
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["R", "&str", "&impl pgp::types::SecretKeyTrait", "F"]
+    canonical_return_type: "core::result::Result<pgp::composed::cleartext::CleartextSignedMessage, pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::cleartext::CleartextSignedMessage.verify_many
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["F"]
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+  - method: pgp::composed::cleartext::CleartextSignedMessage.verify_many
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    canonical_return_type: "core::result::Result<(), pgp::errors::Error>"
+    role: operation
+
+  # --- string-to-key ---
+  # `pgp::types::StringToKey` is the ONE type in this crate whose key does not
+  # move across 0.16.0: `types` is a `pub mod` in both eras and the type was
+  # never root-re-exported, so both probes emitted `pgp::types.StringToKey.*`.
+  - method: pgp::types::StringToKey.new_default
+    arity: 1
+    return: {type: "pgp::types::StringToKey", confidence: high}
+    parameter_types: ["R"]
+    canonical_return_type: "pgp::types::StringToKey"
+    role: factory
+  # ARITY 3 IN EVERY PUBLISHED VERSION — `(rng, hash_alg, count)`, traced to
+  # src/types/s2k.rs in 0.5.0, 0.13.2, 0.14.2, 0.15.0, 0.16.0, 0.17.0, 0.18.0,
+  # 0.19.0 and 0.20.0. This family's first probe wrote a four-argument call and
+  # the exported callgraph reported arity 4; the crate source is what corrected
+  # it. A contract written from that probe would have joined nothing.
+  - method: pgp::types::StringToKey.new_iterated
+    arity: 3
+    return: {type: "pgp::types::StringToKey", confidence: high}
+    parameter_types: ["R", "pgp::crypto::hash::HashAlgorithm", "u8"]
+    canonical_return_type: "pgp::types::StringToKey"
+    role: factory
+  # 0.13.0 onward (0.20.0 s2k.rs:257).
+  - method: pgp::types::StringToKey.new_argon2
+    arity: 4
+    return: {type: "pgp::types::StringToKey", confidence: high}
+    parameter_types: ["R", "u8", "u8", "u8"]
+    canonical_return_type: "pgp::types::StringToKey"
+    role: factory
+
+hierarchy: {}
