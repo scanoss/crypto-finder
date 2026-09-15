@@ -92,7 +92,12 @@ func DefaultDirMatcher() SkipMatcher {
 
 // DefaultsSource provides the built-in default skip patterns.
 // These patterns cover excluded directories and generated-stub globs.
-type DefaultsSource struct{}
+type DefaultsSource struct {
+	// rescued holds the built-output directory names that must stay in the
+	// scan for this target because they hold its only source. Empty for a
+	// source built without a target, which keeps the defaults verbatim.
+	rescued []string
+}
 
 // NewDefaultsSource creates a new source that returns the built-in default patterns.
 //
@@ -102,6 +107,21 @@ func NewDefaultsSource() *DefaultsSource {
 	return &DefaultsSource{}
 }
 
+// NewDefaultsSourceForTarget creates a defaults source aware of what targetDir
+// actually contains: a built-output directory that holds the target's only
+// source is dropped from the exclusions, because excluding it would make the
+// scan read nothing. See BuiltOutputOnlySource. The directory walk happens
+// once, here, so Load and Rescued agree and neither repeats it.
+func NewDefaultsSourceForTarget(targetDir string) *DefaultsSource {
+	return &DefaultsSource{rescued: BuiltOutputOnlySource(targetDir)}
+}
+
+// Rescued returns the built-output directory names this source left in the
+// scan, for logging. Nil when the defaults apply unchanged.
+func (d *DefaultsSource) Rescued() []string {
+	return d.rescued
+}
+
 // Load returns the built-in skip patterns (directories plus generated-stub globs).
 // This source never fails - it always returns the built-in defaults.
 //
@@ -109,7 +129,7 @@ func NewDefaultsSource() *DefaultsSource {
 //   - []string: Default skip patterns
 //   - error: Always nil (included for interface compatibility)
 func (d *DefaultsSource) Load() ([]string, error) {
-	return DefaultPatterns(), nil
+	return withoutPatterns(DefaultPatterns(), d.rescued), nil
 }
 
 // DefaultPatterns returns the built-in directory names plus generated-stub

@@ -394,8 +394,20 @@ func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
 func buildSkipPatterns(targetDir string, noDefaults bool, userExcludes []string) (patterns []string, sourceLabel string) {
 	sources := make([]skip.PatternSource, 0, 3)
 
+	var defaults *skip.DefaultsSource
 	if !noDefaults {
-		sources = append(sources, skip.NewDefaultsSource())
+		defaults = skip.NewDefaultsSourceForTarget(targetDir)
+		sources = append(sources, defaults)
+		if rescued := defaults.Rescued(); len(rescued) > 0 {
+			// Warn, not Info: a default run must show that a built-in
+			// exclusion was dropped, in the run that dropped it.
+			log.Warn().Msgf(
+				"%s holds the only source in this tree, so it is scanned instead of excluded. "+
+					"A published package is not a checkout: excluding its compiled output would "+
+					"leave nothing to read and report no cryptography. Use --exclude %s to override.",
+				strings.Join(rescued, ", "), strings.Join(rescued, " --exclude "),
+			)
+		}
 	} else {
 		log.Warn().Msg(
 			"Default directory exclusions are disabled. Language detection will walk the full tree " +
@@ -419,7 +431,11 @@ func buildSkipPatterns(targetDir string, noDefaults bool, userExcludes []string)
 
 		var fallback []string
 		if !noDefaults {
-			fallback = append(fallback, skip.DefaultPatterns()...)
+			// DefaultsSource.Load never returns an error (no I/O), and reusing
+			// it keeps the fallback on the same rescue decision as the happy
+			// path instead of re-excluding a directory that is the artifact.
+			ds, _ := defaults.Load() //nolint:errcheck // DefaultsSource.Load never returns an error
+			fallback = append(fallback, ds...)
 		}
 		// Re-merge user excludes — they were in the last source which failed
 		// alongside the others; preserve their explicit intent.
