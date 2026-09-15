@@ -69,6 +69,7 @@ type Scanner struct {
 	skipPatterns   []string
 	disableDedup   bool
 	discovery      *discoveryCache
+	helpDiscovery  *discoveryCache
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.
@@ -79,10 +80,16 @@ func NewScanner() *Scanner {
 	}
 }
 
-// NewScannerFactory creates fresh invocation adapters sharing immutable version discovery per run.
+// NewScannerFactory creates fresh invocation adapters sharing immutable version and help discovery per run.
 func NewScannerFactory() func() scanner.Scanner {
-	cache := &discoveryCache{entries: make(map[string]*discovery)}
-	return func() scanner.Scanner { adapter := NewScanner(); adapter.discovery = cache; return adapter }
+	cache := &discoveryCache{entries: make(map[string]*discovery), versionOnly: true}
+	help := &discoveryCache{entries: make(map[string]*discovery)}
+	return func() scanner.Scanner {
+		adapter := NewScanner()
+		adapter.discovery = cache
+		adapter.helpDiscovery = help
+		return adapter
+	}
 }
 
 // Initialize validates that OpenGrep is available and properly configured.
@@ -293,16 +300,19 @@ func (s *Scanner) buildCommand(ctx context.Context, target string, rulePaths []s
 // semgrepignoreControlArgs disables OpenGrep's built-in default ignore file
 // handling so crypto-finder's own skip logic remains the single source of truth.
 func (s *Scanner) semgrepignoreControlArgs(ctx context.Context) []string {
-	help, err := commandOutput(ctx, s.executablePath, "scan", "--help")
-	if err != nil {
-		help, err = commandOutput(ctx, s.executablePath, "--help")
-	}
+	help, err := s.helpDiscovery.get(ctx, s.executablePath, func() (string, error) {
+		output, probeErr := commandOutput(ctx, s.executablePath, "scan", "--help")
+		if probeErr != nil && ctx.Err() == nil {
+			output, probeErr = commandOutput(ctx, s.executablePath, "--help")
+		}
+		return string(output), probeErr
+	})
 	if err != nil {
 		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
 		return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
 	}
 
-	helpText := string(help)
+	helpText := help
 	if strings.Contains(helpText, "--x-ignore-semgrepignore-files") {
 		return []string{"--x-ignore-semgrepignore-files"}
 	}
