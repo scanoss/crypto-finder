@@ -918,7 +918,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, func() scanner.Scanner { return opengrep.NewScanner() })
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory())
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
