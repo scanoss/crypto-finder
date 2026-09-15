@@ -1,0 +1,57 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "@aws-sdk/signature-v4"
+  coordinates:
+    - "@aws-sdk/signature-v4"
+  version_range: ">=3.0.0"
+  description: "AWS Signature Version 4: AWS4-HMAC-SHA256 request signing and presigning"
+
+# Keys read off an exported call graph: scanning @aws-sdk/middleware-signing
+# 3.357.0 and @aws-sdk/signature-v4-crt 3.357.0 shows the parser emits
+# `@aws-sdk/signature-v4.SignatureV4` for the constructor and
+# `@aws-sdk/signature-v4.getPayloadHash` for the helper.
+#
+# The package became a PURE RE-EXPORT SHIM at 3.374.0, where its whole source is
+# `export * from "@smithy/signature-v4"`. Both eras are contracted the same way,
+# because what is keyed is the API a consumer writes: a consumer importing
+# @aws-sdk/signature-v4 gets the same class either way, and @smithy/signature-v4
+# is a separate coordinate and a separate family.
+#
+# The sha256 implementation is INJECTED through the constructor, so no entry
+# names one.
+contracts:
+  - method: "@aws-sdk/signature-v4.SignatureV4.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/signature-v4.SignatureV4", confidence: high }
+    role: factory
+  - method: "@aws-sdk/signature-v4.SignatureV4.sign"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.SignatureV4.sign"
+    arity: 2
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.SignatureV4.presign"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.SignatureV4.presign"
+    arity: 2
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.SignatureV4.signWithCredentials"
+    arity: 2
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.SignatureV4.signWithCredentials"
+    arity: 3
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/signature-v4.getPayloadHash"
+    arity: 2
+    return: { type: builtins.string, confidence: high }
+    role: output
+
+hierarchy: {}
