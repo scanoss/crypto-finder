@@ -1,0 +1,142 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: libp2p-crypto
+  coordinates:
+    - libp2p-crypto
+    - "@libp2p/crypto"
+  version_range: ">=0.19.0"
+  description: "libp2p crypto: key material, HMAC, AES-CTR, PBKDF2 and the RNG, across the legacy namespace package and the scoped subpath rewrite"
+
+# Keys read off an EXPORTED CALL GRAPH, not written from the documentation.
+# Scanning five real published consumers (peer-id 0.16.0, @libp2p/peer-id-factory
+# 4.2.4, @libp2p/pnet 3.0.10, @chainsafe/libp2p-noise 17.0.0, @libp2p/kad-dht
+# 12.0.0) shows the parser keys a scoped call by the SUBPATH it was imported
+# from -- `@libp2p/crypto/keys.generateKeyPair` -- and a bare-entry-point call by
+# the package name, `@libp2p/crypto.randomBytes`. Both spellings are ordinary
+# consumer code and both are contracted.
+#
+# THE TWO COORDINATES ARE SHAPED DIFFERENTLY, not merely versioned differently:
+# the legacy package is one CommonJS namespace (crypto.aes, crypto.hmac,
+# crypto.keys), the rewrite publishes subpath exports. They are declared
+# separately so a consumer on one never resolves against the other's surface.
+#
+# The scoped keys subpath ALSO changed names inside its own line: v5 renamed
+# marshal/unmarshal to protobuf/raw. Both eras are declared, because real
+# consumers in the corpus still call the older names.
+#
+# The cryptography is elsewhere -- @noble/curves, @noble/hashes, WebCrypto and
+# node crypto -- and no entry names a backend call.
+contracts:
+  - method: "@libp2p/crypto/keys.generateKeyPair"
+    arity: 1
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.generateKeyPair"
+    arity: 2
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.generateKeyPairFromSeed"
+    arity: 2
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.marshalPublicKey"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@libp2p/crypto/keys.marshalPrivateKey"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@libp2p/crypto/keys.unmarshalPublicKey"
+    arity: 1
+    return: { type: "@libp2p/crypto.PublicKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.unmarshalPrivateKey"
+    arity: 1
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.publicKeyFromProtobuf"
+    arity: 1
+    return: { type: "@libp2p/crypto.PublicKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.privateKeyFromProtobuf"
+    arity: 1
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.publicKeyFromRaw"
+    arity: 1
+    return: { type: "@libp2p/crypto.PublicKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.privateKeyFromRaw"
+    arity: 1
+    return: { type: "@libp2p/crypto.PrivateKey", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/keys.publicKeyToProtobuf"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@libp2p/crypto/keys.privateKeyToProtobuf"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@libp2p/crypto/hmac.create"
+    arity: 2
+    return: { type: "@libp2p/crypto.HMAC", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/ciphers.create"
+    arity: 0
+    return: { type: "@libp2p/crypto.AESCipher", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/ciphers.create"
+    arity: 1
+    return: { type: "@libp2p/crypto.AESCipher", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto.randomBytes"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@libp2p/crypto.marshalPublicKey"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # --- the legacy namespace package ------------------------------------------
+  - method: libp2p-crypto.aes.create
+    arity: 2
+    return: { type: libp2p-crypto.Cipher, confidence: high }
+    role: factory
+  - method: libp2p-crypto.hmac.create
+    arity: 2
+    return: { type: libp2p-crypto.HMAC, confidence: high }
+    role: factory
+  - method: libp2p-crypto.pbkdf2
+    arity: 5
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: libp2p-crypto.randomBytes
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: libp2p-crypto.keys.generateKeyPair
+    arity: 2
+    return: { type: libp2p-crypto.PrivateKey, confidence: high }
+    role: factory
+  - method: libp2p-crypto.keys.generateEphemeralKeyPair
+    arity: 1
+    return: { type: libp2p-crypto.EphemeralKeyPair, confidence: high }
+    role: factory
+  - method: libp2p-crypto.keys.keyStretcher
+    arity: 3
+    return: { type: libp2p-crypto.StretchedKeys, confidence: high }
+    role: output
+  - method: libp2p-crypto.keys.marshalPublicKey
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: libp2p-crypto.keys.unmarshalPrivateKey
+    arity: 1
+    return: { type: libp2p-crypto.PrivateKey, confidence: high }
+    role: factory
+
+hierarchy: {}
