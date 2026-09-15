@@ -84,12 +84,20 @@ func TestLoadEmbeddedNodeBcrypt(t *testing.T) {
 		}
 	}
 
-	// bcryptjs is a DIFFERENT package and its own Tier 0 family. It exports the
-	// identical seven names, so a coordinate leak here would be invisible at
-	// the call site.
-	for k := range kb.Contracts {
-		if strings.HasPrefix(k, "bcryptjs.") {
-			t.Errorf("key %q belongs to the bcryptjs package, not to bcrypt", k)
+	// bcryptjs is a DIFFERENT package and its own Tier 0 family, and it ships
+	// in this same Node KB. Its keys are expected here; what must never happen
+	// is one of its exports appearing under THIS coordinate, which would
+	// attribute one package's cryptography to the other invisibly.
+	//
+	// The first version of this assertion forbade every "bcryptjs." key in the
+	// whole KB, which was true only while that family did not exist and turned
+	// red the moment it landed. The property worth pinning is per-coordinate,
+	// not KB-wide.
+	for _, jsOnly := range []string{"getSalt", "setRandomFallback", "truncates"} {
+		for k := range kb.Contracts {
+			if strings.HasPrefix(k, "bcrypt."+jsOnly) {
+				t.Errorf("key %q is a bcryptjs-only export declared under the native bcrypt coordinate", k)
+			}
 		}
 	}
 
