@@ -22,7 +22,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,13 +96,13 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 		s.workDir = config.WorkDir
 	}
 	if config.Env != nil {
-		s.env = config.Env
+		s.env = maps.Clone(config.Env)
 	}
 	if config.ExtraArgs != nil {
-		s.extraArgs = config.ExtraArgs
+		s.extraArgs = slices.Clone(config.ExtraArgs)
 	}
 	if config.SkipPatterns != nil {
-		s.skipPatterns = config.SkipPatterns
+		s.skipPatterns = slices.Clone(config.SkipPatterns)
 	}
 	s.disableDedup = config.DisableDedup
 	s.interfile = config.Interfile
