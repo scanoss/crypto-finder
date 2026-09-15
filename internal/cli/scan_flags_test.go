@@ -401,3 +401,71 @@ func countWarnLines(t *testing.T, output, substr string) int {
 	}
 	return count
 }
+
+// TestBuildSkipPatternsRescuesBuiltOutputOnlyPackage covers the seam between
+// buildSkipPatterns and skip.BuiltOutputOnlySource: a published package whose
+// only source is its compiled output must still be scanned. Measured on
+// @azure/cosmos 4.10.1 (dist/ only), where the default exclusion turned 10
+// crypto assets into a reported zero.
+func TestBuildSkipPatternsRescuesBuiltOutputOnlyPackage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("distOnlyPackage_distIsScanned", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "package.json"), `{"name":"pkg","main":"dist/index.js"}`)
+		mustWrite(t, filepath.Join(dir, "dist", "index.js"), "const crypto = require('crypto')\n")
+
+		patterns, _ := buildSkipPatterns(dir, false, nil)
+
+		if sliceContains(patterns, "dist") {
+			t.Errorf("dist holds the only source; it must not be excluded. patterns=%v", patterns)
+		}
+		// Everything else stays: the rescue is surgical, not a defaults reset.
+		for _, want := range []string{"node_modules", "vendor", "build", "**/*.pb.go"} {
+			if !sliceContains(patterns, want) {
+				t.Errorf("expected %q to remain in patterns, not found. patterns=%v", want, patterns)
+			}
+		}
+	})
+
+	t.Run("checkout_distStaysExcluded", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "package.json"), `{"name":"pkg"}`)
+		mustWrite(t, filepath.Join(dir, "src", "index.ts"), "export const a = 1\n")
+		mustWrite(t, filepath.Join(dir, "dist", "index.js"), "const a = 1\n")
+
+		patterns, _ := buildSkipPatterns(dir, false, nil)
+
+		if !sliceContains(patterns, "dist") {
+			t.Errorf("src/ is the source here; dist must stay excluded. patterns=%v", patterns)
+		}
+	})
+
+	t.Run("noDefaults_unaffected", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "dist", "index.js"), "const a = 1\n")
+
+		patterns, _ := buildSkipPatterns(dir, true, nil)
+
+		if len(patterns) != 0 {
+			t.Errorf("--no-default-exclusions must still drop every default. patterns=%v", patterns)
+		}
+	})
+}
+
+// mustWrite writes content at path, creating parents.
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
