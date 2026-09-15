@@ -68,6 +68,7 @@ type Scanner struct {
 	extraArgs      []string
 	skipPatterns   []string
 	disableDedup   bool
+	discovery      *discoveryCache
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.
@@ -76,6 +77,12 @@ func NewScanner() *Scanner {
 		executablePath: "opengrep", // Will search PATH
 		timeout:        10 * time.Minute,
 	}
+}
+
+// NewScannerFactory creates fresh invocation adapters sharing immutable version discovery per run.
+func NewScannerFactory() func() scanner.Scanner {
+	cache := &discoveryCache{entries: make(map[string]*discovery)}
+	return func() scanner.Scanner { adapter := NewScanner(); adapter.discovery = cache; return adapter }
 }
 
 // Initialize validates that OpenGrep is available and properly configured.
@@ -99,7 +106,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	s.executablePath = path
 
 	// Get opengrep version
-	s.version, err = s.detectVersion(ctx)
+	s.version, err = s.discovery.get(ctx, s.executablePath, func() (string, error) { return s.detectVersion(ctx) })
 	if err != nil {
 		if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
 			return ctxErr
