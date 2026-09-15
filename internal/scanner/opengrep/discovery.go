@@ -63,7 +63,8 @@ func discoveryKey(path string) (string, error) {
 	env := os.Environ()
 	slices.Sort(env)
 	hash := sha256.New()
-	_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%s\x00", path, resolved, cwd, info.Size(), info.ModTime().UnixNano(), info.Mode(), strings.Join(env, "\x00")) //nolint:errcheck // SHA-256 writes always succeed.
+	//nolint:errcheck // SHA-256 writes always succeed.
+	_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%s\x00", path, resolved, cwd, info.Size(), info.ModTime().UnixNano(), info.Mode(), strings.Join(env, "\x00")) // #nosec G705 -- Writes SHA-256 digest bytes, not HTML.
 	if _, err = io.Copy(hash, file); err != nil {
 		return "", err
 	}
