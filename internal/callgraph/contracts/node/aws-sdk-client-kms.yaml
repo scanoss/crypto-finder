@@ -1,0 +1,73 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "@aws-sdk/client-kms"
+  coordinates:
+    - "@aws-sdk/client-kms"
+  version_range: ">=3.0.0"
+  description: "AWS KMS v3 client: server-side encrypt, decrypt, sign, verify, MAC, data keys and random"
+
+# AWS KMS performs its cryptography SERVER-SIDE, so nothing here names an
+# algorithm: the call site carries an operation and a key id, and which cipher or
+# curve runs is a property of the CMK in the account. This matches the merged
+# go/aws-kms-v2, go/aws-kms, rust/aws-sdk-kms and rust/rusoto_kms families.
+#
+# Two call shapes are contracted because both are ordinary consumer code: the v3
+# command form, `client.send(new EncryptCommand({...}))`, and the aggregated full
+# client, `kms.encrypt({...})`. The command form is keyed on the command
+# constructor, which is what the parser emits for `new EncryptCommand(...)`.
+contracts:
+  - method: "@aws-sdk/client-kms.EncryptCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.EncryptCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.DecryptCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.DecryptCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.SignCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.SignCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.VerifyCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.VerifyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateMacCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateMacCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.VerifyMacCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.VerifyMacCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateDataKeyCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateDataKeyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateRandomCommand.<init>"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateRandomCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.KMSClient.send"
+    arity: 1
+    return: { type: builtins.object, confidence: low }
+    role: operation
+  - method: "@aws-sdk/client-kms.KMS.encrypt"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/client-kms.KMS.decrypt"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/client-kms.KMS.sign"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: "@aws-sdk/client-kms.KMS.generateDataKey"
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+
+hierarchy: {}
