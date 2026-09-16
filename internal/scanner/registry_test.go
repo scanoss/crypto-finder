@@ -240,3 +240,19 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 		t.Errorf("Scanner should be registered after concurrent access: %v", err)
 	}
 }
+
+func TestRegistryFactoryRegistrationReplacement(t *testing.T) {
+	registry := NewRegistry()
+	shared := &mockScanner{name: "shared"}
+	registry.RegisterFactory("test", func() Scanner { return &mockScanner{name: "factory"} })
+	registry.Register("test", shared)
+	adapter, err := registry.Get("test")
+	if err != nil || adapter != shared {
+		t.Fatalf("Register did not replace factory: %v, %v", adapter, err)
+	}
+	registry.RegisterFactory("test", func() Scanner { return &mockScanner{name: "replacement"} })
+	adapter, err = registry.Get("test")
+	if err != nil || adapter.GetInfo().Name != "replacement" {
+		t.Fatalf("factory did not replace Register: %v, %v", adapter, err)
+	}
+}

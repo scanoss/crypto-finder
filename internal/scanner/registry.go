@@ -27,17 +27,18 @@ import (
 // scanner instances by name.
 //
 // The registry is thread-safe and allows dynamic registration of scanners.
-// For MVP, we register the Semgrep adapter. Future versions will add
-// OpenGrep and CBOM toolkit adapters.
+// Use RegisterFactory for adapters with invocation-specific initialization state.
 type Registry struct {
-	mu       sync.RWMutex
-	scanners map[string]Scanner
+	mu        sync.RWMutex
+	scanners  map[string]Scanner
+	factories map[string]func() Scanner
 }
 
 // NewRegistry creates a new scanner registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		scanners: make(map[string]Scanner),
+		scanners:  make(map[string]Scanner),
+		factories: make(map[string]func() Scanner),
 	}
 }
 
@@ -52,9 +53,20 @@ func (r *Registry) Register(name string, scanner Scanner) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.scanners[name] = scanner
+	delete(r.factories, name)
 }
 
-// Get retrieves a scanner by name.
+// RegisterFactory adds a constructor that Get invokes for each scanner invocation.
+// The constructor must return a fresh adapter. Replaces any registration of name.
+// Use Register instead for callers that explicitly manage a shared adapter's lifetime.
+func (r *Registry) RegisterFactory(name string, factory func() Scanner) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scanners[name] = nil
+	r.factories[name] = factory
+}
+
+// Get retrieves a scanner by name. Factory registrations return a fresh adapter.
 // Returns an error if the scanner is not found.
 //
 // Example:
@@ -65,13 +77,19 @@ func (r *Registry) Register(name string, scanner Scanner) {
 //	}
 func (r *Registry) Get(name string) (Scanner, error) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
 
 	scanner, exists := r.scanners[name]
 	if !exists {
-		return nil, fmt.Errorf("scanner '%s' not found (available scanners: %v)", name, r.available())
+		names := r.available()
+		r.mu.RUnlock()
+		return nil, fmt.Errorf("scanner '%s' not found (available scanners: %v)", name, names)
 	}
 
+	factory := r.factories[name]
+	r.mu.RUnlock()
+	if factory != nil {
+		return factory(), nil
+	}
 	return scanner, nil
 }
 

@@ -51,6 +51,8 @@ type Scanner interface {
 	// Initialize validates the scanner is available and properly configured.
 	// ctx cancels initialization probes and their subprocess trees.
 	// This method should be called once before any scanning operations.
+	// Concurrent initialization of a shared adapter is not supported.
+	// Built-in adapters copy mutable configuration values during initialization.
 	//
 	// It verifies:
 	//   - The scanner executable exists and is executable
