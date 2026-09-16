@@ -111,9 +111,12 @@ const (
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
-//
-//nolint:gocognit,gocyclo // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
-func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
+func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
+	return o.scan(ctx, opts, nil)
+}
+
+//nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
+func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
 		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
 			return nil, progressErr
@@ -166,33 +169,13 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 		return nil, loadErr
 	}
 
-	// Step 3: Get scanner from registry
-	scannerInstance, getErr := o.scannerReg.Get(opts.ScannerName)
-	if getErr != nil {
-		return nil, failure.WrapUnknown(
-			getErr,
-			failure.CodeScannerUnavailable,
-			failure.StageScan,
-			"failed to get scanner",
-			failure.WithDetail("scanner", opts.ScannerName),
-		)
-	}
-
-	// Step 4: Initialize scanner
-	if err := scannerInstance.Initialize(ctx, opts.ScannerConfig); err != nil {
-		if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
-			return nil, ctxErr
+	// Reuse the adapter initialized for dependency cache identity, when supplied.
+	if scannerInstance == nil {
+		var initializeErr error
+		scannerInstance, initializeErr = o.initializeScanner(ctx, opts)
+		if initializeErr != nil {
+			return nil, initializeErr
 		}
-		return nil, failure.WrapUnknown(
-			err,
-			failure.CodeScannerInitializationFailed,
-			failure.StageScan,
-			fmt.Sprintf("failed to initialize scanner '%s'", opts.ScannerName),
-			failure.WithDetail("scanner", opts.ScannerName),
-		)
-	}
-	if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
-		return nil, ctxErr
 	}
 
 	// Step 5: Execute scan
@@ -230,6 +213,37 @@ func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *enti
 	}
 
 	return enrichedReport, nil
+}
+
+func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) (scanner.Scanner, error) {
+	scannerInstance, getErr := o.scannerReg.Get(opts.ScannerName)
+	if getErr != nil {
+		return nil, failure.WrapUnknown(
+			getErr,
+			failure.CodeScannerUnavailable,
+			failure.StageScan,
+			"failed to get scanner",
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
+	}
+
+	if err := scannerInstance.Initialize(ctx, opts.ScannerConfig); err != nil {
+		if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, failure.WrapUnknown(
+			err,
+			failure.CodeScannerInitializationFailed,
+			failure.StageScan,
+			fmt.Sprintf("failed to initialize scanner '%s'", opts.ScannerName),
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
+	}
+	if ctxErr := scanner.InitializationContextError(ctx, opts.ScannerName); ctxErr != nil {
+		return nil, ctxErr
+	}
+
+	return scannerInstance, nil
 }
 
 func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
