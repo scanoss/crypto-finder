@@ -48,7 +48,6 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const (
@@ -187,12 +186,12 @@ func init() {
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
-	scanCmd.Flags().IntVar(&scanExportCallgraphMaxChains, "export-callgraph-max-chains", graphfrag.DefaultMaxChainsPerOp,
-		"Per-finding call-chain sample size for --export-callgraph (default 128). crypto_entry_points stays the full reverse-reach set when enabled. Depth cap remains 32.")
-	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", true,
-		"Include the full crypto_entry_points reverse-reachability index in --export-callgraph")
-	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", false,
-		"Emit schema 6.15 with function identity only in functions[] (opt-in). Default schema 6.14 still inlines identity on every call_chains frame.")
+	scanCmd.Flags().IntVar(&scanExportCallgraphMaxChains, "export-callgraph-max-chains", 8,
+		"Per-finding sampled call-chain budget (default 8, not a complete graph; opt in to 128 for more routes). Depth cap remains 32.")
+	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", false,
+		"Include the optional full crypto_entry_points reverse-reachability index (default false)")
+	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", true,
+		"Emit schema 6.15: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
 	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
