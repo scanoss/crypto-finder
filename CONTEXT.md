@@ -46,8 +46,8 @@ _Avoid_: Client invocation sequence, lifecycle graph
 
 **Call chain**:
 One ordered path through a call graph from an anchor to a reachable function.
-Exported `call_chains` are a capped sample of those paths, default 128, not the
-warehouse. Live UIs that need a composed route opt in to 8 or 1. See
+Exported `call_chains` are a capped sample, not the warehouse: local CLI
+defaults to 8 paths; SDK/stitch defaults to 128. Explicit budgets tune the sample. See
 [docs/adr/0002-call-chains-sample-size.md](docs/adr/0002-call-chains-sample-size.md).
 _Avoid_: Fluent chain, receiver lifecycle
 

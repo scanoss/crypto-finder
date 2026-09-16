@@ -44,7 +44,7 @@ target source tree
    ▼
 6. Enrichment + export    Exact OID preparation (internal/oid); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-                            internal/scan,         --export-callgraph emits the schema-6.14 reachability export;
+                            internal/scan,         --export-callgraph defaults to the schema-6.15 interned export;
                             pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.13 fragment
 ```
 
@@ -143,13 +143,12 @@ Supporting calls (setup/lifecycle/config calls around a crypto object, e.g. `dig
 
 ### 6. Call-chain sample vs entry-point index
 
-`call_chains` is a capped sample of routes, default 128. Live `--export-callgraph`
-sets N with `--export-callgraph-max-chains`. Omitting the flag keeps 128; values
-below 1 are rejected. Stitch sets N with `StitchOptions.MaxChains`. Zero or
-omitted keeps 128 on the stitch path. Live UIs that only need a composed route
-through dependencies pass 8 or 1. Do not silently shrink the default.
-`crypto_entry_points` is the complete reverse-reach set and is never filtered by
-that budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
+`call_chains` is a capped sample, not the complete graph. Local CLI defaults
+to 8 routes, with a depth cap of 32; `--export-callgraph-max-chains` overrides
+the budget and values below 1 are rejected. SDK/stitch zero or omitted
+`StitchOptions.MaxChains` still uses 128. The optional complete reverse-reach
+index is enabled with `--export-callgraph-entry-points=true` on the CLI and
+is never filtered by the sample budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
 
 ## Schema Versioning
 
@@ -158,10 +157,10 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
-| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` | `6.14` | The partner-facing reachability contract changes |
+| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.15` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.13` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-2` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
-Schema `6.15` is an opt-in interned render (`ScanMeta.InternedFrames` / `--export-callgraph-interned-frames`). Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
+Schema `6.15` is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 
 Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).
