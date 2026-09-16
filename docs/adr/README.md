@@ -5,7 +5,7 @@ Architecture Decision Records (ADRs) for crypto-finder land in this directory, o
 | ADR | Decision |
 | --- | --- |
 | [0001](0001-opt-in-structured-progress.md) | Structured progress is opt-in via `--progress`. |
-| [0002](0002-call-chains-sample-size.md) | Live export and served stitch keep a default `call_chains` sample of 128. Live UIs opt in to 8 or 1. `crypto_entry_points` stays complete. |
+| [0002](0002-call-chains-sample-size.md) | Local CLI defaults to 8 sampled paths, no optional index, and interned 6.15; SDK/stitch remains 128, index enabled, inlined 6.14. Explicit flags restore the detailed legacy CLI profile. |
 
 The domain vocabulary lives in the root [CONTEXT.md](../../CONTEXT.md).
 Architectural invariants and the package map live in [docs/ARCHITECTURE.md](../ARCHITECTURE.md).

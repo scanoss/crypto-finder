@@ -112,11 +112,11 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, nil)
+	return o.scan(ctx, opts, nil, nil)
 }
 
 //nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
-func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner) (result *entities.InterimReport, err error) {
+func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
 		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
 			return nil, progressErr
@@ -165,7 +165,7 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstan
 			cleanupRulePaths()
 		}
 	}()
-	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); loadErr != nil {
+	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths, validator); loadErr != nil {
 		return nil, loadErr
 	}
 
@@ -246,7 +246,7 @@ func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) 
 	return scannerInstance, nil
 }
 
-func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
+func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func(), validator *rules.ParameterConditionValidator) (err error) {
 	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); progressErr != nil {
 		return progressErr
 	}
@@ -283,7 +283,7 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
 	}
 
-	if validationErr := rules.ValidateParameterConditions(*rawRulePaths); validationErr != nil {
+	if validationErr := validator.Validate(*rawRulePaths); validationErr != nil {
 		return failure.WrapUnknown(validationErr, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
 	}
 	return nil

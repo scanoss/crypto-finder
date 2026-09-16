@@ -560,8 +560,8 @@ func TestScanCommand_ExportCallgraphMaxChainsFlag(t *testing.T) {
 	if flag == nil {
 		t.Fatal("expected --export-callgraph-max-chains flag")
 	}
-	if flag.DefValue != "128" {
-		t.Fatalf("default = %q, want 128", flag.DefValue)
+	if flag.DefValue != "8" {
+		t.Fatalf("default = %q, want 8", flag.DefValue)
 	}
 }
 
@@ -570,8 +570,8 @@ func TestScanCommand_ExportCallgraphEntryPointsFlag(t *testing.T) {
 	if flag == nil {
 		t.Fatal("expected --export-callgraph-entry-points flag")
 	}
-	if flag.DefValue != "true" {
-		t.Fatalf("default = %q, want true", flag.DefValue)
+	if flag.DefValue != "false" {
+		t.Fatalf("default = %q, want false", flag.DefValue)
 	}
 }
 
@@ -580,8 +580,8 @@ func TestScanCommand_ExportCallgraphInternedFramesFlag(t *testing.T) {
 	if flag == nil {
 		t.Fatal("expected --export-callgraph-interned-frames flag")
 	}
-	if flag.DefValue != "false" {
-		t.Fatalf("default = %q, want false", flag.DefValue)
+	if flag.DefValue != "true" {
+		t.Fatalf("default = %q, want true", flag.DefValue)
 	}
 }
 
