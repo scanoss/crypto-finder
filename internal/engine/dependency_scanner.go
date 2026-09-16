@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -19,8 +22,10 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/rules"
+	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/internal/utils"
+	"github.com/scanoss/crypto-finder/internal/version"
 	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
@@ -52,7 +57,7 @@ type DependencyScanner struct {
 
 // NewDependencyScanner creates a new dependency scanner.
 // The optional findingsCache, if non-nil, is used to skip rescanning dependencies
-// whose results are already cached (keyed by module@version + rules hash).
+// whose results are cached for the same package, rules and initialized scanner configuration.
 func NewDependencyScanner(
 	orchestrator *Orchestrator,
 	resolver dependency.Resolver,
@@ -490,13 +495,39 @@ func (ds *DependencyScanner) scanSingleDep(
 	rulesHash string,
 	opts DepScanOptions,
 ) depScanResult {
-	cacheKey := key + ":" + rulesHash
-	if opts.ScanOptions.JavaRuntimeCacheToken != "" {
-		cacheKey += ":" + opts.ScanOptions.JavaRuntimeCacheToken
+	depOpts := ds.buildDepScanOptions(&dep, rulePaths, opts)
+	cacheKey := ""
+	var initializedScanner scanner.Scanner
+	if ds.findingsCache != nil && rulesHash != "" {
+		var err error
+		initializedScanner, err = ds.orchestrator.initializeScanner(ctx, depOpts)
+		if err != nil {
+			return depScanResult{key: key, dep: dep, status: depScanStatusFailed, err: err}
+		}
+		env := os.Environ()
+		sort.Strings(env)
+		cwd, cwdErr := os.Getwd()
+		info := initializedScanner.GetInfo()
+		identity, encodeErr := json.Marshal(struct {
+			Package       string
+			RulesHash     string
+			JavaRuntime   string
+			Name          string
+			Scanner       scanner.Info
+			FinderVersion string
+			Config        scanner.Config
+			Languages     []string
+			Environment   []string
+			CWD           string
+		}{key, rulesHash, depOpts.JavaRuntimeCacheToken, depOpts.ScannerName, info, version.Version, depOpts.ScannerConfig, depOpts.LanguageHint, env, cwd})
+		// Unavailable context/identity disables caching, never scanner validation.
+		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
+			cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
+		}
 	}
 
 	// Check cache
-	if ds.findingsCache != nil && rulesHash != "" {
+	if cacheKey != "" {
 		if report, ok, err := ds.findingsCache.Get(ctx, cacheKey); err == nil && ok {
 			log.Info().
 				Str("module", dep.Module).
@@ -510,15 +541,14 @@ func (ds *DependencyScanner) scanSingleDep(
 
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	depOpts := ds.buildDepScanOptions(&dep, rulePaths, opts)
-	report, err := ds.orchestrator.Scan(ctx, depOpts)
+	report, err := ds.orchestrator.scan(ctx, depOpts, initializedScanner)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
 		Msg("Scanned dependency")
 
 	// Store in cache on success
-	if err == nil && ds.findingsCache != nil && rulesHash != "" {
+	if err == nil && cacheKey != "" {
 		if putErr := ds.findingsCache.Put(ctx, cacheKey, report); putErr != nil {
 			log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
 		}
@@ -1143,6 +1173,10 @@ func hasFindings(report *entities.InterimReport) bool {
 // The caller MUST call the returned cancel func to release resources.
 func detachDeadlineKeepCancel(parent context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
+	// A warm cache hit can finish before the forwarding goroutine is scheduled.
+	if parent.Err() == context.Canceled {
+		cancel()
+	}
 	go func() {
 		select {
 		case <-parent.Done():
