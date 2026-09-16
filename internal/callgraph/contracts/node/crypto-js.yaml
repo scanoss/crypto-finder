@@ -1,0 +1,287 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "crypto-js"
+  coordinates:
+    - "crypto-js"
+  version_range: ">=3.0.0"
+  description: "crypto-js: eight hashes, eight HMACs, PBKDF2 and EvpKDF, eight ciphers and six modes"
+
+# EVERY ENTRY IS REACHED THROUGH THE NAMESPACE -- `CryptoJS.SHA256(..)`,
+# `CryptoJS.AES.encrypt(..)` -- so these keys are the ones the parser emits.
+#
+# THE HASHES AND HMACS RETURN A WordArray, NOT A STRING, and that is the single
+# most useful thing this KB types: consumers overwhelmingly write
+#
+#     CryptoJS.SHA256(message).toString(CryptoJS.enc.Hex)
+#
+# so the digest call is followed by a method call on its result. Typing the
+# return is what keeps `.toString(..)` attached to the digest that produced it
+# rather than floating as an untyped receiver.
+#
+# THE CIPHERS RETURN A CipherParams, which is why `AES.encrypt(..).toString()`
+# works and why a consumer can pass the result straight back to `decrypt`.
+#
+# DEEP IMPORT PATHS resolve to this same coordinate: `crypto-js/aes`,
+# `crypto-js/sha256` and the rest are submodules of one package, and the rules
+# guard for all of them.
+contracts:
+  - method: "crypto-js.MD5"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.MD5"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacMD5"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA1"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA1"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA1"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA224"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA224"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA224"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA256"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA256"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA256"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA384"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA384"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA384"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA512"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA512"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA512"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA3"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.SHA3"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacSHA3"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RIPEMD160"
+    arity: 1
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RIPEMD160"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.HmacRIPEMD160"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.AES.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.AES.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.AES.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.AES.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.TripleDES.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.TripleDES.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.TripleDES.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.TripleDES.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.DES.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.DES.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.DES.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.DES.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4Drop.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4Drop.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4Drop.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RC4Drop.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.Rabbit.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.Rabbit.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.Rabbit.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.Rabbit.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RabbitLegacy.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RabbitLegacy.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.RabbitLegacy.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.RabbitLegacy.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.Blowfish.encrypt"
+    arity: 2
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.Blowfish.encrypt"
+    arity: 3
+    return: { type: "crypto-js.CipherParams", confidence: high }
+    role: operation
+  - method: "crypto-js.Blowfish.decrypt"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.Blowfish.decrypt"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.PBKDF2"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.PBKDF2"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.EvpKDF"
+    arity: 2
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+  - method: "crypto-js.EvpKDF"
+    arity: 3
+    return: { type: "crypto-js.WordArray", confidence: high }
+    role: operation
+
+  # The WordArray exit points. `.toString(enc)` is on the end of nearly every
+  # digest call in real code, and typing it is what closes the chain.
+  - method: "crypto-js.WordArray.toString"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "crypto-js.WordArray.toString"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "crypto-js.CipherParams.toString"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "crypto-js.CipherParams.toString"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
