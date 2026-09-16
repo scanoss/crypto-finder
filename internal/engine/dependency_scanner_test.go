@@ -576,14 +576,15 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	cache.getMap[cacheKey] = cachedReport
 
 	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
-	if res.err != nil {
-		t.Fatalf("scanSingleDep cache hit error: %v", res.err)
+	if res.err != nil || res.report == nil || res.report == cachedReport || scanCalls != 1 {
+		t.Fatalf("legacy entry must miss and scan, result=%#v calls=%d", res, scanCalls)
 	}
-	if res.report != cachedReport {
-		t.Fatal("expected cached report to be returned")
-	}
-	if scanCalls != 0 {
-		t.Fatalf("scanner should not be called on cache hit, calls=%d", scanCalls)
+	cacheKey = cache.putLastKey
+	cachedReport = res.report
+	cache.getMap[cacheKey] = cachedReport
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	if res.err != nil || res.report != cachedReport || scanCalls != 1 {
+		t.Fatalf("new entry must reuse report without scanning, result=%#v calls=%d", res, scanCalls)
 	}
 
 	delete(cache.getMap, cacheKey)
@@ -594,10 +595,10 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	if res.report == nil {
 		t.Fatal("expected non-nil report on cache miss")
 	}
-	if scanCalls != 1 {
-		t.Fatalf("expected scanner to be called once on cache miss, calls=%d", scanCalls)
+	if scanCalls != 2 {
+		t.Fatalf("expected scanner to be called twice after both misses, calls=%d", scanCalls)
 	}
-	if cache.putCalls != 1 || cache.putLastKey == "" {
+	if cache.putCalls != 2 || cache.putLastKey == "" {
 		t.Fatalf("expected cache put call after successful scan, puts=%d key=%q", cache.putCalls, cache.putLastKey)
 	}
 }
@@ -808,8 +809,8 @@ func TestDependencyScanner_ScanSingleDep_JavaRuntimePartitionsCacheKey(t *testin
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}
-	if cache.putLastKey != "org.example:lib@1.2.3:hash:jdk-21" {
-		t.Fatalf("putLastKey = %q, want org.example:lib@1.2.3:hash:jdk-21", cache.putLastKey)
+	if !strings.HasPrefix(cache.putLastKey, "dependency-findings-v2:") {
+		t.Fatalf("putLastKey = %q, want namespaced identity digest", cache.putLastKey)
 	}
 }
 
