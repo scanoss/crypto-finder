@@ -1,0 +1,148 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "bls-eth-wasm"
+  coordinates:
+    - "bls-eth-wasm"
+  version_range: ">=0.4.0"
+  description: "bls-eth-wasm: the BLS signature scheme Ethereum 2.0 consensus runs on, a WebAssembly build of herumi/bls"
+
+# THE TYPES ARE THE POINT OF THIS KB. A consumer builds a SecretKey, derives a
+# PublicKey from it, signs to get a Signature and verifies with the PublicKey:
+#
+#     const sec = new bls.SecretKey();
+#     sec.setByCSPRNG();
+#     const pub = sec.getPublicKey();       // SecretKey -> PublicKey
+#     const sig = sec.sign(message);        // SecretKey -> Signature
+#     const ok  = pub.verify(sig, message);
+#
+# getPublicKey and sign are what carry the type across statements, and without
+# them the second half of every consumer's key flow is three unrelated calls on
+# untyped variables.
+#
+# ARITY IS EXACT AND THE VOID RETURNS ARE REAL. setByCSPRNG, setHashOf, share
+# and recover all mutate the receiver and return nothing -- declaring any of
+# them as SecretKey would type a variable as something the runtime never
+# produces, which is the same error as declaring bcryptjs's async twins
+# chainable.
+#
+# init IS NOT COSMETIC: it selects the curve, and this library builds BN254,
+# BN381_1 and BN_SNARK1 besides BLS12-381. It returns a promise and is
+# contracted as config for that reason.
+contracts:
+  - method: "bls-eth-wasm.init"
+    arity: 0
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "bls-eth-wasm.init"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "bls-eth-wasm.init"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: config
+
+  - method: "bls-eth-wasm.SecretKey.<init>"
+    arity: 0
+    return: { type: "bls-eth-wasm.SecretKey", confidence: high }
+    role: factory
+  - method: "bls-eth-wasm.PublicKey.<init>"
+    arity: 0
+    return: { type: "bls-eth-wasm.PublicKey", confidence: high }
+    role: factory
+  - method: "bls-eth-wasm.Signature.<init>"
+    arity: 0
+    return: { type: "bls-eth-wasm.Signature", confidence: high }
+    role: factory
+  - method: "bls-eth-wasm.Id.<init>"
+    arity: 0
+    return: { type: "bls-eth-wasm.Id", confidence: high }
+    role: factory
+
+  # The two that carry the type across statements.
+  - method: "bls-eth-wasm.SecretKey.getPublicKey"
+    arity: 0
+    return: { type: "bls-eth-wasm.PublicKey", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.SecretKey.sign"
+    arity: 1
+    return: { type: "bls-eth-wasm.Signature", confidence: high }
+    role: operation
+
+  - method: "bls-eth-wasm.PublicKey.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.Signature.aggregate"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.Signature.aggregateVerifyNoCheck"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.PublicKey.isValidOrder"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.Signature.isValidOrder"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # Mutators. They return nothing, and saying otherwise would type a variable
+  # as something that never exists.
+  - method: "bls-eth-wasm.SecretKey.setByCSPRNG"
+    arity: 0
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.SecretKey.setHashOf"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.SecretKey.share"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.SecretKey.recover"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.PublicKey.share"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.PublicKey.recover"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.Signature.recover"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+
+  - method: "bls-eth-wasm.SecretKey.serialize"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "bls-eth-wasm.PublicKey.serialize"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "bls-eth-wasm.Signature.serialize"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "bls-eth-wasm.SecretKey.deserialize"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.PublicKey.deserialize"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bls-eth-wasm.Signature.deserialize"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
