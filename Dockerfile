@@ -45,7 +45,7 @@ ARG TARGETARCH
 
 # Install system dependencies for downloading the pinned OpenGrep binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl=8.14.1-2+deb13u4 \
+    curl=8.14.1-2+deb13u5 \
     ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/*
 
