@@ -561,7 +561,7 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 		findingsCache: cache,
 	}
 
-	filtered, cleanup, err := ds.loadFilteredRules("go")
+	filtered, cleanup, err := ds.loadFilteredRules("go", nil)
 	if err != nil {
 		t.Fatalf("loadFilteredRules: %v", err)
 	}
@@ -578,20 +578,20 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	cachedReport := &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}
 	cache.getMap[cacheKey] = cachedReport
 
-	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
 	if res.err != nil || res.report == nil || res.report == cachedReport || scanCalls != 1 {
 		t.Fatalf("legacy entry must miss and scan, result=%#v calls=%d", res, scanCalls)
 	}
 	cacheKey = cache.putLastKey
 	cachedReport = res.report
 	cache.getMap[cacheKey] = cachedReport
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
 	if res.err != nil || res.report != cachedReport || scanCalls != 1 {
 		t.Fatalf("new entry must reuse report without scanning, result=%#v calls=%d", res, scanCalls)
 	}
 
 	delete(cache.getMap, cacheKey)
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
 	if res.err != nil {
 		t.Fatalf("scanSingleDep cache miss error: %v", res.err)
 	}
@@ -628,7 +628,7 @@ func TestDependencyScanner_ScanSingleDep_DropsNoFindingReportsFromMemory(t *test
 	dep := dependency.Dependency{Module: "github.com/acme/no-crypto", Version: "v1", Dir: t.TempDir()}
 	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, "hash", DepScanOptions{
 		ScanOptions: ScanOptions{ScannerName: "test-scanner"},
-	})
+	}, nil)
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}
@@ -670,7 +670,7 @@ rules:
 		resolver:     &fakeResolver{ecosystem: "java"},
 	}
 
-	_, cleanup, err := ds.loadFilteredRules("java")
+	_, cleanup, err := ds.loadFilteredRules("java", nil)
 	if cleanup != nil {
 		cleanup()
 	}
@@ -724,7 +724,7 @@ func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 		{Module: "b", Version: "1", Dir: filepath.Join(t.TempDir(), "bad")},
 	}
 
-	outcomes, err := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	outcomes, err := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", DepScanOptions{Workers: 2, ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
 	if err != nil {
 		t.Fatalf("scanDependenciesParallel: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestDependencyScanner_ScanDependenciesParallel_PropagatesCancellation(t *te
 
 	outcomes, err := ds.scanDependenciesParallel(context.Background(), []dependency.Dependency{{
 		Module: "example.com/dep", Version: "v1", Dir: t.TempDir(),
-	}}, []string{"/rules/go.yaml"}, "", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
+	}}, []string{"/rules/go.yaml"}, "", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
 	if len(outcomes) != 1 {
 		t.Fatalf("outcomes len = %d, want 1", len(outcomes))
 	}
@@ -808,7 +808,7 @@ func TestDependencyScanner_ScanSingleDep_JavaRuntimePartitionsCacheKey(t *testin
 			ScannerName:           "test-scanner",
 			JavaRuntimeCacheToken: "jdk-21",
 		},
-	})
+	}, nil)
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}

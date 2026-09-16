@@ -136,7 +136,8 @@ func (ds *DependencyScanner) ScanWithDependencies(
 ) (*DepScanResult, error) {
 	pipelineStart := time.Now()
 
-	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts)
+	validator := &rules.ParameterConditionValidator{}
+	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts, validator)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
 
-	depResults, err := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts)
+	depResults, err := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts, validator)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +270,7 @@ func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscove
 func (ds *DependencyScanner) prepareDependencyScan(
 	ctx context.Context,
 	opts DepScanOptions,
+	validator *rules.ParameterConditionValidator,
 ) (*dependency.ResolveResult, []string, string, func(), error) {
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
 	resolved, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target, opts.ScanOptions.ScannerConfig.SkipPatterns)
@@ -285,7 +287,7 @@ func (ds *DependencyScanner) prepareDependencyScan(
 		return resolved, nil, "", func() {}, nil
 	}
 
-	filteredRulePaths, cleanupRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem())
+	filteredRulePaths, cleanupRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem(), validator)
 	if err != nil {
 		return nil, nil, "", func() {}, failure.WrapUnknown(
 			err,
@@ -410,7 +412,7 @@ func (ds *DependencyScanner) attributeDependencyResults(
 // loadFilteredRules loads all rules from the manager and filters them to only
 // include rules for the ecosystem's languages. This avoids loading Java/Python/C/Rust
 // rules when scanning Go dependencies, significantly reducing scanner overhead.
-func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, func(), error) {
+func (ds *DependencyScanner) loadFilteredRules(ecosystem string, validator *rules.ParameterConditionValidator) ([]string, func(), error) {
 	allRules, err := ds.orchestrator.rulesManager.Load()
 	if err != nil {
 		return nil, func() {}, err
@@ -419,7 +421,7 @@ func (ds *DependencyScanner) loadFilteredRules(ecosystem string) ([]string, func
 	// Fail-fast validation against the raw loaded rules, before any
 	// language filtering — a malformed parameterCondition is a hard abort
 	// (resolved proposal decision), matching the same gate in Orchestrator.Scan.
-	if err := rules.ValidateParameterConditions(allRules); err != nil {
+	if err := validator.Validate(allRules); err != nil {
 		return nil, func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeRulesLoadFailed,
@@ -450,6 +452,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
+	validator *rules.ParameterConditionValidator,
 ) ([]depScanResult, error) {
 	workers := dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem())
 
@@ -515,7 +518,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		go func() {
 			defer wg.Done()
 			for item := range workCh {
-				result := ds.scanSingleDep(depCtx, item.dep, item.key, rulePaths, rulesHash, opts)
+				result := ds.scanSingleDep(depCtx, item.dep, item.key, rulePaths, rulesHash, opts, validator)
 				result.index = item.index
 				resultCh <- result
 			}
@@ -562,6 +565,7 @@ func (ds *DependencyScanner) scanSingleDep(
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
+	validator *rules.ParameterConditionValidator,
 ) depScanResult {
 	depOpts := ds.buildDepScanOptions(&dep, rulePaths, opts)
 	cacheKey := ""
@@ -609,7 +613,7 @@ func (ds *DependencyScanner) scanSingleDep(
 
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, depOpts, initializedScanner)
+	report, err := ds.orchestrator.scan(ctx, depOpts, initializedScanner, validator)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
