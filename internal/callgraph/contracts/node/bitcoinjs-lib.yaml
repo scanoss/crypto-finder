@@ -1,0 +1,260 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "bitcoinjs-lib"
+  coordinates:
+    - "bitcoinjs-lib"
+  version_range: ">=5.0.0"
+  description: "bitcoinjs-lib: Bitcoin PSBT signing and validation, sighash construction, address hashing and the secp256k1 backend"
+
+# THIS IS THE FIRST NODE FAMILY WHOSE CONTRACT HAS REAL WORK TO DO. bcrypt and
+# bcryptjs are terminal module-level functions returning primitives, so their
+# KBs could not change any resolution. Here a Psbt is BUILT and then used across
+# several statements --
+#
+#     const psbt = new bitcoin.Psbt({ network });
+#     psbt.addInput(..).addOutput(..);
+#     psbt.signInput(0, keyPair);
+#     psbt.finalizeAllInputs();
+#     const tx = psbt.extractTransaction();
+#
+# -- and the chainable methods return `this`, so typing the constructor and the
+# builders is what keeps the whole sequence attributable instead of only its
+# first call.
+#
+# EVERY CHAINABLE METHOD RETURNS Psbt AND THAT IS READ OFF THE .d.ts, not
+# assumed: signInput, signAllInputs, signInputHD, signTaprootInput,
+# finalizeInput, finalizeAllInputs, addInput and addOutput are all declared
+# `: this`. extractTransaction is the one that leaves the type, returning a
+# Transaction -- which is why the sighash methods below are reachable at all.
+#
+# The async twins return Promise<void>, NOT the Psbt: `await
+# psbt.signInputAsync(0, k)` cannot be chained, and declaring it as Psbt would
+# type a variable as something the runtime never produces.
+#
+# ECPair IS 5.x ONLY. It moved to the separate `ecpair` package in 6.0.0 -- a
+# different coordinate that must never be keyed here -- but the deployed corpus
+# still pins 5.x, so the three factories are declared under THIS coordinate
+# where they genuinely lived.
+#
+# NOT DECLARED: address encoding, script compilation, network descriptors and
+# the payments builders. They shape transactions and perform no cryptographic
+# operation.
+contracts:
+  - method: "bitcoinjs-lib.Psbt.<init>"
+    arity: 0
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Psbt.<init>"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Psbt.fromHex"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Psbt.fromHex"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Psbt.fromBase64"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Psbt.fromBuffer"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: factory
+
+  - method: "bitcoinjs-lib.Psbt.signInput"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signInput"
+    arity: 3
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signAllInputs"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signAllInputs"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signInputHD"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signAllInputsHD"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signTaprootInput"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signTaprootInput"
+    arity: 3
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signTaprootInput"
+    arity: 4
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+
+  # The async twins return Promise<void> and cannot be chained.
+  - method: "bitcoinjs-lib.Psbt.signInputAsync"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signAllInputsAsync"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.signTaprootInputAsync"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+
+  - method: "bitcoinjs-lib.Psbt.validateSignaturesOfInput"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.validateSignaturesOfInput"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.validateSignaturesOfAllInputs"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  - method: "bitcoinjs-lib.Psbt.finalizeAllInputs"
+    arity: 0
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.finalizeInput"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.finalizeInput"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Psbt.finalizeTaprootInput"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Psbt", confidence: high }
+    role: operation
+
+  # The exit from the Psbt type, and what makes the sighash methods reachable.
+  - method: "bitcoinjs-lib.Psbt.extractTransaction"
+    arity: 0
+    return: { type: "bitcoinjs-lib.Transaction", confidence: high }
+    role: output
+  - method: "bitcoinjs-lib.Psbt.extractTransaction"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Transaction", confidence: high }
+    role: output
+
+  - method: "bitcoinjs-lib.Transaction.fromHex"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Transaction", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Transaction.fromBuffer"
+    arity: 1
+    return: { type: "bitcoinjs-lib.Transaction", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.Transaction.fromBuffer"
+    arity: 2
+    return: { type: "bitcoinjs-lib.Transaction", confidence: high }
+    role: factory
+
+  - method: "bitcoinjs-lib.Transaction.hashForSignature"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.hashForWitnessV0"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.hashForWitnessV1"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.hashForWitnessV1"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.hashForWitnessV1"
+    arity: 6
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.getHash"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.Transaction.getHash"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  - method: "bitcoinjs-lib.crypto.hash160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.crypto.hash256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.crypto.taggedHash"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.crypto.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.crypto.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.crypto.sha1"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # 5.x only: ECPair moved to the separate `ecpair` package in 6.0.0.
+  - method: "bitcoinjs-lib.ECPair.fromWIF"
+    arity: 1
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.ECPair.fromWIF"
+    arity: 2
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.ECPair.makeRandom"
+    arity: 0
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.ECPair.makeRandom"
+    arity: 1
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.ECPair.fromPrivateKey"
+    arity: 1
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+  - method: "bitcoinjs-lib.ECPair.fromPrivateKey"
+    arity: 2
+    return: { type: "bitcoinjs-lib.ECPair", confidence: high }
+    role: factory
+
+  - method: "bitcoinjs-lib.toXOnly"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "bitcoinjs-lib.initEccLib"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
