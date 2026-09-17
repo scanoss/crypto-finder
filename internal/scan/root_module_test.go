@@ -38,8 +38,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
 			t.Fatalf("write pom.xml: %v", err)
 		}
-		if got := DetectRootModule(dir, "java"); got != "com.acme" {
-			t.Fatalf("DetectRootModule(java) = %q, want com.acme", got)
+		if got := DetectRootModule(dir, "java"); got != "com.acme:demo" {
+			t.Fatalf("DetectRootModule(java) = %q, want com.acme:demo", got)
 		}
 	})
 
@@ -49,8 +49,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
 			t.Fatalf("write pom.xml: %v", err)
 		}
-		if got := DetectRootModule(dir, "java"); got != "org.parent" {
-			t.Fatalf("DetectRootModule(java parent) = %q, want org.parent", got)
+		if got := DetectRootModule(dir, "java"); got != "org.parent:demo" {
+			t.Fatalf("DetectRootModule(java parent) = %q, want org.parent:demo", got)
 		}
 	})
 
@@ -62,6 +62,17 @@ func TestDetectRootModule(t *testing.T) {
 		}
 		if got := DetectRootModule(dir, "java"); got != "demo-artifact" {
 			t.Fatalf("DetectRootModule(java artifact) = %q, want demo-artifact", got)
+		}
+	})
+
+	t.Run("java-group-and-artifact-id-multi-module-groupid", func(t *testing.T) {
+		dir := t.TempDir()
+		pom := `<project><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId></project>`
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(pom), 0o600); err != nil {
+			t.Fatalf("write pom.xml: %v", err)
+		}
+		if got := DetectRootModule(dir, "java"); got != "org.bouncycastle:bcprov-jdk18on" {
+			t.Fatalf("DetectRootModule(java multi-module groupid) = %q, want org.bouncycastle:bcprov-jdk18on", got)
 		}
 	})
 

@@ -121,6 +121,58 @@ func TestToFindingsEnvelope_ShapeAndDepPrefix(t *testing.T) {
 	}
 }
 
+// TestToFindingsEnvelope_MalformedModuleFallsBackToClosurePurl covers a dep
+// whose Module string has no ecosystem separator (e.g. a groupId-only Maven
+// module, as detectPomRootModule could emit before it was fixed to return
+// groupId:artifactId). purl.Dependency cannot build a coordinate from a
+// colonless java module, so DependencyInfo.PURL must fall back to the
+// closure node's own key.Purl rather than shipping empty.
+func TestToFindingsEnvelope_MalformedModuleFallsBackToClosurePurl(t *testing.T) {
+	app := ComponentKey{Purl: "pkg:maven/com.acme/app", Version: "1.0"}
+	dep := ComponentKey{Purl: "pkg:maven/org.bouncycastle/bcprov-jdk18on", Version: "1.70"}
+
+	fragments := map[ComponentKey]Fragment{
+		app: {
+			Component: app,
+			Module:    "com.acme:app",
+			Functions: []Function{{
+				Signature: "com.acme.App.entry#0", FunctionName: "com.acme.App.entry",
+				CanonicalSignature: "com.acme.App.entry(): void", FilePath: "App.java", StartLine: 5,
+			}},
+			ExternalCalls: []ExternalCall{{
+				Caller: "com.acme.App.entry#0", TargetSignature: "org.bouncycastle.crypto.signers.ECDSASigner.<init>#0",
+				Resolution: ResolutionExact,
+			}},
+		},
+		dep: {
+			Component: dep,
+			Module:    "org.bouncycastle", // groupId-only, no artifactId separator
+			Functions: []Function{{
+				Signature: "org.bouncycastle.crypto.signers.ECDSASigner.<init>#0", FunctionName: "org.bouncycastle.crypto.signers.ECDSASigner.<init>",
+				CanonicalSignature: "org.bouncycastle.crypto.signers.ECDSASigner.<init>(): void", FilePath: "ECDSASigner.java", StartLine: 37,
+			}},
+			CryptoOperations: []CryptoOperation{{
+				Function: "org.bouncycastle.crypto.signers.ECDSASigner.<init>#0", RuleID: "rule.ecdsa", OccurrenceKey: "v1:aabbccddeeff0011",
+				FilePath: "ECDSASigner.java", StartLine: 37, EndLine: 37,
+				Match:  "org.bouncycastle.crypto.signers.ECDSASigner.<init>",
+				Source: "direct", Metadata: json.RawMessage(`{"assetType":"algorithm","algorithmName":"ECDSA"}`),
+			}},
+		},
+	}
+
+	meta := ScanMeta{SchemaVersion: "6.0", RootModule: "com.acme:app", Ecosystem: "java"}
+	env := ToFindingsEnvelope(app, DependencyGraph{app: {dep}}, fragments, meta)
+
+	const depPath = "org.bouncycastle@1.70/ECDSASigner.java"
+	asset := findAsset(env, depPath)
+	if asset == nil {
+		t.Fatalf("no asset at %s; envelope=%+v", depPath, env)
+	}
+	if asset.DependencyInfo == nil || asset.DependencyInfo.PURL != "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.70" {
+		t.Errorf("dependency_info.purl = %+v, want fallback to closure node's own purl", asset.DependencyInfo)
+	}
+}
+
 // TestToFindingsEnvelope_FindingIDMatchesCallgraphExport is the load-bearing
 // invariant: the envelope's finding_ids MUST equal ToCallgraphExport's so the
 // render layer's asset->call_chains join holds. Verified for the dep component
