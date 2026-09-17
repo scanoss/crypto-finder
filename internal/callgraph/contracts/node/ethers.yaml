@@ -1,0 +1,135 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "ethers"
+  coordinates:
+    - "ethers"
+  version_range: ">=5.0.0"
+  description: "ethers: Keccak-256, SHA-2, RIPEMD-160, HMAC, PBKDF2, scrypt, a CSPRNG and secp256k1 signing"
+
+# THE HASHES RETURN HEX STRINGS, NOT BYTES, and that is the one thing worth
+# typing in this library: `keccak256(data)` produces a `0x`-prefixed string that
+# consumers slice, compare and concatenate, so the return type is what keeps a
+# `.slice(0, 10)` attached to the digest that produced it.
+#
+# BOTH ERAS ARE DECLARED. v5 hangs these off `ethers.utils.*` and v6 exports
+# them at the top level and from `ethers/crypto`; the keys carry the bare
+# function names because that is what the parser emits for either spelling once
+# the namespace is resolved.
+#
+# THE CURVE IS FIXED. Unlike elliptic, ethers offers exactly one curve, so the
+# SigningKey entries are unambiguously secp256k1.
+contracts:
+  - method: "ethers.keccak256"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.sha256"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.sha512"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.ripemd160"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.computeHmac"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.pbkdf2"
+    arity: 5
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.scrypt"
+    arity: 6
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.scrypt"
+    arity: 7
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.scryptSync"
+    arity: 6
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.randomBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  - method: "ethers.SigningKey.<init>"
+    arity: 1
+    return: { type: "ethers.SigningKey", confidence: high }
+    role: factory
+  - method: "ethers.SigningKey.sign"
+    arity: 1
+    return: { type: "ethers.Signature", confidence: high }
+    role: operation
+  - method: "ethers.SigningKey.signDigest"
+    arity: 1
+    return: { type: "ethers.Signature", confidence: high }
+    role: operation
+  - method: "ethers.SigningKey.computeSharedSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.SigningKey.computePublicKey"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.SigningKey.computePublicKey"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.SigningKey.recoverPublicKey"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.recoverAddress"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+
+  # A mnemonic-derived wallet and a random one are the same TYPE and different
+  # provenance; the rules separate them on materialSource, and the KB types both
+  # so a consumer's `wallet.signMessage(..)` resolves either way.
+  - method: "ethers.Wallet.<init>"
+    arity: 1
+    return: { type: "ethers.Wallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.<init>"
+    arity: 2
+    return: { type: "ethers.Wallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.createRandom"
+    arity: 0
+    return: { type: "ethers.HDNodeWallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.createRandom"
+    arity: 1
+    return: { type: "ethers.HDNodeWallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.fromPhrase"
+    arity: 1
+    return: { type: "ethers.HDNodeWallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.fromPhrase"
+    arity: 2
+    return: { type: "ethers.HDNodeWallet", confidence: high }
+    role: factory
+  - method: "ethers.Wallet.signMessage"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.Wallet.signTransaction"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "ethers.HDNodeWallet.signMessage"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
