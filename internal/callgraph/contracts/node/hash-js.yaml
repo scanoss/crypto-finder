@@ -1,0 +1,181 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "hash.js"
+  coordinates:
+    - "hash.js"
+  version_range: ">=1.0.0"
+  description: "hash.js: SHA-1, SHA-2, RIPEMD-160 digests and HMAC over any of them"
+
+# THIS LIBRARY IS A FLUENT CHAIN AND THAT IS THE WHOLE REASON THE KB IS SHAPED
+# THIS WAY. No consumer calls a digest in one expression:
+#
+#     hash.sha256().update(msg).digest("hex")
+#
+# Three calls, and only the first names the algorithm. `update` returns the
+# hasher so the chain continues, and `digest` returns the output. Without the
+# `update` entries returning the SAME type, the chain breaks at the second link
+# and `digest` resolves against nothing -- which is why every update entry below
+# carries a return type rather than only a role.
+#
+# THE ALGORITHM LIVES IN THE FACTORY, so each of the six gets its own type:
+# hash.js.SHA256 and hash.js.SHA512 are different types precisely so a chain
+# starting at sha512 cannot be read as a SHA-256. A single shared Hasher type
+# would have been shorter and would have erased the one thing worth knowing.
+#
+# ARITY IS PART OF THE KEY. update takes (msg) or (msg, enc) and digest takes ()
+# or (enc); the draw contains both spellings of each -- `digest()` in
+# eosjs-upland-auth-fix and `digest("hex")` in @sorare/crypto.
+#
+# hmac is contracted at arity 2 and 3: Hmac(hash, key) and Hmac(hash, key, enc).
+# Its first argument is the DIGEST, which is what lets the rules publish
+# HMAC-SHA-256 rather than a bare HMAC -- but that is a rule-side reading of a
+# literal, and nothing here can express it, so the KB types the chain only.
+#
+# Deliberately NOT contracted: the utils module (hex and endian conversion) and
+# the internal BlockHash prototype. They move bytes and compute nothing.
+contracts:
+  - method: "hash.js.sha1"
+    arity: 0
+    return: { type: "hash.js.SHA1", confidence: high }
+    role: factory
+  - method: "hash.js.SHA1.update"
+    arity: 1
+    return: { type: "hash.js.SHA1", confidence: high }
+    role: operation
+  - method: "hash.js.SHA1.update"
+    arity: 2
+    return: { type: "hash.js.SHA1", confidence: high }
+    role: operation
+  - method: "hash.js.SHA1.digest"
+    arity: 0
+    return: { type: "hash.js.SHA1Digest", confidence: high }
+    role: output
+  - method: "hash.js.SHA1.digest"
+    arity: 1
+    return: { type: "hash.js.SHA1Digest", confidence: high }
+    role: output
+  - method: "hash.js.sha224"
+    arity: 0
+    return: { type: "hash.js.SHA224", confidence: high }
+    role: factory
+  - method: "hash.js.SHA224.update"
+    arity: 1
+    return: { type: "hash.js.SHA224", confidence: high }
+    role: operation
+  - method: "hash.js.SHA224.update"
+    arity: 2
+    return: { type: "hash.js.SHA224", confidence: high }
+    role: operation
+  - method: "hash.js.SHA224.digest"
+    arity: 0
+    return: { type: "hash.js.SHA224Digest", confidence: high }
+    role: output
+  - method: "hash.js.SHA224.digest"
+    arity: 1
+    return: { type: "hash.js.SHA224Digest", confidence: high }
+    role: output
+  - method: "hash.js.sha256"
+    arity: 0
+    return: { type: "hash.js.SHA256", confidence: high }
+    role: factory
+  - method: "hash.js.SHA256.update"
+    arity: 1
+    return: { type: "hash.js.SHA256", confidence: high }
+    role: operation
+  - method: "hash.js.SHA256.update"
+    arity: 2
+    return: { type: "hash.js.SHA256", confidence: high }
+    role: operation
+  - method: "hash.js.SHA256.digest"
+    arity: 0
+    return: { type: "hash.js.SHA256Digest", confidence: high }
+    role: output
+  - method: "hash.js.SHA256.digest"
+    arity: 1
+    return: { type: "hash.js.SHA256Digest", confidence: high }
+    role: output
+  - method: "hash.js.sha384"
+    arity: 0
+    return: { type: "hash.js.SHA384", confidence: high }
+    role: factory
+  - method: "hash.js.SHA384.update"
+    arity: 1
+    return: { type: "hash.js.SHA384", confidence: high }
+    role: operation
+  - method: "hash.js.SHA384.update"
+    arity: 2
+    return: { type: "hash.js.SHA384", confidence: high }
+    role: operation
+  - method: "hash.js.SHA384.digest"
+    arity: 0
+    return: { type: "hash.js.SHA384Digest", confidence: high }
+    role: output
+  - method: "hash.js.SHA384.digest"
+    arity: 1
+    return: { type: "hash.js.SHA384Digest", confidence: high }
+    role: output
+  - method: "hash.js.sha512"
+    arity: 0
+    return: { type: "hash.js.SHA512", confidence: high }
+    role: factory
+  - method: "hash.js.SHA512.update"
+    arity: 1
+    return: { type: "hash.js.SHA512", confidence: high }
+    role: operation
+  - method: "hash.js.SHA512.update"
+    arity: 2
+    return: { type: "hash.js.SHA512", confidence: high }
+    role: operation
+  - method: "hash.js.SHA512.digest"
+    arity: 0
+    return: { type: "hash.js.SHA512Digest", confidence: high }
+    role: output
+  - method: "hash.js.SHA512.digest"
+    arity: 1
+    return: { type: "hash.js.SHA512Digest", confidence: high }
+    role: output
+  - method: "hash.js.ripemd160"
+    arity: 0
+    return: { type: "hash.js.RIPEMD160", confidence: high }
+    role: factory
+  - method: "hash.js.RIPEMD160.update"
+    arity: 1
+    return: { type: "hash.js.RIPEMD160", confidence: high }
+    role: operation
+  - method: "hash.js.RIPEMD160.update"
+    arity: 2
+    return: { type: "hash.js.RIPEMD160", confidence: high }
+    role: operation
+  - method: "hash.js.RIPEMD160.digest"
+    arity: 0
+    return: { type: "hash.js.RIPEMD160Digest", confidence: high }
+    role: output
+  - method: "hash.js.RIPEMD160.digest"
+    arity: 1
+    return: { type: "hash.js.RIPEMD160Digest", confidence: high }
+    role: output
+  - method: "hash.js.hmac"
+    arity: 2
+    return: { type: "hash.js.Hmac", confidence: high }
+    role: factory
+  - method: "hash.js.hmac"
+    arity: 3
+    return: { type: "hash.js.Hmac", confidence: high }
+    role: factory
+  - method: "hash.js.Hmac.update"
+    arity: 1
+    return: { type: "hash.js.Hmac", confidence: high }
+    role: operation
+  - method: "hash.js.Hmac.update"
+    arity: 2
+    return: { type: "hash.js.Hmac", confidence: high }
+    role: operation
+  - method: "hash.js.Hmac.digest"
+    arity: 0
+    return: { type: "hash.js.HmacDigest", confidence: high }
+    role: output
+  - method: "hash.js.Hmac.digest"
+    arity: 1
+    return: { type: "hash.js.HmacDigest", confidence: high }
+    role: output
