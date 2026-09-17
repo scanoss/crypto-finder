@@ -1,0 +1,251 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jsrsasign"
+  coordinates:
+    - "jsrsasign"
+  version_range: ">=8.0.0"
+  description: "jsrsasign: signatures, digests, JWS, RSA encryption, key handling and X.509"
+
+# jsrsasign EXPOSES ITS WHOLE SURFACE THROUGH THREE GLOBAL-LOOKING NAMESPACES --
+# KJUR, KEYUTIL and X509 -- rather than through exported functions, so every key
+# here is a namespace path. That shape is what makes the import guard
+# load-bearing on the rules side and it is why this KB exists: without it a
+# `KJUR.crypto.Signature` in consumer code resolves to the consumer's own module.
+#
+# THIS SCOPE IS MEASURED, NOT ENUMERATED. jsrsasign ships hundreds of classes --
+# the whole of CMS, CAdES, TSP, OCSP and ASN.1 -- and contracting all of them
+# would be a week of typing that no consumer exercises. What is declared here is
+# what the consumer files that actually import the library call: KEYUTIL.getKey
+# 14 times, hextob64 7, KEYUTIL.getPEM 6, getJWK and generateKeypair 4 each,
+# KJUR.crypto.Signature 3, Util.hashHex 2, and one each of JWS.sign,
+# Cipher.encrypt, Cipher.decrypt and the X509 readers. Everything else is
+# deliberately absent and this comment is the record of that choice.
+#
+# THE SIGNATURE AND MESSAGEDIGEST CONSTRUCTORS ARE THE LOAD-BEARING ENTRIES.
+# Both take a parameter object and return an object the consumer then drives:
+# `init`, `updateString`, `sign`, `verify`. Without the constructor return type
+# those method entries are unreachable, exactly as with the Azure and Google
+# client KBs.
+#
+# hextob64, b64tohex, pemtohex AND FRIENDS ARE NOT CONTRACTED. They convert
+# between hex, base64 and PEM and compute no cryptography. hextob64 is the second
+# most-called jsrsasign function in the draw, which is precisely why leaving it
+# out is worth stating: call frequency is not cryptographic relevance.
+contracts:
+  - method: "jsrsasign.KJUR.crypto.Signature.<init>"
+    arity: 0
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: factory
+  - method: "jsrsasign.KJUR.crypto.Signature.<init>"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: factory
+  - method: "jsrsasign.KJUR.crypto.Signature.init"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.init"
+    arity: 2
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.updateString"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.updateHex"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.Signature", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.sign"
+    arity: 0
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.sign"
+    arity: 1
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.verify"
+    arity: 1
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Signature.verify"
+    arity: 2
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.<init>"
+    arity: 0
+    return: { type: "jsrsasign.KJUR.crypto.MessageDigest", confidence: high }
+    role: factory
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.<init>"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.MessageDigest", confidence: high }
+    role: factory
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.updateString"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.MessageDigest", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.updateHex"
+    arity: 1
+    return: { type: "jsrsasign.KJUR.crypto.MessageDigest", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.digest"
+    arity: 0
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: output
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.digest"
+    arity: 1
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: output
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.digestString"
+    arity: 1
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.MessageDigest.digestHex"
+    arity: 1
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Util.hashHex"
+    arity: 2
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Util.hashString"
+    arity: 2
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Cipher.encrypt"
+    arity: 2
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Cipher.encrypt"
+    arity: 3
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Cipher.decrypt"
+    arity: 2
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.crypto.Cipher.decrypt"
+    arity: 3
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.sign"
+    arity: 4
+    return: { type: "jsrsasign.CompactJWS", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.verify"
+    arity: 2
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.verify"
+    arity: 3
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.verifyJWT"
+    arity: 2
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.verifyJWT"
+    arity: 3
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.KJUR.jws.JWS.readSafeJSONString"
+    arity: 1
+    return: { type: "jsrsasign.JWSPayload", confidence: high }
+    role: output
+  - method: "jsrsasign.KJUR.jws.JWS.parse"
+    arity: 1
+    return: { type: "jsrsasign.JWSPayload", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getKey"
+    arity: 1
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: factory
+  - method: "jsrsasign.KEYUTIL.getKey"
+    arity: 2
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: factory
+  - method: "jsrsasign.KEYUTIL.getKey"
+    arity: 3
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: factory
+  - method: "jsrsasign.KEYUTIL.generateKeypair"
+    arity: 2
+    return: { type: "jsrsasign.KEYUTIL.Keypair", confidence: high }
+    role: operation
+  - method: "jsrsasign.KEYUTIL.getPEM"
+    arity: 1
+    return: { type: "jsrsasign.PEM", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getPEM"
+    arity: 2
+    return: { type: "jsrsasign.PEM", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getPEM"
+    arity: 3
+    return: { type: "jsrsasign.PEM", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getJWK"
+    arity: 1
+    return: { type: "jsrsasign.JWK", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getJWK"
+    arity: 2
+    return: { type: "jsrsasign.JWK", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getJWKFromKey"
+    arity: 1
+    return: { type: "jsrsasign.JWK", confidence: high }
+    role: output
+  - method: "jsrsasign.KEYUTIL.getKeyFromPlainPrivatePKCS8PEM"
+    arity: 1
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: factory
+  - method: "jsrsasign.KEYUTIL.getKeyFromCSRPEM"
+    arity: 1
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: factory
+  - method: "jsrsasign.KEYUTIL.getPBKDF2KeyHexFromParam"
+    arity: 1
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.KEYUTIL.getPBKDF2KeyHexFromParam"
+    arity: 2
+    return: { type: "jsrsasign.Hex", confidence: high }
+    role: operation
+  - method: "jsrsasign.X509.<init>"
+    arity: 0
+    return: { type: "jsrsasign.X509", confidence: high }
+    role: factory
+  - method: "jsrsasign.X509.<init>"
+    arity: 1
+    return: { type: "jsrsasign.X509", confidence: high }
+    role: factory
+  - method: "jsrsasign.X509.readCertPEM"
+    arity: 1
+    return: { type: "jsrsasign.X509", confidence: high }
+    role: operation
+  - method: "jsrsasign.X509.readCertHex"
+    arity: 1
+    return: { type: "jsrsasign.X509", confidence: high }
+    role: operation
+  - method: "jsrsasign.X509.verifySignature"
+    arity: 0
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.X509.verifySignature"
+    arity: 1
+    return: { type: "jsrsasign.Boolean", confidence: high }
+    role: operation
+  - method: "jsrsasign.X509.getPublicKeyFromCertPEM"
+    arity: 1
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: output
+  - method: "jsrsasign.X509.getPublicKeyFromCertHex"
+    arity: 1
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: output
+  - method: "jsrsasign.X509.getPublicKey"
+    arity: 0
+    return: { type: "jsrsasign.KEYUTIL.Key", confidence: high }
+    role: output
