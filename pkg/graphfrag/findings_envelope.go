@@ -116,15 +116,7 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 				ParameterConditions: parseParameterConditions(op.Metadata),
 			}
 			if !isRoot {
-				packageURL := purl.Dependency(meta.Ecosystem, frag.Module, key.Version)
-				if frag.Module == "" && strings.HasPrefix(key.Purl, "pkg:") {
-					packageURL = key.Purl
-				}
-				asset.DependencyInfo = &ExportDependencyInfo{
-					Module:  frag.Module,
-					Version: key.Version,
-					PURL:    packageURL,
-				}
+				asset.DependencyInfo = buildDependencyInfo(meta, frag, key)
 			}
 			if _, ok := byPath[path]; !ok {
 				order = append(order, path)
@@ -134,6 +126,26 @@ func ToFindingsEnvelope(root ComponentKey, deps DependencyGraph, fragments map[C
 	}
 
 	return assembleEnvelope(meta, order, byPath)
+}
+
+// buildDependencyInfo names the dependency a non-root finding was reached
+// through. purl.Dependency needs the resolved module+ecosystem; when that's
+// unavailable it falls back to the closure node's own purl (versioned if
+// possible) rather than shipping an empty one.
+func buildDependencyInfo(meta ScanMeta, frag Fragment, key ComponentKey) *ExportDependencyInfo {
+	packageURL := purl.Dependency(meta.Ecosystem, frag.Module, key.Version)
+	if packageURL == "" && strings.HasPrefix(key.Purl, "pkg:") {
+		if versioned := purl.WithVersion(key.Purl, key.Version); versioned != "" {
+			packageURL = versioned
+		} else {
+			packageURL = key.Purl
+		}
+	}
+	return &ExportDependencyInfo{
+		Module:  frag.Module,
+		Version: key.Version,
+		PURL:    packageURL,
+	}
 }
 
 // parseParameterConditions extracts and parses the flat parameterCondition
