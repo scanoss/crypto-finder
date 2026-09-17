@@ -1,0 +1,66 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "fast-jwt"
+  coordinates:
+    - "fast-jwt"
+  version_range: ">=1.0.0"
+  description: "fast-jwt: JWT signing, verification and decoding across the thirteen JWA algorithms"
+
+# THE FACTORIES RETURN FUNCTIONS, and that is the whole shape of this library:
+#
+#     const sign   = createSigner({ key, algorithm: 'RS256' });
+#     const token  = sign(payload);
+#     const verify = createVerifier({ key });
+#     const claims = verify(token);
+#
+# `createSigner` does not sign -- it returns the function that will. Typing that
+# return is what connects the algorithm chosen at configuration time to the call
+# that actually produces a token, which in real code is somewhere else entirely.
+#
+# THE ALGORITHM IS A LITERAL AT THE CALL SITE, which is rare in this campaign,
+# so the rules carry one entry per JWA identifier. The KB types the plumbing;
+# the rules carry the algorithm.
+contracts:
+  - method: "fast-jwt.createSigner"
+    arity: 0
+    return: { type: "fast-jwt.Signer", confidence: high }
+    role: factory
+  - method: "fast-jwt.createSigner"
+    arity: 1
+    return: { type: "fast-jwt.Signer", confidence: high }
+    role: factory
+  - method: "fast-jwt.createVerifier"
+    arity: 0
+    return: { type: "fast-jwt.Verifier", confidence: high }
+    role: factory
+  - method: "fast-jwt.createVerifier"
+    arity: 1
+    return: { type: "fast-jwt.Verifier", confidence: high }
+    role: factory
+  - method: "fast-jwt.createDecoder"
+    arity: 0
+    return: { type: "fast-jwt.Decoder", confidence: high }
+    role: factory
+  - method: "fast-jwt.createDecoder"
+    arity: 1
+    return: { type: "fast-jwt.Decoder", confidence: high }
+    role: factory
+
+  - method: "fast-jwt.Signer"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "fast-jwt.Verifier"
+    arity: 1
+    return: { type: "object", confidence: high }
+    role: operation
+
+  # A DECODER PERFORMS NO CRYPTOGRAPHY. It splits the token and base64-decodes
+  # the claims WITHOUT checking the signature, which is why it is declared with
+  # role output rather than operation: an inventory must not read a decode as a
+  # verification, and the difference is the entire security boundary of a JWT.
+  - method: "fast-jwt.Decoder"
+    arity: 1
+    return: { type: "object", confidence: high }
+    role: output
