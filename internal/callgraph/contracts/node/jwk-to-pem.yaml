@@ -1,0 +1,35 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jwk-to-pem"
+  coordinates:
+    - "jwk-to-pem"
+  version_range: ">=2.0.0"
+  description: "jwk-to-pem: convert a JWK into a PEM-encoded key"
+
+# TWO ENTRIES, AND THE ARITY IS THE WHOLE POINT. The module export is the
+# function; there is no namespace, no class and no chain. What distinguishes the
+# two declarations is whether an options object is present, because
+# `{ private: true }` is what turns a public-key conversion into a PRIVATE KEY
+# being serialized.
+#
+# BOTH ARE role: output AND NEITHER IS AN OPERATION. This library computes no
+# cryptography -- it re-encodes a key that already exists, from JWK into PEM.
+# Declaring either as an operation would put a cryptographic operation in the
+# inventory for a format conversion, which is the same line X509.readCertPEM
+# sits on in the jsrsasign KB.
+#
+# THE KB CANNOT SEE THE ALGORITHM and does not pretend to. `kty` and `crv`
+# decide between RSA and P-256/P-384/P-521, and they live inside a JWK fetched at
+# runtime -- every one of the fourteen call sites measured across sixteen
+# consumers passes a variable. There is one PEM return type rather than one per
+# curve for exactly that reason.
+contracts:
+  - method: "jwk-to-pem"
+    arity: 1
+    return: { type: "jwk-to-pem.PEM", confidence: high }
+    role: output
+  - method: "jwk-to-pem"
+    arity: 2
+    return: { type: "jwk-to-pem.PEM", confidence: high }
+    role: output
