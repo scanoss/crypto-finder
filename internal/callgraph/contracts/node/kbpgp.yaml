@@ -1,0 +1,84 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "kbpgp"
+  coordinates:
+    - "kbpgp"
+  version_range: ">=2.0.0"
+  description: "kbpgp: OpenPGP message boxing, key management and key rings"
+
+# kbpgp IS CALLBACK-STYLE AND THAT SHAPES THIS KB. Nothing chains: every entry
+# takes an options object and a Node-style callback, and the value a consumer
+# works with arrives as a callback argument rather than as a return. So the
+# return types here describe what the callback receives, and no entry exists to
+# carry a fluent chain the way the hash.js or jose KBs do.
+#
+# THE TWO OPERATIONS EACH DO SEVERAL THINGS. `box` encrypts, signs, or both,
+# depending on whether the caller supplied `encrypt_for`, `sign_with` or both;
+# `unbox` decrypts and verifies whatever the message turns out to contain. Both
+# are declared `operation` and neither is narrowed to encrypt or sign, because
+# the KB cannot see which options were passed -- and in the draw they are always
+# passed as an object built elsewhere, `kbpgp.box(params, cb)`.
+#
+# THE KEY MANAGERS ARE FACTORIES AND THAT IS MOST OF WHAT CONSUMERS TOUCH.
+# Counted across sixteen consumers: KeyRing 11 call sites,
+# import_from_armored_pgp 14, import_public 7, generate 8 -- more than box and
+# unbox together. A KB that typed only the operations would miss where a PGP
+# deployment's long-lived keys come from.
+#
+# import_public IS SEPARATE FROM import_from_armored_pgp on purpose: the first
+# brings in a verification key, the second can carry SECRET key material
+# depending on the block. Same coordinate, different consequence, so the rules
+# report them apart and the KB keeps the methods distinguishable.
+#
+# Deliberately NOT contracted: the armor codec, the bignum helpers and the
+# constant tables. They encode and enumerate; they compute nothing.
+contracts:
+  - method: "kbpgp.box"
+    arity: 2
+    return: { type: "kbpgp.ArmoredMessage", confidence: high }
+    role: operation
+  - method: "kbpgp.unbox"
+    arity: 2
+    return: { type: "kbpgp.Literals", confidence: high }
+    role: operation
+  - method: "kbpgp.KeyManager.generate"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.generate_primary"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.import_public"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.import_from_armored_pgp"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.import_from_p3skb"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.sign"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: operation
+  - method: "kbpgp.KeyManager.export_pgp_private"
+    arity: 2
+    return: { type: "kbpgp.ArmoredKey", confidence: high }
+    role: output
+  - method: "kbpgp.KeyManager.export_pgp_public"
+    arity: 2
+    return: { type: "kbpgp.ArmoredKey", confidence: high }
+    role: output
+  - method: "kbpgp.keyring.KeyRing.<init>"
+    arity: 0
+    return: { type: "kbpgp.keyring.KeyRing", confidence: high }
+    role: factory
+  - method: "kbpgp.keyring.KeyRing.add_key_manager"
+    arity: 1
+    return: { type: "kbpgp.keyring.KeyRing", confidence: high }
+    role: config
