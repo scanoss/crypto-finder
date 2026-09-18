@@ -843,14 +843,60 @@ func (p *JavaParser) collectClassFieldAssignments(
 ) map[string]fieldAssignment {
 	assignments := make(map[string]fieldAssignment)
 	for _, child := range javaTypeBodyMembers(body) {
-		if child.Type() != javaNodeConstructorDeclaration && child.Type() != javaNodeCompactConstructorDecl {
-			continue
-		}
-		for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
-			mergeFieldAssignment(assignments, key, value)
+		switch child.Type() {
+		case javaNodeConstructorDeclaration, javaNodeCompactConstructorDecl:
+			for key, value := range p.extractFieldAssignments(child, findConstructorBody(child), src, filePath, fieldTypes) {
+				mergeFieldAssignment(assignments, key, value)
+			}
+		case javaNodeFieldDeclaration:
+			for key, value := range finalFieldInitializers(child, src, filePath) {
+				mergeFieldAssignment(assignments, key, value)
+			}
 		}
 	}
 	return assignments
+}
+
+// finalFieldInitializers records the declarator initializers of a `final`
+// field declaration. Only a final field is safe to read this way: a mutable
+// field can be reassigned from any method, so its initializer is not its value.
+func finalFieldInitializers(node *sitter.Node, src []byte, filePath string) map[string]fieldAssignment {
+	if !javaHasModifier(node, src, "final") {
+		return nil
+	}
+	initializers := make(map[string]fieldAssignment)
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeVariableDeclarator {
+			continue
+		}
+		name, initializer := parseVariableDeclaratorOrigin(child, src)
+		if name == "" || initializer == "" {
+			continue
+		}
+		initializers[name] = fieldAssignment{
+			initializer: initializer,
+			line:        int(child.StartPoint().Row) + 1,
+			filePath:    filePath,
+			valid:       true,
+		}
+	}
+	return initializers
+}
+
+func javaHasModifier(node *sitter.Node, src []byte, modifier string) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		modifiers := node.Child(i)
+		if modifiers.Type() != javaNodeModifiers {
+			continue
+		}
+		for j := 0; j < int(modifiers.ChildCount()); j++ {
+			if modifiers.Child(j).Content(src) == modifier {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func mergeFieldAssignment(assignments map[string]fieldAssignment, fieldName string, assignment fieldAssignment) {
@@ -1207,6 +1253,10 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 			if fa.paramName != "" {
 				origin.constructorParam = &fa
 			}
+			if fa.initializer != "" {
+				origin.initializer = fa.initializer
+				origin.line = fa.line
+			}
 		}
 		varOrigins[k] = origin
 	}
@@ -1218,11 +1268,13 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	return calls
 }
 
-// fieldAssignment records one constructor assignment to a class field.
+// fieldAssignment records one writer of a class field: a constructor
+// assignment, or the declarator initializer of a `final` field.
 type fieldAssignment struct {
 	paramName    string // constructor parameter name
 	paramIndex   int    // parameter index (0-based)
 	paramType    string // parameter type
+	initializer  string // declarator initializer of a final field, e.g. "2048"
 	line         int    // assignment line
 	filePath     string
 	resolvedType string // concrete assigned type, when known
