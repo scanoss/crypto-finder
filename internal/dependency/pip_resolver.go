@@ -52,6 +52,17 @@ func (r *PipResolver) Ecosystem() string {
 	return pythonExecutable
 }
 
+// CanResolve reports whether an interpreter can be located for targetDir.
+// Resolve's input is an interpreter, not a manifest: it lists the packages
+// installed in VIRTUAL_ENV, a project-local venv, or the python3/python found
+// on PATH, so a target with no manifest at all is still resolvable, and one
+// with no interpreter is not. Locating the interpreter reads one environment
+// variable, stats the venv candidates, and walks PATH; it runs no subprocess.
+func (r *PipResolver) CanResolve(targetDir string) bool {
+	_, err := r.resolvePythonExecutable(targetDir)
+	return err == nil
+}
+
 // Resolve uses `pip list` and `pip show` to resolve all installed Python packages
 // for the environment associated with the project at targetDir.
 //

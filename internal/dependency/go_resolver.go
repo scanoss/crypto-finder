@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -30,6 +32,32 @@ func NewGoResolver() *GoResolver {
 // Ecosystem returns "go".
 func (r *GoResolver) Ecosystem() string {
 	return "go"
+}
+
+// CanResolve reports whether targetDir is a directory inside a Go module or
+// workspace. `go list -m -json all` searches upward from its working directory
+// for the nearest go.mod, or the go.work that stands in for one at a workspace
+// root, so a package directory below the module root resolves the whole module
+// and the precondition searches the same way. A file target answers false
+// because Resolve runs the go tool with targetDir as its working directory.
+func (r *GoResolver) CanResolve(targetDir string) bool {
+	dir, err := filepath.Abs(targetDir)
+	if err != nil {
+		return false
+	}
+	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		return false
+	}
+	for {
+		if fileExists(filepath.Join(dir, "go.mod")) || fileExists(filepath.Join(dir, "go.work")) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }
 
 // Resolve uses `go list -m -json all` to resolve all transitive dependencies
