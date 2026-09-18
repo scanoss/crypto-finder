@@ -1173,6 +1173,10 @@ func (r *recordingResolver) Resolve(_ context.Context, targetDir string) (*depen
 
 func (r *recordingResolver) Ecosystem() string { return r.ecosystem }
 
+// CanResolve answers true because only the CLI gate consults it; resolveScanRoot,
+// which these tests exercise, selects roots without asking the resolver.
+func (r *recordingResolver) CanResolve(string) bool { return true }
+
 func TestDependencyScanner_ResolveScanRoot_RootManifestResolvesAtTarget(t *testing.T) {
 	root := writeRepoTree(t, map[string]string{
 		"go.mod":            "module example.com/root\n",

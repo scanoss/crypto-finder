@@ -1009,8 +1009,14 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			// scanner hands the resolver opts.ScanOptions.Target. Gating on the
 			// containing directory lets a file target pass and then abort
 			// inside the resolver, which is what this skip prevents.
-			case !resolver.CanResolve(target):
-				log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at scan target, skipping dependency scan")
+			//
+			// A target the resolver cannot read is not necessarily a target
+			// with nothing to resolve. A monorepo carries its manifests in the
+			// module directories below the root, and the dependency scanner
+			// resolves each of those, so the phase only skips when that search
+			// comes back empty too.
+			case !resolver.CanResolve(target) && len(dependency.ResolutionRoots(target, ecosystem, skipPatterns).Roots) == 0:
+				log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
 				if err := skipDependencies("manifest_absent"); err != nil {
 					return err
 				}
