@@ -22,7 +22,9 @@ import (
 // with no root manifest already resolves today, and fanning out would run the
 // same interpreter query once per subdirectory for the same answer.
 var rootManifests = map[string][]string{
-	"go":          {"go.mod"},
+	// go.work is here because a workspace root carries no go.mod of its own and
+	// `go list -m -json all` resolves from it.
+	"go":          {"go.mod", "go.work"},
 	ecosystemJava: {"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"},
 	"rust":        {"Cargo.toml"},
 	// Node needs BOTH. NpmResolver.Resolve reads package.json and then
@@ -34,6 +36,12 @@ var rootManifests = map[string][]string{
 // rootManifestsAllRequired lists the ecosystems whose entry in rootManifests
 // must ALL be present rather than any one of them.
 var rootManifestsAllRequired = map[string]bool{ecosystemNode: true}
+
+// ecosystemsResolvingUpward names the ecosystems whose toolchain locates its
+// own manifest by searching the scan root's ancestors. GoResolver sets only
+// cmd.Dir and lets `go list` walk up, so a directory inside a module resolves
+// today with no manifest of its own and must not be treated as manifest-less.
+var ecosystemsResolvingUpward = map[string]bool{"go": true}
 
 // rootDiscoveryIgnoredDirs are pruned on top of skip.DefaultDirMatcher(). A
 // manifest under one of these names a fixture, not a module of the repository
@@ -48,8 +56,9 @@ const (
 	// src/main/java/... and a manifest there is a fixture. An immediate child
 	// of the scan root is depth 1.
 	maxRootDiscoveryDepth = 4
-	// maxRootDiscoveryWalk bounds walk cost on a wide pathological tree. Same
-	// value and role as skip.maxBuiltOutputWalk.
+	// maxRootDiscoveryWalk bounds walk cost on a wide pathological tree. It
+	// counts DIRECTORIES, not entries: visit returns on a file before the
+	// counter moves, unlike skip.builtOutputScan, which counts every entry.
 	maxRootDiscoveryWalk = 50000
 	// maxResolutionRoots bounds PROCESS EXECUTION, not reading. One root is one
 	// mvn/gradle/npm/cargo/go invocation plus, for Maven, a source-jar pass.
@@ -96,12 +105,20 @@ type RootDiscovery struct {
 	Unreadable int
 }
 
-// rootWalk is the WalkDir state for one discovery.
+// rootWalk is the WalkDir state for one discovery. It consults two matchers
+// because they are asked different questions. skipDirs is asked about a bare
+// directory NAME, since a gitignore pattern matches any segment and an absolute
+// path would make a scan root that merely sits below a directory called build
+// prune its whole tree. userSkip is asked about the path RELATIVE to the scan
+// root, because a user pattern is path-shaped (third_party/**) and cannot match
+// a bare name; a relative path never contains the scan root's ancestry, so it
+// is immune to that problem.
 type rootWalk struct {
 	root      string
 	ecosystem string
 	bounds    rootDiscoveryBounds
 	skipDirs  skip.SkipMatcher
+	userSkip  skip.SkipMatcher
 	found     []discoveredRoot
 	seen      int
 	out       RootDiscovery
@@ -131,23 +148,62 @@ func HasRootManifest(dir, ecosystem string) bool {
 	return false
 }
 
+// hasRootManifestAbove reports whether a strict ancestor of dir carries a root
+// manifest for ecosystem. It stops at the filesystem root.
+func hasRootManifestAbove(dir, ecosystem string) bool {
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		if HasRootManifest(parent, ecosystem) {
+			return true
+		}
+		dir = parent
+	}
+}
+
+// absoluteScanRoot is the one form of the scan root that discovery and merging
+// both work from. A relative target would otherwise name the merged result ".",
+// and that string reaches scan_metadata.root_module and the occurrence-key
+// subject, so the same tree scanned as "." and by absolute path would produce
+// different occurrence keys. Symlinks are resolved because filepath.WalkDir
+// hands entries straight from ReadDir and never follows one, so a scan root
+// like ./current -> releases/2026-09 would walk nothing at all.
+func absoluteScanRoot(scanRoot string) string {
+	abs, err := filepath.Abs(scanRoot)
+	if err != nil {
+		return filepath.Clean(scanRoot)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return resolved
+}
+
 // ResolutionRoots answers where the resolver for ecosystem must be pointed for
 // the tree at targetDir. A closed gate, meaning Searched false and Roots nil,
 // says that today's single Resolve(targetDir) is correct and nothing changed.
-func ResolutionRoots(targetDir, ecosystem string) RootDiscovery {
-	return resolutionRoots(targetDir, ecosystem, rootDiscoveryBounds{
+// skipPatterns are the scan's own exclusions; a directory they cover is never
+// discovered, because resolving a root runs that ecosystem's build tool there.
+func ResolutionRoots(targetDir, ecosystem string, skipPatterns []string) RootDiscovery {
+	return resolutionRoots(targetDir, ecosystem, skipPatterns, rootDiscoveryBounds{
 		maxRoots:   maxResolutionRoots,
 		maxDepth:   maxRootDiscoveryDepth,
 		maxEntries: maxRootDiscoveryWalk,
 	})
 }
 
-func resolutionRoots(targetDir, ecosystem string, bounds rootDiscoveryBounds) RootDiscovery {
+func resolutionRoots(targetDir, ecosystem string, skipPatterns []string, bounds rootDiscoveryBounds) RootDiscovery {
 	if _, ok := rootManifests[ecosystem]; !ok {
 		return RootDiscovery{}
 	}
-	root := filepath.Clean(targetDir)
+	root := absoluteScanRoot(targetDir)
 	if HasRootManifest(root, ecosystem) {
+		return RootDiscovery{}
+	}
+	if ecosystemsResolvingUpward[ecosystem] && hasRootManifestAbove(root, ecosystem) {
 		return RootDiscovery{}
 	}
 	info, err := os.Stat(root)
@@ -160,6 +216,9 @@ func resolutionRoots(targetDir, ecosystem string, bounds rootDiscoveryBounds) Ro
 		ecosystem: ecosystem,
 		bounds:    bounds,
 		skipDirs:  skip.DefaultDirMatcher(),
+	}
+	if len(skipPatterns) > 0 {
+		walk.userSkip = skip.NewGitIgnoreMatcher(skipPatterns)
 	}
 	// visit returns only fs.SkipDir or fs.SkipAll, so a non-nil error here
 	// would be a WalkDir defect rather than an unreadable directory, which
@@ -190,6 +249,10 @@ func resolutionRoots(targetDir, ecosystem string, bounds rootDiscoveryBounds) Ro
 // where a partial answer would wrongly remove an exclusion. Here a partial
 // answer is strictly more coverage than the zero shipped before this walk
 // existed.
+//
+// A symlinked directory BELOW the scan root is not a discoverable module root:
+// WalkDir hands it over as a non-directory entry and never follows it. Only the
+// scan root itself is dereferenced, by absoluteScanRoot.
 func (w *rootWalk) visit(path string, d fs.DirEntry, err error) error {
 	if err != nil {
 		w.out.Unreadable++
@@ -211,14 +274,13 @@ func (w *rootWalk) visit(path string, d fs.DirEntry, err error) error {
 	if rel == "." {
 		return nil
 	}
-	// The matcher is given the directory's own name, not its path. A gitignore
-	// pattern matches any segment, so an absolute path would skip every
-	// directory under a scan root that merely SITS in one, and
-	// /home/me/build/myproject would discover nothing at all.
 	if w.skipDirs.ShouldSkip(d.Name(), true) || slices.Contains(rootDiscoveryIgnoredDirs, d.Name()) {
 		return fs.SkipDir
 	}
 	slashRel := filepath.ToSlash(rel)
+	if w.userSkip != nil && w.userSkip.ShouldSkip(slashRel, true) {
+		return fs.SkipDir
+	}
 	depth := 1 + strings.Count(slashRel, "/")
 	if HasRootManifest(path, w.ecosystem) {
 		w.found = append(w.found, discoveredRoot{Dir: path, Rel: slashRel, Depth: depth})
@@ -254,7 +316,7 @@ type RootResolution struct {
 // imports this package.
 func MergeRootResolutions(scanRoot string, resolutions []RootResolution) *ResolveResult {
 	out := &ResolveResult{
-		RootModule:     filepath.Base(filepath.Clean(scanRoot)),
+		RootModule:     filepath.Base(absoluteScanRoot(scanRoot)),
 		Graph:          map[string][]string{},
 		VersionedGraph: map[string][]Ref{},
 	}

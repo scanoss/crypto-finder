@@ -1184,7 +1184,7 @@ func TestDependencyScanner_ResolveScanRoot_RootManifestResolvesAtTarget(t *testi
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	resolved, err := ds.resolveScanRoot(context.Background(), root)
+	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err != nil {
 		t.Fatalf("resolveScanRoot: %v", err)
 	}
@@ -1210,7 +1210,7 @@ func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	resolved, err := ds.resolveScanRoot(context.Background(), root)
+	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err != nil {
 		t.Fatalf("resolveScanRoot: %v", err)
 	}
@@ -1247,7 +1247,7 @@ func TestDependencyScanner_ResolveScanRoot_FailingRootNamesIt(t *testing.T) {
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	_, err := ds.resolveScanRoot(context.Background(), root)
+	_, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err == nil {
 		t.Fatal("resolveScanRoot: expected an error")
 	}
@@ -1295,7 +1295,7 @@ func TestDependencyScanner_ResolveScanRoot_NothingBelowKeepsTheResolverError(t *
 	root := writeRepoTree(t, map[string]string{"src/main/java/app/Use.java": "package app; class Use {}"})
 	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
 
-	_, err := ds.resolveScanRoot(context.Background(), root)
+	_, err := ds.resolveScanRoot(context.Background(), root, nil)
 	structured, ok := failure.As(err)
 	if !ok {
 		t.Fatalf("failure.As: %v is not a structured failure", err)
@@ -1305,5 +1305,103 @@ func TestDependencyScanner_ResolveScanRoot_NothingBelowKeepsTheResolverError(t *
 	}
 	if structured.Details["target_dir"] != root {
 		t.Errorf("target_dir = %v, want the scan root %q", structured.Details["target_dir"], root)
+	}
+}
+
+// The merge design rests on this: every discovered root becomes its own package
+// root, and the scan-root package excludes all of them so no directory is
+// parsed under two import paths. The shape fed in is what
+// dependency.MergeRootResolutions produces, pinned by
+// TestMergeRootResolutions_NamesTheScanRootAndOneMemberPerRoot.
+func TestDependencyScanner_CollectPackageSets_MergedRootsEachGetTheirOwnPackage(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	merged := &dependency.ResolveResult{
+		RootModule: "monorepo",
+		WorkspaceMembers: []dependency.WorkspaceMember{
+			{Name: "com.acme.gateway", Dir: "/work/monorepo/services/gateway"},
+			{Name: "com.acme.ledger", Dir: "/work/monorepo/services/ledger"},
+		},
+	}
+
+	sets := ds.collectPackageSets("/work/monorepo", merged, nil)
+
+	want := []callgraph.PackageDir{
+		{Dir: "/work/monorepo/services/gateway", ImportPath: "com.acme.gateway"},
+		{Dir: "/work/monorepo/services/ledger", ImportPath: "com.acme.ledger"},
+		{
+			Dir:         "/work/monorepo",
+			ImportPath:  "monorepo",
+			ExcludeDirs: []string{"/work/monorepo/services/gateway", "/work/monorepo/services/ledger"},
+		},
+	}
+	if !reflect.DeepEqual(sets.graphPackages, want) {
+		t.Fatalf("graphPackages = %+v, want %+v", sets.graphPackages, want)
+	}
+}
+
+// KNOWN LIMITATION, pinned rather than fixed. MavenResolver.parseRootModule
+// returns the groupId alone, so two merged roots sharing <groupId>com.acme</groupId>
+// become two members with the same name. owningModule then answers "com.acme",
+// versionedDirectDependencyRefs and graphDirectDependencyRefs miss because the
+// versioned keys are com.acme:<artifactId>@<version>, and mavenRootAliasRefs
+// sees two incoming-free candidates and returns nil by design. Every direct
+// finding keeps its versionless rule PURL.
+//
+// The root cause is issue #520, "Maven root-module identifier omits artifactId,
+// only returns groupId"; issue #533 is where it surfaces, because merging is
+// what puts two same-group roots in one result. When #520 lands this test
+// changes with it.
+func TestDependencyScanner_EnrichDirectFindingPURLs_MergedMavenRootsSharingAGroupIDStayVersionless(t *testing.T) {
+	resolved := &dependency.ResolveResult{
+		RootModule: "monorepo",
+		WorkspaceMembers: []dependency.WorkspaceMember{
+			{Name: "com.acme", Dir: "/workspace/services/gateway"},
+			{Name: "com.acme", Dir: "/workspace/services/ledger"},
+		},
+		VersionedGraph: map[string][]dependency.Ref{
+			"com.acme:gateway@1.0.0": {{Module: "org.example:lib", Version: "2.0.0"}},
+			"com.acme:ledger@1.0.0":  {{Module: "org.example:lib", Version: "2.0.0"}},
+		},
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath:            "services/ledger/src/main/java/app/Use.java",
+		CryptographicAssets: []entities.CryptographicAsset{{PURL: "pkg:maven/org.example/lib"}},
+	}}}
+
+	enrichDirectFindingPURLs(report, "/workspace", resolved, "java")
+
+	if got := report.Findings[0].CryptographicAssets[0].PURL; got != "pkg:maven/org.example/lib" {
+		t.Fatalf("PURL = %q, want the versionless rule PURL: see issue #520", got)
+	}
+}
+
+// Discovery runs mvn, gradle, cargo or go inside every root it qualifies, so
+// the scan's own exclusions have to reach it. This drives the whole
+// ScanWithDependencies path to pin the plumbing, not just resolveScanRoot.
+func TestDependencyScanner_ScanWithDependencies_ExcludedDirIsNeverAResolutionRoot(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"third_party/legacy/pom.xml": `<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId>
+  <artifactId>legacy</artifactId>
+  <version>1.0.0</version>
+</project>`,
+	})
+	t.Setenv("PATH", t.TempDir())
+
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+	userReport := &entities.InterimReport{Version: "1.2", Tool: entities.ToolInfo{Name: "crypto-finder", Version: "dev"}}
+	opts := DepScanOptions{ScanOptions: ScanOptions{
+		Target:        root,
+		ScannerConfig: scanner.Config{SkipPatterns: []string{"third_party/**"}},
+	}}
+
+	_, err := ds.ScanWithDependencies(context.Background(), userReport, opts)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure, so the excluded pom.xml was resolved", err)
+	}
+	if structured.Code != failure.CodeDependencyBuildToolUnknown {
+		t.Errorf("Code = %q, want %q: the only manifest sits in an excluded directory", structured.Code, failure.CodeDependencyBuildToolUnknown)
 	}
 }

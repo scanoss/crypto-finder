@@ -98,7 +98,7 @@ func TestResolutionRoots_GateClosedWhenRootHasManifest(t *testing.T) {
 		"src/main/java/A.java": "class A {}",
 	})
 
-	got := ResolutionRoots(root, ecosystemJava)
+	got := ResolutionRoots(root, ecosystemJava, nil)
 	if got.Searched {
 		t.Error("Searched = true, want false: a root that resolves today must not be walked")
 	}
@@ -116,7 +116,7 @@ func TestResolutionRoots_GateClosedForPython(t *testing.T) {
 		"services/b/requirements.txt": "cryptography==42.0.0",
 	})
 
-	got := ResolutionRoots(root, "python")
+	got := ResolutionRoots(root, "python", nil)
 	if got.Searched || got.Roots != nil {
 		t.Errorf("ResolutionRoots(python) = %+v, want the closed gate: PipResolver resolves from the interpreter", got)
 	}
@@ -127,7 +127,7 @@ func TestResolutionRoots_GateClosedForAFileTarget(t *testing.T) {
 
 	root := writeTree(t, map[string]string{"services/a/pom.xml": "<project/>", "note.txt": ""})
 
-	got := ResolutionRoots(filepath.Join(root, "note.txt"), ecosystemJava)
+	got := ResolutionRoots(filepath.Join(root, "note.txt"), ecosystemJava, nil)
 	if got.Searched || got.Roots != nil {
 		t.Errorf("ResolutionRoots(file) = %+v, want the closed gate", got)
 	}
@@ -144,7 +144,7 @@ func TestResolutionRoots_FindsRootsBelowAManifestlessRoot(t *testing.T) {
 		"README.md": "",
 	})
 
-	got := ResolutionRoots(root, ecosystemJava)
+	got := ResolutionRoots(root, ecosystemJava, nil)
 	if !got.Searched {
 		t.Fatal("Searched = false, want true")
 	}
@@ -178,7 +178,7 @@ func TestResolutionRoots_DoesNotDescendIntoARoot(t *testing.T) {
 		"a/sub/pom.xml": "<project/>",
 	})
 
-	got := ResolutionRoots(root, ecosystemJava)
+	got := ResolutionRoots(root, ecosystemJava, nil)
 	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"a"}) {
 		t.Errorf("Roots = %v, want [a]: the root's own resolver owns its declared sub-modules", rels)
 	}
@@ -197,7 +197,7 @@ func TestResolutionRoots_PrunesWhatTheScanSkips(t *testing.T) {
 		"fixtures/b/pom.xml":            "<project/>",
 	})
 
-	got := ResolutionRoots(root, ecosystemJava)
+	got := ResolutionRoots(root, ecosystemJava, nil)
 	if !got.Searched {
 		t.Fatal("Searched = false, want true")
 	}
@@ -215,7 +215,7 @@ func TestResolutionRoots_SkippedNameInTheScanRootAncestryDoesNotPrune(t *testing
 	tmp := writeTree(t, map[string]string{"build/workspace/services/ledger/pom.xml": "<project/>"})
 	root := filepath.Join(tmp, "build", "workspace")
 
-	got := ResolutionRoots(root, ecosystemJava)
+	got := ResolutionRoots(root, ecosystemJava, nil)
 	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"services/ledger"}) {
 		t.Errorf("Roots = %v, want [services/ledger]", rels)
 	}
@@ -229,25 +229,41 @@ func TestResolutionRoots_NodePackageJSONWithoutLockfileIsNotARoot(t *testing.T) 
 		"src/index.js":     "export const x = 1",
 	})
 
-	got := ResolutionRoots(root, ecosystemNode)
+	got := ResolutionRoots(root, ecosystemNode, nil)
 	if len(got.Roots) != 0 {
 		t.Errorf("Roots = %v, want none: NpmResolver needs a lockfile and src/ is ordinary layout", rootRels(got))
 	}
 }
 
-func TestResolutionRoots_DepthCap(t *testing.T) {
+// The cap is pinned on both sides. A manifest one level below it must be
+// unreachable with nothing above it to stop the descent first, which is the
+// only arrangement that reaches the depth branch at all.
+func TestResolutionRoots_DepthCapStopsBelowTheCap(t *testing.T) {
 	t.Parallel()
 
-	root := writeTree(t, map[string]string{
-		"a/b/c/d/pom.xml":   "<project/>",
-		"a/b/c/d/e/pom.xml": "<project/>",
-	})
+	root := writeTree(t, map[string]string{"a/b/c/d/e/pom.xml": "<project/>"})
 
 	bounds := testBounds()
 	bounds.maxDepth = 4
-	got := resolutionRoots(root, ecosystemJava, bounds)
+	got := resolutionRoots(root, ecosystemJava, nil, bounds)
+	if !got.Searched {
+		t.Fatal("Searched = false, want true")
+	}
+	if rels := rootRels(got); len(rels) != 0 {
+		t.Errorf("Roots = %v, want none: a/b/c/d/e sits at depth 5", rels)
+	}
+}
+
+func TestResolutionRoots_DepthCapFindsAManifestAtTheCap(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{"a/b/c/d/pom.xml": "<project/>"})
+
+	bounds := testBounds()
+	bounds.maxDepth = 4
+	got := resolutionRoots(root, ecosystemJava, nil, bounds)
 	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"a/b/c/d"}) {
-		t.Errorf("Roots = %v, want [a/b/c/d]: depth 5 is below the cap", rels)
+		t.Errorf("Roots = %v, want [a/b/c/d]: depth 4 is the last depth that qualifies", rels)
 	}
 }
 
@@ -265,7 +281,7 @@ func TestResolutionRoots_RootCapTruncatesShallowestFirst(t *testing.T) {
 
 	bounds := testBounds()
 	bounds.maxRoots = 3
-	got := resolutionRoots(root, ecosystemJava, bounds)
+	got := resolutionRoots(root, ecosystemJava, nil, bounds)
 
 	if got.Found != 17 || !got.Truncated {
 		t.Fatalf("Found/Truncated = %d/%v, want 17/true", got.Found, got.Truncated)
@@ -283,7 +299,7 @@ func TestResolutionRoots_EntryCapAbandons(t *testing.T) {
 
 	bounds := testBounds()
 	bounds.maxEntries = 1
-	got := resolutionRoots(root, ecosystemJava, bounds)
+	got := resolutionRoots(root, ecosystemJava, nil, bounds)
 
 	if !got.Abandoned {
 		t.Error("Abandoned = false, want true")
@@ -309,12 +325,110 @@ func TestResolutionRoots_UnreadableDirIsCountedAndSiblingsSurvive(t *testing.T) 
 	}
 	t.Cleanup(func() { _ = os.Chmod(blocked, 0o755) })
 
-	got := resolutionRoots(root, ecosystemJava, testBounds())
+	got := resolutionRoots(root, ecosystemJava, nil, testBounds())
 	if got.Unreadable != 1 {
 		t.Errorf("Unreadable = %d, want 1", got.Unreadable)
 	}
 	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"ok"}) {
 		t.Errorf("Roots = %v, want [ok]: a partial answer is more coverage than none", rels)
+	}
+}
+
+// The Go toolchain finds its own manifest upward: GoResolver sets only cmd.Dir
+// and `go list -m -json all` walks the ancestors. A directory inside a module
+// therefore resolves today, and opening the gate there would resolve a nested
+// tooling module instead and lose the parent's whole dependency list.
+func TestResolutionRoots_GateClosedForAGoDirInsideAModule(t *testing.T) {
+	t.Parallel()
+
+	tmp := writeTree(t, map[string]string{
+		"go.mod":               "module example.com/parent\n",
+		"sub/s.go":             "package sub",
+		"sub/tools/gen/go.mod": "module example.com/parent/sub/tools/gen\n",
+	})
+
+	got := ResolutionRoots(filepath.Join(tmp, "sub"), "go", nil)
+	if got.Searched || got.Roots != nil {
+		t.Errorf("ResolutionRoots = %+v, want the closed gate: go resolves example.com/parent from sub/", got)
+	}
+}
+
+func TestResolutionRoots_GateClosedForAGoWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{
+		"go.work":  "go 1.25\n\nuse (\n\t./a\n\t./b\n)\n",
+		"a/go.mod": "module example.com/a\n",
+		"b/go.mod": "module example.com/b\n",
+	})
+
+	got := ResolutionRoots(root, "go", nil)
+	if got.Searched || got.Roots != nil {
+		t.Errorf("ResolutionRoots = %+v, want the closed gate: go.work resolves the whole workspace", got)
+	}
+}
+
+func TestResolutionRoots_FindsGoRootsWithNoModuleAbove(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{
+		"services/a/go.mod": "module example.com/a\n",
+		"services/b/go.mod": "module example.com/b\n",
+	})
+
+	got := ResolutionRoots(root, "go", nil)
+	want := []string{"services/a", "services/b"}
+	if rels := rootRels(got); !reflect.DeepEqual(rels, want) {
+		t.Errorf("Roots = %v, want %v: nothing above a temp dir is a Go module", rels, want)
+	}
+}
+
+// filepath.WalkDir hands entries straight from ReadDir and never follows a
+// symlink, so a deploy layout like current -> releases/2026-09 would otherwise
+// walk a single non-directory entry and discover nothing.
+func TestResolutionRoots_ASymlinkedScanRootIsDereferenced(t *testing.T) {
+	t.Parallel()
+
+	tmp := writeTree(t, map[string]string{"releases/2026-09/services/ledger/pom.xml": "<project/>"})
+	link := filepath.Join(tmp, "current")
+	if err := os.Symlink(filepath.Join(tmp, "releases", "2026-09"), link); err != nil {
+		t.Skipf("os.Symlink is unavailable on this platform: %v", err)
+	}
+
+	got := ResolutionRoots(link, ecosystemJava, nil)
+	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"services/ledger"}) {
+		t.Errorf("Roots = %v, want [services/ledger]", rels)
+	}
+}
+
+// Resolving a root runs mvn, gradle, cargo or go inside it, so a directory the
+// user excluded must never become one.
+func TestResolutionRoots_UserSkipPatternsPruneByRelativePath(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{
+		"third_party/legacy/pom.xml": "<project/>",
+		"services/ledger/pom.xml":    "<project/>",
+	})
+
+	got := ResolutionRoots(root, ecosystemJava, []string{"third_party/**"})
+	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"services/ledger"}) {
+		t.Errorf("Roots = %v, want [services/ledger]: third_party/** excluded the other root", rels)
+	}
+}
+
+// User patterns are matched against the path relative to the scan root, which
+// never holds the scan root's own ancestry, so a pattern naming an ancestor
+// segment cannot prune the whole tree.
+func TestResolutionRoots_UserSkipPatternInTheScanRootAncestryDoesNotPrune(t *testing.T) {
+	t.Parallel()
+
+	tmp := writeTree(t, map[string]string{"third_party/workspace/services/ledger/pom.xml": "<project/>"})
+	root := filepath.Join(tmp, "third_party", "workspace")
+
+	got := ResolutionRoots(root, ecosystemJava, []string{"third_party/**"})
+	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"services/ledger"}) {
+		t.Errorf("Roots = %v, want [services/ledger]", rels)
 	}
 }
 
@@ -426,5 +540,23 @@ func TestMergeRootResolutions_NoResolutionsStillNamesTheScanRoot(t *testing.T) {
 	}
 	if merged.Graph == nil || merged.VersionedGraph == nil {
 		t.Error("Graph and VersionedGraph must be non-nil maps")
+	}
+}
+
+// A relative scan target reaches scan_metadata.root_module, the scan-root
+// PackageDir import path and occurrenceSourceSubject, which hashes every direct
+// finding against it. A RootModule of "." would give the same tree different
+// occurrence keys depending on how it was invoked.
+func TestMergeRootResolutions_ARelativeScanRootIsResolvedToItsRealName(t *testing.T) {
+	dir := t.TempDir()
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	merged := MergeRootResolutions(".", nil)
+	if merged.RootModule != filepath.Base(resolvedDir) {
+		t.Errorf("RootModule = %q, want %q", merged.RootModule, filepath.Base(resolvedDir))
 	}
 }

@@ -194,12 +194,21 @@ func (ds *DependencyScanner) ScanWithDependencies(
 }
 
 // resolveScanRoot resolves the scan root, reaching the module roots below it
-// when the root itself holds no build manifest for this ecosystem. A scan root
-// that resolves today takes the single Resolve call it always took, with the
-// same typed error.
-func (ds *DependencyScanner) resolveScanRoot(ctx context.Context, target string) (*dependency.ResolveResult, error) {
+// when the root itself holds no build manifest for this ecosystem and no
+// ancestor manifest its toolchain would find on its own. A scan root that
+// resolves today takes the single Resolve call it always took, with the same
+// typed error.
+//
+// skipPatterns are the scan's exclusions. Discovery honors them because
+// resolving a root runs mvn, gradle, cargo or go in that directory, which is a
+// heavier consequence than reading a file the user asked to skip.
+func (ds *DependencyScanner) resolveScanRoot(
+	ctx context.Context,
+	target string,
+	skipPatterns []string,
+) (*dependency.ResolveResult, error) {
 	ecosystem := ds.resolver.Ecosystem()
-	discovery := dependency.ResolutionRoots(target, ecosystem)
+	discovery := dependency.ResolutionRoots(target, ecosystem, skipPatterns)
 	logRootDiscovery(target, ecosystem, discovery)
 	if len(discovery.Roots) == 0 {
 		return ds.resolver.Resolve(ctx, target)
@@ -248,7 +257,7 @@ func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscove
 	}
 	log.Info().Str("ecosystem", ecosystem).Int("roots", len(paths)).Strs("paths", paths).Msg("Found module roots below the scan root")
 	if discovery.Truncated {
-		log.Warn().Int("found", discovery.Found).Int("resolving", len(paths)).Msg("More module roots qualified than the cap allows; the deepest were dropped")
+		log.Warn().Int("found", discovery.Found).Int("resolving", len(paths)).Msg("More module roots qualified than the cap allows; the shallowest, then lexically first, were kept")
 	}
 }
 
@@ -257,7 +266,7 @@ func (ds *DependencyScanner) prepareDependencyScan(
 	opts DepScanOptions,
 ) (*dependency.ResolveResult, []string, string, func(), error) {
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
-	resolved, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target)
+	resolved, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target, opts.ScanOptions.ScannerConfig.SkipPatterns)
 	if err != nil {
 		return nil, nil, "", func() {}, failure.WrapUnknown(
 			err,
