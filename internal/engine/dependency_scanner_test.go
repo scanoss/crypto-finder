@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1138,5 +1139,171 @@ func TestDependencyScanner_CollectPackageSets_PreservesPythonDistributionAndImpo
 	dep := sets.graphPackages[1]
 	if dep.ImportPath != "argon2" || dep.DistributionName != "argon2-cffi" {
 		t.Fatalf("dependency PackageDir = %#v, want ImportPath argon2 and DistributionName argon2-cffi", dep)
+	}
+}
+
+// writeRepoTree materializes a fixture repository: every key is a path
+// relative to the root, every value its contents.
+func writeRepoTree(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, body := range files {
+		full := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// recordingResolver answers per directory and remembers the order it was asked.
+type recordingResolver struct {
+	ecosystem string
+	calls     []string
+	answer    func(dir string) (*dependency.ResolveResult, error)
+}
+
+func (r *recordingResolver) Resolve(_ context.Context, targetDir string) (*dependency.ResolveResult, error) {
+	r.calls = append(r.calls, targetDir)
+	return r.answer(targetDir)
+}
+
+func (r *recordingResolver) Ecosystem() string { return r.ecosystem }
+
+func TestDependencyScanner_ResolveScanRoot_RootManifestResolvesAtTarget(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"go.mod":            "module example.com/root\n",
+		"services/a/go.mod": "module example.com/a\n",
+		"services/a/a.go":   "package a",
+	})
+	resolver := &recordingResolver{ecosystem: "go", answer: func(_ string) (*dependency.ResolveResult, error) {
+		return &dependency.ResolveResult{RootModule: "example.com/root"}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	resolved, err := ds.resolveScanRoot(context.Background(), root)
+	if err != nil {
+		t.Fatalf("resolveScanRoot: %v", err)
+	}
+	if !reflect.DeepEqual(resolver.calls, []string{root}) {
+		t.Fatalf("Resolve calls = %v, want exactly the scan root %q", resolver.calls, root)
+	}
+	if resolved.RootModule != "example.com/root" {
+		t.Errorf("RootModule = %q, want the resolver's own answer untouched", resolved.RootModule)
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/gateway/pom.xml": "<project/>",
+		"services/ledger/pom.xml":  "<project/>",
+	})
+	resolver := &recordingResolver{ecosystem: "java", answer: func(dir string) (*dependency.ResolveResult, error) {
+		name := filepath.Base(dir)
+		return &dependency.ResolveResult{
+			RootModule:   "com.acme." + name,
+			Dependencies: []dependency.Dependency{{Module: "com.acme:" + name + "-dep", Version: "1.0", Dir: dir}},
+		}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	resolved, err := ds.resolveScanRoot(context.Background(), root)
+	if err != nil {
+		t.Fatalf("resolveScanRoot: %v", err)
+	}
+
+	wantCalls := []string{filepath.Join(root, "services", "gateway"), filepath.Join(root, "services", "ledger")}
+	if !reflect.DeepEqual(resolver.calls, wantCalls) {
+		t.Fatalf("Resolve calls = %v, want %v", resolver.calls, wantCalls)
+	}
+	if resolved.RootModule != filepath.Base(root) {
+		t.Errorf("RootModule = %q, want %q", resolved.RootModule, filepath.Base(root))
+	}
+	wantMembers := []dependency.WorkspaceMember{
+		{Name: "com.acme.gateway", Dir: wantCalls[0]},
+		{Name: "com.acme.ledger", Dir: wantCalls[1]},
+	}
+	if !reflect.DeepEqual(resolved.WorkspaceMembers, wantMembers) {
+		t.Errorf("WorkspaceMembers = %+v, want %+v", resolved.WorkspaceMembers, wantMembers)
+	}
+	if len(resolved.Dependencies) != 2 {
+		t.Errorf("len(Dependencies) = %d, want 2", len(resolved.Dependencies))
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_FailingRootNamesIt(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/gateway/pom.xml": "<project/>",
+		"services/ledger/pom.xml":  "<project/>",
+	})
+	resolver := &recordingResolver{ecosystem: "java", answer: func(dir string) (*dependency.ResolveResult, error) {
+		if filepath.Base(dir) == "ledger" {
+			return nil, failure.New(failure.CodeJavaBuildToolAmbiguous, failure.StageDependency, "both manifests present")
+		}
+		return &dependency.ResolveResult{RootModule: "com.acme.gateway"}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	_, err := ds.resolveScanRoot(context.Background(), root)
+	if err == nil {
+		t.Fatal("resolveScanRoot: expected an error")
+	}
+	if !strings.Contains(err.Error(), "services/ledger") {
+		t.Errorf("error = %q, want it to name the failing root services/ledger", err.Error())
+	}
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure", err)
+	}
+	if structured.Code != failure.CodeJavaBuildToolAmbiguous {
+		t.Errorf("Code = %q, want the root's own code %q", structured.Code, failure.CodeJavaBuildToolAmbiguous)
+	}
+}
+
+// The reproduction from issue #533, driven through the real Java resolver with
+// no mvn anywhere on PATH. Maven's fast path returns before any subprocess for
+// a pom.xml that declares no dependencies and no modules, so this pins the
+// discovery without needing a build tool installed.
+func TestDependencyScanner_ScanWithDependencies_NestedPomWithoutMaven(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/ledger/pom.xml": `<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId>
+  <artifactId>ledger</artifactId>
+  <version>1.0.0</version>
+</project>`,
+		"services/ledger/src/main/java/app/Use.java": "package app; class Use {}",
+	})
+	t.Setenv("PATH", t.TempDir())
+
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+	userReport := &entities.InterimReport{Version: "1.2", Tool: entities.ToolInfo{Name: "crypto-finder", Version: "dev"}}
+
+	result, err := ds.ScanWithDependencies(context.Background(), userReport, DepScanOptions{ScanOptions: ScanOptions{Target: root}})
+	if err != nil {
+		t.Fatalf("ScanWithDependencies: %v, want the nested pom.xml to resolve", err)
+	}
+	if result.RootModule != filepath.Base(root) {
+		t.Errorf("RootModule = %q, want %q: an empty root module zeroes every finding's reachability", result.RootModule, filepath.Base(root))
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_NothingBelowKeepsTheResolverError(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{"src/main/java/app/Use.java": "package app; class Use {}"})
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+
+	_, err := ds.resolveScanRoot(context.Background(), root)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure", err)
+	}
+	if structured.Code != failure.CodeDependencyBuildToolUnknown {
+		t.Errorf("Code = %q, want the unchanged %q", structured.Code, failure.CodeDependencyBuildToolUnknown)
+	}
+	if structured.Details["target_dir"] != root {
+		t.Errorf("target_dir = %v, want the scan root %q", structured.Details["target_dir"], root)
 	}
 }

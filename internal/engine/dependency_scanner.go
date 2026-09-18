@@ -193,12 +193,71 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	}, nil
 }
 
+// resolveScanRoot resolves the scan root, reaching the module roots below it
+// when the root itself holds no build manifest for this ecosystem. A scan root
+// that resolves today takes the single Resolve call it always took, with the
+// same typed error.
+func (ds *DependencyScanner) resolveScanRoot(ctx context.Context, target string) (*dependency.ResolveResult, error) {
+	ecosystem := ds.resolver.Ecosystem()
+	discovery := dependency.ResolutionRoots(target, ecosystem)
+	logRootDiscovery(target, ecosystem, discovery)
+	if len(discovery.Roots) == 0 {
+		return ds.resolver.Resolve(ctx, target)
+	}
+
+	resolutions := make([]dependency.RootResolution, 0, len(discovery.Roots))
+	for i, root := range discovery.Roots {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		log.Info().Str("root", root.Rel).Int("index", i+1).Int("roots", len(discovery.Roots)).Msg("Resolving module root")
+		result, err := ds.resolver.Resolve(ctx, root.Dir)
+		if err != nil {
+			// WrapUnknown only prefixes an already-typed failure, so the root
+			// keeps its own code and details and now also names which of
+			// several roots failed.
+			return nil, failure.WrapUnknown(
+				err,
+				failure.CodeDependencyResolutionFailed,
+				failure.StageDependency,
+				"resolving module root "+root.Rel,
+			)
+		}
+		resolutions = append(resolutions, dependency.RootResolution{Root: root, Result: result})
+	}
+	return dependency.MergeRootResolutions(target, resolutions), nil
+}
+
+func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscovery) {
+	if !discovery.Searched {
+		return
+	}
+	if discovery.Unreadable > 0 {
+		log.Debug().Int("dirs", discovery.Unreadable).Msg("Module root discovery could not read some directories")
+	}
+	if discovery.Abandoned {
+		log.Warn().Str("target", target).Msg("Module root discovery stopped at its entry cap; some module roots may be missing")
+	}
+	if len(discovery.Roots) == 0 {
+		log.Info().Str("target", target).Str("ecosystem", ecosystem).Msg("No module root found below the scan root")
+		return
+	}
+	paths := make([]string, 0, len(discovery.Roots))
+	for _, root := range discovery.Roots {
+		paths = append(paths, root.Rel)
+	}
+	log.Info().Str("ecosystem", ecosystem).Int("roots", len(paths)).Strs("paths", paths).Msg("Found module roots below the scan root")
+	if discovery.Truncated {
+		log.Warn().Int("found", discovery.Found).Int("resolving", len(paths)).Msg("More module roots qualified than the cap allows; the deepest were dropped")
+	}
+}
+
 func (ds *DependencyScanner) prepareDependencyScan(
 	ctx context.Context,
 	opts DepScanOptions,
 ) (*dependency.ResolveResult, []string, string, func(), error) {
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
-	resolved, err := ds.resolver.Resolve(ctx, opts.ScanOptions.Target)
+	resolved, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target)
 	if err != nil {
 		return nil, nil, "", func() {}, failure.WrapUnknown(
 			err,
