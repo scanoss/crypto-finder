@@ -59,6 +59,12 @@ func (r *CargoResolver) Ecosystem() string {
 	return "rust"
 }
 
+// CanResolve reports whether targetDir has the root Cargo.toml that
+// `cargo metadata --manifest-path` is pointed at.
+func (r *CargoResolver) CanResolve(targetDir string) bool {
+	return fileExists(filepath.Join(targetDir, "Cargo.toml"))
+}
+
 // Resolve uses `cargo metadata --format-version=1` to resolve all dependencies
 // for the Rust project at targetDir.
 func (r *CargoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {

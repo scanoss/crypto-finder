@@ -16,6 +16,10 @@ func (n *noopResolver) Ecosystem() string {
 	return "noop"
 }
 
+func (n *noopResolver) CanResolve(string) bool {
+	return true
+}
+
 func TestRegistry_RegisterGet(t *testing.T) {
 	t.Parallel()
 

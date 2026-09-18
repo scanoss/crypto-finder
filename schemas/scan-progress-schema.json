@@ -36,7 +36,8 @@
             "ecosystem_unknown",
             "resolver_unavailable",
             "parser_unavailable",
-            "callgraph_unavailable"
+            "callgraph_unavailable",
+            "manifest_absent"
           ]
         },
         "deps_scanned": {

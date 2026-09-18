@@ -37,6 +37,8 @@ func (f *fakeResolver) Resolve(ctx context.Context, targetDir string) (*dependen
 
 func (f *fakeResolver) Ecosystem() string { return f.ecosystem }
 
+func (f *fakeResolver) CanResolve(string) bool { return true }
+
 type fakeFindingsCache struct {
 	getMap     map[string]*entities.InterimReport
 	getErr     error

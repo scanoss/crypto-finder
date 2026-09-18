@@ -66,6 +66,12 @@ func (r *GradleResolver) Ecosystem() string {
 	return ecosystemJava
 }
 
+// CanResolve reports whether targetDir has a Gradle build or settings script
+// at its root.
+func (r *GradleResolver) CanResolve(targetDir string) bool {
+	return hasGradleManifest(targetDir)
+}
+
 // Resolve uses Gradle itself to export a machine-readable dependency model.
 func (r *GradleResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	command, err := r.selectGradleCommand(targetDir)

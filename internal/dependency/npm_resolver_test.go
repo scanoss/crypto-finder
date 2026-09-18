@@ -601,3 +601,31 @@ func TestNpmResolver_LockfileV2PrefersThePackagesMap(t *testing.T) {
 		t.Errorf("version = %q, want 1.4.0 from the packages map, not the legacy dependencies block", dep.Version)
 	}
 }
+
+func TestNpmResolver_CanResolve(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewNpmResolver()
+
+	t.Run("package-json-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"use"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with package.json at the root")
+		}
+	})
+
+	t.Run("bare-js-source-without-package-json", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "use.js"), []byte("module.exports = 1;\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false for a Node source tree with no package.json")
+		}
+	})
+}
