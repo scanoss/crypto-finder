@@ -23,12 +23,13 @@ import (
 func assertLibraryOwnsPrefix(t *testing.T, kb *contracts.KnowledgeBase, library, prefix string) {
 	t.Helper()
 	for key, declared := range kb.Contracts {
-		for _, contract := range declared {
-			under := strings.HasPrefix(key, prefix)
+		under := strings.HasPrefix(key, prefix)
+		for i := range declared {
+			author := declared[i].SourceLibrary
 			switch {
-			case under && contract.SourceLibrary != library:
-				t.Errorf("key %q sits under %q but %q authored it", key, prefix, contract.SourceLibrary)
-			case !under && contract.SourceLibrary == library:
+			case under && author != library:
+				t.Errorf("key %q sits under %q but %q authored it", key, prefix, author)
+			case !under && author == library:
 				t.Errorf("key %q was authored by %q and belongs under %q", key, library, prefix)
 			}
 		}
