@@ -53,4 +53,19 @@ class JcaKeygenUsage {
         generator.initialize(keyBits);
         generator.generateKeyPair();
     }
+
+    private static final int RSA_FIELD_BITS = 2048;
+
+    void keyPairGeneratorFieldConstant() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(RSA_FIELD_BITS);
+        generator.generateKeyPair();
+    }
+
+    void keyPairGeneratorLocalConstant() throws Exception {
+        final int bits = 2048;
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(bits);
+        generator.generateKeyPair();
+    }
 }
