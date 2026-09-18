@@ -99,11 +99,7 @@ func TestLoadEmbeddedNodeBitcoinjsLib(t *testing.T) {
 	// different coordinate. It is declared here because the deployed corpus
 	// still pins 5.x, where it genuinely lived; it must never appear under the
 	// standalone package's name.
-	for k := range kb.Contracts {
-		if strings.HasPrefix(k, "ecpair.") {
-			t.Errorf("key %q belongs to the standalone `ecpair` package, which is not this family", k)
-		}
-	}
+	assertLibraryOwnsItsKeys(t, kb, "bitcoinjs-lib", "bitcoinjs-lib.")
 
 	n := 0
 	for k := range kb.Contracts {
