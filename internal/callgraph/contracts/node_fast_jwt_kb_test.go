@@ -75,13 +75,7 @@ func TestLoadEmbeddedNodeFastJwt(t *testing.T) {
 
 	// The crowded JWT ecosystem: jsonwebtoken and jose sign the same JWA
 	// algorithms with the same identifiers at their own coordinates.
-	for _, foreign := range []string{"jsonwebtoken.", "jose."} {
-		for k := range kb.Contracts {
-			if strings.HasPrefix(k, foreign) {
-				t.Errorf("key %q belongs to %s, a different package", k, foreign)
-			}
-		}
-	}
+	assertLibraryOwnsItsKeys(t, kb, "fast-jwt", "fast-jwt.")
 
 	n := 0
 	for k := range kb.Contracts {
