@@ -497,3 +497,40 @@ func TestGradleResolver_ResolveJavaSelection_ExplicitIncompatibleJDKFailsClearly
 		t.Fatalf("Code = %q, want %q", structured.Code, failure.CodeGradleJavaIncompatible)
 	}
 }
+
+func TestGradleResolver_CanResolve(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewGradleResolver()
+
+	for _, manifest := range []string{"build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"} {
+		t.Run(manifest, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, manifest), []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !resolver.CanResolve(dir) {
+				t.Fatalf("CanResolve() = false, want true with %s at the root", manifest)
+			}
+		})
+	}
+
+	t.Run("pom-only", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false when only pom.xml is present")
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		if resolver.CanResolve(t.TempDir()) {
+			t.Fatal("CanResolve() = true, want false for an empty directory")
+		}
+	})
+}

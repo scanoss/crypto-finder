@@ -245,3 +245,71 @@ func TestJavaResolver_Resolve_DelegatesToDetectedBuildTool(t *testing.T) {
 		}
 	})
 }
+
+func TestJavaResolver_CanResolve(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewJavaResolver()
+
+	t.Run("pom-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with pom.xml at the root")
+		}
+	})
+
+	t.Run("gradle-kts-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "build.gradle.kts"), []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with build.gradle.kts at the root")
+		}
+	})
+
+	t.Run("bare-java-source-without-manifest", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "Use.java"), []byte("class Use {}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false for a Java source tree with no build manifest")
+		}
+	})
+
+	t.Run("both-manifests-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		for _, name := range []string{"pom.xml", "build.gradle"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true: the ambiguous root must reach Resolve so it fails as java_build_tool_ambiguous")
+		}
+	})
+
+	t.Run("manifests-only-in-nested-modules", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		for _, module := range []string{"a", "b"} {
+			if err := os.MkdirAll(filepath.Join(dir, "services", module), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "services", module, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false when only nested modules carry pom.xml")
+		}
+	})
+}

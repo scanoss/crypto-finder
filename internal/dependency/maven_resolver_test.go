@@ -1081,3 +1081,38 @@ exit 0
 		t.Fatalf("unexpected first dep: %v", result.Dependencies[0])
 	}
 }
+
+func TestMavenResolver_CanResolve(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewMavenResolver()
+
+	t.Run("pom-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with pom.xml at the root")
+		}
+	})
+
+	t.Run("gradle-only", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "build.gradle"), []byte(""), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false when only a Gradle build file is present")
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		if resolver.CanResolve(t.TempDir()) {
+			t.Fatal("CanResolve() = true, want false for an empty directory")
+		}
+	})
+}

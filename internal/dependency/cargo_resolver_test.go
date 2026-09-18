@@ -2,6 +2,8 @@ package dependency
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -267,4 +269,34 @@ func TestNewCargoResolveResult_FallsBackWhenResolveRootMissing(t *testing.T) {
 	if result.RootModule != "app" {
 		t.Fatalf("RootModule = %q, want app", result.RootModule)
 	}
+}
+
+func TestCargoResolver_CanResolve(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewCargoResolver()
+
+	t.Run("cargo-toml-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[package]
+name = "use"
+`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with Cargo.toml at the root")
+		}
+	})
+
+	t.Run("bare-rust-source-without-cargo-toml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte("fn main() {}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false for a Rust source tree with no Cargo.toml")
+		}
+	})
 }
