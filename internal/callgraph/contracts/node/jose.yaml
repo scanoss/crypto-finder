@@ -1,0 +1,735 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jose"
+  coordinates:
+    - "jose"
+  version_range: ">=5.0.0"
+  description: "jose: JWS, JWE, JWT and JWK for the Web Crypto API"
+
+# jose IS A BUILDER LIBRARY AND THAT IS WHAT THIS KB TYPES. Nothing is signed in
+# one call:
+#
+#     await new SignJWT(payload)
+#       .setProtectedHeader({ alg: "ES256" })
+#       .setExpirationTime("2h")
+#       .sign(privateKey);
+#
+# Every setter returns `this` so the chain continues, and only the LAST call
+# performs cryptography. If the setters do not carry the type forward, `.sign()`
+# resolves against nothing and the one call that matters is the one that goes
+# unattributed. So each setter is declared with a return type, not merely a role.
+#
+# THE ALGORITHM IS IN THE HEADER, NOT IN THE TYPE, which is the opposite of
+# hash.js and is why there is one SignJWT type rather than one per algorithm.
+# `setProtectedHeader` takes it as a literal in an object, and reading that
+# literal is the rules' job -- a contract cannot express "the value of the alg
+# key". What this KB does is make sure the chain the literal sits in resolves to
+# jose at all.
+#
+# UnsecuredJWT IS CONTRACTED ALONGSIDE THE REAL SIGNERS. It produces a token with
+# alg none, so `encode` performs no cryptography whatsoever -- and it is declared
+# `operation` anyway, because a JWT being MINTED WITHOUT A SIGNATURE is precisely
+# what an inventory must not lose. Its `decode` is a static method and declared
+# output.
+#
+# decodeJwt AND decodeProtectedHeader ARE DECLARED output, NOT operation. They
+# base64-decode without verifying anything. Typing them as operations would put
+# a verification in the inventory at a line where none happened, the same
+# boundary fast-jwt's createDecoder sits on.
+#
+# Deliberately NOT contracted: the error classes, the jwksCache symbol and
+# customFetch. They configure and report; they compute nothing.
+contracts:
+  - method: "jose.SignJWT.<init>"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: factory
+  - method: "jose.SignJWT.<init>"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: factory
+  - method: "jose.SignJWT.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: operation
+  - method: "jose.SignJWT.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: operation
+  - method: "jose.SignJWT.setIssuedAt"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setIssuedAt"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setIssuer"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setIssuer"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setSubject"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setSubject"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setAudience"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setAudience"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setJti"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setJti"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setNotBefore"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setNotBefore"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setExpirationTime"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setExpirationTime"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setUnprotectedHeader"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.setUnprotectedHeader"
+    arity: 2
+    return: { type: "jose.SignJWT", confidence: high }
+    role: config
+  - method: "jose.SignJWT.sign"
+    arity: 1
+    return: { type: "jose.CompactJWS", confidence: high }
+    role: operation
+  - method: "jose.SignJWT.sign"
+    arity: 2
+    return: { type: "jose.CompactJWS", confidence: high }
+    role: operation
+  - method: "jose.EncryptJWT.<init>"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: factory
+  - method: "jose.EncryptJWT.<init>"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: factory
+  - method: "jose.EncryptJWT.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: operation
+  - method: "jose.EncryptJWT.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: operation
+  - method: "jose.EncryptJWT.setIssuedAt"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setIssuedAt"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setIssuer"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setIssuer"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setSubject"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setSubject"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setAudience"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setAudience"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setJti"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setJti"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setNotBefore"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setNotBefore"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setExpirationTime"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setExpirationTime"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setKeyManagementParameters"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setKeyManagementParameters"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setContentEncryptionKey"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setContentEncryptionKey"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setInitializationVector"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setInitializationVector"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setReplicatedHeader"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.setReplicatedHeader"
+    arity: 2
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.encrypt"
+    arity: 1
+    return: { type: "jose.CompactJWE", confidence: high }
+    role: operation
+  - method: "jose.EncryptJWT.encrypt"
+    arity: 2
+    return: { type: "jose.CompactJWE", confidence: high }
+    role: operation
+  - method: "jose.CompactSign.<init>"
+    arity: 1
+    return: { type: "jose.CompactSign", confidence: high }
+    role: factory
+  - method: "jose.CompactSign.<init>"
+    arity: 2
+    return: { type: "jose.CompactSign", confidence: high }
+    role: factory
+  - method: "jose.CompactSign.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.CompactSign", confidence: high }
+    role: operation
+  - method: "jose.CompactSign.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.CompactSign", confidence: high }
+    role: operation
+  - method: "jose.CompactSign.sign"
+    arity: 1
+    return: { type: "jose.CompactJWS", confidence: high }
+    role: operation
+  - method: "jose.CompactSign.sign"
+    arity: 2
+    return: { type: "jose.CompactJWS", confidence: high }
+    role: operation
+  - method: "jose.FlattenedSign.<init>"
+    arity: 1
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: factory
+  - method: "jose.FlattenedSign.<init>"
+    arity: 2
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: factory
+  - method: "jose.FlattenedSign.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: operation
+  - method: "jose.FlattenedSign.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: operation
+  - method: "jose.FlattenedSign.setUnprotectedHeader"
+    arity: 1
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: config
+  - method: "jose.FlattenedSign.setUnprotectedHeader"
+    arity: 2
+    return: { type: "jose.FlattenedSign", confidence: high }
+    role: config
+  - method: "jose.FlattenedSign.sign"
+    arity: 1
+    return: { type: "jose.FlattenedJWS", confidence: high }
+    role: operation
+  - method: "jose.FlattenedSign.sign"
+    arity: 2
+    return: { type: "jose.FlattenedJWS", confidence: high }
+    role: operation
+  - method: "jose.GeneralSign.<init>"
+    arity: 1
+    return: { type: "jose.GeneralSign", confidence: high }
+    role: factory
+  - method: "jose.GeneralSign.<init>"
+    arity: 2
+    return: { type: "jose.GeneralSign", confidence: high }
+    role: factory
+  - method: "jose.GeneralSign.addSignature"
+    arity: 1
+    return: { type: "jose.GeneralSign", confidence: high }
+    role: config
+  - method: "jose.GeneralSign.addSignature"
+    arity: 2
+    return: { type: "jose.GeneralSign", confidence: high }
+    role: config
+  - method: "jose.GeneralSign.sign"
+    arity: 0
+    return: { type: "jose.GeneralJWS", confidence: high }
+    role: operation
+  - method: "jose.GeneralSign.sign"
+    arity: 1
+    return: { type: "jose.GeneralJWS", confidence: high }
+    role: operation
+  - method: "jose.CompactEncrypt.<init>"
+    arity: 1
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: factory
+  - method: "jose.CompactEncrypt.<init>"
+    arity: 2
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: factory
+  - method: "jose.CompactEncrypt.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: operation
+  - method: "jose.CompactEncrypt.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: operation
+  - method: "jose.CompactEncrypt.setKeyManagementParameters"
+    arity: 1
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.setKeyManagementParameters"
+    arity: 2
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.setContentEncryptionKey"
+    arity: 1
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.setContentEncryptionKey"
+    arity: 2
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.setInitializationVector"
+    arity: 1
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.setInitializationVector"
+    arity: 2
+    return: { type: "jose.CompactEncrypt", confidence: high }
+    role: config
+  - method: "jose.CompactEncrypt.encrypt"
+    arity: 1
+    return: { type: "jose.CompactJWE", confidence: high }
+    role: operation
+  - method: "jose.CompactEncrypt.encrypt"
+    arity: 2
+    return: { type: "jose.CompactJWE", confidence: high }
+    role: operation
+  - method: "jose.FlattenedEncrypt.<init>"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: factory
+  - method: "jose.FlattenedEncrypt.<init>"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: factory
+  - method: "jose.FlattenedEncrypt.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: operation
+  - method: "jose.FlattenedEncrypt.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: operation
+  - method: "jose.FlattenedEncrypt.setSharedUnprotectedHeader"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setSharedUnprotectedHeader"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setUnprotectedHeader"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setUnprotectedHeader"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setAdditionalAuthenticatedData"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setAdditionalAuthenticatedData"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setKeyManagementParameters"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setKeyManagementParameters"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setContentEncryptionKey"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setContentEncryptionKey"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setInitializationVector"
+    arity: 1
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.setInitializationVector"
+    arity: 2
+    return: { type: "jose.FlattenedEncrypt", confidence: high }
+    role: config
+  - method: "jose.FlattenedEncrypt.encrypt"
+    arity: 1
+    return: { type: "jose.FlattenedJWE", confidence: high }
+    role: operation
+  - method: "jose.FlattenedEncrypt.encrypt"
+    arity: 2
+    return: { type: "jose.FlattenedJWE", confidence: high }
+    role: operation
+  - method: "jose.GeneralEncrypt.<init>"
+    arity: 1
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: factory
+  - method: "jose.GeneralEncrypt.<init>"
+    arity: 2
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: factory
+  - method: "jose.GeneralEncrypt.setProtectedHeader"
+    arity: 1
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: operation
+  - method: "jose.GeneralEncrypt.setProtectedHeader"
+    arity: 2
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: operation
+  - method: "jose.GeneralEncrypt.setSharedUnprotectedHeader"
+    arity: 1
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.setSharedUnprotectedHeader"
+    arity: 2
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.setAdditionalAuthenticatedData"
+    arity: 1
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.setAdditionalAuthenticatedData"
+    arity: 2
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.addRecipient"
+    arity: 1
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.addRecipient"
+    arity: 2
+    return: { type: "jose.GeneralEncrypt", confidence: high }
+    role: config
+  - method: "jose.GeneralEncrypt.encrypt"
+    arity: 1
+    return: { type: "jose.GeneralJWE", confidence: high }
+    role: operation
+  - method: "jose.GeneralEncrypt.encrypt"
+    arity: 2
+    return: { type: "jose.GeneralJWE", confidence: high }
+    role: operation
+  - method: "jose.UnsecuredJWT.<init>"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: factory
+  - method: "jose.UnsecuredJWT.<init>"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: factory
+  - method: "jose.UnsecuredJWT.setIssuedAt"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setIssuedAt"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setIssuer"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setIssuer"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setSubject"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setSubject"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setAudience"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setAudience"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setJti"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setJti"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setNotBefore"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setNotBefore"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setExpirationTime"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.setExpirationTime"
+    arity: 2
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: config
+  - method: "jose.UnsecuredJWT.encode"
+    arity: 0
+    return: { type: "jose.CompactJWT", confidence: high }
+    role: operation
+  - method: "jose.UnsecuredJWT.encode"
+    arity: 1
+    return: { type: "jose.CompactJWT", confidence: high }
+    role: operation
+  - method: "jose.UnsecuredJWT.decode"
+    arity: 1
+    return: { type: "jose.JWTPayload", confidence: high }
+    role: output
+  - method: "jose.UnsecuredJWT.decode"
+    arity: 2
+    return: { type: "jose.JWTPayload", confidence: high }
+    role: output
+  - method: "jose.jwtVerify"
+    arity: 2
+    return: { type: "jose.JWTVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.jwtVerify"
+    arity: 3
+    return: { type: "jose.JWTVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.compactVerify"
+    arity: 2
+    return: { type: "jose.CompactVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.compactVerify"
+    arity: 3
+    return: { type: "jose.CompactVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.generalVerify"
+    arity: 2
+    return: { type: "jose.GeneralVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.generalVerify"
+    arity: 3
+    return: { type: "jose.GeneralVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.flattenedVerify"
+    arity: 2
+    return: { type: "jose.FlattenedVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.flattenedVerify"
+    arity: 3
+    return: { type: "jose.FlattenedVerifyResult", confidence: high }
+    role: operation
+  - method: "jose.jwtDecrypt"
+    arity: 2
+    return: { type: "jose.JWTDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.jwtDecrypt"
+    arity: 3
+    return: { type: "jose.JWTDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.compactDecrypt"
+    arity: 2
+    return: { type: "jose.CompactDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.compactDecrypt"
+    arity: 3
+    return: { type: "jose.CompactDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.generalDecrypt"
+    arity: 2
+    return: { type: "jose.GeneralDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.generalDecrypt"
+    arity: 3
+    return: { type: "jose.GeneralDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.flattenedDecrypt"
+    arity: 2
+    return: { type: "jose.FlattenedDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.flattenedDecrypt"
+    arity: 3
+    return: { type: "jose.FlattenedDecryptResult", confidence: high }
+    role: operation
+  - method: "jose.generateKeyPair"
+    arity: 1
+    return: { type: "jose.GenerateKeyPairResult", confidence: high }
+    role: operation
+  - method: "jose.generateKeyPair"
+    arity: 2
+    return: { type: "jose.GenerateKeyPairResult", confidence: high }
+    role: operation
+  - method: "jose.generateSecret"
+    arity: 1
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.generateSecret"
+    arity: 2
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importJWK"
+    arity: 1
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importJWK"
+    arity: 2
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importJWK"
+    arity: 3
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importPKCS8"
+    arity: 2
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importPKCS8"
+    arity: 3
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importSPKI"
+    arity: 2
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importSPKI"
+    arity: 3
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importX509"
+    arity: 2
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.importX509"
+    arity: 3
+    return: { type: "jose.CryptoKey", confidence: high }
+    role: operation
+  - method: "jose.exportJWK"
+    arity: 1
+    return: { type: "jose.JWK", confidence: high }
+    role: output
+  - method: "jose.exportPKCS8"
+    arity: 1
+    return: { type: "jose.PKCS8", confidence: high }
+    role: output
+  - method: "jose.exportSPKI"
+    arity: 1
+    return: { type: "jose.SPKI", confidence: high }
+    role: output
+  - method: "jose.createRemoteJWKSet"
+    arity: 1
+    return: { type: "jose.JWKSetResolver", confidence: high }
+    role: factory
+  - method: "jose.createRemoteJWKSet"
+    arity: 2
+    return: { type: "jose.JWKSetResolver", confidence: high }
+    role: factory
+  - method: "jose.createLocalJWKSet"
+    arity: 1
+    return: { type: "jose.JWKSetResolver", confidence: high }
+    role: factory
+  - method: "jose.calculateJwkThumbprint"
+    arity: 1
+    return: { type: "jose.Thumbprint", confidence: high }
+    role: operation
+  - method: "jose.calculateJwkThumbprint"
+    arity: 2
+    return: { type: "jose.Thumbprint", confidence: high }
+    role: operation
+  - method: "jose.calculateJwkThumbprintUri"
+    arity: 1
+    return: { type: "jose.ThumbprintUri", confidence: high }
+    role: operation
+  - method: "jose.calculateJwkThumbprintUri"
+    arity: 2
+    return: { type: "jose.ThumbprintUri", confidence: high }
+    role: operation
+  - method: "jose.decodeJwt"
+    arity: 1
+    return: { type: "jose.JWTPayload", confidence: high }
+    role: output
+  - method: "jose.decodeProtectedHeader"
+    arity: 1
+    return: { type: "jose.ProtectedHeader", confidence: high }
+    role: output
