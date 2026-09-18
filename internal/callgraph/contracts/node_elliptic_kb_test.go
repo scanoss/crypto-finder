@@ -83,14 +83,8 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 		}
 	}
 
-	// Separate coordinates implementing the same curves must never be keyed here.
-	for _, foreign := range []string{"secp256k1.", "@noble/curves.", "tweetnacl."} {
-		for k := range kb.Contracts {
-			if strings.HasPrefix(k, foreign) {
-				t.Errorf("key %q belongs to %s, a different package", k, foreign)
-			}
-		}
-	}
+	// Separate coordinates implementing the same curves keep to their own keys.
+	assertLibraryOwnsPrefix(t, kb, "elliptic", "elliptic.")
 
 	n := 0
 	for k := range kb.Contracts {
