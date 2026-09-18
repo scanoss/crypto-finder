@@ -73,15 +73,7 @@ func TestLoadEmbeddedNodeJsonWebToken(t *testing.T) {
 	// The crowded JWT ecosystem: jose and fast-jwt sign the same JWA identifiers
 	// at their own coordinates. What must never happen is jsonwebtoken's own
 	// surface being authored under one of theirs.
-	for _, foreign := range []string{"jose.", "fast-jwt."} {
-		for _, own := range []string{"sign", "verify", "decode"} {
-			for arity := 0; arity <= 4; arity++ {
-				if got := kb.ContractsFor(foreign+own, arity); len(got) != 0 {
-					t.Errorf("jsonwebtoken's %s is declared under %s, a different package", own, foreign)
-				}
-			}
-		}
-	}
+	assertLibraryOwnsItsKeys(t, kb, "jsonwebtoken", "jsonwebtoken.")
 
 	// Error classes report failures and compute nothing.
 	for _, unwanted := range []string{
