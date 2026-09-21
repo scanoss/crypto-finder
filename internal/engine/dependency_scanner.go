@@ -597,7 +597,8 @@ func (ds *DependencyScanner) scanSingleDep(
 		// Unavailable context/identity disables caching, never scanner validation.
 		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
 			cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
-		}	}
+		}
+	}
 
 	// Check cache
 	if cacheKey != "" {
