@@ -53,6 +53,18 @@ func TestScanProgressSchema(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name: "skipped-dependencies-manifest-absent",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "manifest_absent"}
+			}`,
+			wantValid: true,
+		},
+		{
 			name: "skipped-export-with-reason",
 			document: `{
 				"event": "scan_progress",

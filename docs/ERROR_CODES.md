@@ -76,7 +76,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | `scanner_output_parse_failed` | `scan` | Scanner output unreadable | Scanner emitted output the parser could not decode |
 | `language_detection_failed` | `scan` | Language detection failed | Unreadable target tree |
 | `dependency_resolution_failed` | `dependency` | Dependency resolution/scan failed | Missing toolchain, unresolvable manifest, dep scan error |
-| `java_build_tool_unknown` | `dependency` | Java build tool not detected | No `pom.xml` / Gradle build files found |
+| `java_build_tool_unknown` | `dependency` | Java build tool not detected | No `pom.xml` / Gradle build files found at the scan root or in any module directory discovered below it. The Java build tool is detected per directory, and no search is made above the scan root. `scan` checks for a manifest before the resolver runs and reports that case as the `manifest_absent` dependency skip instead; the code remains for other callers of `DetectJavaBuildTool` |
 | `java_build_tool_ambiguous` | `dependency` | Multiple Java build tools detected | Both Maven and Gradle present without a clear winner |
 | `gradle_tool_missing` | `dependency` | Gradle unavailable | No usable `gradle` / wrapper for dependency export |
 | `gradle_export_failed` | `dependency` | Gradle dependency export failed | Gradle invocation failed or produced unusable output |

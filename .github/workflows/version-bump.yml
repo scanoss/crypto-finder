@@ -23,12 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Generate GitHub App Token
-        uses: actions/create-github-app-token@v2
+        uses: scanoss/actions/github-app-token@v1
         id: app-token
         with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          owner: scanoss
+          bws-access-token: ${{ secrets.BWS_ACCESS_TOKEN }}
           repositories: crypto-finder
 
       - uses: actions/checkout@v4

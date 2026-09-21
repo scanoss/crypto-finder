@@ -32,7 +32,9 @@ target source tree
    analysis                (match columns ∩ call-node columns), then call chains from
    (internal/scan)         API entry points to the terminal crypto call are computed;
                            dependency scans (internal/dependency, internal/engine)
-                           repeat 2–3 per resolved dependency with a findings cache
+                           repeat 2–3 per resolved dependency with a findings cache;
+                           a scan root holding no manifest for the selected ecosystem
+                           resolves from the module roots discovered below it instead
    │
    ▼
 5. Supporting-call        lifecycle/config/factory/output calls around each finding's
@@ -76,7 +78,7 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 | `converter` | Interim JSON → CycloneDX 1.7 CBOM transformation with exact-only OID projection. |
 | `deadcode` | Filters findings inside C/C++ preprocessor dead-code blocks (`#if 0 ... #endif`). |
 | `deduplicator` | Per-line deduplication of cryptographic assets (multiple rules on one line → one asset with a `rules[]` array). |
-| `dependency` | Dependency resolvers: Go modules, Java (Maven/Gradle), Python (pip), Rust (Cargo). |
+| `dependency` | Dependency resolvers: Go modules, Java (Maven/Gradle), Python (pip), Rust (Cargo), Node (npm); plus the bounded downward walk that finds the module roots below a manifest-less scan root. |
 | `engine` | Scan orchestration: language detection → rules → scanner → report; the dependency scanner and its findings cache (disk/postgres); finding-ID assignment; rule-driven entry-point synthesis. |
 | `enricher` | Compatibility adapter for exact OID preparation of findings (algorithm → Object Identifier). |
 | `entities` | Scanner input structures and compatibility aliases for the public interim report contract. |

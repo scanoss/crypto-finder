@@ -110,6 +110,11 @@ func (r *NpmResolver) Ecosystem() string {
 	return ecosystemNode
 }
 
+// CanResolve reports whether targetDir has the root package.json Resolve reads.
+func (r *NpmResolver) CanResolve(targetDir string) bool {
+	return fileExists(filepath.Join(targetDir, npmManifest))
+}
+
 // Resolve reads package.json and package-lock.json at targetDir and maps every
 // production dependency to the directory npm installed it in.
 func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResult, error) {

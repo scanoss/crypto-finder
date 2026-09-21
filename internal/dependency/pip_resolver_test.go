@@ -690,3 +690,27 @@ exit 1
 		t.Errorf("ImportPath = %q, want discovered import root %q", dep.ImportPath, "argon2")
 	}
 }
+
+// A manifest-less Python target is deliberately resolvable: the pip resolver
+// reads the ambient interpreter's installed packages, not a manifest.
+func TestPipResolver_CanResolve(t *testing.T) {
+	t.Run("empty-directory-with-interpreter-on-path", func(t *testing.T) {
+		r := NewPipResolver()
+		r.lookPath = func(string) (string, error) { return "/mock/python3", nil }
+		t.Setenv("VIRTUAL_ENV", "")
+
+		if !r.CanResolve(t.TempDir()) {
+			t.Fatal("CanResolve() = false, want true: pip resolves from the interpreter, not a manifest")
+		}
+	})
+
+	t.Run("no-interpreter-anywhere", func(t *testing.T) {
+		r := NewPipResolver()
+		r.lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+		t.Setenv("VIRTUAL_ENV", "")
+
+		if r.CanResolve(t.TempDir()) {
+			t.Fatal("CanResolve() = true, want false: Resolve fails fatally when no interpreter can be located")
+		}
+	})
+}

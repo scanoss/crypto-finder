@@ -94,6 +94,11 @@ func (r *MavenResolver) Ecosystem() string {
 	return ecosystemJava
 }
 
+// CanResolve reports whether targetDir has the root pom.xml Resolve parses.
+func (r *MavenResolver) CanResolve(targetDir string) bool {
+	return fileExists(filepath.Join(targetDir, "pom.xml"))
+}
+
 // Resolve uses Maven CLI to resolve all transitive dependencies for the project at targetDir.
 // For multi-module projects, it uses a three-tier fallback strategy:
 //

@@ -42,6 +42,13 @@ func (r *JavaResolver) Ecosystem() string {
 	return ecosystemJava
 }
 
+// CanResolve reports whether either build-tool resolver can run on targetDir.
+// A root holding both manifests answers true so Resolve runs and reports the
+// ambiguity as a fatal java_build_tool_ambiguous, as it did before the gate.
+func (r *JavaResolver) CanResolve(targetDir string) bool {
+	return r.maven.CanResolve(targetDir) || r.gradle.CanResolve(targetDir)
+}
+
 // SetJavaRuntime configures which Java runtime Java build-tool resolvers should use.
 func (r *JavaResolver) SetJavaRuntime(cfg javaruntime.Config) {
 	r.javaRuntime = cfg

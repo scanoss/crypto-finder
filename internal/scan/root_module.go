@@ -94,14 +94,14 @@ func detectPomRootModule(targetDir string) string {
 		return ""
 	}
 
-	switch {
-	case pom.GroupID != "":
-		return pom.GroupID
-	case pom.Parent.GroupID != "":
-		return pom.Parent.GroupID
-	default:
+	groupID := pom.GroupID
+	if groupID == "" {
+		groupID = pom.Parent.GroupID
+	}
+	if groupID == "" || pom.ArtifactID == "" {
 		return pom.ArtifactID
 	}
+	return groupID + ":" + pom.ArtifactID
 }
 
 var gradleRootNamePattern = regexp.MustCompile(`(?m)^\s*rootProject\.name\s*=\s*["']([^"']+)["']`)

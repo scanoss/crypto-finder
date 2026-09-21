@@ -950,6 +950,17 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	var callGraphResult *engine.DepScanResult
 
 	// Dependency scanning phase.
+	dependencyCompleted := false
+	skipDependencies := func(reason string) error {
+		if progress == nil {
+			return nil
+		}
+		if err := progress.Skip("dependencies", "scan", reason); err != nil {
+			return progressWriteFailure(err)
+		}
+		dependencyCompleted = true
+		return nil
+	}
 	//nolint:nestif // This orchestration intentionally branches by ecosystem/resolver/parser/caching availability.
 	if scanDependencies {
 		if progress != nil {
@@ -957,7 +968,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return progressWriteFailure(err)
 			}
 		}
-		dependencyCompleted := false
 		defer func() {
 			if progress == nil || dependencyCompleted {
 				return
@@ -989,15 +999,28 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			depRegistry.Register(ecosystemNode, dependency.NewNpmResolver())
 
 			resolver, resolverErr := depRegistry.Get(ecosystem)
-			if resolverErr != nil {
+			switch {
+			case resolverErr != nil:
 				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
-				if progress != nil {
-					if err := progress.Skip("dependencies", "scan", "resolver_unavailable"); err != nil {
-						return progressWriteFailure(err)
-					}
-					dependencyCompleted = true
+				if err := skipDependencies("resolver_unavailable"); err != nil {
+					return err
 				}
-			} else {
+			// Gated on target rather than targetDir because the dependency
+			// scanner hands the resolver opts.ScanOptions.Target. Gating on the
+			// containing directory lets a file target pass and then abort
+			// inside the resolver, which is what this skip prevents.
+			//
+			// A target the resolver cannot read is not necessarily a target
+			// with nothing to resolve. A monorepo carries its manifests in the
+			// module directories below the root, and the dependency scanner
+			// resolves each of those, so the phase only skips when that search
+			// comes back empty too.
+			case !resolver.CanResolve(target) && len(dependency.ResolutionRoots(target, ecosystem, skipPatterns).Roots) == 0:
+				log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
+				if err := skipDependencies("manifest_absent"); err != nil {
+					return err
+				}
+			default:
 				if ecosystem == "java" {
 					if err := ensureJavaRuntime(); err != nil {
 						return err
@@ -1011,21 +1034,15 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
 				if cgParser == nil {
 					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
-					if progress != nil {
-						if err := progress.Skip("dependencies", "scan", "parser_unavailable"); err != nil {
-							return progressWriteFailure(err)
-						}
-						dependencyCompleted = true
+					if err := skipDependencies("parser_unavailable"); err != nil {
+						return err
 					}
 				} else {
 					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests, skipMatcher)
 					if builderErr != nil {
 						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
-						if progress != nil {
-							if err := progress.Skip("dependencies", "scan", "callgraph_unavailable"); err != nil {
-								return progressWriteFailure(err)
-							}
-							dependencyCompleted = true
+						if err := skipDependencies("callgraph_unavailable"); err != nil {
+							return err
 						}
 					} else {
 						findingsCache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
@@ -1064,17 +1081,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			}
 		} else {
 			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
-			if progress != nil {
-				if err := progress.Skip("dependencies", "scan", "ecosystem_unknown"); err != nil {
-					return progressWriteFailure(err)
-				}
-				dependencyCompleted = true
+			if err := skipDependencies("ecosystem_unknown"); err != nil {
+				return err
 			}
 		}
-	} else if progress != nil {
-		if err := progress.Skip("dependencies", "scan", "not_requested"); err != nil {
-			return progressWriteFailure(err)
-		}
+	} else if err := skipDependencies("not_requested"); err != nil {
+		return err
 	}
 
 	engine.EnsureFindingSources(report)

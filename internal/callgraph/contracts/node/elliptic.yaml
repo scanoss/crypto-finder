@@ -1,0 +1,135 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "elliptic"
+  coordinates:
+    - "elliptic"
+  version_range: ">=6.0.0"
+  description: "elliptic: ECDSA, EdDSA and ECDH over eight named curves"
+
+# THE CONSTRUCTORS CARRY THE CURVE AND NOTHING ELSE DOES. A consumer writes
+#
+#     const ec = new EC('secp256k1');
+#     const key = ec.genKeyPair();
+#     const sig = key.sign(msgHash);
+#     const shared = key.derive(peer.getPublic());
+#
+# and the curve appears exactly once. Typing `ec` and then `key` is what ties
+# the signature and the shared secret back to secp256k1 rather than leaving them
+# as untyped receivers -- which is the whole reason this KB is more than a list.
+#
+# TWO TYPES, NOT ONE. `new EC(curve)` produces the curve CONTEXT and its
+# factories produce a KeyPair; the operations live on the KeyPair, not on the
+# context. Merging them would let `ec.sign(..)` resolve, which the library does
+# not offer.
+#
+# BOTH CASINGS ARE DECLARED. The package exports `ec` and `eddsa` in lower case
+# and consumers overwhelmingly alias them to `EC` and `EdDSA`; the rules match
+# both and so does this KB.
+contracts:
+  - method: "elliptic.ec.<init>"
+    arity: 1
+    return: { type: "elliptic.ec", confidence: high }
+    role: factory
+  - method: "elliptic.EC.<init>"
+    arity: 1
+    return: { type: "elliptic.ec", confidence: high }
+    role: factory
+  - method: "elliptic.eddsa.<init>"
+    arity: 1
+    return: { type: "elliptic.eddsa", confidence: high }
+    role: factory
+  - method: "elliptic.EdDSA.<init>"
+    arity: 1
+    return: { type: "elliptic.eddsa", confidence: high }
+    role: factory
+
+  # The context's factories: every one of them returns a KeyPair, which is where
+  # the operations live.
+  - method: "elliptic.ec.genKeyPair"
+    arity: 0
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.ec.genKeyPair"
+    arity: 1
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.ec.keyFromPrivate"
+    arity: 1
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.ec.keyFromPrivate"
+    arity: 2
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.ec.keyFromPublic"
+    arity: 1
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.ec.keyFromPublic"
+    arity: 2
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.eddsa.keyFromSecret"
+    arity: 1
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+  - method: "elliptic.eddsa.keyFromPublic"
+    arity: 1
+    return: { type: "elliptic.KeyPair", confidence: high }
+    role: factory
+
+  - method: "elliptic.KeyPair.sign"
+    arity: 1
+    return: { type: "elliptic.Signature", confidence: high }
+    role: operation
+  - method: "elliptic.KeyPair.sign"
+    arity: 2
+    return: { type: "elliptic.Signature", confidence: high }
+    role: operation
+  - method: "elliptic.KeyPair.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # derive() IS ECDH: a private key times a peer's public point. Neither a
+  # signature nor an encryption, and it returns a BN rather than a key object.
+  - method: "elliptic.KeyPair.derive"
+    arity: 1
+    return: { type: "BN", confidence: high }
+    role: operation
+
+  - method: "elliptic.KeyPair.getPublic"
+    arity: 0
+    return: { type: "elliptic.Point", confidence: high }
+    role: output
+  - method: "elliptic.KeyPair.getPublic"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "elliptic.KeyPair.getPrivate"
+    arity: 0
+    return: { type: "BN", confidence: high }
+    role: output
+  - method: "elliptic.KeyPair.getPrivate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+
+  # Public key recovery: the mechanism Ethereum addresses depend on.
+  - method: "elliptic.ec.recoverPubKey"
+    arity: 3
+    return: { type: "elliptic.Point", confidence: high }
+    role: operation
+  - method: "elliptic.ec.recoverPubKey"
+    arity: 4
+    return: { type: "elliptic.Point", confidence: high }
+    role: operation
+  - method: "elliptic.ec.getKeyRecoveryParam"
+    arity: 3
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "elliptic.ec.getKeyRecoveryParam"
+    arity: 4
+    return: { type: "number", confidence: high }
+    role: operation

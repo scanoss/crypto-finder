@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,6 +37,8 @@ func (f *fakeResolver) Resolve(ctx context.Context, targetDir string) (*dependen
 }
 
 func (f *fakeResolver) Ecosystem() string { return f.ecosystem }
+
+func (f *fakeResolver) CanResolve(string) bool { return true }
 
 type fakeFindingsCache struct {
 	getMap     map[string]*entities.InterimReport
@@ -1136,5 +1139,273 @@ func TestDependencyScanner_CollectPackageSets_PreservesPythonDistributionAndImpo
 	dep := sets.graphPackages[1]
 	if dep.ImportPath != "argon2" || dep.DistributionName != "argon2-cffi" {
 		t.Fatalf("dependency PackageDir = %#v, want ImportPath argon2 and DistributionName argon2-cffi", dep)
+	}
+}
+
+// writeRepoTree materializes a fixture repository: every key is a path
+// relative to the root, every value its contents.
+func writeRepoTree(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, body := range files {
+		full := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// recordingResolver answers per directory and remembers the order it was asked.
+type recordingResolver struct {
+	ecosystem string
+	calls     []string
+	answer    func(dir string) (*dependency.ResolveResult, error)
+}
+
+func (r *recordingResolver) Resolve(_ context.Context, targetDir string) (*dependency.ResolveResult, error) {
+	r.calls = append(r.calls, targetDir)
+	return r.answer(targetDir)
+}
+
+func (r *recordingResolver) Ecosystem() string { return r.ecosystem }
+
+// CanResolve answers true because only the CLI gate consults it; resolveScanRoot,
+// which these tests exercise, selects roots without asking the resolver.
+func (r *recordingResolver) CanResolve(string) bool { return true }
+
+func TestDependencyScanner_ResolveScanRoot_RootManifestResolvesAtTarget(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"go.mod":            "module example.com/root\n",
+		"services/a/go.mod": "module example.com/a\n",
+		"services/a/a.go":   "package a",
+	})
+	resolver := &recordingResolver{ecosystem: "go", answer: func(_ string) (*dependency.ResolveResult, error) {
+		return &dependency.ResolveResult{RootModule: "example.com/root"}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
+	if err != nil {
+		t.Fatalf("resolveScanRoot: %v", err)
+	}
+	if !reflect.DeepEqual(resolver.calls, []string{root}) {
+		t.Fatalf("Resolve calls = %v, want exactly the scan root %q", resolver.calls, root)
+	}
+	if resolved.RootModule != "example.com/root" {
+		t.Errorf("RootModule = %q, want the resolver's own answer untouched", resolved.RootModule)
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/gateway/pom.xml": "<project/>",
+		"services/ledger/pom.xml":  "<project/>",
+	})
+	resolver := &recordingResolver{ecosystem: "java", answer: func(dir string) (*dependency.ResolveResult, error) {
+		name := filepath.Base(dir)
+		return &dependency.ResolveResult{
+			RootModule:   "com.acme." + name,
+			Dependencies: []dependency.Dependency{{Module: "com.acme:" + name + "-dep", Version: "1.0", Dir: dir}},
+		}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
+	if err != nil {
+		t.Fatalf("resolveScanRoot: %v", err)
+	}
+
+	wantCalls := []string{filepath.Join(root, "services", "gateway"), filepath.Join(root, "services", "ledger")}
+	if !reflect.DeepEqual(resolver.calls, wantCalls) {
+		t.Fatalf("Resolve calls = %v, want %v", resolver.calls, wantCalls)
+	}
+	if resolved.RootModule != filepath.Base(root) {
+		t.Errorf("RootModule = %q, want %q", resolved.RootModule, filepath.Base(root))
+	}
+	wantMembers := []dependency.WorkspaceMember{
+		{Name: "com.acme.gateway", Dir: wantCalls[0]},
+		{Name: "com.acme.ledger", Dir: wantCalls[1]},
+	}
+	if !reflect.DeepEqual(resolved.WorkspaceMembers, wantMembers) {
+		t.Errorf("WorkspaceMembers = %+v, want %+v", resolved.WorkspaceMembers, wantMembers)
+	}
+	if len(resolved.Dependencies) != 2 {
+		t.Errorf("len(Dependencies) = %d, want 2", len(resolved.Dependencies))
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_FailingRootNamesIt(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/gateway/pom.xml": "<project/>",
+		"services/ledger/pom.xml":  "<project/>",
+	})
+	resolver := &recordingResolver{ecosystem: "java", answer: func(dir string) (*dependency.ResolveResult, error) {
+		if filepath.Base(dir) == "ledger" {
+			return nil, failure.New(failure.CodeJavaBuildToolAmbiguous, failure.StageDependency, "both manifests present")
+		}
+		return &dependency.ResolveResult{RootModule: "com.acme.gateway"}, nil
+	}}
+	ds := &DependencyScanner{resolver: resolver}
+
+	_, err := ds.resolveScanRoot(context.Background(), root, nil)
+	if err == nil {
+		t.Fatal("resolveScanRoot: expected an error")
+	}
+	if !strings.Contains(err.Error(), "services/ledger") {
+		t.Errorf("error = %q, want it to name the failing root services/ledger", err.Error())
+	}
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure", err)
+	}
+	if structured.Code != failure.CodeJavaBuildToolAmbiguous {
+		t.Errorf("Code = %q, want the root's own code %q", structured.Code, failure.CodeJavaBuildToolAmbiguous)
+	}
+}
+
+// The reproduction from issue #533, driven through the real Java resolver with
+// no mvn anywhere on PATH. Maven's fast path returns before any subprocess for
+// a pom.xml that declares no dependencies and no modules, so this pins the
+// discovery without needing a build tool installed.
+func TestDependencyScanner_ScanWithDependencies_NestedPomWithoutMaven(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"services/ledger/pom.xml": `<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId>
+  <artifactId>ledger</artifactId>
+  <version>1.0.0</version>
+</project>`,
+		"services/ledger/src/main/java/app/Use.java": "package app; class Use {}",
+	})
+	t.Setenv("PATH", t.TempDir())
+
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+	userReport := &entities.InterimReport{Version: "1.2", Tool: entities.ToolInfo{Name: "crypto-finder", Version: "dev"}}
+
+	result, err := ds.ScanWithDependencies(context.Background(), userReport, DepScanOptions{ScanOptions: ScanOptions{Target: root}})
+	if err != nil {
+		t.Fatalf("ScanWithDependencies: %v, want the nested pom.xml to resolve", err)
+	}
+	if result.RootModule != filepath.Base(root) {
+		t.Errorf("RootModule = %q, want %q: an empty root module zeroes every finding's reachability", result.RootModule, filepath.Base(root))
+	}
+}
+
+func TestDependencyScanner_ResolveScanRoot_NothingBelowKeepsTheResolverError(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{"src/main/java/app/Use.java": "package app; class Use {}"})
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+
+	_, err := ds.resolveScanRoot(context.Background(), root, nil)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure", err)
+	}
+	if structured.Code != failure.CodeDependencyBuildToolUnknown {
+		t.Errorf("Code = %q, want the unchanged %q", structured.Code, failure.CodeDependencyBuildToolUnknown)
+	}
+	if structured.Details["target_dir"] != root {
+		t.Errorf("target_dir = %v, want the scan root %q", structured.Details["target_dir"], root)
+	}
+}
+
+// The merge design rests on this: every discovered root becomes its own package
+// root, and the scan-root package excludes all of them so no directory is
+// parsed under two import paths. The shape fed in is what
+// dependency.MergeRootResolutions produces, pinned by
+// TestMergeRootResolutions_NamesTheScanRootAndOneMemberPerRoot.
+func TestDependencyScanner_CollectPackageSets_MergedRootsEachGetTheirOwnPackage(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	merged := &dependency.ResolveResult{
+		RootModule: "monorepo",
+		WorkspaceMembers: []dependency.WorkspaceMember{
+			{Name: "com.acme.gateway", Dir: "/work/monorepo/services/gateway"},
+			{Name: "com.acme.ledger", Dir: "/work/monorepo/services/ledger"},
+		},
+	}
+
+	sets := ds.collectPackageSets("/work/monorepo", merged, nil)
+
+	want := []callgraph.PackageDir{
+		{Dir: "/work/monorepo/services/gateway", ImportPath: "com.acme.gateway"},
+		{Dir: "/work/monorepo/services/ledger", ImportPath: "com.acme.ledger"},
+		{
+			Dir:         "/work/monorepo",
+			ImportPath:  "monorepo",
+			ExcludeDirs: []string{"/work/monorepo/services/gateway", "/work/monorepo/services/ledger"},
+		},
+	}
+	if !reflect.DeepEqual(sets.graphPackages, want) {
+		t.Fatalf("graphPackages = %+v, want %+v", sets.graphPackages, want)
+	}
+}
+
+// KNOWN LIMITATION, pinned rather than fixed. MavenResolver.parseRootModule
+// returns the groupId alone, so two merged roots sharing <groupId>com.acme</groupId>
+// become two members with the same name. owningModule then answers "com.acme",
+// versionedDirectDependencyRefs and graphDirectDependencyRefs miss because the
+// versioned keys are com.acme:<artifactId>@<version>, and mavenRootAliasRefs
+// sees two incoming-free candidates and returns nil by design. Every direct
+// finding keeps its versionless rule PURL.
+//
+// The root cause is issue #520, "Maven root-module identifier omits artifactId,
+// only returns groupId"; issue #533 is where it surfaces, because merging is
+// what puts two same-group roots in one result. When #520 lands this test
+// changes with it.
+func TestDependencyScanner_EnrichDirectFindingPURLs_MergedMavenRootsSharingAGroupIDStayVersionless(t *testing.T) {
+	resolved := &dependency.ResolveResult{
+		RootModule: "monorepo",
+		WorkspaceMembers: []dependency.WorkspaceMember{
+			{Name: "com.acme", Dir: "/workspace/services/gateway"},
+			{Name: "com.acme", Dir: "/workspace/services/ledger"},
+		},
+		VersionedGraph: map[string][]dependency.Ref{
+			"com.acme:gateway@1.0.0": {{Module: "org.example:lib", Version: "2.0.0"}},
+			"com.acme:ledger@1.0.0":  {{Module: "org.example:lib", Version: "2.0.0"}},
+		},
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath:            "services/ledger/src/main/java/app/Use.java",
+		CryptographicAssets: []entities.CryptographicAsset{{PURL: "pkg:maven/org.example/lib"}},
+	}}}
+
+	enrichDirectFindingPURLs(report, "/workspace", resolved, "java")
+
+	if got := report.Findings[0].CryptographicAssets[0].PURL; got != "pkg:maven/org.example/lib" {
+		t.Fatalf("PURL = %q, want the versionless rule PURL: see issue #520", got)
+	}
+}
+
+// Discovery runs mvn, gradle, cargo or go inside every root it qualifies, so
+// the scan's own exclusions have to reach it. This drives the whole
+// ScanWithDependencies path to pin the plumbing, not just resolveScanRoot.
+func TestDependencyScanner_ScanWithDependencies_ExcludedDirIsNeverAResolutionRoot(t *testing.T) {
+	root := writeRepoTree(t, map[string]string{
+		"third_party/legacy/pom.xml": `<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId>
+  <artifactId>legacy</artifactId>
+  <version>1.0.0</version>
+</project>`,
+	})
+	t.Setenv("PATH", t.TempDir())
+
+	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
+	userReport := &entities.InterimReport{Version: "1.2", Tool: entities.ToolInfo{Name: "crypto-finder", Version: "dev"}}
+	opts := DepScanOptions{ScanOptions: ScanOptions{
+		Target:        root,
+		ScannerConfig: scanner.Config{SkipPatterns: []string{"third_party/**"}},
+	}}
+
+	_, err := ds.ScanWithDependencies(context.Background(), userReport, opts)
+	structured, ok := failure.As(err)
+	if !ok {
+		t.Fatalf("failure.As: %v is not a structured failure, so the excluded pom.xml was resolved", err)
+	}
+	if structured.Code != failure.CodeDependencyBuildToolUnknown {
+		t.Errorf("Code = %q, want %q: the only manifest sits in an excluded directory", structured.Code, failure.CodeDependencyBuildToolUnknown)
 	}
 }

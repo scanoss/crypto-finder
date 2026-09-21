@@ -41,9 +41,11 @@ func TestJcaKeygenKeyLength_EntryPointsResolveConstantBits(t *testing.T) {
 		41: "cipher.doFinal(new byte[0])",
 		48: "cipher.doFinal(new byte[0])",
 		54: "generator.generateKeyPair()",
+		62: "generator.generateKeyPair()",
+		69: "generator.generateKeyPair()",
 	}
 	assets := make([]entities.CryptographicAsset, 0, len(terminals))
-	for _, line := range []int{14, 20, 27, 34, 41, 48, 54} {
+	for _, line := range []int{14, 20, 27, 34, 41, 48, 54, 62, 69} {
 		assets = append(assets, entities.CryptographicAsset{
 			StartLine: line,
 			EndLine:   line,
@@ -76,6 +78,8 @@ func TestJcaKeygenKeyLength_EntryPointsResolveConstantBits(t *testing.T) {
 		41: {entryPoint: "javax.crypto.spec.SecretKeySpec.<init>", provenance: "constant", bits: intPointer(256)},
 		48: {entryPoint: "javax.crypto.spec.SecretKeySpec.<init>", provenance: "unknown"},
 		54: {entryPoint: "java.security.KeyPairGenerator.initialize", provenance: "unknown"},
+		62: {entryPoint: "java.security.KeyPairGenerator.initialize", provenance: "constant", bits: intPointer(2048)},
+		69: {entryPoint: "java.security.KeyPairGenerator.initialize", provenance: "constant", bits: intPointer(2048)},
 	}
 
 	live := buildCallGraphExportV2(result)

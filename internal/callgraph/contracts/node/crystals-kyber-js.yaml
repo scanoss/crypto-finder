@@ -1,0 +1,107 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "crystals-kyber-js"
+  coordinates:
+    - "crystals-kyber-js"
+  version_range: ">=0.1.0"
+  description: "crystals-kyber-js: ML-KEM (FIPS 203, formerly CRYSTALS-Kyber) at all three parameter sets"
+
+# THE CONSTRUCTORS ARE WHAT CARRY THE SECURITY LEVEL. A consumer writes
+#
+#     const kem = new MlKem768();
+#     const [pk, sk] = await kem.generateKeyPair();
+#     const [ct, ss] = await kem.encap(pk);
+#
+# and the parameter set appears exactly once, at construction. Typing the
+# constructor is therefore the only way a downstream reader can tell which
+# ML-KEM a given encap/decap belongs to -- the operations themselves name no
+# level, which is why the rules deliberately do not publish one for them.
+#
+# BOTH CLASS NAMES ARE DECLARED. NIST standardized Kyber as ML-KEM in FIPS 203
+# and this package renamed its classes, but the old names are still in the
+# deployed corpus -- measured, `Kyber1024` appears more often than `MlKem1024`
+# in the consumer draw. They are the same coordinate and the same algorithm, so
+# both spellings map to the same types.
+#
+# THE ASYNC AND SYNC OVERLOADS BOTH EXIST in the .d.ts, and the tuple returns
+# are real: generateKeyPair and deriveKeyPair return [publicKey, secretKey] and
+# encap returns [ciphertext, sharedSecret]. Declaring those as a single
+# Uint8Array would type a variable as half of what the runtime produces.
+contracts:
+  - method: "crystals-kyber-js.MlKem512.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.MlKem768.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.MlKem1024.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.Kyber512.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.Kyber768.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.Kyber1024.<init>"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.createMlKem512"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.createMlKem768"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.createMlKem1024"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+
+  - method: "crystals-kyber-js.MlKemBase.generateKeyPair"
+    arity: 0
+    return: { type: "Uint8Array[]", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.MlKemBase.deriveKeyPair"
+    arity: 1
+    return: { type: "Uint8Array[]", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.MlKemBase.encap"
+    arity: 1
+    return: { type: "Uint8Array[]", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.MlKemBase.encap"
+    arity: 2
+    return: { type: "Uint8Array[]", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.MlKemBase.decap"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # The package also re-exports its SHA-3 primitives, which consumers use
+  # directly for domain separation around the KEM.
+  - method: "crystals-kyber-js.sha3_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.sha3_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.shake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "crystals-kyber-js.shake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation

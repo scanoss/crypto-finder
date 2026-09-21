@@ -77,4 +77,10 @@ type Resolver interface {
 	Resolve(ctx context.Context, targetDir string) (*ResolveResult, error)
 	// Ecosystem returns the name of the ecosystem (e.g., "go", "python", "java", "rust")
 	Ecosystem() string
+	// CanResolve reports whether targetDir carries the inputs this resolver
+	// needs. It is a cheap filesystem precondition, not a promise that Resolve
+	// will succeed: a present but malformed manifest still fails in Resolve. A
+	// resolver that reads the ambient environment rather than a manifest
+	// reports true unconditionally.
+	CanResolve(targetDir string) bool
 }
