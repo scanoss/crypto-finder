@@ -25,7 +25,8 @@ const (
 var stabilityNotice = regexp.MustCompile(`^\[[0-9]{2}\.[0-9]{2}\]\[WARNING\]: !!! You're using one or more options starting with '--x-'\. These options are not part of the opengrep API\. They will change or will be removed without notice !!! \n$`)
 
 func (s *Scanner) certify(target string, rules, args []string, output []byte, stderr string) (bool, string) {
-	expected := []string{"--json", "--taint-intrafile", "--x-ignore-semgrepignore-files"}
+	expected := make([]string, 0, 7+2*len(rules))
+	expected = append(expected, "--json", "--taint-intrafile", "--x-ignore-semgrepignore-files")
 	for _, rule := range rules {
 		expected = append(expected, "--config", rule)
 	}
