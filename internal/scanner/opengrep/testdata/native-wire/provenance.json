@@ -67,5 +67,12 @@
   },
   "digest.yaml": {
     "sha256": "afaa58b38e91879dfc8563007b602e6fef370e07e39ba42037ef7124fb9f4b79"
+  },
+  "xnotice": {
+    "portable_stdout_sha256": "3390871a42f8f65f2f1ecbe6d5f196bffba612cc2d8e0dc5c8c3905f39f20572",
+    "stderr_sha256": "07cfd912bb1b49edf99c67bffa148aa1594992a369f43f55d5ee3d3a30f94520",
+    "original_stdout_sha256": "55e894388bb596d8cea15c6d225b2c4870f19498778b1f8bf3da4140eb44ffdd",
+    "engine": "OpenGrep 1.29.0",
+    "adaptation": "Only results[].path and paths.scanned source root replaced by @TARGET@; metadata/IDs/fingerprint/spans unchanged."
   }
 }

@@ -27,6 +27,14 @@ Its Go child process is executed by the actual built-in Initialize/Scan methods;
 both adapters decode and transform the captured wire output normally. This is
 not a custom fake Scan implementation, certificate test or sharing feature.
 
-`telemetry.stderr.txt` contains trailing spaces emitted by OpenGrep. The exact-path
-`.gitattributes` entry treats only this machine capture as non-text for Git diff
-checks. Tests read its original bytes, and `provenance.json` pins their SHA-256.
+The `xnotice` capture records OpenGrep 1.29 using the exact
+`--x-ignore-semgrepignore-files --quiet --jobs 2` profile. Only its two
+source-root path fields use `@TARGET@`; its metadata and stderr stay unchanged.
+The outcome tests vary only the notice timestamp for the positive control.
+Other diagnostic and wire changes are labeled transport perturbations, not
+native observations or evidence that a report is safe to reuse.
+
+`telemetry.stderr.txt` and `xnotice.stderr.txt` contain native trailing spaces.
+Exact-path `.gitattributes` entries treat only these machine captures as non-text
+for Git diff checks. Tests read their original bytes; `provenance.json` pins
+their SHA-256 values.
