@@ -1,0 +1,78 @@
+{
+  "positive": {
+    "engine": "OpenGrep 1.29.0",
+    "exit": 0,
+    "original_stdout_sha256": "a868cf4d41cefe7e229b23204c24a3cb0fbb03d189f964e0b1002d49763a4c61",
+    "portable_stdout_sha256": "fc38e15c6542c2c091b877f0d611fb2fb2f0b1eb19704d5d3acc44ce6db41882",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native_args": [
+      "--json",
+      "--taint-intrafile",
+      "--config",
+      "@RULE@",
+      "@TARGET@",
+      "--quiet",
+      "--experimental",
+      "--semgrepignore-filename",
+      "/dev/null",
+      "--jobs",
+      "2"
+    ],
+    "capture_record_sha256": "6e33f3ecf7be95fc57fb97807b1f8f399e10e70cb843f448bb6885906b42a12b"
+  },
+  "no-match": {
+    "engine": "OpenGrep 1.29.0",
+    "exit": 0,
+    "original_stdout_sha256": "498778c8a737f8d644422e08bf98d79bab151035ca0e4e6f89cce76eca5847b6",
+    "portable_stdout_sha256": "dcb160e0ea250c437a821678a61feb12ea0b550af1d143e890b883b1293d2d86",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native_args": [
+      "--json",
+      "--taint-intrafile",
+      "--config",
+      "@RULE@",
+      "@TARGET@",
+      "--quiet",
+      "--experimental",
+      "--semgrepignore-filename",
+      "/dev/null",
+      "--jobs",
+      "2"
+    ],
+    "capture_record_sha256": "f2c76542755714727c7888d24247e1acc49b8755945c3f9bc2ed8dc7b0053a16"
+  },
+  "telemetry": {
+    "engine": "OpenGrep 1.29.0",
+    "exit": 0,
+    "original_stdout_sha256": "0946c65e206616fb2f5cdb9a7af441621e08512036d8508ec7c88c7761086d00",
+    "portable_stdout_sha256": "d2684467442ec7a61b39456d2b68a51911e656ccb960343d0787b2679be1ed33",
+    "stderr_sha256": "664e09a58f325633a15f345a78d1e0796ee056ec192f7491e5166e65615aac5c",
+    "native_args": [
+      "--json",
+      "--taint-intrafile",
+      "--x-ignore-semgrepignore-files",
+      "--config",
+      "@RULE@",
+      "@TARGET@",
+      "--jobs",
+      "2"
+    ],
+    "capture_record_sha256": "7577900b81f49e64bd70399f69d96f18d1016072f951fe9401f03095d796b4b6"
+  },
+  "compute.py": {
+    "sha256": "5f64dc7c3794db3dc236d3813dc983b2a94ee6a6c3c06f3443f8fb034c46f58c"
+  },
+  "nomatch.py": {
+    "sha256": "8512d148cd7e52bc2d356aa1971987bd14329a92c6dbea1860e960812bc893c5"
+  },
+  "digest.yaml": {
+    "sha256": "afaa58b38e91879dfc8563007b602e6fef370e07e39ba42037ef7124fb9f4b79"
+  },
+  "xnotice": {
+    "portable_stdout_sha256": "3390871a42f8f65f2f1ecbe6d5f196bffba612cc2d8e0dc5c8c3905f39f20572",
+    "stderr_sha256": "07cfd912bb1b49edf99c67bffa148aa1594992a369f43f55d5ee3d3a30f94520",
+    "original_stdout_sha256": "55e894388bb596d8cea15c6d225b2c4870f19498778b1f8bf3da4140eb44ffdd",
+    "engine": "OpenGrep 1.29.0",
+    "adaptation": "Only results[].path and paths.scanned source root replaced by @TARGET@; metadata/IDs/fingerprint/spans unchanged."
+  }
+}

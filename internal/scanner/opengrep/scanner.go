@@ -141,6 +141,18 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 
 // Scan executes OpenGrep against the target with the given rule paths.
 func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+	return s.scan(ctx, target, rulePaths, toolInfo, nil)
+}
+
+// ScanWithOutcome collects invocation-scoped evidence without changing legacy Scan.
+func (s *Scanner) ScanWithOutcome(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (scanner.Outcome, error) {
+	outcome := scanner.Outcome{Scanner: ScannerName, Version: s.version, Reason: "execution-failure", ExitCode: -1}
+	report, err := s.scan(ctx, target, rulePaths, toolInfo, &outcome)
+	outcome.Report = report
+	return outcome, err
+}
+
+func (s *Scanner) scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo, outcome *scanner.Outcome) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
 			failure.CodeRulesLoadFailed,
@@ -161,7 +173,7 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	args := s.buildCommand(ctx, target, rulePaths)
 
 	// Execute opengrep
-	output, stderr, err := s.execute(ctx, args)
+	output, stderr, err := s.execute(ctx, args, outcome)
 	if err != nil {
 		log.Debug().
 			Strs("configs", rulePaths).
@@ -175,6 +187,9 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	// Parse opengrep JSON output (uses same format as Semgrep)
 	opengrepResults, err := semgrep.ParseSemgrepCompatibleOutput(output)
 	if err != nil {
+		if outcome != nil {
+			outcome.Reason = "parse-failure"
+		}
 		return nil, failure.Wrap(
 			err,
 			failure.CodeScannerOutputParseFailed,
@@ -185,6 +200,13 @@ func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, t
 	}
 
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
+
+	if outcome != nil {
+		outcome.Reason = "unknown-exit"
+		if outcome.ExitAvailable && outcome.ExitCode == 0 {
+			outcome.ScopedComplete, outcome.Reason = s.certify(target, rulePaths, args, output, stderr)
+		}
+	}
 
 	// Transform to interim format (reuse Semgrep transformer)
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths, s.disableDedup)
@@ -281,7 +303,7 @@ func (s *Scanner) semgrepignoreControlArgs(ctx context.Context) []string {
 }
 
 // execute runs the opengrep command and captures stdout/stderr.
-func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, stderr string, err error) {
+func (s *Scanner) execute(ctx context.Context, args []string, outcome *scanner.Outcome) (stdout []byte, stderr string, err error) {
 	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 
 	if s.workDir != "" {
@@ -299,6 +321,15 @@ func (s *Scanner) execute(ctx context.Context, args []string) (stdout []byte, st
 	stdout, err = cmd.Output()
 	stderr = stderrBuf.String()
 	duration := time.Since(startTime)
+	if outcome != nil {
+		outcome.Argv = slices.Clone(args)
+		outcome.Stdout = stdout
+		outcome.Stderr = stderr
+		if cmd.ProcessState != nil {
+			outcome.ExitCode = cmd.ProcessState.ExitCode()
+			outcome.ExitAvailable = outcome.ExitCode >= 0
+		}
+	}
 
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
