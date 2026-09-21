@@ -79,9 +79,11 @@ func TestCallgraphCLIExportProfiles(t *testing.T) {
 		t.Run(profile.name, func(t *testing.T) {
 			findings := filepath.Join(tmp, profile.name+"-findings.json")
 			graphPath := filepath.Join(tmp, profile.name+"-graph.json")
-			args := []string{"scan", "--scanner", "opengrep", "--no-remote-rules", "--no-default-exclusions", "--languages", "go", "--rules", rulesPath, "--output", findings, "--export-callgraph", graphPath}
+			args := make([]string, 0, 14+len(profile.flags))
+			args = append(args, "scan", "--scanner", "opengrep", "--no-remote-rules", "--no-default-exclusions", "--languages", "go", "--rules", rulesPath, "--output", findings, "--export-callgraph", graphPath)
 			args = append(args, profile.flags...)
-			cmd := exec.CommandContext(t.Context(), binary, append(args, target)...)
+			args = append(args, target)
+			cmd := exec.CommandContext(t.Context(), binary, args...)
 			cmd.Env = append(os.Environ(), "HOME="+filepath.Join(tmp, "home"), "FAKE_OPENGREP_OUTPUT="+scannerOutput, "PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 			output, err := cmd.CombinedOutput()
 			require.NoErrorf(t, err, "CLI output: %s", output)
