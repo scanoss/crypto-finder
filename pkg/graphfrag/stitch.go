@@ -66,8 +66,8 @@ type StitchOptions struct {
 	ChainEntrySignatures []string
 
 	// MaxChains is the per-operation emit budget for condensed call_chains.
-	// Zero uses DefaultMaxChainsPerOp (128), matching live --export-callgraph
-	// when the CLI flag is omitted. Depth remains stitchMaxDepth (32).
+	// Zero uses DefaultMaxChainsPerOp (128). Local CLI defaults to 8 and may
+	// explicitly request 128. Depth remains stitchMaxDepth (32).
 	MaxChains int
 }
 
@@ -1171,11 +1171,9 @@ func indexOperationEntryPoints(closure []ComponentKey, fragments map[ComponentKe
 // ever violated.
 const stitchMaxFrontier = 1_000_000
 
-// stitchMaxDepth and DefaultMaxChainsPerOp mirror the bounds the live exporter
-// passes to TraceBackCondensed (internal/scan/export.go: maxDepth=32,
-// maxChains=DefaultMaxChainsPerOp). The served stitch MUST apply the same caps
-// or it would emit deeper / more numerous chains than a live --export-callgraph
-// run (live silently drops chains past these bounds), breaking the parity contract.
+// Stitch preserves the SDK depth and sample defaults. Local CLI shares the
+// depth cap but selects its own smaller export profile; callers can align
+// MaxChains explicitly when comparing sampled routes across both surfaces.
 const (
 	stitchMaxDepth        = 32
 	DefaultMaxChainsPerOp = 128

@@ -24,16 +24,10 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
-// CallgraphSchemaVersion is the default schema_version of the callgraph
-// export envelope (the `--export-callgraph` / stitch reachability format). It is
-// the single source of truth for both the live CLI export (internal/scan) and
-// the graph-fragment stitch path (ToCallgraphExport), so the two can never drift
-// — a consumer that serves stitched output stamps the SAME version a live
-// `--scan-dependencies --export-callgraph` run produces.
-//
-// Default remains 6.14 (identity still inlined on call_chains frames) until
-// Earnie and scanoss.api hydrate from functions[]. Schema 6.15 is opt-in
-// via InternedFrames / --export-callgraph-interned-frames.
+// CallgraphSchemaVersion is the inlined callgraph contract and the zero-value
+// SDK/stitch default. Local CLI exports default to the interned 6.15 contract;
+// --export-callgraph-interned-frames=false selects this compatibility render.
+// Both paths use CallgraphExportSchemaVersion to stamp the selected render.
 const CallgraphSchemaVersion = "6.14"
 
 // CallgraphInternedSchemaVersion is the interned contract: call_chains frames

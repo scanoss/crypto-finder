@@ -237,7 +237,8 @@ func runAcceptanceCase(t *testing.T, root, binary string, tc acceptanceCase) acc
 
 	cmd := exec.CommandContext(t.Context(), binary, "--error-format", "json", "scan", "--scanner", "opengrep", "--no-remote-rules",
 		"--no-default-exclusions", "--include-tests", "--languages", tc.ecosystem, "--rules", rules,
-		"--output", findings, "--export-callgraph", callgraph, "--export-graph-fragment", fragmentPath, target)
+		"--output", findings, "--export-callgraph", callgraph, "--export-callgraph-max-chains", "128",
+		"--export-callgraph-entry-points=true", "--export-callgraph-interned-frames=false", "--export-graph-fragment", fragmentPath, target)
 	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(tmp, "home"), "FAKE_OPENGREP_OUTPUT="+fakeOutput,
 		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 	output, err := cmd.CombinedOutput()

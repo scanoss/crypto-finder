@@ -1,4 +1,18 @@
-# Keep the 128 call_chains default; live UIs opt in to a small N
+# Call-chain sampling defaults by surface
+
+## Amendment: compact local CLI profile
+
+Local CLI `--export-callgraph` now defaults to **8 sampled paths**, omits the
+optional `crypto_entry_points` index, and emits interned schema **6.15**.
+Consumers must hydrate identity from `functions[]` via `call_chain_indexes`.
+The explicit detailed legacy profile is `--export-callgraph-max-chains 128
+--export-callgraph-entry-points=true --export-callgraph-interned-frames=false`.
+Depth remains 32; findings and supporting calls are unchanged. This amends only
+the local CLI policy below. `DefaultMaxChainsPerOp`, zero-value SDK/stitch
+options, and served defaults remain **128**, index enabled, inlined **6.14**.
+Paths remain a sample, not the complete graph.
+
+## Original decision (CLI policy superseded above)
 
 Live `--export-callgraph` and served stitch both keep a default `call_chains`
 sample of 128. A live dependency scan that only needs a composed route opts in
