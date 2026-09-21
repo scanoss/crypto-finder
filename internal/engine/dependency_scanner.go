@@ -33,6 +33,8 @@ import (
 // overwhelming the system with too many opengrep processes.
 const maxWorkers = 8
 
+const npmEcosystem = "node"
+
 const (
 	findingSourceDependency = "dependency"
 	findingSourceDirect     = "direct"
@@ -662,6 +664,11 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	// Preserve only built-in test exclusions for dependency scans. Other user/project
 	// skip patterns should not hide dependency source files.
 	depOpts.ScannerConfig.SkipPatterns = skip.OnlyDefaultTestPatterns(depOpts.ScannerConfig.SkipPatterns)
+	if ds.resolver.Ecosystem() == npmEcosystem {
+		// Anchor below this artifact, not every node_modules ancestor: the
+		// dependency target itself usually lives inside node_modules.
+		depOpts.ScannerConfig.SkipPatterns = append(depOpts.ScannerConfig.SkipPatterns, filepath.ToSlash(filepath.Join(dep.Dir, "node_modules"))+"/")
+	}
 	return depOpts
 }
 
