@@ -1,0 +1,2 @@
+# Preserve the machine-captured native diagnostic byte-for-byte.
+internal/scanner/opengrep/testdata/native-wire/telemetry.stderr.txt -diff

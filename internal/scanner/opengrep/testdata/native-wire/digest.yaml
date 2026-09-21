@@ -1,0 +1,10 @@
+rules:
+- id: fixture.digest
+  languages: [python]
+  pattern: $H.digest()
+  message: SHA-256 terminal
+  severity: INFO
+  metadata:
+    crypto:
+      assetType: algorithm
+      algorithmName: SHA-256
