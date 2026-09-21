@@ -36,8 +36,9 @@ type discovery struct {
 	value string
 }
 type discoveryCache struct {
-	mu      sync.Mutex
-	entries map[string]*discovery
+	mu          sync.Mutex
+	versionOnly bool
+	entries     map[string]*discovery
 }
 
 // key fingerprints executable bytes and the ambient context actually used by probes.
@@ -116,7 +117,10 @@ func (c *discoveryCache) get(ctx context.Context, path string, probe func() (str
 
 func (c *discoveryCache) finish(ctx context.Context, path, key string, entry *discovery, value string, err error) {
 	current, keyErr := discoveryKey(path)
-	_, versionErr := version.NewVersion(value)
+	var versionErr error
+	if c.versionOnly {
+		_, versionErr = version.NewVersion(value)
+	}
 	c.mu.Lock()
 	if versionErr != nil || err != nil || ctx.Err() != nil || keyErr != nil || current != key {
 		delete(c.entries, key)

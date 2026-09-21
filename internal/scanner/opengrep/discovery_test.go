@@ -52,13 +52,13 @@ func TestFactoryReusesDiscoveryWithoutReusingInvocations(t *testing.T) {
 		}()
 	}
 	done.Wait()
-	if got := discoveryCounts(t, dir); got != "version=1 help=4 scan=4" {
+	if got := discoveryCounts(t, dir); got != "version=1 help=1 scan=4" {
 		t.Fatalf("want one discovery and four configured scans, got %s", got)
 	}
 	// A new run must not inherit discovery from a prior factory.
 	adapter := initializedDiscovery(t, opengrep.NewScannerFactory(), scanner.Config{ExecutablePath: exe})
 	discoveryScan(t, adapter, dir)
-	if got := discoveryCounts(t, dir); got != "version=2 help=5 scan=5" {
+	if got := discoveryCounts(t, dir); got != "version=2 help=2 scan=5" {
 		t.Fatal(got)
 	}
 }
@@ -74,9 +74,15 @@ func discoveryFixture(t *testing.T) (string, string) {
 root="$(dirname "$0")"
 case "$1" in
  --version) echo version >> "$root/log"; [ ! -s "$root/fail-version" ] || { cat "$root/fail-version"; exit 0; }; [ ! -f "$root/fail-version" ] || exit 2; [ ! -f "$root/block-version" ] || sleep 10; echo "${DISCOVERY_VERSION:-1.29.0}"; exit 0;;
- scan|--help) echo help >> "$root/log"; echo '--x-ignore-semgrepignore-files'; exit 0;;
+ scan|--help) echo help >> "$root/log"; echo "$1" >> "$root/help-order"; [ ! -f "$root/block-help" ] || sleep 10; [ ! -f "$root/fail-help" ] || exit 2; if [ "$1" = scan ] && [ -f "$root/preferred-fail" ]; then exit 2; fi; if [ -f "$root/legacy-help" ]; then echo 'legacy help'; else echo '--x-ignore-semgrepignore-files'; fi; exit 0;;
 esac
 [ -z "$TOKEN" ] || { [ "$PWD" = "$root" ] && case "$*" in *"--token $TOKEN"*) true;; *) false;; esac; } || exit 2
+case "$EXPECT_CONTROL:$*" in
+ modern:*--x-ignore-semgrepignore-files*) true;;
+ legacy:*--experimental*--semgrepignore-filename\ .crypto-finder-no-semgrepignore*) true;;
+ :*) true;;
+ *) exit 2;;
+esac
 echo scan >> "$root/log"
 printf '%s\n' '{"version":"1.29.0","results":[],"errors":[]}'
 `
