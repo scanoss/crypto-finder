@@ -50,6 +50,8 @@ func (r consumerResolver) Resolve(context.Context, string) (*dependency.ResolveR
 }
 func (consumerResolver) Ecosystem() string { return "go" }
 
+func (consumerResolver) CanResolve(string) bool { return true }
+
 func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testing.T) {
 	for _, scenario := range []string{"unchanged", "malformed-prepared"} {
 		t.Run(scenario, func(t *testing.T) {
