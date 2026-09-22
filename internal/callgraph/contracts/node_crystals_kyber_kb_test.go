@@ -81,16 +81,14 @@ func TestLoadEmbeddedNodeCrystalsKyber(t *testing.T) {
 		}
 	}
 
-	// The other ML-KEM implementations are separate coordinates and must never
-	// be keyed here: `mlkem`, `@noble/post-quantum` and `liboqs-node` share
-	// every operation name with this package.
-	for _, foreign := range []string{"mlkem.", "@noble/post-quantum.", "liboqs-node."} {
-		for k := range kb.Contracts {
-			if strings.HasPrefix(k, foreign) {
-				t.Errorf("key %q belongs to %s, a different ML-KEM package", k, foreign)
-			}
-		}
-	}
+	// Ask whether crystals-kyber-js claims a coordinate that is not its own,
+	// rather than scanning the merged KB for a sibling's prefix. `mlkem`,
+	// `@noble/post-quantum` and `liboqs-node` share every operation name with
+	// this package, but a prefix scan answers a different question: it passes
+	// only while those siblings have no KB of their own, and adding one is the
+	// ordinary way this catalog grows. Adding liboqs-node.yaml failed this test
+	// though crystals-kyber-js had not changed.
+	assertLibraryOwnsItsKeys(t, kb, "crystals-kyber-js", "crystals-kyber-js.")
 
 	n := 0
 	for k := range kb.Contracts {

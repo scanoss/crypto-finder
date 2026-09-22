@@ -125,13 +125,11 @@ func TestLoadEmbeddedNodeGoogleCloudKMS(t *testing.T) {
 		t.Errorf("ContractsFor(asymmetricSign, 9) resolved %d contracts; that arity does not exist", len(got))
 	}
 
-	// A sibling Google Cloud package must not have been dragged in: the guard
-	// in the rules is on the module specifier and the KB must agree.
-	for k := range kb.Contracts {
-		if strings.HasPrefix(k, "@google-cloud/") && !strings.HasPrefix(k, "@google-cloud/kms.") {
-			t.Errorf("unexpected @google-cloud coordinate in the Node KB: %q", k)
-		}
-	}
+	// Ask whether this library claims a coordinate that is not its own, rather
+	// than scanning the merged KB for the @google-cloud prefix: that scan passes
+	// only while no sibling Google Cloud package has a KB, and adding one is the
+	// ordinary way this catalog grows.
+	assertLibraryOwnsItsKeys(t, kb, "@google-cloud/kms", "@google-cloud/kms.")
 
 	n := 0
 	for k := range kb.Contracts {

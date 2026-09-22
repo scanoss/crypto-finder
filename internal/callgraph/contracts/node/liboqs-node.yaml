@@ -1,0 +1,82 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "liboqs-node"
+  coordinates:
+    - "liboqs-node"
+  version_range: ">=0.0.1"
+  description: "liboqs-node: Open Quantum Safe bindings for post-quantum KEMs and signatures"
+
+# TWO CLASSES AND THE MECHANISM IS THE CONSTRUCTOR'S FIRST ARGUMENT, so this KB
+# is two factories plus the methods they make reachable. There is one
+# KeyEncapsulation type and one Signature type rather than one per mechanism,
+# for the reason the jwa and keccak KBs give: the mechanism arrives as a string,
+# so a per-mechanism type could not resolve `new Signature(alg)` with a
+# variable. Reading the literal is the rules' job.
+#
+# THE SECOND CONSTRUCTOR ARGUMENT IS A SECRET KEY and both arities are declared
+# because of it: `new Signature(alg)` generates a fresh key pair, while
+# `new Signature(alg, secretKey)` RESUMES FROM EXISTING PRIVATE KEY MATERIAL.
+# The KB cannot say which happened -- that is the rules' reading -- but the
+# arities must stay distinguishable for anything to.
+#
+# verify IS DECLARED AT ARITY 3 ONLY. liboqs signature verification takes the
+# message, the signature and the public key; there is no two-argument form, and
+# declaring one would type a call that cannot run.
+#
+# exportSecretKey IS role: output. It hands out key material that already
+# exists and computes nothing -- and for these schemes that material is large,
+# Classic-McEliece private keys running to hundreds of kilobytes.
+#
+# Deliberately NOT contracted: getDetails, and the KEMs/Sigs enumeration
+# helpers. They report which mechanisms the build supports and perform no
+# cryptography.
+contracts:
+  - method: "liboqs-node.KeyEncapsulation.<init>"
+    arity: 1
+    return: { type: "liboqs-node.KeyEncapsulation", confidence: high }
+    role: factory
+  - method: "liboqs-node.KeyEncapsulation.<init>"
+    arity: 2
+    return: { type: "liboqs-node.KeyEncapsulation", confidence: high }
+    role: factory
+  - method: "liboqs-node.KeyEncapsulation.generateKeypair"
+    arity: 0
+    return: { type: "liboqs-node.PublicKey", confidence: high }
+    role: operation
+  - method: "liboqs-node.KeyEncapsulation.encapsulateSecret"
+    arity: 1
+    return: { type: "liboqs-node.Encapsulation", confidence: high }
+    role: operation
+  - method: "liboqs-node.KeyEncapsulation.decapsulateSecret"
+    arity: 1
+    return: { type: "liboqs-node.SharedSecret", confidence: high }
+    role: operation
+  - method: "liboqs-node.KeyEncapsulation.exportSecretKey"
+    arity: 0
+    return: { type: "liboqs-node.SecretKey", confidence: high }
+    role: output
+  - method: "liboqs-node.Signature.<init>"
+    arity: 1
+    return: { type: "liboqs-node.Signature", confidence: high }
+    role: factory
+  - method: "liboqs-node.Signature.<init>"
+    arity: 2
+    return: { type: "liboqs-node.Signature", confidence: high }
+    role: factory
+  - method: "liboqs-node.Signature.generateKeypair"
+    arity: 0
+    return: { type: "liboqs-node.PublicKey", confidence: high }
+    role: operation
+  - method: "liboqs-node.Signature.sign"
+    arity: 1
+    return: { type: "liboqs-node.SignatureBytes", confidence: high }
+    role: operation
+  - method: "liboqs-node.Signature.verify"
+    arity: 3
+    return: { type: "Boolean", confidence: high }
+    role: operation
+  - method: "liboqs-node.Signature.exportSecretKey"
+    arity: 0
+    return: { type: "liboqs-node.SecretKey", confidence: high }
+    role: output
