@@ -1,0 +1,338 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "libsodium-wrappers"
+  coordinates:
+    - "libsodium-wrappers"
+  version_range: ">=0.7.0"
+  description: "libsodium-wrappers: the libsodium API compiled to WebAssembly"
+
+# EVERY ENTRY IS A FREE FUNCTION ON THE MODULE NAMESPACE. libsodium exposes no
+# classes and no chains: a consumer awaits `sodium.ready` once and then calls
+# `sodium.crypto_secretbox_easy(..)` directly. So this KB is flat, and there are
+# no constructor entries to make anything reachable -- unlike every other Node KB
+# in this campaign.
+#
+# THE ALGORITHM IS IN THE FUNCTION NAME, so no entry carries one and none needs
+# to. `crypto_secretbox_easy` IS XSalsa20-Poly1305; there is no parameter that
+# could change it. That is the rules' reading, and the KB's job here is only to
+# make the call resolve to this coordinate rather than to the consumer's module.
+#
+# ARITIES ARE READ FROM THE WRAPPER'S OWN SIGNATURES, not from the C API, and
+# they differ: the JavaScript wrapper drops the output-buffer and length
+# arguments that the C functions take, so `crypto_secretbox_easy` is 3 arguments
+# here against 5 in C. Declaring the C arities would type calls no consumer can
+# write.
+#
+# AN OPTIONAL TRAILING `outputFormat` ARGUMENT exists on most of these -- "uint8array",
+# "hex", "base64" -- so each function is declared at its base arity and one
+# above it.
+#
+# Deliberately NOT contracted: the `*_keybytes`, `*_npubbytes` and `*_abytes`
+# constants, `sodium.ready`, and the from_/to_ encoding helpers. They report
+# sizes and convert representations; they compute nothing.
+contracts:
+  - method: "libsodium-wrappers.crypto_aead_aes256gcm_decrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aes256gcm_decrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aes256gcm_encrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aes256gcm_encrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_decrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_decrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_encrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_encrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_decrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_decrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth_verify"
+    arity: 3
+    return: { type: "libsodium-wrappers.Boolean", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_auth_verify"
+    arity: 4
+    return: { type: "libsodium-wrappers.Boolean", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_easy"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_easy"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_keypair"
+    arity: 0
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_keypair"
+    arity: 1
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_open_easy"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_box_open_easy"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_generichash"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_generichash"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_generichash_update"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_generichash_update"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kdf_derive_from_key"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kdf_derive_from_key"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kdf_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kdf_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_client_session_keys"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_client_session_keys"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_keypair"
+    arity: 0
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_keypair"
+    arity: 1
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_server_session_keys"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_kx_server_session_keys"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_pwhash"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_pwhash"
+    arity: 7
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_pwhash_str"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_pwhash_str"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_scalarmult"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_scalarmult"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_easy"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_easy"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_open_easy"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretbox_open_easy"
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_pull"
+    arity: 2
+    return: { type: "libsodium-wrappers.StreamState", confidence: high }
+    role: factory
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_pull"
+    arity: 3
+    return: { type: "libsodium-wrappers.StreamState", confidence: high }
+    role: factory
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_push"
+    arity: 2
+    return: { type: "libsodium-wrappers.StreamState", confidence: high }
+    role: factory
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_push"
+    arity: 3
+    return: { type: "libsodium-wrappers.StreamState", confidence: high }
+    role: factory
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_push"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_push"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_detached"
+    arity: 2
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_detached"
+    arity: 3
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_ed25519_pk_to_curve25519"
+    arity: 1
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_ed25519_pk_to_curve25519"
+    arity: 2
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_ed25519_sk_to_curve25519"
+    arity: 1
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_ed25519_sk_to_curve25519"
+    arity: 2
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_ed25519_sk_to_seed"
+    arity: 1
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_ed25519_sk_to_seed"
+    arity: 2
+    return: { type: "libsodium-wrappers.ConvertedKey", confidence: high }
+    role: output
+  - method: "libsodium-wrappers.crypto_sign_keypair"
+    arity: 0
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_keypair"
+    arity: 1
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_seed_keypair"
+    arity: 1
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_seed_keypair"
+    arity: 2
+    return: { type: "libsodium-wrappers.KeyPair", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_verify_detached"
+    arity: 3
+    return: { type: "libsodium-wrappers.Boolean", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_sign_verify_detached"
+    arity: 4
+    return: { type: "libsodium-wrappers.Boolean", confidence: high }
+    role: operation
