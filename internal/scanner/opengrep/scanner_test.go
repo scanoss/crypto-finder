@@ -18,6 +18,7 @@ package opengrep
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestBuildCommand(t *testing.T) {
 	rulePaths := []string{"/rules/crypto.yaml", "/rules/hash.yaml"}
 	target := "/tmp/target"
 
-	args := s.buildCommand(context.Background(), target, rulePaths)
+	args := s.buildCommand(context.Background(), []string{target}, rulePaths, false)
 
 	// Verify required arguments
 	expectedArgs := map[string]bool{
@@ -137,7 +138,7 @@ func TestBuildCommand_FallsBackWhenExperimentalIgnoreFlagUnsupported(t *testing.
 	}
 
 	s := NewScanner()
-	args := s.buildCommand(context.Background(), "/tmp/target", []string{"/rules/crypto.yaml"})
+	args := s.buildCommand(context.Background(), []string{"/tmp/target"}, []string{"/rules/crypto.yaml"}, false)
 
 	for _, arg := range args {
 		if arg == "--x-ignore-semgrepignore-files" {
@@ -400,5 +401,48 @@ func mockToolInfo() entities.ToolInfo {
 	return entities.ToolInfo{
 		Name:    "crypto-finder",
 		Version: "test",
+	}
+}
+
+func TestBuildCommand_DetectionScopeNamesFilesUnderForceExclude(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() { commandOutput = originalCommandOutput }()
+	commandOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("--x-ignore-semgrepignore-files --force-exclude"), nil
+	}
+
+	s := NewScanner()
+	s.skipPatterns = []string{"docs/"}
+	if args := s.buildCommand(context.Background(), []string{"/repo"}, []string{"/rules.yaml"}, false); containsArg(args, "--force-exclude") {
+		t.Fatalf("a whole-target scan must keep OpenGrep's default exclude handling, got %v", args)
+	}
+
+	args := s.buildCommand(context.Background(), []string{"/repo/a.go", "/repo/b.go"}, []string{"/rules.yaml"}, true)
+	if !containsArg(args, "--force-exclude") {
+		t.Fatalf("named files bypass --exclude without --force-exclude, got %v", args)
+	}
+	if got := args[len(args)-2:]; got[0] != "/repo/a.go" || got[1] != "/repo/b.go" {
+		t.Fatalf("expected the scoped files as trailing targets, got %v", got)
+	}
+	if containsArg(args, "/repo") {
+		t.Fatalf("a scoped scan must not also pass the directory target, got %v", args)
+	}
+}
+
+func TestScan_DetectionScopeRefusedWithoutForceExclude(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() { commandOutput = originalCommandOutput }()
+	commandOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	scope := &scanner.DetectionScope{Paths: []string{"a.go"}}
+	_, err := NewScanner().ScanScoped(context.Background(), "/repo", scope, []string{"/rules.yaml"}, entities.ToolInfo{})
+	if err == nil {
+		t.Fatal("a scoped scan on an OpenGrep without --force-exclude would scan excluded files; expected a refusal")
+	}
+	var fe *failure.Error
+	if !errors.As(err, &fe) || fe.Code != failure.CodeScannerUnavailable {
+		t.Fatalf("expected %s, got %v", failure.CodeScannerUnavailable, err)
 	}
 }

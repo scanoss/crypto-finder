@@ -688,3 +688,44 @@ func TestNewOrchestrator(t *testing.T) {
 		t.Error("orchestrator.processor is nil")
 	}
 }
+
+type scopedMockScanner struct {
+	mockScanner
+	gotScope *scanner.DetectionScope
+}
+
+func (m *scopedMockScanner) ScanScoped(ctx context.Context, target string, scope *scanner.DetectionScope, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+	m.gotScope = scope
+	return m.Scan(ctx, target, rulePaths, toolInfo)
+}
+
+func TestOrchestrator_ScanScoped(t *testing.T) {
+	t.Parallel()
+	opts := ScanOptions{Target: "/repo", ScannerName: "scoped", LanguageHint: []string{"go"}}
+	scope := &scanner.DetectionScope{Paths: []string{"a.go"}}
+
+	scoped := &scopedMockScanner{mockScanner: mockScanner{scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
+		return &entities.InterimReport{}, nil
+	}}}
+	registry := scanner.NewRegistry()
+	registry.Register("scoped", scoped)
+	registry.Register("plain", &mockScanner{scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
+		t.Fatal("a scanner that cannot honor a scope must not run a whole-target scan instead")
+		return nil, nil
+	}})
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{}), registry)
+
+	if _, err := orchestrator.ScanScoped(context.Background(), opts, scope); err != nil {
+		t.Fatalf("ScanScoped: %v", err)
+	}
+	if scoped.gotScope != scope {
+		t.Fatalf("scope was not handed to the scanner, got %v", scoped.gotScope)
+	}
+
+	opts.ScannerName = "plain"
+	_, err := orchestrator.ScanScoped(context.Background(), opts, scope)
+	var fe *failure.Error
+	if !errors.As(err, &fe) || fe.Code != failure.CodeInvalidArguments {
+		t.Fatalf("expected %s for a scanner without scope support, got %v", failure.CodeInvalidArguments, err)
+	}
+}

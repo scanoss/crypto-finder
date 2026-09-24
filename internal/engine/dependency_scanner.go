@@ -615,7 +615,7 @@ func (ds *DependencyScanner) scanSingleDep(
 
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, depOpts, initializedScanner, validator)
+	report, err := ds.orchestrator.scan(ctx, depOpts, nil, initializedScanner, validator)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).

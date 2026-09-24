@@ -98,6 +98,7 @@ var (
 	scanIncludeTests             bool
 	scanNoDefaultExclusions      bool     // --no-default-exclusions flag
 	scanExcludePatterns          []string // --exclude flag (repeatable)
+	scanDetectPathsFrom          string
 	scanDepEcosystem             string
 	scanExportCallgraph          string
 	scanExportCgFormat           string
@@ -180,6 +181,11 @@ func init() {
 			"Same gitignore-style syntax as scanoss.json settings.skip.patterns.scanning. "+
 			"Patterns are added on top of the built-in defaults unless --no-default-exclusions is also set. "+
 			"Duplicates are removed automatically.")
+	scanCmd.Flags().StringVar(&scanDetectPathsFrom, "detect-paths-from", "",
+		"File listing the files to detect findings in, one path per line relative to the target (\"-\" reads stdin). "+
+			"Only detection is narrowed: the call graph, reachability and dependency root discovery still read the whole target, "+
+			"so each listed file's findings match a full scan. Missing files are skipped; --exclude and default exclusions still apply. "+
+			"OpenGrep scanner only.")
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, node, python, rust")
 
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8; Java max 2)")
@@ -737,6 +743,14 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// Create skip matcher for language detection
 	skipMatcher := skip.NewMatcher(skipPatterns, !scanNoDefaultExclusions)
 
+	var detectionScope *scanner.DetectionScope
+	if scanDetectPathsFrom != "" {
+		detectionScope, err = loadDetectionScope(ctx, cmd.InOrStdin(), target)
+		if err != nil {
+			return err
+		}
+	}
+
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(config.InitOptions{
 		APIKey:               scanAPIKey,
@@ -942,7 +956,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	log.Info().Msgf("Starting scan of %s with scanner '%s'...", target, scanScanner)
 
-	report, err := orchestrator.Scan(ctx, scanOpts)
+	report, err := orchestrator.ScanScoped(ctx, scanOpts, detectionScope)
 	if err != nil {
 		return err
 	}

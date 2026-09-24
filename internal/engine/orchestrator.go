@@ -112,11 +112,18 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, nil, nil)
+	return o.scan(ctx, opts, nil, nil, nil)
+}
+
+// ScanScoped is Scan with detection limited to scope's files under
+// opts.Target. A nil scope scans the whole target. The scanner must implement
+// scanner.ScopedScanner.
+func (o *Orchestrator) ScanScoped(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope) (*entities.InterimReport, error) {
+	return o.scan(ctx, opts, scope, nil, nil)
 }
 
 //nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
-func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
+func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
 		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
 			return nil, progressErr
@@ -184,7 +191,7 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstan
 		Name:    version.ToolName,
 		Version: version.Version,
 	}
-	report, scanErr := scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
+	report, scanErr := runScanner(ctx, opts, scope, scannerInstance, rulePaths, toolInfo)
 	if scanErr != nil {
 		return nil, failure.WrapUnknown(
 			scanErr,
@@ -213,6 +220,23 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scannerInstan
 	}
 
 	return enrichedReport, nil
+}
+
+// runScanner runs a whole-target scan, or a scoped one when scope is set.
+func runScanner(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+	if scope == nil {
+		return scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
+	}
+	scoped, ok := scannerInstance.(scanner.ScopedScanner)
+	if !ok {
+		return nil, failure.New(
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("scanner '%s' cannot limit detection to a file list (--detect-paths-from); use opengrep", opts.ScannerName),
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
+	}
+	return scoped.ScanScoped(ctx, opts.Target, scope, rulePaths, toolInfo)
 }
 
 func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) (scanner.Scanner, error) {

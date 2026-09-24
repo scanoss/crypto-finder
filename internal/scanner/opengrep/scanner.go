@@ -155,18 +155,23 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 
 // Scan executes OpenGrep against the target with the given rule paths.
 func (s *Scanner) Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
-	return s.scan(ctx, target, rulePaths, toolInfo, nil)
+	return s.scan(ctx, target, nil, rulePaths, toolInfo, nil)
+}
+
+// ScanScoped executes OpenGrep over the scope's files under target only.
+func (s *Scanner) ScanScoped(ctx context.Context, target string, scope *scanner.DetectionScope, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
+	return s.scan(ctx, target, scope, rulePaths, toolInfo, nil)
 }
 
 // ScanWithOutcome collects invocation-scoped evidence without changing legacy Scan.
 func (s *Scanner) ScanWithOutcome(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (scanner.Outcome, error) {
 	outcome := scanner.Outcome{Scanner: ScannerName, Version: s.version, Reason: "execution-failure", ExitCode: -1}
-	report, err := s.scan(ctx, target, rulePaths, toolInfo, &outcome)
+	report, err := s.scan(ctx, target, nil, rulePaths, toolInfo, &outcome)
 	outcome.Report = report
 	return outcome, err
 }
 
-func (s *Scanner) scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo, outcome *scanner.Outcome) (*entities.InterimReport, error) {
+func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.DetectionScope, rulePaths []string, toolInfo entities.ToolInfo, outcome *scanner.Outcome) (*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
 			failure.CodeRulesLoadFailed,
@@ -183,44 +188,55 @@ func (s *Scanner) scan(ctx context.Context, target string, rulePaths []string, t
 		defer cancel()
 	}
 
-	// Build opengrep command
-	args := s.buildCommand(ctx, target, rulePaths)
-
-	// Execute opengrep
-	output, stderr, err := s.execute(ctx, args, outcome)
-	if err != nil {
-		log.Debug().
-			Strs("configs", rulePaths).
-			Str("target", target).
-			Str("stderr", semgrep.SanitizeScannerStderr(stderr)).
-			Msg("opengrep command failed")
-
-		return nil, err
+	if scope != nil {
+		if err := s.requireForceExclude(ctx); err != nil {
+			return nil, err
+		}
 	}
 
-	// Parse opengrep JSON output (uses same format as Semgrep)
-	opengrepResults, err := semgrep.ParseSemgrepCompatibleOutput(output)
-	if err != nil {
-		if outcome != nil {
-			outcome.Reason = "parse-failure"
+	opengrepResults := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
+	for _, targets := range scanner.TargetBatches(target, scope) {
+		args := s.buildCommand(ctx, targets, rulePaths, scope != nil)
+
+		output, stderr, err := s.execute(ctx, args, outcome)
+		if err != nil {
+			log.Debug().
+				Strs("configs", rulePaths).
+				Str("target", target).
+				Str("stderr", semgrep.SanitizeScannerStderr(stderr)).
+				Msg("opengrep command failed")
+
+			return nil, err
 		}
-		return nil, failure.Wrap(
-			err,
-			failure.CodeScannerOutputParseFailed,
-			failure.StageScan,
-			"failed to parse opengrep output",
-			failure.WithDetail("scanner", ScannerName),
-		)
+
+		// Parse opengrep JSON output (uses same format as Semgrep)
+		batch, err := semgrep.ParseSemgrepCompatibleOutput(output)
+		if err != nil {
+			if outcome != nil {
+				outcome.Reason = "parse-failure"
+			}
+			return nil, failure.Wrap(
+				err,
+				failure.CodeScannerOutputParseFailed,
+				failure.StageScan,
+				"failed to parse opengrep output",
+				failure.WithDetail("scanner", ScannerName),
+			)
+		}
+		opengrepResults.Results = append(opengrepResults.Results, batch.Results...)
+		opengrepResults.Errors = append(opengrepResults.Errors, batch.Errors...)
+
+		if outcome != nil {
+			outcome.Reason = "unknown-exit"
+			// Certification proves a whole-target scan; a detection-scoped
+			// scan never claims it.
+			if outcome.ExitAvailable && outcome.ExitCode == 0 && scope == nil {
+				outcome.ScopedComplete, outcome.Reason = s.certify(target, rulePaths, args, output, stderr)
+			}
+		}
 	}
 
 	semgrep.LogSemgrepCompatibleErrors(opengrepResults.Errors)
-
-	if outcome != nil {
-		outcome.Reason = "unknown-exit"
-		if outcome.ExitAvailable && outcome.ExitCode == 0 {
-			outcome.ScopedComplete, outcome.Reason = s.certify(target, rulePaths, args, output, stderr)
-		}
-	}
 
 	// Transform to interim format (reuse Semgrep transformer)
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths, s.disableDedup)
@@ -272,13 +288,14 @@ func (s *Scanner) validateVersion() error {
 	return nil
 }
 
-// buildCommand constructs the opengrep command arguments.
-func (s *Scanner) buildCommand(ctx context.Context, target string, rulePaths []string) []string {
+// buildCommand constructs the opengrep command arguments. namedFiles marks
+// targets that are explicit files from a detection scope.
+func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string, namedFiles bool) []string {
 	args := []string{
 		"--json",            // JSON output format
 		"--taint-intrafile", // Enable taint analysis
 	}
-	args = append(args, s.semgrepignoreControlArgs(ctx)...)
+	args = append(args, s.ignoreControlArgs(ctx, namedFiles)...)
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -292,31 +309,58 @@ func (s *Scanner) buildCommand(ctx context.Context, target string, rulePaths []s
 		args = append(args, s.extraArgs...)
 	}
 
-	args = append(args, target)
+	args = append(args, targets...)
 
 	return args
 }
 
-// semgrepignoreControlArgs disables OpenGrep's built-in default ignore file
+// ignoreControlArgs disables OpenGrep's built-in default ignore file
 // handling so crypto-finder's own skip logic remains the single source of truth.
-func (s *Scanner) semgrepignoreControlArgs(ctx context.Context) []string {
-	help, err := s.helpDiscovery.get(ctx, s.executablePath, func() (string, error) {
+// Named files get --exclude applied only under --force-exclude.
+func (s *Scanner) ignoreControlArgs(ctx context.Context, namedFiles bool) []string {
+	help, err := s.help(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
+		return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
+	}
+
+	var args []string
+	if strings.Contains(help, "--x-ignore-semgrepignore-files") {
+		args = []string{"--x-ignore-semgrepignore-files"}
+	} else {
+		args = []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
+	}
+	if namedFiles {
+		args = append(args, "--force-exclude")
+	}
+	return args
+}
+
+// help returns the scan help text, discovered once per run.
+func (s *Scanner) help(ctx context.Context) (string, error) {
+	return s.helpDiscovery.get(ctx, s.executablePath, func() (string, error) {
 		output, probeErr := commandOutput(ctx, s.executablePath, "scan", "--help")
 		if probeErr != nil && ctx.Err() == nil {
 			output, probeErr = commandOutput(ctx, s.executablePath, "--help")
 		}
 		return string(output), probeErr
 	})
-	if err != nil {
-		log.Debug().Err(err).Msg("failed to detect opengrep ignore-file flags; using documented fallback")
-		return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
-	}
+}
 
-	helpText := help
-	if strings.Contains(helpText, "--x-ignore-semgrepignore-files") {
-		return []string{"--x-ignore-semgrepignore-files"}
+// requireForceExclude refuses a detection-scoped scan on an OpenGrep that
+// cannot apply --exclude to explicitly named files: those files would be
+// scanned even where a whole-target scan skips them.
+func (s *Scanner) requireForceExclude(ctx context.Context) error {
+	help, err := s.help(ctx)
+	if err == nil && strings.Contains(help, "--force-exclude") {
+		return nil
 	}
-	return []string{"--experimental", "--semgrepignore-filename", noSemgrepignoreFilename}
+	return failure.New(
+		failure.CodeScannerUnavailable,
+		failure.StageScan,
+		fmt.Sprintf("opengrep %s does not advertise --force-exclude, which a detection scope (--detect-paths-from) requires", s.version),
+		failure.WithDetail("scanner", ScannerName),
+	)
 }
 
 // execute runs the opengrep command and captures stdout/stderr.
