@@ -585,6 +585,16 @@ func TestScanCommand_ExportCallgraphInternedFramesFlag(t *testing.T) {
 	}
 }
 
+func TestScanCommand_ExportCallgraphProjectReachabilityFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("export-callgraph-project-reachability")
+	if flag == nil {
+		t.Fatal("expected --export-callgraph-project-reachability flag")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("default = %q, want false", flag.DefValue)
+	}
+}
+
 func TestCountFindings(t *testing.T) {
 	t.Run("nil report", func(t *testing.T) {
 		count := scanutil.CountFindings(nil)

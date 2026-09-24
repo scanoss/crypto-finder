@@ -153,6 +153,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
 | `--export-callgraph <file>` | — | Write the finding-centric crypto call graph (reachability slices) to `<file>` |
 | `--export-callgraph-format <fmt>` | `json` | Call graph export format (only `json`) |
+| `--export-callgraph-project-reachability` | off | Without `--scan-dependencies` (or when none resolved), classify reachability against the target's own source packages instead of reporting `not_applicable`; leave off when scanning a library on its own |
 | `--export-graph-fragment <file>` | — | Write a reusable structural graph fragment to `<file>` |
 | `--export-graph-fragment-format <fmt>` | `json` | Graph fragment export format (only `json`) |
 | `--java-jdk-major <major>` | — | Java JDK major for dependency resolution/type enrichment: `auto`, `8`, `11`, `17`, `21` |

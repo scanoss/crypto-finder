@@ -1,0 +1,82 @@
+rules:
+  - id: go.project-reachability.sha256
+    message: Detected SHA-256 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: sha256.Sum256($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: SHA-2
+        algorithmName: SHA-256
+        algorithmPrimitive: hash
+        api: sha256.Sum256
+
+  - id: go.project-reachability.sha512
+    message: Detected SHA-512 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: sha512.Sum512($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: SHA-2
+        algorithmName: SHA-512
+        algorithmPrimitive: hash
+        api: sha512.Sum512
+
+  - id: go.project-reachability.md5
+    message: Detected MD5 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: md5.Sum($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: MD5
+        algorithmName: MD5
+        algorithmPrimitive: hash
+        api: md5.Sum
+
+  - id: python.project-reachability.sha256
+    message: Detected SHA-256 hashing
+    severity: INFO
+    languages:
+      - python
+    pattern: hashlib.sha256(...)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: SHA-2
+        algorithmName: SHA-256
+        algorithmPrimitive: hash
+        api: hashlib.sha256
+
+  - id: python.project-reachability.md5
+    message: Detected MD5 hashing
+    severity: INFO
+    languages:
+      - python
+    pattern: hashlib.md5(...)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: MD5
+        algorithmName: MD5
+        algorithmPrimitive: hash
+        api: hashlib.md5
+
+  - id: java.project-reachability.message-digest
+    message: Detected MessageDigest usage
+    severity: INFO
+    languages:
+      - java
+    pattern: MessageDigest.getInstance($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+        api: java.security.MessageDigest.getInstance

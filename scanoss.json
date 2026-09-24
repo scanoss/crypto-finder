@@ -11,6 +11,9 @@
     "include": [
       {
         "purl": "pkg:github/scanoss/crypto-finder"
+      },
+      {
+        "purl": "pkg:golang/github.com/scanoss/crypto-finder"
       }
     ],
     "remove": [
