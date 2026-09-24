@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 // Package scanner defines legacy and optional scanner interfaces.
+//
+//revive:disable:var-naming // scanner is a domain package name and intentionally matches CLI/config terminology.
 package scanner
 
 import (

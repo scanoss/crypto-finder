@@ -99,6 +99,27 @@ crypto-finder scan --export-graph-fragment fragment.json /path/to/code
 
 The interim JSON report (findings + metadata) goes to `--output` (stdout by default). The call graph and graph fragment exports are **separate files** written to the paths given to `--export-callgraph` / `--export-graph-fragment`. Use `scan --progress` when an integration needs lifecycle JSONL on stderr; it suppresses human logs and leaves findings on stdout or `--output`. See [Output Formats](docs/OUTPUT_FORMATS.md) for all schemas.
 
+## Scanning changed files
+
+An incremental scan usually needs findings only for the files a change touched. `--exclude` is the wrong tool for that: it also removes the other files from the call graph, so a changed file's findings can turn unreachable because their callers were excluded. `--detect-paths-from` narrows detection alone:
+
+```bash
+git diff --name-only origin/main... > changed.txt
+crypto-finder scan --detect-paths-from changed.txt --scan-dependencies --export-callgraph callgraph.json /path/to/repo
+
+# or read the list from stdin
+git diff --name-only origin/main... | crypto-finder scan --detect-paths-from - /path/to/repo
+```
+
+- The list holds one path per line, relative to the scan target or absolute inside it. Blank lines are ignored.
+- Listed files that no longer exist, such as files the change deleted, are skipped. A directory or a path outside the target is an error.
+- Listed files still pass through `--exclude`, the default exclusions, and untracked files that git ignores, so the scope never reaches a file a full scan would skip.
+- The call graph, reachability, and dependency root discovery read the whole target. Each listed file reports the same findings, occurrence keys, metadata, reachability, and key sizes as a full scan of the same tree.
+- With `--scan-dependencies`, dependencies are scanned in full as usual. The list scopes only the target's own files.
+- It works with the default `opengrep` scanner only.
+
+Detection time scales with the number of listed files. Long lists are split across scanner invocations to stay under the platform command-line limit.
+
 ## Re-annotation: `annotate` vs `scan`
 
 The call graph build (parsing + type inference) is the expensive ~95% of a scan and is **rules-independent**. When only the detection ruleset changed — new rules version, local rule you are iterating on — you do not need to rebuild the graph:
@@ -146,6 +167,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--include-tests` | off | Include test sources in findings and dependency scans |
 | `--no-default-exclusions` | off | Disable built-in exclusions (`vendor`, `node_modules`, `shaded/`, generated protobuf stubs, ...). Slows scans on large repos; combine with `--exclude` to re-add specific paths |
 | `--exclude <glob>` | — | Gitignore-style pattern to skip (repeatable); added on top of the defaults |
+| `--detect-paths-from <file>` | — | Detect findings only in the files listed in `<file>` (one path per line, relative to the target; `-` reads stdin). The call graph and reachability still read the whole target. OpenGrep only. See [Scanning changed files](#scanning-changed-files) |
 | `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
 | `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2) |
