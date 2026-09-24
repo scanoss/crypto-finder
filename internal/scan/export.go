@@ -391,6 +391,12 @@ type CallGraphExportOptions struct {
 	MaxChains             int
 	OmitCryptoEntryPoints bool
 	InternedFrames        bool
+	// ProjectReachability classifies reachability against the scan target's own
+	// source packages when no dependency set was resolved. The target is then
+	// the application, not a library whose public API is the entry point, so its
+	// sources are the user code a --scan-dependencies run would trace to. A
+	// result with resolved dependencies is unaffected.
+	ProjectReachability bool
 }
 
 // ExportCallGraph writes the current finding-centric callgraph export.
@@ -440,7 +446,7 @@ func exportResolvedCallGraphProjection(path, format string, result *engine.DepSc
 }
 
 func buildResolvedCallGraphExportV2ToFile(path string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) (callGraphExportV2, error) {
-	ctx := newExportBuildContextWithFindings(result, report.Findings, options.MaxChains)
+	ctx := newCallGraphExportBuildContext(result, report.Findings, options)
 	assets := callGraphExportAssetsFromFindings(report.Findings)
 	meta := buildResolvedCallGraphExportScanMeta(result, report)
 	var streamed streamedCallGraphExport
@@ -485,6 +491,7 @@ func exportCallGraphProjectionWithOptions(path, format string, result *engine.De
 		Int("max_chains", graphfrag.ResolveMaxChains(options.MaxChains)).
 		Bool("omit_crypto_entry_points", options.OmitCryptoEntryPoints).
 		Bool("interned_frames", options.InternedFrames).
+		Bool("project_reachability", options.ProjectReachability).
 		Msg("Starting integration call graph export")
 
 	buildStart := time.Now()
@@ -508,7 +515,7 @@ func exportCallGraphProjectionWithOptions(path, format string, result *engine.De
 }
 
 func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, options CallGraphExportOptions) (callGraphExportV2, error) {
-	ctx := newExportBuildContextWithMaxChains(result, options.MaxChains)
+	ctx := newCallGraphExportBuildContext(result, result.Report.Findings, options)
 	assets := callGraphExportAssets(result.Report)
 	meta := buildCallGraphExportScanMeta(result)
 
@@ -1516,6 +1523,18 @@ func newExportBuildContextWithMaxChains(result *engine.DepScanResult, maxChains 
 }
 
 func newExportBuildContextWithFindings(result *engine.DepScanResult, findings []entities.Finding, maxChains int) *exportBuildContext {
+	return newExportBuildContextWithUserPackages(result, findings, maxChains, exportUserPackages(result))
+}
+
+func newCallGraphExportBuildContext(result *engine.DepScanResult, findings []entities.Finding, options CallGraphExportOptions) *exportBuildContext {
+	userPackages := exportUserPackages(result)
+	if options.ProjectReachability && len(result.Dependencies) == 0 {
+		userPackages = projectUserPackages(result)
+	}
+	return newExportBuildContextWithUserPackages(result, findings, options.MaxChains, userPackages)
+}
+
+func newExportBuildContextWithUserPackages(result *engine.DepScanResult, findings []entities.Finding, maxChains int, userPackages map[string]bool) *exportBuildContext {
 	ctx := &exportBuildContext{
 		graph:                   result.CallGraph,
 		projectRoot:             filepath.Clean(result.ProjectRoot),
@@ -1525,7 +1544,7 @@ func newExportBuildContextWithFindings(result *engine.DepScanResult, findings []
 		callChainRawCache:       make(map[string][]callgraph.CallChain),
 		callChainRemainingUses:  make(map[string]int),
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
-		userPackages:            exportUserPackages(result),
+		userPackages:            userPackages,
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
 		maxChainsBudget:         graphfrag.ResolveMaxChains(maxChains),
 	}
@@ -3336,6 +3355,22 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 	// project name. The project name is not a Java package, so tracing against
 	// it alone drops every chain that starts in application sources (#372).
 	addProjectSourcePackages(pkgs, result)
+	return pkgs
+}
+
+// projectUserPackages is the user universe of a run that resolved no
+// dependencies but is asked to classify reachability anyway: the same root
+// module and project source packages exportUserPackages builds for first-party
+// code once dependencies are resolved.
+func projectUserPackages(result *engine.DepScanResult) map[string]bool {
+	pkgs := make(map[string]bool)
+	if root := strings.TrimSpace(result.RootModule); root != "" {
+		pkgs[root] = true
+	}
+	addProjectSourcePackages(pkgs, result)
+	if len(pkgs) == 0 {
+		return nil
+	}
 	return pkgs
 }
 

@@ -104,6 +104,7 @@ var (
 	scanExportCallgraphMaxChains int
 	scanExportEntryPoints        bool
 	scanExportInternedFrames     bool
+	scanExportProjectReach       bool
 	scanExportGraphFragment      string
 	scanExportGfFormat           string
 	scanDepWorkers               int
@@ -192,6 +193,8 @@ func init() {
 		"Include the optional full crypto_entry_points reverse-reachability index (default false)")
 	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", true,
 		"Emit schema 6.15: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
+	scanCmd.Flags().BoolVar(&scanExportProjectReach, "export-callgraph-project-reachability", false,
+		"When no dependency set was resolved, classify reachability against the scan target's own source packages, as a --scan-dependencies run does for first-party findings (default false). Leave it off when scanning a library on its own.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
 	scanCmd.Flags().StringVar(&scanExportGfFormat, "export-graph-fragment-format", "json", "Graph fragment export format (only json is supported)")
 	scanCmd.Flags().StringVar(&scanJavaJDKMajor, "java-jdk-major", "", "Java JDK major for Java dependency resolution/type enrichment: auto, 8, 11, 17, 21")
@@ -1211,6 +1214,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			MaxChains:             scanExportCallgraphMaxChains,
 			OmitCryptoEntryPoints: !scanExportEntryPoints,
 			InternedFrames:        scanExportInternedFrames,
+			ProjectReachability:   scanExportProjectReach,
 		}); exportErr != nil {
 			return failure.WrapUnknown(
 				exportErr,
