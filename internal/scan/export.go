@@ -1339,6 +1339,9 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 		if len(matches) == 0 && ctx.kb.Ecosystem == "cpp" && call.Callee.Type != "" && call.Callee.Linkage != callgraph.LinkageInternal && !hasCallDeclaration(ctx.graph, call.Callee) {
 			matches = ctx.kb.ContractsForTolerant(call.Callee.Type+"."+callgraph.BaseFunctionName(call.Callee.Name), arity)
 		}
+		if len(matches) == 0 && ctx.kb.Ecosystem == ecosystemJava {
+			matches = ctx.inheritedContracts(fqn, arity)
+		}
 		return exactConditionalContracts(matches, call)
 	}
 	if exact := ctx.kb.ContractsFor(fqn, arity); len(exact) > 0 {
@@ -1349,6 +1352,37 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 	}
 	externalGlobal := call.Callee.Linkage == callgraph.LinkageExternal && ctx.graph.Functions[call.Callee.String()] == nil
 	return exactConditionalContracts(ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal), call)
+}
+
+// inheritedContracts finds the contracts a Java method inherits when the KB
+// declares it on a supertype of the called class rather than on the class
+// itself. It walks the contract hierarchy breadth first and returns the
+// nearest level that declares the method, so the most specific declaration
+// wins. Constructors are not inherited.
+func (ctx *exportBuildContext) inheritedContracts(fqn string, arity int) []contracts.Contract {
+	class, method := splitFunctionName(fqn)
+	if class == "" || method == "<init>" || method == "<clinit>" {
+		return nil
+	}
+	seen := map[string]bool{class: true}
+	level := ctx.kb.Hierarchy[class]
+	for len(level) > 0 {
+		var matches []contracts.Contract
+		var next []string
+		for _, parent := range level {
+			if seen[parent] {
+				continue
+			}
+			seen[parent] = true
+			matches = append(matches, ctx.kb.ContractsFor(parent+"."+method, arity)...)
+			next = append(next, ctx.kb.Hierarchy[parent]...)
+		}
+		if len(matches) > 0 {
+			return matches
+		}
+		level = next
+	}
+	return nil
 }
 
 func exactConditionalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
@@ -1587,7 +1621,7 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		ctx.declIndex = make(map[string][]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
 		ctx.declsByMethod = make(map[string][]operationContractDeclaration)
 		for _, fn := range result.CallGraph.Functions {
-			if fqn := ctx.contractDeclKey(fn.ID); fqn != "" {
+			for _, fqn := range ctx.contractDeclKeys(fn.ID) {
 				_, method := splitFunctionName(fqn)
 				ctx.declsByMethod[method] = append(ctx.declsByMethod[method], operationContractDeclaration{
 					declFQN: fqn,
@@ -1634,16 +1668,29 @@ func exportFunctionFQN(id callgraph.FunctionID) string {
 	return fqn
 }
 
-// contractDeclKey returns the key a declaration is indexed under for contract
+// contractDeclKeys returns the keys a declaration is indexed under for contract
 // lookups. The Rust call graph joins a declaration's module, type and name with
 // "." ("rsa::pkcs1v15.SigningKey.new") while the Rust KBs key contracts as
-// "rsa::pkcs1v15::SigningKey.new", so Rust declarations take the KB spelling.
-func (ctx *exportBuildContext) contractDeclKey(id callgraph.FunctionID) string {
+// "rsa::pkcs1v15::SigningKey.new", so Rust declarations take the KB spelling,
+// once under the declaring path and once under each public re-export of it.
+func (ctx *exportBuildContext) contractDeclKeys(id callgraph.FunctionID) []string {
 	fqn := exportFunctionFQN(id)
-	if ctx.ecosystem == ecosystemRust {
-		return rustContractMethodKey(fqn)
+	if fqn == "" {
+		return nil
 	}
-	return fqn
+	if ctx.ecosystem != ecosystemRust {
+		return []string{fqn}
+	}
+	keys := []string{rustContractMethodKey(fqn)}
+	// A Rust contract names the path a consumer imports, and a type declared in
+	// a private module and re-exported is only reachable by the declaring one.
+	if id.Package != "" && id.Type != "" && ctx.graph != nil {
+		_, method := splitFunctionName(keys[0])
+		for _, public := range ctx.graph.PublicTypePaths[id.Package+"::"+id.Type] {
+			keys = append(keys, public+"."+method)
+		}
+	}
+	return keys
 }
 
 // --- Per-finding graph builder ---

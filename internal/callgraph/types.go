@@ -439,6 +439,11 @@ type CallGraph struct {
 	// (EdgeResolutionEndpoints), so per-pair views are one O(E) pass away —
 	// see internal/scan's indexFragmentEdgeResolutions.
 	EdgeResolutions map[string]EdgeResolution
+	// PublicTypePaths maps a type's declaring path to the public paths a
+	// `pub use` re-exports it under ("rsa::pkcs1v15::signing_key::SigningKey"
+	// -> ["rsa::pkcs1v15::SigningKey"]). Contracts name the public path, the
+	// declaration carries the declaring one. Rust only.
+	PublicTypePaths map[string][]string
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
