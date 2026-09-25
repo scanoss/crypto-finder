@@ -2,7 +2,9 @@ package callgraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -372,10 +374,10 @@ func pythonModuleNames(dir string) map[string]bool {
 }
 
 // pythonModuleName is the module name a directory entry defines, if any. A
-// directory counts when it holds a .py file directly, so `__pycache__` or a
-// directory of C sources names nothing. A package whose Python lives only in
-// deeper subpackages is not seen; the layout directory then collapses and
-// its modules key without the segment, as they did before this check.
+// directory counts when a .py file sits anywhere below it, so a namespace
+// package whose Python lives only in deeper subpackages (`a/b/x.py` with no
+// `a/*.py`) still names `a`, while `__pycache__` or a directory of C sources
+// names nothing.
 func pythonModuleName(path string, entry os.DirEntry) (string, bool) {
 	name := entry.Name()
 	if !entry.IsDir() {
@@ -384,16 +386,34 @@ func pythonModuleName(path string, entry os.DirEntry) (string, bool) {
 		}
 		return strings.TrimSuffix(name, ".py"), true
 	}
-	children, err := os.ReadDir(path)
-	if err != nil {
-		return "", false
-	}
-	for _, child := range children {
-		if !child.IsDir() && strings.HasSuffix(child.Name(), ".py") {
-			return name, true
-		}
+	if pythonDirHoldsSource(path) {
+		return name, true
 	}
 	return "", false
+}
+
+var errPythonSourceFound = errors.New("python source found")
+
+// pythonDirHoldsSource reports whether any .py file sits under dir, however
+// deep. The walk stops at the first one and does not enter hidden
+// directories, whose names no import statement can spell.
+func pythonDirHoldsSource(dir string) bool {
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			if path != dir && strings.HasPrefix(entry.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(entry.Name(), ".py") {
+			return errPythonSourceFound
+		}
+		return nil
+	})
+	return errors.Is(err, errPythonSourceFound)
 }
 
 // SubPackagePath constructs a child module path using "." separator.

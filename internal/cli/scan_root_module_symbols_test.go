@@ -105,6 +105,18 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 			wantKeys: []string{"Crypto.Hash.new"},
 		},
 		{
+			name:      "python lib layout stays transparent beside a src holding only bytecode and C sources",
+			ecosystem: "python",
+			files: map[string]string{
+				"src/Crypto/__pycache__/AES.cpython-312.pyc": "",
+				"src/Crypto/native/AES.c":                    "int aes(void) { return 1; }\n",
+				"lib/Crypto/__init__.py":                     "",
+				"lib/Crypto/Hash/__init__.py":                "",
+				"lib/Crypto/Hash/HMAC.py":                    "def new(key):\n    return key\n",
+			},
+			wantKeys: []string{"Crypto.Hash.new"},
+		},
+		{
 			name:      "python src and lib layouts with disjoint packages are both transparent",
 			ecosystem: "python",
 			files: map[string]string{
@@ -218,6 +230,17 @@ func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *te
 			wantFiles: map[string]string{
 				"src.a.f": "src/a/__init__.py",
 				"lib.a.f": "lib/a/__init__.py",
+			},
+		},
+		{
+			name: "src and lib both define a deep subpackage",
+			files: map[string]string{
+				"src/a/b/x.py": "def f():\n    return 1\n",
+				"lib/a/b/x.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"src.a.b.f": "src/a/b/x.py",
+				"lib.a.b.f": "lib/a/b/x.py",
 			},
 		},
 		{
