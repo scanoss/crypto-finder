@@ -1,0 +1,899 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: fusionauth-jwt
+  coordinates:
+    - "io.fusionauth:fusionauth-jwt"
+  version_range: ">=2.0,<7.0"
+  description: "FusionAuth JWT: HMAC, RSA, RSA-PSS, ECDSA and EdDSA JWT signing and verification, PEM and JWK key helpers"
+
+# Inventory source: javap over the published jars of all 46 releases from 2.0.0 to
+# 6.0.0. Section banners and per-entry comments give the releases that ship each
+# entry. 2.0.0 ships the same API under org.primeframework.jwt, so its surface is
+# contracted twice, once per package.
+#
+# Dispositions for the rest of the public surface:
+#   covered through the hierarchy: sign, getAlgorithm and verify on every
+#     concrete signer and verifier, which implement Signer and Verifier.
+#   skipped-non-crypto: UnsecuredSigner, which signs with alg none and produces
+#     an empty signature; Signer.getKid and Verifier.canVerify, a key id and an
+#     algorithm support check; JWTDecoder.withClockSkew, which only
+#     widens the expiry window; JWTUtils.decodeHeader and decodePayload, which
+#     read a token without verifying it, and the fingerprint and thumbprint
+#     format converters; PEMEncoder.parseEncodedCertificate and the 2.x
+#     PEMUtils certificate helpers, which reformat text; JWKUtils, a base64
+#     codec for key integers; the der package and ECDSASignature, the DER
+#     transcoding the EC signer and verifier use internally; the PEM and KeyPair
+#     constructors and the no-argument constructors of the encoders, decoders,
+#     builders and parsers, which are containers that hold no configuration;
+#     and every claim accessor on the JWT and Header domain types.
+contracts:
+
+  # ---- io.fusionauth.jwt, 2.1.0 onwards unless noted ----
+
+  # Signer factories. The digest size is in the method name, which the detection rules
+  # read; the contract only labels the lifecycle. Same-arity overloads (String PEM,
+  # byte[], PrivateKey, key id, CryptoProvider) share one entry, so no parameter_types.
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA256Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # since 3.1.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA256Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA256Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA384Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # since 3.1.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA384Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA384Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA512Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # since 3.1.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA512Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.hmac.HMACSigner.newSHA512Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA256Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA256Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA256Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA384Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA384Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA384Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA512Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA512Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSASigner.newSHA512Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA256Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA256Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # 3.5.0 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA256Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA384Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA384Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # 3.5.0 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA384Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA512Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA512Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # 3.5.0 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSSigner.newSHA512Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSSigner, confidence: high}
+    role: factory
+  # since 3.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA256Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA256Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA256Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 3.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA384Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA384Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA384Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 3.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA512Signer
+    arity: 1
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 3.1.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA512Signer
+    arity: 2
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # 3.1.7 to 5.3.3 only; the CryptoProvider overloads were removed in 6.0.0
+  - method: io.fusionauth.jwt.ec.ECSigner.newSHA512Signer
+    arity: 3
+    return: {type: io.fusionauth.jwt.ec.ECSigner, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.ed.EdDSASigner.newSigner
+    arity: 1
+    return: {type: io.fusionauth.jwt.ed.EdDSASigner, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.ed.EdDSASigner.newSigner
+    arity: 2
+    return: {type: io.fusionauth.jwt.ed.EdDSASigner, confidence: high}
+    role: factory
+
+  # Verifier factories.
+  - method: io.fusionauth.jwt.hmac.HMACVerifier.newVerifier
+    arity: 1
+    return: {type: io.fusionauth.jwt.hmac.HMACVerifier, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  # CryptoProvider overloads, 3.1.7 to 5.3.3 only
+  - method: io.fusionauth.jwt.hmac.HMACVerifier.newVerifier
+    arity: 2
+    return: {type: io.fusionauth.jwt.hmac.HMACVerifier, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: io.fusionauth.jwt.rsa.RSAVerifier.newVerifier
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSAVerifier, confidence: high}
+    role: factory
+  # CryptoProvider overloads, 3.1.7 to 5.3.3 only
+  - method: io.fusionauth.jwt.rsa.RSAVerifier.newVerifier
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSAVerifier, confidence: high}
+    role: factory
+  # since 3.5.0
+  - method: io.fusionauth.jwt.rsa.RSAPSSVerifier.newVerifier
+    arity: 1
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSVerifier, confidence: high}
+    role: factory
+  # CryptoProvider overloads, 3.5.0 to 5.3.3 only
+  - method: io.fusionauth.jwt.rsa.RSAPSSVerifier.newVerifier
+    arity: 2
+    return: {type: io.fusionauth.jwt.rsa.RSAPSSVerifier, confidence: high}
+    role: factory
+  # since 3.0.0
+  - method: io.fusionauth.jwt.ec.ECVerifier.newVerifier
+    arity: 1
+    return: {type: io.fusionauth.jwt.ec.ECVerifier, confidence: high}
+    role: factory
+  # CryptoProvider overloads, 3.1.7 to 5.3.3 only
+  - method: io.fusionauth.jwt.ec.ECVerifier.newVerifier
+    arity: 2
+    return: {type: io.fusionauth.jwt.ec.ECVerifier, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.ed.EdDSAVerifier.newVerifier
+    arity: 1
+    return: {type: io.fusionauth.jwt.ed.EdDSAVerifier, confidence: high}
+    role: factory
+
+  # Signing and verification, authored once on the interfaces. The hierarchy edges below
+  # route every concrete signer and verifier to these declarations.
+  - method: io.fusionauth.jwt.Signer.sign
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.Verifier.verify
+    arity: 3
+    return: {type: void, confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.Signer.getAlgorithm
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.Algorithm, confidence: high}
+    role: output
+
+  # Token encoding signs and token decoding verifies, so both carry role operation.
+  - method: io.fusionauth.jwt.domain.JWT.getEncoder
+    arity: 0
+    return: {type: io.fusionauth.jwt.JWTEncoder, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.domain.JWT.getDecoder
+    arity: 0
+    return: {type: io.fusionauth.jwt.JWTDecoder, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTEncoder.getInstance
+    arity: 0
+    return: {type: io.fusionauth.jwt.JWTEncoder, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTDecoder.getInstance
+    arity: 0
+    return: {type: io.fusionauth.jwt.JWTDecoder, confidence: high}
+    role: factory
+  # since 3.6.0
+  - method: io.fusionauth.jwt.domain.JWT.getTimeMachineDecoder
+    arity: 1
+    return: {type: io.fusionauth.jwt.JWTDecoder, confidence: high}
+    role: factory
+  # since 3.6.0
+  - method: io.fusionauth.jwt.TimeMachineJWTDecoder.<init>
+    arity: 1
+    return: {type: io.fusionauth.jwt.TimeMachineJWTDecoder, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTEncoder.encode
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # header Consumer, and from 5.3.0 a header Supplier
+  - method: io.fusionauth.jwt.JWTEncoder.encode
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # Verifier varargs, Verifier map, and from 5.2.0 a Verifier lookup function
+  - method: io.fusionauth.jwt.JWTDecoder.decode
+    arity: 2
+    return: {type: io.fusionauth.jwt.domain.JWT, confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.JWTDecoder.decode
+    arity: 3
+    return: {type: io.fusionauth.jwt.domain.JWT, confidence: high}
+    role: operation
+
+  # ---- io.fusionauth key helpers, 3.0.0 onwards unless noted ----
+
+  # Key and secret generation.
+  - method: io.fusionauth.jwt.JWTUtils.generate2048_RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate3072_RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate4096_RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate256_ECKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate384_ECKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate521_ECKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.JWTUtils.generate2048_RSAPSSKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.JWTUtils.generate3072_RSAPSSKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.JWTUtils.generate4096_RSAPSSKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.JWTUtils.generate_ed25519_EdDSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  # since 6.0.0
+  - method: io.fusionauth.jwt.JWTUtils.generate_ed448_EdDSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.KeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA256_HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA384_HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA512_HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  # since 3.0.4
+  - method: io.fusionauth.jwt.JWTUtils.generateSecureRandom
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateJWS_x5t
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.JWTUtils.generateJWS_x5t
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # since 3.5.3
+  - method: io.fusionauth.jwt.JWTUtils.generateJWS_kid
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # since 3.5.3
+  - method: io.fusionauth.jwt.JWTUtils.generateJWS_kid
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # since 3.5.3
+  - method: io.fusionauth.jwt.JWTUtils.generateJWS_kid_S256
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+
+  # PEM decoding yields the key material a signer or verifier is built from; encoding is
+  # its output.
+  # String, byte[] and Path overloads
+  - method: io.fusionauth.pem.PEMDecoder.decode
+    arity: 1
+    return: {type: io.fusionauth.pem.domain.PEM, confidence: high}
+    role: factory
+  - method: io.fusionauth.pem.domain.PEM.decode
+    arity: 1
+    return: {type: io.fusionauth.pem.domain.PEM, confidence: high}
+    role: factory
+  # declared as a type variable, so the erased return says less than this
+  - method: io.fusionauth.pem.domain.PEM.getPrivateKey
+    arity: 0
+    return: {type: java.security.PrivateKey, confidence: high}
+    role: output
+  - method: io.fusionauth.pem.domain.PEM.getPublicKey
+    arity: 0
+    return: {type: java.security.PublicKey, confidence: high}
+    role: output
+  # since 3.0.4
+  - method: io.fusionauth.pem.domain.PEM.getCertificate
+    arity: 0
+    return: {type: java.security.cert.Certificate, confidence: high}
+    role: output
+  # Key, and from 3.0.4 Certificate
+  - method: io.fusionauth.pem.PEMEncoder.encode
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.pem.PEMEncoder.encode
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.pem.domain.PEM.encode
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.pem.domain.PEM.encode
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+  # JSON Web Keys: building one from key material, parsing one back into a public key,
+  # and fetching a key set from an issuer.
+  # PEM String, PrivateKey, PublicKey and Certificate overloads
+  - method: io.fusionauth.jwks.JSONWebKeyBuilder.build
+    arity: 1
+    return: {type: io.fusionauth.jwks.domain.JSONWebKey, confidence: high}
+    role: factory
+  # since 3.3.1
+  - method: io.fusionauth.jwks.JSONWebKeyParser.parse
+    arity: 1
+    return: {type: java.security.PublicKey, confidence: high}
+    role: factory
+  # since 3.4.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromIssuer
+    arity: 1
+    return: {type: java.util.List, confidence: high}
+    role: factory
+  # connection customizer, since 4.2.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromIssuer
+    arity: 2
+    return: {type: java.util.List, confidence: high}
+    role: factory
+  # since 3.4.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromWellKnownConfiguration
+    arity: 1
+    return: {type: java.util.List, confidence: high}
+    role: factory
+  # connection customizer, since 4.2.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromWellKnownConfiguration
+    arity: 2
+    return: {type: java.util.List, confidence: high}
+    role: factory
+  # since 3.4.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromJWKS
+    arity: 1
+    return: {type: java.util.List, confidence: high}
+    role: factory
+  # connection customizer, since 4.2.0
+  - method: io.fusionauth.jwks.JSONWebKeySetHelper.retrieveKeysFromJWKS
+    arity: 2
+    return: {type: java.util.List, confidence: high}
+    role: factory
+
+  # Key inspection.
+  # since 3.3.1
+  - method: io.fusionauth.security.KeyUtils.getKeyLength
+    arity: 1
+    return: {type: int, confidence: high}
+    role: output
+  # since 6.0.0
+  - method: io.fusionauth.security.KeyUtils.getCurveName
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  # since 6.0.0
+  - method: io.fusionauth.security.KeyUtils.getCurveOID
+    arity: 1
+    return: {type: io.fusionauth.der.ObjectIdentifier, confidence: high}
+    role: output
+  # since 6.0.0
+  - method: io.fusionauth.security.KeyUtils.deriveEdDSAPublicKeyFromPrivate
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: factory
+
+  # ---- 2.x key helpers under io.fusionauth.jwt (2.1.0, 2.1.1) ----
+
+  # 2.x key helpers, replaced in 3.0.0 by the pem and jwks packages and the renamed
+  # JWTUtils generators.
+  - method: io.fusionauth.jwt.JWTUtils.generate2048RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate3072RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generate4096RSAKeyPair
+    arity: 0
+    return: {type: io.fusionauth.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA256HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA384HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.JWTUtils.generateSHA512HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.rsa.RSAUtils.getPrivateKeyFromPEM
+    arity: 1
+    return: {type: java.security.interfaces.RSAPrivateKey, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.rsa.RSAUtils.getPublicKeyFromPEM
+    arity: 1
+    return: {type: java.security.interfaces.RSAPublicKey, confidence: high}
+    role: factory
+  - method: io.fusionauth.jwt.rsa.RSAUtils.getPEMFromPrivateKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.jwt.rsa.RSAUtils.getPEMFromPublicKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.jwt.rsa.RSAUtils.generateJWS_x5t
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.rsa.RSAUtils.generateJWS_x5t
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: io.fusionauth.jwt.rsa.PEMUtils.encodePrivateKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: io.fusionauth.jwt.rsa.PEMUtils.encodePublicKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+  # ---- org.primeframework.jwt, the 2.0.0 package name ----
+
+  # Signer factories. The digest size is in the method name, which the detection rules
+  # read; the contract only labels the lifecycle. Same-arity overloads (String PEM,
+  # byte[], PrivateKey, key id, CryptoProvider) share one entry, so no parameter_types.
+  - method: org.primeframework.jwt.hmac.HMACSigner.newSHA256Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.primeframework.jwt.hmac.HMACSigner.newSHA384Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.primeframework.jwt.hmac.HMACSigner.newSHA512Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.hmac.HMACSigner, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.primeframework.jwt.rsa.RSASigner.newSHA256Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.rsa.RSASigner.newSHA384Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.rsa.RSASigner.newSHA512Signer
+    arity: 1
+    return: {type: org.primeframework.jwt.rsa.RSASigner, confidence: high}
+    role: factory
+
+  # Verifier factories.
+  - method: org.primeframework.jwt.hmac.HMACVerifier.newVerifier
+    arity: 1
+    return: {type: org.primeframework.jwt.hmac.HMACVerifier, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.primeframework.jwt.rsa.RSAVerifier.newVerifier
+    arity: 1
+    return: {type: org.primeframework.jwt.rsa.RSAVerifier, confidence: high}
+    role: factory
+
+  # Signing and verification, authored once on the interfaces. The hierarchy edges below
+  # route every concrete signer and verifier to these declarations.
+  - method: org.primeframework.jwt.Signer.sign
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.primeframework.jwt.Verifier.verify
+    arity: 3
+    return: {type: void, confidence: high}
+    role: operation
+  - method: org.primeframework.jwt.Signer.getAlgorithm
+    arity: 0
+    return: {type: org.primeframework.jwt.domain.Algorithm, confidence: high}
+    role: output
+
+  # Token encoding signs and token decoding verifies, so both carry role operation.
+  - method: org.primeframework.jwt.domain.JWT.getEncoder
+    arity: 0
+    return: {type: org.primeframework.jwt.JWTEncoder, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.domain.JWT.getDecoder
+    arity: 0
+    return: {type: org.primeframework.jwt.JWTDecoder, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTEncoder.getInstance
+    arity: 0
+    return: {type: org.primeframework.jwt.JWTEncoder, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTDecoder.getInstance
+    arity: 0
+    return: {type: org.primeframework.jwt.JWTDecoder, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTEncoder.encode
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # header Consumer, and from 5.3.0 a header Supplier
+  - method: org.primeframework.jwt.JWTEncoder.encode
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  # Verifier varargs, Verifier map, and from 5.2.0 a Verifier lookup function
+  - method: org.primeframework.jwt.JWTDecoder.decode
+    arity: 2
+    return: {type: org.primeframework.jwt.domain.JWT, confidence: high}
+    role: operation
+  - method: org.primeframework.jwt.JWTDecoder.decode
+    arity: 3
+    return: {type: org.primeframework.jwt.domain.JWT, confidence: high}
+    role: operation
+
+  # 2.x key helpers, replaced in 3.0.0 by the pem and jwks packages and the renamed
+  # JWTUtils generators.
+  - method: org.primeframework.jwt.JWTUtils.generate2048RSAKeyPair
+    arity: 0
+    return: {type: org.primeframework.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTUtils.generate3072RSAKeyPair
+    arity: 0
+    return: {type: org.primeframework.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTUtils.generate4096RSAKeyPair
+    arity: 0
+    return: {type: org.primeframework.jwt.domain.RSAKeyPair, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTUtils.generateSHA256HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTUtils.generateSHA384HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.JWTUtils.generateSHA512HMACSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.rsa.RSAUtils.getPrivateKeyFromPEM
+    arity: 1
+    return: {type: java.security.interfaces.RSAPrivateKey, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.rsa.RSAUtils.getPublicKeyFromPEM
+    arity: 1
+    return: {type: java.security.interfaces.RSAPublicKey, confidence: high}
+    role: factory
+  - method: org.primeframework.jwt.rsa.RSAUtils.getPEMFromPrivateKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: org.primeframework.jwt.rsa.RSAUtils.getPEMFromPublicKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: org.primeframework.jwt.rsa.RSAUtils.generateJWS_x5t
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.primeframework.jwt.rsa.RSAUtils.generateJWS_x5t
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.primeframework.jwt.rsa.PEMUtils.encodePrivateKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: org.primeframework.jwt.rsa.PEMUtils.encodePublicKey
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+hierarchy:
+  io.fusionauth.jwt.hmac.HMACSigner:
+    - io.fusionauth.jwt.Signer
+  io.fusionauth.jwt.rsa.RSASigner:
+    - io.fusionauth.jwt.Signer
+  io.fusionauth.jwt.rsa.RSAPSSSigner:
+    - io.fusionauth.jwt.Signer
+  io.fusionauth.jwt.ec.ECSigner:
+    - io.fusionauth.jwt.Signer
+  io.fusionauth.jwt.ed.EdDSASigner:
+    - io.fusionauth.jwt.Signer
+  io.fusionauth.jwt.hmac.HMACVerifier:
+    - io.fusionauth.jwt.Verifier
+  io.fusionauth.jwt.rsa.RSAVerifier:
+    - io.fusionauth.jwt.Verifier
+  io.fusionauth.jwt.rsa.RSAPSSVerifier:
+    - io.fusionauth.jwt.Verifier
+  io.fusionauth.jwt.ec.ECVerifier:
+    - io.fusionauth.jwt.Verifier
+  io.fusionauth.jwt.ed.EdDSAVerifier:
+    - io.fusionauth.jwt.Verifier
+  io.fusionauth.jwt.Signer:
+    - java.lang.Object
+  io.fusionauth.jwt.Verifier:
+    - java.lang.Object
+  io.fusionauth.jwt.JWTEncoder:
+    - java.lang.Object
+  io.fusionauth.jwt.JWTDecoder:
+    - java.lang.Object
+  io.fusionauth.jwt.domain.JWT:
+    - java.lang.Object
+  io.fusionauth.jwt.domain.Algorithm:
+    - java.lang.Enum
+  io.fusionauth.jwt.TimeMachineJWTDecoder:
+    - io.fusionauth.jwt.JWTDecoder
+  io.fusionauth.jwt.domain.KeyPair:
+    - java.lang.Object
+  io.fusionauth.pem.domain.PEM:
+    - java.lang.Object
+  io.fusionauth.jwks.domain.JSONWebKey:
+    - java.lang.Object
+  io.fusionauth.der.ObjectIdentifier:
+    - java.lang.Object
+  io.fusionauth.jwt.domain.RSAKeyPair:
+    - java.lang.Object
+  org.primeframework.jwt.hmac.HMACSigner:
+    - org.primeframework.jwt.Signer
+  org.primeframework.jwt.rsa.RSASigner:
+    - org.primeframework.jwt.Signer
+  org.primeframework.jwt.hmac.HMACVerifier:
+    - org.primeframework.jwt.Verifier
+  org.primeframework.jwt.rsa.RSAVerifier:
+    - org.primeframework.jwt.Verifier
+  org.primeframework.jwt.Signer:
+    - java.lang.Object
+  org.primeframework.jwt.Verifier:
+    - java.lang.Object
+  org.primeframework.jwt.JWTEncoder:
+    - java.lang.Object
+  org.primeframework.jwt.JWTDecoder:
+    - java.lang.Object
+  org.primeframework.jwt.domain.JWT:
+    - java.lang.Object
+  org.primeframework.jwt.domain.Algorithm:
+    - java.lang.Enum
+  org.primeframework.jwt.domain.RSAKeyPair:
+    - java.lang.Object
+  java.lang.Enum:
+    - java.lang.Object
+  java.security.interfaces.RSAPrivateKey:
+    - java.security.PrivateKey
+  java.security.interfaces.RSAPublicKey:
+    - java.security.PublicKey
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.security.cert.Certificate:
+    - java.lang.Object
+  java.util.List:
+    - java.lang.Object
+  java.lang.String:
+    - java.lang.Object
