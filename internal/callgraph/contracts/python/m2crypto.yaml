@@ -654,6 +654,183 @@ contracts:
     return: { type: builtins.bytes, confidence: high }
     role: output
 
+  # Rule APIs that had no contract (crypto_rules python/m2crypto after #422).
+  # Signatures read from the 0.40.0 and 0.48.0 sdists; arity counts every
+  # parameter after self, as the entries above do. CRL.verify and
+  # X509_Store_Context.verify_cert exist from 0.47.0. m2urllib.open_https is a
+  # module function taking the URLopener as its first argument, monkey-patched
+  # onto URLopener; from 0.46.0 it is defined only when URLopener exists.
+
+  # Key generation and signature verification on the key classes.
+  - method: M2Crypto.RSA.RSA.verify
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.RSA.RSA.verify_rsassa_pss
+    arity: 4
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.DSA.DSA.gen_key
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.DSA.DSA.verify
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC.gen_key
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC.verify_dsa
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC_pub.get_key
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.DH.DH.gen_key
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  # EVP streaming digests, HMAC and PKey signing and verification.
+  - method: M2Crypto.EVP.MessageDigest.update
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.HMAC.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.sign_update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.verify_final
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.digest_verify
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.assign_rsa
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+  - method: M2Crypto.EVP.PKey.assign_ec
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+  - method: M2Crypto.EVP.PKey.get_ec
+    arity: 0
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: output
+  - method: M2Crypto.BIO.CipherStream.set_cipher
+    arity: 4
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  # X.509 signing and verification, CRL and chain verification.
+  - method: M2Crypto.X509.X509.sign
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.X509.X509.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.Request.sign
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.X509.Request.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  # The CRL constructor and loader bind the receiver CRL.verify runs on.
+  - method: M2Crypto.X509.CRL
+    arity: 0
+    return: { type: M2Crypto.X509.CRL, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.CRL.<init>
+    arity: 0
+    return: { type: M2Crypto.X509.CRL, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.load_crl
+    arity: 1
+    return: { type: M2Crypto.X509.CRL, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.CRL.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.X509_Store_Context.verify_cert
+    arity: 0
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+  # S/MIME encryption and signer key loading.
+  - method: M2Crypto.SMIME.SMIME.encrypt
+    arity: 2
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: operation
+  - method: M2Crypto.SMIME.SMIME.decrypt
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.SMIME.SMIME.load_key
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+  # TLS context certificate, key and trust-anchor loading.
+  - method: M2Crypto.SSL.Context.Context.load_cert
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: M2Crypto.SSL.Context.Context.load_cert_chain
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: M2Crypto.SSL.Context.Context.load_verify_locations
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+  - method: M2Crypto.SSL.Context.Context.set_client_CA_list_from_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: M2Crypto.m2urllib.open_https
+    arity: 4
+    return: { type: urllib.response.addinfourl, confidence: high }
+    role: operation
+
 hierarchy:
   M2Crypto.RSA.RSA_pub:
     - M2Crypto.RSA.RSA
@@ -722,5 +899,9 @@ hierarchy:
   builtins.bytes:
     - builtins.object
   builtins.tuple:
+    - builtins.object
+  M2Crypto.X509.CRL:
+    - builtins.object
+  urllib.response.addinfourl:
     - builtins.object
   builtins.object: []
