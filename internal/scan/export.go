@@ -1587,7 +1587,7 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		ctx.declIndex = make(map[string][]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
 		ctx.declsByMethod = make(map[string][]operationContractDeclaration)
 		for _, fn := range result.CallGraph.Functions {
-			if fqn := ctx.contractDeclKey(fn.ID); fqn != "" {
+			for _, fqn := range ctx.contractDeclKeys(fn.ID) {
 				_, method := splitFunctionName(fqn)
 				ctx.declsByMethod[method] = append(ctx.declsByMethod[method], operationContractDeclaration{
 					declFQN: fqn,
@@ -1634,16 +1634,29 @@ func exportFunctionFQN(id callgraph.FunctionID) string {
 	return fqn
 }
 
-// contractDeclKey returns the key a declaration is indexed under for contract
+// contractDeclKeys returns the keys a declaration is indexed under for contract
 // lookups. The Rust call graph joins a declaration's module, type and name with
 // "." ("rsa::pkcs1v15.SigningKey.new") while the Rust KBs key contracts as
-// "rsa::pkcs1v15::SigningKey.new", so Rust declarations take the KB spelling.
-func (ctx *exportBuildContext) contractDeclKey(id callgraph.FunctionID) string {
+// "rsa::pkcs1v15::SigningKey.new", so Rust declarations take the KB spelling,
+// once under the declaring path and once under each public re-export of it.
+func (ctx *exportBuildContext) contractDeclKeys(id callgraph.FunctionID) []string {
 	fqn := exportFunctionFQN(id)
-	if ctx.ecosystem == ecosystemRust {
-		return rustContractMethodKey(fqn)
+	if fqn == "" {
+		return nil
 	}
-	return fqn
+	if ctx.ecosystem != ecosystemRust {
+		return []string{fqn}
+	}
+	keys := []string{rustContractMethodKey(fqn)}
+	// A Rust contract names the path a consumer imports, and a type declared in
+	// a private module and re-exported is only reachable by the declaring one.
+	if id.Package != "" && id.Type != "" && ctx.graph != nil {
+		_, method := splitFunctionName(keys[0])
+		for _, public := range ctx.graph.PublicTypePaths[id.Package+"::"+id.Type] {
+			keys = append(keys, public+"."+method)
+		}
+	}
+	return keys
 }
 
 // --- Per-finding graph builder ---

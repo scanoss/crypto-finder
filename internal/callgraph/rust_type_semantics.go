@@ -209,6 +209,11 @@ type rustFileFacts struct {
 	// `aes::Aes128` which does the encryption — is a wrong identity, not a
 	// missing one.
 	reExports map[string]rustReExportTarget
+	// publicTypePaths maps the public path of a type a plain `pub use`
+	// re-exports to the path that declares it, once
+	// resolveRustPublicTypeChains has followed it through the crate. Crate
+	// index only; see rustPublicTypePaths.
+	publicTypePaths map[string]string
 	// derefTransparent records a wrapper's bare name when the crate's own
 	// source declares `impl<T> Deref for Wrapper<T> { type Target = T; }` (or
 	// DerefMut) for it: a single type parameter, applied to the impl target
@@ -367,6 +372,7 @@ func (f *rustFileFacts) mergeCrateFacts(other *rustFileFacts) {
 	f.mergeStructFields(other)
 	f.mergeDeclaredTypes(other)
 	f.mergeReExports(other)
+	f.mergePublicTypePaths(other)
 	for name := range other.localModules {
 		f.localModules[name] = true
 	}
@@ -460,6 +466,7 @@ func newRustFileFacts() *rustFileFacts {
 		conflicting:      make(map[string]bool),
 		crateAliases:     make(map[string]string),
 		reExports:        make(map[string]rustReExportTarget),
+		publicTypePaths:  make(map[string]string),
 		derefTransparent: make(map[string]bool),
 	}
 }

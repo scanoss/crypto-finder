@@ -171,6 +171,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if b.ecosystem == ecosystemPython {
 		applyPythonReExports(graph, b.pythonReExports)
 	}
+	if provider, ok := b.parser.(publicTypePathProvider); ok {
+		graph.PublicTypePaths = provider.PublicTypePaths()
+	}
 	sourceParseDuration := time.Since(sourceParseStart)
 
 	log.Info().Int("functions", len(graph.Functions)).Msg("Source parsing complete, building caller index")
@@ -286,6 +289,12 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 type parseDirWork struct {
 	dir        string
 	importPath string
+}
+
+// publicTypePathProvider is a parser that knows the public paths its
+// ecosystem's re-exports give a declared type.
+type publicTypePathProvider interface {
+	PublicTypePaths() map[string][]string
 }
 
 // NestedModuleNamer lets a parser re-root the import path when traversal
