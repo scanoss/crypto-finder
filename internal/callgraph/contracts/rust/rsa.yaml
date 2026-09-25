@@ -4,11 +4,62 @@ library:
   name: rsa
   coordinates:
     - rsa
-  version_range: ">=0.9.0,<0.10.0"
-  description: "RustCrypto pure-Rust RSA implementation"
+  version_range: ">=0.5.0,<0.11.0"
+  description: "RustCrypto pure-Rust RSA implementation: RsaPrivateKey generation, decryption and signing"
 
+# The rsa crate spans four API eras, and version_range is per file, so each era
+# file claims only the versions where every entry in it is true. The windows
+# below were tabulated from every tier0 archive, 0.1.0 through 0.10.0-rc.18,
+# by the `pub fn` items of each inherent impl, with no gaps inside a window:
+#
+#   rsa-0.1.yaml                  RSAPrivateKey::new                       0.1.0 - 0.4.x
+#   rsa-padding-scheme.yaml       PaddingScheme::new_oaep, _encrypt        0.3.0 - 0.8.0-pre.0
+#   rsa-padding-scheme-0.3.yaml   PaddingScheme::new_pkcs1v15_sign(hash),
+#                                 new_pss(rng)                             0.3.0 - 0.7.0-pre
+#   rsa-padding-scheme-0.7.yaml   the same two at arity 0                  0.7.0-rc.0 - 0.8.0-pre.0
+#   rsa.yaml                      RsaPrivateKey::{new, new_with_exp,
+#                                 decrypt, decrypt_blinded, sign}          0.5.0 - 0.10.0-rc.18
+#   rsa-0.7.yaml                  pkcs1v15 and pss typed keys,
+#                                 RsaPrivateKey::sign_with_rng             0.7.0-rc.0 - 0.10.0-rc.18
+#   rsa-0.7-prefixed.yaml         pkcs1v15 new_with_prefix                 0.7.0-rc.0 - 0.10.0-rc.0
+#   rsa-0.8.yaml                  Oaep, Pkcs1v15Sign, Pss, random          0.8.0-rc.0 - 0.10.0-rc.18
+#   rsa-0.8.2.yaml                oaep and pkcs1v15 Encrypting/DecryptingKey 0.8.2 - 0.10.0-rc.18
+#   rsa-0.9.yaml                  RsaPublicKey::{encrypt, verify}          0.9.0-rc.0 - 0.10.0-rc.18
+#                                 (its unprefixed and salt-length entries
+#                                 exist from 0.9.0-pre.2)
+#   rsa-0.10.yaml                 pss::VerifyingKey::new_with_auto_salt_len 0.10.0-rc.5 - 0.10.0-rc.18
+#
+# The upper bound <0.11.0 is verified through 0.10.0-rc.18, the newest
+# published release; recheck it when 0.10.0 ships.
+#
+# The operations take the padding or signature scheme as an argument, so that
+# argument is operation-determining: it is what selects OAEP, PKCS#1 v1.5 or
+# PSS. Before 0.8 it is a `PaddingScheme` value, from 0.8 a typed scheme, and
+# argument_value carries the choice in both eras. Each returns a `Result`
+# and is declared as one: the bytes inside are no crypto object a caller
+# chains on, and unwrapping them would key a following `.expect()` on `Vec`.
+#
+# The factories are the calls the scanoss/crypto_rules rust/rsa rules name in
+# metadata.crypto.api, keyed as the Rust parser emits them (`rsa.Oaep.new`
+# normalizes to `rsa::Oaep.new`). Returns are the semantic type: a
+# `Result<Self>` constructor returns the key it builds.
+#
+# skipped-unsupported: `rsa.Pkcs1v15Encrypt` is a unit struct used as a value,
+# not a call, so no contract can key on it.
+# skipped-unsupported: `sign_with_rng`, `verify` and friends on the typed
+# keys are signature-crate trait methods (RandomizedSigner, Verifier), not
+# rsa's own callables. The 0.2-0.8 `PublicKey` trait's encrypt/verify are
+# trait methods too.
+# needs-follow-up (no rule selects them yet): RSAPrivateKey::new_with_exp
+# (0.4), PaddingScheme::{new_oaep_with_label, new_oaep_with_mgf_hash*,
+# new_pss_with_salt, new_pkcs1v15_sign_raw}, Pkcs1v15Sign::new_raw,
+# EncryptingKey/DecryptingKey::new_with_label, the random_* key generators,
+# the 0.10 *_unchecked constructors, RsaPrivateKey::sign_blinded (0.5-0.7)
+# and the 0.1-0.4 RSAPrivateKey operations.
+# skipped-non-crypto: RsaPublicKey::new, key accessors and the pkcs1/pkcs8
+# encoding traits.
 contracts:
-  # RsaPrivateKey::new(rng, bit_size) — the modulus size is the caller-supplied
+  # RsaPrivateKey::new(rng, bit_size). The modulus size is the caller-supplied
   # second argument, so it is argument_value evidence.
   - method: rsa::RsaPrivateKey.new
     arity: 2
@@ -19,5 +70,46 @@ contracts:
         name: bit_size
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_value }
+  # RsaPrivateKey::new_with_exp(rng, bit_size, exp).
+  - method: rsa::RsaPrivateKey.new_with_exp
+    arity: 3
+    return: { type: rsa::RsaPrivateKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+      - index: 2
+        name: exp
+        role: metadata-contributing
+        contributes: { property: publicExponent, derivation: argument_value }
+  - method: rsa::RsaPrivateKey.decrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: padding
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
+  - method: rsa::RsaPrivateKey.decrypt_blinded
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: padding
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
+  - method: rsa::RsaPrivateKey.sign
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: padding
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
 
 hierarchy: {}
