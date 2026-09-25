@@ -91,7 +91,6 @@ func m2cryptoFinding(line int, match string) entities.CryptographicAsset {
 		Rules:     []entities.RuleInfo{{ID: "python.m2crypto.synth"}},
 		Metadata:  map[string]string{"api": "M2Crypto.synth", "assetType": "algorithm", "library": "M2Crypto"},
 	}
-
 }
 
 func TestPythonM2Crypto_RuleAPIsResolveToTheirContracts(t *testing.T) {
