@@ -195,3 +195,30 @@ func TestNewTypeResolverForEcosystem_Java_StillWorks(t *testing.T) {
 		t.Fatal("NewTypeResolverForEcosystem(\"java\") returned nil; Java path was broken")
 	}
 }
+
+// TestPythonFQN_EmptyPackageHasNoLeadingSeparator pins the KB spelling of a
+// Python declaration or call with no package: the bare name, or "Type.name"
+// for a method, never ".name". Every root-level function of a scan no
+// manifest names has that shape, and a leading separator matches no KB key.
+func TestPythonFQN_EmptyPackageHasNoLeadingSeparator(t *testing.T) {
+	cases := []struct {
+		id   FunctionID
+		want string
+	}{
+		{FunctionID{Name: "f"}, "f"},
+		{FunctionID{Type: "Benchmark", Name: "_random_bytes"}, "Benchmark._random_bytes"},
+		{FunctionID{Package: "Crypto.Cipher.AES", Name: "new"}, "Crypto.Cipher.AES.new"},
+		{FunctionID{Package: "coincurve", Type: "PrivateKey", Name: "<init>"}, "coincurve.PrivateKey.<init>"},
+	}
+	for _, tc := range cases {
+		if got := pythonFunctionIDFQN(tc.id); got != tc.want {
+			t.Errorf("pythonFunctionIDFQN(%#v) = %q, want %q", tc.id, got, tc.want)
+		}
+		if got := pythonFunctionFQN(&FunctionDecl{ID: tc.id}); got != tc.want {
+			t.Errorf("pythonFunctionFQN(%#v) = %q, want %q", tc.id, got, tc.want)
+		}
+		if got := pythonCallFQN(&FunctionCall{Callee: tc.id}); got != tc.want {
+			t.Errorf("pythonCallFQN(%#v) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}

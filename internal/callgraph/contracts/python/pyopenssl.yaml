@@ -4,63 +4,269 @@ library:
   name: pyopenssl
   coordinates:
     - pyOpenSSL
-  version_range: ">=24.0"
-  description: "pyOpenSSL SSL and crypto wrapper contracts"
+  version_range: ">=0.15,<27.0"
+  description: >-
+    pyOpenSSL lifecycle contracts, split into two halves: key and certificate
+    operations (OpenSSL.crypto) and TLS context and connection configuration
+    (OpenSSL.SSL). Read at 24.3.0 and 26.3.0, with 0.15.1, 17.5.0, 20.0.1,
+    23.2.0 and 23.3.0 checked for drift.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SPELLINGS. `SSL.Context(..)` after `from OpenSSL import SSL`, and
+# `OpenSSL.SSL.Context(..)` after `import OpenSSL`, emit the attribute path
+# `OpenSSL.SSL.Context`; `from OpenSSL.SSL import Context; Context(..)` emits
+# `OpenSSL.SSL.Context.<init>`. Every constructor carries both keys. Module
+# functions and classmethods emit one key under either import.
+#
+# RETURN TYPES. Instance methods are keyed on the class a factory returns, so
+# every return type is the defining-module FQN. PKey.to_cryptography_key
+# returns one of ten cryptography key classes depending on the key, so it is
+# typed builtins.object rather than a guessed class. get_peer_certificate and
+# get_certificate return cryptography.x509.Certificate when called with the
+# keyword `as_cryptography=True` (24.x onward); keyword arguments are not bound
+# to positions yet (crypto-finder#284), so they are typed by their default,
+# OpenSSL.crypto.X509.
+#
+# ROLES. factory creates or loads a key, certificate, request, store, context
+# or connection. config sets crypto parameters on an existing object:
+# protocol bounds, cipher lists, curves, DH parameters, verify mode and depth,
+# trust anchors, the certificate and private key a context presents, and the
+# public key a certificate or request carries. operation performs the
+# cryptography: key generation and consistency checks, certificate and
+# request signing and verification, fingerprint digests, chain verification,
+# the TLS handshake, renegotiation and keying-material export. output reads an
+# already-negotiated or already-computed value, or serializes one.
+#
+# VERSION WINDOWS inside `>=0.15,<27.0` (0.14 moved the package to cffi;
+# earlier releases were a C extension and are not claimed):
+#   PKey.to_cryptography_key, from_cryptography_key     16.1.0 onward
+#   X509.to_cryptography, from_cryptography             17.1.0 onward
+#   X509Store.add_crl, set_flags, set_time              present by 17.5.0
+#   X509Store.load_locations, get_verified_chain,
+#   Connection.get_certificate, get_verified_chain      present by 20.0.1
+#   Connection.get_protocol_version_name,
+#   export_keying_material                              present by 17.5.0
+#   Context.set_min_proto_version, set_max_proto_version present by 23.2.0
+#   Context.set_tls13_ciphersuites, Connection.get_group_name
+#                                                       present by 26.3.0
+#   load_pkcs12                                         removed in 23.3.0
+#   crypto.sign, crypto.verify, PKCS12                  removed by 24.3.0
+#   X509Req, load/dump_certificate_request              removed by 26.3.0
+#
+# INVENTORY (26.3.0 public API plus the removed crypto.py surface above).
+# contracted: every entry below.
+# skipped-non-crypto: X509 set/get_version, serial number, notBefore/After,
+#   gmtime_adj_*, issuer/subject, has_expired, extension count; X509Name;
+#   PKey.type/bits (informative int); Context session, timeout, mode, app
+#   data, ALPN, SRTP and client-CA list calls; Connection send/recv/bio_*,
+#   connect/accept, shutdown, set_connect_state/set_accept_state,
+#   set_tlsext_host_name (SNI name selection), session get/set, want_*;
+#   PKCS12 friendly name and CA-certificate list.
+# skipped-informative-return: Context.get_verify_mode/get_verify_depth,
+#   Connection.get_cipher_list, get_protocol_version (int),
+#   client_random/server_random.
+# skipped-unsupported: Context.set_passwd_cb, set_info_callback,
+#   set_keylog_callback, set_tlsext_servername_callback, the OCSP and cookie
+#   callbacks (consumer-supplied callbacks the library invokes).
+# needs-follow-up: crypto.get_elliptic_curve/get_elliptic_curves (return a
+#   private _EllipticCurve type); Connection.set_verify, use_certificate and
+#   use_privatekey (present by 23.2.0, not yet windowed); X509Req
+#   to/from_cryptography; CRL, Revoked and NetscapeSPKI (removed); OpenSSL.rand.
 
 contracts:
-  - method: OpenSSL.SSL.Context
-    arity: 1
-    return: { type: OpenSSL.SSL.Context, confidence: high }
-    role: factory
-  - method: OpenSSL.SSL.Connection
-    arity: 2
-    return: { type: OpenSSL.SSL.Connection, confidence: high }
-    role: factory
+  # ══ Key and certificate operations (OpenSSL.crypto) ═══════════════════════
+
+  # ── PKey (crypto.py:237) ────────────────────────────────────────────────
   - method: OpenSSL.crypto.PKey
     arity: 0
     return: { type: OpenSSL.crypto.PKey, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.X509
-    arity: 0
-    return: { type: OpenSSL.crypto.X509, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.X509Store
-    arity: 0
-    return: { type: OpenSSL.crypto.X509Store, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.X509StoreContext
-    arity: 2
-    return: { type: OpenSSL.crypto.X509StoreContext, confidence: high }
-    role: factory
-  - method: OpenSSL.SSL.Context.<init>
-    arity: 1
-    return: { type: OpenSSL.SSL.Context, confidence: high }
-    role: factory
-  - method: OpenSSL.SSL.Connection.<init>
-    arity: 2
-    return: { type: OpenSSL.SSL.Connection, confidence: high }
     role: factory
   - method: OpenSSL.crypto.PKey.<init>
     arity: 0
     return: { type: OpenSSL.crypto.PKey, confidence: high }
     role: factory
+  # crypto.py:274 @classmethod from_cryptography_key(crypto_key)
+  - method: OpenSSL.crypto.PKey.from_cryptography_key
+    arity: 1
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  # crypto.py:335 generate_key(type, bits): TYPE_RSA / TYPE_DSA / TYPE_EC.
+  - method: OpenSSL.crypto.PKey.generate_key
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  # crypto.py:395 check(): RSA key consistency check.
+  - method: OpenSSL.crypto.PKey.check
+    arity: 0
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  # crypto.py:250 to_cryptography_key() -> one of ten key classes.
+  - method: OpenSSL.crypto.PKey.to_cryptography_key
+    arity: 0
+    return: { type: builtins.object, confidence: high }
+    role: output
+
+  # ── X509 (crypto.py:781) ────────────────────────────────────────────────
+  - method: OpenSSL.crypto.X509
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
   - method: OpenSSL.crypto.X509.<init>
     arity: 0
     return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  # crypto.py:816 @classmethod from_cryptography(crypto_cert)
+  - method: OpenSSL.crypto.X509.from_cryptography
+    arity: 1
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  # crypto.py:863
+  - method: OpenSSL.crypto.X509.get_pubkey
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  # crypto.py:882
+  - method: OpenSSL.crypto.X509.set_pubkey
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # crypto.py:901 sign(pkey, digest)
+  - method: OpenSSL.crypto.X509.sign
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+  # crypto.py:948 digest(digest_name): the certificate fingerprint.
+  - method: OpenSSL.crypto.X509.digest
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: digest_name
+        role: operation-determining
+  # crypto.py:929
+  - method: OpenSSL.crypto.X509.get_signature_algorithm
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  # crypto.py:802
+  - method: OpenSSL.crypto.X509.to_cryptography
+    arity: 0
+    return: { type: cryptography.x509.Certificate, confidence: high }
+    role: output
+
+  # ── X509Req (24.3.0 crypto.py; removed by 26.3.0) ───────────────────────
+  - method: OpenSSL.crypto.X509Req
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Req, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509Req.<init>
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Req, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509Req.get_pubkey
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.X509Req.set_pubkey
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.X509Req.sign
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+  - method: OpenSSL.crypto.X509Req.verify
+    arity: 1
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: OpenSSL.crypto.load_certificate_request
+    arity: 2
+    return: { type: OpenSSL.crypto.X509Req, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.dump_certificate_request
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ── X509Store and chain verification (crypto.py:1286 / :1473) ───────────
+  - method: OpenSSL.crypto.X509Store
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Store, confidence: high }
     role: factory
   - method: OpenSSL.crypto.X509Store.<init>
     arity: 0
     return: { type: OpenSSL.crypto.X509Store, confidence: high }
     role: factory
+  - method: OpenSSL.crypto.X509Store.add_cert
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.X509Store.add_crl
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.X509Store.set_flags
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.X509Store.set_time
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.X509Store.load_locations
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # crypto.py:1489 X509StoreContext(store, certificate, chain=None)
+  - method: OpenSSL.crypto.X509StoreContext
+    arity: 2
+    return: { type: OpenSSL.crypto.X509StoreContext, confidence: high }
+    role: factory
   - method: OpenSSL.crypto.X509StoreContext.<init>
     arity: 2
     return: { type: OpenSSL.crypto.X509StoreContext, confidence: high }
     role: factory
+  - method: OpenSSL.crypto.X509StoreContext.set_store
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # crypto.py:1590 raises X509StoreContextError on failure.
+  - method: OpenSSL.crypto.X509StoreContext.verify_certificate
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: OpenSSL.crypto.X509StoreContext.get_verified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+
+  # ── Loading and serialization (crypto.py:1631 onward) ───────────────────
   - method: OpenSSL.crypto.load_certificate
     arity: 2
     return: { type: OpenSSL.crypto.X509, confidence: high }
     role: factory
   - method: OpenSSL.crypto.load_privatekey
+    arity: 2
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.load_publickey
     arity: 2
     return: { type: OpenSSL.crypto.PKey, confidence: high }
     role: factory
@@ -72,30 +278,32 @@ contracts:
     arity: 2
     return: { type: builtins.bytes, confidence: high }
     role: output
-  - method: OpenSSL.crypto.PKey.from_cryptography_key
-    arity: 1
-    return: { type: OpenSSL.crypto.PKey, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.X509.from_cryptography
-    arity: 1
-    return: { type: OpenSSL.crypto.X509, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.X509.get_pubkey
-    arity: 0
-    return: { type: OpenSSL.crypto.PKey, confidence: high }
-    role: factory
-  - method: OpenSSL.crypto.load_publickey
-    arity: 2
-    return: { type: OpenSSL.crypto.PKey, confidence: high }
-    role: factory
   - method: OpenSSL.crypto.dump_publickey
     arity: 2
     return: { type: builtins.bytes, confidence: high }
     role: output
+
+  # ── Removed one-shot signatures (23.2.0 crypto.py:3102 / :3137) ─────────
+  # sign(pkey, data, digest); verify(cert, signature, data, digest) raises
+  # on a bad signature.
   - method: OpenSSL.crypto.sign
     arity: 3
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+    parameters:
+      - index: 2
+        name: digest
+        role: operation-determining
+  - method: OpenSSL.crypto.verify
+    arity: 4
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+    parameters:
+      - index: 3
+        name: digest
+        role: operation-determining
+
+  # ── Removed PKCS#12 container (23.2.0 crypto.py:2616 / :3275) ───────────
   - method: OpenSSL.crypto.PKCS12
     arity: 0
     return: { type: OpenSSL.crypto.PKCS12, confidence: high }
@@ -108,7 +316,233 @@ contracts:
     arity: 1
     return: { type: OpenSSL.crypto.PKCS12, confidence: high }
     role: factory
+  - method: OpenSSL.crypto.PKCS12.get_certificate
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKCS12.get_privatekey
+    arity: 0
+    return: { type: OpenSSL.crypto.PKey, confidence: high }
+    role: factory
+  - method: OpenSSL.crypto.PKCS12.set_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.crypto.PKCS12.set_privatekey
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
   - method: OpenSSL.crypto.PKCS12.export
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ══ TLS context and connection configuration (OpenSSL.SSL) ════════════════
+
+  # ── Context (SSL.py:878) ────────────────────────────────────────────────
+  # SSL.py:904 Context(method): TLS_METHOD, TLS_CLIENT_METHOD, ...
+  - method: OpenSSL.SSL.Context
+    arity: 1
+    return: { type: OpenSSL.SSL.Context, confidence: high }
+    role: factory
+    parameters: &ssl_method_param
+      - index: 0
+        name: method
+        role: operation-determining
+  - method: OpenSSL.SSL.Context.<init>
+    arity: 1
+    return: { type: OpenSSL.SSL.Context, confidence: high }
+    role: factory
+    parameters: *ssl_method_param
+  # SSL.py:954 / :968
+  - method: OpenSSL.SSL.Context.set_min_proto_version
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters: &ssl_version_param
+      - index: 0
+        name: version
+        role: operation-determining
+  - method: OpenSSL.SSL.Context.set_max_proto_version
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters: *ssl_version_param
+  # SSL.py:1735 set_options(options): OP_NO_TLSv1, OP_NO_COMPRESSION, ...
+  - method: OpenSSL.SSL.Context.set_options
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: options
+        role: operation-determining
+  # SSL.py:1500 / :1523
+  - method: OpenSSL.SSL.Context.set_cipher_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: cipher_list
+        role: operation-determining
+  - method: OpenSSL.SSL.Context.set_tls13_ciphersuites
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: ciphersuites
+        role: operation-determining
+  # SSL.py:1460 / :1438: key-exchange parameters.
+  - method: OpenSSL.SSL.Context.set_tmp_ecdh
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: curve
+        role: operation-determining
+  - method: OpenSSL.SSL.Context.load_tmp_dh
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # SSL.py:1368 set_verify(mode, callback=None) / :1406
+  - method: OpenSSL.SSL.Context.set_verify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: mode
+        role: operation-determining
+  - method: OpenSSL.SSL.Context.set_verify_depth
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # SSL.py:982 / :1069: trust anchors.
+  - method: OpenSSL.SSL.Context.load_verify_locations
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.set_default_verify_paths
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # SSL.py:1145 / :1163 / :1188 / :1213 / :1246 / :1271: what the context
+  # presents.
+  - method: OpenSSL.SSL.Context.use_certificate_chain_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.use_certificate_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.use_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.add_extra_chain_cert
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.use_privatekey_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: OpenSSL.SSL.Context.use_privatekey
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # SSL.py:1295 checks the private key matches the certificate.
+  - method: OpenSSL.SSL.Context.check_privatekey
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  # SSL.py:1717
+  - method: OpenSSL.SSL.Context.get_cert_store
+    arity: 0
+    return: { type: OpenSSL.crypto.X509Store, confidence: high }
+    role: output
+
+  # ── Connection (SSL.py:1970) ────────────────────────────────────────────
+  # SSL.py:1975 Connection(context, socket=None)
+  - method: OpenSSL.SSL.Connection
+    arity: 1
+    return: { type: OpenSSL.SSL.Connection, confidence: high }
+    role: factory
+  - method: OpenSSL.SSL.Connection.<init>
+    arity: 1
+    return: { type: OpenSSL.SSL.Connection, confidence: high }
+    role: factory
+  # SSL.py:2478 / :2467
+  - method: OpenSSL.SSL.Connection.do_handshake
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: OpenSSL.SSL.Connection.renegotiate
+    arity: 0
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  # SSL.py:2818 export_keying_material(label, olen, context=None)
+  - method: OpenSSL.SSL.Connection.export_keying_material
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: olen
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+  # SSL.py:2895 / :2860 / :2963 / :2998
+  - method: OpenSSL.SSL.Connection.get_peer_certificate
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_certificate
+    arity: 0
+    return: { type: OpenSSL.crypto.X509, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_peer_cert_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_verified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  # SSL.py:3175 / :3191 / :3206 / :3222 / :3308: negotiated parameters.
+  - method: OpenSSL.SSL.Connection.get_cipher_name
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_cipher_bits
+    arity: 0
+    return: { type: builtins.int, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_cipher_version
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_protocol_version_name
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_group_name
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  # SSL.py:2802 / :3153 / :3164: session secrets and Finished MACs.
+  - method: OpenSSL.SSL.Connection.master_key
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_finished
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: OpenSSL.SSL.Connection.get_peer_finished
     arity: 0
     return: { type: builtins.bytes, confidence: high }
     role: output
@@ -122,12 +556,26 @@ hierarchy:
     - builtins.object
   OpenSSL.crypto.X509:
     - builtins.object
+  OpenSSL.crypto.X509Req:
+    - builtins.object
   OpenSSL.crypto.X509Store:
     - builtins.object
   OpenSSL.crypto.X509StoreContext:
     - builtins.object
   OpenSSL.crypto.PKCS12:
     - builtins.object
+  cryptography.x509.Certificate:
+    - builtins.object
   builtins.bytes:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.int:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.NoneType:
     - builtins.object
   builtins.object: []

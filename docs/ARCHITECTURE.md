@@ -159,7 +159,7 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
 | Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.15` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.13` | The fragment wire format changes |
-| Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-2` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
+| Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-3` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
 Schema `6.15` is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 

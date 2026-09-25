@@ -248,18 +248,15 @@ func existsPath(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// detectRootModule tries to determine the root project name from manifest files.
+// detectRootModule returns the project name pyproject.toml declares, or ""
+// when there is none. The directory name is never a substitute: it names no
+// module and leaks the scan location into every symbol and occurrence key.
 func (r *PipResolver) detectRootModule(targetDir string) string {
-	// Try pyproject.toml first
-	pyprojectPath := filepath.Join(targetDir, "pyproject.toml")
-	if data, err := os.ReadFile(pyprojectPath); err == nil {
-		if name := parsePyprojectName(string(data)); name != "" {
-			return name
-		}
+	data, err := os.ReadFile(filepath.Join(targetDir, "pyproject.toml"))
+	if err != nil {
+		return ""
 	}
-
-	// Try setup.py / setup.cfg — just use directory name as fallback
-	return filepath.Base(targetDir)
+	return parsePyprojectName(string(data))
 }
 
 // parsePyprojectName extracts the project name from pyproject.toml.

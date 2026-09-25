@@ -237,7 +237,7 @@ func TestBuildJavaMethodLookup_FiltersByArity(t *testing.T) {
 func TestApplyResolvedJavaCall_AllowsFullClassWithoutPackage(t *testing.T) {
 	graph := &CallGraph{
 		Functions: map[string]*FunctionDecl{
-			".(StandaloneType).helper#0": {
+			"(StandaloneType).helper#0": {
 				ID: FunctionID{Type: "StandaloneType", Name: "helper#0"},
 			},
 			"app.run#0": {
@@ -262,7 +262,7 @@ func TestApplyResolvedJavaCall_AllowsFullClassWithoutPackage(t *testing.T) {
 	if call.Callee.Package != "" || call.Callee.Type != "StandaloneType" || call.Callee.Name != "helper#0" {
 		t.Fatalf("call.Callee = %#v, want packageless StandaloneType.helper#0", call.Callee)
 	}
-	callers := graph.Callers[".(StandaloneType).helper#0"]
+	callers := graph.Callers["(StandaloneType).helper#0"]
 	if len(callers) != 1 || callers[0] != "app.run#0" {
 		t.Fatalf("unexpected callers index: %#v", graph.Callers)
 	}

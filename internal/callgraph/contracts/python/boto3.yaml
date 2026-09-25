@@ -4,11 +4,49 @@ library:
   name: boto3
   coordinates:
     - boto3
-  version_range: ">=1.0"
+  version_range: ">=0.0.1"
   description: "boto3 AWS SDK KMS client contracts"
+
+# Read at boto3 1.43.102 (boto3/__init__.py, boto3/session.py) and the
+# botocore 1.43.102 KMS service model (botocore/data/kms/2014-11-01/
+# service-2.json); checked against boto3 0.0.1, 0.0.6 and 1.0.0.
+#
+# VERSION RANGE. boto3.client, boto3.Session and Session.client(service_name,
+# ..) all exist from 0.0.1, so the range starts there. Which KMS operations a
+# client offers is botocore's model, not boto3's: GenerateMac, VerifyMac and
+# DeriveSharedSecret arrive in later botocore releases, and a call to one on an
+# older release does not exist to be keyed.
+#
+# FOUR SESSION SPELLINGS. A Python call-graph key follows the consumer's
+# import: `boto3.Session()` emits `boto3.Session`, `from boto3 import Session`
+# emits `boto3.Session.<init>`, `boto3.session.Session()` emits
+# `boto3.session.Session` and `from boto3.session import Session` emits
+# `boto3.session.Session.<init>`. All four build the same class.
+#
+# THE KMS CLIENT IS CONDITIONAL. botocore builds every service client at
+# runtime, so `client('kms')` is the only place the KMS type exists. The
+# receiver binds only when the service name is one of the literals below; a
+# variable or keyword service name leaves the client unbound.
+#
+# ROLES. Every KMS call below except get_public_key runs cryptography inside
+# KMS (encrypt, decrypt, re-encrypt, key and data-key generation, random
+# generation, MAC, signature, key agreement), so it is `operation`.
+# get_public_key returns stored key material and stays `output`.
+#
+# NOT CONTRACTED. create_key, import_key_material and
+# get_parameters_for_import manage keys and have no detection rule yet; they
+# belong with the rules that would find them.
 
 contracts:
   - method: boto3.Session
+    arity: 0
+    return: { type: boto3.session.Session, confidence: high }
+    role: factory
+  - method: boto3.Session.<init>
+    arity: 0
+    return: { type: boto3.session.Session, confidence: high }
+    role: factory
+  - method: boto3.session.Session
     arity: 0
     return: { type: boto3.session.Session, confidence: high }
     role: factory
@@ -33,51 +71,55 @@ contracts:
   - method: botocore.client.KMS.encrypt
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.decrypt
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.generate_data_key
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.generate_data_key_without_plaintext
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.re_encrypt
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.generate_random
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.generate_mac
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.verify_mac
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.derive_shared_secret
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.generate_data_key_pair
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
+  - method: botocore.client.KMS.generate_data_key_pair_without_plaintext
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: operation
   - method: botocore.client.KMS.sign
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.verify
     arity: 0
     return: { type: builtins.dict, confidence: high }
-    role: output
+    role: operation
   - method: botocore.client.KMS.get_public_key
     arity: 0
     return: { type: builtins.dict, confidence: high }

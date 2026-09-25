@@ -220,8 +220,8 @@ func TestLoadEmbedded_Python_Paramiko(t *testing.T) {
 			wantLib:    "paramiko",
 		},
 		{
-			method:     "paramiko.ed25519key.Ed25519Key.generate",
-			arity:      0,
+			method:     "paramiko.ed25519key.Ed25519Key.from_private_key_file",
+			arity:      1,
 			wantReturn: "paramiko.ed25519key.Ed25519Key",
 			wantLib:    "paramiko",
 		},
