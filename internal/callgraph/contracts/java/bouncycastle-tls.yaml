@@ -1,0 +1,90 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-tls
+  coordinates:
+    - "org.bouncycastle:bctls-jdk15on"
+    - "org.bouncycastle:bctls-jdk18on"
+  version_range: ">=1.57,<2.0"
+  description: "Bouncy Castle bctls: TLS and DTLS protocol engines and the BCJSSE provider"
+
+# Authored from javap over every tier0 bctls jar, bctls-jdk15on 1.57 through
+# 1.70 and bctls-jdk18on 1.71 through 1.84. Each entry below exists, with this
+# arity and return, in all 32. bctls first ships at 1.57; before that the TLS
+# engines lived in bcprov under org.bouncycastle.crypto.tls.
+#
+# The DTLS protocol constructors change at 1.58: 1.57 takes a SecureRandom
+# (bouncycastle-tls-1.57.yaml) and 1.58 onwards takes nothing
+# (bouncycastle-tls-1.58.yaml). version_range is per file, so they cannot sit
+# here.
+#
+# The protocol constructors create the engine and connect/accept run the
+# handshake. A blocking engine is built over (InputStream, OutputStream); the
+# no-argument form is the non-blocking engine fed through offerInput.
+#
+# Inventory, beyond the contracted entries:
+#   ProtocolVersion.TLSv1x / DTLSv1x / SSLv3 (rule apis)  skipped-unsupported: static fields, not calls
+#   SSLContext.getInstance(protocol, "BCJSSE")            contracted in jdk-crypto.yaml (a JDK method)
+#   DTLSServerProtocol.accept(server, transport, request) needs-follow-up: 1.62+, no rule selects it
+#   BouncyCastleJsseProvider.configure, TlsProtocol stream accessors, offerInput/readOutput, close,
+#   DTLSServerProtocol.set/getVerifyRequests               skipped-non-crypto
+contracts:
+  - method: org.bouncycastle.tls.TlsClientProtocol.<init>
+    arity: 0
+    return: { type: org.bouncycastle.tls.TlsClientProtocol, confidence: high }
+    role: factory
+  - method: org.bouncycastle.tls.TlsClientProtocol.<init>
+    arity: 2
+    return: { type: org.bouncycastle.tls.TlsClientProtocol, confidence: high }
+    role: factory
+  - method: org.bouncycastle.tls.TlsServerProtocol.<init>
+    arity: 0
+    return: { type: org.bouncycastle.tls.TlsServerProtocol, confidence: high }
+    role: factory
+  - method: org.bouncycastle.tls.TlsServerProtocol.<init>
+    arity: 2
+    return: { type: org.bouncycastle.tls.TlsServerProtocol, confidence: high }
+    role: factory
+  - method: org.bouncycastle.tls.TlsClientProtocol.connect
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.tls.TlsServerProtocol.accept
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.tls.DTLSClientProtocol.connect
+    arity: 2
+    return: { type: org.bouncycastle.tls.DTLSTransport, confidence: high }
+    role: operation
+  - method: org.bouncycastle.tls.DTLSServerProtocol.accept
+    arity: 2
+    return: { type: org.bouncycastle.tls.DTLSTransport, confidence: high }
+    role: operation
+  - method: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider.<init>
+    arity: 0
+    return: { type: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider, confidence: high }
+    role: factory
+  - method: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider.<init>
+    arity: 1
+    return: { type: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider, confidence: high }
+    role: factory
+  - method: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider.<init>
+    arity: 2
+    return: { type: org.bouncycastle.jsse.provider.BouncyCastleJsseProvider, confidence: high }
+    role: factory
+
+hierarchy:
+  org.bouncycastle.tls.TlsClientProtocol:
+    - org.bouncycastle.tls.TlsProtocol
+  org.bouncycastle.tls.TlsServerProtocol:
+    - org.bouncycastle.tls.TlsProtocol
+  org.bouncycastle.tls.TlsProtocol:
+    - java.lang.Object
+  org.bouncycastle.tls.DTLSTransport:
+    - java.lang.Object
+  org.bouncycastle.jsse.provider.BouncyCastleJsseProvider:
+    - java.security.Provider
+  java.security.Provider:
+    - java.lang.Object
+  java.lang.Object: []
