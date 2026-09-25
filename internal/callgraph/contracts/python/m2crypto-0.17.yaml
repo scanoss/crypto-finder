@@ -1,0 +1,35 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.17
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.17"
+  description: "M2Crypto APIs added in 0.17: the HTTPS proxy connection and the urllib2 HTTPS handler"
+
+contracts:
+  - method: M2Crypto.httpslib.ProxyHTTPSConnection
+    arity: 1
+    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.httpslib.ProxyHTTPSConnection.<init>
+    arity: 1
+    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
+    role: factory
+  - method: M2Crypto.m2urllib2.HTTPSHandler
+    arity: 0
+    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
+    role: factory
+  - method: M2Crypto.m2urllib2.HTTPSHandler.<init>
+    arity: 0
+    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
+    role: factory
+
+hierarchy:
+  M2Crypto.m2urllib2.HTTPSHandler:
+    - builtins.object
+  M2Crypto.httpslib.ProxyHTTPSConnection:
+    - M2Crypto.httpslib.HTTPSConnection
+  M2Crypto.httpslib.HTTPSConnection:
+    - builtins.object
+  builtins.object: []

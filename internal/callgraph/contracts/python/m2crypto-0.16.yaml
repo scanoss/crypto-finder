@@ -1,0 +1,123 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.16
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.16"
+  description: "M2Crypto APIs added in 0.16: the EC module (keys, ECDSA and ECDH), RSA sign and verify, DSA public key loaders, and EVP PKey DER export and RSA access"
+
+contracts:
+  - method: M2Crypto.RSA.RSA.sign
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.as_der
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.EVP.PKey.get_rsa
+    arity: 0
+    return: { type: M2Crypto.RSA.RSA, confidence: high }
+    role: factory
+  - method: M2Crypto.DSA.load_pub_key
+    arity: 1
+    return: { type: M2Crypto.DSA.DSA_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.DSA.load_pub_key_bio
+    arity: 1
+    return: { type: M2Crypto.DSA.DSA_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC
+    arity: 0
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC.<init>
+    arity: 0
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC_pub
+    arity: 0
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC_pub.<init>
+    arity: 0
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.gen_params
+    arity: 1
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.load_key
+    arity: 1
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.load_key_bio
+    arity: 1
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.load_pub_key
+    arity: 1
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.load_pub_key_bio
+    arity: 1
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.pub_key_from_der
+    arity: 1
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC.pub
+    arity: 0
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC.compute_dh_key
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC_pub.get_der
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.EC.EC.sign_dsa
+    arity: 1
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC.sign_dsa_asn1
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.RSA.RSA.verify
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.EC.EC.gen_key
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.EC.EC.verify_dsa
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+hierarchy:
+  builtins.tuple:
+    - builtins.object
+  M2Crypto.EC.EC:
+    - builtins.object
+  M2Crypto.DSA.DSA_pub:
+    - M2Crypto.DSA.DSA
+  M2Crypto.DSA.DSA:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  M2Crypto.EC.EC_pub:
+    - M2Crypto.EC.EC
+  M2Crypto.RSA.RSA:
+    - builtins.object
+  builtins.object: []
