@@ -2,7 +2,9 @@ package callgraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -286,6 +288,132 @@ func NewPythonParser(opts ...ParserOption) *PythonParser {
 // for concurrent use (tree-sitter parsers are not reentrant).
 func (p *PythonParser) CloneParser() Parser {
 	return NewPythonParser(WithIncludeTests(p.includeTests))
+}
+
+// IsLayoutDir implements LayoutDirNamer: a `src` or `lib` directory that is
+// not itself a package (no __init__.py) is a packaging convention, not a
+// module. The importable package lives one level down, and `import Crypto`
+// is how a consumer reaches pycryptodome's lib/Crypto, so the directory
+// contributes nothing to the module path. A `lib/__init__.py` is a real
+// package named lib and keeps its name.
+//
+// Collapsing the directory promotes its modules to the root, so it stays a
+// segment when any module it would promote is already defined there: by a
+// root module or package, or by the other layout directory. Otherwise
+// `src/a/__init__.py` and `lib/a/__init__.py` would both key `a.f`, and one
+// finding would point at the other file's function.
+func (p *PythonParser) IsLayoutDir(dir string) bool {
+	if !isPythonLayoutDir(dir) {
+		return false
+	}
+	taken := pythonRootModuleNames(filepath.Dir(dir), dir)
+	for name := range pythonModuleNames(dir) {
+		if taken[name] {
+			return false
+		}
+	}
+	return true
+}
+
+func isPythonLayoutDir(dir string) bool {
+	switch filepath.Base(dir) {
+	case "src", "lib":
+	default:
+		return false
+	}
+	return !isPythonPackage(dir)
+}
+
+func isPythonPackage(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, pythonInitPyFileName))
+	return err == nil
+}
+
+// pythonRootModuleNames is the set of module names defined at the package
+// root as seen from the layout directory `layoutDir`: every module and
+// package directly under the root, with any other layout directory replaced
+// by the modules it promotes.
+func pythonRootModuleNames(root, layoutDir string) map[string]bool {
+	names := map[string]bool{}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return names
+	}
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		if path == layoutDir {
+			continue
+		}
+		if entry.IsDir() && isPythonLayoutDir(path) {
+			for name := range pythonModuleNames(path) {
+				names[name] = true
+			}
+			continue
+		}
+		if name, ok := pythonModuleName(path, entry); ok {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// pythonModuleNames is the set of module names a directory defines directly:
+// each .py file by its stem, and each subdirectory that holds Python.
+func pythonModuleNames(dir string) map[string]bool {
+	names := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return names
+	}
+	for _, entry := range entries {
+		if name, ok := pythonModuleName(filepath.Join(dir, entry.Name()), entry); ok {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// pythonModuleName is the module name a directory entry defines, if any. A
+// directory counts when a .py file sits anywhere below it, so a namespace
+// package whose Python lives only in deeper subpackages (`a/b/x.py` with no
+// `a/*.py`) still names `a`, while `__pycache__` or a directory of C sources
+// names nothing.
+func pythonModuleName(path string, entry os.DirEntry) (string, bool) {
+	name := entry.Name()
+	if !entry.IsDir() {
+		if !strings.HasSuffix(name, ".py") || name == pythonInitPyFileName {
+			return "", false
+		}
+		return strings.TrimSuffix(name, ".py"), true
+	}
+	if pythonDirHoldsSource(path) {
+		return name, true
+	}
+	return "", false
+}
+
+var errPythonSourceFound = errors.New("python source found")
+
+// pythonDirHoldsSource reports whether any .py file sits under dir, however
+// deep. The walk stops at the first one and does not enter hidden
+// directories, whose names no import statement can spell.
+func pythonDirHoldsSource(dir string) bool {
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			if path != dir && strings.HasPrefix(entry.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(entry.Name(), ".py") {
+			return errPythonSourceFound
+		}
+		return nil
+	})
+	return errors.Is(err, errPythonSourceFound)
 }
 
 // SubPackagePath constructs a child module path using "." separator.

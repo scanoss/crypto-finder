@@ -1140,7 +1140,7 @@ The `JavaParser` resolves method calls through import analysis:
 
 The `PipResolver` executes the following steps:
 
-1. **Root module detection** — reads `pyproject.toml` for `[project] name`, falls back to directory name
+1. **Root module detection** — reads `pyproject.toml` for `[project] name` or `[tool.poetry] name`; with neither the root module is empty and the project's own symbols are keyed at the scan root, never by the directory name
 2. **`python -m pip list --format=json`** — lists all installed packages with versions
 3. **`python -m pip show <packages>`** — gets location and dependency info for each package (batched in groups of 50)
 4. **Distribution-to-import mapping** — uses that SAME interpreter's `importlib.metadata.packages_distributions()` (Python 3.10+) to map distribution names to import names. Falls back to scanning `*.dist-info` directories (`top_level.txt` → `RECORD` file) for older Python versions

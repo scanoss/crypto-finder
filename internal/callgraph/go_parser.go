@@ -139,7 +139,12 @@ func (p *GoParser) SkipsDirNamed(name string) bool {
 }
 
 // SubPackagePath constructs a child import path by appending the dir name with "/".
+// A tree with no go.mod has no module path, so its packages are named by their
+// directory alone rather than with a leading "/".
 func (p *GoParser) SubPackagePath(parentPath, dirName string) string {
+	if parentPath == "" {
+		return dirName
+	}
 	return parentPath + "/" + dirName
 }
 
