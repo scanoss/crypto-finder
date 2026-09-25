@@ -14,10 +14,11 @@ library:
 # Every method returns the crypt(3) string, so each name and arity has one
 # return.
 #
-# Each method derives the stored password hash, so all carry role operation.
-# Crypt.crypt is the dispatcher: the salt prefix ($1$, $5$, $6$, or none for
-# DES) selects the algorithm, so its salt argument is operation-determining.
-# The named classes fix the algorithm in the method and expose nothing further.
+# Every method hashes a password into a crypt(3) string, so each carries role
+# operation. Crypt.crypt picks the scheme from the salt prefix ($1$ MD5, $5$
+# SHA-256, $6$ SHA-512, otherwise DES), so its salt is operation-determining.
+# UnixCrypt, Md5Crypt and Sha2Crypt fix the scheme in the method name, so no
+# argument selects it.
 #
 # Dispositions for the rest of the public surface:
 #   skipped-non-crypto: the deprecated public no-argument constructors of
