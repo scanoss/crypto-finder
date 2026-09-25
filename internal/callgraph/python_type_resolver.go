@@ -340,10 +340,13 @@ func isPythonSourceFile(filePath string) bool {
 // FunctionID.String() renders a type-qualified id as "Package.(Type).Name",
 // which no KB key matches.
 func pythonCallFQN(call *FunctionCall) string {
+	// A chain link typed through the contract KB is renamed "name#arity";
+	// a Python identifier never contains '#', so the suffix is safe to drop.
+	name, _, _ := strings.Cut(call.Callee.Name, "#")
 	if call.Callee.Type != "" {
-		return call.Callee.Package + "." + call.Callee.Type + "." + call.Callee.Name
+		return call.Callee.Package + "." + call.Callee.Type + "." + name
 	}
-	return call.Callee.Package + "." + call.Callee.Name
+	return call.Callee.Package + "." + name
 }
 
 // pythonFunctionFQN derives the fully-qualified method name for a FunctionDecl
