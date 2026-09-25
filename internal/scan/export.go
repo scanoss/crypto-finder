@@ -1339,6 +1339,9 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 		if len(matches) == 0 && ctx.kb.Ecosystem == "cpp" && call.Callee.Type != "" && call.Callee.Linkage != callgraph.LinkageInternal && !hasCallDeclaration(ctx.graph, call.Callee) {
 			matches = ctx.kb.ContractsForTolerant(call.Callee.Type+"."+callgraph.BaseFunctionName(call.Callee.Name), arity)
 		}
+		if len(matches) == 0 && ctx.kb.Ecosystem == ecosystemJava {
+			matches = ctx.inheritedContracts(fqn, arity)
+		}
 		return exactConditionalContracts(matches, call)
 	}
 	if exact := ctx.kb.ContractsFor(fqn, arity); len(exact) > 0 {
@@ -1349,6 +1352,37 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 	}
 	externalGlobal := call.Callee.Linkage == callgraph.LinkageExternal && ctx.graph.Functions[call.Callee.String()] == nil
 	return exactConditionalContracts(ctx.kb.ContractsForCFunction(fqn, arity, externalGlobal), call)
+}
+
+// inheritedContracts finds the contracts a Java method inherits when the KB
+// declares it on a supertype of the called class rather than on the class
+// itself. It walks the contract hierarchy breadth first and returns the
+// nearest level that declares the method, so the most specific declaration
+// wins. Constructors are not inherited.
+func (ctx *exportBuildContext) inheritedContracts(fqn string, arity int) []contracts.Contract {
+	class, method := splitFunctionName(fqn)
+	if class == "" || method == "<init>" || method == "<clinit>" {
+		return nil
+	}
+	seen := map[string]bool{class: true}
+	level := ctx.kb.Hierarchy[class]
+	for len(level) > 0 {
+		var matches []contracts.Contract
+		var next []string
+		for _, parent := range level {
+			if seen[parent] {
+				continue
+			}
+			seen[parent] = true
+			matches = append(matches, ctx.kb.ContractsFor(parent+"."+method, arity)...)
+			next = append(next, ctx.kb.Hierarchy[parent]...)
+		}
+		if len(matches) > 0 {
+			return matches
+		}
+		level = next
+	}
+	return nil
 }
 
 func exactConditionalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
