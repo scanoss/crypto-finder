@@ -2,6 +2,8 @@ package contracts_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,38 +106,55 @@ func TestLoadEmbeddedRustIncludesRingContracts(t *testing.T) {
 		t.Fatalf("LoadEmbedded(rust): %v", err)
 	}
 
+	// lib names the file that owns the contract: the first release whose
+	// signature matches it, per the ring*.yaml version ranges.
 	tests := []struct {
 		method string
 		arity  int
 		role   string
 		ret    string
+		lib    string
 	}{
-		{"ring::aead::UnboundKey.new", 2, "factory", "ring::aead::UnboundKey"},
-		{"ring::aead::LessSafeKey.new", 1, "factory", "ring::aead::LessSafeKey"},
-		{"ring::aead::Nonce.assume_unique_for_key", 1, "factory", "ring::aead::Nonce"},
-		{"ring::aead::LessSafeKey.seal_in_place_append_tag", 3, "operation", "()"},
-		{"ring::digest.digest", 2, "operation", "ring::digest::Digest"},
-		{"ring::digest::Context.new", 1, "factory", "ring::digest::Context"},
-		{"ring::digest::Context.update", 1, "operation", "()"},
-		{"ring::digest::Context.finish", 0, "output", "ring::digest::Digest"},
-		{"ring::hmac::Key.new", 2, "factory", "ring::hmac::Key"},
-		{"ring::hmac::Key.generate", 2, "factory", "ring::hmac::Key"},
-		{"ring::hmac.sign", 2, "operation", "ring::hmac::Tag"},
-		{"ring::hmac.verify", 3, "operation", "()"},
-		{"ring::hmac::Context.with_key", 1, "factory", "ring::hmac::Context"},
-		{"ring::hmac::Context.update", 1, "operation", "()"},
-		{"ring::hmac::Context.sign", 0, "output", "ring::hmac::Tag"},
-		{"ring::hkdf::Salt.new", 2, "factory", "ring::hkdf::Salt"},
-		{"ring::hkdf::Salt.extract", 1, "operation", "ring::hkdf::Prk"},
-		{"ring::hkdf::Prk.expand", 2, "operation", "ring::hkdf::Okm"},
-		{"ring::hkdf::Okm.fill", 1, "output", "()"},
-		{"ring::agreement::EphemeralPrivateKey.generate", 2, "factory", "ring::agreement::EphemeralPrivateKey"},
-		{"ring::agreement::EphemeralPrivateKey.compute_public_key", 0, "output", "ring::agreement::PublicKey"},
-		{"ring::agreement::UnparsedPublicKey.new", 2, "factory", "ring::agreement::UnparsedPublicKey"},
-		{"ring::signature::Ed25519KeyPair.from_pkcs8", 1, "factory", "ring::signature::Ed25519KeyPair"},
-		{"ring::signature::Ed25519KeyPair.sign", 1, "operation", "ring::signature::Signature"},
-		{"ring::signature::UnparsedPublicKey.new", 2, "factory", "ring::signature::UnparsedPublicKey"},
-		{"ring::signature::UnparsedPublicKey.verify", 2, "operation", "()"},
+		{"ring::aead::UnboundKey.new", 2, "factory", "ring::aead::UnboundKey", "ring-0.15"},
+		{"ring::aead::LessSafeKey.new", 1, "factory", "ring::aead::LessSafeKey", "ring-0.15"},
+		{"ring::aead::Nonce.assume_unique_for_key", 1, "factory", "ring::aead::Nonce", "ring-0.14"},
+		{"ring::aead::LessSafeKey.seal_in_place_append_tag", 3, "operation", "()", "ring-0.16.2"},
+		{"ring::digest.digest", 2, "operation", "ring::digest::Digest", "ring"},
+		{"ring::digest::Context.new", 1, "factory", "ring::digest::Context", "ring"},
+		{"ring::digest::Context.update", 1, "operation", "()", "ring"},
+		{"ring::digest::Context.finish", 0, "output", "ring::digest::Digest", "ring"},
+		{"ring::hmac::Key.new", 2, "factory", "ring::hmac::Key", "ring-0.15"},
+		{"ring::hmac::Key.generate", 2, "factory", "ring::hmac::Key", "ring-0.15"},
+		{"ring::hmac.sign", 2, "operation", "ring::hmac::Tag", "ring-0.15"},
+		{"ring::hmac.verify", 3, "operation", "()", "ring"},
+		{"ring::hmac::Context.with_key", 1, "factory", "ring::hmac::Context", "ring-0.15"},
+		{"ring::hmac::Context.update", 1, "operation", "()", "ring-0.15"},
+		{"ring::hmac::Context.sign", 0, "output", "ring::hmac::Tag", "ring-0.15"},
+		{"ring::hkdf::Salt.new", 2, "factory", "ring::hkdf::Salt", "ring-0.15"},
+		{"ring::hkdf::Salt.extract", 1, "operation", "ring::hkdf::Prk", "ring-0.15"},
+		{"ring::hkdf::Prk.expand", 2, "operation", "ring::hkdf::Okm", "ring-0.15"},
+		{"ring::hkdf::Okm.fill", 1, "output", "()", "ring-0.15"},
+		{"ring::agreement::EphemeralPrivateKey.generate", 2, "factory", "ring::agreement::EphemeralPrivateKey", "ring"},
+		{"ring::agreement::EphemeralPrivateKey.compute_public_key", 0, "output", "ring::agreement::PublicKey", "ring-0.14"},
+		{"ring::agreement::UnparsedPublicKey.new", 2, "factory", "ring::agreement::UnparsedPublicKey", "ring-0.15"},
+		{"ring::signature::Ed25519KeyPair.from_pkcs8", 1, "factory", "ring::signature::Ed25519KeyPair", "ring-0.9"},
+		{"ring::signature::Ed25519KeyPair.sign", 1, "operation", "ring::signature::Signature", "ring"},
+		{"ring::signature::UnparsedPublicKey.new", 2, "factory", "ring::signature::UnparsedPublicKey", "ring-0.15"},
+		{"ring::signature::UnparsedPublicKey.verify", 2, "operation", "()", "ring-0.15"},
+		{"ring::pbkdf2.derive", 5, "operation", "()", "ring"},
+		{"ring::pbkdf2.verify", 5, "operation", "()", "ring"},
+		{"ring::rand::SystemRandom.new", 0, "factory", "ring::rand::SystemRandom", "ring"},
+		{"ring::rand::SecureRandom.fill", 1, "operation", "()", "ring"},
+		{"ring::rand.generate", 1, "operation", "ring::rand::Random", "ring-0.15"},
+		{"ring::rand::Random.expose", 0, "output", "T", "ring-0.15"},
+		{"ring::signature::Ed25519KeyPair.generate_pkcs8", 1, "factory", "ring::pkcs8::Document", "ring-0.14"},
+		{"ring::aead::chacha20_poly1305_openssh::SealingKey.new", 1, "factory", "ring::aead::chacha20_poly1305_openssh::SealingKey", "ring-0.5"},
+		{"ring::aead::chacha20_poly1305_openssh::SealingKey.seal_in_place", 3, "operation", "()", "ring-0.5"},
+		{"ring::aead::chacha20_poly1305_openssh::OpeningKey.new", 1, "factory", "ring::aead::chacha20_poly1305_openssh::OpeningKey", "ring-0.5"},
+		{"ring::aead::chacha20_poly1305_openssh::OpeningKey.decrypt_packet_length", 2, "operation", "[u8; 4]", "ring-0.5"},
+		{"ring::aead::chacha20_poly1305_openssh::OpeningKey.open_in_place", 3, "operation", "&[u8]", "ring-0.5"},
+		{"ring::aead::quic::HeaderProtectionKey.new", 2, "factory", "ring::aead::quic::HeaderProtectionKey", "ring-0.14"},
+		{"ring::aead::quic::HeaderProtectionKey.new_mask", 1, "operation", "[u8; 5]", "ring-0.14"},
 	}
 
 	for _, tt := range tests {
@@ -144,10 +163,69 @@ func TestLoadEmbeddedRustIncludesRingContracts(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("%s#%d contracts = %d, want 1", tt.method, tt.arity, len(got))
 			}
-			if got[0].SourceLibrary != "ring" || got[0].Role != tt.role || got[0].Return.Type != tt.ret {
-				t.Fatalf("%s#%d = %#v, want ring %s returning %s", tt.method, tt.arity, got[0], tt.role, tt.ret)
+			if got[0].SourceLibrary != tt.lib || got[0].Role != tt.role || got[0].Return.Type != tt.ret {
+				t.Fatalf("%s#%d = %#v, want %s %s returning %s", tt.method, tt.arity, got[0], tt.lib, tt.role, tt.ret)
 			}
 		})
+	}
+}
+
+// version_range is never consulted at lookup, so an over-claiming range is a
+// silent false statement. Each ring file starts at the first release whose
+// signatures match every contract in it, checked against every release from
+// 0.2.0 to 0.17.14.
+func TestRingVersionRangesMatchTheReleasesThatDefineThem(t *testing.T) {
+	t.Parallel()
+
+	for file, want := range map[string]string{
+		"ring.yaml":        ">=0.2.0,<0.18.0",
+		"ring-0.5.yaml":    ">=0.5.0,<0.18.0",
+		"ring-0.9.yaml":    ">=0.9.0,<0.18.0",
+		"ring-0.14.yaml":   ">=0.14.0,<0.18.0",
+		"ring-0.15.yaml":   ">=0.15.0,<0.18.0",
+		"ring-0.16.2.yaml": ">=0.16.2,<0.18.0",
+	} {
+		data, err := os.ReadFile(filepath.Join("rust", file))
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", file, err)
+		}
+		kb, err := contracts.Load(data)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", file, err)
+		}
+		if kb.Library == nil || kb.Library.VersionRange != want || strings.Join(kb.Library.Coordinates, ",") != "ring" {
+			t.Errorf("%s: library = %+v, want version_range %q and coordinate ring", file, kb.Library, want)
+		}
+	}
+}
+
+// PBKDF2 takes its digest algorithm first and its iteration count second in
+// every release; derive also writes a key as long as its output buffer.
+func TestRingPbkdf2ParameterRoles(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("rust")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(rust): %v", err)
+	}
+	type role struct {
+		index                      int
+		role, property, derivation string
+	}
+	for method, want := range map[string][]role{
+		"ring::pbkdf2.derive": {{0, "operation-determining", "algorithm", "argument_value"}, {1, "metadata-contributing", "iterations", "argument_value"}, {4, "metadata-contributing", "keySize", "argument_bit_length"}},
+		"ring::pbkdf2.verify": {{0, "operation-determining", "algorithm", "argument_value"}, {1, "metadata-contributing", "iterations", "argument_value"}},
+	} {
+		got := kb.ContractsFor(method, 5)
+		if len(got) != 1 || len(got[0].Parameters) != len(want) {
+			t.Fatalf("%s#5 = %#v, want %d parameter roles", method, got, len(want))
+		}
+		for i, w := range want {
+			p := got[0].Parameters[i]
+			if p.Index == nil || *p.Index != w.index || p.Role != w.role || p.Contributes == nil || p.Contributes.Property != w.property || p.Contributes.Derivation != w.derivation {
+				t.Errorf("%s parameters[%d] = %#v, want %+v", method, i, p, w)
+			}
+		}
 	}
 }
 

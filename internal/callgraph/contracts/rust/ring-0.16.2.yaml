@@ -1,0 +1,29 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ring-0.16.2
+  coordinates:
+    - ring
+  version_range: ">=0.16.2,<0.18.0"
+  description: "ring LessSafeKey seal_in_place_append_tag, added in 0.16.2"
+
+contracts:
+  - method: ring::aead::LessSafeKey.seal_in_place_append_tag
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+    parameters: &aead_operation
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+      - index: 1
+        name: aad
+        role: metadata-contributing
+        contributes: { property: associatedData, derivation: argument_value }
+      - index: 2
+        name: plaintext
+        role: metadata-contributing
+        contributes: { property: plaintext, derivation: argument_value }
+
+hierarchy: {}
