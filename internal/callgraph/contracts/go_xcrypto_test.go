@@ -49,7 +49,7 @@ func TestLoadEmbeddedGoIncludesXCryptoContracts(t *testing.T) {
 
 	sort.Strings(inventory)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(inventory, "\n"))))
-	if len(inventory) != 170 || roles["factory"] != 65 || roles["config"] != 3 || roles["operation"] != 76 || roles["output"] != 26 || parameterRoles != 248 || digest != "2b241a1dbcdb5606b6ac0d213b344e1c1a3ad2fa5257a5332eae4fcb7905384b" {
+	if len(inventory) != 190 || roles["factory"] != 68 || roles["config"] != 3 || roles["operation"] != 93 || roles["output"] != 26 || parameterRoles != 294 || digest != "e058674bd4e54cf4a2d5702af6ebcca6916ba3433618fcb55d85b35a51caedaa" {
 		t.Fatalf("x/crypto inventory = %d contracts, roles %#v, %d parameter roles, digest %s", len(inventory), roles, parameterRoles, digest)
 	}
 	if got := kb.ContractsFor("golang.org/x/crypto/blake2s.Sum128", 1); len(got) != 0 {
@@ -82,6 +82,21 @@ func TestLoadEmbeddedGoIncludesXCryptoContracts(t *testing.T) {
 		{"golang.org/x/crypto/openpgp.NewEntity", 4, 3, "factory", "metadata-contributing", "cryptoConfig", "argument_value"},
 		{"golang.org/x/crypto/openpgp.(*Entity).SignIdentity", 3, 2, "operation", "metadata-contributing", "cryptoConfig", "argument_value"},
 		{"golang.org/x/crypto/openpgp.(*Entity).SerializePrivate", 2, 1, "output", "metadata-contributing", "cryptoConfig", "argument_value"},
+		{"golang.org/x/crypto/nacl/box.GenerateKey", 1, -1, "factory", "", "", ""},
+		{"golang.org/x/crypto/nacl/box.Seal", 5, 2, "operation", "metadata-contributing", "nonce", "argument_value"},
+		{"golang.org/x/crypto/nacl/box.OpenAfterPrecomputation", 4, 3, "operation", "metadata-contributing", "keySize", "argument_bit_length"},
+		{"golang.org/x/crypto/nacl/box.SealAnonymous", 4, 2, "operation", "metadata-contributing", "publicKey", "argument_value"},
+		{"golang.org/x/crypto/nacl/box.Precompute", 3, 2, "operation", "metadata-contributing", "privateKey", "argument_value"},
+		{"golang.org/x/crypto/nacl/sign.GenerateKey", 1, -1, "factory", "", "", ""},
+		{"golang.org/x/crypto/nacl/sign.Open", 3, 2, "operation", "metadata-contributing", "publicKey", "argument_value"},
+		{"golang.org/x/crypto/nacl/auth.Sum", 2, 1, "operation", "metadata-contributing", "keySize", "argument_bit_length"},
+		{"golang.org/x/crypto/nacl/auth.Verify", 3, 0, "operation", "metadata-contributing", "mac", "argument_value"},
+		{"golang.org/x/crypto/salsa20.XORKeyStream", 4, 2, "operation", "operation-determining", "nonceSize", "argument_bit_length"},
+		{"golang.org/x/crypto/openpgp/elgamal.Encrypt", 3, 1, "operation", "metadata-contributing", "publicKey", "argument_value"},
+		{"golang.org/x/crypto/openpgp/elgamal.Decrypt", 3, 0, "operation", "metadata-contributing", "privateKey", "argument_value"},
+		{"golang.org/x/crypto/openpgp/clearsign.EncodeMulti", 3, 2, "operation", "metadata-contributing", "cryptoConfig", "argument_value"},
+		{"golang.org/x/crypto/ssh/knownhosts.HashHostname", 1, 0, "operation", "metadata-contributing", "input", "argument_value"},
+		{"golang.org/x/crypto/ssh.NewSignerWithAlgorithms", 2, 1, "factory", "operation-determining", "algorithm", "argument_value"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method, func(t *testing.T) {
@@ -115,6 +130,7 @@ func TestLoadEmbeddedGoIncludesXCryptoContracts(t *testing.T) {
 		{"golang.org/x/crypto/ed25519.GenerateKey", 1},
 		{"golang.org/x/crypto/ssh.ParseKnownHosts", 1},
 		{"golang.org/x/crypto/cryptobyte.String", 1},
+		{"golang.org/x/crypto/openpgp/clearsign.Decode", 1},
 	} {
 		if got := kb.ContractsFor(skipped.method, skipped.arity); len(got) != 0 {
 			t.Fatalf("ContractsFor(%q, %d) = %#v, want unsupported API omitted", skipped.method, skipped.arity, got)
