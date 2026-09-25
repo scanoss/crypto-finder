@@ -1,0 +1,18 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.10
+  coordinates:
+    - rsa
+  version_range: ">=0.10.0-rc.5,<0.11.0"
+  description: "RustCrypto rsa 0.10 prereleases: PSS verification that recovers the salt length"
+
+# `pss::VerifyingKey::new_with_auto_salt_len` first appears at 0.10.0-rc.5
+# (0.10.0-rc.18 src/pss/verifying_key.rs:55). The era table is in rsa.yaml.
+contracts:
+  - method: rsa::pss::VerifyingKey.new_with_auto_salt_len
+    arity: 1
+    return: { type: rsa::pss::VerifyingKey, confidence: high }
+    role: factory
+
+hierarchy: {}
