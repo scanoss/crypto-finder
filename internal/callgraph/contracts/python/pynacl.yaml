@@ -4,22 +4,112 @@ library:
   name: pynacl
   coordinates:
     - PyNaCl
-  version_range: ">=1.5"
+  version_range: ">=1.0,<2.0"
   description: "PyNaCl high-level secret/public/signing/hash/pwhash APIs"
 
+# Inventory source: PyNaCl 1.5.0 sdist (src/nacl/secret.py, public.py,
+# signing.py, hash.py, utils.py, pwhash/, bindings/crypto_sign.py), diffed
+# against 1.6.2: the public surface is identical. PyNaCl wraps libsodium
+# through cffi, so every entry below types the Python API only.
+#
+# SPELLINGS. A python callgraph key follows the consumer's import. `import
+# nacl.signing; nacl.signing.SigningKey(seed)` emits the attribute path
+# `nacl.signing.SigningKey`, while `from nacl.signing import SigningKey;
+# SigningKey(seed)` emits `nacl.signing.SigningKey.<init>`; neither resolves
+# the other. Every constructor is declared under both spellings. Classmethods
+# (`SigningKey.generate`, `PrivateKey.from_seed`, `Box.decode`) emit one key
+# under either import and need one entry.
+#
+# VERSION WINDOWS inside `>=1.0,<2.0`, read from the 1.0.1, 1.2.1 and 1.4.0
+# sdists. No method changes its return type across the range; releases only
+# add APIs, so an entry is dormant before its release:
+#   SecretBox, Box, PrivateKey, PublicKey, SigningKey, VerifyKey,
+#   nacl.hash.sha256/sha512, nacl.utils.random    1.0 onward
+#   SealedBox, PrivateKey.from_seed, Box.shared_key, nacl.hash.blake2b/
+#   siphash24/siphashx24, nacl.pwhash.*           1.2 onward
+#   nacl.utils.randombytes_deterministic         1.4 onward
+#   nacl.secret.Aead                              1.5 onward
+# SecretBox.encrypt and Box.encrypt require `nonce` in 1.0.1 (optional by 1.2.1); the entries
+# key the lowest arity and Python lookup falls back by name. 0.x had a
+# different module layout and is not claimed.
+#
+# PARAMETERS. Python keyword arguments are not yet bound to declared
+# positions by the parser; `keySize` is the one property with a keyword-name
+# path, so key material and KDF output sizes are declared as keySize.
+#
+# Dispositions for the remaining public surface:
+# - nacl.hash.generichash and nacl.hash.shorthash are aliases of blake2b and
+#   siphash24; no detection rule matches the alias spelling (needs-follow-up).
+# - nacl.hashlib.blake2b and nacl.hashlib.scrypt are hashlib-compatible
+#   wrappers no detection rule matches yet (needs-follow-up).
+# - nacl.pwhash.kdf_scryptsalsa208sha256, scryptsalsa208sha256_str and
+#   verify_scryptsalsa208sha256 are legacy aliases of the scrypt module
+#   functions with no rule (needs-follow-up).
+# - nacl.pwhash.kdf is matched by a detection rule pattern but is not defined
+#   by PyNaCl 1.5.0 or 1.6.2; there is nothing to contract.
+# - nacl.encoding.* encoders and Encodable.encode are serialization helpers
+#   (skipped-non-crypto).
+# - SignedMessage.signature/.message, EncryptedMessage.nonce/.ciphertext and
+#   SigningKey.verify_key are attributes, not calls (skipped-unsupported).
+# - nacl.bindings.* exposes ~200 libsodium functions; only the Ed25519
+#   crypto_sign pair is contracted as the low-level regression anchor, the
+#   rest are needs-follow-up.
 contracts:
+  # ── Symmetric authenticated encryption. secret.py:59 SecretBox(key,
+  # encoder) is XSalsa20-Poly1305; secret.py:200 Aead(key, encoder) is
+  # XChaCha20-Poly1305-IETF. Both take a 32-byte key.
+  - method: nacl.secret.SecretBox
+    arity: 1
+    return: { type: nacl.secret.SecretBox, confidence: high }
+    role: factory
+    parameters: &symmetric_key_param
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
   - method: nacl.secret.SecretBox.<init>
     arity: 1
     return: { type: nacl.secret.SecretBox, confidence: high }
     role: factory
+    parameters: *symmetric_key_param
   - method: nacl.secret.SecretBox.encrypt
     arity: 1
     return: { type: nacl.utils.EncryptedMessage, confidence: high }
-    role: output
+    role: operation
   - method: nacl.secret.SecretBox.decrypt
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+  - method: nacl.secret.Aead
+    arity: 1
+    return: { type: nacl.secret.Aead, confidence: high }
+    role: factory
+    parameters: *symmetric_key_param
+  - method: nacl.secret.Aead.<init>
+    arity: 1
+    return: { type: nacl.secret.Aead, confidence: high }
+    role: factory
+    parameters: *symmetric_key_param
+  - method: nacl.secret.Aead.encrypt
+    arity: 1
+    return: { type: nacl.utils.EncryptedMessage, confidence: high }
+    role: operation
+  - method: nacl.secret.Aead.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Curve25519 public-key encryption. public.py:36 PublicKey,
+  # :87 PrivateKey, :111 from_seed, :161 generate.
+  - method: nacl.public.PublicKey
+    arity: 1
+    return: { type: nacl.public.PublicKey, confidence: high }
+    role: factory
+  - method: nacl.public.PublicKey.<init>
+    arity: 1
+    return: { type: nacl.public.PublicKey, confidence: high }
+    role: factory
+  - method: nacl.public.PrivateKey
+    arity: 1
+    return: { type: nacl.public.PrivateKey, confidence: high }
+    role: factory
   - method: nacl.public.PrivateKey.<init>
     arity: 1
     return: { type: nacl.public.PrivateKey, confidence: high }
@@ -28,18 +118,44 @@ contracts:
     arity: 0
     return: { type: nacl.public.PrivateKey, confidence: high }
     role: factory
+  - method: nacl.public.PrivateKey.from_seed
+    arity: 1
+    return: { type: nacl.public.PrivateKey, confidence: high }
+    role: factory
+
+  # public.py:196 Box(private_key, public_key) runs the X25519 agreement;
+  # :212 decode rebuilds a Box from an encoded shared key; :226 encrypt,
+  # :269 decrypt; :307 shared_key returns the agreed secret.
+  - method: nacl.public.Box
+    arity: 2
+    return: { type: nacl.public.Box, confidence: high }
+    role: factory
   - method: nacl.public.Box.<init>
     arity: 2
+    return: { type: nacl.public.Box, confidence: high }
+    role: factory
+  - method: nacl.public.Box.decode
+    arity: 1
     return: { type: nacl.public.Box, confidence: high }
     role: factory
   - method: nacl.public.Box.encrypt
     arity: 1
     return: { type: nacl.utils.EncryptedMessage, confidence: high }
-    role: output
+    role: operation
   - method: nacl.public.Box.decrypt
     arity: 1
     return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.public.Box.shared_key
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
     role: output
+
+  # public.py:346 SealedBox(recipient_key), :367 encrypt, :393 decrypt.
+  - method: nacl.public.SealedBox
+    arity: 1
+    return: { type: nacl.public.SealedBox, confidence: high }
+    role: factory
   - method: nacl.public.SealedBox.<init>
     arity: 1
     return: { type: nacl.public.SealedBox, confidence: high }
@@ -47,11 +163,19 @@ contracts:
   - method: nacl.public.SealedBox.encrypt
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: nacl.public.SealedBox.decrypt
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+
+  # ── Ed25519 signatures. signing.py:169 SigningKey(seed), :209 generate,
+  # :220 sign, :241 to_curve25519_private_key; :68 VerifyKey(key), :98
+  # verify, :139 to_curve25519_public_key.
+  - method: nacl.signing.SigningKey
+    arity: 1
+    return: { type: nacl.signing.SigningKey, confidence: high }
+    role: factory
   - method: nacl.signing.SigningKey.<init>
     arity: 1
     return: { type: nacl.signing.SigningKey, confidence: high }
@@ -63,7 +187,15 @@ contracts:
   - method: nacl.signing.SigningKey.sign
     arity: 1
     return: { type: nacl.signing.SignedMessage, confidence: high }
-    role: output
+    role: operation
+  - method: nacl.signing.SigningKey.to_curve25519_private_key
+    arity: 0
+    return: { type: nacl.public.PrivateKey, confidence: high }
+    role: factory
+  - method: nacl.signing.VerifyKey
+    arity: 1
+    return: { type: nacl.signing.VerifyKey, confidence: high }
+    role: factory
   - method: nacl.signing.VerifyKey.<init>
     arity: 1
     return: { type: nacl.signing.VerifyKey, confidence: high }
@@ -71,46 +203,132 @@ contracts:
   - method: nacl.signing.VerifyKey.verify
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+  - method: nacl.signing.VerifyKey.to_curve25519_public_key
+    arity: 0
+    return: { type: nacl.public.PublicKey, confidence: high }
+    role: factory
+
+  # ── Hashing and short-input MACs. hash.py:62 sha256, :77 sha512,
+  # :92 blake2b, :136 siphash24, :160 siphashx24. Each returns the
+  # encoded digest (HexEncoder by default).
+  - method: nacl.hash.sha256
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.hash.sha512
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.hash.blake2b
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.hash.siphash24
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.hash.siphashx24
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Password hashing. pwhash/argon2i.py:49 and argon2id.py:53
+  # kdf(size, password, salt, opslimit, memlimit, encoder), scrypt.py:59 the
+  # same shape; size is the derived key length in BYTES. str hashes with a
+  # random salt, verify checks a modular-crypt hash; pwhash/__init__.py:40
+  # binds nacl.pwhash.str to argon2id.str and :57 defines the generic verify.
   - method: nacl.pwhash.argon2i.kdf
     arity: 5
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+    parameter_types: &kdf_parameter_types
+      - builtins.int
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+    parameters: &kdf_size_param
+      - { index: 0, name: size, role: metadata-contributing, contributes: { property: keySize, derivation: argument_byte_length } }
   - method: nacl.pwhash.argon2i.str
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: nacl.pwhash.argon2i.verify
     arity: 2
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
   - method: nacl.pwhash.argon2id.kdf
     arity: 5
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+    parameter_types: *kdf_parameter_types
+    parameters: *kdf_size_param
   - method: nacl.pwhash.argon2id.str
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: nacl.pwhash.argon2id.verify
     arity: 2
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
   - method: nacl.pwhash.scrypt.kdf
     arity: 5
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+    parameter_types: *kdf_parameter_types
+    parameters: *kdf_size_param
   - method: nacl.pwhash.scrypt.str
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: nacl.pwhash.scrypt.verify
     arity: 2
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
+  - method: nacl.pwhash.str
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.pwhash.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # ── Random material. utils.py:70 random(size) reads os.urandom and is
+  # the documented source of SecretBox keys and nonces; :74
+  # randombytes_deterministic(size, seed, encoder) expands a seed.
+  - method: nacl.utils.random
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: size, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: nacl.utils.randombytes_deterministic
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: size, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+
+  # ── Low-level binding regression anchor. bindings/crypto_sign.py:72
+  # crypto_sign(message, sk) and :90 crypto_sign_open(signed, pk) are the
+  # raw Ed25519 calls SigningKey.sign and VerifyKey.verify reach.
+  - method: nacl.bindings.crypto_sign
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.bindings.crypto_sign_open
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
 
 hierarchy:
   nacl.secret.SecretBox:
+    - builtins.object
+  nacl.secret.Aead:
+    - builtins.object
+  nacl.public.PublicKey:
     - builtins.object
   nacl.public.PrivateKey:
     - builtins.object
