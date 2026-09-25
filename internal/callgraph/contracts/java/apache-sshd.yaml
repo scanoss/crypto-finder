@@ -1,110 +1,570 @@
 schema_version: "2"
 ecosystem: java
 
+# The package layout changed inside the covered range: 0.x keeps the
+# primitives in org.apache.sshd.common and the client and server in
+# org.apache.sshd, and 1.0.0 introduced the per-area packages used since. SessionContext was added as
+# a leading parameter to KeyPairProvider.loadKeys in 2.2.0 and to the Signature
+# lifecycle in 2.4.0, so both arities are contracted for those methods.
 library:
   name: apache-sshd
   coordinates:
     - "org.apache.sshd:sshd-core"
     - "org.apache.sshd:sshd-common"
-  version_range: ">=2,<3"
-  description: "Apache MINA SSHD factory contracts for key, cipher, MAC, and fingerprint flows"
+  version_range: ">=0.4.0,<4"
+  description: "Apache MINA SSHD key loading, cipher, MAC, signature, fingerprint and session configuration flows"
 
 contracts:
+  # Key generation, cloning and fingerprints.
   - method: org.apache.sshd.common.config.keys.KeyUtils.generateKeyPair
     arity: 2
     return:
       type: java.security.KeyPair
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keyType
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: keySize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
   - method: org.apache.sshd.common.config.keys.KeyUtils.cloneKeyPair
     arity: 2
     return:
       type: java.security.KeyPair
       confidence: high
+    role: factory
   - method: org.apache.sshd.common.config.keys.KeyUtils.getDefaultFingerPrintFactory
     arity: 0
     return:
       type: org.apache.sshd.common.digest.DigestFactory
       confidence: high
+    role: factory
   - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
     arity: 1
     return:
       type: java.lang.String
       confidence: high
+    role: operation
   - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
     arity: 2
     return:
       type: java.lang.String
       confidence: high
+    role: operation
   - method: org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint
     arity: 3
     return:
       type: java.lang.String
       confidence: high
+    role: operation
   - method: org.apache.sshd.common.config.keys.KeyUtils.getRawFingerprint
     arity: 1
     return:
       type: byte[]
       confidence: high
+    role: operation
   - method: org.apache.sshd.common.config.keys.KeyUtils.getRawFingerprint
     arity: 2
     return:
       type: byte[]
       confidence: high
+    role: operation
+
+  # Algorithm selection by SSH name.
   - method: org.apache.sshd.common.cipher.BuiltinCiphers.fromFactoryName
     arity: 1
     return:
       type: org.apache.sshd.common.cipher.BuiltinCiphers
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.cipher.BuiltinCiphers.resolveFactory
     arity: 1
     return:
       type: org.apache.sshd.common.cipher.CipherFactory
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.cipher.BuiltinCiphers.create
     arity: 0
     return:
       type: org.apache.sshd.common.cipher.Cipher
       confidence: high
+    role: factory
   - method: org.apache.sshd.common.mac.BuiltinMacs.fromFactoryName
     arity: 1
     return:
       type: org.apache.sshd.common.mac.BuiltinMacs
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.mac.BuiltinMacs.resolveFactory
     arity: 1
     return:
       type: org.apache.sshd.common.mac.MacFactory
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.mac.BuiltinMacs.create
     arity: 0
     return:
       type: org.apache.sshd.common.mac.Mac
       confidence: high
+    role: factory
   - method: org.apache.sshd.common.signature.BuiltinSignatures.fromFactoryName
     arity: 1
     return:
       type: org.apache.sshd.common.signature.BuiltinSignatures
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.signature.BuiltinSignatures.resolveFactory
     arity: 1
     return:
       type: org.apache.sshd.common.signature.SignatureFactory
       confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: org.apache.sshd.common.signature.BuiltinSignatures.create
     arity: 0
     return:
       type: org.apache.sshd.common.signature.Signature
       confidence: high
+    role: factory
+
+  # JCA entity factories routed through the library's provider registrar. The
+  # class moved from common.util to common.util.security during the 1.x line.
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getCipher
+    arity: 1
+    return: { type: javax.crypto.Cipher, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: transformation, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getMac
+    arity: 1
+    return: { type: javax.crypto.Mac, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getSignature
+    arity: 1
+    return: { type: java.security.Signature, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getMessageDigest
+    arity: 1
+    return: { type: java.security.MessageDigest, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getKeyPairGenerator
+    arity: 1
+    return: { type: java.security.KeyPairGenerator, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getKeyFactory
+    arity: 1
+    return: { type: java.security.KeyFactory, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getKeyAgreement
+    arity: 1
+    return: { type: javax.crypto.KeyAgreement, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.security.SecurityUtils.getCertificateFactory
+    arity: 1
+    return: { type: java.security.cert.CertificateFactory, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: type, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getCipher
+    arity: 1
+    return: { type: javax.crypto.Cipher, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: transformation, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getMac
+    arity: 1
+    return: { type: javax.crypto.Mac, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getSignature
+    arity: 1
+    return: { type: java.security.Signature, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getMessageDigest
+    arity: 1
+    return: { type: java.security.MessageDigest, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getKeyPairGenerator
+    arity: 1
+    return: { type: java.security.KeyPairGenerator, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getKeyFactory
+    arity: 1
+    return: { type: java.security.KeyFactory, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.common.util.SecurityUtils.getKeyAgreement
+    arity: 1
+    return: { type: javax.crypto.KeyAgreement, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+
+  # Key loading.
+  - method: org.apache.sshd.common.util.security.SecurityUtils.loadKeyPairIdentities
+    arity: 4
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.KeyPairProvider.loadKeys
+    arity: 0
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.KeyPairProvider.loadKeys
+    arity: 1
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.KeyPairProvider.loadKeys
+    arity: 0
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.FileKeyPairProvider.loadKeys
+    arity: 0
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.FileKeyPairProvider.loadKeys
+    arity: 1
+    return: { type: java.lang.Iterable, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.FileKeyPairProvider.<init>
+    arity: 0
+    return: { type: org.apache.sshd.common.keyprovider.FileKeyPairProvider, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.FileKeyPairProvider.<init>
+    arity: 1
+    return: { type: org.apache.sshd.common.keyprovider.FileKeyPairProvider, confidence: high }
+    role: factory
+  - method: org.apache.sshd.common.keyprovider.FileKeyPairProvider.<init>
+    arity: 2
+    return: { type: org.apache.sshd.common.keyprovider.FileKeyPairProvider, confidence: high }
+    role: factory
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.<init>
+    arity: 0
+    return: { type: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider, confidence: high }
+    role: factory
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.<init>
+    arity: 1
+    return: { type: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider, confidence: high }
+    role: factory
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.<init>
+    arity: 2
+    return: { type: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider, confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.<init>
+    arity: 3
+    return: { type: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider, confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 2, name: keySize, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.setAlgorithm
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider.setKeySize
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: keySize, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+
+  # Cipher lifecycle. updateAAD and updateWithAAD exist from 2.6.0.
+  - method: org.apache.sshd.common.cipher.Cipher.init
+    arity: 3
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: org.apache.sshd.common.cipher.Cipher.update
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.cipher.Cipher.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.cipher.Cipher.updateAAD
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.cipher.Cipher.updateAAD
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.cipher.Cipher.updateWithAAD
+    arity: 4
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Cipher.init
+    arity: 3
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: org.apache.sshd.common.Cipher.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+
+  # MAC lifecycle.
+  - method: org.apache.sshd.common.mac.Mac.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: org.apache.sshd.common.mac.Mac.update
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.mac.Mac.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.mac.Mac.updateUInt
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.mac.Mac.doFinal
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.mac.Mac.doFinal
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.mac.Mac.doFinal
+    arity: 2
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Mac.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: org.apache.sshd.common.Mac.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Mac.updateUInt
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Mac.doFinal
+    arity: 2
+    return: { type: void, confidence: high }
+    role: operation
+
+  # Signature lifecycle. Arity 1/1/1,3/0/1 is the pre-2.4.0 spelling; arity
+  # 2/2/2,4/1/2 is the SessionContext spelling from 2.4.0.
+  - method: org.apache.sshd.common.signature.Signature.initSigner
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.sshd.common.signature.Signature.initSigner
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.sshd.common.signature.Signature.initVerifier
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.sshd.common.signature.Signature.initVerifier
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.sshd.common.signature.Signature.update
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.update
+    arity: 2
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.update
+    arity: 4
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.sign
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.sign
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.verify
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.signature.Signature.verify
+    arity: 2
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Signature.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.apache.sshd.common.Signature.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Signature.sign
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.apache.sshd.common.Signature.verify
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: operation
+
+  # Client and server setup, and session configuration. The setters are
+  # inherited from factory-manager base types whose names and depth differ by
+  # release; they are contracted on the two entry types a consumer declares,
+  # which is the receiver the Java parser keys the call on.
   - method: org.apache.sshd.client.SshClient.setUpDefaultClient
     arity: 0
     return:
       type: org.apache.sshd.client.SshClient
       confidence: high
+    role: factory
   - method: org.apache.sshd.server.SshServer.setUpDefaultServer
     arity: 0
     return:
       type: org.apache.sshd.server.SshServer
       confidence: high
+    role: factory
+  - method: org.apache.sshd.SshClient.setUpDefaultClient
+    arity: 0
+    return: { type: org.apache.sshd.SshClient, confidence: high }
+    role: factory
+  - method: org.apache.sshd.SshServer.setUpDefaultServer
+    arity: 0
+    return: { type: org.apache.sshd.SshServer, confidence: high }
+    role: factory
+
+  - { method: org.apache.sshd.client.SshClient.setCipherFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.client.SshClient.setMacFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.client.SshClient.setSignatureFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.client.SshClient.setKeyExchangeFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.client.SshClient.setServerKeyVerifier, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.client.SshClient.setKeyIdentityProvider, arity: 1, return: { type: void, confidence: high }, role: config }
+  - method: org.apache.sshd.client.SshClient.setCipherFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.client.SshClient.setMacFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.client.SshClient.setSignatureFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - { method: org.apache.sshd.server.SshServer.setCipherFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.server.SshServer.setMacFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.server.SshServer.setSignatureFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.server.SshServer.setKeyExchangeFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.server.SshServer.setKeyPairProvider, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.server.SshServer.setPublickeyAuthenticator, arity: 1, return: { type: void, confidence: high }, role: config }
+  - method: org.apache.sshd.server.SshServer.setCipherFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.server.SshServer.setMacFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: org.apache.sshd.server.SshServer.setSignatureFactoriesNames
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: names, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - { method: org.apache.sshd.client.session.ClientSession.addPublicKeyIdentity, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshClient.setCipherFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshClient.setMacFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshClient.setSignatureFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshClient.setKeyExchangeFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshClient.setServerKeyVerifier, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setCipherFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setMacFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setSignatureFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setKeyExchangeFactories, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setKeyPairProvider, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.SshServer.setPublickeyAuthenticator, arity: 1, return: { type: void, confidence: high }, role: config }
+  - { method: org.apache.sshd.ClientSession.addPublicKeyIdentity, arity: 1, return: { type: void, confidence: high }, role: config }
 
 hierarchy:
   org.apache.sshd.common.digest.DigestFactory:
@@ -127,8 +587,20 @@ hierarchy:
     - java.lang.Object
   org.apache.sshd.common.signature.BuiltinSignatures:
     - org.apache.sshd.common.signature.SignatureFactory
+  org.apache.sshd.common.keyprovider.KeyPairProvider:
+    - java.lang.Object
+  org.apache.sshd.common.keyprovider.FileKeyPairProvider:
+    - org.apache.sshd.common.keyprovider.KeyPairProvider
+  org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider:
+    - org.apache.sshd.common.keyprovider.KeyPairProvider
   org.apache.sshd.client.SshClient:
     - java.lang.Object
   org.apache.sshd.server.SshServer:
+    - java.lang.Object
+  org.apache.sshd.SshClient:
+    - java.lang.Object
+  org.apache.sshd.SshServer:
+    - java.lang.Object
+  java.lang.Iterable:
     - java.lang.Object
   java.lang.Object: []
