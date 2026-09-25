@@ -1,0 +1,280 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: commons-codec-digestutils
+  coordinates:
+    - "commons-codec:commons-codec"
+  version_range: ">=1.2,<2.0"
+  description: "Apache Commons Codec DigestUtils: one-shot and instance message digests"
+
+# Inventory source: the released sources jars 1.3 through 1.22.0, and javap over
+# the 1.1 and 1.2 binaries, which ship no sources. DigestUtils first appears in
+# 1.2 with md5, md5Hex, sha and shaHex; 1.1 has no digest API at all. Later
+# releases only add methods: sha256/384/512 and InputStream overloads in 1.4,
+# md2, sha1, the get*Digest factories and updateDigest in 1.7, the instance API
+# (constructor, digest, digestAsHex) and the static digest(MessageDigest, ...)
+# in 1.11, SHA-3 in 1.12, SHA-512/224 and SHA-512/256 plus the Path overloads
+# in 1.14, and SHAKE in 1.20.0. Nothing was removed or changed return type, so
+# one range serves every release and each method+arity key has one return.
+#
+# Every one-shot method computes the digest, including the *Hex spellings,
+# which hash and then hex-encode, so they carry role operation. None of the
+# surface only extracts a result an earlier call produced, so no contract here
+# carries role output.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the deprecated no-argument constructor, a no-op kept for
+#     binary compatibility; isAvailable, an availability probe.
+#   skipped-informative-return: getMessageDigest, an accessor returning the
+#     MessageDigest the constructor already received.
+
+contracts:
+
+  - method: org.apache.commons.codec.digest.DigestUtils.getDigest
+    arity: 1
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: org.apache.commons.codec.digest.DigestUtils.getDigest
+    arity: 2
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: org.apache.commons.codec.digest.DigestUtils.getMd2Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getMd5Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getShaDigest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha1Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha256Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha384Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha512Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha512_224Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha512_256Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha3_224Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha3_256Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha3_384Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getSha3_512Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getShake128_256Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+  - method: org.apache.commons.codec.digest.DigestUtils.getShake256_512Digest
+    arity: 0
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: factory
+
+  # Arity 1 is both DigestUtils(String) and DigestUtils(MessageDigest); either
+  # argument selects the algorithm.
+  - method: org.apache.commons.codec.digest.DigestUtils.<init>
+    arity: 1
+    return: {type: org.apache.commons.codec.digest.DigestUtils, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: digest
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  - method: org.apache.commons.codec.digest.DigestUtils.digest
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.digest
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.digest
+    arity: 3
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.digestAsHex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.digestAsHex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.updateDigest
+    arity: 2
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.updateDigest
+    arity: 3
+    return: {type: java.security.MessageDigest, confidence: high}
+    role: operation
+
+  - method: org.apache.commons.codec.digest.DigestUtils.md2
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.md2Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.md5
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.md5Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.shaHex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha1
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha1Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha256
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha256Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha384
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha384Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512_224
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512_224Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512_256
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha512_256Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_224
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_224Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_256
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_256Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_384
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_384Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_512
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.sha3_512Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.shake128_256
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.shake128_256Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.shake256_512
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.DigestUtils.shake256_512Hex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+
+hierarchy:
+  org.apache.commons.codec.digest.DigestUtils:
+    - java.lang.Object
+  java.security.MessageDigest:
+    - java.lang.Object
+  java.lang.Object: []
