@@ -204,3 +204,74 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*_checksums.txt
+
+  # Tells crypto-mining-service a release exists; it answers with a PR that
+  # bumps every crypto-finder pin. Nothing deploys until a human merges that PR
+  # and tags a crypto-mining-service release.
+  #
+  # Gated on goreleaser, which pushes the -deps image the bump pins.
+  notify:
+    name: Notify crypto-mining-service
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # The org has no tag protection, so any commit can be tagged. Only a tag
+      # on trunk is announced: `identical` or `behind` mean on trunk.
+      - name: Refuse a tag that is not on trunk
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TRUNK: ${{ github.event.repository.default_branch }}
+        with:
+          script: |
+            const { data } = await github.rest.repos.compareCommitsWithBasehead({
+              ...context.repo,
+              basehead: `${process.env.TRUNK}...${context.sha}`,
+            });
+            if (data.status !== 'identical' && data.status !== 'behind') {
+              core.setFailed(`refusing to announce ${context.ref}: its commit is '${data.status}' relative to ${process.env.TRUNK}, so it never went through trunk.`);
+            }
+
+      # The automation App's credentials live in Bitwarden; BWS_ACCESS_TOKEN is
+      # the only secret this job needs. The ids are Bitwarden secret ids, not
+      # values. This public repository cannot use the org's private
+      # scanoss/actions wrapper, so its two steps are inlined.
+      - uses: bitwarden/sm-action@1238aae8fc64b212641190a9227c8a734ab1a793 # v3.0.1
+        with:
+          access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
+          cloud_region: eu
+          secrets: |
+            6bec4daa-f722-44b2-8240-b4c700aa5ab0 > AUTOMATION_APP_CLIENT_ID
+            f8e1ba4a-08fd-40d0-8dcc-b4c700abc213 > AUTOMATION_APP_PRIVATE_KEY
+
+      # repository_dispatch needs contents: write on the target, and only there.
+      - name: Mint token for crypto-mining-service
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ env.AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ env.AUTOMATION_APP_PRIVATE_KEY }}
+          owner: scanoss
+          repositories: crypto-mining-service
+          permission-contents: write
+
+      - name: Dispatch crypto-finder-released
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          VERSION: ${{ github.ref_name }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const version = process.env.VERSION;
+            if (!/^v\d+\.\d+\.\d+$/.test(version)) {
+              core.setFailed(`refusing to announce '${version}': not a vX.Y.Z release tag`);
+              return;
+            }
+            await github.rest.repos.createDispatchEvent({
+              owner: 'scanoss',
+              repo: 'crypto-mining-service',
+              event_type: 'crypto-finder-released',
+              client_payload: { version },
+            });
+            core.notice(`crypto-mining-service notified of ${version}`);
