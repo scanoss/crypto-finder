@@ -7,7 +7,10 @@ library:
   version_range: ">=2.0.0,<3.0.0"
   description: "Legacy Go OpenSSL v2 cryptographic bindings"
 
-# API inventory source: upstream v2 branch at 9696eb4fdc48b79fdcb0381b341ffbb143d9d942.
+# API inventory sources: upstream v2 branch at 9696eb4fdc48b79fdcb0381b341ffbb143d9d942,
+# and the v2.0.0-rc.2 to v2.0.3 module zips from proxy.golang.org (v2.0.0-rc.1 has no
+# /v2 module path and cannot be resolved). Several entries (ML-KEM, ML-DSA, DSA, SHAKE,
+# ChaCha20-Poly1305, ExpandHKDFOneShot, ExpandTLS13KDF) exist only on the v2 branch.
 # Capability probes and OpenSSL/FIPS runtime setup are intentionally omitted: they do not
 # construct, configure, or execute a source-visible cryptographic operation.
 contracts:
@@ -90,6 +93,44 @@ contracts:
       - index: 1
         role: metadata-contributing
         contributes: {property: customization, derivation: argument_value}
+
+  # Legacy hashes (NewMD4/MD4/NewMD5/MD5 from v2.0.0-rc.3, NewSHA1/SHA1 in every tag).
+  - method: github.com/golang-fips/openssl/v2.NewSHA1
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.SHA1
+    arity: 1
+    return: {type: "[20]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewMD5
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.MD5
+    arity: 1
+    return: {type: "[16]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewMD4
+    arity: 0
+    return: {type: hash.Hash, confidence: high}
+    role: factory
+  - method: github.com/golang-fips/openssl/v2.MD4
+    arity: 1
+    return: {type: "[16]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
 
   # KDFs and TLS PRF.
   - method: github.com/golang-fips/openssl/v2.ExtractHKDF
@@ -286,6 +327,200 @@ contracts:
     arity: 0
     return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyECDH", confidence: high}
     role: output
+
+  # Key generation. GenerateKeyRSA and GenerateKeyECDSA return the key's
+  # BigInt components; the first result is modeled.
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyRSA
+    arity: 1
+    return: {type: github.com/golang-fips/openssl/v2.BigInt, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyECDSA
+    arity: 1
+    return: {type: github.com/golang-fips/openssl/v2.BigInt, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyECDH
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyECDH", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.GenerateKeyEd25519
+    arity: 0
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyEd25519", confidence: high}
+    role: factory
+
+  # Public key constructors.
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyECDSA
+    arity: 3
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyECDSA", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyECDH
+    arity: 2
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyECDH", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+
+  # Every released tag (v2.0.0 to v2.0.3) spells the Ed25519 key constructors
+  # NewPrivateKeyEd25119 / NewPublicKeyEd25119. The upstream v2 branch adds the
+  # Ed25519 spellings after v2.0.3 and keeps the old ones as aliases, so both
+  # are modeled; version_range is library-wide and cannot split them.
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyEd25119
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyEd25119
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewPublicKeyEd25519
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PublicKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.NewPrivateKeyEd25519FromSeed
+    arity: 1
+    return: {type: "*github.com/golang-fips/openssl/v2.PrivateKeyEd25519", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: seed, derivation: argument_value}
+
+  # RSA PKCS #1 v1.5 and raw (no padding) encryption, and PKCS #1 v1.5 signatures.
+  # The Hash* variants hash the message themselves; the others take a digest.
+  - method: github.com/golang-fips/openssl/v2.EncryptRSAPKCS1
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.DecryptRSAPKCS1
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.EncryptRSANoPadding
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: publicKey, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.DecryptRSANoPadding
+    arity: 2
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        role: metadata-contributing
+        contributes: {property: privateKey, derivation: argument_value}
+      - index: 1
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.SignRSAPKCS1v15
+    arity: 3
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.HashSignRSAPKCS1v15
+    arity: 3
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.VerifyRSAPKCS1v15
+    arity: 4
+    return: {type: error, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.HashVerifyRSAPKCS1v15
+    arity: 4
+    return: {type: error, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # ECDSA and Ed25519 signing and verification.
+  - method: github.com/golang-fips/openssl/v2.HashSignECDSA
+    arity: 3
+    return: {type: "[]byte", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.VerifyECDSA
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: github.com/golang-fips/openssl/v2.HashVerifyECDSA
+    arity: 4
+    return: {type: bool, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: github.com/golang-fips/openssl/v2.VerifyEd25519
+    arity: 3
+    return: {type: error, confidence: high}
+    role: operation
 
   # Post-quantum key material and operations.
   - method: github.com/golang-fips/openssl/v2.GenerateKeyMLKEM768
