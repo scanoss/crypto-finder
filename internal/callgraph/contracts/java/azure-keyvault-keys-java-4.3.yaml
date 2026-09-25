@@ -6,7 +6,7 @@ library:
   coordinates:
     - "com.azure:azure-security-keyvault-keys"
   version_range: ">=4.3.0,<5.0.0"
-  description: "Azure Key Vault Keys symmetric (oct) key options, added in 4.3.0"
+  description: "Azure Key Vault Keys APIs added in 4.3.0: symmetric (oct) key options and creation, JSON Web Key clients, async parameter-object encrypt/decrypt, and the AES IV and tag results"
 
 contracts:
   - method: com.azure.security.keyvault.keys.models.CreateOctKeyOptions.<init>
@@ -31,7 +31,84 @@ contracts:
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_value }
 
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.jsonWebKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.JsonWebKey]
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt
+    arity: 1
+    parameter_types:
+      [com.azure.security.keyvault.keys.cryptography.models.EncryptParameters]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt
+    arity: 1
+    parameter_types:
+      [com.azure.security.keyvault.keys.cryptography.models.DecryptParameters]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.keys.KeyClient.createOctKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
+    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
+    return:
+      type: com.azure.security.keyvault.keys.models.KeyVaultKey
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createOctKey
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getIv
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getAuthenticationTag
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+
 hierarchy:
+  com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyAsyncClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.EncryptResult:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.EncryptParameters:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.cryptography.models.DecryptParameters:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.JsonWebKey:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.KeyVaultKey:
+    - java.lang.Object
+  reactor.core.publisher.Mono:
+    - java.lang.Object
   com.azure.security.keyvault.keys.models.CreateKeyOptions:
     - java.lang.Object
   com.azure.security.keyvault.keys.models.CreateOctKeyOptions:
