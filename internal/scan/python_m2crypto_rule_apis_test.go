@@ -99,9 +99,11 @@ func TestPythonM2Crypto_RuleAPIsResolveToTheirContracts(t *testing.T) {
 	lines := strings.Split(m2cryptoConsumer, "\n")
 	var assets []entities.CryptographicAsset
 	for i, line := range lines {
-		for _, ctor := range []string{"RSA.load_key(", "DSA.load_key(", "EC.load_key(", "EC.load_pub_key(", "DH.gen_params(",
-			"EVP.MessageDigest(", "EVP.HMAC(", "EVP.PKey(", "BIO.CipherStream(", "X509.X509(", "X509.Request(",
-			"X509.load_crl(", "X509.X509_Store_Context(", "SMIME.SMIME(", "SSL.Context("} {
+		for _, ctor := range []string{
+			"RSA.load_key(", "DSA.load_key(", "EC.load_key(", "EC.load_pub_key(", "DH.gen_params(",
+			"EVP.MessageDigest(", "EVP.HMAC(", "EVP.PKey(", "BIO.CipherStream(", "X509.X509(",
+			"X509.Request(", "X509.load_crl(", "X509.X509_Store_Context(", "SMIME.SMIME(", "SSL.Context(",
+		} {
 			if strings.Contains(line, "= "+ctor) {
 				assets = append(assets, m2cryptoFinding(i+1, strings.TrimSpace(line)))
 			}
