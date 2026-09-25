@@ -4,10 +4,60 @@ library:
   name: argon2-cffi
   coordinates:
     - argon2-cffi
-  version_range: ">=23.0"
+  version_range: ">=16.0"
   description: "argon2-cffi high-level PasswordHasher and low-level Argon2 APIs"
 
+# Read at argon2-cffi 25.1.0 (src/argon2/__init__.py, _password_hasher.py,
+# low_level.py) and checked against 16.0.0, 18.2.0 and 21.2.0.
+#
+# VERSION RANGE. 16.0.0 introduced PasswordHasher and argon2.low_level, and
+# PasswordHasher.hash has returned text since then (16.0.0 _password_hasher.py
+# decodes the hash_secret bytes). 15.x ships only the legacy module-level
+# hash_password/verify_password API, which no rule spelling reaches, so the
+# range starts at 16.0. check_needs_rehash arrives at 18.2.0 and
+# from_parameters at 21.2.0; a call to either on an older release does not
+# exist to be keyed.
+#
+# TWO CONSTRUCTOR SPELLINGS. A Python call-graph key follows the consumer's
+# import: `from argon2 import PasswordHasher; PasswordHasher()` emits
+# `argon2.PasswordHasher.<init>`, while `import argon2; argon2.PasswordHasher()`
+# emits `argon2.PasswordHasher`. Neither resolves the other, and without the
+# attribute spelling the receiver keys on the consumer's own variable
+# (`<module>.ph.hash`), which no contract can join. The library's own
+# tests/typing/api.py uses the attribute spelling.
+#
+# ROLES. hash, verify and the low-level hash_secret, hash_secret_raw and
+# verify_secret run Argon2, so they are `operation`. check_needs_rehash decodes
+# the parameters embedded in an existing hash and compares them with the
+# hasher's own; it runs no Argon2, so it stays `output`. The constructors and
+# from_parameters are `factory`.
+#
+# NOT CONTRACTED. hash_password, hash_password_raw and verify_password are the
+# deprecated pre-16.0 API: no rule spelling reaches them. extract_parameters,
+# profiles.get_default_parameters and the Parameters record parse or build a
+# parameter set and perform no cryptography.
+
 contracts:
+  - method: argon2.PasswordHasher
+    arity: 0
+    return: { type: argon2.PasswordHasher, confidence: high }
+    role: factory
+  - method: argon2.PasswordHasher
+    arity: 4
+    return: { type: argon2.PasswordHasher, confidence: high }
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 3
+        name: hash_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
   - method: argon2.PasswordHasher.<init>
     arity: 0
     return: { type: argon2.PasswordHasher, confidence: high }
@@ -38,14 +88,20 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_byte_length
+  # classmethod from_parameters(cls, params) — 25.1.0 _password_hasher.py:133.
+  # Both import spellings emit this one key, because the class is the receiver.
+  - method: argon2.PasswordHasher.from_parameters
+    arity: 1
+    return: { type: argon2.PasswordHasher, confidence: high }
+    role: factory
   - method: argon2.PasswordHasher.hash
     arity: 1
     return: { type: builtins.str, confidence: high }
-    role: output
+    role: operation
   - method: argon2.PasswordHasher.verify
     arity: 2
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
   - method: argon2.PasswordHasher.check_needs_rehash
     arity: 1
     return: { type: builtins.bool, confidence: high }
@@ -54,10 +110,11 @@ contracts:
   # parallelism, hash_len, type, version=ARGON2_VERSION) — verified
   # against github.com/hynek/argon2-cffi (src/argon2/low_level.py, main
   # branch): 7 required parameters (version defaults), hash_len at index 5.
+  # `type` selects Argon2d, Argon2i or Argon2id.
   - method: argon2.low_level.hash_secret
     arity: 7
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.bytes
@@ -73,14 +130,41 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_byte_length
+      - index: 6
+        name: type
+        role: operation-determining
+  # hash_secret_raw shares hash_secret's signature (low_level.py:123).
   - method: argon2.low_level.hash_secret_raw
     arity: 7
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - argon2.low_level.Type
+    parameters:
+      - index: 5
+        name: hash_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 6
+        name: type
+        role: operation-determining
+  # verify_secret(hash, secret, type) — low_level.py:163.
   - method: argon2.low_level.verify_secret
     arity: 3
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
 
 hierarchy:
   argon2.PasswordHasher:
