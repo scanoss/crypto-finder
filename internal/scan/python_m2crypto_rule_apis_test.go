@@ -35,6 +35,7 @@ def keys(data, sig, digest):
     ec = EC.load_key("ec.pem")
     ec.gen_key()
     ec.verify_dsa(digest, sig, sig)
+    ec.verify_dsa_asn1(digest, sig)
     pub = EC.load_pub_key("ecpub.pem")
     pub.get_key()
     dh = DH.gen_params(2048, 2)
@@ -183,6 +184,7 @@ func TestPythonM2Crypto_RuleAPIsResolveToTheirContracts(t *testing.T) {
 		"M2Crypto.DSA.DSA.verify":                                   "operation",
 		"M2Crypto.EC.EC.gen_key":                                    "operation",
 		"M2Crypto.EC.EC.verify_dsa":                                 "operation",
+		"M2Crypto.EC.EC.verify_dsa_asn1":                            "operation",
 		"M2Crypto.EC.EC_pub.get_key":                                "output",
 		"M2Crypto.DH.DH.gen_key":                                    "operation",
 		"M2Crypto.EVP.MessageDigest.update":                         "operation",

@@ -104,6 +104,10 @@ contracts:
     arity: 3
     return: { type: builtins.int, confidence: high }
     role: operation
+  - method: M2Crypto.EC.EC.verify_dsa_asn1
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
 
 hierarchy:
   builtins.tuple:
