@@ -116,6 +116,38 @@ contracts:
       type: java.security.PrivateKey
       confidence: high
 
+  # --- SSLContext ---
+  # SSLContext.getInstance(protocol[, provider]). The protocol selects the TLS
+  # version family; the provider, when named, is what routes the context to
+  # an implementation such as Bouncy Castle's "BCJSSE".
+  - method: javax.net.ssl.SSLContext.getInstance
+    arity: 1
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: protocol
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+
+  - method: javax.net.ssl.SSLContext.getInstance
+    arity: 2
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: protocol
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+      - index: 1
+        name: provider
+        role: metadata-contributing
+        contributes: { property: provider, derivation: argument_value }
+
   # --- Cipher ---
   - method: javax.crypto.Cipher.getInstance
     arity: 1
@@ -440,6 +472,8 @@ contracts:
       confidence: high
 
 hierarchy:
+  javax.net.ssl.SSLContext:
+    - java.lang.Object
   # JCA Key family
   javax.crypto.SecretKey:
     - java.security.Key

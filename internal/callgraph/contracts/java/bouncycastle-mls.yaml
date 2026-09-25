@@ -1,0 +1,78 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-mls
+  coordinates:
+    - "org.bouncycastle:bcmls-jdk18on"
+  version_range: ">=1.78,<2.0"
+  description: "Bouncy Castle bcmls: RFC 9420 MLS cipher suite selection and its labelled operations"
+
+# Authored from javap over every tier0 bcmls-jdk18on jar, 1.78 (its first
+# release) through 1.84; each entry exists unchanged in all ten.
+#
+# The rules match the seven MlsCipherSuite.MLS_* suite identifiers. Those are
+# short constants, not calls, so no contract can key on them. The call that
+# consumes one is MlsCipherSuite.getSuite(short), whose argument is therefore
+# operation-determining: it selects the KEM, AEAD, hash and signature scheme
+# together. The BCMLS_* fields are MlsCipherSuite instances, also not calls.
+#
+# Inventory, beyond the contracted entries:
+#   MLS_* and BCMLS_* fields, ALL_SUPPORTED_SUITES     skipped-unsupported: fields, not calls
+#   getSuiteID, getHPKE, getKDF, getAEAD                skipped-informative-return
+#   serialize/deserializeSignature{Public,Private}Key   needs-follow-up: key encoding, no rule selects it
+contracts:
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.getSuite
+    arity: 1
+    return: { type: org.bouncycastle.mls.crypto.MlsCipherSuite, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: suiteID
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.<init>
+    arity: 5
+    return: { type: org.bouncycastle.mls.crypto.MlsCipherSuite, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: suiteId
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.generateSignatureKeyPair
+    arity: 0
+    return: { type: org.bouncycastle.crypto.AsymmetricCipherKeyPair, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.signWithLabel
+    arity: 3
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.verifyWithLabel
+    arity: 4
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.encryptWithLabel
+    arity: 4
+    return: { type: "byte[][]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.decryptWithLabel
+    arity: 5
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.hash
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.refHash
+    arity: 2
+    return: { type: "byte[]", confidence: high }
+    role: operation
+
+hierarchy:
+  org.bouncycastle.mls.crypto.MlsCipherSuite:
+    - java.lang.Object
+  org.bouncycastle.crypto.AsymmetricCipherKeyPair:
+    - java.lang.Object
+  "byte[][]":
+    - java.lang.Object
+  java.lang.Object: []
