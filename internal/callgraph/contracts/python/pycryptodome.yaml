@@ -95,6 +95,89 @@ contracts:
     return: { type: builtins.bytes, confidence: high }
     role: operation
 
+  # DES and Triple DES (Cipher/DES.py, DES3.py new(key, mode, *args, **kwargs)).
+  # As for AES, the mode object new() returns is modelled as one cipher type.
+  - method: Crypto.Cipher.DES.new
+    arity: 2
+    return: { type: Crypto.Cipher.DES.DESCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Crypto.Cipher.DES.DESCipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.DES.DESCipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.DES3.new
+    arity: 2
+    return: { type: Crypto.Cipher.DES3.DES3Cipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Crypto.Cipher.DES3.DES3Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.DES3.DES3Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # Salsa20 (Cipher/Salsa20.py). 3.0 to 3.3.1 declare new(key, nonce); 3.4 makes
+  # nonce optional, so arity 2 matches every release.
+  - method: Crypto.Cipher.Salsa20.new
+    arity: 2
+    return: { type: Crypto.Cipher.Salsa20.Salsa20Cipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+  - method: Crypto.Cipher.Salsa20.Salsa20Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.Salsa20.Salsa20Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # RSA-OAEP (Cipher/PKCS1_OAEP.py new(key, hashAlgo=None, mgfunc=None, ..)).
+  - method: Crypto.Cipher.PKCS1_OAEP.new
+    arity: 1
+    return: { type: Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher, confidence: high }
+    role: factory
+  - method: Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
   # ChaCha20-Poly1305 (Cipher/ChaCha20_Poly1305.py new(**kwargs), keyword-only, 3.7+).
   - method: Crypto.Cipher.ChaCha20_Poly1305.new
     arity: 1
@@ -513,6 +596,14 @@ contracts:
           derivation: argument_byte_length
 
 hierarchy:
+  Crypto.Cipher.DES.DESCipher:
+    - builtins.object
+  Crypto.Cipher.DES3.DES3Cipher:
+    - builtins.object
+  Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher:
+    - builtins.object
+  Crypto.Cipher.Salsa20.Salsa20Cipher:
+    - builtins.object
   Crypto.Cipher.AES.AESCipher:
     - builtins.object
   Crypto.Cipher.ChaCha20.ChaCha20Cipher:

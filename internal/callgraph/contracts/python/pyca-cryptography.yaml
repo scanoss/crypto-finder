@@ -798,7 +798,168 @@ contracts:
       confidence: high
     role: output
 
+  # AES-CCM (ciphers/aead.py, bindings/_rust/openssl/aead.pyi from 43.0.0):
+  # AESCCM(key, tag_length=16) and the same encrypt/decrypt shape as AESGCM.
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.AESCCM
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.generate_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  # X25519 key agreement (asymmetric/x25519.py): generate, public_key, exchange.
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.exchange
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.x25519.X25519PublicKey
+      confidence: high
+    role: factory
+  # Fernet and MultiFernet (fernet.py). Fernet(key) builds the AES-CBC plus
+  # HMAC-SHA256 token scheme; encrypt, decrypt, their *_at_time forms and
+  # MultiFernet.rotate run it.
+  - method: cryptography.fernet.Fernet.<init>
+    arity: 1
+    return:
+      type: cryptography.fernet.Fernet
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.Fernet.generate_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.Fernet.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.encrypt_at_time
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.decrypt_at_time
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.<init>
+    arity: 1
+    return:
+      type: cryptography.fernet.MultiFernet
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.MultiFernet.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.rotate
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  # CSR builder (x509/base.py). Both spellings, as for CertificateBuilder. The
+  # 3.x sign also required backend; it is optional from 35.0.0.
+  - method: cryptography.x509.CertificateSigningRequestBuilder
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateSigningRequestBuilder.<init>
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateSigningRequestBuilder.subject_name
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.add_extension
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.add_attribute
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.sign
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequest
+      confidence: high
+    role: operation
+
 hierarchy:
+  cryptography.hazmat.primitives.ciphers.aead.AESCCM:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.x25519.X25519PublicKey:
+    - builtins.object
+  cryptography.fernet.Fernet:
+    - builtins.object
+  cryptography.fernet.MultiFernet:
+    - builtins.object
+  cryptography.x509.CertificateSigningRequestBuilder:
+    - builtins.object
+  cryptography.x509.CertificateSigningRequest:
+    - builtins.object
   cryptography.hazmat.primitives.padding.PKCS7:
     - builtins.object
   cryptography.hazmat.primitives.padding.PaddingContext:
