@@ -1,0 +1,54 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: spring-security-crypto-5.5
+  coordinates:
+    - "org.springframework.security:spring-security-crypto"
+  version_range: ">=5.5.0,<6.0.0"
+  description: "Spring Security encoder constructors removed at 6.0.0"
+
+# Every constructor here is gone from 6.0.0. The file claims only 5.5.0 onwards
+# because Pbkdf2PasswordEncoder(CharSequence, int) first appears there; the
+# others are older:
+#   SCryptPasswordEncoder()                           4.1.0 - 5.8.x
+#   Pbkdf2PasswordEncoder(), (CharSequence),
+#     (CharSequence, int, int)                        4.1.0 - 5.8.x
+#   Argon2PasswordEncoder()                           5.2.0 - 5.8.x
+#   Pbkdf2PasswordEncoder(CharSequence, int)          5.5.0 - 5.8.x
+contracts:
+  - method: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.scrypt.SCryptPasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.argon2.Argon2PasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.argon2.Argon2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.password.Pbkdf2PasswordEncoder, confidence: high }
+    role: factory
+
+hierarchy:
+  org.springframework.security.crypto.password.PasswordEncoder:
+    - java.lang.Object
+  org.springframework.security.crypto.scrypt.SCryptPasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.argon2.Argon2PasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  org.springframework.security.crypto.password.Pbkdf2PasswordEncoder:
+    - org.springframework.security.crypto.password.PasswordEncoder
+  java.lang.Object: []
