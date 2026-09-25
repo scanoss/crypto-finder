@@ -318,7 +318,7 @@ func propagatePythonAssignedVarTypesForDecl(
 	kb *contracts.KnowledgeBase,
 ) {
 	var varTypes map[string]pythonTrackedAssignedType
-	for i := range fn.Calls {
+	for _, i := range pythonPropagationOrder(fn.Calls) {
 		call := &fn.Calls[i]
 		if call.ReceiverVar != "" && varTypes != nil {
 			if tracked, ok := varTypes[call.ReceiverVar]; ok {
@@ -354,6 +354,32 @@ func propagatePythonAssignedVarTypesForDecl(
 		}
 		varTypes[call.AssignedVar] = pythonTrackedAssignedType{name: returnType, declPackage: declPackage}
 	}
+}
+
+// pythonPropagationOrder is document order, except that a fluent chain's
+// root is visited after the chain's other links. The parser records the root,
+// which carries the statement's AssignedVar, before the links it wraps, so in
+// "builder = builder.a(..).b(..)" the rebinding would otherwise drop builder's
+// type before the innermost link reads it as its receiver.
+func pythonPropagationOrder(calls []FunctionCall) []int {
+	lastLink := map[string]int{}
+	for i := range calls {
+		if id := calls[i].ChainID; id != "" {
+			lastLink[id] = i
+		}
+	}
+	order := make([]int, 0, len(calls))
+	deferred := map[int][]int{}
+	for i := range calls {
+		call := &calls[i]
+		if last := lastLink[call.ChainID]; call.ChainID != "" && call.AssignedVar != "" && last > i {
+			deferred[last] = append(deferred[last], i)
+			continue
+		}
+		order = append(order, i)
+		order = append(order, deferred[i]...)
+	}
+	return order
 }
 
 // isPythonSourceFile reports whether filePath is a Python source/stub file

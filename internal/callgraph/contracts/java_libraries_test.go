@@ -1466,6 +1466,18 @@ func TestLoadEmbeddedJava_CloudKmsAndVaultLifecycle(t *testing.T) {
 		{"com.azure.security.keyvault.keys.KeyClient.backupKey", 1, "byte[]", "output", "azure-keyvault-keys-java"},
 		{"com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getCipherText", 0, "byte[]", "output", "azure-keyvault-keys-java"},
 		{"com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm.fromString", 1, "com.azure.security.keyvault.keys.cryptography.models.EncryptionAlgorithm", "factory", "azure-keyvault-keys-java"},
+		// Later-release Azure Key Vault APIs live in the file whose version_range
+		// starts at the release that introduced them.
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.jsonWebKey", 1, "com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder", "config", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt", 1, "reactor.core.publisher.Mono", "operation", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt", 1, "reactor.core.publisher.Mono", "operation", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.KeyClient.createOctKey", 1, "com.azure.security.keyvault.keys.models.KeyVaultKey", "factory", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.KeyAsyncClient.createOctKey", 1, "reactor.core.publisher.Mono", "factory", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getIv", 0, "byte[]", "output", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getAuthenticationTag", 0, "byte[]", "output", "azure-keyvault-keys-java-4.3"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableChallengeResourceVerification", 0, "com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder", "config", "azure-keyvault-keys-java-4.5"},
+		{"com.azure.security.keyvault.keys.KeyClientBuilder.disableChallengeResourceVerification", 0, "com.azure.security.keyvault.keys.KeyClientBuilder", "config", "azure-keyvault-keys-java-4.5"},
+		{"com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableKeyCaching", 0, "com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder", "config", "azure-keyvault-keys-java-4.9"},
 		// vault-java-driver — rule anchors new Vault(...) / new VaultConfig().
 		{"com.bettercloud.vault.Vault.<init>", 1, "com.bettercloud.vault.Vault", "factory", "vault-java-driver"},
 		{"com.bettercloud.vault.VaultConfig.<init>", 0, "com.bettercloud.vault.VaultConfig", "factory", "vault-java-driver"},
