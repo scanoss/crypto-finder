@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: spring-security-crypto-6.3
+  coordinates:
+    - "org.springframework.security:spring-security-crypto"
+  version_range: ">=6.3.0,<7.2.0"
+  description: "Spring Security RSA encryptors, added in 6.3.0"
+
+# The constructors are overloaded at the same arity with the RsaAlgorithm,
+# key or salt in different positions, so no index names a parameter role.
+#
+# Not authorable: encrypt and decrypt take a String and return a String, or
+# take a byte[] and return a byte[], under one method and arity. One method and
+# arity can declare one return. Both classes implement BytesEncryptor and
+# TextEncryptor, whose encrypt and decrypt contracts they reach through the
+# hierarchy below.
+contracts:
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 4
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.<init>
+    arity: 6
+    return: { type: org.springframework.security.crypto.encrypt.RsaSecretEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.getPublicKey
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.springframework.security.crypto.encrypt.RsaSecretEncryptor.canDecrypt
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.<init>
+    arity: 0
+    return: { type: org.springframework.security.crypto.encrypt.RsaRawEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.<init>
+    arity: 1
+    return: { type: org.springframework.security.crypto.encrypt.RsaRawEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.<init>
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.RsaRawEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.<init>
+    arity: 3
+    return: { type: org.springframework.security.crypto.encrypt.RsaRawEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.<init>
+    arity: 4
+    return: { type: org.springframework.security.crypto.encrypt.RsaRawEncryptor, confidence: high }
+    role: factory
+  - method: org.springframework.security.crypto.encrypt.RsaRawEncryptor.getPublicKey
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+hierarchy:
+  org.springframework.security.crypto.encrypt.BytesEncryptor:
+    - java.lang.Object
+  org.springframework.security.crypto.encrypt.TextEncryptor:
+    - java.lang.Object
+  org.springframework.security.crypto.encrypt.RsaSecretEncryptor:
+    - org.springframework.security.crypto.encrypt.BytesEncryptor
+    - org.springframework.security.crypto.encrypt.TextEncryptor
+  org.springframework.security.crypto.encrypt.RsaRawEncryptor:
+    - org.springframework.security.crypto.encrypt.BytesEncryptor
+    - org.springframework.security.crypto.encrypt.TextEncryptor
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []
