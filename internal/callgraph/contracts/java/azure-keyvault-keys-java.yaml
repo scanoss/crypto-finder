@@ -620,6 +620,66 @@ contracts:
       confidence: high
     role: factory
 
+  # --- Key creation options ---
+  # The options objects carry the key type, size and curve that createKey,
+  # createRsaKey and createEcKey send to the vault. CreateOctKeyOptions (4.3.0)
+  # is in azure-keyvault-keys-java-4.3.
+  - method: com.azure.security.keyvault.keys.models.CreateKeyOptions.<init>
+    arity: 2
+    parameter_types: [java.lang.String, com.azure.security.keyvault.keys.models.KeyType]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateKeyOptions
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: keyType
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.models.CreateEcKeyOptions.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateEcKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateEcKeyOptions
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions.setKeySize
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateRsaKeyOptions
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keySize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: com.azure.security.keyvault.keys.models.CreateEcKeyOptions.setCurveName
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.keys.models.KeyCurveName]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateEcKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateEcKeyOptions
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        contributes: { property: curve, derivation: argument_value }
+
   # --- Async key management (KeyAsyncClient); same Mono caveat as above ---
   - method: com.azure.security.keyvault.keys.KeyAsyncClient.createKey
     arity: 1

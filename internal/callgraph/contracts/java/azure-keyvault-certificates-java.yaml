@@ -1,0 +1,242 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: azure-keyvault-certificates-java
+  coordinates:
+    - "com.azure:azure-security-keyvault-certificates"
+  # javap over every tier0 release, 4.0.0 through 4.9.0; beginCreateCertificate
+  # with a CreateCertificateOptions is in azure-keyvault-certificates-java-4.8.
+  version_range: ">=4.0.0,<5.0.0"
+  description: "Azure Key Vault Certificates contracts for client construction, certificate policy key settings, certificate creation and import"
+
+contracts:
+  # =========================================================================
+  # Client construction (CertificateClientBuilder)
+  # From 4.3.0 credential also has a TokenCredentialTrait bridge overload at
+  # arity 1, so it carries no parameter_types.
+  # =========================================================================
+  - method: com.azure.security.keyvault.certificates.CertificateClientBuilder.<init>
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.certificates.CertificateClientBuilder
+    return:
+      type: com.azure.security.keyvault.certificates.CertificateClientBuilder
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.CertificateClientBuilder.vaultUrl
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.certificates.CertificateClientBuilder
+    return:
+      type: com.azure.security.keyvault.certificates.CertificateClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.certificates.CertificateClientBuilder.credential
+    arity: 1
+    return:
+      type: com.azure.security.keyvault.certificates.CertificateClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.certificates.CertificateClientBuilder.buildClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.certificates.CertificateClient
+    return:
+      type: com.azure.security.keyvault.certificates.CertificateClient
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.CertificateClientBuilder.buildAsyncClient
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.certificates.CertificateAsyncClient
+    return:
+      type: com.azure.security.keyvault.certificates.CertificateAsyncClient
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Certificate policy. The two-argument constructors take (subject, issuer)
+  # or (issuer, SubjectAlternativeNames), so they share one entry without
+  # parameter_types. The key setters carry the key algorithm, size and curve
+  # the certificate's key is created with.
+  # =========================================================================
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.<init>
+    arity: 2
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.<init>
+    arity: 3
+    parameter_types: [java.lang.String, java.lang.String, com.azure.security.keyvault.certificates.models.SubjectAlternativeNames]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.getDefault
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.setKeyType
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.CertificateKeyType]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyType
+        role: operation-determining
+        contributes: { property: keyType, derivation: argument_value }
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.setKeySize
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keySize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: com.azure.security.keyvault.certificates.models.CertificatePolicy.setKeyCurveName
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.CertificateKeyCurveName]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.CertificatePolicy
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        contributes: { property: curve, derivation: argument_value }
+
+  # =========================================================================
+  # Creation and import. beginCreateCertificate returns a long-running
+  # operation poller whose final result is the certificate.
+  # =========================================================================
+  - method: com.azure.security.keyvault.certificates.CertificateClient.beginCreateCertificate
+    arity: 2
+    parameter_types: [java.lang.String, com.azure.security.keyvault.certificates.models.CertificatePolicy]
+    canonical_return_type: com.azure.core.util.polling.SyncPoller
+    return:
+      type: com.azure.core.util.polling.SyncPoller
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateClient.beginCreateCertificate
+    arity: 4
+    parameter_types: [java.lang.String, com.azure.security.keyvault.certificates.models.CertificatePolicy, java.lang.Boolean, java.util.Map]
+    canonical_return_type: com.azure.core.util.polling.SyncPoller
+    return:
+      type: com.azure.core.util.polling.SyncPoller
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateAsyncClient.beginCreateCertificate
+    arity: 2
+    parameter_types: [java.lang.String, com.azure.security.keyvault.certificates.models.CertificatePolicy]
+    canonical_return_type: com.azure.core.util.polling.PollerFlux
+    return:
+      type: com.azure.core.util.polling.PollerFlux
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateAsyncClient.beginCreateCertificate
+    arity: 4
+    parameter_types: [java.lang.String, com.azure.security.keyvault.certificates.models.CertificatePolicy, java.lang.Boolean, java.util.Map]
+    canonical_return_type: com.azure.core.util.polling.PollerFlux
+    return:
+      type: com.azure.core.util.polling.PollerFlux
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.models.ImportCertificateOptions.<init>
+    arity: 2
+    parameter_types: [java.lang.String, "byte[]"]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.ImportCertificateOptions
+    return:
+      type: com.azure.security.keyvault.certificates.models.ImportCertificateOptions
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.CertificateClient.importCertificate
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.ImportCertificateOptions]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.KeyVaultCertificateWithPolicy
+    return:
+      type: com.azure.security.keyvault.certificates.models.KeyVaultCertificateWithPolicy
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateClient.importCertificateWithResponse
+    arity: 2
+    parameter_types: [com.azure.security.keyvault.certificates.models.ImportCertificateOptions, com.azure.core.util.Context]
+    canonical_return_type: com.azure.core.http.rest.Response
+    return:
+      type: com.azure.core.http.rest.Response
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateAsyncClient.importCertificate
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.ImportCertificateOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateAsyncClient.importCertificateWithResponse
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.ImportCertificateOptions]
+    canonical_return_type: reactor.core.publisher.Mono
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Poller final result. SyncPoller and AsyncPollResponse are azure-core
+  # generics shared by every Azure SDK long-running operation, so the result
+  # type is java.lang.Object and Mono rather than the certificate: the type
+  # argument that names it is not expressible in the schema.
+  # =========================================================================
+  - method: com.azure.core.util.polling.SyncPoller.getFinalResult
+    arity: 0
+    return:
+      type: java.lang.Object
+      confidence: high
+    role: output
+  - method: com.azure.core.util.polling.AsyncPollResponse.getFinalResult
+    arity: 0
+    return:
+      type: reactor.core.publisher.Mono
+      confidence: high
+    role: output
+
+hierarchy:
+  com.azure.security.keyvault.certificates.CertificateClientBuilder:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.CertificateClient:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.CertificateAsyncClient:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.models.CertificatePolicy:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.models.ImportCertificateOptions:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.models.KeyVaultCertificateWithPolicy:
+    - java.lang.Object
+  com.azure.core.util.polling.SyncPoller:
+    - java.lang.Object
+  com.azure.core.util.polling.PollerFlux:
+    - java.lang.Object
+  com.azure.core.util.polling.AsyncPollResponse:
+    - java.lang.Object
+  com.azure.core.http.rest.Response:
+    - java.lang.Object
+  reactor.core.publisher.Mono:
+    - java.lang.Object
+  java.lang.Object: []

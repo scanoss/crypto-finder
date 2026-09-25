@@ -1,0 +1,39 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: azure-keyvault-keys-java-4.3
+  coordinates:
+    - "com.azure:azure-security-keyvault-keys"
+  version_range: ">=4.3.0,<5.0.0"
+  description: "Azure Key Vault Keys symmetric (oct) key options, added in 4.3.0"
+
+contracts:
+  - method: com.azure.security.keyvault.keys.models.CreateOctKeyOptions.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateOctKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateOctKeyOptions
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.keys.models.CreateOctKeyOptions.setKeySize
+    arity: 1
+    parameter_types: [java.lang.Integer]
+    canonical_return_type: com.azure.security.keyvault.keys.models.CreateOctKeyOptions
+    return:
+      type: com.azure.security.keyvault.keys.models.CreateOctKeyOptions
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keySize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+hierarchy:
+  com.azure.security.keyvault.keys.models.CreateKeyOptions:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.models.CreateOctKeyOptions:
+    - com.azure.security.keyvault.keys.models.CreateKeyOptions
+  java.lang.Object: []
