@@ -224,22 +224,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
 	if b.ecosystem == ecosystemPython {
-		// The type resolver already propagated assigned-variable types, but
-		// before the pass above typed chain links, so `padder =
-		// PKCS7(128).padder()` bound nothing and `padder.update(..)` stayed
-		// keyed on the local name. Another pass sees the resolved links. A
-		// chain whose receiver was bound by the previous statement's chain,
-		// as in consecutive `builder = builder.a(..).b(..)` lines, can only be
-		// typed after that binding exists, so the two passes alternate until
-		// chain resolution rewrites nothing new. Each round types one more
-		// statement of such a run; the cap guards against a rewrite cycle.
-		propagatePythonAssignedVarTypes(graph, kb)
-		for range 10 {
-			if resolveFluentChainCalleesByContract(graph, kb) == 0 {
-				break
-			}
-			propagatePythonAssignedVarTypes(graph, kb)
-		}
+		propagatePythonTypesThroughChains(graph, kb)
 	}
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
 	respellGoPointerReceivers(graph, b.ecosystem)
@@ -1471,6 +1456,25 @@ func resolveFluentChainsByReturnType(graph *CallGraph) {
 
 	if totalResolved > 0 {
 		log.Info().Int("resolved", totalResolved).Msg("Resolved fluent chain calls via return types")
+	}
+}
+
+// propagatePythonTypesThroughChains re-runs Python assigned-variable
+// propagation after chain resolution. The type resolver already propagated,
+// but before chain links were typed, so `padder = PKCS7(128).padder()` bound
+// nothing and `padder.update(..)` stayed keyed on the local name. A chain
+// whose receiver was bound by the previous statement's chain, as in
+// consecutive `builder = builder.a(..).b(..)` lines, can only be typed after
+// that binding exists, so the two passes alternate until chain resolution
+// rewrites nothing new. Each round types one more statement of such a run;
+// the cap guards against a rewrite cycle.
+func propagatePythonTypesThroughChains(graph *CallGraph, kb *contracts.KnowledgeBase) {
+	propagatePythonAssignedVarTypes(graph, kb)
+	for range 10 {
+		if resolveFluentChainCalleesByContract(graph, kb) == 0 {
+			return
+		}
+		propagatePythonAssignedVarTypes(graph, kb)
 	}
 }
 
