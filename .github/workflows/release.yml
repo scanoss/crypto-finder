@@ -213,18 +213,25 @@ jobs:
   notify:
     name: Notify crypto-mining-service
     needs: goreleaser
+    # A prerelease tag (v1.2.3-rc.1) is never announced, and never mints a token.
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      # The org has no tag protection, so any commit can be tagged. Only a tag
-      # on trunk is announced: `identical` or `behind` mean on trunk.
-      - name: Refuse a tag that is not on trunk
+      # The org has no tag protection, so any commit can be tagged. Only a
+      # vX.Y.Z tag on trunk is announced: `identical` or `behind` mean on trunk.
+      - name: Refuse a tag that is not vX.Y.Z on trunk
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           TRUNK: ${{ github.event.repository.default_branch }}
+          VERSION: ${{ github.ref_name }}
         with:
           script: |
+            if (!/^v\d+\.\d+\.\d+$/.test(process.env.VERSION)) {
+              core.setFailed(`refusing to announce '${process.env.VERSION}': not a vX.Y.Z release tag`);
+              return;
+            }
             const { data } = await github.rest.repos.compareCommitsWithBasehead({
               ...context.repo,
               basehead: `${process.env.TRUNK}...${context.sha}`,
@@ -264,10 +271,6 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const version = process.env.VERSION;
-            if (!/^v\d+\.\d+\.\d+$/.test(version)) {
-              core.setFailed(`refusing to announce '${version}': not a vX.Y.Z release tag`);
-              return;
-            }
             await github.rest.repos.createDispatchEvent({
               owner: 'scanoss',
               repo: 'crypto-mining-service',
