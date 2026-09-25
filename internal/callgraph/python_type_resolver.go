@@ -333,27 +333,26 @@ func isPythonSourceFile(filePath string) bool {
 	return strings.HasSuffix(filePath, ".py") || strings.HasSuffix(filePath, ".pyi")
 }
 
-// pythonCallFQN derives the fully-qualified callee name for a FunctionCall in
-// the spelling the Python contracts KB uses: "Package.Type.Name" for a method
-// or constructor, "Package.Name" for a module-level function. It is the
-// call-site mirror of pythonFunctionFQN, and it exists because
+// pythonFunctionIDFQN renders a FunctionID in the spelling the Python
+// contracts KB uses for its `method:` field: "Package.Type.Name" for a method
+// or constructor, "Package.Name" for a module-level function, and the same
+// without the package when the id has none. It exists because
 // FunctionID.String() renders a type-qualified id as "Package.(Type).Name",
 // which no KB key matches.
-func pythonCallFQN(call *FunctionCall) string {
-	if call.Callee.Type != "" {
-		return call.Callee.Package + "." + call.Callee.Type + "." + call.Callee.Name
+func pythonFunctionIDFQN(id FunctionID) string {
+	name := id.Name
+	if id.Type != "" {
+		name = id.Type + "." + id.Name
 	}
-	return call.Callee.Package + "." + call.Callee.Name
+	return qualifiedType(id.Package, name)
 }
 
-// pythonFunctionFQN derives the fully-qualified method name for a FunctionDecl
-// as it appears in the Python contracts KB: "Package.Type.Name" for methods,
-// "Package.Name" for module-level functions.
-//
-// This must match the KB's `method:` field exactly.
+// pythonCallFQN is pythonFunctionIDFQN for a call site.
+func pythonCallFQN(call *FunctionCall) string {
+	return pythonFunctionIDFQN(call.Callee)
+}
+
+// pythonFunctionFQN is pythonFunctionIDFQN for a declaration.
 func pythonFunctionFQN(fn *FunctionDecl) string {
-	if fn.ID.Type != "" {
-		return fn.ID.Package + "." + fn.ID.Type + "." + fn.ID.Name
-	}
-	return fn.ID.Package + "." + fn.ID.Name
+	return pythonFunctionIDFQN(fn.ID)
 }

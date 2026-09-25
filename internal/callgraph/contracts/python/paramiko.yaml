@@ -4,127 +4,727 @@ library:
   name: paramiko
   coordinates:
     - paramiko
-  version_range: ">=2.0"
-  description: "Paramiko — SSH2 protocol library: RSA/DSA/ECDSA/Ed25519 keys, transport crypto"
+  version_range: ">=2.0,<6.0"
+  description: >-
+    Paramiko SSH2 lifecycle contracts: key generation and loading, SSH
+    signature creation and verification, transport negotiation and
+    authentication, security options, and host-key trust policy. Read at
+    paramiko 3.5.1 (the tier0 source), with 2.0.0, 4.0.0 and 5.0.0 checked for
+    drift.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SPELLINGS. Measured on an exported call graph, not assumed:
+#   import paramiko; paramiko.RSAKey(..)            -> paramiko.RSAKey
+#   from paramiko import RSAKey; RSAKey(..)         -> paramiko.RSAKey.<init>
+#   from paramiko.rsakey import RSAKey; RSAKey(..)  -> paramiko.rsakey.RSAKey.<init>
+#   paramiko.RSAKey.generate(..) and
+#   from paramiko import RSAKey; RSAKey.generate(..) -> paramiko.RSAKey.generate
+#   from paramiko.rsakey import RSAKey; RSAKey.generate(..)
+#                                                   -> paramiko.rsakey.RSAKey.generate
+# So every constructor carries three keys and every class-invoked
+# static/classmethod two. `import paramiko.rsakey; paramiko.rsakey.RSAKey(..)`
+# (a fourth constructor key) is not declared: no documented idiom uses it.
+#
+# Instance methods carry ONE key, the defining class: a factory's return type
+# names that class, and the receiver bound to it rekeys every later call onto
+# `<return type>.<method>`. That is why every return type below is the
+# defining-module FQN (`paramiko.rsakey.RSAKey`), never the re-export.
+#
+# INHERITED METHODS. The KB lookup is by exact FQN and does not walk
+# `hierarchy`, so `key.get_fingerprint()` on an RSAKey receiver is keyed
+# `paramiko.rsakey.RSAKey.get_fingerprint` and never reaches a
+# `paramiko.pkey.PKey.get_fingerprint` contract. Each inherited operation is
+# therefore declared on PKey (for receivers typed PKey, e.g. from `from_path`
+# or `get_remote_server_key`) AND on each concrete key class a consumer holds.
+#
+# ROLES. factory creates or loads a key, transport, client, trust store or
+# policy object. config sets crypto parameters on an existing object (host
+# key, moduli, trust store, host-key policy, certificate). operation performs
+# the cryptography: key exchange and authentication handshakes, rekeying,
+# SSH signature creation and verification, the MD5 fingerprint digest, the
+# known_hosts HMAC-SHA1 hostname hash, the legacy PEM key-derivation, and the
+# host-key check. output extracts an already-negotiated value (the peer's
+# host key, the transport a client holds, its trust store, the security-
+# options object) or serializes an already-computed key.
+#
+# PARAMETERS. Keyword arguments are not bound to parameter positions yet
+# (crypto-finder#284); only `keySize` has a keyword-name path. The index and
+# name below follow the real signature. `disabled_algorithms` (Transport and
+# SSHClient.connect) is NOT declared: its position moved when 5.0.0 removed
+# the GSS-API parameters (Transport.__init__ index 5 -> 3, SSHClient.connect
+# index 20 -> 15), so no single index is true across the range, and a
+# name-only parameter is exported with `index: 0`, which would name
+# `sock`/`hostname` as the algorithm selector.
+#
+# VERSION WINDOWS inside `>=2.0,<6.0` (the whole 2.x..5.x line; 1.x used
+# PyCrypto and a different key API, and is not claimed):
+#   Ed25519Key                      2.2.0 onward
+#   PKey.from_path, from_type_string, load_certificate
+#                                   3.2.0 / 3.2.0 / 2.6.0 onward
+#   sign_ssh_data(algorithm=)       2.9.0 onward (the key is arity-tolerant)
+#   DSSKey                          removed in 4.0.0; kept for 2.x-3.x
+#   GSS-API parameters              removed in 5.0.0
+#   from_path(passphrase=) renamed to (password=) in 5.0.0; position unchanged
+#
+# INVENTORY (paramiko 3.5.1 public API; SFTP and channel I/O out of scope).
+# contracted:
+#   RSAKey/DSSKey/ECDSAKey/Ed25519Key constructors; RSAKey/DSSKey/ECDSAKey
+#   .generate; PKey + each key class .from_private_key_file/.from_private_key;
+#   PKey.from_path/.from_type_string; sign_ssh_data, verify_ssh_sig,
+#   get_fingerprint, write_private_key_file, write_private_key,
+#   load_certificate; AgentKey.sign_ssh_data; Agent constructor and get_keys;
+#   Transport constructor, get_security_options, start_client, start_server,
+#   connect, renegotiate_keys, auth_publickey, add_server_key, get_server_key,
+#   get_remote_server_key, load_server_moduli; SSHClient constructor,
+#   load_system_host_keys, load_host_keys, get_host_keys,
+#   set_missing_host_key_policy, connect, get_transport; AutoAddPolicy,
+#   RejectPolicy, WarningPolicy constructors; HostKeys constructor, load, add,
+#   check, hash_host; util.generate_key_bytes.
+# skipped-unsupported:
+#   SecurityOptions.ciphers/digests/key_types/kex/compression setters and the
+#   Transport.preferred_* properties (attribute access, not a call site);
+#   MissingHostKeyPolicy.missing_host_key (a callback the library invokes;
+#   consumers override it rather than call it).
+# skipped-informative-return / skipped-non-crypto:
+#   PKey.get_name/get_bits/get_base64/asbytes/can_sign/algorithm_name/
+#   identifiers; PublicBlob.from_file/from_string/from_message (blob
+#   container, no cryptography); Transport.auth_password/auth_none/
+#   auth_interactive/auth_interactive_dumb (credential transport over an
+#   already-encrypted channel); SSHClient.save_host_keys, HostKeys.save/lookup/
+#   clear, HostKeyEntry.from_line, util.load_host_keys (file persistence);
+#   Transport.use_compression/set_keepalive/send_ignore and every channel,
+#   port-forward, exec, shell and SFTP call; SSHConfig; Message.
+# needs-follow-up:
+#   paramiko.auth_strategy (OnDiskPrivateKey, InMemoryPrivateKey, AuthStrategy;
+#   3.2.0+); ServiceRequestingTransport (3.2.0+, built by SSHClient when an
+#   auth_strategy is passed); Transport.auth_gssapi_with_mic/auth_gssapi_keyex
+#   and GSSAuth (removed in 5.0.0); the `disabled_algorithms` parameter role
+#   on Transport and SSHClient.connect (see PARAMETERS).
+# removed from this file:
+#   paramiko.ed25519key.Ed25519Key.generate. No paramiko release defines it
+#   (checked 2.0.0, 3.5.1, 4.0.0, 5.0.0); the call raises AttributeError.
 
 contracts:
-  # ── RSA keys (paramiko.rsakey) ────────────────────────────────────────────────
+  # ── RSA keys (paramiko/rsakey.py) ─────────────────────────────────────────
+  # rsakey.py:49 RSAKey.__init__(msg, data, filename, password, key, file_obj)
+  - method: paramiko.RSAKey
+    arity: 0
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
+  - method: paramiko.RSAKey.<init>
+    arity: 0
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
+  - method: paramiko.rsakey.RSAKey.<init>
+    arity: 0
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
 
-  # RSAKey.generate(bits) → RSAKey
+  # rsakey.py:179 @staticmethod generate(bits, progress_func=None)
+  - method: paramiko.RSAKey.generate
+    arity: 1
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
   - method: paramiko.rsakey.RSAKey.generate
     arity: 1
-    return:
-      type: paramiko.rsakey.RSAKey
-      confidence: high
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
 
-  # RSAKey.from_private_key_file(filename, password=None) → RSAKey
+  # pkey.py:415 / :439 classmethods, inherited: they return `cls(...)`.
+  - method: paramiko.RSAKey.from_private_key_file
+    arity: 1
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
   - method: paramiko.rsakey.RSAKey.from_private_key_file
     arity: 1
-    return:
-      type: paramiko.rsakey.RSAKey
-      confidence: high
-
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
+  - method: paramiko.RSAKey.from_private_key
+    arity: 1
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
   - method: paramiko.rsakey.RSAKey.from_private_key
     arity: 1
-    return:
-      type: paramiko.rsakey.RSAKey
-      confidence: high
+    return: { type: paramiko.rsakey.RSAKey, confidence: high }
+    role: factory
 
+  # rsakey.py:122 sign_ssh_data(data, algorithm=None): `algorithm` selects
+  # ssh-rsa (SHA-1), rsa-sha2-256 or rsa-sha2-512.
   - method: paramiko.rsakey.RSAKey.sign_ssh_data
     arity: 1
-    return:
-      type: paramiko.message.Message
-      confidence: high
-    role: output
-
-  # ── DSA keys (paramiko.dsskey) ────────────────────────────────────────────────
-
-  - method: paramiko.dsskey.DSSKey.generate
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+  # rsakey.py:138
+  - method: paramiko.rsakey.RSAKey.verify_ssh_sig
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: paramiko.rsakey.RSAKey.get_fingerprint
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  # rsakey.py:162 / :170 (moved onto PKey in 4.0.0; same key either way)
+  - method: paramiko.rsakey.RSAKey.write_private_key_file
     arity: 1
-    return:
-      type: paramiko.dsskey.DSSKey
-      confidence: high
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.rsakey.RSAKey.write_private_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.rsakey.RSAKey.load_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
 
+  # ── DSA keys (paramiko/dsskey.py, removed in 4.0.0) ─────────────────────────
+  # dsskey.py:48 DSSKey.__init__(msg, data, filename, password, vals, file_obj)
+  - method: paramiko.DSSKey
+    arity: 0
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+  - method: paramiko.DSSKey.<init>
+    arity: 0
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+  - method: paramiko.dsskey.DSSKey.<init>
+    arity: 0
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+
+  # dsskey.py:202 @staticmethod generate(bits=1024, progress_func=None)
+  - method: paramiko.DSSKey.generate
+    arity: 0
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: paramiko.dsskey.DSSKey.generate
+    arity: 0
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: paramiko.DSSKey.from_private_key_file
+    arity: 1
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
   - method: paramiko.dsskey.DSSKey.from_private_key_file
     arity: 1
-    return:
-      type: paramiko.dsskey.DSSKey
-      confidence: high
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+  - method: paramiko.DSSKey.from_private_key
+    arity: 1
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
+  - method: paramiko.dsskey.DSSKey.from_private_key
+    arity: 1
+    return: { type: paramiko.dsskey.DSSKey, confidence: high }
+    role: factory
 
-  # ── ECDSA keys (paramiko.ecdsakey) ────────────────────────────────────────────
+  # dsskey.py:111 / :136 / :165 / :183
+  - method: paramiko.dsskey.DSSKey.sign_ssh_data
+    arity: 1
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+  - method: paramiko.dsskey.DSSKey.verify_ssh_sig
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: paramiko.dsskey.DSSKey.get_fingerprint
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: paramiko.dsskey.DSSKey.write_private_key_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.dsskey.DSSKey.write_private_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.dsskey.DSSKey.load_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
 
+  # ── ECDSA keys (paramiko/ecdsakey.py) ───────────────────────────────────────
+  # ecdsakey.py:109 ECDSAKey.__init__(msg, data, filename, password, vals,
+  # file_obj, validate_point)
+  - method: paramiko.ECDSAKey
+    arity: 0
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+  - method: paramiko.ECDSAKey.<init>
+    arity: 0
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+  - method: paramiko.ecdsakey.ECDSAKey.<init>
+    arity: 0
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+
+  # ecdsakey.py:263 @classmethod generate(curve=ec.SECP256R1(),
+  # progress_func=None, bits=None): `bits` picks the curve when given.
+  - method: paramiko.ECDSAKey.generate
+    arity: 0
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: operation-determining
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
   - method: paramiko.ecdsakey.ECDSAKey.generate
     arity: 0
-    return:
-      type: paramiko.ecdsakey.ECDSAKey
-      confidence: high
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: operation-determining
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
 
+  - method: paramiko.ECDSAKey.from_private_key_file
+    arity: 1
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
   - method: paramiko.ecdsakey.ECDSAKey.from_private_key_file
     arity: 1
-    return:
-      type: paramiko.ecdsakey.ECDSAKey
-      confidence: high
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+  - method: paramiko.ECDSAKey.from_private_key
+    arity: 1
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
+  - method: paramiko.ecdsakey.ECDSAKey.from_private_key
+    arity: 1
+    return: { type: paramiko.ecdsakey.ECDSAKey, confidence: high }
+    role: factory
 
+  # ecdsakey.py:220 / :230 / :246 / :254
   - method: paramiko.ecdsakey.ECDSAKey.sign_ssh_data
     arity: 1
-    return:
-      type: paramiko.message.Message
-      confidence: high
-    role: output
-
-  # ── Ed25519 keys (paramiko.ed25519key) ────────────────────────────────────────
-
-  - method: paramiko.ed25519key.Ed25519Key.generate
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+  - method: paramiko.ecdsakey.ECDSAKey.verify_ssh_sig
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: paramiko.ecdsakey.ECDSAKey.get_fingerprint
     arity: 0
-    return:
-      type: paramiko.ed25519key.Ed25519Key
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: paramiko.ecdsakey.ECDSAKey.write_private_key_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.ecdsakey.ECDSAKey.write_private_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.ecdsakey.ECDSAKey.load_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
 
+  # ── Ed25519 keys (paramiko/ed25519key.py, 2.2.0 onward) ─────────────────────
+  # ed25519key.py:44 Ed25519Key.__init__(msg, data, filename, password,
+  # file_obj). There is no generate(): Ed25519 keys are only loaded.
+  - method: paramiko.Ed25519Key
+    arity: 0
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
+  - method: paramiko.Ed25519Key.<init>
+    arity: 0
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
+  - method: paramiko.ed25519key.Ed25519Key.<init>
+    arity: 0
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
+
+  - method: paramiko.Ed25519Key.from_private_key_file
+    arity: 1
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
   - method: paramiko.ed25519key.Ed25519Key.from_private_key_file
     arity: 1
-    return:
-      type: paramiko.ed25519key.Ed25519Key
-      confidence: high
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
+  - method: paramiko.Ed25519Key.from_private_key
+    arity: 1
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
+  - method: paramiko.ed25519key.Ed25519Key.from_private_key
+    arity: 1
+    return: { type: paramiko.ed25519key.Ed25519Key, confidence: high }
+    role: factory
 
+  # ed25519key.py:197 / :203
   - method: paramiko.ed25519key.Ed25519Key.sign_ssh_data
     arity: 1
-    return:
-      type: paramiko.message.Message
-      confidence: high
-    role: output
-
-  # ── Transport (paramiko.transport.Transport) ──────────────────────────────────
-
-  # Transport.<init>(sock) → Transport (SSH connection)
-  - method: paramiko.transport.Transport.<init>
-    arity: 1
-    return:
-      type: paramiko.transport.Transport
-      confidence: high
-    role: factory
-
-  # ── SSH client (paramiko.client.SSHClient) ────────────────────────────────────
-
-  - method: paramiko.client.SSHClient.<init>
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+  - method: paramiko.ed25519key.Ed25519Key.verify_ssh_sig
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: paramiko.ed25519key.Ed25519Key.get_fingerprint
     arity: 0
-    return:
-      type: paramiko.client.SSHClient
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: paramiko.ed25519key.Ed25519Key.write_private_key_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.ed25519key.Ed25519Key.write_private_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.ed25519key.Ed25519Key.load_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+  # ── PKey base (paramiko/pkey.py) ────────────────────────────────────────────
+  # Receivers typed PKey come from from_path, from_type_string,
+  # get_remote_server_key and get_server_key.
+  - method: paramiko.PKey.from_private_key_file
+    arity: 1
+    return: { type: paramiko.pkey.PKey, confidence: high }
     role: factory
-
-  # ── PKey base (paramiko.pkey.PKey) ────────────────────────────────────────────
-
   - method: paramiko.pkey.PKey.from_private_key_file
     arity: 1
-    return:
-      type: paramiko.pkey.PKey
-      confidence: high
-
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+  - method: paramiko.PKey.from_private_key
+    arity: 1
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
   - method: paramiko.pkey.PKey.from_private_key
     arity: 1
-    return:
-      type: paramiko.pkey.PKey
-      confidence: high
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+
+  # pkey.py:128 @staticmethod from_path(path, passphrase=None): the concrete
+  # class is chosen from the file contents, so the type is PKey.
+  - method: paramiko.PKey.from_path
+    arity: 1
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+  - method: paramiko.pkey.PKey.from_path
+    arity: 1
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+  # pkey.py:202 @staticmethod from_type_string(key_type, key_bytes)
+  - method: paramiko.PKey.from_type_string
+    arity: 2
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key_type
+        role: operation-determining
+  - method: paramiko.pkey.PKey.from_type_string
+    arity: 2
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key_type
+        role: operation-determining
+
+  # pkey.py:385 / :402 / :349 (md5(self.asbytes()).digest()) / :459 / :473 / :835
+  - method: paramiko.pkey.PKey.sign_ssh_data
+    arity: 1
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+  - method: paramiko.pkey.PKey.verify_ssh_sig
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: paramiko.pkey.PKey.get_fingerprint
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: paramiko.pkey.PKey.write_private_key_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.pkey.PKey.write_private_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: output
+  - method: paramiko.pkey.PKey.load_certificate
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+  # ── SSH agent (paramiko/agent.py) ───────────────────────────────────────────
+  # agent.py:409 Agent.__init__(); agent.py:66 AgentSSH.get_keys() returns a
+  # tuple of AgentKey. A receiver bound to Agent() is keyed on Agent, so
+  # get_keys is declared there rather than on the AgentSSH base.
+  - method: paramiko.Agent
+    arity: 0
+    return: { type: paramiko.agent.Agent, confidence: high }
+    role: factory
+  - method: paramiko.Agent.<init>
+    arity: 0
+    return: { type: paramiko.agent.Agent, confidence: high }
+    role: factory
+  - method: paramiko.agent.Agent.<init>
+    arity: 0
+    return: { type: paramiko.agent.Agent, confidence: high }
+    role: factory
+  - method: paramiko.agent.Agent.get_keys
+    arity: 0
+    return: { type: builtins.tuple, confidence: high }
+    role: factory
+  # agent.py:484 AgentKey.sign_ssh_data(data, algorithm=None): the agent signs.
+  - method: paramiko.agent.AgentKey.sign_ssh_data
+    arity: 1
+    return: { type: paramiko.message.Message, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+
+  # ── Transport (paramiko/transport.py) ───────────────────────────────────────
+  # transport.py:364 Transport.__init__(sock, default_window_size,
+  # default_max_packet_size, gss_kex, gss_deleg_creds, disabled_algorithms, ..).
+  # disabled_algorithms is left undeclared; see PARAMETERS above.
+  - method: paramiko.Transport
+    arity: 1
+    return: { type: paramiko.transport.Transport, confidence: high }
+    role: factory
+  - method: paramiko.Transport.<init>
+    arity: 1
+    return: { type: paramiko.transport.Transport, confidence: high }
+    role: factory
+  - method: paramiko.transport.Transport.<init>
+    arity: 1
+    return: { type: paramiko.transport.Transport, confidence: high }
+    role: factory
+
+  # transport.py:679 returns SecurityOptions(self); its cipher/digest/kex/
+  # key_types setters are attribute stores and have no call site to key.
+  - method: paramiko.transport.Transport.get_security_options
+    arity: 0
+    return: { type: paramiko.transport.SecurityOptions, confidence: high }
+    role: output
+  # transport.py:722 / :780 / :1341: key exchange (and for connect, host-key
+  # check plus authentication).
+  - method: paramiko.transport.Transport.start_client
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: paramiko.transport.Transport.start_server
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: paramiko.transport.Transport.connect
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  # transport.py:1236
+  - method: paramiko.transport.Transport.renegotiate_keys
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  # transport.py:1662 auth_publickey(username, key, event=None) signs the
+  # session identifier with `key`; returns the list of further allowed methods.
+  - method: paramiko.transport.Transport.auth_publickey
+    arity: 2
+    return: { type: builtins.list, confidence: high }
+    role: operation
+  # transport.py:846 / :866 / :939
+  - method: paramiko.transport.Transport.add_server_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: paramiko.transport.Transport.get_server_key
+    arity: 0
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: output
+  - method: paramiko.transport.Transport.get_remote_server_key
+    arity: 0
+    return: { type: paramiko.pkey.PKey, confidence: high }
+    role: output
+  # transport.py:888 @staticmethod load_server_moduli(filename=None): DH
+  # group-exchange primes for server mode.
+  - method: paramiko.Transport.load_server_moduli
+    arity: 0
+    return: { type: builtins.bool, confidence: high }
+    role: config
+  - method: paramiko.transport.Transport.load_server_moduli
+    arity: 0
+    return: { type: builtins.bool, confidence: high }
+    role: config
+
+  # ── SSH client (paramiko/client.py) ─────────────────────────────────────────
+  # client.py:68 SSHClient.__init__()
+  - method: paramiko.SSHClient
+    arity: 0
+    return: { type: paramiko.client.SSHClient, confidence: high }
+    role: factory
+  - method: paramiko.SSHClient.<init>
+    arity: 0
+    return: { type: paramiko.client.SSHClient, confidence: high }
+    role: factory
+  - method: paramiko.client.SSHClient.<init>
+    arity: 0
+    return: { type: paramiko.client.SSHClient, confidence: high }
+    role: factory
+
+  # client.py:80 / :109: the host-key trust store the handshake checks against.
+  - method: paramiko.client.SSHClient.load_system_host_keys
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: paramiko.client.SSHClient.load_host_keys
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # client.py:153
+  - method: paramiko.client.SSHClient.get_host_keys
+    arity: 0
+    return: { type: paramiko.hostkeys.HostKeys, confidence: high }
+    role: output
+  # client.py:171: Reject/AutoAdd/Warning decides what an unknown host key does.
+  - method: paramiko.client.SSHClient.set_missing_host_key_policy
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: policy
+        role: operation-determining
+  # client.py:217 connect(hostname, ..): handshake, host-key check, auth.
+  - method: paramiko.client.SSHClient.connect
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  # client.py:610
+  - method: paramiko.client.SSHClient.get_transport
+    arity: 0
+    return: { type: paramiko.transport.Transport, confidence: high }
+    role: output
+
+  # ── host-key policies (paramiko/client.py:846 / :864 / :882) ────────────────
+  - method: paramiko.AutoAddPolicy
+    arity: 0
+    return: { type: paramiko.client.AutoAddPolicy, confidence: high }
+    role: factory
+  - method: paramiko.AutoAddPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.AutoAddPolicy, confidence: high }
+    role: factory
+  - method: paramiko.client.AutoAddPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.AutoAddPolicy, confidence: high }
+    role: factory
+  - method: paramiko.RejectPolicy
+    arity: 0
+    return: { type: paramiko.client.RejectPolicy, confidence: high }
+    role: factory
+  - method: paramiko.RejectPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.RejectPolicy, confidence: high }
+    role: factory
+  - method: paramiko.client.RejectPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.RejectPolicy, confidence: high }
+    role: factory
+  - method: paramiko.WarningPolicy
+    arity: 0
+    return: { type: paramiko.client.WarningPolicy, confidence: high }
+    role: factory
+  - method: paramiko.WarningPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.WarningPolicy, confidence: high }
+    role: factory
+  - method: paramiko.client.WarningPolicy.<init>
+    arity: 0
+    return: { type: paramiko.client.WarningPolicy, confidence: high }
+    role: factory
+
+  # ── known_hosts trust store (paramiko/hostkeys.py) ──────────────────────────
+  # hostkeys.py:47 HostKeys.__init__(filename=None)
+  - method: paramiko.HostKeys
+    arity: 0
+    return: { type: paramiko.hostkeys.HostKeys, confidence: high }
+    role: factory
+  - method: paramiko.HostKeys.<init>
+    arity: 0
+    return: { type: paramiko.hostkeys.HostKeys, confidence: high }
+    role: factory
+  - method: paramiko.hostkeys.HostKeys.<init>
+    arity: 0
+    return: { type: paramiko.hostkeys.HostKeys, confidence: high }
+    role: factory
+  # hostkeys.py:74 / :59
+  - method: paramiko.hostkeys.HostKeys.load
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: paramiko.hostkeys.HostKeys.add
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # hostkeys.py:208 check(hostname, key): host-key verification.
+  - method: paramiko.hostkeys.HostKeys.check
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  # hostkeys.py:285 @staticmethod hash_host(hostname, salt=None): HMAC-SHA1.
+  - method: paramiko.HostKeys.hash_host
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: operation
+  - method: paramiko.hostkeys.HostKeys.hash_host
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: operation
+
+  # ── legacy PEM key derivation (paramiko/util.py:142) ────────────────────────
+  # generate_key_bytes(hash_alg, salt, key, nbytes): OpenSSL EVP_BytesToKey.
+  - method: paramiko.util.generate_key_bytes
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: hash_alg
+        role: operation-determining
 
 hierarchy:
   paramiko.rsakey.RSAKey:
@@ -135,13 +735,42 @@ hierarchy:
     - paramiko.pkey.PKey
   paramiko.ed25519key.Ed25519Key:
     - paramiko.pkey.PKey
+  paramiko.agent.AgentKey:
+    - paramiko.pkey.PKey
   paramiko.pkey.PKey:
+    - builtins.object
+  paramiko.agent.Agent:
+    - paramiko.agent.AgentSSH
+  paramiko.agent.AgentSSH:
     - builtins.object
   paramiko.transport.Transport:
     - builtins.object
+  paramiko.transport.SecurityOptions:
+    - builtins.object
   paramiko.client.SSHClient:
+    - builtins.object
+  paramiko.client.AutoAddPolicy:
+    - paramiko.client.MissingHostKeyPolicy
+  paramiko.client.RejectPolicy:
+    - paramiko.client.MissingHostKeyPolicy
+  paramiko.client.WarningPolicy:
+    - paramiko.client.MissingHostKeyPolicy
+  paramiko.client.MissingHostKeyPolicy:
+    - builtins.object
+  paramiko.hostkeys.HostKeys:
     - builtins.object
   paramiko.message.Message:
     - builtins.object
   builtins.bytes:
     - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []

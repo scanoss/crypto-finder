@@ -19,7 +19,7 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
-	t.Run("go-missing-module-falls-back", func(t *testing.T) {
+	t.Run("go-missing-module-is-empty", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "go-repo")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir repo: %v", err)
@@ -27,8 +27,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("require example.com/lib v1.0.0\n"), 0o600); err != nil {
 			t.Fatalf("write go.mod: %v", err)
 		}
-		if got := DetectRootModule(dir, "go"); got != "go-repo" {
-			t.Fatalf("DetectRootModule(go fallback) = %q, want go-repo", got)
+		if got := DetectRootModule(dir, "go"); got != "" {
+			t.Fatalf("DetectRootModule(go without module line) = %q, want empty: the directory name is not a module", got)
 		}
 	})
 
@@ -76,7 +76,7 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
-	t.Run("java-invalid-xml-fallback", func(t *testing.T) {
+	t.Run("java-invalid-xml-is-empty", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "java-repo")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir repo: %v", err)
@@ -84,8 +84,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project>"), 0o600); err != nil {
 			t.Fatalf("write pom.xml: %v", err)
 		}
-		if got := DetectRootModule(dir, "java"); got != "java-repo" {
-			t.Fatalf("DetectRootModule(java invalid xml) = %q, want java-repo", got)
+		if got := DetectRootModule(dir, "java"); got != "" {
+			t.Fatalf("DetectRootModule(java invalid xml) = %q, want empty: the directory name is not a module", got)
 		}
 	})
 
@@ -153,13 +153,48 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
-	t.Run("empty-ecosystem-fallback", func(t *testing.T) {
+	t.Run("empty-ecosystem-is-empty", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "plain-repo")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir repo: %v", err)
 		}
-		if got := DetectRootModule(dir, ""); got != "plain-repo" {
-			t.Fatalf("DetectRootModule(empty ecosystem) = %q, want plain-repo", got)
+		if got := DetectRootModule(dir, ""); got != "" {
+			t.Fatalf("DetectRootModule(empty ecosystem) = %q, want empty: the directory name is not a module", got)
+		}
+	})
+
+	t.Run("node-package-json-name", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"@scope/demo-lib","version":"1.0.0"}`), 0o600); err != nil {
+			t.Fatalf("write package.json: %v", err)
+		}
+		if got := DetectRootModule(dir, "node"); got != "@scope/demo-lib" {
+			t.Fatalf("DetectRootModule(node) = %q, want @scope/demo-lib", got)
+		}
+	})
+
+	t.Run("node-package-json-without-name-is-empty", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "node-repo")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir repo: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"private":true}`), 0o600); err != nil {
+			t.Fatalf("write package.json: %v", err)
+		}
+		if got := DetectRootModule(dir, "node"); got != "" {
+			t.Fatalf("DetectRootModule(node without name) = %q, want empty: the directory name is not a module", got)
+		}
+	})
+
+	t.Run("c-and-cpp-have-no-manifest-and-are-empty", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "pkg_generic_libfoo-1.0-123")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir repo: %v", err)
+		}
+		for _, ecosystem := range []string{"c", "cpp"} {
+			if got := DetectRootModule(dir, ecosystem); got != "" {
+				t.Fatalf("DetectRootModule(%s) = %q, want empty: the directory name is not a module", ecosystem, got)
+			}
 		}
 	})
 
@@ -176,13 +211,16 @@ func TestDetectRootModule(t *testing.T) {
 		}
 	})
 
-	t.Run("fallback", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "repo-name")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	t.Run("python-without-manifest-is-empty", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "pkg_pypi_pycryptodome-3.23.0-448642030")
+		if err := os.MkdirAll(filepath.Join(dir, "lib", "Crypto"), 0o755); err != nil {
 			t.Fatalf("mkdir repo: %v", err)
 		}
-		if got := DetectRootModule(dir, "python"); got != "repo-name" {
-			t.Fatalf("DetectRootModule(fallback) = %q, want repo-name", got)
+		if err := os.WriteFile(filepath.Join(dir, "setup.py"), []byte("from setuptools import setup\nsetup(name='pycryptodome')\n"), 0o600); err != nil {
+			t.Fatalf("write setup.py: %v", err)
+		}
+		if got := DetectRootModule(dir, "python"); got != "" {
+			t.Fatalf("DetectRootModule(python without pyproject name) = %q, want empty: the directory name is not a module", got)
 		}
 	})
 }

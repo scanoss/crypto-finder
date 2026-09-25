@@ -6,240 +6,405 @@ library:
     - pycryptodome
     - pycryptodomex
   version_range: ">=3.0"
-  description: "PyCryptodome / PyCryptodomex — Crypto.* namespace: symmetric, asymmetric, hash, MAC, KDF"
+  description: "PyCryptodome: Crypto.* namespace, symmetric, asymmetric, hash, MAC, KDF"
+
+# Read at pycryptodome 3.23.0 (lib/Crypto) and checked against 3.4 and 3.0. The
+# pycryptodome and pycryptodomex packages ship the same code under the
+# `Crypto` and `Cryptodome` namespaces; the two contract files are the same
+# table under each prefix, and a test holds them equal.
+#
+# VERSION RANGE. 3.0 already ships AES.new, HMAC.new, DSS.new and the RSA
+# importKey/exportKey/publickey spellings. pkcs1_15, pss, import_key,
+# export_key and public_key are present by 3.4, and ChaCha20_Poly1305 arrives
+# at 3.7. A call to an entry on a release that lacks it does not exist to be
+# keyed.
+#
+# ROLES. new/generate/import_key build an object (`factory`); encrypt,
+# decrypt, sign, verify, MAC verification, hash update and every KDF run the
+# primitive (`operation`); digest, hexdigest and export_key read a result
+# (`output`); an AEAD update feeds associated data (`config`). update's
+# return type follows each class: SHA-2 hashes and ChaCha20-Poly1305 return
+# None; SHA-3, HMAC and the GCM, EAX, CCM and OCB modes return the object.
 
 contracts:
-  # ── AES symmetric cipher (Crypto.Cipher.AES) ─────────────────────────────────
-
-  # AES.new(key, mode, ...) returns an AES cipher object.
-  # Mode determines the cipher context type; we declare the common case (generic return).
+  # AES (Cipher/AES.py new(key, mode, *args, **kwargs)). The mode object that
+  # new() returns (GCM, EAX, CBC, CTR ...) is modelled as one AESCipher type; its
+  # AEAD methods are a superset of the classic modes' encrypt/decrypt.
   - method: Crypto.Cipher.AES.new
     arity: 2
-    return:
-      type: Crypto.Cipher.AES.AESCipher
-      confidence: high
+    return: { type: Crypto.Cipher.AES.AESCipher, confidence: high }
     role: factory
-
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
   - method: Crypto.Cipher.AES.AESCipher.encrypt
     arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
-
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
   - method: Crypto.Cipher.AES.AESCipher.decrypt
     arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
-
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
   - method: Crypto.Cipher.AES.AESCipher.encrypt_and_digest
     arity: 1
-    return:
-      type: builtins.tuple
-      confidence: high
-    role: output
-
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
   - method: Crypto.Cipher.AES.AESCipher.decrypt_and_verify
     arity: 2
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.AES.AESCipher.update
+    arity: 1
+    return: { type: Crypto.Cipher.AES.AESCipher, confidence: high }
+    role: config
+  - method: Crypto.Cipher.AES.AESCipher.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
     role: output
+  - method: Crypto.Cipher.AES.AESCipher.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Crypto.Cipher.AES.AESCipher.verify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.AES.AESCipher.hexverify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
 
-  # ── ChaCha20 / ChaCha20Poly1305 ───────────────────────────────────────────────
-
+  # ChaCha20 (Cipher/ChaCha20.py new(**kwargs), keyword-only).
   - method: Crypto.Cipher.ChaCha20.new
     arity: 1
-    return:
-      type: Crypto.Cipher.ChaCha20.ChaCha20Cipher
-      confidence: high
+    return: { type: Crypto.Cipher.ChaCha20.ChaCha20Cipher, confidence: high }
     role: factory
-
   - method: Crypto.Cipher.ChaCha20.ChaCha20Cipher.encrypt
     arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
-
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
   - method: Crypto.Cipher.ChaCha20.ChaCha20Cipher.decrypt
     arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
 
+  # ChaCha20-Poly1305 (Cipher/ChaCha20_Poly1305.py new(**kwargs), keyword-only, 3.7+).
   - method: Crypto.Cipher.ChaCha20_Poly1305.new
     arity: 1
-    return:
-      type: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher
-      confidence: high
+    return: { type: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher, confidence: high }
     role: factory
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.encrypt_and_digest
+    arity: 1
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.decrypt_and_verify
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.verify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.hexverify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
 
-  # ── Cryptographic hashes (Crypto.Hash.*) ──────────────────────────────────────
-
+  # Hashes (Hash/<name>.py new(data=None)). update feeds the digest; digest and
+  # hexdigest read the result.
+  - method: Crypto.Hash.SHA224.new
+    arity: 0
+    return: { type: Crypto.Hash.SHA224.SHA224Hash, confidence: high }
+    role: factory
+  - method: Crypto.Hash.SHA224.SHA224Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA224.SHA224Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA224.SHA224Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
   - method: Crypto.Hash.SHA256.new
     arity: 0
-    return:
-      type: Crypto.Hash.SHA256.SHA256Hash
-      confidence: high
+    return: { type: Crypto.Hash.SHA256.SHA256Hash, confidence: high }
     role: factory
-
+  - method: Crypto.Hash.SHA256.SHA256Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
   - method: Crypto.Hash.SHA256.SHA256Hash.digest
     arity: 0
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
     role: output
-
   - method: Crypto.Hash.SHA256.SHA256Hash.hexdigest
     arity: 0
-    return:
-      type: builtins.str
-      confidence: high
+    return: { type: builtins.str, confidence: high }
     role: output
-
+  - method: Crypto.Hash.SHA384.new
+    arity: 0
+    return: { type: Crypto.Hash.SHA384.SHA384Hash, confidence: high }
+    role: factory
+  - method: Crypto.Hash.SHA384.SHA384Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA384.SHA384Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA384.SHA384Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
   - method: Crypto.Hash.SHA512.new
     arity: 0
-    return:
-      type: Crypto.Hash.SHA512.SHA512Hash
-      confidence: high
+    return: { type: Crypto.Hash.SHA512.SHA512Hash, confidence: high }
     role: factory
-
+  - method: Crypto.Hash.SHA512.SHA512Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
   - method: Crypto.Hash.SHA512.SHA512Hash.digest
     arity: 0
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
     role: output
-
+  - method: Crypto.Hash.SHA512.SHA512Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_224.new
+    arity: 0
+    return: { type: Crypto.Hash.SHA3_224.SHA3_224Hash, confidence: high }
+    role: factory
+  - method: Crypto.Hash.SHA3_224.SHA3_224Hash.update
+    arity: 1
+    return: { type: Crypto.Hash.SHA3_224.SHA3_224Hash, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA3_224.SHA3_224Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_224.SHA3_224Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
   - method: Crypto.Hash.SHA3_256.new
     arity: 0
-    return:
-      type: Crypto.Hash.SHA3_256.SHA3_256Hash
-      confidence: high
+    return: { type: Crypto.Hash.SHA3_256.SHA3_256Hash, confidence: high }
     role: factory
+  - method: Crypto.Hash.SHA3_256.SHA3_256Hash.update
+    arity: 1
+    return: { type: Crypto.Hash.SHA3_256.SHA3_256Hash, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA3_256.SHA3_256Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_256.SHA3_256Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_384.new
+    arity: 0
+    return: { type: Crypto.Hash.SHA3_384.SHA3_384Hash, confidence: high }
+    role: factory
+  - method: Crypto.Hash.SHA3_384.SHA3_384Hash.update
+    arity: 1
+    return: { type: Crypto.Hash.SHA3_384.SHA3_384Hash, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA3_384.SHA3_384Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_384.SHA3_384Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_512.new
+    arity: 0
+    return: { type: Crypto.Hash.SHA3_512.SHA3_512Hash, confidence: high }
+    role: factory
+  - method: Crypto.Hash.SHA3_512.SHA3_512Hash.update
+    arity: 1
+    return: { type: Crypto.Hash.SHA3_512.SHA3_512Hash, confidence: high }
+    role: operation
+  - method: Crypto.Hash.SHA3_512.SHA3_512Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Crypto.Hash.SHA3_512.SHA3_512Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
 
-  # ── HMAC (Crypto.Hash.HMAC) ───────────────────────────────────────────────────
-
+  # HMAC (Hash/HMAC.py new(key, msg=b"", digestmod=None)).
   - method: Crypto.Hash.HMAC.new
     arity: 2
-    return:
-      type: Crypto.Hash.HMAC.HMAC
-      confidence: high
+    return: { type: Crypto.Hash.HMAC.HMAC, confidence: high }
     role: factory
-
+  - method: Crypto.Hash.HMAC.HMAC.update
+    arity: 1
+    return: { type: Crypto.Hash.HMAC.HMAC, confidence: high }
+    role: operation
   - method: Crypto.Hash.HMAC.HMAC.digest
     arity: 0
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
     role: output
-
   - method: Crypto.Hash.HMAC.HMAC.hexdigest
     arity: 0
-    return:
-      type: builtins.str
-      confidence: high
+    return: { type: builtins.str, confidence: high }
     role: output
+  - method: Crypto.Hash.HMAC.HMAC.verify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Hash.HMAC.HMAC.hexverify
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
 
-  # ── RSA (Crypto.PublicKey.RSA) ────────────────────────────────────────────────
-
+  # RSA (PublicKey/RSA.py). importKey, exportKey and publickey are the pre-3.x
+  # spellings the library still ships as aliases.
   - method: Crypto.PublicKey.RSA.generate
     arity: 1
-    return:
-      type: Crypto.PublicKey.RSA.RsaKey
-      confidence: high
-
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: Crypto.PublicKey.RSA.construct
+    arity: 1
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
+    role: factory
   - method: Crypto.PublicKey.RSA.import_key
     arity: 1
-    return:
-      type: Crypto.PublicKey.RSA.RsaKey
-      confidence: high
-
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
+    role: factory
+  - method: Crypto.PublicKey.RSA.importKey
+    arity: 1
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
+    role: factory
   - method: Crypto.PublicKey.RSA.RsaKey.export_key
     arity: 0
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
     role: output
-
+  - method: Crypto.PublicKey.RSA.RsaKey.exportKey
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
   - method: Crypto.PublicKey.RSA.RsaKey.public_key
     arity: 0
-    return:
-      type: Crypto.PublicKey.RSA.RsaKey
-      confidence: high
-
-  # ── RSA signature (Crypto.Signature.pkcs1_15, pss) ───────────────────────────
-
-  - method: Crypto.Signature.pkcs1_15.new
-    arity: 1
-    return:
-      type: Crypto.Signature.pkcs1_15.PKCS115_SigScheme
-      confidence: high
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
+    role: factory
+  - method: Crypto.PublicKey.RSA.RsaKey.publickey
+    arity: 0
+    return: { type: Crypto.PublicKey.RSA.RsaKey, confidence: high }
     role: factory
 
-  - method: Crypto.Signature.pkcs1_15.PKCS115_SigScheme.sign
-    arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
-
-  - method: Crypto.Signature.pss.new
-    arity: 1
-    return:
-      type: Crypto.Signature.pss.PSS_SigScheme
-      confidence: high
-    role: factory
-
-  - method: Crypto.Signature.pss.PSS_SigScheme.sign
-    arity: 1
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
-
-  # ── ECC (Crypto.PublicKey.ECC) ────────────────────────────────────────────────
-
+  # ECC (PublicKey/ECC.py generate(**kwargs), import_key(encoded, ..)).
   - method: Crypto.PublicKey.ECC.generate
     arity: 1
-    return:
-      type: Crypto.PublicKey.ECC.EccKey
-      confidence: high
-
+    return: { type: Crypto.PublicKey.ECC.EccKey, confidence: high }
+    role: factory
   - method: Crypto.PublicKey.ECC.import_key
     arity: 1
-    return:
-      type: Crypto.PublicKey.ECC.EccKey
-      confidence: high
-
+    return: { type: Crypto.PublicKey.ECC.EccKey, confidence: high }
+    role: factory
   - method: Crypto.PublicKey.ECC.EccKey.export_key
     arity: 0
-    return:
-      type: builtins.bytes
-      confidence: high
+    return: { type: builtins.bytes, confidence: high }
     role: output
+  - method: Crypto.PublicKey.ECC.EccKey.public_key
+    arity: 0
+    return: { type: Crypto.PublicKey.ECC.EccKey, confidence: high }
+    role: factory
 
-  # ── KDF (Crypto.Protocol.KDF) ─────────────────────────────────────────────────
+  # Signatures (Signature/pkcs1_15.py new(rsa_key), pss.py new(rsa_key, **kwargs),
+  # DSS.py new(key, mode, ..)). verify raises ValueError on a bad signature and
+  # returns None.
+  - method: Crypto.Signature.pkcs1_15.new
+    arity: 1
+    return: { type: Crypto.Signature.pkcs1_15.PKCS115_SigScheme, confidence: high }
+    role: factory
+  - method: Crypto.Signature.pkcs1_15.PKCS115_SigScheme.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Signature.pkcs1_15.PKCS115_SigScheme.verify
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Signature.pss.new
+    arity: 1
+    return: { type: Crypto.Signature.pss.PSS_SigScheme, confidence: high }
+    role: factory
+  - method: Crypto.Signature.pss.PSS_SigScheme.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Signature.pss.PSS_SigScheme.verify
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Crypto.Signature.DSS.new
+    arity: 2
+    return: { type: Crypto.Signature.DSS.DssSigScheme, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Crypto.Signature.DSS.DssSigScheme.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Crypto.Signature.DSS.DssSigScheme.verify
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
 
-  # PBKDF2 starts uppercase so the Python parser treats it as a type constructor;
-  # the emitted callee FQN uses <init>, matching the call `from Crypto.Protocol.KDF
-  # import PBKDF2; PBKDF2(password, salt, 32)`.
-  # Signature verified against github.com/Legrandin/pycryptodome
-  # (lib/Crypto/Protocol/KDF.py, master branch, python-parser-parity-2
-  # batch 3): PBKDF2(password, salt, dkLen=16, count=1000, prf=None,
-  # hmac_hash_module=None) — dkLen itself defaults, but the pre-existing
-  # arity: 3 already models the common 3-positional-arg call shape
-  # (password, salt, dkLen); dkLen is at index 2.
+  # KDFs (Protocol/KDF.py). PBKDF2, PBKDF1 and HKDF start uppercase, so
+  # `from ..KDF import PBKDF2; PBKDF2(..)` keys as `.<init>` while
+  # `from ..Protocol import KDF; KDF.PBKDF2(..)` keys as the bare name.
   - method: Crypto.Protocol.KDF.PBKDF2.<init>
     arity: 3
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.bytes
@@ -251,46 +416,55 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_byte_length
-
-  # scrypt(password, salt, key_len, N, r, p, num_keys=1) — verified against
-  # the same primary source. **Correction**: the PRE-EXISTING contract
-  # declared arity: 4, a latent bug (same class as pyca-cryptography's
-  # Scrypt bug found in batch 2) — the real signature has 6 required
-  # parameters (only num_keys defaults). Fixed arity: 4 -> 6 as part of
-  # this row; key_len is at index 2.
-  - method: Crypto.Protocol.KDF.scrypt
-    arity: 6
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
+  - method: Crypto.Protocol.KDF.PBKDF2
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.bytes
       - builtins.int
-      - builtins.int
-      - builtins.int
-      - builtins.int
     parameters:
       - index: 2
-        name: key_len
+        name: dkLen
         role: metadata-contributing
         contributes:
           property: keySize
           derivation: argument_byte_length
-
-  # HKDF starts uppercase — same constructor treatment as PBKDF2.
-  # HKDF(master, key_len, salt, hashmod, num_keys=1, context=None) —
-  # verified against the same primary source. **Correction**: the
-  # PRE-EXISTING contract declared arity: 3, also a latent bug — the real
-  # signature has 4 required parameters (only num_keys/context default).
-  # Fixed arity: 3 -> 4 as part of this row; key_len is at index 1.
+  - method: Crypto.Protocol.KDF.PBKDF1.<init>
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+  - method: Crypto.Protocol.KDF.PBKDF1
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 2
+        name: dkLen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.HKDF.<init>
     arity: 4
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.int
@@ -303,24 +477,36 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_byte_length
-
-  # PBKDF1 starts uppercase — same constructor treatment as PBKDF2. New
-  # contract (not previously in the KB): PBKDF1(password, salt, dkLen,
-  # count=1000, hashAlgo=None) — verified against the same primary source,
-  # 3 required parameters, dkLen at index 2.
-  - method: Crypto.Protocol.KDF.PBKDF1.<init>
-    arity: 3
-    return:
-      type: builtins.bytes
-      confidence: high
-    role: output
+  - method: Crypto.Protocol.KDF.HKDF
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.bytes
+      - builtins.object
+    parameters:
+      - index: 1
+        name: key_len
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+  - method: Crypto.Protocol.KDF.scrypt
+    arity: 6
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.bytes
       - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
     parameters:
       - index: 2
-        name: dkLen
+        name: key_len
         role: metadata-contributing
         contributes:
           property: keySize
@@ -333,21 +519,35 @@ hierarchy:
     - builtins.object
   Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher:
     - builtins.object
+  Crypto.Hash.HMAC.HMAC:
+    - builtins.object
+  Crypto.Hash.SHA224.SHA224Hash:
+    - builtins.object
   Crypto.Hash.SHA256.SHA256Hash:
     - builtins.object
-  Crypto.Hash.SHA512.SHA512Hash:
+  Crypto.Hash.SHA384.SHA384Hash:
+    - builtins.object
+  Crypto.Hash.SHA3_224.SHA3_224Hash:
     - builtins.object
   Crypto.Hash.SHA3_256.SHA3_256Hash:
     - builtins.object
-  Crypto.Hash.HMAC.HMAC:
+  Crypto.Hash.SHA3_384.SHA3_384Hash:
+    - builtins.object
+  Crypto.Hash.SHA3_512.SHA3_512Hash:
+    - builtins.object
+  Crypto.Hash.SHA512.SHA512Hash:
+    - builtins.object
+  Crypto.PublicKey.ECC.EccKey:
     - builtins.object
   Crypto.PublicKey.RSA.RsaKey:
     - builtins.object
-  Crypto.PublicKey.ECC.EccKey:
+  Crypto.Signature.DSS.DssSigScheme:
     - builtins.object
   Crypto.Signature.pkcs1_15.PKCS115_SigScheme:
     - builtins.object
   Crypto.Signature.pss.PSS_SigScheme:
+    - builtins.object
+  builtins.NoneType:
     - builtins.object
   builtins.bytes:
     - builtins.object
@@ -355,3 +555,4 @@ hierarchy:
     - builtins.object
   builtins.tuple:
     - builtins.object
+  builtins.object: []
