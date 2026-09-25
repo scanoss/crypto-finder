@@ -294,14 +294,106 @@ func (p *PythonParser) CloneParser() Parser {
 // is how a consumer reaches pycryptodome's lib/Crypto, so the directory
 // contributes nothing to the module path. A `lib/__init__.py` is a real
 // package named lib and keeps its name.
+//
+// Collapsing the directory promotes its modules to the root, so it stays a
+// segment when any module it would promote is already defined there: by a
+// root module or package, or by the other layout directory. Otherwise
+// `src/a/__init__.py` and `lib/a/__init__.py` would both key `a.f`, and one
+// finding would point at the other file's function.
 func (p *PythonParser) IsLayoutDir(dir string) bool {
+	if !isPythonLayoutDir(dir) {
+		return false
+	}
+	taken := pythonRootModuleNames(filepath.Dir(dir), dir)
+	for name := range pythonModuleNames(dir) {
+		if taken[name] {
+			return false
+		}
+	}
+	return true
+}
+
+func isPythonLayoutDir(dir string) bool {
 	switch filepath.Base(dir) {
 	case "src", "lib":
 	default:
 		return false
 	}
+	return !isPythonPackage(dir)
+}
+
+func isPythonPackage(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, pythonInitPyFileName))
-	return err != nil
+	return err == nil
+}
+
+// pythonRootModuleNames is the set of module names defined at the package
+// root as seen from the layout directory `layoutDir`: every module and
+// package directly under the root, with any other layout directory replaced
+// by the modules it promotes.
+func pythonRootModuleNames(root, layoutDir string) map[string]bool {
+	names := map[string]bool{}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return names
+	}
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		if path == layoutDir {
+			continue
+		}
+		if entry.IsDir() && isPythonLayoutDir(path) {
+			for name := range pythonModuleNames(path) {
+				names[name] = true
+			}
+			continue
+		}
+		if name, ok := pythonModuleName(path, entry); ok {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// pythonModuleNames is the set of module names a directory defines directly:
+// each .py file by its stem, and each subdirectory that holds Python.
+func pythonModuleNames(dir string) map[string]bool {
+	names := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return names
+	}
+	for _, entry := range entries {
+		if name, ok := pythonModuleName(filepath.Join(dir, entry.Name()), entry); ok {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// pythonModuleName is the module name a directory entry defines, if any. A
+// directory counts when it holds a .py file directly, so `__pycache__` or a
+// directory of C sources names nothing. A package whose Python lives only in
+// deeper subpackages is not seen; the layout directory then collapses and
+// its modules key without the segment, as they did before this check.
+func pythonModuleName(path string, entry os.DirEntry) (string, bool) {
+	name := entry.Name()
+	if !entry.IsDir() {
+		if !strings.HasSuffix(name, ".py") || name == pythonInitPyFileName {
+			return "", false
+		}
+		return strings.TrimSuffix(name, ".py"), true
+	}
+	children, err := os.ReadDir(path)
+	if err != nil {
+		return "", false
+	}
+	for _, child := range children {
+		if !child.IsDir() && strings.HasSuffix(child.Name(), ".py") {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // SubPackagePath constructs a child module path using "." separator.

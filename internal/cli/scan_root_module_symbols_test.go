@@ -64,6 +64,17 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 			wantKeys: []string{"mypkg.run"},
 		},
 		{
+			name:      "python src layout is transparent under a pyproject name",
+			ecosystem: "python",
+			files: map[string]string{
+				"pyproject.toml":        "[project]\nname = \"mylib\"\n",
+				"src/mylib/__init__.py": "",
+				"src/mylib/core.py":     "def run():\n    return 1\n",
+			},
+			rootModule: "mylib",
+			wantKeys:   []string{"mylib.mylib.run"},
+		},
+		{
 			name:      "python lib layout is transparent",
 			ecosystem: "python",
 			files: map[string]string{
@@ -81,6 +92,28 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/util.py":     "def f():\n    return 1\n",
 			},
 			wantKeys: []string{"lib.f"},
+		},
+		{
+			name:      "python lib layout stays transparent beside a src of C sources",
+			ecosystem: "python",
+			files: map[string]string{
+				"src/AES.c":                   "int aes(void) { return 1; }\n",
+				"lib/Crypto/__init__.py":      "",
+				"lib/Crypto/Hash/__init__.py": "",
+				"lib/Crypto/Hash/HMAC.py":     "def new(key):\n    return key\n",
+			},
+			wantKeys: []string{"Crypto.Hash.new"},
+		},
+		{
+			name:      "python src and lib layouts with disjoint packages are both transparent",
+			ecosystem: "python",
+			files: map[string]string{
+				"src/mypkg/__init__.py": "",
+				"src/mypkg/core.py":     "def run():\n    return 1\n",
+				"lib/other/__init__.py": "",
+				"lib/other/util.py":     "def f():\n    return 1\n",
+			},
+			wantKeys: []string{"mypkg.run", "other.f"},
 		},
 		{
 			name:      "node without package.json is rooted at the scan root",
@@ -162,6 +195,101 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Collapsing a layout directory promotes its packages to the scan root. When
+// two trees would promote the same package, or the root already defines it,
+// collapsing would merge distinct functions into one key and point a finding
+// at the wrong function, so the layout directory keeps its segment instead.
+func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		files     map[string]string
+		wantFiles map[string]string
+	}{
+		{
+			name: "src and lib both define the package",
+			files: map[string]string{
+				"src/a/__init__.py": "def f():\n    return 1\n",
+				"lib/a/__init__.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"src.a.f": "src/a/__init__.py",
+				"lib.a.f": "lib/a/__init__.py",
+			},
+		},
+		{
+			name: "the root already defines the package src promotes",
+			files: map[string]string{
+				"a/__init__.py":     "def f():\n    return 1\n",
+				"src/a/__init__.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"a.f":     "a/__init__.py",
+				"src.a.f": "src/a/__init__.py",
+			},
+		},
+		{
+			name: "a root module file collides with the module src promotes",
+			files: map[string]string{
+				"a.py":     "def f():\n    return 1\n",
+				"src/a.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"f":     "a.py",
+				"src.f": "src/a.py",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			for rel, content := range tc.files {
+				path := filepath.Join(dir, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, false)
+			if err != nil {
+				t.Fatalf("build call graph: %v", err)
+			}
+			if got, want := len(result.CallGraph.Functions), len(tc.wantFiles); got != want {
+				t.Errorf("function count = %d, want %d: %v", got, want, functionKeys(result.CallGraph.Functions))
+			}
+			for key, wantFile := range tc.wantFiles {
+				fn, ok := result.CallGraph.Functions[key]
+				if !ok {
+					t.Errorf("missing function %q in %v", key, functionKeys(result.CallGraph.Functions))
+					continue
+				}
+				rel, err := filepath.Rel(dir, fn.FilePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := filepath.ToSlash(rel); got != wantFile {
+					t.Errorf("function %q file = %q, want %q", key, got, wantFile)
+				}
+			}
+		})
+	}
+}
+
+func functionKeys[T any](functions map[string]T) []string {
+	keys := make([]string, 0, len(functions))
+	for key := range functions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func scanRootModuleKeys(t *testing.T, dir, ecosystem string, files map[string]string, wantRootModule string) []string {
