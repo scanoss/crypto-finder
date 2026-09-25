@@ -227,8 +227,19 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		// The type resolver already propagated assigned-variable types, but
 		// before the pass above typed chain links, so `padder =
 		// PKCS7(128).padder()` bound nothing and `padder.update(..)` stayed
-		// keyed on the local name. A second pass sees the resolved links.
+		// keyed on the local name. Another pass sees the resolved links. A
+		// chain whose receiver was bound by the previous statement's chain,
+		// as in consecutive `builder = builder.a(..).b(..)` lines, can only be
+		// typed after that binding exists, so the two passes alternate until
+		// chain resolution rewrites nothing new. Each round types one more
+		// statement of such a run; the cap guards against a rewrite cycle.
 		propagatePythonAssignedVarTypes(graph, kb)
+		for range 10 {
+			if resolveFluentChainCalleesByContract(graph, kb) == 0 {
+				break
+			}
+			propagatePythonAssignedVarTypes(graph, kb)
+		}
 	}
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
 	respellGoPointerReceivers(graph, b.ecosystem)
@@ -1476,9 +1487,9 @@ func resolveFluentChainsByReturnType(graph *CallGraph) {
 // conservative: a link is only rewritten when the KB confirms the method exists
 // on the propagated receiver type, so chains the KB does not describe are left
 // untouched.
-func resolveFluentChainCalleesByContract(graph *CallGraph, kb *contracts.KnowledgeBase) {
+func resolveFluentChainCalleesByContract(graph *CallGraph, kb *contracts.KnowledgeBase) int {
 	if kb == nil {
-		return
+		return 0
 	}
 	// The reconciliation below writes resolved edges into the caller index.
 	// BuildFromDirectories always initializes it, but callers that invoke this
@@ -1493,6 +1504,7 @@ func resolveFluentChainCalleesByContract(graph *CallGraph, kb *contracts.Knowled
 	if resolved > 0 {
 		log.Info().Int("resolved", resolved).Msg("Resolved fluent chain link callees via contract KB")
 	}
+	return resolved
 }
 
 func resolveChainCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase) int {
