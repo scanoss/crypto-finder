@@ -55,22 +55,27 @@ func TestDependencyRulesSetupAllocationBudget(t *testing.T) {
 	if err := os.WriteFile(path, []byte("rules:\n"+strings.Repeat(reuseRule, 256)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	consumer, opts := rulesReuseConsumer(t, path, 6, func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
-		return &entities.InterimReport{}, nil
-	})
-	// Fixed six-dependency setup must stay below 300,000 heap allocations.
-	// A separate one-dependency baseline measured about 279,000 allocations.
-	// This budget allows that unrelated setup, not repeated YAML per dependency.
-	// Fixture construction is excluded; scanner and callgraph do no external work.
-	allocations := testing.AllocsPerRun(3, func() {
-		result, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, opts)
-		if err != nil || result.ProgressDetails()["deps_scanned"] != 6 {
-			t.Fatalf("public scan: result=%v error=%v", result, err)
-		}
-	})
-	t.Logf("public setup allocations: %.0f", allocations)
-	if allocations > 300000 {
-		t.Fatalf("six-dependency setup allocated %.0f objects; budget 300000", allocations)
+	setupAllocations := func(count int) float64 {
+		consumer, opts := rulesReuseConsumer(t, path, count, func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
+			return &entities.InterimReport{}, nil
+		})
+		return testing.AllocsPerRun(3, func() {
+			result, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, opts)
+			if err != nil || result.ProgressDetails()["deps_scanned"] != count {
+				t.Fatalf("public scan: result=%v error=%v", result, err)
+			}
+		})
+	}
+	// The budget bounds what each added dependency costs, not the whole setup:
+	// the setup includes loading the embedded contract knowledge base, which
+	// grows with every library it covers. Validating the 256-rule YAML again
+	// per dependency costs about 23,000 allocations each; the shared
+	// validator keeps an added dependency to a few dozen.
+	one, six := setupAllocations(1), setupAllocations(6)
+	perDependency := (six - one) / 5
+	t.Logf("setup allocations: one dependency %.0f, six %.0f, %.0f per added dependency", one, six, perDependency)
+	if perDependency > 10000 {
+		t.Fatalf("each added dependency allocated %.0f objects; budget 10000", perDependency)
 	}
 }
 
