@@ -74,14 +74,20 @@ func TestGoImplicitImportName(t *testing.T) {
 	t.Parallel()
 
 	for path, want := range map[string]string{
-		"crypto/aes":                        "aes",
-		"fmt":                               "fmt",
-		"github.com/golang-fips/openssl/v2": "openssl",
-		"github.com/cloudflare/circl/v10":   "circl",
-		"gopkg.in/yaml.v3":                  "yaml",
-		"gopkg.in/square/go-jose.v2":        "go-jose",
-		"github.com/example/v2ray":          "v2ray",
-		"v2":                                "v2",
+		"crypto/aes":                           "aes",
+		"fmt":                                  "fmt",
+		"github.com/golang-fips/openssl/v2":    "openssl",
+		"github.com/cloudflare/circl/v10":      "circl",
+		"gopkg.in/yaml.v3":                     "yaml",
+		"gopkg.in/square/go-jose.v2":           "go-jose",
+		"github.com/example/v2ray":             "v2ray",
+		"v2":                                   "v2",
+		"k8s.io/api/core/v1":                   "v1",
+		"k8s.io/apimachinery/pkg/apis/meta/v1": "v1",
+		"example.com/pkg/v0":                   "v0",
+		"example.com/pkg/v02":                  "v02",
+		"gopkg.in/yaml.v1":                     "yaml",
+		"gopkg.in/check.v0":                    "check",
 	} {
 		if got := goImplicitImportName(path); got != want {
 			t.Errorf("goImplicitImportName(%q) = %q, want %q", path, got, want)

@@ -250,33 +250,43 @@ func (p *GoParser) processImportSpec(spec *sitter.Node, src []byte, analysis *Fi
 
 // goImplicitImportName is the name an unaliased import binds. It is the
 // imported package's own name, which this per-file pass cannot read, so it
-// follows the Go module convention: the last path element, skipping a major
-// version suffix (github.com/golang-fips/openssl/v2 declares package openssl)
-// and dropping a gopkg.in ".vN" suffix (gopkg.in/yaml.v3 declares package yaml).
+// follows the module path rules of golang.org/x/mod/module.SplitPathVersion:
+// the last path element, skipping a /vN major version suffix, which exists
+// only for N >= 2 (github.com/golang-fips/openssl/v2 declares package openssl,
+// k8s.io/api/core/v1 declares package v1), and dropping a gopkg.in .vN suffix,
+// which exists for every N including 0 and 1 (gopkg.in/yaml.v1 declares
+// package yaml).
 func goImplicitImportName(path string) string {
 	parts := strings.Split(path, "/")
 	name := parts[len(parts)-1]
-	if len(parts) > 1 && goIsMajorVersion(name) {
-		name = parts[len(parts)-2]
-	}
 	if parts[0] == "gopkg.in" {
-		if i := strings.LastIndex(name, ".v"); i > 0 && goIsMajorVersion(name[i+1:]) {
-			name = name[:i]
+		if i := strings.LastIndex(name, ".v"); i > 0 {
+			if _, ok := goMajorVersion(name[i+1:]); ok {
+				name = name[:i]
+			}
 		}
+		return name
+	}
+	if n, ok := goMajorVersion(name); ok && n >= 2 && len(parts) > 1 {
+		name = parts[len(parts)-2]
 	}
 	return name
 }
 
-func goIsMajorVersion(s string) bool {
-	if len(s) < 2 || s[0] != 'v' {
-		return false
+// goMajorVersion parses a canonical "vN": digits with no leading zero, except
+// for "v0" itself.
+func goMajorVersion(s string) (int, bool) {
+	if len(s) < 2 || s[0] != 'v' || (s[1] == '0' && len(s) > 2) {
+		return 0, false
 	}
+	n := 0
 	for _, r := range s[1:] {
 		if r < '0' || r > '9' {
-			return false
+			return 0, false
 		}
+		n = n*10 + int(r-'0')
 	}
-	return true
+	return n, true
 }
 
 func (p *GoParser) extractFunctions(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
