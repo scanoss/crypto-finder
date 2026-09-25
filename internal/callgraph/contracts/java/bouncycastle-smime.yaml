@@ -26,13 +26,13 @@ library:
 # through the hierarchy edges below.
 #
 # Inventory, beyond the contracted entries:
-#   SMIMESignedGenerator.addSigner/addCertificatesAndCRLs, generate(part, provider),
+#   SMIMESignedGenerator.addSigner, generate(part, provider), generateEncapsulated(part, provider),
 #   SMIMEEnvelopedGenerator.addKeyTransRecipient/addKEKRecipient/addKeyAgreementRecipient,
-#   generate(part, alg, provider)                     needs-follow-up: 1.46-1.49 only, removed at 1.50
+#   generate(part, alg, [keySize,] provider)          contracted in bouncycastle-smime-1.46.yaml (1.46-1.49)
 #   addSigners, addCRLs, addAttributeCertificates,
 #   getGeneratedDigests, setBerEncodeRecipients       skipped-non-crypto
 #   DIGEST_*, ENCRYPTION_*, *_CBC, *_WRAP constants   skipped-unsupported: fields, not calls
-#   SMIMESigned.getSafeInstance                       needs-follow-up: 1.84 only
+#   SMIMESigned.getSafeInstance                       contracted in bouncycastle-smime-1.84.yaml
 #   getContent, getContentAsMimeMessage, getEncryptedContent  skipped-non-crypto (MIME content)
 contracts:
   - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.<init>

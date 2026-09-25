@@ -1,0 +1,28 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-tls-1.62
+  coordinates:
+    - "org.bouncycastle:bctls-jdk15on"
+    - "org.bouncycastle:bctls-jdk18on"
+  version_range: ">=1.62,<2.0"
+  description: "Bouncy Castle bctls 1.62: DTLS server accept with a verified client request"
+
+# accept(server, transport, request) first ships in bctls-jdk15on 1.62 and is
+# present unchanged through bctls-jdk18on 1.84 (javap over every release jar).
+# It runs the server handshake from a DTLSRequest that a DTLSVerifier has
+# already checked, so it is the same operation as the two-argument accept.
+contracts:
+  - method: org.bouncycastle.tls.DTLSServerProtocol.accept
+    arity: 3
+    return: { type: org.bouncycastle.tls.DTLSTransport, confidence: high }
+    role: operation
+
+hierarchy:
+  org.bouncycastle.tls.DTLSServerProtocol:
+    - org.bouncycastle.tls.DTLSProtocol
+  org.bouncycastle.tls.DTLSProtocol:
+    - java.lang.Object
+  org.bouncycastle.tls.DTLSTransport:
+    - java.lang.Object
+  java.lang.Object: []

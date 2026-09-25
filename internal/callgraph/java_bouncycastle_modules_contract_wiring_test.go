@@ -23,13 +23,19 @@ func TestBouncyCastleModuleContractsResolveParsedCallIdentities(t *testing.T) {
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.Security;
+import java.security.cert.X509Certificate;
+import javax.crypto.SecretKey;
 import javax.mail.internet.MimeBodyPart;
 import javax.mail.internet.MimeMultipart;
 import javax.net.ssl.SSLContext;
+import org.bouncycastle.asn1.cms.AttributeTable;
 import org.bouncycastle.cert.jcajce.JcaCertStore;
 import org.bouncycastle.cms.RecipientInfoGenerator;
 import org.bouncycastle.cms.SignerInfoGenerator;
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider;
 import org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator;
 import org.bouncycastle.mail.smime.SMIMEEnveloped;
@@ -39,6 +45,7 @@ import org.bouncycastle.mail.smime.SMIMESignedGenerator;
 import org.bouncycastle.mls.crypto.MlsCipherSuite;
 import org.bouncycastle.operator.OutputEncryptor;
 import org.bouncycastle.tls.DTLSClientProtocol;
+import org.bouncycastle.tls.DTLSRequest;
 import org.bouncycastle.tls.DTLSServerProtocol;
 import org.bouncycastle.tls.DatagramTransport;
 import org.bouncycastle.tls.TlsClient;
@@ -56,11 +63,12 @@ public class App {
         new TlsServerProtocol();
     }
 
-    public void dtls(TlsClient client, TlsServer server, DatagramTransport transport) throws Exception {
+    public void dtls(TlsClient client, TlsServer server, DatagramTransport transport, DTLSRequest request) throws Exception {
         DTLSClientProtocol c = new DTLSClientProtocol();
         c.connect(client, transport);
         DTLSServerProtocol s = new DTLSServerProtocol();
         s.accept(server, transport);
+        s.accept(server, transport, request);
     }
 
     public SSLContext jsse() throws Exception {
@@ -68,10 +76,13 @@ public class App {
         return SSLContext.getInstance("TLSv1.3", "BCJSSE");
     }
 
-    public byte[] mls(byte[] priv, byte[] content) throws Exception {
+    public byte[] mls(byte[] priv, byte[] content, AsymmetricCipherKeyPair key) throws Exception {
         MlsCipherSuite suite = MlsCipherSuite.getSuite(MlsCipherSuite.MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519);
         suite.generateSignatureKeyPair();
         suite.hash(content);
+        suite.deserializeSignaturePrivateKey(priv);
+        suite.serializeSignaturePrivateKey(key.getPrivate());
+        suite.serializeSignaturePublicKey(key.getPublic());
         return suite.signWithLabel(priv, "label", content);
     }
 
@@ -87,7 +98,27 @@ public class App {
         SMIMEAuthEnvelopedGenerator gcm = new SMIMEAuthEnvelopedGenerator();
         gcm.addRecipientInfoGenerator(recipient);
         new SMIMESigned(signed);
+        SMIMESigned.getSafeInstance(signed);
+        SMIMESigned.getSafeInstance(signed, "binary");
         new SMIMEEnveloped(part);
+    }
+
+    public void legacySmime(MimeBodyPart part, PrivateKey key, X509Certificate cert, AttributeTable signedAttrs,
+            AttributeTable unsignedAttrs, PublicKey pub, byte[] keyId, SecretKey kek) throws Exception {
+        SMIMESignedGenerator gen = new SMIMESignedGenerator();
+        gen.addSigner(key, cert, SMIMESignedGenerator.DIGEST_SHA256);
+        gen.addSigner(key, cert, SMIMESignedGenerator.ENCRYPTION_RSA, SMIMESignedGenerator.DIGEST_SHA256);
+        gen.addSigner(key, cert, SMIMESignedGenerator.DIGEST_SHA256, signedAttrs, unsignedAttrs);
+        gen.addSigner(key, cert, SMIMESignedGenerator.ENCRYPTION_RSA, SMIMESignedGenerator.DIGEST_SHA256, signedAttrs, unsignedAttrs);
+        gen.generate(part, "BC");
+        gen.generateEncapsulated(part, "BC");
+        SMIMEEnvelopedGenerator env = new SMIMEEnvelopedGenerator();
+        env.addKeyTransRecipient(cert);
+        env.addKeyTransRecipient(pub, keyId);
+        env.addKEKRecipient(kek, keyId);
+        env.addKeyAgreementRecipient("ECDH", key, pub, cert, "AESWRAP", "BC");
+        env.generate(part, SMIMEEnvelopedGenerator.AES128_CBC, "BC");
+        env.generate(part, SMIMEEnvelopedGenerator.RC2_CBC, 40, "BC");
     }
 }
 `)
@@ -125,6 +156,24 @@ public class App {
 		{"org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator.addRecipientInfoGenerator", 1, "config", "bouncycastle-smime-1.80"},
 		{"org.bouncycastle.mail.smime.SMIMESigned.<init>", 1, "factory", "bouncycastle-smime"},
 		{"org.bouncycastle.mail.smime.SMIMEEnveloped.<init>", 1, "factory", "bouncycastle-smime"},
+		{"org.bouncycastle.tls.DTLSServerProtocol.accept", 3, "operation", "bouncycastle-tls-1.62"},
+		{"org.bouncycastle.mls.crypto.MlsCipherSuite.deserializeSignaturePrivateKey", 1, "factory", "bouncycastle-mls"},
+		{"org.bouncycastle.mls.crypto.MlsCipherSuite.serializeSignaturePrivateKey", 1, "output", "bouncycastle-mls"},
+		{"org.bouncycastle.mls.crypto.MlsCipherSuite.serializeSignaturePublicKey", 1, "output", "bouncycastle-mls"},
+		{"org.bouncycastle.mail.smime.SMIMESigned.getSafeInstance", 1, "factory", "bouncycastle-smime-1.84"},
+		{"org.bouncycastle.mail.smime.SMIMESigned.getSafeInstance", 2, "factory", "bouncycastle-smime-1.84"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner", 3, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner", 4, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner", 5, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner", 6, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.generate", 2, "operation", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMESignedGenerator.generateEncapsulated", 2, "operation", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyTransRecipient", 1, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyTransRecipient", 2, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKEKRecipient", 2, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyAgreementRecipient", 6, "config", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.generate", 3, "operation", "bouncycastle-smime-1.46"},
+		{"org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.generate", 4, "operation", "bouncycastle-smime-1.46"},
 	} {
 		if !slices.Contains(calls[tc.method], tc.arity) {
 			t.Errorf("no parsed call to %s with %d argument(s); parsed %v", tc.method, tc.arity, calls[tc.method])
