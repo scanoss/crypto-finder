@@ -1,0 +1,32 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: azure-keyvault-keys-java-4.5
+  coordinates:
+    - "com.azure:azure-security-keyvault-keys"
+  version_range: ">=4.5.0,<5.0.0"
+  description: "Azure Key Vault Keys client builder options added in 4.5.0: turning off the authentication-challenge resource check"
+
+contracts:
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableChallengeResourceVerification
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+  - method: com.azure.security.keyvault.keys.KeyClientBuilder.disableChallengeResourceVerification
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.KeyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.KeyClientBuilder
+      confidence: high
+    role: config
+
+hierarchy:
+  com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder:
+    - java.lang.Object
+  com.azure.security.keyvault.keys.KeyClientBuilder:
+    - java.lang.Object
+  java.lang.Object: []

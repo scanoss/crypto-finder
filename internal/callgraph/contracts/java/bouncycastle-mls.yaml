@@ -16,10 +16,13 @@ library:
 # operation-determining: it selects the KEM, AEAD, hash and signature scheme
 # together. The BCMLS_* fields are MlsCipherSuite instances, also not calls.
 #
+# serializeSignaturePublicKey and serializeSignaturePrivateKey encode an MLS
+# signature key (output); deserializeSignaturePrivateKey decodes one into a key
+# pair (factory). No release has deserializeSignaturePublicKey.
+#
 # Inventory, beyond the contracted entries:
 #   MLS_* and BCMLS_* fields, ALL_SUPPORTED_SUITES     skipped-unsupported: fields, not calls
 #   getSuiteID, getHPKE, getKDF, getAEAD                skipped-informative-return
-#   serialize/deserializeSignature{Public,Private}Key   needs-follow-up: key encoding, no rule selects it
 contracts:
   - method: org.bouncycastle.mls.crypto.MlsCipherSuite.getSuite
     arity: 1
@@ -67,6 +70,18 @@ contracts:
     arity: 2
     return: { type: "byte[]", confidence: high }
     role: operation
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.serializeSignaturePublicKey
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.serializeSignaturePrivateKey
+    arity: 1
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.mls.crypto.MlsCipherSuite.deserializeSignaturePrivateKey
+    arity: 1
+    return: { type: org.bouncycastle.crypto.AsymmetricCipherKeyPair, confidence: high }
+    role: factory
 
 hierarchy:
   org.bouncycastle.mls.crypto.MlsCipherSuite:

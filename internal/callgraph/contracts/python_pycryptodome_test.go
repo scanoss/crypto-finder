@@ -12,7 +12,8 @@ import (
 )
 
 // wantPycryptodomeContracts was reviewed line by line against the
-// pycryptodome 3.23.0 sources (lib/Crypto). Update returns differ by class:
+// pycryptodome 3.23.0 sources (lib/Crypto); the DES, DES3, Salsa20 and
+// PKCS1_OAEP entries also against every release from 3.0. Update returns differ by class:
 // SHA-2 and ChaCha20-Poly1305 return None, SHA-3, HMAC and the AES AEAD
 // modes return the object. Every verify raises on failure and returns None.
 func wantPycryptodomeContracts() []string {
@@ -40,6 +41,18 @@ func wantPycryptodomeContracts() []string {
 		"Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.update#1 Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.update/config/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.verify#1 Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.ChaCha20_Poly1305.new#1 Crypto.Cipher.ChaCha20_Poly1305.new/factory/Crypto.Cipher.ChaCha20_Poly1305.ChaCha20Poly1305Cipher/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES.DESCipher.decrypt#1 Crypto.Cipher.DES.DESCipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES.DESCipher.encrypt#1 Crypto.Cipher.DES.DESCipher.encrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES.new#2 Crypto.Cipher.DES.new/factory/Crypto.Cipher.DES.DESCipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length,1:mode:operation-determining:-:-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES3.DES3Cipher.decrypt#1 Crypto.Cipher.DES3.DES3Cipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES3.DES3Cipher.encrypt#1 Crypto.Cipher.DES3.DES3Cipher.encrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.DES3.new#2 Crypto.Cipher.DES3.new/factory/Crypto.Cipher.DES3.DES3Cipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length,1:mode:operation-determining:-:-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.decrypt#1 Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.encrypt#1 Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher.encrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.PKCS1_OAEP.new#1 Crypto.Cipher.PKCS1_OAEP.new/factory/Crypto.Cipher.PKCS1_OAEP.PKCS1OAEP_Cipher/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.Salsa20.Salsa20Cipher.decrypt#1 Crypto.Cipher.Salsa20.Salsa20Cipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.Salsa20.Salsa20Cipher.encrypt#1 Crypto.Cipher.Salsa20.Salsa20Cipher.encrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.Salsa20.new#2 Crypto.Cipher.Salsa20.new/factory/Crypto.Cipher.Salsa20.Salsa20Cipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Hash.HMAC.HMAC.digest#0 Crypto.Hash.HMAC.HMAC.digest/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Hash.HMAC.HMAC.hexdigest#0 Crypto.Hash.HMAC.HMAC.hexdigest/output/builtins.str/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Hash.HMAC.HMAC.hexverify#1 Crypto.Hash.HMAC.HMAC.hexverify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",

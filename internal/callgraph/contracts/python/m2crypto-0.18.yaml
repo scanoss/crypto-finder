@@ -1,0 +1,29 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.18
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.18"
+  description: "M2Crypto APIs added or reshaped in 0.18: EVP PBKDF2, the one-argument EVP PKey verify_final, and DER certificate loading"
+
+contracts:
+  - method: M2Crypto.EVP.pbkdf2
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.load_cert_der_string
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.EVP.PKey.verify_final
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+hierarchy:
+  M2Crypto.X509.X509:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []

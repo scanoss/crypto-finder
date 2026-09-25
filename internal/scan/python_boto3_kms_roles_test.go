@@ -74,6 +74,12 @@ def named_service(name, data):
     client = boto3.client(name)
     client.encrypt(KeyId="alias/k", Plaintext=data)
     return client.generate_random(NumberOfBytes=32)
+
+
+def create_key():
+    kms = boto3.client('kms')
+    kms.create_key(KeySpec="RSA_4096", KeyUsage="SIGN_VERIFY")
+    return kms.generate_random(NumberOfBytes=32)
 `
 
 func boto3Finding(line int) entities.CryptographicAsset {
@@ -93,7 +99,7 @@ func boto3Finding(line int) entities.CryptographicAsset {
 func TestPythonBoto3_KMSClientBindsFromItsServiceLiteral(t *testing.T) {
 	t.Parallel()
 
-	anchors := []int{10, 16, 23, 30, 37, 44, 50, 56}
+	anchors := []int{10, 16, 23, 30, 37, 44, 50, 56, 62}
 	assets := make([]entities.CryptographicAsset, 0, len(anchors))
 	for _, line := range anchors {
 		assets = append(assets, boto3Finding(line))
@@ -150,6 +156,7 @@ func TestPythonBoto3_KMSClientBindsFromItsServiceLiteral(t *testing.T) {
 		{36, "botocore.client.KMS.generate_data_key_pair_without_plaintext", "operation"},
 		{41, "boto3.Session.<init>", "factory"},
 		{43, "botocore.client.KMS.verify_mac", "operation"},
+		{61, "botocore.client.KMS.create_key", "operation"},
 	} {
 		category, ok := got[want.line][want.symbol]
 		if !ok {

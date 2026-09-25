@@ -1,0 +1,25 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.39
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.39.0"
+  description: "M2Crypto APIs added in 0.39.0: EVP PKey EC key assignment and access"
+
+contracts:
+  - method: M2Crypto.EVP.PKey.assign_ec
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+  - method: M2Crypto.EVP.PKey.get_ec
+    arity: 0
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: output
+
+hierarchy:
+  M2Crypto.EC.EC_pub:
+    - M2Crypto.EC.EC
+  M2Crypto.EC.EC:
+    - builtins.object
+  builtins.object: []

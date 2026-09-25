@@ -109,6 +109,31 @@ def run(key, name, pem):
 			{11, "cryptography.x509.Certificate.public_bytes", "output"},
 		},
 	},
+	{
+		// Each chain re-assigns its own receiver, and the second one's
+		// receiver is the first one's result.
+		name: "X.509 builder chains re-assigning their receiver",
+		source: `from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+
+
+def run(key, name, pub, serial, start):
+    builder = x509.CertificateBuilder()
+    builder = builder.subject_name(name).issuer_name(name).public_key(pub)
+    builder = builder.serial_number(serial).not_valid_before(start)
+    cert = builder.sign(key, hashes.SHA256())
+    return cert.public_bytes(None)
+`,
+		anchors: []int{6},
+		want: []pycaSupportingCall{
+			{7, "cryptography.x509.CertificateBuilder.subject_name", "config"},
+			{7, "cryptography.x509.CertificateBuilder.issuer_name", "config"},
+			{7, "cryptography.x509.CertificateBuilder.public_key", "config"},
+			{8, "cryptography.x509.CertificateBuilder.serial_number", "config"},
+			{8, "cryptography.x509.CertificateBuilder.not_valid_before", "config"},
+			{9, "cryptography.x509.CertificateBuilder.sign", "operation"},
+		},
+	},
 }
 
 func TestPycaCryptography_SupportingCallsCarryTheirLifecycleRole(t *testing.T) {
