@@ -377,9 +377,13 @@ func pythonFunctionIDFQN(id FunctionID) string {
 	return qualifiedType(id.Package, name)
 }
 
-// pythonCallFQN is pythonFunctionIDFQN for a call site.
+// pythonCallFQN is pythonFunctionIDFQN for a call site. A chain link typed
+// through the contract KB is renamed "name#arity"; a Python identifier never
+// contains '#', so the suffix is safe to drop.
 func pythonCallFQN(call *FunctionCall) string {
-	return pythonFunctionIDFQN(call.Callee)
+	id := call.Callee
+	id.Name, _, _ = strings.Cut(id.Name, "#")
+	return pythonFunctionIDFQN(id)
 }
 
 // pythonFunctionFQN is pythonFunctionIDFQN for a declaration.

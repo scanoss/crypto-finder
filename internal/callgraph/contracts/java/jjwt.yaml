@@ -6,87 +6,183 @@ library:
   coordinates:
     - "io.jsonwebtoken:jjwt-api"
     - "io.jsonwebtoken:jjwt-impl"
-  version_range: ">=0.12,<1.0"
-  description: "JJWT fluent builder and parser contracts for signed and encrypted JWT flows"
+  version_range: ">=0.10.0,<1.0"
+  description: "JJWT builder signing, compaction, legacy JWS parsing and the Keys factories"
 
+# JJWT's API moves at 0.11.0 (JwtParserBuilder) and 0.12.0 (Jwts.parser()
+# returns the builder, verifyWith, JWE, the Jwts.SIG/ENC/KEY registries), and
+# version_range is per file, so each file claims only the versions where every
+# entry in it is true. Every public method of Jwts, JwtBuilder, JwtParser,
+# JwtParserBuilder and the security key types was listed by reflection over
+# all 24 tier0 jjwt-api jars, 0.10.0 through 0.13.0:
+#
+#   jjwt.yaml          this file                                  0.10.0 - 0.13.0
+#   jjwt-0.10.yaml     JwtParser.setSigningKey                    0.10.0 - 0.11.5
+#   jjwt-0.11.yaml     JwtParserBuilder.setSigningKey, build      0.11.0 - 0.13.0
+#   jjwt-0.11.0.yaml   Jwts.parserBuilder                         0.11.0 - 0.11.5
+#   jjwt-0.12.yaml     Jwts.parser (builder), verifyWith, JWE,
+#                      key builders, parseSigned*/parseEncrypted* 0.12.0 - 0.13.0
+#
+# Roles: Jwts.builder, the Keys factories and builders are factories;
+# signWith, encryptWith, setSigningKey, verifyWith and decryptWith configure
+# the builder or parser; compact and the parse* methods perform the signing,
+# encryption or verification.
+#
+# signWith at arity 2 has two argument orders, (SignatureAlgorithm, key) and
+# (key, algorithm), under one method and arity, so no index can name its
+# algorithm; the rules read it from the call site instead.
+#
+# The JwtBuilder claim setters carry no role. They are here only so that a
+# fluent chain such as Jwts.builder().setSubject(..).signWith(..) keeps its
+# JwtBuilder receiver type through to the crypto call.
+#
+# Not authorable: Jwts.parser() returns JwtParser before 0.12.0 and
+# JwtParserBuilder from 0.12.0, and one method and arity can declare one
+# return, so jjwt-0.12.yaml owns it. On 0.10 and 0.11 a chained
+# Jwts.parser().setSigningKey(..) therefore resolves to
+# JwtParserBuilder.setSigningKey, which carries the same config role.
 contracts:
   - method: io.jsonwebtoken.Jwts.builder
     arity: 0
     return:
       type: io.jsonwebtoken.JwtBuilder
       confidence: high
+    role: factory
   - method: io.jsonwebtoken.JwtBuilder.signWith
     arity: 1
     return:
       type: io.jsonwebtoken.JwtBuilder
       confidence: high
+    role: config
   - method: io.jsonwebtoken.JwtBuilder.signWith
     arity: 2
     return:
       type: io.jsonwebtoken.JwtBuilder
       confidence: high
+    role: config
   - method: io.jsonwebtoken.JwtBuilder.compact
     arity: 0
     return:
       type: java.lang.String
       confidence: high
-  - method: io.jsonwebtoken.Jwts.parser
-    arity: 0
-    return:
-      type: io.jsonwebtoken.JwtParserBuilder
-      confidence: high
-  - method: io.jsonwebtoken.JwtParserBuilder.verifyWith
-    arity: 1
-    return:
-      type: io.jsonwebtoken.JwtParserBuilder
-      confidence: high
-  - method: io.jsonwebtoken.JwtParserBuilder.decryptWith
-    arity: 1
-    return:
-      type: io.jsonwebtoken.JwtParserBuilder
-      confidence: high
-  - method: io.jsonwebtoken.JwtParserBuilder.build
-    arity: 0
-    return:
-      type: io.jsonwebtoken.JwtParser
-      confidence: high
-  - method: io.jsonwebtoken.JwtParser.parseSignedClaims
+    role: operation
+  - method: io.jsonwebtoken.JwtParser.parseClaimsJws
     arity: 1
     return:
       type: io.jsonwebtoken.Jws
       confidence: high
-  - method: io.jsonwebtoken.JwtParser.parseSignedClaims
+    role: operation
+  - method: io.jsonwebtoken.security.Keys.secretKeyFor
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: io.jsonwebtoken.security.Keys.keyPairFor
+    arity: 1
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: io.jsonwebtoken.security.Keys.hmacShaKeyFor
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: bytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: io.jsonwebtoken.JwtBuilder.setSubject
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setIssuer
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setAudience
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setExpiration
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setNotBefore
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setIssuedAt
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setId
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setClaims
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.addClaims
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setHeader
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setHeaderParams
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.setPayload
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtBuilder
+      confidence: high
+  - method: io.jsonwebtoken.JwtBuilder.claim
     arity: 2
     return:
-      type: io.jsonwebtoken.Jws
+      type: io.jsonwebtoken.JwtBuilder
       confidence: high
-  - method: io.jsonwebtoken.JwtParser.parseSignedContent
-    arity: 1
+  - method: io.jsonwebtoken.JwtBuilder.setHeaderParam
+    arity: 2
     return:
-      type: io.jsonwebtoken.Jws
-      confidence: high
-  - method: io.jsonwebtoken.JwtParser.parseEncryptedClaims
-    arity: 1
-    return:
-      type: io.jsonwebtoken.Jwe
-      confidence: high
-  - method: io.jsonwebtoken.JwtParser.parseEncryptedContent
-    arity: 1
-    return:
-      type: io.jsonwebtoken.Jwe
+      type: io.jsonwebtoken.JwtBuilder
       confidence: high
 
 hierarchy:
   io.jsonwebtoken.JwtBuilder:
-    - java.lang.Object
-  io.jsonwebtoken.JwtParserBuilder:
     - java.lang.Object
   io.jsonwebtoken.JwtParser:
     - java.lang.Object
   io.jsonwebtoken.Jwt:
     - java.lang.Object
   io.jsonwebtoken.Jws:
-    - io.jsonwebtoken.Jwt
-  io.jsonwebtoken.Jwe:
     - io.jsonwebtoken.Jwt
   java.lang.Object: []

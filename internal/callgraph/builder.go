@@ -223,6 +223,13 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
 	// return types and runs before the KB is available.
 	resolveFluentChainCalleesByContract(graph, kb)
+	if b.ecosystem == ecosystemPython {
+		// The type resolver already propagated assigned-variable types, but
+		// before the pass above typed chain links, so `padder =
+		// PKCS7(128).padder()` bound nothing and `padder.update(..)` stayed
+		// keyed on the local name. A second pass sees the resolved links.
+		propagatePythonAssignedVarTypes(graph, kb)
+	}
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
 	respellGoPointerReceivers(graph, b.ecosystem)
 

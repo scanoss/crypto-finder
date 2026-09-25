@@ -2643,6 +2643,9 @@ func resolveImportedCall(object, method, raw, filePath string, line, startCol, e
 	if dotIdx > 0 {
 		firstSegment := object[:dotIdx]
 		if pkg, ok := analysis.Imports[firstSegment]; ok {
+			if analysis.FromImports[firstSegment] {
+				pkg = pkg + "." + pythonImportedName(analysis, firstSegment)
+			}
 			fullPath := pkg + "." + object[dotIdx+1:]
 			return &FunctionCall{
 				Callee:      FunctionID{Package: fullPath, Name: method},

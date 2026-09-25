@@ -45,7 +45,7 @@ func TestRustContractsResolveOnExportPath(t *testing.T) {
 		t.Fatalf("return type = %q, want ring::aead::UnboundKey", matches[0].Return.Type)
 	}
 
-	roles := parameterRolesFromKB(ctx.kb, fqn, len(call.Arguments))
+	roles := parameterRolesFromKB(ctx.kb, fqn, "", len(call.Arguments))
 	if len(roles) != 2 {
 		t.Fatalf("parameter roles = %d, want 2", len(roles))
 	}

@@ -1,0 +1,104 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-smime
+  coordinates:
+    - "org.bouncycastle:bcmail-jdk15on"
+    - "org.bouncycastle:bcmail-jdk18on"
+    - "org.bouncycastle:bcjmail-jdk18on"
+  version_range: ">=1.47,<2.0"
+  description: "Bouncy Castle bcmail and bcjmail: S/MIME signing and enveloping generators and parsers"
+
+# Authored from javap over every tier0 jar: bcmail-jdk15on 1.46 through 1.70,
+# bcmail-jdk18on and bcjmail-jdk18on 1.71 through 1.84. Each entry exists with
+# this arity in all of them from 1.47; 1.46 lacks only the
+# SMIMESignedGenerator(String, Map) constructor. The authenticated-enveloped
+# generator arrives at 1.80 (bouncycastle-smime-1.80.yaml).
+#
+# bcmail and bcjmail ship the same org.bouncycastle.mail.smime classes over
+# javax.mail and jakarta.mail respectively, so one method key covers both.
+# The generate methods therefore return java.lang.Object here: the real
+# MimeMultipart or MimeBodyPart is javax.mail.internet.* in one artifact and
+# jakarta.mail.internet.* in the other, and one key can declare one return.
+#
+# SMIMESigned and SMIMEEnveloped extend CMSSignedData and CMSEnvelopedData,
+# so their signer and recipient accessors come from bouncycastle-pkix.yaml
+# through the hierarchy edges below.
+#
+# Inventory, beyond the contracted entries:
+#   SMIMESignedGenerator.addSigner/addCertificatesAndCRLs, generate(part, provider),
+#   SMIMEEnvelopedGenerator.addKeyTransRecipient/addKEKRecipient/addKeyAgreementRecipient,
+#   generate(part, alg, provider)                     needs-follow-up: 1.46-1.49 only, removed at 1.50
+#   addSigners, addCRLs, addAttributeCertificates,
+#   getGeneratedDigests, setBerEncodeRecipients       skipped-non-crypto
+#   DIGEST_*, ENCRYPTION_*, *_CBC, *_WRAP constants   skipped-unsupported: fields, not calls
+#   SMIMESigned.getSafeInstance                       needs-follow-up: 1.84 only
+#   getContent, getContentAsMimeMessage, getEncryptedContent  skipped-non-crypto (MIME content)
+contracts:
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.mail.smime.SMIMESignedGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.<init>
+    arity: 1
+    return: { type: org.bouncycastle.mail.smime.SMIMESignedGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.<init>
+    arity: 2
+    return: { type: org.bouncycastle.mail.smime.SMIMESignedGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addSignerInfoGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addCertificates
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.generate
+    arity: 1
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.generateEncapsulated
+    arity: 1
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addRecipientInfoGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.generate
+    arity: 2
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mail.smime.SMIMESigned.<init>
+    arity: 1
+    return: { type: org.bouncycastle.mail.smime.SMIMESigned, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMESigned.<init>
+    arity: 2
+    return: { type: org.bouncycastle.mail.smime.SMIMESigned, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMEEnveloped.<init>
+    arity: 1
+    return: { type: org.bouncycastle.mail.smime.SMIMEEnveloped, confidence: high }
+    role: factory
+
+hierarchy:
+  org.bouncycastle.mail.smime.SMIMESignedGenerator:
+    - java.lang.Object
+  org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator:
+    - java.lang.Object
+  org.bouncycastle.mail.smime.SMIMESigned:
+    - org.bouncycastle.cms.CMSSignedData
+  org.bouncycastle.mail.smime.SMIMEEnveloped:
+    - org.bouncycastle.cms.CMSEnvelopedData
+  org.bouncycastle.cms.CMSSignedData:
+    - java.lang.Object
+  org.bouncycastle.cms.CMSEnvelopedData:
+    - java.lang.Object
+  java.lang.Object: []
