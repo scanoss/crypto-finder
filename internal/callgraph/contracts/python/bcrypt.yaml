@@ -4,22 +4,69 @@ library:
   name: bcrypt
   coordinates:
     - bcrypt
-  version_range: ">=4.0"
+  version_range: ">=1.0"
   description: "pyca/bcrypt password hashing APIs"
+
+# Read at bcrypt 5.0.0 (src/bcrypt/__init__.pyi) and checked against 1.0.0,
+# 3.0.0, 3.1.0, 3.1.3 and 3.2.2 (bcrypt/__init__.py).
+#
+# VERSION RANGE. gensalt and hashpw exist from 1.0.0 and hashpw has returned
+# bytes on Python 3 since then (1.0.0 returns `_ffi.string(hashed)`). kdf
+# arrives at 3.0.0, checkpw at 3.1.0 and kdf's ignore_few_rounds at 3.1.3.
+#
+# ONE SPELLING. Every entry is a module-level function, so `import bcrypt;
+# bcrypt.hashpw(..)` and `from bcrypt import hashpw; hashpw(..)` emit the same
+# key `bcrypt.hashpw`.
+#
+# ROLES. hashpw, checkpw and kdf run bcrypt, so they are `operation`. gensalt
+# only encodes a cost and random bytes into a salt string; it is the `factory`
+# of the salt that hashpw consumes.
+#
+# COST. gensalt's `rounds` is the log2 work factor written into the salt
+# (`cost`, as favre-bcrypt names it on the Java side). kdf's `rounds` is the
+# bcrypt_pbkdf iteration count (`iterations`).
 
 contracts:
   - method: bcrypt.gensalt
     arity: 0
     return: { type: builtins.bytes, confidence: high }
     role: factory
+  # gensalt(rounds=12, prefix=b"2b"); `prefix` arrives at 3.0.0.
+  - method: bcrypt.gensalt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+    parameter_types:
+      - builtins.int
+    parameters:
+      - index: 0
+        name: rounds
+        role: metadata-contributing
+        contributes:
+          property: cost
+          derivation: argument_value
+  - method: bcrypt.gensalt
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 0
+        name: rounds
+        role: metadata-contributing
+        contributes:
+          property: cost
+          derivation: argument_value
   - method: bcrypt.hashpw
     arity: 2
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: bcrypt.checkpw
     arity: 2
     return: { type: builtins.bool, confidence: high }
-    role: output
+    role: operation
   # bcrypt.kdf(password, salt, desired_key_bytes, rounds,
   # ignore_few_rounds=False) — verified against github.com/pyca/bcrypt
   # (src/bcrypt/__init__.pyi, main branch, python-parser-parity-2 batch 3):
@@ -27,7 +74,7 @@ contracts:
   - method: bcrypt.kdf
     arity: 4
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
     parameter_types:
       - builtins.bytes
       - builtins.bytes
@@ -40,6 +87,35 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_byte_length
+      - index: 3
+        name: rounds
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+  - method: bcrypt.kdf
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.bool
+    parameters:
+      - index: 2
+        name: desired_key_bytes
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 3
+        name: rounds
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
 
 hierarchy:
   builtins.bytes:
