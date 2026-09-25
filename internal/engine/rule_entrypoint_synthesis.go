@@ -48,6 +48,7 @@ const (
 	extYML          = ".yml"
 	languageJava    = "java"
 	ecosystemPython = "python"
+	ecosystemRust   = "rust"
 )
 
 // SynthesizeRuleCryptoEntryPoints surfaces a library's public crypto API methods
@@ -101,6 +102,9 @@ func synthesizeRuleCryptoEntryPoints(
 	}
 
 	declsByFQN, declsByClass := indexGraphDeclarations(graph)
+	if ecosystem == ecosystemRust {
+		declsByFQN = rustDeclarationsBySynthesisKey(graph)
+	}
 	fileIdx := indexReportFiles(report)
 	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem, result)
 
@@ -144,6 +148,38 @@ func indexGraphDeclarations(
 	return declsByFQN, declsByClass
 }
 
+// rustDeclarationsBySynthesisKey indexes Rust method definitions the way
+// rustSynthesisKey spells a rule api. A declaration is keyed by its defining
+// module ("rsa::pkcs1v15::signing_key.SigningKey.new") and by every public path
+// a `pub use` gives its type ("rsa::pkcs1v15::SigningKey.new"), because a rule
+// names the path a consumer imports.
+func rustDeclarationsBySynthesisKey(graph *callgraph.CallGraph) map[string][]*callgraph.FunctionDecl {
+	out := make(map[string][]*callgraph.FunctionDecl)
+	for _, fn := range graph.Functions {
+		fqn := baseFQN(functionFQN(fn.ID))
+		if fqn == "" {
+			continue
+		}
+		out[rustSynthesisKey(fqn)] = append(out[rustSynthesisKey(fqn)], fn)
+		if fn.ID.Package == "" || fn.ID.Type == "" {
+			continue
+		}
+		method := fqn[strings.LastIndex(fqn, ".")+1:]
+		for _, public := range graph.PublicTypePaths[fn.ID.Package+"::"+fn.ID.Type] {
+			key := rustSynthesisKey(public + "." + method)
+			out[key] = append(out[key], fn)
+		}
+	}
+	return out
+}
+
+// rustSynthesisKey spells a Rust path with "." between every segment, so a rule
+// api written "rsa.pkcs1v15.SigningKey.new" or "cmac::Cmac::new_from_slice"
+// meets a declaration the call graph renders "rsa::pkcs1v15.SigningKey.new".
+func rustSynthesisKey(path string) string {
+	return strings.ReplaceAll(path, "::", ".")
+}
+
 func indexReportFiles(report *entities.InterimReport) map[string]int {
 	fileIdx := make(map[string]int, len(report.Findings))
 	for i := range report.Findings {
@@ -172,6 +208,9 @@ func synthesizeRuleCryptoAssets(
 	added := 0
 	for api, metas := range apiCrypto {
 		decls := declsByFQN[api]
+		if ecosystem == ecosystemRust {
+			decls = declsByFQN[rustSynthesisKey(api)]
+		}
 		if len(decls) == 0 && ecosystem == ecosystemPython {
 			decls = pythonModuleCollapsedDecls(api, declsByFQN)
 		}
@@ -796,8 +835,12 @@ func isQualifiedMethodSymbol(s, ecosystem string) bool {
 		return false
 	}
 	minDots := 2
-	if ecosystem == ecosystemPython {
+	switch ecosystem {
+	case ecosystemPython:
 		minDots = 1
+	case ecosystemRust:
+		// "cmac::Cmac::new_from_slice" is as qualified as "cmac.Cmac.new_from_slice".
+		s = rustSynthesisKey(s)
 	}
 	return strings.Count(s, ".") >= minDots
 }
