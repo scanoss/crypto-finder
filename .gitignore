@@ -10,7 +10,7 @@ coverage.html
 tmp/
 .*/
 !.github
-!.idea
+.idea/
 demo/
 # Local Pi runtime state
 .atl/
