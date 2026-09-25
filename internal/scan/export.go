@@ -1587,7 +1587,7 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		ctx.declIndex = make(map[string][]*callgraph.FunctionDecl, len(result.CallGraph.Functions))
 		ctx.declsByMethod = make(map[string][]operationContractDeclaration)
 		for _, fn := range result.CallGraph.Functions {
-			if fqn := exportFunctionFQN(fn.ID); fqn != "" {
+			if fqn := ctx.contractDeclKey(fn.ID); fqn != "" {
 				_, method := splitFunctionName(fqn)
 				ctx.declsByMethod[method] = append(ctx.declsByMethod[method], operationContractDeclaration{
 					declFQN: fqn,
@@ -1630,6 +1630,18 @@ func exportFunctionFQN(id callgraph.FunctionID) string {
 	}
 	if i := strings.IndexByte(fqn, '#'); i >= 0 {
 		return fqn[:i]
+	}
+	return fqn
+}
+
+// contractDeclKey returns the key a declaration is indexed under for contract
+// lookups. The Rust call graph joins a declaration's module, type and name with
+// "." ("rsa::pkcs1v15.SigningKey.new") while the Rust KBs key contracts as
+// "rsa::pkcs1v15::SigningKey.new", so Rust declarations take the KB spelling.
+func (ctx *exportBuildContext) contractDeclKey(id callgraph.FunctionID) string {
+	fqn := exportFunctionFQN(id)
+	if ctx.ecosystem == ecosystemRust {
+		return rustContractMethodKey(fqn)
 	}
 	return fqn
 }
@@ -1906,20 +1918,77 @@ func receiverType(method string) string {
 	return ""
 }
 
-// contractReturnType returns the contract-declared return type of a method FQN
-// (any arity), or "" when unknown.
-func (ctx *exportBuildContext) contractReturnType(method string) string {
+// contractByMethod returns the first contract declared for a method FQN (any
+// arity), or nil when the KB declares none.
+func (ctx *exportBuildContext) contractByMethod(method string) *contracts.Contract {
 	if ctx.kb == nil {
-		return ""
+		return nil
 	}
 	for _, group := range ctx.kb.Contracts {
 		for i := range group {
 			if group[i].Method == method {
-				return group[i].Return.Type
+				return &group[i]
 			}
 		}
 	}
-	return ""
+	return nil
+}
+
+// contractTypeKnown reports whether the KB declares typ as a contract return
+// type or a hierarchy child. Receivers alone do not count: a free function's
+// receiver is its module, which a type-only api must not join.
+func (ctx *exportBuildContext) contractTypeKnown(typ string) bool {
+	if ctx.kb == nil {
+		return false
+	}
+	if _, ok := ctx.kb.Hierarchy[typ]; ok {
+		return true
+	}
+	for _, group := range ctx.kb.Contracts {
+		for i := range group {
+			if group[i].Return.Type == typ {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// contractTerminalTypes returns the receiver type of a finding's terminal api
+// and the contract-declared return type of that api.
+//
+// Rust rules spell the api's path with "." ("rsa.pkcs1v15.SigningKey.new") or
+// with "::", while the Rust KBs key contracts as "rsa::pkcs1v15::SigningKey.new".
+// A Rust api therefore joins in the KB spelling: first as a contract method,
+// then, when the KB declares no such method, as a type the KB knows. A
+// type-only api such as "aes_gcm_siv.AesGcmSiv" names aes_gcm_siv::AesGcmSiv
+// and carries that type's lifecycle. An api the KB knows in neither form keeps
+// the spelling it was written in.
+func (ctx *exportBuildContext) contractTerminalTypes(api string) (builder, ret string) {
+	if ctx.ecosystem == ecosystemRust {
+		method := rustContractMethodKey(api)
+		if c := ctx.contractByMethod(method); c != nil {
+			return receiverType(method), c.Return.Type
+		}
+		if typ := strings.ReplaceAll(api, ".", "::"); receiverType(method) != "" && ctx.contractTypeKnown(typ) {
+			return typ, ""
+		}
+	}
+	if c := ctx.contractByMethod(api); c != nil {
+		ret = c.Return.Type
+	}
+	return receiverType(api), ret
+}
+
+// rustContractMethodKey spells a Rust api the way the Rust KBs key contracts:
+// "::" between path segments and "." before the method only.
+func rustContractMethodKey(api string) string {
+	path := strings.ReplaceAll(api, "::", ".")
+	i := strings.LastIndex(path, ".")
+	if i < 0 {
+		return api
+	}
+	return strings.ReplaceAll(path[:i], ".", "::") + path[i:]
 }
 
 // typeOrAncestor reports whether candidate is typ itself or a transitive
@@ -1963,12 +2032,10 @@ func deriveContractSupportingCalls(ctx *exportBuildContext, asset entities.Crypt
 	if ctx.kb == nil || len(ctx.kb.Contracts) == 0 || ctx.declIndex == nil {
 		return nil
 	}
-	terminalAPI := strings.TrimSpace(asset.Metadata["api"])
-	builderType := receiverType(terminalAPI)
+	builderType, returnType := ctx.contractTerminalTypes(strings.TrimSpace(asset.Metadata["api"]))
 	if builderType == "" {
 		return nil
 	}
-	returnType := ctx.contractReturnType(terminalAPI)
 
 	var out []callGraphSupportingCall
 	seen := make(map[string]struct{})

@@ -8,13 +8,13 @@ library:
   version_range: ">=7.0.0,<7.2.0"
   description: >-
     Spring Security Crypto 7.1 encoder lifecycle contracts, additive to the
-    version-pinned 6.3.4 KB (spring-security-crypto.yaml): the new
+    base KB (spring-security-crypto.yaml): the new
     org.springframework.security.crypto.password4j.* Password4j-backed
     PasswordEncoder wrappers, the PasswordEncoderFactories default
     DelegatingPasswordEncoder factory, the hand-rolled
     org.springframework.security.crypto.bcrypt.BCrypt static Blowfish-EKS
     terminal, and the previously-uncontracted AesBytesEncryptor
-    constructors and Encryptors.delux text-encryptor factory. Verified
+    constructors. Verified
     against spring-security-crypto 7.1.0 source (bcrypt/BCrypt.java,
     password4j/*.java, factory/PasswordEncoderFactories.java,
     encrypt/AesBytesEncryptor.java, encrypt/Encryptors.java).
@@ -113,7 +113,7 @@ library:
 #   <init>(String,CharSequence,BytesKeyGenerator,CipherAlgorithm) contracted (factory, arity 4)
 #   encrypt(byte[])/decrypt(byte[])    covered-existing -- resolve via
 #                                        BytesEncryptor.encrypt/decrypt
-#                                        (spring-security-crypto.yaml, 6.3.4)
+#                                        (spring-security-crypto.yaml)
 #                                        through the new AesBytesEncryptor ->
 #                                        BytesEncryptor hierarchy edge below.
 #   CipherAlgorithm (enum)             skipped-non-crypto -- enum constant, not a
@@ -123,32 +123,20 @@ library:
 #
 # org.springframework.security.crypto.encrypt.Encryptors (public final factory
 # class; standard/stronger already contracted in 6.3.4)
-#   standard(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml, 6.3.4)
-#   stronger(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml, 6.3.4)
-#   delux(CharSequence,CharSequence)   contracted (factory, arity 2) -- ticket AC scope
-#   text(CharSequence,CharSequence)    needs-follow-up -- identical shape to delux()
-#                                        (wraps standard() in the same package-private
-#                                        HexEncodingTextEncryptor) but not named in the
-#                                        approved AC scope ("standard/stronger/delux");
-#                                        left as a follow-up rather than silently
-#                                        expanding scope.
+#   standard(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml)
+#   stronger(CharSequence,CharSequence) covered-existing (spring-security-crypto.yaml)
+#   delux(CharSequence,CharSequence)   covered-existing (spring-security-crypto.yaml)
+#   text(CharSequence,CharSequence)    covered-existing (spring-security-crypto.yaml)
 #   noOpText()                        skipped-non-crypto -- literal no-op passthrough
 #                                        encryptor, not a cryptographic factory.
 #
 # Deferred (belongs to the joined crypto_rules#162/#170 rules PR's broader
 # scope, not this KB ticket's narrow AC):
 #   password.Md4PasswordEncoder, password.MessageDigestPasswordEncoder,
-#   password.LdapShaPasswordEncoder, password.StandardPasswordEncoder,
-#   password.NoOpPasswordEncoder      needs-follow-up -- legacy digest-based
-#                                        PasswordEncoder implementations,
-#                                        pre-existing since old Spring Security
-#                                        releases (not new to 7.1); already have
-#                                        crypto_rules#162 rule coverage
-#                                        independent of this KB ticket.
-#   encrypt.RsaRawEncryptor            needs-follow-up -- pre-existing class,
-#                                        out of this ticket's encoder-lifecycle
-#                                        scope; already has crypto_rules#162
-#                                        rule coverage.
+#   password.LdapShaPasswordEncoder, password.StandardPasswordEncoder
+#                                       covered-existing (spring-security-crypto.yaml)
+#   password.NoOpPasswordEncoder      skipped-non-crypto -- no rule selects it.
+#   encrypt.RsaRawEncryptor            covered-existing (spring-security-crypto-6.3.yaml)
 #   encrypt.BouncyCastleAes{Cbc,Gcm}BytesEncryptor
 #                                       needs-follow-up -- BouncyCastle-backed
 #                                        siblings of AesBytesEncryptor, out of
@@ -228,7 +216,7 @@ contracts:
   # encode()/matches()/upgradeEncoding() `final`, dispatching to each
   # subclass's *NonNullPassword template method), so those three operations
   # resolve via the existing PasswordEncoder contract in
-  # spring-security-crypto.yaml (6.3.4) through the hierarchy edges below --
+  # spring-security-crypto.yaml through the hierarchy edges below --
   # no per-class encode/matches override is authored here (skill: "operation
   # authoring rule -- prefer the shared interface"). The no-arg constructor
   # delegates to com.password4j.AlgorithmFinder's defaults, an EXTERNAL
@@ -315,18 +303,6 @@ contracts:
   - method: org.springframework.security.crypto.encrypt.AesBytesEncryptor.<init>
     arity: 4
     return: { type: org.springframework.security.crypto.encrypt.AesBytesEncryptor, confidence: high }
-    role: factory
-
-  # ── Encryptors: the previously-uncontracted delux() text-encryptor factory ──
-  # Encryptors.delux(password, salt) wraps stronger(...) (AES-256-GCM) in a
-  # HexEncodingTextEncryptor; that wrapper class itself is package-private
-  # (not part of the public API surface), so only the public factory method
-  # is contracted -- its TextEncryptor return resolves encrypt()/decrypt()
-  # via the existing TextEncryptor operation contract in
-  # spring-security-crypto.yaml.
-  - method: org.springframework.security.crypto.encrypt.Encryptors.delux
-    arity: 2
-    return: { type: org.springframework.security.crypto.encrypt.TextEncryptor, confidence: high }
     role: factory
 
 hierarchy:
