@@ -3336,32 +3336,26 @@ func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, r
 }
 
 func exportUserPackages(result *engine.DepScanResult) map[string]bool {
-	if result == nil || strings.TrimSpace(result.RootModule) == "" {
-		return nil
-	}
 	// In standalone mode (no dependencies), return nil so the tracer
 	// traverses call chains to graph roots instead of stopping at the
 	// first root-module function. This produces deeper chains needed
 	// for crypto_entry_points: e.g., HttpClientBuilder.build → ... →
 	// SSLContext.getInstance (depth 5) instead of just depth 1.
-	if len(result.Dependencies) == 0 {
+	if result == nil || len(result.Dependencies) == 0 {
 		return nil
 	}
-	pkgs := map[string]bool{
-		strings.TrimSpace(result.RootModule): true,
-	}
-	// RootModule is a build-tool coordinate. For Go that is also the import
-	// prefix; for Java it is Maven groupId or, on Gradle with no group, the
-	// project name. The project name is not a Java package, so tracing against
-	// it alone drops every chain that starts in application sources (#372).
-	addProjectSourcePackages(pkgs, result)
-	return pkgs
+	return projectUserPackages(result)
 }
 
-// projectUserPackages is the user universe of a run that resolved no
-// dependencies but is asked to classify reachability anyway: the same root
-// module and project source packages exportUserPackages builds for first-party
-// code once dependencies are resolved.
+// projectUserPackages is the user universe: the root module a manifest
+// declares, when there is one, plus the package of every function whose file
+// lives in the project tree. RootModule is a build-tool coordinate. For Go
+// that is also the import prefix; for Java it is Maven groupId or, on Gradle
+// with no group, the project name. The project name is not a Java package, so
+// tracing against it alone drops every chain that starts in application
+// sources (#372). A root no manifest names has an empty RootModule, and its
+// top-level modules carry the empty package, which is a member like any other:
+// the tracer matches it exactly and never as a prefix.
 func projectUserPackages(result *engine.DepScanResult) map[string]bool {
 	pkgs := make(map[string]bool)
 	if root := strings.TrimSpace(result.RootModule); root != "" {
@@ -3389,10 +3383,7 @@ func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult
 		}
 	}
 	for _, fn := range result.CallGraph.Functions {
-		if fn == nil || fn.ID.Package == "" {
-			continue
-		}
-		if !isProjectSourceFile(fn.FilePath, projectRoot, depDirs) {
+		if fn == nil || !isProjectSourceFile(fn.FilePath, projectRoot, depDirs) {
 			continue
 		}
 		pkgs[fn.ID.Package] = true

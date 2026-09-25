@@ -831,11 +831,10 @@ func splitMethodArity(id *FunctionID) (string, int) {
 			name = name[:idx]
 		}
 	}
-	base := name
 	if id.Type != "" {
-		return id.Package + "." + id.Type + "." + base, arity
+		name = id.Type + "." + name
 	}
-	return id.Package + "." + base, arity
+	return qualifiedType(id.Package, name), arity
 }
 
 func cppContractMethod(id *FunctionID) string {

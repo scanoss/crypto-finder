@@ -242,7 +242,7 @@ func (ds *DependencyScanner) resolveScanRoot(
 		}
 		resolutions = append(resolutions, dependency.RootResolution{Root: root, Result: result})
 	}
-	return dependency.MergeRootResolutions(target, resolutions), nil
+	return dependency.MergeRootResolutions(resolutions), nil
 }
 
 func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscovery) {

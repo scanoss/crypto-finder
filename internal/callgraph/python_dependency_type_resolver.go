@@ -491,18 +491,6 @@ func pythonDependencyParamTypes(params *sitter.Node, src []byte, implicitReceive
 	return types
 }
 
-// pythonFunctionIDFQN builds the dotted FQN for a FunctionID exactly as
-// pythonFunctionFQN builds it for a *FunctionDecl (row 13,
-// python_type_resolver.go) — kept as a separate small helper here rather
-// than reusing pythonFunctionFQN directly, since that helper takes a
-// *FunctionDecl rather than a bare FunctionID.
-func pythonFunctionIDFQN(id FunctionID) string {
-	if id.Type != "" {
-		return id.Package + "." + id.Type + "." + id.Name
-	}
-	return id.Package + "." + id.Name
-}
-
 // mergePythonHierarchy merges a distribution index's class hierarchy into
 // the graph, overwriting any prior entry for the same class FQN (mirrors
 // mergeTypeHierarchy's own last-writer-wins behavior for the Java
