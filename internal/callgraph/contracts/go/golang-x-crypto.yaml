@@ -4,11 +4,16 @@ library:
   name: golang-x-crypto
   coordinates:
     - "golang.org/x/crypto"
-  version_range: ">=0.48.0,<0.49.0"
+  version_range: ">=0.1.0,<0.54.0"
   description: "Go supplementary cryptography libraries"
 
 # Inventory sources: golang.org/x/crypto v0.48.0 source and the 85 x/crypto
-# detection rules at scanoss/crypto_rules b6730e8721570f2ffaa8b841ddf2e845eca8e277.
+# detection rules at scanoss/crypto_rules b6730e8721570f2ffaa8b841ddf2e845eca8e277,
+# extended with the NaCl box/sign/auth, salsa20, elgamal, clearsign, knownhosts
+# and NewSignerWithAlgorithms rules of crypto_rules #419. Every contract below
+# has the same arity in every release from v0.1.0 to v0.53.0 in which it
+# exists; only ssh.MarshalPrivateKey, MarshalPrivateKeyWithPassphrase and
+# NewSignerWithAlgorithms are absent before v0.14.0.
 # Imports, constants, type conversions, and composite literals are non-callable and
 # intentionally omitted. ed25519.GenerateKey is parser-unsupported because its
 # private key is the second result of a tuple; ssh.ParseKnownHosts is likewise
@@ -1079,3 +1084,155 @@ contracts:
     role: operation
     parameters:
       - { index: 1, role: metadata-contributing, contributes: { property: "serverConfig", derivation: argument_value } }
+  # nacl/box is X25519 key agreement with XSalsa20-Poly1305; the anonymous
+  # forms seal to a recipient key with an ephemeral sender key. GenerateKey
+  # returns the public key first, so the private key is not a typed result.
+  - method: "golang.org/x/crypto/nacl/box.GenerateKey"
+    arity: 1
+    return: { type: "*[32]byte", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/nacl/box.Precompute"
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/box.Seal"
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/box.SealAfterPrecomputation"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/nacl/box.SealAnonymous"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/box.Open"
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 4, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/box.OpenAfterPrecomputation"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "nonce", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/nacl/box.OpenAnonymous"
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  # nacl/sign wraps Ed25519; GenerateKey has the same tuple shape as box.
+  - method: "golang.org/x/crypto/nacl/sign.GenerateKey"
+    arity: 1
+    return: { type: "*[32]byte", confidence: high }
+    role: factory
+  - method: "golang.org/x/crypto/nacl/sign.Sign"
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+  - method: "golang.org/x/crypto/nacl/sign.Open"
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "signedMessage", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+  # nacl/auth is HMAC-SHA-512-256 with a 32-byte key.
+  - method: "golang.org/x/crypto/nacl/auth.Sum"
+    arity: 2
+    return: { type: "*[32]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/nacl/auth.Verify"
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "mac", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "message", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  # The nonce length selects the cipher at run time: 24 bytes is XSalsa20,
+  # 8 bytes is Salsa20.
+  - method: "golang.org/x/crypto/salsa20.XORKeyStream"
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "output", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+      - { index: 2, role: operation-determining, contributes: { property: "nonceSize", derivation: argument_bit_length } }
+      - { index: 3, role: metadata-contributing, contributes: { property: "keySize", derivation: argument_bit_length } }
+  - method: "golang.org/x/crypto/openpgp/elgamal.Encrypt"
+    arity: 3
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "publicKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "plaintext", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp/elgamal.Decrypt"
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 1, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "ciphertext", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp/clearsign.Encode"
+    arity: 3
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  - method: "golang.org/x/crypto/openpgp/clearsign.EncodeMulti"
+    arity: 3
+    return: { type: "io.WriteCloser", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, role: metadata-contributing, contributes: { property: "privateKey", derivation: argument_value } }
+      - { index: 2, role: metadata-contributing, contributes: { property: "cryptoConfig", derivation: argument_value } }
+  # known_hosts hashing is HMAC-SHA1 keyed with a random salt per entry.
+  - method: "golang.org/x/crypto/ssh/knownhosts.HashHostname"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "input", derivation: argument_value } }
+  - method: "golang.org/x/crypto/ssh.NewSignerWithAlgorithms"
+    arity: 2
+    return: { type: "golang.org/x/crypto/ssh.MultiAlgorithmSigner", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: "key", derivation: argument_type } }
+      - { index: 1, role: operation-determining, contributes: { property: "algorithm", derivation: argument_value } }

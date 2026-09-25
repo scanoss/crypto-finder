@@ -1677,7 +1677,7 @@ func flattenGraphFragmentEntryPoints(
 			// stitch/served path can pick them up via the by-function_key
 			// carry-through (see pkg/graphfrag/ingest.go, stitch.go — the
 			// merge/index side of that carry-through is a follow-up).
-			ParameterRoles: toGraphFragmentParameterRoles(parameterRolesFromKB(kb, entry.functionName, len(entry.parameterTypes))),
+			ParameterRoles: toGraphFragmentParameterRoles(parameterRolesFromKB(kb, entry.functionName, entry.functionKey, len(entry.parameterTypes))),
 		})
 	}
 	return out
