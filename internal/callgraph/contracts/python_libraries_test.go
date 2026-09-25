@@ -1,6 +1,8 @@
 package contracts_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
@@ -536,14 +538,26 @@ func TestLoadEmbedded_Python_Tier0GapLibraries(t *testing.T) {
 		{"M2Crypto.RSA.gen_key", 2, "M2Crypto.RSA.RSA", "m2crypto"},
 		{"M2Crypto.EVP.MessageDigest", 1, "M2Crypto.EVP.MessageDigest", "m2crypto"},
 		{"M2Crypto.EVP.PKey", 0, "M2Crypto.EVP.PKey", "m2crypto"},
-		{"M2Crypto.EVP.pbkdf2", 4, "builtins.bytes", "m2crypto"},
+		{"M2Crypto.EVP.pbkdf2", 4, "builtins.bytes", "m2crypto-0.18"},
 		{"M2Crypto.DSA.load_key", 1, "M2Crypto.DSA.DSA", "m2crypto"},
-		{"M2Crypto.EC.load_pub_key", 1, "M2Crypto.EC.EC_pub", "m2crypto"},
+		{"M2Crypto.EC.load_pub_key", 1, "M2Crypto.EC.EC_pub", "m2crypto-0.16"},
 		{"M2Crypto.SMIME.PKCS7", 0, "M2Crypto.SMIME.PKCS7", "m2crypto"},
-		{"M2Crypto.Engine.Engine.load_private_key", 1, "M2Crypto.EVP.PKey", "m2crypto"},
-		{"M2Crypto.Provider.Provider.generate_rsa_key_pair", 0, "M2Crypto.RSA.RSA", "m2crypto"},
+		{"M2Crypto.Engine.Engine.load_private_key", 1, "M2Crypto.EVP.PKey", "m2crypto-engine"},
+		{"M2Crypto.Provider.Provider.generate_rsa_key_pair", 0, "M2Crypto.RSA.RSA", "m2crypto-0.48"},
 		{"M2Crypto.AuthCookie.AuthCookie", 0, "M2Crypto.AuthCookie.AuthCookie", "m2crypto"},
-		{"M2Crypto.httpslib.ProxyHTTPSConnection", 1, "M2Crypto.httpslib.ProxyHTTPSConnection", "m2crypto"},
+		{"M2Crypto.httpslib.ProxyHTTPSConnection", 1, "M2Crypto.httpslib.ProxyHTTPSConnection", "m2crypto-0.17"},
+		{"M2Crypto.X509.X509.sign", 2, "builtins.int", "m2crypto-0.13"},
+		{"M2Crypto.EVP.PKey.sign_update", 1, "builtins.NoneType", "m2crypto-0.15"},
+		{"M2Crypto.RSA.RSA.verify_rsassa_pss", 4, "builtins.int", "m2crypto-0.20"},
+		{"M2Crypto.EC.EC_pub.get_key", 0, "builtins.bytes", "m2crypto-0.24"},
+		{"M2Crypto.SMIME.load_pkcs7_der", 1, "M2Crypto.SMIME.PKCS7", "m2crypto-0.26"},
+		{"M2Crypto.EVP.PKey.digest_verify", 2, "builtins.int", "m2crypto-0.37"},
+		{"M2Crypto.EVP.PKey.get_ec", 0, "M2Crypto.EC.EC_pub", "m2crypto-0.39"},
+		{"M2Crypto.X509.CRL.verify", 1, "builtins.int", "m2crypto-0.47"},
+		{"M2Crypto.X509.X509", 0, "M2Crypto.X509.X509", "m2crypto-0.13"},
+		{"M2Crypto.SMIME.SMIME.load_key", 3, "builtins.NoneType", "m2crypto-0.13"},
+		{"M2Crypto.EVP.PKey.assign_rsa", 2, "builtins.int", "m2crypto-0.15"},
+		{"M2Crypto.EVP.PKey.verify_final", 1, "builtins.int", "m2crypto-0.18"},
 		{"M2Crypto.SSL.Context", 1, "M2Crypto.SSL.Context.Context", "m2crypto"},
 		{"M2Crypto.SSL.Connection.Connection.get_peer_cert", 0, "M2Crypto.X509.X509", "m2crypto"},
 		{"OpenSSL.SSL.Context", 1, "OpenSSL.SSL.Context", "pyopenssl"},
@@ -860,6 +874,43 @@ func TestLoadEmbedded_Python_BareJWTNamespaceStaysPyjwt(t *testing.T) {
 			if c.SourceLibrary != "pyjwt" {
 				t.Errorf("%s#%d: contract owned by %q, want pyjwt only", tt.method, tt.arity, c.SourceLibrary)
 			}
+		}
+	}
+}
+
+// version_range is never consulted at lookup, so an over-claiming range is a
+// silent false statement. Each M2Crypto file names the first release whose
+// signatures match all of its contracts, checked against the 0.11 to 0.48.0
+// sources; ENGINE support is absent from 0.45.0 to 0.46.2.
+func TestM2CryptoVersionRangesMatchTheReleasesThatDefineThem(t *testing.T) {
+	t.Parallel()
+
+	for file, want := range map[string]string{
+		"m2crypto.yaml":        ">=0.11",
+		"m2crypto-0.13.yaml":   ">=0.13",
+		"m2crypto-0.15.yaml":   ">=0.15",
+		"m2crypto-0.16.yaml":   ">=0.16",
+		"m2crypto-0.17.yaml":   ">=0.17",
+		"m2crypto-0.18.yaml":   ">=0.18",
+		"m2crypto-0.20.yaml":   ">=0.20beta1",
+		"m2crypto-0.24.yaml":   ">=0.24.0",
+		"m2crypto-0.26.yaml":   ">=0.26.0",
+		"m2crypto-0.37.yaml":   ">=0.37.0",
+		"m2crypto-0.39.yaml":   ">=0.39.0",
+		"m2crypto-0.47.yaml":   ">=0.47.0",
+		"m2crypto-0.48.yaml":   ">=0.48.0",
+		"m2crypto-engine.yaml": ">=0.19,<0.45.0 || >=0.47.0",
+	} {
+		data, err := os.ReadFile(filepath.Join("python", file))
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", file, err)
+		}
+		kb, err := contracts.Load(data)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", file, err)
+		}
+		if kb.Library == nil || kb.Library.VersionRange != want {
+			t.Errorf("%s: library = %+v, want version_range %q", file, kb.Library, want)
 		}
 	}
 }

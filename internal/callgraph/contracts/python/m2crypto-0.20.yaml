@@ -1,0 +1,27 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.20
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.20beta1"
+  description: "M2Crypto APIs added in 0.20: RSA-PSS signing and verification"
+
+contracts:
+  - method: M2Crypto.RSA.RSA.sign_rsassa_pss
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.RSA.RSA.verify_rsassa_pss
+    arity: 4
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+
+hierarchy:
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []

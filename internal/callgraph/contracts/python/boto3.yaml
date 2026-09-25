@@ -29,13 +29,15 @@ library:
 # variable or keyword service name leaves the client unbound.
 #
 # ROLES. Every KMS call below except get_public_key runs cryptography inside
-# KMS (encrypt, decrypt, re-encrypt, key and data-key generation, random
-# generation, MAC, signature, key agreement), so it is `operation`.
-# get_public_key returns stored key material and stays `output`.
+# KMS (encrypt, decrypt, re-encrypt, key creation, key and data-key
+# generation, random generation, MAC, signature, key agreement), so it is
+# `operation`. create_key generates the key material of a new KMS key, whose
+# KeySpec and KeyUsage the detection rule reports. get_public_key returns
+# stored key material and stays `output`.
 #
-# NOT CONTRACTED. create_key, import_key_material and
-# get_parameters_for_import manage keys and have no detection rule yet; they
-# belong with the rules that would find them.
+# NOT CONTRACTED. import_key_material and get_parameters_for_import move
+# existing key material and have no detection rule yet; they belong with the
+# rules that would find them.
 
 contracts:
   - method: boto3.Session
@@ -117,6 +119,10 @@ contracts:
     return: { type: builtins.dict, confidence: high }
     role: operation
   - method: botocore.client.KMS.verify
+    arity: 0
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+  - method: botocore.client.KMS.create_key
     arity: 0
     return: { type: builtins.dict, confidence: high }
     role: operation

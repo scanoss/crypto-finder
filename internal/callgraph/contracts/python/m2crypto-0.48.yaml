@@ -1,0 +1,25 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.48
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.48.0"
+  description: "M2Crypto APIs added in 0.48.0: Provider key pair generation"
+
+contracts:
+  - method: M2Crypto.Provider.Provider.generate_ec_key_pair
+    arity: 0
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.generate_rsa_key_pair
+    arity: 0
+    return: { type: M2Crypto.RSA.RSA, confidence: high }
+    role: factory
+
+hierarchy:
+  M2Crypto.RSA.RSA:
+    - builtins.object
+  M2Crypto.EC.EC:
+    - builtins.object
+  builtins.object: []

@@ -1,0 +1,43 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.13
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.13"
+  description: "M2Crypto APIs added or reshaped in 0.13: X.509 certificate construction and signing, S/MIME key loading, and TLS context trust-anchor and client CA loading"
+
+contracts:
+  - method: M2Crypto.X509.X509.sign
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: M2Crypto.SSL.Context.Context.load_verify_locations
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+  - method: M2Crypto.SSL.Context.Context.set_client_CA_list_from_file
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: M2Crypto.X509.X509
+    arity: 0
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.X509.<init>
+    arity: 0
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.SMIME.load_key
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+hierarchy:
+  M2Crypto.X509.X509:
+    - builtins.object
+  builtins.object: []

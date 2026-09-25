@@ -39,6 +39,7 @@ func wantBoto3Contracts() []string {
 		"botocore.client.KMS.derive_shared_secret#0 botocore.client.KMS.derive_shared_secret/operation/builtins.dict/high/-/-/params=-/varargs=false/when=-/lib=boto3",
 		"botocore.client.KMS.sign#0 botocore.client.KMS.sign/operation/builtins.dict/high/-/-/params=-/varargs=false/when=-/lib=boto3",
 		"botocore.client.KMS.verify#0 botocore.client.KMS.verify/operation/builtins.dict/high/-/-/params=-/varargs=false/when=-/lib=boto3",
+		"botocore.client.KMS.create_key#0 botocore.client.KMS.create_key/operation/builtins.dict/high/-/-/params=-/varargs=false/when=-/lib=boto3",
 		"botocore.client.KMS.get_public_key#0 botocore.client.KMS.get_public_key/output/builtins.dict/high/-/-/params=-/varargs=false/when=-/lib=boto3",
 	}
 }
