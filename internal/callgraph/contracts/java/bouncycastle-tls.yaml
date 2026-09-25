@@ -25,7 +25,7 @@ library:
 # Inventory, beyond the contracted entries:
 #   ProtocolVersion.TLSv1x / DTLSv1x / SSLv3 (rule apis)  skipped-unsupported: static fields, not calls
 #   SSLContext.getInstance(protocol, "BCJSSE")            contracted in jdk-crypto.yaml (a JDK method)
-#   DTLSServerProtocol.accept(server, transport, request) needs-follow-up: 1.62+, no rule selects it
+#   DTLSServerProtocol.accept(server, transport, request) contracted in bouncycastle-tls-1.62.yaml
 #   BouncyCastleJsseProvider.configure, TlsProtocol stream accessors, offerInput/readOutput, close,
 #   DTLSServerProtocol.set/getVerifyRequests               skipped-non-crypto
 contracts:

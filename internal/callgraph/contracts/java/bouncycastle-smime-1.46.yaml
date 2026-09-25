@@ -1,0 +1,137 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-smime-1.46
+  coordinates:
+    - "org.bouncycastle:bcmail-jdk15on"
+  version_range: ">=1.46,<1.50"
+  description: "Bouncy Castle bcmail 1.46 to 1.49: the provider-based S/MIME generator API removed at 1.50"
+
+# Authored from javap over bcmail-jdk15on 1.46 through 1.70. Every entry exists
+# with this arity in 1.46 to 1.49 and in no later release: 1.50 replaced the
+# provider-based generator methods with SignerInfoGenerator,
+# RecipientInfoGenerator and OutputEncryptor. No bcmail-jdk18on or bcjmail
+# release has them, so the only coordinate is bcmail-jdk15on.
+#
+# Each key covers overloads that share an arity: a provider named as a String
+# or passed as a Provider, and a MimeBodyPart or a MimeMessage. The generate
+# methods return java.lang.Object, as in bouncycastle-smime.yaml.
+#
+# addSigner and the add*Recipient methods configure the generator; generate
+# and generateEncapsulated sign or encrypt. The digest and content-encryption
+# OIDs select the algorithm, and the detection rules report their constants.
+#
+# Inventory, beyond the contracted entries:
+#   addCertificatesAndCRLs(CertStore), generateCertificateManagement(provider)  skipped-non-crypto
+contracts:
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner
+    arity: 3
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 2
+        name: digestOID
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner
+    arity: 4
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 2
+        name: encryptionOID
+        role: operation-determining
+        contributes: { property: signatureAlgorithm, derivation: argument_value }
+      - index: 3
+        name: digestOID
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner
+    arity: 5
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 2
+        name: digestOID
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.addSigner
+    arity: 6
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 2
+        name: encryptionOID
+        role: operation-determining
+        contributes: { property: signatureAlgorithm, derivation: argument_value }
+      - index: 3
+        name: digestOID
+        role: operation-determining
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.generate
+    arity: 2
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mail.smime.SMIMESignedGenerator.generateEncapsulated
+    arity: 2
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyTransRecipient
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyTransRecipient
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKEKRecipient
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.addKeyAgreementRecipient
+    arity: 6
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: agreementAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 4
+        name: cekWrapAlgorithm
+        role: metadata-contributing
+        contributes: { property: keyWrapAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.generate
+    arity: 3
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: encryptionOID
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator.generate
+    arity: 4
+    return: { type: java.lang.Object, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: encryptionOID
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 2
+        name: keySize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+hierarchy:
+  org.bouncycastle.mail.smime.SMIMESignedGenerator:
+    - java.lang.Object
+  org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator:
+    - java.lang.Object
+  java.lang.Object: []
