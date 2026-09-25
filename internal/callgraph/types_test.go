@@ -132,31 +132,42 @@ func TestFunctionDecl_InferredReturn_ZeroMarshal(t *testing.T) {
 	}
 }
 
-// TestParseFunctionID_RoundTripsUnanchoredCall pins that a callee whose receiver
-// never resolved survives String → Parse. Such an ID has no package and no type,
-// so String renders it ".name#0"; rejecting that on the way back leaves
-// recordEdgeResolution unable to recover the method name, and every edge built
-// from one of these loses its `method_name`.
-func TestParseFunctionID_RoundTripsUnanchoredCall(t *testing.T) {
-	id := FunctionID{Name: "getSimpleName#0"}
-
-	rendered := id.String()
-	if rendered != ".getSimpleName#0" {
-		t.Fatalf("String() = %q, want %q", rendered, ".getSimpleName#0")
+// TestParseFunctionID_RoundTripsEmptyPackage pins the key of a function with
+// no package: a callee whose receiver never resolved, or a declaration at a
+// scan root that no manifest names. An empty package
+// contributes nothing to the key, not a leading separator, so the exported
+// function_key reads `(Benchmark)._random_bytes` and `main`. Parse must take
+// both back, or recordEdgeResolution loses the method name on every edge
+// built from one of these.
+func TestParseFunctionID_RoundTripsEmptyPackage(t *testing.T) {
+	cases := []struct {
+		id       FunctionID
+		rendered string
+	}{
+		{FunctionID{Name: "getSimpleName#0"}, "getSimpleName#0"},
+		{FunctionID{Type: "Benchmark", Name: "_random_bytes"}, "(Benchmark)._random_bytes"},
+		{FunctionID{Package: "pkg", Type: "Benchmark", Name: "run"}, "pkg.(Benchmark).run"},
+		{FunctionID{Package: "crypto/aes", Name: "NewCipher"}, "crypto/aes.NewCipher"},
 	}
-
-	parsed, err := ParseFunctionID(rendered)
-	if err != nil {
-		t.Fatalf("ParseFunctionID(%q) failed: %v — String and Parse must agree", rendered, err)
-	}
-	if parsed != id {
-		t.Errorf("round trip = %#v, want %#v", parsed, id)
+	for _, tc := range cases {
+		rendered := tc.id.String()
+		if rendered != tc.rendered {
+			t.Errorf("String(%#v) = %q, want %q", tc.id, rendered, tc.rendered)
+		}
+		parsed, err := ParseFunctionID(rendered)
+		if err != nil {
+			t.Errorf("ParseFunctionID(%q) failed: %v — String and Parse must agree", rendered, err)
+			continue
+		}
+		if parsed != tc.id {
+			t.Errorf("round trip of %q = %#v, want %#v", rendered, parsed, tc.id)
+		}
 	}
 
 	// Genuinely malformed input stays rejected. (".pkg.name" is deliberately not
 	// asserted here: it already parsed as package ".pkg" before this change, and
 	// that pre-existing behavior is out of scope.)
-	for _, bad := range []string{".", ""} {
+	for _, bad := range []string{".", "", "().m", "(T).", ".(T).m"} {
 		if _, err := ParseFunctionID(bad); err == nil {
 			t.Errorf("ParseFunctionID(%q) succeeded, want an error", bad)
 		}
