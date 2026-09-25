@@ -1272,7 +1272,7 @@ func flattenEntryPointIndex(kb *contracts.KnowledgeBase, index map[string]*entry
 			Aliases:                  cloneStringSlice(ep.aliases),
 			ReachableFindings:        flattenReachableFindings(ep.findings),
 			ReachableSupportingCalls: flattenReachableSupportingCalls(ep.supporting),
-			ParameterRoles:           parameterRolesFromKB(kb, ep.function, len(ep.parameterTypes)),
+			ParameterRoles:           parameterRolesFromKB(kb, ep.function, ep.functionKey, len(ep.parameterTypes)),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -1286,9 +1286,14 @@ func flattenEntryPointIndex(kb *contracts.KnowledgeBase, index map[string]*entry
 // (by ContractsForTolerant) that declares a non-empty Parameters list. Never
 // emitted for call-site literals (callGraphParameter carries no such field);
 // only for method-static surfaces (crypto_entry_points, supporting-call decl).
-func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn string, arity int) []callGraphParameterRole {
+func parameterRolesFromKB(kb *contracts.KnowledgeBase, fqn, functionKey string, arity int) []callGraphParameterRole {
 	if kb == nil || fqn == "" {
 		return nil
+	}
+	if kb.Ecosystem == "go" && functionKey != "" {
+		// Go KBs key a method as pkg.(Type).Method, which is the function key;
+		// the display name drops the receiver brackets.
+		fqn = functionKey
 	}
 	return parameterRolesFromContracts(kb.ContractsForTolerant(fqn, arity))
 }
@@ -1324,6 +1329,11 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 		return nil
 	}
 	fqn := fullFunctionName(call.Callee)
+	if ctx.kb.Ecosystem == "go" {
+		// Go KBs key a method by the parser's own identity, pkg.(Type).Method
+		// or pkg.(*Type).Method; fullFunctionName drops the receiver brackets.
+		fqn = call.Callee.String()
+	}
 	if ctx.kb.Ecosystem != "c" {
 		matches := ctx.kb.ContractsForTolerant(fqn, arity)
 		if len(matches) == 0 && ctx.kb.Ecosystem == "cpp" && call.Callee.Type != "" && call.Callee.Linkage != callgraph.LinkageInternal && !hasCallDeclaration(ctx.graph, call.Callee) {
