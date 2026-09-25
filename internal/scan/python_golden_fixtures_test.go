@@ -494,7 +494,7 @@ def demo_generate_and_sign(bits, data):
 	frag := buildPythonLibraryFragment(t,
 		"paramiko.rsakey", "rsakey.py", src, report, synthRules)
 
-	// paramiko has a contract with role methods (sign_ssh_data as output role);
+	// paramiko has a contract with role methods (sign_ssh_data as operation role);
 	// the consumer function key.sign_ssh_data(data) is a lifecycle sibling of
 	// RSAKey.generate via the assigned variable "key".
 	assertGoldenShape(t, "paramiko", frag, true /* wantSupportingCalls */)

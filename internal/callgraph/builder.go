@@ -82,6 +82,10 @@ type Builder struct {
 	// inside a package, not across them. TestBuilder_PackageExcludeDirs pins the
 	// behavior this depends on.
 	excludeDirs map[string]struct{}
+	// packageRoot is the current package's cleaned Dir, held for the same
+	// per-package duration as excludeDirs so subImportPath can tell a layout
+	// directory directly under the root from a nested one of the same name.
+	packageRoot string
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -254,6 +258,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 // concurrently; results are merged in the exact serial traversal order so the
 // collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
+	b.packageRoot = filepath.Clean(pkg.Dir)
 	b.excludeDirs = nil
 	if len(pkg.ExcludeDirs) > 0 {
 		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
@@ -287,11 +292,25 @@ type NestedModuleNamer interface {
 	NestedModulePath(dir string) string
 }
 
+// LayoutDirNamer lets a parser declare a directory directly under the package
+// root transparent: it exists for packaging, names no module, and its children
+// keep the root's import path. Python's src/ and lib/ layouts put the importable
+// package one directory down, so without this pycryptodome's `lib/Crypto` is
+// keyed `lib.Crypto`, a path no `import` statement ever spells. Only the
+// package root's own children qualify: a nested directory of the same name is
+// the parser's to interpret.
+type LayoutDirNamer interface {
+	IsLayoutDir(dir string) bool
+}
+
 func (b *Builder) subImportPath(subDir, parentPath, dirName string) string {
 	if namer, ok := b.parser.(NestedModuleNamer); ok {
 		if modulePath := namer.NestedModulePath(subDir); modulePath != "" {
 			return modulePath
 		}
+	}
+	if namer, ok := b.parser.(LayoutDirNamer); ok && filepath.Dir(subDir) == b.packageRoot && namer.IsLayoutDir(subDir) {
+		return parentPath
 	}
 	return b.parser.SubPackagePath(parentPath, dirName)
 }
@@ -666,9 +685,17 @@ func (b *Builder) preservePythonModuleCollision(graph *CallGraph, existing, cand
 	return true
 }
 
+// addPythonModuleAlias keys fn a second time under its module's own dotted
+// path, `<package>.<stem>`, so that two sibling modules defining the same
+// name keep both declarations. At an unnamed root the package is empty and
+// the module path is the bare stem, as pythonModuleDottedPath spells it:
+// `a.f`, never `.a.f`.
 func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
 	alias := *fn
-	if !strings.HasSuffix(alias.ID.Package, "."+stem) {
+	switch {
+	case alias.ID.Package == "":
+		alias.ID.Package = stem
+	case !strings.HasSuffix(alias.ID.Package, "."+stem):
 		alias.ID.Package = alias.ID.Package + "." + stem
 	}
 	graph.Functions[alias.ID.String()] = &alias
@@ -1721,7 +1748,7 @@ func goAssignedVarContractTypes(graph *CallGraph, fn *FunctionDecl, kb *contract
 			arity = len(call.Arguments)
 		}
 		if call.Callee.Type != "" {
-			fqn = call.Callee.Package + ".(" + call.Callee.Type + ")." + BaseFunctionName(call.Callee.Name)
+			fqn = FunctionID{Package: call.Callee.Package, Type: call.Callee.Type, Name: BaseFunctionName(call.Callee.Name)}.String()
 		}
 		ret := unconditionalContractReturn(kb.ContractsForTolerant(fqn, arity))
 		if ret == "" {

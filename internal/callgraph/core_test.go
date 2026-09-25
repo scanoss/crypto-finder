@@ -264,6 +264,12 @@ func TestTracerAndHelpers(t *testing.T) {
 	if isUserPackage("dep", map[string]bool{"app": true}, "/") {
 		t.Fatal("unexpected user package match")
 	}
+	if !isUserPackage("", map[string]bool{"": true}, ".") {
+		t.Fatal("expected the unnamed scan root to be a user package")
+	}
+	if isUserPackage("Crypto.Cipher", map[string]bool{"": true}, ".") {
+		t.Fatal("the unnamed scan root must not prefix-match every package")
+	}
 	if !chainReachesUserCode(chains[0].Steps, map[string]bool{"app": true}, "/") {
 		t.Fatal("expected chain to reach user code")
 	}
@@ -325,8 +331,8 @@ func TestTypesAndParserRegistry(t *testing.T) {
 		t.Fatalf("unexpected parsed function: %#v", parsedFn)
 	}
 
-	if _, err := ParseFunctionID("invalid"); err == nil {
-		t.Fatal("expected parse error for invalid function id")
+	if _, err := ParseFunctionID("pkg."); err == nil {
+		t.Fatal("expected parse error for a function id with no name")
 	}
 	if _, err := ParseFunctionID("crypto/aes.(*Block"); err == nil {
 		t.Fatal("expected parse error for unmatched method syntax")

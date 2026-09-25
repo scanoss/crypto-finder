@@ -1224,8 +1224,8 @@ func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t
 	if !reflect.DeepEqual(resolver.calls, wantCalls) {
 		t.Fatalf("Resolve calls = %v, want %v", resolver.calls, wantCalls)
 	}
-	if resolved.RootModule != filepath.Base(root) {
-		t.Errorf("RootModule = %q, want %q", resolved.RootModule, filepath.Base(root))
+	if resolved.RootModule != "" {
+		t.Errorf("RootModule = %q, want empty: the scan root declares no module and its directory name is not one", resolved.RootModule)
 	}
 	wantMembers := []dependency.WorkspaceMember{
 		{Name: "com.acme.gateway", Dir: wantCalls[0]},
@@ -1291,8 +1291,8 @@ func TestDependencyScanner_ScanWithDependencies_NestedPomWithoutMaven(t *testing
 	if err != nil {
 		t.Fatalf("ScanWithDependencies: %v, want the nested pom.xml to resolve", err)
 	}
-	if result.RootModule != filepath.Base(root) {
-		t.Errorf("RootModule = %q, want %q: an empty root module zeroes every finding's reachability", result.RootModule, filepath.Base(root))
+	if result.RootModule != "" {
+		t.Errorf("RootModule = %q, want empty: the scan root declares no module and its directory name is not one", result.RootModule)
 	}
 }
 

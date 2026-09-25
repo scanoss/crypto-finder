@@ -125,8 +125,8 @@ func TestDependencyIntelligenceExportContract(t *testing.T) {
 			matches: []acceptanceMatch{
 				{needle: "AES.new(key, AES.MODE_GCM)", ruleID: "python.acceptance.aes-new", api: "Cryptodome.Cipher.AES.new", requiresSupport: true},
 				{needle: "cipher.encrypt(data)", ruleID: "python.acceptance.aes-encrypt", api: "Cryptodome.Cipher.AES.AESCipher.encrypt", requiresSupport: true, supportingCategories: []string{"factory"}},
-				{needle: `provider_probe("pycryptodomex")`, ruleID: "python.acceptance.static-provider", api: "dependency_intelligence_python.provider_probe", staticProvider: true},
-				{needle: "provider_probe(runtime_provider)", ruleID: "python.acceptance.runtime-provider", api: "dependency_intelligence_python.provider_probe", runtimeProvider: true},
+				{needle: `provider_probe("pycryptodomex")`, ruleID: "python.acceptance.static-provider", api: "provider_probe", staticProvider: true},
+				{needle: "provider_probe(runtime_provider)", ruleID: "python.acceptance.runtime-provider", api: "provider_probe", runtimeProvider: true},
 			},
 		},
 	}
@@ -205,7 +205,7 @@ func paritySemantics(t *testing.T, result *acceptanceResult) externalParitySeman
 		semantics.ForwardTruncated = forward.Truncated
 		for j := range forward.Edges {
 			entry := forward.Edges[j].EntryCall
-			if entry == nil || !strings.HasSuffix(entry.FunctionName, ".helper") {
+			if entry == nil || !functionNamed(entry.FunctionName, "helper") {
 				continue
 			}
 			semantics.ParameterTypesAligned = len(entry.ParameterTypes) == len(entry.Parameters)
@@ -470,7 +470,7 @@ func assertForwardContract(t *testing.T, tc acceptanceCase, result *acceptanceRe
 	for i := range forward.Edges {
 		edge := &forward.Edges[i]
 		require.NotNil(t, edge.EntryCall, "forward edge %s -> %s entry_call", edge.From, edge.To)
-		if strings.HasSuffix(edge.EntryCall.FunctionName, ".helper") {
+		if functionNamed(edge.EntryCall.FunctionName, "helper") {
 			helper = edge
 		}
 		if tc.ecosystem == "java" && strings.HasSuffix(edge.EntryCall.FunctionName, ".AESEngine.processBlock") {
@@ -505,7 +505,7 @@ func assertForwardContract(t *testing.T, tc acceptanceCase, result *acceptanceRe
 		assertSuppressedAmbiguity(t, result.stitch)
 		assertSerializedAmbiguity(t, result.stitched)
 	case "python":
-		assert.Equal(t, "dependency_intelligence_python.helper(bytes, bytes, int): bytes", helper.EntryCall.CanonicalSignature)
+		assert.Equal(t, "helper(bytes, bytes, int): bytes", helper.EntryCall.CanonicalSignature)
 		assert.Equal(t, "bytes", helper.EntryCall.ReturnType)
 		assert.Equal(t, []string{"bytes", "bytes", "int"}, helper.EntryCall.ParameterTypes)
 	}
@@ -622,8 +622,8 @@ func assertPythonCallableIdentities(t *testing.T, payload *graphfrag.GraphFragme
 		}
 	}
 	assert.ElementsMatch(t, []string{
-		"dependency_intelligence_python.BaseRunner.run(bytes, bytes, str): bytes",
-		"dependency_intelligence_python.Runner.run(bytes, bytes, str): bytes",
+		"BaseRunner.run(bytes, bytes, str): bytes",
+		"Runner.run(bytes, bytes, str): bytes",
 	}, signatures, "base/override identities include declaring type, parameter types, and return type")
 }
 
@@ -762,4 +762,12 @@ func writeJSON(t *testing.T, path string, value any) {
 	data, err := json.Marshal(value)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, data, 0o600))
+}
+
+// functionNamed reports whether an exported function name is short, either
+// bare or under a package or type prefix. A function declared at a scan root
+// that no manifest names has no prefix at all, so Python's helper is exported
+// as `helper` while Java's is `example.Acceptance.helper`.
+func functionNamed(name, short string) bool {
+	return name == short || strings.HasSuffix(name, "."+short)
 }
