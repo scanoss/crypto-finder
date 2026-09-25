@@ -525,10 +525,12 @@ func (index *rustCrateIndex) indexCrateSources(p *RustParser, root string) *rust
 		// the file's own module path: a `use crate::ssl::Ctx;` is only absolute
 		// relative to where the file sits.
 		p.qualifyCrateFacts(facts, tree.RootNode(), src, modulePath)
+		p.rustPublicTypePaths(tree.RootNode(), src, modulePath, facts)
 		merged.mergeCrateFacts(facts)
 		tree.Close()
 	}
 	resolveRustReExportChains(merged)
+	resolveRustPublicTypeChains(merged)
 	return merged
 }
 
