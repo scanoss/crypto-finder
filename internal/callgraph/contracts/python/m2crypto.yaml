@@ -4,7 +4,9 @@ library:
   name: m2crypto
   coordinates:
     - M2Crypto
-  version_range: ">=0.40"
+  # Every contract here is defined in every release from 0.11 on. APIs added
+  # later live in m2crypto-<release>.yaml, the ENGINE ones in m2crypto-engine.yaml.
+  version_range: ">=0.11"
   description: "M2Crypto OpenSSL wrapper contracts for RSA, EVP, SSL, and X509 APIs"
 
 contracts:
@@ -17,10 +19,6 @@ contracts:
     return: { type: M2Crypto.RSA.RSA, confidence: high }
     role: factory
   - method: M2Crypto.RSA.load_key_bio
-    arity: 1
-    return: { type: M2Crypto.RSA.RSA, confidence: high }
-    role: factory
-  - method: M2Crypto.RSA.load_key_string
     arity: 1
     return: { type: M2Crypto.RSA.RSA, confidence: high }
     role: factory
@@ -55,31 +53,19 @@ contracts:
   - method: M2Crypto.RSA.RSA.public_encrypt
     arity: 2
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.RSA.RSA.public_decrypt
     arity: 2
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.RSA.RSA.private_encrypt
     arity: 2
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.RSA.RSA.private_decrypt
     arity: 2
     return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.RSA.RSA.sign
-    arity: 2
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.RSA.RSA.sign_rsassa_pss
-    arity: 2
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.RSA.RSA.as_pem
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.MessageDigest
     arity: 1
     return: { type: M2Crypto.EVP.MessageDigest, confidence: high }
@@ -91,11 +77,11 @@ contracts:
   - method: M2Crypto.EVP.MessageDigest.final
     arity: 0
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.MessageDigest.digest
     arity: 0
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.Cipher
     arity: 4
     return: { type: M2Crypto.EVP.Cipher, confidence: high }
@@ -107,7 +93,7 @@ contracts:
   - method: M2Crypto.EVP.Cipher.update
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.HMAC
     arity: 1
     return: { type: M2Crypto.EVP.HMAC, confidence: high }
@@ -119,15 +105,15 @@ contracts:
   - method: M2Crypto.EVP.HMAC.digest
     arity: 0
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.HMAC.final
     arity: 0
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.hmac
     arity: 3
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.EVP.PKey
     arity: 0
     return: { type: M2Crypto.EVP.PKey, confidence: high }
@@ -144,46 +130,6 @@ contracts:
     arity: 1
     return: { type: M2Crypto.EVP.PKey, confidence: high }
     role: factory
-  - method: M2Crypto.EVP.load_key_pubkey
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.EVP.load_key_bio_pubkey
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.EVP.load_key_string
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.EVP.load_key_string_pubkey
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.EVP.pbkdf2
-    arity: 4
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EVP.PKey.as_der
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EVP.PKey.as_pem
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EVP.PKey.get_rsa
-    arity: 0
-    return: { type: M2Crypto.RSA.RSA, confidence: high }
-    role: factory
-  - method: M2Crypto.EVP.PKey.sign
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EVP.PKey.digest_sign
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
   - method: M2Crypto.SSL.Context
     arity: 1
     return: { type: M2Crypto.SSL.Context.Context, confidence: high }
@@ -236,24 +182,8 @@ contracts:
     arity: 1
     return: { type: M2Crypto.X509.X509, confidence: high }
     role: factory
-  - method: M2Crypto.X509.load_cert_string
-    arity: 1
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
   - method: M2Crypto.X509.load_cert_bio
     arity: 1
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
-  - method: M2Crypto.X509.load_cert_der_string
-    arity: 1
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
-  - method: M2Crypto.X509.X509
-    arity: 0
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
-  - method: M2Crypto.X509.X509.<init>
-    arity: 0
     return: { type: M2Crypto.X509.X509, confidence: high }
     role: factory
   - method: M2Crypto.X509.X509.get_pubkey
@@ -267,10 +197,6 @@ contracts:
   - method: M2Crypto.X509.Request.<init>
     arity: 0
     return: { type: M2Crypto.X509.Request, confidence: high }
-    role: factory
-  - method: M2Crypto.X509.Request.get_pubkey
-    arity: 0
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
     role: factory
   - method: M2Crypto.X509.load_request
     arity: 1
@@ -296,10 +222,6 @@ contracts:
     arity: 2
     return: { type: M2Crypto.X509.X509_Store_Context, confidence: high }
     role: factory
-  - method: M2Crypto.X509.X509_Store_Context.get_current_cert
-    arity: 0
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
 
   - method: M2Crypto.DH.DH
     arity: 0
@@ -316,7 +238,7 @@ contracts:
   - method: M2Crypto.DH.DH.compute_key
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.DSA.DSA
     arity: 0
     return: { type: M2Crypto.DSA.DSA, confidence: high }
@@ -353,102 +275,14 @@ contracts:
     arity: 1
     return: { type: M2Crypto.DSA.DSA, confidence: high }
     role: factory
-  - method: M2Crypto.DSA.load_pub_key
-    arity: 1
-    return: { type: M2Crypto.DSA.DSA_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.DSA.load_pub_key_bio
-    arity: 1
-    return: { type: M2Crypto.DSA.DSA_pub, confidence: high }
-    role: factory
   - method: M2Crypto.DSA.DSA.sign
     arity: 1
     return: { type: builtins.tuple, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.DSA.DSA.sign_asn1
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC
-    arity: 0
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.EC.<init>
-    arity: 0
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.EC_pub
-    arity: 0
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.EC_pub.<init>
-    arity: 0
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.gen_params
-    arity: 1
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_key
-    arity: 1
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_key_bio
-    arity: 1
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_key_string
-    arity: 1
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_pub_key
-    arity: 1
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_pub_key_bio
-    arity: 1
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.load_key_string_pubkey
-    arity: 1
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.pub_key_from_der
-    arity: 1
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.pub_key_from_params
-    arity: 1
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.EC.pub
-    arity: 0
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: factory
-  - method: M2Crypto.EC.EC.compute_dh_key
-    arity: 1
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC.as_pem
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC_pub.as_pem
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC_pub.get_der
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC.sign_dsa
-    arity: 1
-    return: { type: builtins.tuple, confidence: high }
-    role: output
-  - method: M2Crypto.EC.EC.sign_dsa_asn1
-    arity: 1
-    return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.SMIME.Cipher
     arity: 1
     return: { type: M2Crypto.SMIME.Cipher, confidence: high }
@@ -484,7 +318,7 @@ contracts:
   - method: M2Crypto.SMIME.SMIME.sign
     arity: 2
     return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.RC4.RC4
     arity: 1
     return: { type: M2Crypto.RC4.RC4, confidence: high }
@@ -496,7 +330,7 @@ contracts:
   - method: M2Crypto.RC4.RC4.update
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
   - method: M2Crypto.BIO.CipherStream
     arity: 1
     return: { type: M2Crypto.BIO.CipherStream, confidence: high }
@@ -504,50 +338,6 @@ contracts:
   - method: M2Crypto.BIO.CipherStream.<init>
     arity: 1
     return: { type: M2Crypto.BIO.CipherStream, confidence: high }
-    role: factory
-  - method: M2Crypto.Engine.Engine
-    arity: 0
-    return: { type: M2Crypto.Engine.Engine, confidence: high }
-    role: factory
-  - method: M2Crypto.Engine.Engine.<init>
-    arity: 0
-    return: { type: M2Crypto.Engine.Engine, confidence: high }
-    role: factory
-  - method: M2Crypto.Engine.Engine.load_private_key
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.Engine.Engine.load_public_key
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.Engine.Engine.load_certificate
-    arity: 1
-    return: { type: M2Crypto.X509.X509, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider
-    arity: 0
-    return: { type: M2Crypto.Provider.Provider, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider.<init>
-    arity: 0
-    return: { type: M2Crypto.Provider.Provider, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider.generate_ec_key_pair
-    arity: 0
-    return: { type: M2Crypto.EC.EC, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider.generate_rsa_key_pair
-    arity: 0
-    return: { type: M2Crypto.RSA.RSA, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider.load_key
-    arity: 1
-    return: { type: M2Crypto.EVP.PKey, confidence: high }
-    role: factory
-  - method: M2Crypto.Provider.Provider.load_certificate
-    arity: 1
-    return: { type: M2Crypto.X509.X509, confidence: high }
     role: factory
   - method: M2Crypto.AuthCookie.AuthCookie
     arity: 0
@@ -565,14 +355,6 @@ contracts:
     arity: 1
     return: { type: M2Crypto.httpslib.HTTPSConnection, confidence: high }
     role: factory
-  - method: M2Crypto.httpslib.ProxyHTTPSConnection
-    arity: 1
-    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
-    role: factory
-  - method: M2Crypto.httpslib.ProxyHTTPSConnection.<init>
-    arity: 1
-    return: { type: M2Crypto.httpslib.ProxyHTTPSConnection, confidence: high }
-    role: factory
   - method: M2Crypto.ftpslib.FTP_TLS
     arity: 0
     return: { type: M2Crypto.ftpslib.FTP_TLS, confidence: high }
@@ -589,50 +371,6 @@ contracts:
     arity: 0
     return: { type: M2Crypto.m2xmlrpclib.SSL_Transport, confidence: high }
     role: factory
-  - method: M2Crypto.m2urllib2.HTTPSHandler
-    arity: 0
-    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
-    role: factory
-  - method: M2Crypto.m2urllib2.HTTPSHandler.<init>
-    arity: 0
-    return: { type: M2Crypto.m2urllib2.HTTPSHandler, confidence: high }
-    role: factory
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper
-    arity: 5
-    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
-    role: factory
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper.<init>
-    arity: 5
-    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
-    role: factory
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectSSL
-    arity: 4
-    return: { type: builtins.object, confidence: high }
-    role: output
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectTCP
-    arity: 3
-    return: { type: builtins.object, confidence: high }
-    role: output
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenSSL
-    arity: 3
-    return: { type: builtins.object, confidence: high }
-    role: output
-  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenTCP
-    arity: 2
-    return: { type: builtins.object, confidence: high }
-    role: output
-  - method: M2Crypto.SMIME.load_certificates
-    arity: 1
-    return: { type: M2Crypto.X509.X509_Stack, confidence: high }
-    role: factory
-  - method: M2Crypto.SMIME.load_pkcs7_der
-    arity: 1
-    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
-    role: factory
-  - method: M2Crypto.SMIME.load_pkcs7_bio_der
-    arity: 1
-    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
-    role: factory
   - method: M2Crypto.SMIME.smime_load_pkcs7
     arity: 1
     return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
@@ -641,43 +379,16 @@ contracts:
     arity: 1
     return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
     role: factory
-  - method: M2Crypto.SMIME.SMIME.public_encrypt
-    arity: 2
-    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
-    role: output
-  - method: M2Crypto.SMIME.SMIME.public_decrypt
-    arity: 1
-    return: { type: builtins.bytes, confidence: high }
-    role: output
   - method: M2Crypto.SMIME.SMIME.verify
     arity: 1
     return: { type: builtins.bytes, confidence: high }
-    role: output
+    role: operation
 
-  # Rule APIs that had no contract (crypto_rules python/m2crypto after #422).
-  # Signatures read from the 0.40.0 and 0.48.0 sdists; arity counts every
-  # parameter after self, as the entries above do. CRL.verify and
-  # X509_Store_Context.verify_cert exist from 0.47.0. m2urllib.open_https is a
-  # module function taking the URLopener as its first argument, monkey-patched
-  # onto URLopener; from 0.46.0 it is defined only when URLopener exists.
+  # Arity counts every parameter after self. m2urllib.open_https is a module
+  # function taking the URLopener as its first argument, monkey-patched onto
+  # URLopener; from 0.46.0 it is defined only when URLopener exists.
 
   # Key generation and signature verification on the key classes.
-  - method: M2Crypto.RSA.RSA.verify
-    arity: 3
-    return: { type: builtins.int, confidence: high }
-    role: operation
-    parameters:
-      - index: 2
-        role: operation-determining
-        contributes: { property: hashAlgorithm, derivation: argument_value }
-  - method: M2Crypto.RSA.RSA.verify_rsassa_pss
-    arity: 4
-    return: { type: builtins.int, confidence: high }
-    role: operation
-    parameters:
-      - index: 2
-        role: operation-determining
-        contributes: { property: hashAlgorithm, derivation: argument_value }
   - method: M2Crypto.DSA.DSA.gen_key
     arity: 0
     return: { type: builtins.NoneType, confidence: high }
@@ -686,24 +397,12 @@ contracts:
     arity: 3
     return: { type: builtins.int, confidence: high }
     role: operation
-  - method: M2Crypto.EC.EC.gen_key
-    arity: 0
-    return: { type: builtins.NoneType, confidence: high }
-    role: operation
-  - method: M2Crypto.EC.EC.verify_dsa
-    arity: 3
-    return: { type: builtins.int, confidence: high }
-    role: operation
-  - method: M2Crypto.EC.EC_pub.get_key
-    arity: 0
-    return: { type: builtins.bytes, confidence: high }
-    role: output
   - method: M2Crypto.DH.DH.gen_key
     arity: 0
     return: { type: builtins.NoneType, confidence: high }
     role: operation
 
-  # EVP streaming digests, HMAC and PKey signing and verification.
+  # EVP streaming digests and HMAC, PKey RSA assignment and cipher streams.
   - method: M2Crypto.EVP.MessageDigest.update
     arity: 1
     return: { type: builtins.int, confidence: high }
@@ -712,30 +411,6 @@ contracts:
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
     role: operation
-  - method: M2Crypto.EVP.PKey.sign_update
-    arity: 1
-    return: { type: builtins.NoneType, confidence: high }
-    role: operation
-  - method: M2Crypto.EVP.PKey.verify_final
-    arity: 1
-    return: { type: builtins.int, confidence: high }
-    role: operation
-  - method: M2Crypto.EVP.PKey.digest_verify
-    arity: 2
-    return: { type: builtins.int, confidence: high }
-    role: operation
-  - method: M2Crypto.EVP.PKey.assign_rsa
-    arity: 2
-    return: { type: builtins.int, confidence: high }
-    role: config
-  - method: M2Crypto.EVP.PKey.assign_ec
-    arity: 2
-    return: { type: builtins.int, confidence: high }
-    role: config
-  - method: M2Crypto.EVP.PKey.get_ec
-    arity: 0
-    return: { type: M2Crypto.EC.EC_pub, confidence: high }
-    role: output
   - method: M2Crypto.BIO.CipherStream.set_cipher
     arity: 4
     return: { type: builtins.NoneType, confidence: high }
@@ -748,19 +423,7 @@ contracts:
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_bit_length }
 
-  # X.509 signing and verification, CRL and chain verification.
-  - method: M2Crypto.X509.X509.sign
-    arity: 2
-    return: { type: builtins.int, confidence: high }
-    role: operation
-    parameters:
-      - index: 1
-        role: operation-determining
-        contributes: { property: hashAlgorithm, derivation: argument_value }
-  - method: M2Crypto.X509.X509.verify
-    arity: 1
-    return: { type: builtins.int, confidence: high }
-    role: operation
+  # X.509 request signing.
   - method: M2Crypto.X509.Request.sign
     arity: 2
     return: { type: builtins.int, confidence: high }
@@ -769,11 +432,7 @@ contracts:
       - index: 1
         role: operation-determining
         contributes: { property: hashAlgorithm, derivation: argument_value }
-  - method: M2Crypto.X509.Request.verify
-    arity: 1
-    return: { type: builtins.int, confidence: high }
-    role: operation
-  # The CRL constructor and loader bind the receiver CRL.verify runs on.
+  # The CRL constructor and loader bind the receiver CRL.verify (0.47) runs on.
   - method: M2Crypto.X509.CRL
     arity: 0
     return: { type: M2Crypto.X509.CRL, confidence: high }
@@ -786,14 +445,6 @@ contracts:
     arity: 1
     return: { type: M2Crypto.X509.CRL, confidence: high }
     role: factory
-  - method: M2Crypto.X509.CRL.verify
-    arity: 1
-    return: { type: builtins.int, confidence: high }
-    role: operation
-  - method: M2Crypto.X509.X509_Store_Context.verify_cert
-    arity: 0
-    return: { type: builtins.int, confidence: high }
-    role: operation
 
   # S/MIME encryption and signer key loading.
   - method: M2Crypto.SMIME.SMIME.encrypt
@@ -804,10 +455,6 @@ contracts:
     arity: 2
     return: { type: builtins.bytes, confidence: high }
     role: operation
-  - method: M2Crypto.SMIME.SMIME.load_key
-    arity: 3
-    return: { type: builtins.NoneType, confidence: high }
-    role: config
 
   # TLS context certificate, key and trust-anchor loading.
   - method: M2Crypto.SSL.Context.Context.load_cert
@@ -816,14 +463,6 @@ contracts:
     role: config
   - method: M2Crypto.SSL.Context.Context.load_cert_chain
     arity: 3
-    return: { type: builtins.NoneType, confidence: high }
-    role: config
-  - method: M2Crypto.SSL.Context.Context.load_verify_locations
-    arity: 2
-    return: { type: builtins.int, confidence: high }
-    role: config
-  - method: M2Crypto.SSL.Context.Context.set_client_CA_list_from_file
-    arity: 1
     return: { type: builtins.NoneType, confidence: high }
     role: config
   - method: M2Crypto.m2urllib.open_https

@@ -1,0 +1,45 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.26
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.26.0"
+  description: "M2Crypto APIs added in 0.26.0: EC PEM string loading and export, and DER PKCS#7 loaders"
+
+contracts:
+  - method: M2Crypto.EC.load_key_string
+    arity: 1
+    return: { type: M2Crypto.EC.EC, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.load_key_string_pubkey
+    arity: 1
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC.as_pem
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.EC.EC_pub.as_pem
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.SMIME.load_pkcs7_der
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.load_pkcs7_bio_der
+    arity: 1
+    return: { type: M2Crypto.SMIME.PKCS7, confidence: high }
+    role: factory
+
+hierarchy:
+  M2Crypto.EC.EC_pub:
+    - M2Crypto.EC.EC
+  M2Crypto.EC.EC:
+    - builtins.object
+  M2Crypto.SMIME.PKCS7:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []
