@@ -304,19 +304,13 @@ type RootResolution struct {
 
 // MergeRootResolutions folds per-root results into the one ResolveResult the
 // pipeline consumes. Each discovered root becomes a WorkspaceMember of the
-// scan root, which has no module identity of its own and is named by its
-// directory.
-//
-// RootModule may never be empty. scan.exportUserPackages returns a nil stop-set
-// for an empty RootModule, which makes every finding report reachability
-// not_applicable, and occurrenceSourceSubject hashes every non-dependency
-// finding against it. The directory-name fallback is the convention
-// internal/scan/root_module.go:24 already documents for DetectRootModule;
-// internal/dependency cannot import internal/scan, because internal/scan
-// imports this package.
-func MergeRootResolutions(scanRoot string, resolutions []RootResolution) *ResolveResult {
+// scan root, which has no module identity of its own: its RootModule is empty,
+// never its directory name, so the same tree scanned from two differently
+// named directories keeps one set of symbols and occurrence keys.
+// scan.exportUserPackages still classifies reachability for an empty root,
+// from the packages of the functions that live under the project tree.
+func MergeRootResolutions(resolutions []RootResolution) *ResolveResult {
 	out := &ResolveResult{
-		RootModule:     filepath.Base(absoluteScanRoot(scanRoot)),
 		Graph:          map[string][]string{},
 		VersionedGraph: map[string][]Ref{},
 	}

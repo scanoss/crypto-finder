@@ -171,13 +171,20 @@ const (
 	LinkageInternal Linkage = "internal"
 )
 
-// String returns a human-readable representation of the function ID.
-// This includes the arity suffix (e.g., "javax.crypto.(Cipher).getInstance#1").
+// String renders the key, arity suffix included: "package.(Type).Name#1" for
+// a method, "package.Name#1" for a function. An empty package contributes
+// nothing, not a leading separator: a scan root that no manifest names keys
+// its symbols as "(Benchmark)._random_bytes" and "main", and an unanchored
+// call whose receiver never resolved keys as its bare name.
 func (f FunctionID) String() string {
+	key := f.Name
 	if f.Type != "" {
-		return f.Package + ".(" + f.Type + ")." + f.Name
+		key = "(" + f.Type + ")." + f.Name
 	}
-	return f.Package + "." + f.Name
+	if f.Package == "" {
+		return key
+	}
+	return f.Package + "." + key
 }
 
 // InferredReturn carries the result of static return-type inference for a function.
@@ -573,36 +580,53 @@ type CallChainStep struct {
 // name and everything after it as the function name. Go package paths may contain
 // "/" before that final ".", while Java package and class names use "." throughout.
 func ParseFunctionID(s string) (FunctionID, error) {
-	// Check for method pattern: "package.(Type).Name"
-	if parenStart := strings.Index(s, ".("); parenStart != -1 {
-		pkg := s[:parenStart]
-		rest := s[parenStart+2:] // skip ".("
-
+	// Method pattern: "package.(Type).Name", or "(Type).Name" when the package
+	// is empty (String emits no separator for one, so ".(Type).Name" is
+	// malformed).
+	parenStart := strings.Index(s, ".(") + 1 // 0 when absent, else the "(" position
+	if strings.HasPrefix(s, "(") || parenStart > 0 {
+		if parenStart == 1 {
+			return FunctionID{}, fmt.Errorf("invalid function ID: malformed method components in %q", s)
+		}
+		pkg := strings.TrimSuffix(s[:parenStart], ".")
+		if strings.HasPrefix(pkg, ".") {
+			return FunctionID{}, fmt.Errorf("invalid function ID: package starts with a separator in %q", s)
+		}
+		rest := s[parenStart+1:] // skip "("
 		parenEnd := strings.Index(rest, ").")
 		if parenEnd == -1 {
 			return FunctionID{}, fmt.Errorf("invalid function ID: unmatched parentheses in %q", s)
 		}
 		typ := rest[:parenEnd]
 		name := rest[parenEnd+2:] // skip ")."
-		if pkg == "" || typ == "" || name == "" {
+		if typ == "" || name == "" {
 			return FunctionID{}, fmt.Errorf("invalid function ID: malformed method components in %q", s)
 		}
 
 		return FunctionID{Package: pkg, Type: typ, Name: name}, nil
 	}
 
-	// Unanchored call: ".Name" — a method whose receiver never resolved to a type,
-	// which String renders with empty Package and Type. Parsing it back keeps the
-	// pair symmetric; rejecting it silently drops the method name from every edge
-	// built through recordEdgeResolution.
-	if strings.HasPrefix(s, ".") && len(s) > 1 && !strings.Contains(s[1:], ".") {
-		return FunctionID{Name: s[1:]}, nil
-	}
-
-	// Plain function: "package<sep>Name" — find the last separator-appropriate dot
+	// Plain function: "package<sep>Name" — find the last separator-appropriate
+	// dot. No dot at all is a function with no package: a declaration at an
+	// unnamed scan root, or a call whose receiver never resolved to a type.
+	// Parsing it back keeps the pair symmetric with String; rejecting it
+	// silently drops the method name from every edge built through
+	// recordEdgeResolution.
 	lastDot := strings.LastIndex(s, ".")
-	if lastDot == -1 || lastDot == 0 || lastDot == len(s)-1 {
+	if lastDot == -1 {
+		if s == "" {
+			return FunctionID{}, fmt.Errorf("invalid function ID: empty")
+		}
+		return FunctionID{Name: s}, nil
+	}
+	if lastDot == 0 || lastDot == len(s)-1 {
 		return FunctionID{}, fmt.Errorf("invalid function ID: no package separator in %q", s)
+	}
+	// String never emits a separator for an empty package, so a package that
+	// starts with one is a key joined from "" and a name with a dot, not a
+	// package named ".a". Rejecting it keeps the pair symmetric.
+	if s[0] == '.' {
+		return FunctionID{}, fmt.Errorf("invalid function ID: package starts with a separator in %q", s)
 	}
 
 	return FunctionID{

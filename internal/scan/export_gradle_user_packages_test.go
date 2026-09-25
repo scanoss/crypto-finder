@@ -229,3 +229,50 @@ func TestBuildFindingGraph_GradleProjectNameRootModuleIsReachable(t *testing.T) 
 		t.Fatalf("call chains = %#v, want a traced chain from user code", fg.CallChains)
 	}
 }
+
+// A scan root with no manifest that names its module (a C tree, a Python
+// project built from setup.py) has an empty RootModule. That is not an error:
+// its own sources are still the user code, keyed at the scan root, so a
+// dependency scan of it classifies reachability instead of answering
+// not_applicable for every finding.
+func TestExportUserPackages_EmptyRootModuleStillCountsProjectSources(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	depDir := t.TempDir()
+	rootID := callgraph.FunctionID{Type: "Benchmark", Name: "run"}
+	pkgID := callgraph.FunctionID{Package: "app.services", Name: "sign"}
+	libID := callgraph.FunctionID{Package: "Crypto.Cipher", Name: "new"}
+
+	result := &engine.DepScanResult{
+		RootModule:  "",
+		Ecosystem:   "python",
+		ProjectRoot: project,
+		Dependencies: []dependency.Dependency{{
+			Module:  "pycryptodome",
+			Version: "3.23.0",
+			Dir:     depDir,
+		}},
+		CallGraph: &callgraph.CallGraph{
+			Functions: map[string]*callgraph.FunctionDecl{
+				rootID.String(): {ID: rootID, FilePath: filepath.Join(project, "bench.py"), StartLine: 1, EndLine: 3},
+				pkgID.String():  {ID: pkgID, FilePath: filepath.Join(project, "app", "services", "sign.py"), StartLine: 1, EndLine: 3},
+				libID.String():  {ID: libID, FilePath: filepath.Join(depDir, "Crypto", "Cipher", "__init__.py"), StartLine: 1, EndLine: 3},
+			},
+		},
+	}
+
+	got := exportUserPackages(result)
+	if got == nil {
+		t.Fatal("user packages = nil: an empty RootModule must not disable reachability")
+	}
+	if !got[""] {
+		t.Errorf("user packages = %#v, want the scan root's own top-level modules (package %q)", got, "")
+	}
+	if !got["app.services"] {
+		t.Errorf("user packages = %#v, want the project source package app.services", got)
+	}
+	if got["Crypto.Cipher"] {
+		t.Errorf("user packages = %#v, dependency package must not count as user code", got)
+	}
+}
