@@ -1,0 +1,49 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.47
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.47.0"
+  description: "M2Crypto APIs added in 0.47.0: the OpenSSL 3 Provider, S/MIME certificate loading, CRL verification and X.509 chain verification"
+
+contracts:
+  - method: M2Crypto.Provider.Provider
+    arity: 0
+    return: { type: M2Crypto.Provider.Provider, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.<init>
+    arity: 0
+    return: { type: M2Crypto.Provider.Provider, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.load_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Provider.Provider.load_certificate
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.SMIME.load_certificates
+    arity: 1
+    return: { type: M2Crypto.X509.X509_Stack, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.CRL.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.X509_Store_Context.verify_cert
+    arity: 0
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+hierarchy:
+  M2Crypto.EVP.PKey:
+    - builtins.object
+  M2Crypto.Provider.Provider:
+    - builtins.object
+  M2Crypto.X509.X509:
+    - builtins.object
+  M2Crypto.X509.X509_Stack:
+    - builtins.object
+  builtins.object: []
