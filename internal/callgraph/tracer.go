@@ -182,8 +182,13 @@ func isUserPackage(pkg string, userPackages map[string]bool, sep string) bool {
 	if userPackages[pkg] {
 		return true
 	}
-	// Check if pkg is a sub-package of any user package
+	// Check if pkg is a sub-package of any user package. The empty package is
+	// the scan root itself when no manifest names it; it owns no sub-packages,
+	// so it matches exactly and never as a prefix.
 	for userPkg := range userPackages {
+		if userPkg == "" {
+			continue
+		}
 		prefix := userPkg + sep
 		if len(pkg) >= len(prefix) && pkg[:len(prefix)] == prefix {
 			return true

@@ -432,11 +432,10 @@ func TestResolutionRoots_UserSkipPatternInTheScanRootAncestryDoesNotPrune(t *tes
 	}
 }
 
-func TestMergeRootResolutions_NamesTheScanRootAndOneMemberPerRoot(t *testing.T) {
+func TestMergeRootResolutions_LeavesTheScanRootUnnamedAndOneMemberPerRoot(t *testing.T) {
 	t.Parallel()
 
-	scanRoot := "/work/monorepo/"
-	merged := MergeRootResolutions(scanRoot, []RootResolution{
+	merged := MergeRootResolutions([]RootResolution{
 		{
 			Root:   discoveredRoot{Dir: "/work/monorepo/services/ledger", Rel: "services/ledger", Depth: 2},
 			Result: &ResolveResult{RootModule: "com.acme.ledger"},
@@ -462,7 +461,7 @@ func TestMergeRootResolutions_NamesTheScanRootAndOneMemberPerRoot(t *testing.T) 
 func TestMergeRootResolutions_ChildMembersReplaceTheChild(t *testing.T) {
 	t.Parallel()
 
-	merged := MergeRootResolutions("/work/monorepo", []RootResolution{{
+	merged := MergeRootResolutions([]RootResolution{{
 		Root: discoveredRoot{Dir: "/work/monorepo/services/ledger", Rel: "services/ledger", Depth: 2},
 		Result: &ResolveResult{
 			RootModule: "com.acme",
@@ -486,7 +485,7 @@ func TestMergeRootResolutions_DependenciesAreConcatenatedNotDeduped(t *testing.T
 	t.Parallel()
 
 	shared := Dependency{Module: "org.apache.commons:commons-lang3", Version: "3.12.0", Dir: "/cache/lang3"}
-	merged := MergeRootResolutions("/work/monorepo", []RootResolution{
+	merged := MergeRootResolutions([]RootResolution{
 		{Root: discoveredRoot{Dir: "/work/monorepo/a"}, Result: &ResolveResult{RootModule: "a", Dependencies: []Dependency{shared}}},
 		{Root: discoveredRoot{Dir: "/work/monorepo/b"}, Result: &ResolveResult{RootModule: "b", Dependencies: []Dependency{shared}}},
 	})
@@ -502,7 +501,7 @@ func TestMergeRootResolutions_DependenciesAreConcatenatedNotDeduped(t *testing.T
 func TestMergeRootResolutions_GraphsAreUnionedDedupedAndSorted(t *testing.T) {
 	t.Parallel()
 
-	merged := MergeRootResolutions("/work/monorepo", []RootResolution{
+	merged := MergeRootResolutions([]RootResolution{
 		{
 			Root: discoveredRoot{Dir: "/work/monorepo/a"},
 			Result: &ResolveResult{
@@ -534,28 +533,11 @@ func TestMergeRootResolutions_GraphsAreUnionedDedupedAndSorted(t *testing.T) {
 func TestMergeRootResolutions_NoResolutionsLeavesTheScanRootUnnamed(t *testing.T) {
 	t.Parallel()
 
-	merged := MergeRootResolutions("/work/monorepo", nil)
+	merged := MergeRootResolutions(nil)
 	if merged.RootModule != "" {
 		t.Errorf("RootModule = %q, want empty: the scan root declares no module and its directory name is not one", merged.RootModule)
 	}
 	if merged.Graph == nil || merged.VersionedGraph == nil {
 		t.Error("Graph and VersionedGraph must be non-nil maps")
-	}
-}
-
-// A relative scan target reaches scan_metadata.root_module, the scan-root
-// PackageDir import path and occurrenceSourceSubject, which hashes every direct
-// finding against it. The scan root has no module of its own, so however it is
-// invoked -- ".", a relative path, an absolute one -- the merged RootModule is
-// empty and the tree keeps one set of symbols and occurrence keys.
-func TestMergeRootResolutions_ARelativeScanRootIsNotNamedAfterItsDirectory(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	for _, scanRoot := range []string{".", dir} {
-		merged := MergeRootResolutions(scanRoot, nil)
-		if merged.RootModule != "" {
-			t.Errorf("MergeRootResolutions(%q).RootModule = %q, want empty", scanRoot, merged.RootModule)
-		}
 	}
 }

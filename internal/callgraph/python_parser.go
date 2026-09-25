@@ -288,6 +288,22 @@ func (p *PythonParser) CloneParser() Parser {
 	return NewPythonParser(WithIncludeTests(p.includeTests))
 }
 
+// IsLayoutDir implements LayoutDirNamer: a `src` or `lib` directory that is
+// not itself a package (no __init__.py) is a packaging convention, not a
+// module. The importable package lives one level down, and `import Crypto`
+// is how a consumer reaches pycryptodome's lib/Crypto, so the directory
+// contributes nothing to the module path. A `lib/__init__.py` is a real
+// package named lib and keeps its name.
+func (p *PythonParser) IsLayoutDir(dir string) bool {
+	switch filepath.Base(dir) {
+	case "src", "lib":
+	default:
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, pythonInitPyFileName))
+	return err != nil
+}
+
 // SubPackagePath constructs a child module path using "." separator.
 func (p *PythonParser) SubPackagePath(parentPath, dirName string) string {
 	if parentPath == "" {
