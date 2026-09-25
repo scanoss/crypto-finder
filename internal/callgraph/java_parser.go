@@ -3233,7 +3233,27 @@ func resolveImportedJavaObjectCallee(object, simpleClass, method string, analysi
 	if pkg, ok := analysis.Imports[object]; ok {
 		return FunctionID{Package: pkg, Type: object, Name: method}, true
 	}
+	if pkg, typ, ok := importedOuterJavaType(object, analysis); ok {
+		return FunctionID{Package: pkg, Type: typ, Name: method}, true
+	}
 	return FunctionID{}, false
+}
+
+// importedOuterJavaType resolves a nested type written through its imported
+// outer type, `Outer.Inner` after `import a.b.Outer;`, to package `a.b.Outer`
+// and type `Inner`: the identity a direct `import a.b.Outer.Inner;` produces.
+// Split on the last dot instead, the outer name was taken for the package.
+func importedOuterJavaType(typeName string, analysis *FileAnalysis) (pkg, typ string, ok bool) {
+	outer, _, nested := strings.Cut(typeName, ".")
+	if !nested || analysis == nil {
+		return "", "", false
+	}
+	outerPkg, imported := analysis.Imports[outer]
+	if !imported {
+		return "", "", false
+	}
+	last := strings.LastIndex(typeName, ".")
+	return outerPkg + "." + typeName[:last], typeName[last+1:], true
 }
 
 func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis, varTypes map[string]string) (FunctionID, bool) {
@@ -3260,6 +3280,9 @@ func resolveJavaVariableTypeCallee(object, method string, analysis *FileAnalysis
 	// Erasing up front is what keeps all three branches consistent; erasing per
 	// branch leaves whichever branch was missed emitting unjoinable identities.
 	typeName = stripGenericSuffix(typeName)
+	if pkg, typ, ok := importedOuterJavaType(typeName, analysis); ok {
+		return FunctionID{Package: pkg, Type: typ, Name: method}, true
+	}
 	if pkg, typ, ok := splitQualifiedJavaType(typeName); ok {
 		return FunctionID{Package: pkg, Type: typ, Name: method}, true
 	}
