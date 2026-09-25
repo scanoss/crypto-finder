@@ -8,8 +8,8 @@ library:
   name: azure-keyvault-keys-java
   coordinates:
     - "com.azure:azure-security-keyvault-keys"
-  # Verified with javap against the published azure-security-keyvault-keys-4.9.2
-  # jar (MANIFEST Implementation-Version 4.9.2).
+  # Every contract here exists in every 4.x release from 4.0.0 (javap over the
+  # published jars). Later additions live in the -4.3, -4.5 and -4.9 files.
   version_range: ">=4.0,<5.0"
   description: "Azure Key Vault Keys contracts for cryptography and key client construction, remote encrypt/decrypt, sign/verify, key wrapping, and key creation or import"
 
@@ -36,32 +36,8 @@ contracts:
       type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
       confidence: high
     role: config
-  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.jsonWebKey
-    arity: 1
-    parameter_types: [com.azure.security.keyvault.keys.models.JsonWebKey]
-    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
-    return:
-      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
-      confidence: high
-    role: config
   - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.credential
     arity: 1
-    return:
-      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
-      confidence: high
-    role: config
-  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableKeyCaching
-    arity: 0
-    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
-    return:
-      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
-      confidence: high
-    role: config
-  # disableChallengeResourceVerification turns off the authentication-challenge
-  # resource check.
-  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableChallengeResourceVerification
-    arity: 0
-    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
     return:
       type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
       confidence: high
@@ -84,7 +60,7 @@ contracts:
   # =========================================================================
   # Remote crypto operations (CryptographyClient)
   # encrypt#2 and decrypt#2 are ambiguous by arity: (algorithm, data) and
-  # (parameters, context) both exist and return the same result type, so
+  # (parameters, context) both exist from 4.3 and return the same result type, so
   # canonical signatures are omitted for those two. The remaining operations are
   # unambiguous per arity.
   # =========================================================================
@@ -336,18 +312,9 @@ contracts:
   # is only recoverable from the Mono's type argument, which the contract schema
   # cannot express, so the declared container type is what is modelled. The
   # lifecycle role is the load-bearing part here.
-  # encrypt#1/decrypt#1 take a Parameters object; the arity-2 forms take
-  # (algorithm, data).
+  # The arity-2 encrypt/decrypt forms take (algorithm, data); the arity-1
+  # Parameters forms arrived in 4.3 and live in the -4.3 file.
   # =========================================================================
-  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt
-    arity: 1
-    parameter_types:
-      [com.azure.security.keyvault.keys.cryptography.models.EncryptParameters]
-    canonical_return_type: reactor.core.publisher.Mono
-    return:
-      type: reactor.core.publisher.Mono
-      confidence: high
-    role: operation
   - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.encrypt
     arity: 2
     parameter_types:
@@ -365,15 +332,6 @@ contracts:
         name: algorithm
         role: operation-determining
         contributes: { property: algorithm, derivation: argument_value }
-  - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt
-    arity: 1
-    parameter_types:
-      [com.azure.security.keyvault.keys.cryptography.models.DecryptParameters]
-    canonical_return_type: reactor.core.publisher.Mono
-    return:
-      type: reactor.core.publisher.Mono
-      confidence: high
-    role: operation
   - method: com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient.decrypt
     arity: 2
     parameter_types:
@@ -510,13 +468,6 @@ contracts:
       type: com.azure.security.keyvault.keys.KeyClientBuilder
       confidence: high
     role: config
-  - method: com.azure.security.keyvault.keys.KeyClientBuilder.disableChallengeResourceVerification
-    arity: 0
-    canonical_return_type: com.azure.security.keyvault.keys.KeyClientBuilder
-    return:
-      type: com.azure.security.keyvault.keys.KeyClientBuilder
-      confidence: high
-    role: config
   - method: com.azure.security.keyvault.keys.KeyClientBuilder.buildClient
     arity: 0
     canonical_return_type: com.azure.security.keyvault.keys.KeyClient
@@ -565,14 +516,6 @@ contracts:
   - method: com.azure.security.keyvault.keys.KeyClient.createEcKey
     arity: 1
     parameter_types: [com.azure.security.keyvault.keys.models.CreateEcKeyOptions]
-    canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
-    return:
-      type: com.azure.security.keyvault.keys.models.KeyVaultKey
-      confidence: high
-    role: factory
-  - method: com.azure.security.keyvault.keys.KeyClient.createOctKey
-    arity: 1
-    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
     canonical_return_type: com.azure.security.keyvault.keys.models.KeyVaultKey
     return:
       type: com.azure.security.keyvault.keys.models.KeyVaultKey
@@ -719,14 +662,6 @@ contracts:
       type: reactor.core.publisher.Mono
       confidence: high
     role: factory
-  - method: com.azure.security.keyvault.keys.KeyAsyncClient.createOctKey
-    arity: 1
-    parameter_types: [com.azure.security.keyvault.keys.models.CreateOctKeyOptions]
-    canonical_return_type: reactor.core.publisher.Mono
-    return:
-      type: reactor.core.publisher.Mono
-      confidence: high
-    role: factory
   # importKey#1 takes ImportKeyOptions; #2 takes (name, JsonWebKey).
   - method: com.azure.security.keyvault.keys.KeyAsyncClient.importKey
     arity: 1
@@ -819,20 +754,6 @@ contracts:
   # Result material
   # =========================================================================
   - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getCipherText
-    arity: 0
-    canonical_return_type: byte[]
-    return:
-      type: byte[]
-      confidence: high
-    role: output
-  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getIv
-    arity: 0
-    canonical_return_type: byte[]
-    return:
-      type: byte[]
-      confidence: high
-    role: output
-  - method: com.azure.security.keyvault.keys.cryptography.models.EncryptResult.getAuthenticationTag
     arity: 0
     canonical_return_type: byte[]
     return:
