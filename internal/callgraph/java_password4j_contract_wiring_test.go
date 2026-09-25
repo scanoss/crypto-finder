@@ -63,6 +63,10 @@ public class App {
         return fn.hash(pw);
     }
 
+    public byte[] storeBytes(String pw) {
+        return Password.hash(pw).withScrypt().getResultAsBytes();
+    }
+
     public String saltOf(Hash hash) {
         return hash.getSalt();
     }
@@ -90,6 +94,7 @@ public class App {
 		{"com.password4j.HashChecker.with", 1}:           "operation",
 		{"com.password4j.HashingFunction.hash", 1}:       "operation",
 		{"com.password4j.Hash.getResult", 0}:             "output",
+		{"com.password4j.Hash.getResultAsBytes", 0}:      "output",
 		{"com.password4j.Argon2Function.getInstance", 6}: "factory",
 		{"com.password4j.BcryptFunction.getInstance", 2}: "factory",
 		{"com.password4j.ScryptFunction.getInstance", 4}: "factory",
