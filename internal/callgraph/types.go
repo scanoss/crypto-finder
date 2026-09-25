@@ -589,6 +589,9 @@ func ParseFunctionID(s string) (FunctionID, error) {
 			return FunctionID{}, fmt.Errorf("invalid function ID: malformed method components in %q", s)
 		}
 		pkg := strings.TrimSuffix(s[:parenStart], ".")
+		if strings.HasPrefix(pkg, ".") {
+			return FunctionID{}, fmt.Errorf("invalid function ID: package starts with a separator in %q", s)
+		}
 		rest := s[parenStart+1:] // skip "("
 		parenEnd := strings.Index(rest, ").")
 		if parenEnd == -1 {
@@ -618,6 +621,12 @@ func ParseFunctionID(s string) (FunctionID, error) {
 	}
 	if lastDot == 0 || lastDot == len(s)-1 {
 		return FunctionID{}, fmt.Errorf("invalid function ID: no package separator in %q", s)
+	}
+	// String never emits a separator for an empty package, so a package that
+	// starts with one is a key joined from "" and a name with a dot, not a
+	// package named ".a". Rejecting it keeps the pair symmetric.
+	if s[0] == '.' {
+		return FunctionID{}, fmt.Errorf("invalid function ID: package starts with a separator in %q", s)
 	}
 
 	return FunctionID{

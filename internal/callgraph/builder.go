@@ -685,9 +685,17 @@ func (b *Builder) preservePythonModuleCollision(graph *CallGraph, existing, cand
 	return true
 }
 
+// addPythonModuleAlias keys fn a second time under its module's own dotted
+// path, `<package>.<stem>`, so that two sibling modules defining the same
+// name keep both declarations. At an unnamed root the package is empty and
+// the module path is the bare stem, as pythonModuleDottedPath spells it:
+// `a.f`, never `.a.f`.
 func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
 	alias := *fn
-	if !strings.HasSuffix(alias.ID.Package, "."+stem) {
+	switch {
+	case alias.ID.Package == "":
+		alias.ID.Package = stem
+	case !strings.HasSuffix(alias.ID.Package, "."+stem):
 		alias.ID.Package = alias.ID.Package + "." + stem
 	}
 	graph.Functions[alias.ID.String()] = &alias

@@ -164,10 +164,11 @@ func TestParseFunctionID_RoundTripsEmptyPackage(t *testing.T) {
 		}
 	}
 
-	// Genuinely malformed input stays rejected. (".pkg.name" is deliberately not
-	// asserted here: it already parsed as package ".pkg" before this change, and
-	// that pre-existing behavior is out of scope.)
-	for _, bad := range []string{".", "", "().m", "(T).", ".(T).m"} {
+	// Genuinely malformed input stays rejected. A package never starts with
+	// the separator, because String never emits one for an empty package, so
+	// ".a.f" is not "package .a" but a key built by joining "" and "a" with
+	// a dot; accepting it would let that bug pass through every edge.
+	for _, bad := range []string{".", "", "().m", "(T).", ".(T).m", ".a.f", ".a.(T).m", "pkg."} {
 		if _, err := ParseFunctionID(bad); err == nil {
 			t.Errorf("ParseFunctionID(%q) succeeded, want an error", bad)
 		}

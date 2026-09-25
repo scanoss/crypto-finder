@@ -247,39 +247,96 @@ func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *te
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			dir := t.TempDir()
-			for rel, content := range tc.files {
-				path := filepath.Join(dir, filepath.FromSlash(rel))
-				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, false)
-			if err != nil {
-				t.Fatalf("build call graph: %v", err)
-			}
-			if got, want := len(result.CallGraph.Functions), len(tc.wantFiles); got != want {
-				t.Errorf("function count = %d, want %d: %v", got, want, functionKeys(result.CallGraph.Functions))
-			}
-			for key, wantFile := range tc.wantFiles {
-				fn, ok := result.CallGraph.Functions[key]
-				if !ok {
-					t.Errorf("missing function %q in %v", key, functionKeys(result.CallGraph.Functions))
-					continue
-				}
-				rel, err := filepath.Rel(dir, fn.FilePath)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if got := filepath.ToSlash(rel); got != wantFile {
-					t.Errorf("function %q file = %q, want %q", key, got, wantFile)
-				}
-			}
+			assertPythonFunctionFiles(t, tc.files, tc.wantFiles)
 		})
+	}
+}
+
+// TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem pins the
+// alias a module collision adds at an unnamed root. Two modules at the same
+// package level that define the same name keep both declarations under
+// `<package>.<stem>.<name>`; with an empty root package that must be
+// `a.f` and `b.f`, never `.a.f`, which the key grammar rejects. Several
+// root-level scripts each defining `main` is the common shape of a Python
+// sdist with no pyproject, so this is the normal case, not an edge.
+func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		files     map[string]string
+		wantFiles map[string]string
+	}{
+		{
+			name: "two root modules define the same function",
+			files: map[string]string{
+				"a.py": "def f():\n    return 1\n",
+				"b.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"f":   "a.py",
+				"a.f": "a.py",
+				"b.f": "b.py",
+			},
+		},
+		{
+			name: "a root module and a module src promotes define the same function",
+			files: map[string]string{
+				"a.py":     "def f():\n    return 1\n",
+				"src/b.py": "def f():\n    return 2\n",
+			},
+			wantFiles: map[string]string{
+				"f":   "a.py",
+				"a.f": "a.py",
+				"b.f": "src/b.py",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertPythonFunctionFiles(t, tc.files, tc.wantFiles)
+		})
+	}
+}
+
+// assertPythonFunctionFiles builds the Python call graph of a tree written
+// into a fresh directory and checks that its function keys are exactly
+// wantFiles' keys, each declared in the file wantFiles names.
+func assertPythonFunctionFiles(t *testing.T, files, wantFiles map[string]string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	for rel, content := range files {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, false)
+	if err != nil {
+		t.Fatalf("build call graph: %v", err)
+	}
+	if got, want := len(result.CallGraph.Functions), len(wantFiles); got != want {
+		t.Errorf("function count = %d, want %d: %v", got, want, functionKeys(result.CallGraph.Functions))
+	}
+	for key, wantFile := range wantFiles {
+		fn, ok := result.CallGraph.Functions[key]
+		if !ok {
+			t.Errorf("missing function %q in %v", key, functionKeys(result.CallGraph.Functions))
+			continue
+		}
+		rel, err := filepath.Rel(dir, fn.FilePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := filepath.ToSlash(rel); got != wantFile {
+			t.Errorf("function %q file = %q, want %q", key, got, wantFile)
+		}
 	}
 }
 
