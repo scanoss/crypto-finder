@@ -190,10 +190,11 @@ func (c *PythonTypeResolverChain) ResolveTypes(graph *CallGraph, sourceRoots []P
 //
 // The KB lookup uses ContractsForTolerant, the same entry point the
 // contract resolver above uses, so the arity tolerance Python needs for
-// default arguments and kwargs applies identically. Only an unconditional
-// contract (`When == nil`) with a non-empty return type is used: a
-// conditional return depends on argument VALUES, which this pass does not
-// evaluate.
+// default arguments and kwargs applies identically. An unconditional
+// contract (`When == nil`) wins. A conditional one is used only when the call
+// passes, at the contract's `arg_index`, a literal that its `arg_value_in`
+// lists, and exactly one such contract matches: `boto3.client('kms')` binds a
+// KMS client, `boto3.client(name)` binds nothing.
 //
 // Gated to `.py`/`.pyi`-sourced declarations ONLY (FunctionDecl.FilePath):
 // AssignedVar/ReceiverVar are language-agnostic FunctionCall fields shared
@@ -237,9 +238,14 @@ func pythonCalleeReturnType(
 	// That asymmetry is exactly what a "a call was produced" assertion would
 	// have missed, so pythonCallFQN mirrors pythonFunctionFQN instead.
 	contractList := kb.ContractsForTolerant(pythonCallFQN(call), len(call.Arguments))
+	var literalMatch *contracts.Contract
+	literalMatches := 0
 	for i := range contractList {
 		c := &contractList[i]
-		if c.When == nil && c.Return.Type != "" {
+		if c.Return.Type == "" {
+			continue
+		}
+		if c.When == nil {
 			// A contract return type is written fully qualified, so
 			// pythonSplitAssignedType splits it at its last separator and
 			// never consults declPackage. The callee's own package is the
@@ -247,8 +253,32 @@ func pythonCalleeReturnType(
 			// belongs to the factory's package, not to the caller's.
 			return c.Return.Type, call.Callee.Package
 		}
+		if pythonCallPassesLiteral(call, c.When) {
+			literalMatch = c
+			literalMatches++
+		}
+	}
+	if literalMatches == 1 {
+		return literalMatch.Return.Type, call.Callee.Package
 	}
 	return "", ""
+}
+
+// pythonCallPassesLiteral reports whether the call's positional argument at
+// the condition's index is, verbatim, one of the strings the condition lists.
+// A keyword argument never matches, and an identifier matches only when the
+// condition lists it bare, as boto3's `kms` does.
+func pythonCallPassesLiteral(call *FunctionCall, when *contracts.Condition) bool {
+	if when.ArgIndex < 0 || when.ArgIndex >= len(call.Arguments) {
+		return false
+	}
+	arg := strings.TrimSpace(call.Arguments[when.ArgIndex])
+	for _, v := range when.ArgValueIn {
+		if arg == v {
+			return true
+		}
+	}
+	return false
 }
 
 // pythonTrackedAssignedType records what propagatePythonAssignedVarTypesForDecl
@@ -333,27 +363,26 @@ func isPythonSourceFile(filePath string) bool {
 	return strings.HasSuffix(filePath, ".py") || strings.HasSuffix(filePath, ".pyi")
 }
 
-// pythonCallFQN derives the fully-qualified callee name for a FunctionCall in
-// the spelling the Python contracts KB uses: "Package.Type.Name" for a method
-// or constructor, "Package.Name" for a module-level function. It is the
-// call-site mirror of pythonFunctionFQN, and it exists because
+// pythonFunctionIDFQN renders a FunctionID in the spelling the Python
+// contracts KB uses for its `method:` field: "Package.Type.Name" for a method
+// or constructor, "Package.Name" for a module-level function, and the same
+// without the package when the id has none. It exists because
 // FunctionID.String() renders a type-qualified id as "Package.(Type).Name",
 // which no KB key matches.
-func pythonCallFQN(call *FunctionCall) string {
-	if call.Callee.Type != "" {
-		return call.Callee.Package + "." + call.Callee.Type + "." + call.Callee.Name
+func pythonFunctionIDFQN(id FunctionID) string {
+	name := id.Name
+	if id.Type != "" {
+		name = id.Type + "." + id.Name
 	}
-	return call.Callee.Package + "." + call.Callee.Name
+	return qualifiedType(id.Package, name)
 }
 
-// pythonFunctionFQN derives the fully-qualified method name for a FunctionDecl
-// as it appears in the Python contracts KB: "Package.Type.Name" for methods,
-// "Package.Name" for module-level functions.
-//
-// This must match the KB's `method:` field exactly.
+// pythonCallFQN is pythonFunctionIDFQN for a call site.
+func pythonCallFQN(call *FunctionCall) string {
+	return pythonFunctionIDFQN(call.Callee)
+}
+
+// pythonFunctionFQN is pythonFunctionIDFQN for a declaration.
 func pythonFunctionFQN(fn *FunctionDecl) string {
-	if fn.ID.Type != "" {
-		return fn.ID.Package + "." + fn.ID.Type + "." + fn.ID.Name
-	}
-	return fn.ID.Package + "." + fn.ID.Name
+	return pythonFunctionIDFQN(fn.ID)
 }

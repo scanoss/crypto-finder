@@ -1018,3 +1018,28 @@ func TestConfidenceConstants(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitMethodArity_EmptyPackageHasNoLeadingSeparator pins the contract
+// key of a function with no package, the shape of every declaration at a
+// scan root no manifest names: the bare name, or "Type.name" for a method,
+// never ".name". No KB key starts with a separator, so a leading one turns
+// every lookup for such a function into a silent miss.
+func TestSplitMethodArity_EmptyPackageHasNoLeadingSeparator(t *testing.T) {
+	cases := []struct {
+		id        FunctionID
+		wantFQN   string
+		wantArity int
+	}{
+		{FunctionID{Name: "main#0"}, "main", 0},
+		{FunctionID{Type: "Benchmark", Name: "_random_bytes#1"}, "Benchmark._random_bytes", 1},
+		{FunctionID{Package: "javax.crypto", Type: "KeyGenerator", Name: "generateKey#0"}, "javax.crypto.KeyGenerator.generateKey", 0},
+		{FunctionID{Package: "crypto/aes", Name: "NewCipher"}, "crypto/aes.NewCipher", -1},
+	}
+	for _, tc := range cases {
+		id := tc.id
+		fqn, arity := splitMethodArity(&id)
+		if fqn != tc.wantFQN || arity != tc.wantArity {
+			t.Errorf("splitMethodArity(%#v) = (%q, %d), want (%q, %d)", tc.id, fqn, arity, tc.wantFQN, tc.wantArity)
+		}
+	}
+}
