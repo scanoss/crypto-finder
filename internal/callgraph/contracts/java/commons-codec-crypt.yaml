@@ -1,0 +1,103 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: commons-codec-crypt
+  coordinates:
+    - "commons-codec:commons-codec"
+  version_range: ">=1.7,<2.0"
+  description: "Apache Commons Codec Unix crypt(3) password hashing: Crypt, UnixCrypt, Md5Crypt and Sha2Crypt"
+
+# Inventory source: the released sources jars 1.7 through 1.22.0. All four
+# classes first appear in 1.7. 1.12 adds java.util.Random overloads, which
+# introduce md5Crypt at arity 4 and sha256Crypt and sha512Crypt at arity 3.
+# Every method returns the crypt(3) string, so each name and arity has one
+# return.
+#
+# Each method derives the stored password hash, so all carry role operation.
+# Crypt.crypt is the dispatcher: the salt prefix ($1$, $5$, $6$, or none for
+# DES) selects the algorithm, so its salt argument is operation-determining.
+# The named classes fix the algorithm in the method and expose nothing further.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the deprecated public no-argument constructors of
+#     these static utility classes (1.16.1, and 1.17.2 for Sha2Crypt); B64, the
+#     crypt(3) base64 alphabet, is package-private and not public API.
+
+contracts:
+
+  - method: org.apache.commons.codec.digest.Crypt.crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Crypt.crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: salt
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  - method: org.apache.commons.codec.digest.UnixCrypt.crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.UnixCrypt.crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+
+  - method: org.apache.commons.codec.digest.Md5Crypt.md5Crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Md5Crypt.md5Crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Md5Crypt.md5Crypt
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Md5Crypt.md5Crypt
+    arity: 4
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Md5Crypt.apr1Crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Md5Crypt.apr1Crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha256Crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha256Crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha256Crypt
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha512Crypt
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha512Crypt
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.Sha2Crypt.sha512Crypt
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+
+hierarchy:
+  java.lang.Object: []
