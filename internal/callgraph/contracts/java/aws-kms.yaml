@@ -601,6 +601,85 @@ contracts:
         name: signingAlgorithm
         role: operation-determining
         contributes: { property: algorithm, derivation: argument_value }
+  # VerifyRequest (1.11.690+) and GenerateMacRequest (1.12.250+) arrived with
+  # asymmetric signing and HMAC keys; withSigningAlgorithm/withMacAlgorithm are
+  # overloaded (String / enum spec) like the others.
+  - method: com.amazonaws.services.kms.model.VerifyRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyRequest
+    return:
+      type: com.amazonaws.services.kms.model.VerifyRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.VerifyRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyRequest
+    return:
+      type: com.amazonaws.services.kms.model.VerifyRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.withMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyRequest
+    return:
+      type: com.amazonaws.services.kms.model.VerifyRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.withSignature
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.VerifyRequest
+    return:
+      type: com.amazonaws.services.kms.model.VerifyRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.withSigningAlgorithm
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.VerifyRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: signingAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.<init>
+    arity: 0
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateMacRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateMacRequest
+      confidence: high
+    role: factory
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.withKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateMacRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateMacRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.withMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: com.amazonaws.services.kms.model.GenerateMacRequest
+    return:
+      type: com.amazonaws.services.kms.model.GenerateMacRequest
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.withMacAlgorithm
+    arity: 1
+    return:
+      type: com.amazonaws.services.kms.model.GenerateMacRequest
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: macAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.<init>
     arity: 0
     canonical_return_type: com.amazonaws.services.kms.model.GenerateDataKeyRequest
@@ -717,6 +796,72 @@ contracts:
         name: signingAlgorithm
         role: operation-determining
         contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.VerifyRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.setMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.setSignature
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.VerifyRequest.setSigningAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: signingAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.setKeyId
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.setMessage
+    arity: 1
+    parameter_types: [java.nio.ByteBuffer]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: com.amazonaws.services.kms.model.GenerateMacRequest.setMacAlgorithm
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: macAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
   - method: com.amazonaws.services.kms.model.GenerateDataKeyRequest.setKeyId
     arity: 1
     parameter_types: [java.lang.String]
@@ -767,6 +912,20 @@ contracts:
       confidence: high
     role: output
   - method: com.amazonaws.services.kms.model.SignResult.getSignature
+    arity: 0
+    canonical_return_type: java.nio.ByteBuffer
+    return:
+      type: java.nio.ByteBuffer
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.VerifyResult.getSignatureValid
+    arity: 0
+    canonical_return_type: java.lang.Boolean
+    return:
+      type: java.lang.Boolean
+      confidence: high
+    role: output
+  - method: com.amazonaws.services.kms.model.GenerateMacResult.getMac
     arity: 0
     canonical_return_type: java.nio.ByteBuffer
     return:
@@ -860,6 +1019,10 @@ hierarchy:
   com.amazonaws.services.kms.model.DecryptRequest:
     - java.lang.Object
   com.amazonaws.services.kms.model.SignRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.VerifyRequest:
+    - java.lang.Object
+  com.amazonaws.services.kms.model.GenerateMacRequest:
     - java.lang.Object
   com.amazonaws.services.kms.model.GenerateDataKeyRequest:
     - java.lang.Object
