@@ -1,0 +1,552 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: gnutls
+  coordinates:
+    - gnutls
+  version_range: ">=3.6.0,<4.0.0"
+  description: "GnuTLS TLS/DTLS, X.509 and cryptographic APIs"
+
+# Inventory source: GnuTLS 3.7.0 public headers (lib/includes/gnutls/gnutls.h.in,
+# crypto.h, abstract.h, x509.h, dtls.h) from the upstream tag archive; the
+# signatures used here are unchanged across the 3.6.x to 3.8.x releases.
+#
+# Scope: every gnutls_* symbol the GnuTLS detection rules select, plus the TLS
+# session, priority and credential lifecycle, the negotiated-parameter getters,
+# the X.509 and abstract-key lifecycle, and hash/HMAC update and output calls.
+# Configured values (the priority string, the requested cipher, digest or key
+# size) are parameters of the factory/config/operation calls; negotiated values
+# are output-role getters called after gnutls_handshake. The two stay distinct.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-informative-return: gnutls_mac_get_nonce_size (size query).
+# skipped-non-crypto: gnutls_bye, transport setters (gnutls_transport_set_*),
+#   error/strerror helpers, and all *_deinit / *_free teardown calls, which have
+#   no contract-native lifecycle role.
+# needs-follow-up: gnutls_aead_cipher_encryptv/decryptv and scatter-gather
+#   variants, OCSP, PKCS#7/#11/#12, SRP and PSK credentials, raw DH/ECC import
+#   and export helpers, and the TLS session ticket/resumption APIs.
+contracts:
+
+  # TLS/DTLS session lifecycle. gnutls_init's flags select client/server and
+  # TLS/DTLS; the priority string is the configured policy. The negotiated
+  # values are only known after the handshake and come from the output getters.
+  - method: gnutls_init
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: flags
+        role: operation-determining
+        contributes: {property: protocol, derivation: argument_value}
+  - method: gnutls_priority_init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: priorities
+        role: metadata-contributing
+        contributes: {property: priority, derivation: argument_value}
+  - method: gnutls_priority_set_direct
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: priorities
+        role: metadata-contributing
+        contributes: {property: priority, derivation: argument_value}
+  - method: gnutls_priority_set
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+  - method: gnutls_set_default_priority
+    arity: 1
+    return: {type: int, confidence: high}
+    role: config
+  - method: gnutls_certificate_allocate_credentials
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_certificate_set_x509_key_file
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: type
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: gnutls_certificate_set_x509_trust_file
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: type
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: gnutls_certificate_set_x509_system_trust
+    arity: 1
+    return: {type: int, confidence: high}
+    role: config
+  - method: gnutls_credentials_set
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: metadata-contributing
+        contributes: {property: credentialType, derivation: argument_value}
+  - method: gnutls_session_set_verify_cert
+    arity: 3
+    return: {type: void, confidence: high}
+    role: config
+  - method: gnutls_handshake
+    arity: 1
+    return: {type: int, confidence: high}
+    role: operation
+  - method: gnutls_record_send
+    arity: 3
+    return: {type: ssize_t, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: data_size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_record_recv
+    arity: 3
+    return: {type: ssize_t, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: data_size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_protocol_get_version
+    arity: 1
+    return: {type: gnutls_protocol_t, confidence: high}
+    role: output
+  - method: gnutls_cipher_get
+    arity: 1
+    return: {type: gnutls_cipher_algorithm_t, confidence: high}
+    role: output
+  - method: gnutls_mac_get
+    arity: 1
+    return: {type: gnutls_mac_algorithm_t, confidence: high}
+    role: output
+  - method: gnutls_kx_get
+    arity: 1
+    return: {type: gnutls_kx_algorithm_t, confidence: high}
+    role: output
+
+  # DTLS stateless cookie exchange (dtls.h).
+  - method: gnutls_dtls_cookie_send
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: gnutls_dtls_cookie_verify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: gnutls_dtls_prestate_set
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+
+  # Symmetric ciphers (crypto.h).
+  - method: gnutls_cipher_init
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_cipher_encrypt
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: textlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_cipher_decrypt
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ciphertextlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_cipher_encrypt2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: textlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_cipher_decrypt2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: ciphertextlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_aead_cipher_init
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_aead_cipher_encrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce_len
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 5
+        name: tag_size
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: gnutls_aead_cipher_decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce_len
+        role: metadata-contributing
+        contributes: {property: nonceSize, derivation: argument_value}
+      - index: 5
+        name: tag_size
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+
+  # Hashes and MACs (crypto.h, gnutls.h).
+  - method: gnutls_hash_init
+    arity: 2
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_hash
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: textlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_hash_output
+    arity: 2
+    return: {type: void, confidence: high}
+    role: output
+  - method: gnutls_hash_fast
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: textlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_fingerprint
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_hmac_init
+    arity: 4
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: gnutls_hmac
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: textlen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: gnutls_hmac_output
+    arity: 2
+    return: {type: void, confidence: high}
+    role: output
+  - method: gnutls_hmac_fast
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+
+  # Key derivation (crypto.h, 3.6.13 and later).
+  - method: gnutls_pbkdf2
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: mac
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: iter_count
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: gnutls_hkdf_extract
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: mac
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_hkdf_expand
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: mac
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # Abstract private and public keys (abstract.h).
+  - method: gnutls_privkey_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_privkey_generate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: gnutls_privkey_generate2
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: gnutls_privkey_import_rsa_raw
+    arity: 9
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_privkey_import_x509
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_privkey_sign_hash
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_privkey_sign_data
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_pubkey_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_pubkey_import_rsa_raw
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_pubkey_import_x509
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_pubkey_verify_hash2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_pubkey_verify_data2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # X.509 certificates and keys (x509.h).
+  - method: gnutls_x509_crt_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_x509_crt_import
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: gnutls_x509_crt_export
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: format
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: gnutls_x509_crt_verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: gnutls_x509_crt_sign2
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: dig
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gnutls_x509_crt_get_pk_algorithm
+    arity: 2
+    return: {type: int, confidence: high}
+    role: output
+  - method: gnutls_x509_privkey_init
+    arity: 1
+    return: {type: int, confidence: high}
+    role: factory
+  - method: gnutls_x509_privkey_generate
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: gnutls_x509_privkey_import
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: gnutls_x509_privkey_export
+    arity: 4
+    return: {type: int, confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: format
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+
+  # Random numbers (crypto.h).
+  - method: gnutls_rnd
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: level
+        role: metadata-contributing
+        contributes: {property: securityLevel, derivation: argument_value}
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: gnutls_rnd_refresh
+    arity: 0
+    return: {type: void, confidence: high}
+    role: config
+
+hierarchy: {}
