@@ -151,7 +151,9 @@ func (p *CParser) parseFunction(node *sitter.Node, src []byte, filePath, package
 		Parameters:   cParameters(declarator, src),
 		ReturnType:   cFunctionReturnType(node, declarator, src),
 	}
-	p.walkCalls(body, src, filePath, packagePath, staticFunctions, &decl.Calls)
+	handles := make(map[string]bool)
+	collectCHandleVars(node, src, handles)
+	p.walkCalls(body, src, filePath, packagePath, staticFunctions, handles, &decl.Calls)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, staticFunctions)
 	return decl
 }
@@ -246,19 +248,19 @@ func cDescendantByType(node *sitter.Node, nodeType string) *sitter.Node {
 	return nil
 }
 
-func (p *CParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool, calls *[]FunctionCall) {
+func (p *CParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, handles map[string]bool, calls *[]FunctionCall) {
 	if node.Type() == cNodeCallExpression {
-		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions); call != nil {
+		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions, handles); call != nil {
 			setFunctionCallASTAnchor(call, node)
 			*calls = append(*calls, *call)
 		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.walkCalls(node.Child(i), src, filePath, packagePath, staticFunctions, calls)
+		p.walkCalls(node.Child(i), src, filePath, packagePath, staticFunctions, handles, calls)
 	}
 }
 
-func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions map[string]bool) *FunctionCall {
+func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, handles map[string]bool) *FunctionCall {
 	function := node.ChildByFieldName("function")
 	if function == nil {
 		return nil
@@ -278,6 +280,7 @@ func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath
 	switch function.Type() {
 	case cNodeIdentifier:
 		call.Callee = cFunctionID(packagePath, filePath, function.Content(src), staticFunctions)
+		call.ReceiverVar = cHandleVar(node, src, handles)
 	case fieldExpressionNode:
 		field := function.ChildByFieldName("field")
 		argument := function.ChildByFieldName("argument")
@@ -292,6 +295,61 @@ func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath
 		return nil
 	}
 	return call
+}
+
+// cHandleVar returns the object a C free-function call operates on. C APIs pass
+// it first, as in EVP_DigestUpdate(ctx, ...) or crypto_generichash_update(&state,
+// ...), so it plays the part a receiver plays in a method call and ties the call
+// to the object's lifecycle. A first argument counts only when it can address an
+// object: its address (&state), or a variable the function holds as an object
+// handle (see collectCHandleVars). A return code passed first, as in
+// ASSERT_STATUS(status, ...), is a value and stays unbound.
+func cHandleVar(node *sitter.Node, src []byte, handles map[string]bool) string {
+	name, addressed := cFirstArgumentVar(node, src)
+	if addressed || handles[name] {
+		return name
+	}
+	return ""
+}
+
+// cFirstArgumentVar returns the variable named by a call's first argument and
+// whether the argument takes its address. It returns "" for any other
+// expression.
+func cFirstArgumentVar(node *sitter.Node, src []byte) (string, bool) {
+	arguments := node.ChildByFieldName("arguments")
+	if arguments == nil || arguments.NamedChildCount() == 0 {
+		return "", false
+	}
+	first := arguments.NamedChild(0)
+	addressed := false
+	if operator := first.ChildByFieldName("operator"); first.Type() == "pointer_expression" && operator != nil && operator.Type() == "&" {
+		first = first.ChildByFieldName("argument")
+		addressed = true
+	}
+	if first == nil || first.Type() != cNodeIdentifier {
+		return "", false
+	}
+	return first.Content(src), addressed
+}
+
+// collectCHandleVars records the variables a function holds as object handles:
+// those declared as pointers, locally or as parameters, and those whose address
+// it passes as a first argument, which covers an opaque handle type such as
+// gnutls_session_t initialized by gnutls_init(&session, ...).
+func collectCHandleVars(node *sitter.Node, src []byte, handles map[string]bool) {
+	switch node.Type() {
+	case "pointer_declarator":
+		if name := cDeclaratorName(node, src); name != "" {
+			handles[name] = true
+		}
+	case cNodeCallExpression:
+		if name, addressed := cFirstArgumentVar(node, src); addressed {
+			handles[name] = true
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectCHandleVars(node.Child(i), src, handles)
+	}
 }
 
 func cAssignedVar(node *sitter.Node, src []byte) string {
@@ -357,7 +415,7 @@ func (p *CParser) cReturnSource(expr *sitter.Node, src []byte, filePath, package
 	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
 	switch expr.Type() {
 	case cNodeCallExpression:
-		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions)
+		call := p.parseCall(expr, src, filePath, packagePath, staticFunctions, nil)
 		if call == nil {
 			return SourceNode{}, false
 		}
