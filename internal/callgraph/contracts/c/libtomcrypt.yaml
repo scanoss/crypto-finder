@@ -1,0 +1,2059 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libtomcrypt
+  coordinates:
+    - libtomcrypt
+    - libtom/libtomcrypt
+  version_range: ">=1.18.0,<1.19"
+  description: "LibTomCrypt descriptor-selected ciphers, modes, AEAD, hashes, MACs, KDFs, PRNGs and public-key APIs"
+
+# Inventory source: the public headers src/headers/tomcrypt_*.h at tag v1.18.2,
+# plus every function the libtomcrypt detection rules select. Macro spellings a
+# consumer writes (aes_setup, rsa_encrypt_key, rsa_sign_hash, sha224_process, ...)
+# carry the signature of the function or macro expansion they stand for.
+#
+# LibTomCrypt selects an algorithm through a descriptor: register_cipher(&aes_desc)
+# or find_cipher("aes") returns an index, and the index is then passed to every
+# mode, AEAD, MAC, KDF and hash-by-index call. That index argument is
+# operation-determining. So are the direction flag of the one-shot and streaming
+# AEAD calls and the padding flag of the RSA _ex calls.
+#
+# Dispositions for the v1.18.2 header surface:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: ASN.1 DER encode/decode, base64, CRC32 and Adler-32,
+#     zeromem, mem_neq, crypt_* constant/size helpers, burn_stack, the ltc_mp
+#     math descriptor, unregister_* and *_is_valid registry management, and every
+#     *_free teardown call.
+#   skipped-informative-return: *_keysize, *_get_size, ecc_sizes and the *_test
+#     self-tests.
+#   needs-follow-up: ciphers with no CycloneDX family (XTEA, Noekeon, Khazad,
+#     Anubis, KASUMI, MULTI2, SAFER, SOBER-128, Tiger), LRW and F8 modes, the
+#     F9 and Pelican MACs, Katja, the raw PKCS#1 encoders and the ltc_ecc_*
+#     point arithmetic. No detection rule selects them.
+contracts:
+  - method: aes_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: aes_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: aes_enc_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: aes_enc_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: aes_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: blake2b_160_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2b_256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2b_384_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2b_512_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2b_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: blake2b_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2b_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blake2bmac_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blake2bmac_file
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2bmac_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2bmac_memory
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2bmac_memory_multi
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2bmac_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blake2s_128_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2s_160_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2s_224_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2s_256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blake2s_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: blake2s_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2s_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blake2smac_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blake2smac_file
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2smac_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2smac_memory
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2smac_memory_multi
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: blake2smac_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blowfish_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blowfish_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blowfish_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: camellia_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: camellia_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: camellia_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: cast5_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cast5_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cast5_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: cbc_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cbc_done
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cbc_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cbc_getiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: cbc_setiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: cbc_start
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: ccm_add_aad
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ccm_add_nonce
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ccm_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ccm_init
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ccm_memory
+    arity: 14
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 13
+        name: direction
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: ccm_process
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: direction
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: ccm_reset
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: cfb_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cfb_done
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cfb_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cfb_getiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: cfb_setiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: cfb_start
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: chacha20_prng_add_entropy
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha20_prng_read
+    arity: 3
+    return: {type: "unsigned long", confidence: high}
+    role: operation
+  - method: chacha20_prng_ready
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha20_prng_start
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha20poly1305_add_aad
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha20poly1305_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: chacha20poly1305_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: chacha20poly1305_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: chacha20poly1305_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: chacha20poly1305_memory
+    arity: 12
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 11
+        name: direction
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: chacha20poly1305_setiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha20poly1305_setiv_rfc7905
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha_crypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: chacha_ivctr32
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha_ivctr64
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: chacha_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: ctr_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ctr_done
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ctr_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ctr_getiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ctr_setiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ctr_start
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: des3_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: des3_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: des3_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: des_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: des_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: des_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: dh_export
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: dh_generate_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dh_import
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dh_shared_secret
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: dsa_export
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: dsa_generate_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dsa_generate_pqg
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dsa_import
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dsa_make_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dsa_sign_hash
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: dsa_sign_hash_raw
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: dsa_verify_hash
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: dsa_verify_hash_raw
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: eax_addheader
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: eax_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: eax_decrypt_verify_memory
+    arity: 13
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: eax_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: eax_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: eax_encrypt_authenticate_memory
+    arity: 12
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ecb_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecb_done
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecb_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecb_start
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: ecc_ansi_x963_export
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ecc_ansi_x963_import
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ecc_export
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ecc_import
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ecc_make_key
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ecc_make_key_ex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ecc_shared_secret
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecc_sign_hash
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecc_sign_hash_rfc7518
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecc_verify_hash
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: ecc_verify_hash_rfc7518
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: find_cipher
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: find_hash
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: find_prng
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: fortuna_add_entropy
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: fortuna_read
+    arity: 3
+    return: {type: "unsigned long", confidence: high}
+    role: operation
+  - method: fortuna_ready
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: fortuna_start
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: gcm_add_aad
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: gcm_add_iv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: gcm_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: gcm_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: gcm_memory
+    arity: 13
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 12
+        name: direction
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: gcm_process
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: direction
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: gcm_reset
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: hkdf
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: hkdf_expand
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: hkdf_extract
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: hmac_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: hmac_file
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: hmac_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: hmac_memory
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: hmac_memory_multi
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: hmac_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: kseed_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: kseed_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: kseed_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: md2_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: md2_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: md2_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: md4_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: md4_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: md4_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: md5_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: md5_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: md5_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb3_add_aad
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ocb3_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb3_decrypt_last
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb3_decrypt_verify_memory
+    arity: 13
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ocb3_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb3_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb3_encrypt_authenticate_memory
+    arity: 12
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ocb3_encrypt_last
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb_decrypt_verify_memory
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ocb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ocb_encrypt_authenticate_memory
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ofb_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ofb_done
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ofb_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ofb_getiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ofb_setiv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ofb_start
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: omac_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: omac_file
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: omac_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: omac_memory
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: omac_memory_multi
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: omac_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: pkcs_5_alg1
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: iteration_count
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: pkcs_5_alg1_openssl
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: iteration_count
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: pkcs_5_alg2
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: iteration_count
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: pmac_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: pmac_file
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: pmac_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: pmac_memory
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: pmac_memory_multi
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: pmac_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: poly1305_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: poly1305_file
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: poly1305_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: poly1305_memory
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: poly1305_memory_multi
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: poly1305_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc2_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc2_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc2_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: rc2_setup_ex
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: rc4_stream_crypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc4_stream_setup
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rc5_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc5_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc5_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: rc6_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc6_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rc6_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: register_cipher
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: register_hash
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: register_prng
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: prng
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rijndael_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rijndael_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rijndael_enc_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rijndael_enc_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: rijndael_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: rmd128_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rmd128_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: rmd128_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rmd160_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rmd160_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: rmd160_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rmd256_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rmd256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: rmd256_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rmd320_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rmd320_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: rmd320_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_decrypt_key
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rsa_decrypt_key_ex
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 7
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+  - method: rsa_encrypt_key
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 8
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rsa_encrypt_key_ex
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 8
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 9
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+  - method: rsa_export
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: rsa_import
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: rsa_import_pkcs8
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: rsa_import_x509
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: rsa_make_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rsa_sign_hash
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 7
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: rsa_sign_hash_ex
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+      - index: 7
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 8
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: rsa_verify_hash
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: rsa_verify_hash_ex
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+      - index: 5
+        name: hash_idx
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: sha1_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha1_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha1_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha224_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha224_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha224_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha256_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha256_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha384_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha384_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha384_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha3_224_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha3_256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha3_384_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha3_512_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha3_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha3_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha3_shake_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha3_shake_init
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha3_shake_memory
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha512_224_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha512_224_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha512_224_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha512_256_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha512_256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha512_256_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sha512_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sha512_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sha512_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: skipjack_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: skipjack_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: skipjack_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: twofish_ecb_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: twofish_ecb_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: twofish_setup
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 2
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: whirlpool_done
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: whirlpool_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: whirlpool_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: xcbc_done
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: xcbc_file
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: xcbc_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: xcbc_memory
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: xcbc_memory_multi
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: xcbc_process
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: xts_decrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: xts_done
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_encrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: xts_start
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: num_rounds
+        role: metadata-contributing
+        contributes: {property: rounds, derivation: argument_value}
+  - method: yarrow_add_entropy
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: yarrow_read
+    arity: 3
+    return: {type: "unsigned long", confidence: high}
+    role: operation
+  - method: yarrow_ready
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: yarrow_start
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+hierarchy: {}
