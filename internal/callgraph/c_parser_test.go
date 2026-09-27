@@ -64,6 +64,66 @@ EVP_CIPHER_CTX *build_ctx(void) {
 	}
 }
 
+func TestCParser_FreeFunctionHandleIsTheFirstArgumentObject(t *testing.T) {
+	dir := t.TempDir()
+	src := `void run(struct engine *e, session_t sess) {
+    CTX *ctx = ctx_new();
+    struct state st;
+    session_t opened;
+    unsigned char buf[8];
+    int ret;
+    ctx_update(ctx, buf, 4);
+    state_update(&st, buf, 4);
+    param_update(e, buf);
+    session_open(&opened);
+    session_write(opened, buf);
+    session_read(sess, buf);
+    ret = ctx_final(ctx, buf);
+    check_status(ret, 0);
+    buffer_wipe(buf, 8);
+    literal_first("x", ctx);
+    member_first(e->inner, ctx);
+    nested_first(ctx_get(ctx), buf);
+    no_args();
+    e->finish(ctx);
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "handle.c"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analyses, err := NewCParser().ParseDirectory(dir, "example")
+	if err != nil {
+		t.Fatalf("ParseDirectory error: %v", err)
+	}
+	got := map[string]string{}
+	for _, call := range findCFunction(t, analyses[0], "run").Calls {
+		got[call.Callee.Name] = call.ReceiverVar
+	}
+	for name, want := range map[string]string{
+		"ctx_update":    "ctx",
+		"state_update":  "st",
+		"param_update":  "e",
+		"session_open":  "opened",
+		"session_write": "opened",
+		// A handle type that is neither a pointer declaration nor addressed in
+		// this function is indistinguishable from a value, so it stays unbound.
+		"session_read":  "",
+		"ctx_final":     "ctx",
+		"check_status":  "",
+		"buffer_wipe":   "",
+		"literal_first": "",
+		"member_first":  "",
+		"nested_first":  "",
+		"ctx_get":       "ctx",
+		"no_args":       "",
+		"finish":        "e",
+	} {
+		if got[name] != want {
+			t.Errorf("%s ReceiverVar = %q, want %q", name, got[name], want)
+		}
+	}
+}
+
 func TestCParser_Basics(t *testing.T) {
 	p := NewCParser(WithIncludeTests(true))
 	if !p.includeTests {
