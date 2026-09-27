@@ -268,7 +268,9 @@ type FunctionCall struct {
 	// Empty means the receiver type is declared, unknown, or ambiguous.
 	ResolvedReceiverType string
 	// ReceiverVar preserves the original receiver variable name for selector calls
-	// like `cipher.Encrypt()` when static type information is incomplete.
+	// like `cipher.Encrypt()` when static type information is incomplete. For a
+	// C free-function call it is the handle variable passed first, as in
+	// `EVP_DigestUpdate(ctx, ...)` or `crypto_generichash_update(&state, ...)`.
 	ReceiverVar string
 	// AssignedVar is the local variable this call's result is bound to, e.g.
 	// "digest" in `SHA3Digest digest = new SHA3Digest(256)`. Empty when the call
