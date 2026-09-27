@@ -144,7 +144,6 @@ func TestLibp11ContractsMarkSelectorsOperationDetermining(t *testing.T) {
 		"PKCS11_verify":          {6, 0, "hashAlgorithm"},
 		"PKCS11_private_encrypt": {5, 4, "padding"},
 		"PKCS11_private_decrypt": {5, 4, "padding"},
-		"PKCS11_generate_key":    {6, 1, "algorithm"},
 	}
 	for method, want := range selector {
 		got := kb.ContractsFor(method, want.arity)

@@ -84,10 +84,6 @@ contracts:
     return: {type: "int", confidence: high}
     role: factory
     parameters:
-      - index: 1
-        name: algorithm
-        role: operation-determining
-        contributes: {property: algorithm, derivation: argument_value}
       - index: 2
         name: bits
         role: metadata-contributing
