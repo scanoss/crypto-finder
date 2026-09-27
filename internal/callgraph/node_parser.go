@@ -867,7 +867,13 @@ func nodeCallArguments(node *sitter.Node, src []byte) []string {
 	if arguments == nil {
 		return nil
 	}
-	return parseArgumentsFromDelimitedContent(arguments.Content(src))
+	args := parseArgumentsFromDelimitedContent(arguments.Content(src))
+	for i, arg := range args {
+		if literal, ok := canonicalNodeStringLiteral(arg); ok {
+			args[i] = literal
+		}
+	}
+	return args
 }
 
 func splitNodeMemberObject(object string) (first, suffix string) {
