@@ -1,0 +1,8 @@
+{
+  "name": "selector-javascript-literals",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "noise-protocol": "3.0.2"
+  }
+}
