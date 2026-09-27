@@ -80,6 +80,10 @@ type exportBuildContext struct {
 	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
 	calleeSignatureKeys  map[string]string
 	chainIDsByCallerLine map[string]map[int]string
+	// returnInlining holds the call targets whose return sources are being
+	// inlined on the current provenance path, so a recursive callee is not
+	// re-inlined into itself.
+	returnInlining map[string]bool
 	// maxChainsBudget is the resolved per-finding condensed route emit cap (#334).
 	maxChainsBudget int
 	// reachSetCache memoizes the reverse-reachability answer per containing
@@ -2680,8 +2684,6 @@ func mergeCallParameters(
 // resolveExportSourceNodes follows simple Java parameter pass-through and return
 // paths before serializing provenance. It keeps every candidate so a dynamic
 // selector remains unresolved instead of choosing an arbitrary caller value.
-//
-//nolint:gocognit // Recursive provenance dispatch intentionally keeps every source-node kind fail-closed.
 func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.FunctionID, nodes []callgraph.SourceNode, depth int) []callgraph.SourceNode {
 	if ctx == nil || ctx.graph == nil || depth >= maxExportSourceResolutionDepth || len(nodes) == 0 {
 		return cloneCallgraphSourceNodes(nodes)
@@ -2695,18 +2697,7 @@ func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.Functi
 			node.SourceNodes = append(node.SourceNodes, resolveIncomingParameterSources(ctx, ownerID, node.Name, node.ParameterIndex, depth+1)...)
 		case sourceNodeTypeCallResult:
 			node.SourceNodes = resolveExportSourceNodes(ctx, ownerID, node.SourceNodes, depth+1)
-			if node.CallTarget != nil {
-				if callee := ctx.graph.Functions[node.CallTarget.String()]; callee != nil {
-					returns := selectGuardedReturnSources(callee.ReturnSources, node.SourceNodes)
-					for i := range returns {
-						if returns[i].Flow == nil {
-							returns[i].Flow = &callgraph.SourceFlow{}
-						}
-						returns[i].Flow.ReturnValue = true
-					}
-					node.SourceNodes = append(node.SourceNodes, resolveExportSourceNodes(ctx, node.CallTarget, returns, depth+1)...)
-				}
-			}
+			node.SourceNodes = append(node.SourceNodes, resolveCalleeReturnSources(ctx, node, depth+1)...)
 		case sourceNodeTypeField:
 			// A field's nested PARAMETER provenance may describe constructor
 			// initialization, not the current method's argument list.
@@ -2716,6 +2707,34 @@ func resolveExportSourceNodes(ctx *exportBuildContext, ownerID *callgraph.Functi
 		}
 	}
 	return resolved
+}
+
+// resolveCalleeReturnSources inlines the return provenance of a call result's
+// target. A target already being inlined on the current path is skipped, so a
+// recursive method contributes its returns once instead of once per level.
+func resolveCalleeReturnSources(ctx *exportBuildContext, node *callgraph.SourceNode, depth int) []callgraph.SourceNode {
+	if node.CallTarget == nil {
+		return nil
+	}
+	targetKey := node.CallTarget.String()
+	callee := ctx.graph.Functions[targetKey]
+	if callee == nil || ctx.returnInlining[targetKey] {
+		return nil
+	}
+	if ctx.returnInlining == nil {
+		ctx.returnInlining = make(map[string]bool)
+	}
+	ctx.returnInlining[targetKey] = true
+	defer delete(ctx.returnInlining, targetKey)
+
+	returns := selectGuardedReturnSources(callee.ReturnSources, node.SourceNodes)
+	for i := range returns {
+		if returns[i].Flow == nil {
+			returns[i].Flow = &callgraph.SourceFlow{}
+		}
+		returns[i].Flow.ReturnValue = true
+	}
+	return resolveExportSourceNodes(ctx, node.CallTarget, returns, depth)
 }
 
 func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgraph.FunctionID, parameterName string, parameterIndex, depth int) []callgraph.SourceNode {
