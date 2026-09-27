@@ -1,0 +1,521 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: nss
+  coordinates:
+    - nss
+    - nss-dev/nss
+  description: "Mozilla NSS PK11 wrapper, signing and verification contexts, key helpers, certificates and libssl configuration"
+
+# Inventory source: NSS_3_125_RTM public headers lib/pk11wrap/pk11pub.h,
+# lib/cryptohi/cryptohi.h, lib/cryptohi/keyhi.h, lib/certdb/cert.h and
+# lib/ssl/ssl.h, plus the APIs the NSS detection rules select (PK11_CreateDigestContext,
+# PK11_Encrypt/PK11_Decrypt, PK11_KeyGen, PK11_GenerateKeyPair, PK11_PubDerive,
+# PK11_PubEncrypt/PK11_PrivDecrypt, PK11_PBEKeyGen, PK11_CreatePBEV2AlgorithmID
+# and SECKEY_Create{RSA,DH,EC}PrivateKey).
+#
+# The mechanism (CK_MECHANISM_TYPE), the hash or signature OID (SECOidTag), the
+# TLS option and the cipher-suite id are the arguments that select what a call
+# does, so each is operation-determining. No contract names a token, slot,
+# module or FIPS state: which PKCS#11 module performs the call is a runtime fact.
+#
+# Dispositions:
+#   contracted: the 63 entries below.
+#   skipped-non-crypto: slot, token and module management (PK11_GetBestSlot,
+#     PK11_GetInternalSlot, PK11_Authenticate, PK11_FindSlotByName, SECMOD_*),
+#     reference counting and destruction (*_Destroy*, *_Free*, *_Reference*),
+#     nickname and attribute queries, NSS_Init/NSS_Shutdown, PRFileDesc I/O, and
+#     SSL callbacks and handshake plumbing (SSL_ResetHandshake, SSL_ForceHandshake,
+#     SSL_AuthCertificateHook, SSL_GetClientAuthDataHook).
+#   skipped-informative-return: size queries (PK11_SignatureLen,
+#     PK11_GetBlockSize, PK11_GetIVLength, SECKEY_PublicKeyStrengthInBits).
+#   needs-follow-up: PK11_RawPBEKeyGen, PK11_WrapPrivKey/PK11_UnwrapPrivKey, the
+#     KEM entry points (PK11_Encapsulate/PK11_Decapsulate), PK11_AEADOp and
+#     PK11_AEADRawOp, HPKE (PK11_HPKE_*), CMS/SMIME (NSS_CMS*), and PKCS#12
+#     (SEC_PKCS12*). They are crypto APIs no NSS detection rule selects yet.
+contracts:
+
+  # PK11 contexts: the mechanism and CKA_ENCRYPT/CKA_DECRYPT/CKA_SIGN operation
+  # select the context; the digest context is selected by its hash OID.
+  - method: PK11_CreateContextBySymKey
+    arity: 4
+    return: {type: "PK11Context*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: operation
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: PK11_CreateDigestContext
+    arity: 1
+    return: {type: "PK11Context*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: hashAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_DigestBegin
+    arity: 1
+    return: {type: "SECStatus", confidence: high}
+    role: config
+  - method: PK11_CipherOp
+    arity: 6
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_DigestOp
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_DigestFinal
+    arity: 4
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_Finalize
+    arity: 1
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_HashBuf
+    arity: 4
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: hashAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # One-shot symmetric and public-key operations.
+  - method: PK11_Encrypt
+    arity: 8
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_Decrypt
+    arity: 8
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_PubEncrypt
+    arity: 9
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_PrivDecrypt
+    arity: 8
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_Sign
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_Verify
+    arity: 4
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: PK11_SignWithMechanism
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_VerifyWithMechanism
+    arity: 6
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_WrapSymKey
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_UnwrapSymKey
+    arity: 7
+    return: {type: "PK11SymKey*", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: wraptype
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 6
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PK11_GenerateRandom
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+
+  # Key generation, import and derivation. keySize is in bytes for the
+  # symmetric generators, bits for SECKEY_CreateRSAPrivateKey.
+  - method: PK11_KeyGen
+    arity: 5
+    return: {type: "PK11SymKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PK11_TokenKeyGen
+    arity: 7
+    return: {type: "PK11SymKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PK11_GenerateKeyPair
+    arity: 7
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_GenerateKeyPairWithFlags
+    arity: 6
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_ImportSymKey
+    arity: 6
+    return: {type: "PK11SymKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: PK11_PubDerive
+    arity: 10
+    return: {type: "PK11SymKey*", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: derive
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 6
+        name: target
+        role: metadata-contributing
+        contributes: {property: targetAlgorithm, derivation: argument_value}
+  - method: PK11_PubDeriveWithKDF
+    arity: 12
+    return: {type: "PK11SymKey*", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: derive
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 6
+        name: target
+        role: metadata-contributing
+        contributes: {property: targetAlgorithm, derivation: argument_value}
+  - method: PK11_Derive
+    arity: 6
+    return: {type: "PK11SymKey*", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mechanism
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: target
+        role: metadata-contributing
+        contributes: {property: targetAlgorithm, derivation: argument_value}
+      - index: 5
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PK11_CreatePBEV2AlgorithmID
+    arity: 6
+    return: {type: "SECAlgorithmID*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: pbeAlgTag
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: cipherAlgTag
+        role: metadata-contributing
+        contributes: {property: cipher, derivation: argument_value}
+      - index: 2
+        name: prfAlgTag
+        role: metadata-contributing
+        contributes: {property: hashAlgorithm, derivation: argument_value}
+      - index: 3
+        name: keyLength
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 4
+        name: iteration
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: PK11_PBEKeyGen
+    arity: 5
+    return: {type: "PK11SymKey*", confidence: high}
+    role: factory
+  - method: SECKEY_CreateRSAPrivateKey
+    arity: 3
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: SECKEY_CreateDHPrivateKey
+    arity: 3
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+  - method: SECKEY_CreateECPrivateKey
+    arity: 3
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+  - method: SECKEY_ConvertToPublicKey
+    arity: 1
+    return: {type: "SECKEYPublicKey*", confidence: high}
+    role: output
+  - method: PK11_FindKeyByAnyCert
+    arity: 2
+    return: {type: "SECKEYPrivateKey*", confidence: high}
+    role: factory
+
+  # cryptohi signing and verification: the signature algorithm OID selects the scheme.
+  - method: SGN_NewContext
+    arity: 2
+    return: {type: "SGNContext*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: SGN_Begin
+    arity: 1
+    return: {type: "SECStatus", confidence: high}
+    role: config
+  - method: SGN_Update
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: SGN_End
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: SEC_SignData
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: algid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: VFY_CreateContext
+    arity: 4
+    return: {type: "VFYContext*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: sigAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: VFY_Begin
+    arity: 1
+    return: {type: "SECStatus", confidence: high}
+    role: config
+  - method: VFY_Update
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: VFY_End
+    arity: 1
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: VFY_VerifyData
+    arity: 6
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: sigAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: VFY_VerifyDigest
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: sigAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: VFY_VerifyDataDirect
+    arity: 8
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: pubkAlg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: hashAlg
+        role: metadata-contributing
+        contributes: {property: hashAlgorithm, derivation: argument_value}
+
+  # Certificates.
+  - method: CERT_DecodeCertFromPackage
+    arity: 2
+    return: {type: "CERTCertificate*", confidence: high}
+    role: factory
+  - method: CERT_DecodeDERCertificate
+    arity: 3
+    return: {type: "CERTCertificate*", confidence: high}
+    role: factory
+  - method: CERT_NewTempCertificate
+    arity: 5
+    return: {type: "CERTCertificate*", confidence: high}
+    role: factory
+  - method: CERT_FindCertByNickname
+    arity: 2
+    return: {type: "CERTCertificate*", confidence: high}
+    role: factory
+  - method: PK11_FindCertFromNickname
+    arity: 2
+    return: {type: "CERTCertificate*", confidence: high}
+    role: factory
+  - method: CERT_ExtractPublicKey
+    arity: 1
+    return: {type: "SECKEYPublicKey*", confidence: high}
+    role: output
+  - method: CERT_VerifyCertificate
+    arity: 8
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+  - method: CERT_VerifyCertNow
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: operation
+
+  # libssl configuration: the option id, cipher-suite id and version range select
+  # the protocol behaviour.
+  - method: SSL_ImportFD
+    arity: 2
+    return: {type: "PRFileDesc*", confidence: high}
+    role: factory
+  - method: SSL_OptionSet
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: option
+        role: operation-determining
+        contributes: {property: option, derivation: argument_value}
+  - method: SSL_OptionSetDefault
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: option
+        role: operation-determining
+        contributes: {property: option, derivation: argument_value}
+  - method: SSL_CipherPrefSet
+    arity: 3
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: cipherSuite, derivation: argument_value}
+  - method: SSL_CipherPrefSetDefault
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: cipher
+        role: operation-determining
+        contributes: {property: cipherSuite, derivation: argument_value}
+  - method: SSL_VersionRangeSet
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: vrange
+        role: metadata-contributing
+        contributes: {property: protocolVersion, derivation: argument_value}
+  - method: SSL_VersionRangeSetDefault
+    arity: 2
+    return: {type: "SECStatus", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: vrange
+        role: metadata-contributing
+        contributes: {property: protocolVersion, derivation: argument_value}
+  - method: SSL_ConfigServerCert
+    arity: 5
+    return: {type: "SECStatus", confidence: high}
+    role: config
+  - method: SSL_ConfigSecureServer
+    arity: 4
+    return: {type: "SECStatus", confidence: high}
+    role: config
+hierarchy: {}
