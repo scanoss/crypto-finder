@@ -32,6 +32,7 @@ const (
 	nodeObjectLiteral         = "object"
 	nodeFieldDefinition       = "field_definition"
 	nodePublicFieldDefinition = "public_field_definition"
+	nodeAssignmentExpression  = "assignment_expression"
 )
 
 // NodeParser extracts JavaScript and TypeScript imports, declarations, and calls.
@@ -169,10 +170,19 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	for name, binding := range bindings {
 		analysis.Imports[name] = binding.module
 	}
+	for name := range collectNodeLocalNames(nil, root, src) {
+		if _, imported := bindings[name]; !imported {
+			bindings[name] = nodeBinding{}
+		}
+	}
 	// Identities and same-file call targets are scoped to the module, not the
 	// package: see nodeModulePath. analysis.PackagePath keeps the package so the
 	// import map and the package name are unaffected.
-	p.extractDeclarations(root, src, filePath, nodeModulePath(packagePath, filePath), bindings, analysis)
+	modulePath := nodeModulePath(packagePath, filePath)
+	p.extractDeclarations(root, src, filePath, modulePath, bindings, analysis)
+	if decl := p.moduleInitDecl(root, src, filePath, modulePath, bindings); decl != nil {
+		analysis.Functions = append(analysis.Functions, *decl)
+	}
 	return analysis, nil
 }
 
@@ -194,7 +204,9 @@ func (p *NodeParser) parserForFile(path string) *sitter.Parser {
 // An empty member is the module itself. `const EC = require('elliptic').ec`,
 // `import { ec as EC } from 'elliptic'` and `const { ec: EC } =
 // require('elliptic')` all bind EC to {elliptic, ec}, so `new EC(..)` is
-// elliptic.ec.<init> however the consumer spelled the import.
+// elliptic.ec.<init> however the consumer spelled the import. An empty module
+// is a variable the module declares itself, such as
+// `const ec = new EC('secp256k1')`.
 type nodeBinding struct {
 	module string
 	member string
@@ -202,13 +214,27 @@ type nodeBinding struct {
 
 type nodeBindings map[string]nodeBinding
 
-// lookup returns the binding of name unless a local declaration shadows it.
+// lookup returns the import that name refers to unless a local declaration
+// shadows it.
 func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, bool) {
 	if locals[name] {
 		return nodeBinding{}, false
 	}
 	binding, ok := b[name]
-	return binding, ok
+	return binding, ok && binding.module != ""
+}
+
+// addModuleVariables adds the variables the module declares to a function's
+// locals. A call on one then records its receiver, which is how a variable
+// the module binds once, as elliptic consumers do with their curve context,
+// reaches the functions that use it.
+func (b nodeBindings) addModuleVariables(locals map[string]bool) map[string]bool {
+	for name, binding := range b {
+		if binding.module == "" {
+			locals[name] = true
+		}
+	}
+	return locals
 }
 
 // qualify appends a dotted access path to the binding and splits the result
@@ -401,9 +427,113 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 	case javaNodeClassDeclaration:
 		p.extractClassMethods(node, src, filePath, packagePath, "", bindings, analysis)
 		return
+	case nodeAssignmentExpression:
+		if fn := nodeAssignedFunction(node); fn != nil {
+			if name, owner := nodeAssignmentTarget(node.ChildByFieldName("left"), src); name != "" {
+				if decl := p.parseNodeFunction(fn, src, filePath, packagePath, name, owner, bindings); decl != nil {
+					analysis.Functions = append(analysis.Functions, *decl)
+				}
+				p.extractDeclarations(fn.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
+				return
+			}
+		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.extractDeclarations(node.Child(i), src, filePath, packagePath, bindings, analysis)
+	}
+}
+
+// nodeAssignedFunction returns the function an assignment stores, looking
+// through a chain such as `var sign = exports.sign = function (..) {..}`.
+func nodeAssignedFunction(node *sitter.Node) *sitter.Node {
+	for node != nil && node.Type() == nodeAssignmentExpression {
+		node = node.ChildByFieldName("right")
+	}
+	if node == nil || (node.Type() != nodeArrowFunction && node.Type() != nodeFunctionExpression) {
+		return nil
+	}
+	return node
+}
+
+// nodeAssignmentTarget names the function a CommonJS module declares by
+// assignment: `exports.sign = function` and `module.exports.sign = function`
+// declare sign, and `EC.prototype.sign = function` declares the sign method
+// of EC. It returns no name for a target it cannot name, such as `a[i]`.
+func nodeAssignmentTarget(left *sitter.Node, src []byte) (name, owner string) {
+	if left == nil {
+		return "", ""
+	}
+	switch left.Type() {
+	case goNodeIdentifier:
+		return left.Content(src), ""
+	case nodeMemberExpression:
+		object := left.ChildByFieldName("object")
+		property := left.ChildByFieldName("property")
+		if object == nil || property == nil {
+			return "", ""
+		}
+		if class, ok := strings.CutSuffix(object.Content(src), ".prototype"); ok {
+			owner = class[strings.LastIndex(class, ".")+1:]
+		}
+		return property.Content(src), owner
+	}
+	return "", ""
+}
+
+// nodeFunctionIsDeclared reports whether the parser records a function
+// expression as a declaration of its own: bound to a name by a declarator, or
+// assigned to a name or a member.
+func nodeFunctionIsDeclared(fn *sitter.Node) bool {
+	parent := fn.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Type() {
+	case nodeVariableDeclarator:
+		name := parent.ChildByFieldName("name")
+		return name != nil && name.Type() == goNodeIdentifier && sameSyntaxNode(parent.ChildByFieldName("value"), fn)
+	case nodeAssignmentExpression:
+		left := parent.ChildByFieldName("left")
+		return sameSyntaxNode(parent.ChildByFieldName("right"), fn) && left != nil &&
+			(left.Type() == goNodeIdentifier || left.Type() == nodeMemberExpression)
+	}
+	return false
+}
+
+// nodeOwnsScope reports whether node is a function or class whose calls
+// belong to a declaration of its own. An anonymous function the parser does
+// not record, such as a callback passed to a call, does not own its calls:
+// they belong to the enclosing function, the code that hands the callback
+// on, as `new Promise(function (resolve) { .. })` does.
+func nodeOwnsScope(node *sitter.Node) bool {
+	switch node.Type() {
+	case nodeArrowFunction, nodeFunctionExpression:
+		return nodeFunctionIsDeclared(node)
+	case nodeClassExpression:
+		return true
+	}
+	return isNodeNestedScope(node.Type())
+}
+
+// moduleInitDecl collects the calls a module makes when it loads: its
+// top-level statements and the anonymous callbacks they run, under the
+// synthetic <module> declaration the Python parser also emits. A module that
+// makes no such call gets none.
+func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, modulePath string, bindings nodeBindings) *FunctionDecl {
+	locals := bindings.addModuleVariables(make(map[string]bool))
+	calls := p.extractCalls(root, src, filePath, modulePath, "", bindings, locals)
+	if len(calls) == 0 {
+		return nil
+	}
+	return &FunctionDecl{
+		ID:           FunctionID{Package: modulePath, Name: moduleInitMethodName},
+		FilePath:     filePath,
+		StartLine:    int(root.StartPoint().Row) + 1,
+		EndLine:      int(root.EndPoint().Row) + 1,
+		OwnerType:    "module",
+		OwnerName:    modulePath,
+		FunctionType: functionTypeModuleInit,
+		Calls:        calls,
 	}
 }
 
@@ -433,7 +563,8 @@ func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, fil
 			continue
 		}
 
-		if value.Type() != nodeArrowFunction && value.Type() != nodeFunctionExpression {
+		value = nodeAssignedFunction(value)
+		if value == nil {
 			continue
 		}
 		if decl := p.parseNodeFunction(value, src, filePath, packagePath, bound, "", bindings); decl != nil {
@@ -519,7 +650,7 @@ func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, sr
 		FunctionType: javaFunctionTypeMethod,
 	}
 	for _, init := range inits {
-		locals := collectNodeLocalNames(nil, init, src)
+		locals := bindings.addModuleVariables(collectNodeLocalNames(nil, init, src))
 		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, bindings, locals)...)
 	}
 	analysis.Functions = append(analysis.Functions, *decl)
@@ -553,7 +684,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 		decl.OwnerName = owner
 		decl.FunctionType = javaFunctionTypeMethod
 	}
-	locals := collectNodeLocalNames(params, body, src)
+	locals := imports.addModuleVariables(collectNodeLocalNames(params, body, src))
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
 	return decl
@@ -677,7 +808,7 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 }
 
 func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]bool) bool {
-	if !isNodeNestedScope(node.Type()) {
+	if !nodeOwnsScope(node) {
 		return false
 	}
 	switch node.Type() {
@@ -709,7 +840,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 	if node == nil {
 		return
 	}
-	if isNodeNestedScope(node.Type()) {
+	if nodeOwnsScope(node) {
 		return
 	}
 	var call *FunctionCall

@@ -61,21 +61,27 @@ func resolveNodeAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase
 	if kb == nil || kb.Ecosystem != ecosystemNode {
 		return
 	}
-	receivers := make(map[string]bool)
-	for _, group := range kb.Contracts {
-		for i := range group {
-			if pkg, _ := splitQualifiedTypeName(group[i].Method); pkg != "" {
-				receivers[pkg] = true
-			}
-		}
-	}
+	receivers := contractReceiverTypes(kb)
+	// A module's <module> declaration binds the variables its functions share,
+	// so each file's module declaration is typed first and seeds the others.
+	moduleDecls := nodeModuleDecls(graph)
 	// To a fixed point: typing a receiver can reveal the next variable's
 	// producer, and a fluent chain rooted at a newly typed receiver
 	// (md.digest().toHex()) resolves only once its root has a type.
 	for range 4 {
 		pass := 0
+		moduleTypes := make(map[string]map[string]string, len(moduleDecls))
+		for file, fn := range moduleDecls {
+			resolved, types := resolveNodeAssignedVarCalleesInFunction(graph, fn.ID.String(), fn, kb, receivers, nil)
+			pass += resolved
+			moduleTypes[file] = types
+		}
 		for callerKey, fn := range graph.Functions {
-			pass += resolveNodeAssignedVarCalleesInFunction(graph, callerKey, fn, kb, receivers)
+			if fn == nil || fn.FunctionType == functionTypeModuleInit {
+				continue
+			}
+			resolved, _ := resolveNodeAssignedVarCalleesInFunction(graph, callerKey, fn, kb, receivers, moduleVariableTypes(fn, moduleTypes[fn.FilePath]))
+			pass += resolved
 		}
 		if pass == 0 {
 			break
@@ -84,14 +90,60 @@ func resolveNodeAssignedVarCallees(graph *CallGraph, kb *contracts.KnowledgeBase
 	}
 }
 
-// resolveNodeAssignedVarCalleesInFunction walks one function's calls in
-// document order. Rebinding a variable to a value of unknown type drops what
-// was known about it, so a later call on that name is left alone.
-func resolveNodeAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase, receivers map[string]bool) int {
-	if fn == nil || len(fn.Calls) == 0 {
-		return 0
+// contractReceiverTypes returns the types the KB declares methods on.
+func contractReceiverTypes(kb *contracts.KnowledgeBase) map[string]bool {
+	receivers := make(map[string]bool)
+	for _, group := range kb.Contracts {
+		for i := range group {
+			if pkg, _ := splitQualifiedTypeName(group[i].Method); pkg != "" {
+				receivers[pkg] = true
+			}
+		}
 	}
-	varTypes := make(map[string]string)
+	return receivers
+}
+
+// nodeModuleDecls indexes each file's <module> declaration by file.
+func nodeModuleDecls(graph *CallGraph) map[string]*FunctionDecl {
+	decls := make(map[string]*FunctionDecl)
+	for _, fn := range graph.Functions {
+		if fn != nil && fn.FunctionType == functionTypeModuleInit {
+			decls[fn.FilePath] = fn
+		}
+	}
+	return decls
+}
+
+// moduleVariableTypes returns the module variable types a function sees: the
+// module's, less any name the function binds itself as a parameter or from a
+// call. A local declared any other way, as in `const ec = opts.ec`, is not
+// visible here and would still inherit the module's type for ec.
+func moduleVariableTypes(fn *FunctionDecl, moduleTypes map[string]string) map[string]string {
+	if len(moduleTypes) == 0 {
+		return nil
+	}
+	seen := make(map[string]string, len(moduleTypes))
+	for name, typ := range moduleTypes {
+		seen[name] = typ
+	}
+	for _, param := range fn.Parameters {
+		delete(seen, param.Name)
+	}
+	for i := range fn.Calls {
+		delete(seen, fn.Calls[i].AssignedVar)
+	}
+	return seen
+}
+
+// resolveNodeAssignedVarCalleesInFunction walks one function's calls in
+// document order, starting from the seeded variable types, and returns the
+// types it ends with. Rebinding a variable to a value of unknown type drops
+// what was known about it, so a later call on that name is left alone.
+func resolveNodeAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, fn *FunctionDecl, kb *contracts.KnowledgeBase, receivers map[string]bool, seed map[string]string) (int, map[string]string) {
+	varTypes := make(map[string]string, len(seed))
+	for name, typ := range seed {
+		varTypes[name] = typ
+	}
 	oldKeys := make(map[string]bool)
 	resolved := 0
 	for _, i := range assignmentPropagationOrder(fn.Calls) {
@@ -118,5 +170,5 @@ func resolveNodeAssignedVarCalleesInFunction(graph *CallGraph, callerKey string,
 		}
 	}
 	reconcileRewrittenCallers(graph, callerKey, fn, oldKeys)
-	return resolved
+	return resolved, varTypes
 }
