@@ -803,3 +803,36 @@ public class A {
 		}
 	})
 }
+
+func TestDispatch_StaticOwnOverloadsDoNotBlockInheritedInstanceDispatch(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/S.java": "package com.acme;\npublic class S {\n  public void m(Object o) {}\n}\n",
+		"com/acme/A.java": "package com.acme;\npublic class A extends S {\n  public static void m(String s) {}\n  public static void m(Integer i) {}\n}\n",
+		// B overrides the instance m(Object) A inherits from S.
+		"com/acme/B.java": `package com.acme;
+import javax.crypto.Cipher;
+public class B extends A {
+  public void m(Object o) { try { Cipher.getInstance("AES"); } catch (Exception e) {} }
+}
+`,
+		"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run(A a) { a.m(new Object()); }\n}\n",
+	})
+	if !hasCaller(graph, "com.acme.(B).m#1", "com.acme.(App).run#1") {
+		t.Fatalf("a may be a B overriding the inherited instance m(Object): B.m must stay linked")
+	}
+}
+
+func TestDispatch_OwnStaticRedeclarationHidesInheritedStatic(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/A.java":   "package com.acme;\npublic class A {\n  public static void m(String s) {}\n  public static void m(Integer i) {}\n}\n",
+		"com/acme/B.java":   "package com.acme;\npublic class B extends A {\n  public static void m(String s) {}\n  public static void m(Long l) {}\n}\n",
+		"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run() { B.m(\"x\"); }\n}\n",
+	})
+	caller := "com.acme.(App).run#0"
+	if !hasCaller(graph, "com.acme.(B).m#1$String", caller) {
+		t.Fatalf("B.m(String) is the target")
+	}
+	if hasCaller(graph, "com.acme.(A).m#1$String", caller) {
+		t.Fatalf("B's static m(String) hides A's: A.m(String) is not a target")
+	}
+}

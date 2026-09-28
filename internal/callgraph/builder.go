@@ -1485,10 +1485,6 @@ func (b *Builder) expandAbstractClassDispatch(
 	baseRoot := namespaceRoot(callee.Package)
 	calleeArity := functionArity(callee.Name)
 	ancestors := idx.hierarchy.ancestorSet(calleeOwner)
-	// When the callee's class declares the method only as overloads, overload
-	// selection links those; this expansion still adds what they may dispatch
-	// to in subtypes (unless all are static) and what the class inherits.
-	virtual := !staticOverloadFamily(graph, callee, idx)
 	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
 	var overrides, heuristic []string
 	inheritedByOwner := make(map[string][]string)
@@ -1501,7 +1497,7 @@ func (b *Builder) expandAbstractClassDispatch(
 			inheritedByOwner[owner] = append(inheritedByOwner[owner], candidate.ID.String())
 			continue
 		}
-		if !virtual || namespaceRoot(candidate.ID.Package) != baseRoot {
+		if namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
 		if kind := abstractCandidateKind(idx.hierarchy, owner, calleeOwner, calleeComplete); kind == EdgeKindInterfaceDispatch {
@@ -1511,10 +1507,19 @@ func (b *Builder) expandAbstractClassDispatch(
 		}
 	}
 
+	own := ownOverloads(graph, callee, idx)
+	inherited := inheritedMethods(graph, idx.hierarchy, calleeOwner, inheritedByOwner, own)
+	// A call on a class whose own overloads and inherited methods of this
+	// name are all static is bound at compile time: no subtype override can
+	// be the target. One non-static method, own or inherited, reopens
+	// dispatch.
+	if allStatic(own) && allStatic(declsOf(graph, inherited)) && len(own) > 0 {
+		overrides, heuristic = nil, nil
+	}
 	sort.Strings(overrides)
 	sort.Strings(heuristic)
-	results := make([]interfaceDispatchAlias, 0, len(overrides)+len(heuristic)+1)
-	for _, k := range inheritedMethods(graph, idx.hierarchy, calleeOwner, inheritedByOwner) {
+	results := make([]interfaceDispatchAlias, 0, len(overrides)+len(heuristic)+len(inherited))
+	for _, k := range inherited {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Kind: EdgeKindExact})
 	}
 	for _, k := range overrides {
@@ -1559,16 +1564,26 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 	return idx.knownClassTypes[callee.Package+"|"+callee.Type]
 }
 
-// staticOverloadFamily reports whether the callee's own class declares
-// same-name, same-arity overloads and all of them are static. A static method
-// is bound at compile time, so such a call never dispatches to a subtype.
-func staticOverloadFamily(graph *CallGraph, callee FunctionID, idx dispatchIndexes) bool {
-	keys := idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]
-	if len(keys) == 0 {
-		return false
-	}
+// ownOverloads returns the callee's class's own same-name, same-arity
+// declarations.
+func ownOverloads(graph *CallGraph, callee FunctionID, idx dispatchIndexes) []*FunctionDecl {
+	return declsOf(graph, idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)])
+}
+
+func declsOf(graph *CallGraph, keys []string) []*FunctionDecl {
+	decls := make([]*FunctionDecl, 0, len(keys))
 	for _, key := range keys {
-		if fn := graph.Functions[key]; fn == nil || !fn.Static {
+		if fn := graph.Functions[key]; fn != nil {
+			decls = append(decls, fn)
+		}
+	}
+	return decls
+}
+
+// allStatic reports whether every declaration is static (true when empty).
+func allStatic(decls []*FunctionDecl) bool {
+	for _, fn := range decls {
+		if !fn.Static {
 			return false
 		}
 	}
@@ -1614,16 +1629,18 @@ func notOverridden(graph *CallGraph, level []string, nearer []*FunctionDecl) ([]
 
 // inheritedMethods returns the methods owner inherits from its ancestors,
 // walked breadth-first: every ancestor's same-name, same-arity declarations,
-// minus any whose erased signature a nearer class already declares (that one
-// overrides it). An overload declared further up is inherited too, so it is
+// minus any whose erased signature owner itself (own) or a nearer class
+// already declares (that one overrides or hides it). An overload declared further up is inherited too, so it is
 // kept even when a nearer class declares a different overload of the name;
 // call-site overload selection then chooses among them.
-func inheritedMethods(graph *CallGraph, hierarchy *dispatchHierarchy, owner string, byOwner map[string][]string) []string {
+func inheritedMethods(graph *CallGraph, hierarchy *dispatchHierarchy, owner string, byOwner map[string][]string, own []*FunctionDecl) []string {
 	if len(byOwner) == 0 {
 		return nil
 	}
 	var kept []string
-	var keptDecls []*FunctionDecl
+	// The class's own declarations override (or, for static ones, hide) an
+	// ancestor's with the same erased signature.
+	keptDecls := append([]*FunctionDecl(nil), own...)
 	seen := map[string]bool{owner: true}
 	frontier := []string{owner}
 	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
