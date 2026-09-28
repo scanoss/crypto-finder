@@ -1,0 +1,171 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libp11
+  coordinates:
+    - libp11
+    - OpenSC/libp11
+  version_range: ">=0.4.0,<0.5.0"
+  description: "libp11 PKCS#11 wrapper: token sessions, key and certificate objects, and sign, verify and RSA private-key operations"
+
+# Inventory source: src/libp11.h at libp11-0.4.13, checked unchanged for every
+# function below against libp11-0.4.4 and libp11-0.4.9 (the *_ext enumerators
+# appear later in the 0.4 line and are absent there), plus every function the
+# libp11 detection rules select.
+#
+# The digest NID of PKCS11_sign/PKCS11_verify, the padding of
+# PKCS11_private_encrypt/PKCS11_private_decrypt and the algorithm of
+# PKCS11_generate_key select the operation, so they are operation-determining;
+# the generated key size is metadata-contributing. No contract names a token,
+# HSM, module or certification: which PKCS#11 module performs a call is a
+# runtime fact.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: PKCS11_CTX_unload/_free, PKCS11_release_all_slots,
+#     PKCS11_logout, PIN management (PKCS11_init_pin, PKCS11_change_pin,
+#     PKCS11_init_token), slot updates and id queries, PKCS11_is_logged_in,
+#     PKCS11_set_ui_method, PKCS11_remove_key/_certificate, PKCS11_strings.
+#   skipped-informative-return: PKCS11_get_key_modulus, PKCS11_get_key_exponent.
+#   needs-follow-up: the libp11 0.1.x-0.3.x releases, whose signatures are not
+#     verified here, and the engine/provider modules, which configure OpenSSL
+#     rather than call libp11 directly.
+contracts:
+  - method: PKCS11_CTX_load
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_CTX_new
+    arity: 0
+    return: {type: "PKCS11_CTX*", confidence: high}
+    role: factory
+  - method: PKCS11_ecdsa_sign
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: PKCS11_enumerate_certs
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_certs_ext
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_keys
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_keys_ext
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_public_keys
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_public_keys_ext
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_enumerate_slots
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: PKCS11_find_key
+    arity: 1
+    return: {type: "PKCS11_KEY*", confidence: high}
+    role: factory
+  - method: PKCS11_find_token
+    arity: 3
+    return: {type: "PKCS11_SLOT*", confidence: high}
+    role: factory
+  - method: PKCS11_generate_key
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PKCS11_generate_random
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: PKCS11_get_key_size
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: PKCS11_get_key_type
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: PKCS11_get_private_key
+    arity: 1
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+  - method: PKCS11_get_public_key
+    arity: 1
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+  - method: PKCS11_login
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_open_session
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_private_decrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+  - method: PKCS11_private_encrypt
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: padding
+        role: operation-determining
+        contributes: {property: padding, derivation: argument_value}
+  - method: PKCS11_seed_random
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_sign
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: hashAlgorithm, derivation: argument_value}
+  - method: PKCS11_store_certificate
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_store_private_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_store_public_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: PKCS11_verify
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: hashAlgorithm, derivation: argument_value}
+hierarchy: {}
