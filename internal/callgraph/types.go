@@ -245,6 +245,12 @@ type FunctionDecl struct {
 	// CRATE matters — a method declared in `impl <CrateTrait> for <LocalType>`
 	// is the crate's API even though the receiver type is local.
 	OwnerTraits []string
+	// ModuleVars names the module-scope variables the function's calls use as
+	// receivers without declaring them itself, as `ec` in a function that calls
+	// the `ec` its module binds with `const ec = new EC(..)`. Populated by the
+	// Node parser only, so the receiver typing pass can seed exactly those names
+	// with the module's types and never a local that shadows one.
+	ModuleVars []string
 }
 
 // FunctionParameter describes a declared function parameter.
