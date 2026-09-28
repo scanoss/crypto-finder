@@ -102,3 +102,39 @@ function run(m) {
 		}
 	}
 }
+
+// A variable the module binds types the calls every function makes on it,
+// unless the function binds that name itself.
+func TestNodeModuleVariableTypesFunctionReceivers(t *testing.T) {
+	t.Parallel()
+
+	graph := buildNodeGraph(t, `const EC = require('elliptic').ec;
+const ec = new EC('secp256k1');
+
+function run(msg) {
+  const key = ec.genKeyPair();
+  return key.sign(msg);
+}
+
+function shadow(ec) {
+  return ec.genKeyPair();
+}
+
+function fromOptions(opts) {
+  const ec = opts.ec;
+  return ec.genKeyPair();
+}
+`)
+	for fn, want := range map[string]map[int][]string{
+		"run":         {5: {"elliptic.(ec).genKeyPair"}, 6: {"elliptic.(KeyPair).sign"}},
+		"shadow":      {10: {"app.genKeyPair"}},
+		"fromOptions": {15: {"app.genKeyPair"}},
+	} {
+		got := nodeCalleesByLine(t, graph, fn)
+		for line, callees := range want {
+			if len(got[line]) != 1 || got[line][0] != callees[0] {
+				t.Errorf("%s line %d: callees %v, want %v", fn, line, got[line], callees)
+			}
+		}
+	}
+}
