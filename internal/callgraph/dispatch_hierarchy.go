@@ -71,6 +71,8 @@ const (
 type dispatchHierarchy struct {
 	parents  map[string][]string
 	children map[string][]string
+	// simpleNameCount counts the known types sharing each simple name.
+	simpleNameCount map[string]int
 	// inheritedBy memoizes inheritedProviders per interface and method.
 	inheritedBy     map[string]map[string]bool
 	declaredMethods map[string]map[string][]*FunctionDecl
@@ -100,6 +102,10 @@ func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 	}
 	for owner := range graph.SourceSupertypes {
 		known[normalizeHierarchyName(owner)] = true
+	}
+	h.simpleNameCount = make(map[string]int, len(known))
+	for owner := range known {
+		h.simpleNameCount[simpleTypeName(owner)]++
 	}
 
 	for owner, bases := range graph.TypeHierarchy {
@@ -162,6 +168,11 @@ func (h *dispatchHierarchy) record(owner string, bases []string, known map[strin
 	certain := true
 	for _, entry := range bases {
 		alternatives := strings.Split(entry, javaSupertypeAlternatives)
+		if h.simpleNameCount[simpleTypeName(strings.TrimSpace(stripGenericSuffix(alternatives[0])))] > 1 {
+			// Several known types share the name, and which one the source
+			// means depends on scoping the resolver does not model.
+			certain = false
+		}
 		matched := 0
 		for _, alt := range alternatives {
 			if alt == javaUnresolvableSupertype {
@@ -687,18 +698,18 @@ func (s *overloadSelector) exactAt(fn *FunctionDecl, call *FunctionCall, i int, 
 }
 
 // certainParameterType returns the fully qualified type of fn's parameter i
-// when it is certain, or "". It is certain when the source wrote it fully
-// qualified, or when nothing can shadow the name: the declaring file declares
-// no type or type parameter of that name (QualifiedType is empty otherwise)
-// and no supertype of the declaring class in the graph has a member type of
-// that name.
+// when it is certain, or "": written fully qualified in source, or a name
+// certain by certainName in the declaring file.
 func (s *overloadSelector) certainParameterType(fn *FunctionDecl, i int) string {
 	param := fn.Parameters[i]
+	if param.QualifiedInSource {
+		return normalizeHierarchyName(param.QualifiedType)
+	}
 	base := javaParameterBaseType(normalizeJavaTypeName(param.Type))
-	if param.QualifiedType == "" || s.inheritsMemberType(fn.ID, base) {
+	if param.QualifiedType == "" {
 		return ""
 	}
-	return s.resolveQualified(param.QualifiedType, base, fn.ID.Package)
+	return s.certainName(base, s.resolveQualified(param.QualifiedType, base, fn.ID.Package), fn)
 }
 
 // parameterUncertain reports whether fn's parameter i is a reference type
@@ -706,25 +717,32 @@ func (s *overloadSelector) certainParameterType(fn *FunctionDecl, i int) string 
 func (s *overloadSelector) parameterUncertain(fn *FunctionDecl, i int) bool {
 	param := fn.Parameters[i]
 	base := javaParameterBaseType(normalizeJavaTypeName(param.Type))
-	if base == "" || isJavaPrimitive(base) || fn.FileTypeNamesAtRisk == nil {
+	if base == "" || isJavaPrimitive(base) || fn.FileTypeNamesAtRisk == nil || param.QualifiedInSource {
 		return false
 	}
-	return param.QualifiedType == "" || s.inheritsMemberType(fn.ID, base)
+	return s.certainParameterType(fn, i) == ""
 }
 
-// inheritsMemberType reports whether a supertype of owner's class known to the
-// graph declares a member type named simple, which would shadow an import or
-// package type of that name inside the class.
-func (s *overloadSelector) inheritsMemberType(owner FunctionID, simple string) bool {
-	if owner.Type == "" || simple == "" {
-		return false
+// certainName decides whether a simple type name used in decl's file denotes
+// one type beyond doubt, and returns it (or ""). It does so without modeling
+// Java's scoping: the name is certain only when the file declares no type
+// parameter or local class of that name, and at most one type of that simple
+// name exists anywhere in the graph's type universe (source types, nested
+// ones included, and indexed bytecode types). With two or more, any of them
+// could be the one in scope. resolved is the import/package resolution of
+// the name; when the universe holds exactly one type of that name and
+// resolved names another, resolved is kept, which then simply fails to match.
+func (s *overloadSelector) certainName(simple, resolved string, decl *FunctionDecl) string {
+	if simple == "" || resolved == "" {
+		return ""
 	}
-	for ancestor := range s.hierarchy.ancestorSet(declOwnerFQN(owner)) {
-		if s.knownType(ancestor + "." + simple) {
-			return true
-		}
+	if decl != nil && decl.FileTypeNamesAtRisk[simple] {
+		return ""
 	}
-	return false
+	if len(s.typesBySimple[simple]) > 1 {
+		return ""
+	}
+	return resolved
 }
 
 // dominatedBy reports whether some overload in others has fn's parameter type
@@ -831,37 +849,20 @@ func (s *overloadSelector) knownType(fqn string) bool {
 }
 
 // qualifiedCallResultType resolves the fully qualified type a call produces:
-// the class a constructor creates, or the callee's recorded return type. Only
-// the callee file's imports tell which type a simple return type names;
-// without that record, or when the callee's class inherits a member type of
-// that name, the package stays unknown.
+// the class a constructor creates, or the callee's recorded return type,
+// resolved through the callee file's imports. Either is kept only when
+// certainName accepts the name.
 func (s *overloadSelector) qualifiedCallResultType(target FunctionID, caller *FunctionDecl) string {
 	if BaseFunctionName(target.Name) == constructorMethodName {
-		if s.shadowable(caller, simpleTypeName(target.Type)) {
-			return ""
-		}
-		return declOwnerFQN(FunctionID{Package: target.Package, Type: target.Type})
+		fqn := declOwnerFQN(FunctionID{Package: target.Package, Type: target.Type})
+		return s.certainName(simpleTypeName(fqn), fqn, caller)
 	}
 	fn := s.graph.Functions[target.String()]
 	if fn == nil || fn.QualifiedReturnType == "" {
 		return ""
 	}
 	base := javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType))
-	if s.inheritsMemberType(fn.ID, base) {
-		return ""
-	}
-	return s.resolveQualified(fn.QualifiedReturnType, base, fn.ID.Package)
-}
-
-// shadowable reports whether, in the calling function's file and class, the
-// simple name could denote something the caller's import resolution did not
-// see: a type or type parameter the file declares, or a member type the
-// caller's class inherits.
-func (s *overloadSelector) shadowable(caller *FunctionDecl, simple string) bool {
-	if caller == nil {
-		return false
-	}
-	return caller.FileTypeNamesAtRisk[simple] || s.inheritsMemberType(caller.ID, simple)
+	return s.certainName(base, s.resolveQualified(fn.QualifiedReturnType, base, fn.ID.Package), fn)
 }
 
 func callerPackageOf(caller *FunctionDecl) string {
@@ -887,13 +888,11 @@ func (s *overloadSelector) qualifiedArgumentType(call *FunctionCall, idx int, ca
 func (s *overloadSelector) qualifiedSourceNodeType(node SourceNode, caller *FunctionDecl, depth int) string {
 	if node.DeclaredType != "" {
 		base := javaParameterBaseType(node.DeclaredType)
-		if s.shadowable(caller, simpleTypeName(base)) {
-			return ""
+		resolved := normalizeHierarchyName(base)
+		if !strings.Contains(base, ".") {
+			resolved = s.resolveQualified("", base, callerPackageOf(caller))
 		}
-		if strings.Contains(base, ".") {
-			return normalizeHierarchyName(base)
-		}
-		return s.resolveQualified("", base, callerPackageOf(caller))
+		return s.certainName(simpleTypeName(base), resolved, caller)
 	}
 	switch node.Type {
 	case sourceNodeCallResult:

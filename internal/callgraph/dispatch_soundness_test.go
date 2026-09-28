@@ -565,3 +565,31 @@ public class Local {
 		}
 	}
 }
+
+func TestDispatch_MemberTypeInheritedByEnclosingClassIsNotCertain(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/Key.java": "package com.acme;\npublic class Key {}\n",
+		"com/acme/Base.java": `package com.acme;
+public class Base { public static class Key {} }
+`,
+		"com/acme/Wrapper.java": `package com.acme;
+import java.security.MessageDigest;
+public class Wrapper {
+  public void init(Key k) {}
+  public void init(Object o) throws Exception { MessageDigest.getInstance("SHA-1"); }
+}
+`,
+		// Inside Outer, Key means the Base.Key that Outer inherits, so javac
+		// picks init(Object).
+		"com/acme/Outer.java": `package com.acme;
+public class Outer extends Base {
+  static class Caller {
+    void go() throws Exception { Key k = new Key(); new Wrapper().init(k); }
+  }
+}
+`,
+	})
+	if !hasCaller(graph, "com.acme.(Wrapper).init#1$Object", "com.acme.(Outer.Caller).go#0") {
+		t.Fatalf("Key inside Outer is Base.Key: init(Object) must stay linked")
+	}
+}

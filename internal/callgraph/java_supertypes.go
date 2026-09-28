@@ -201,8 +201,7 @@ func qualifyJavaType(raw string, analysis *FileAnalysis) string {
 		return base
 	}
 	if analysis != nil && analysis.TypeNamesAtRisk[simpleTypeName(base)] {
-		// The file declares a type or type parameter of this name somewhere;
-		// without javac's scoping the reference is not certain.
+		// A type parameter or local class of this name may be the one meant.
 		return ""
 	}
 	return strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
@@ -230,17 +229,17 @@ func javaFileSupertypeCandidates(typeText, head string, analysis *FileAnalysis) 
 	return candidates
 }
 
-// collectJavaTypeNamesAtRisk gathers the simple names of every type
-// declaration (member, nested and local) and every type parameter in a
-// compilation unit.
+// collectJavaTypeNamesAtRisk gathers the simple names of every type parameter
+// and every local class (a class declared inside a method, constructor or
+// initializer body) in a compilation unit.
 func collectJavaTypeNamesAtRisk(root *sitter.Node, src []byte) map[string]bool {
 	names := make(map[string]bool)
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
+	var walk func(n *sitter.Node, inBody bool)
+	walk = func(n *sitter.Node, inBody bool) {
 		switch n.Type() {
 		case javaNodeClassDeclaration, javaNodeInterfaceDeclaration, javaNodeEnumDeclaration,
 			javaNodeRecordDeclaration, javaNodeAnnotationTypeDecl:
-			if name := n.ChildByFieldName(javaFieldName); name != nil {
+			if name := n.ChildByFieldName(javaFieldName); name != nil && inBody {
 				names[name.Content(src)] = true
 			}
 		case "type_parameter":
@@ -250,11 +249,13 @@ func collectJavaTypeNamesAtRisk(root *sitter.Node, src []byte) map[string]bool {
 					break
 				}
 			}
+		case goNodeBlock, javaNodeConstructorBody:
+			inBody = true
 		}
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			walk(n.NamedChild(i))
+			walk(n.NamedChild(i), inBody)
 		}
 	}
-	walk(root)
+	walk(root, false)
 	return names
 }

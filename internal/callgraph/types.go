@@ -270,6 +270,9 @@ type FunctionParameter struct {
 	// are listed in Java's lookup order separated by "|". Empty for
 	// primitives and for parsers that do not resolve it (Java only).
 	QualifiedType string
+	// QualifiedInSource reports that the source spelled the type fully
+	// qualified (java.io.File), so QualifiedType is certain.
+	QualifiedInSource bool
 	// Name is the declared parameter name (e.g. "hashingFunction"), when the
 	// parser captures it (1.6+ / Java only as of introduction). Empty for
 	// ecosystems whose parser does not populate it — callers that key off Name
@@ -414,11 +417,9 @@ type FileAnalysis struct {
 	// is listed, so an entry may name a type the graph does not know. Java
 	// only; merged into CallGraph.SourceSupertypes.
 	Supertypes map[string][]string
-	// TypeNamesAtRisk holds every simple type name this file could bind to
-	// something other than an import or a package type: each class,
-	// interface, enum or record it declares (nested and local ones included)
-	// and each type parameter it declares. A type written with one of these
-	// names cannot be resolved with certainty without javac's scoping rules
+	// TypeNamesAtRisk holds the simple names this file binds in a scope no
+	// graph-wide index sees: each type parameter and each local class it
+	// declares. A type written with one of these names is never certain
 	// (Java only).
 	TypeNamesAtRisk map[string]bool
 	Functions       []FunctionDecl

@@ -2801,6 +2801,8 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 		}
 		if base := javaParameterBaseType(spec.RawType); strings.Contains(base, ".") {
 			param.QualifiedType = base
+			head, _, _ := strings.Cut(base, ".")
+			param.QualifiedInSource = !looksLikeJavaTypeName(head)
 		}
 		params = append(params, param)
 	}
