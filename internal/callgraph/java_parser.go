@@ -1050,7 +1050,7 @@ func (p *JavaParser) parseMethodDecl(
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
 		if decl.Static {
-			markStaticContextCalls(decl.Calls)
+			markStaticContextCalls(decl.Calls, javaNestedClassBodySpans(body))
 		}
 
 		// Build variable type and origin maps for return-source tracing.
@@ -1155,13 +1155,57 @@ func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
 
 // markStaticContextCalls marks the unqualified calls of a static method as
 // statically bound: a static method has no this, so `get(file, metadata)`
-// inside one names a static method of the class and cannot dispatch.
-func markStaticContextCalls(calls []FunctionCall) {
+// inside one can only name a static method of the class or an ancestor, and
+// cannot dispatch. A call inside an anonymous or local class body declared in
+// the method (spans) runs with that class's own this and is left alone.
+func markStaticContextCalls(calls []FunctionCall, spans [][2]sitter.Point) {
 	for i := range calls {
-		if !strings.Contains(calls[i].Raw, ".") && !strings.Contains(calls[i].Raw, "(") {
-			calls[i].StaticReceiver = true
+		if strings.Contains(calls[i].Raw, ".") || strings.Contains(calls[i].Raw, "(") {
+			continue
+		}
+		if withinSpans(calls[i].Line, calls[i].StartCol, spans) {
+			continue
+		}
+		calls[i].StaticReceiver = true
+	}
+}
+
+// javaNestedClassBodySpans returns the start/end points of every class body
+// nested in a method body: anonymous class creations and local classes.
+func javaNestedClassBodySpans(body *sitter.Node) [][2]sitter.Point {
+	var spans [][2]sitter.Point
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n.Type() == javaNodeClassBody {
+			spans = append(spans, [2]sitter.Point{n.StartPoint(), n.EndPoint()})
+			return
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			walk(n.NamedChild(i))
 		}
 	}
+	walk(body)
+	return spans
+}
+
+// withinSpans reports whether the 1-based line and column fall inside one of
+// the 0-based tree-sitter spans. A call without a line is treated as inside,
+// so it is never marked.
+func withinSpans(line, col int, spans [][2]sitter.Point) bool {
+	if line == 0 {
+		return len(spans) > 0
+	}
+	row, column := line-1, max(col-1, 0)
+	for _, span := range spans {
+		startRow, startCol := int(span[0].Row), int(span[0].Column)
+		endRow, endCol := int(span[1].Row), int(span[1].Column)
+		afterStart := row > startRow || (row == startRow && column >= startCol)
+		beforeEnd := row < endRow || (row == endRow && column < endCol)
+		if afterStart && beforeEnd {
+			return true
+		}
+	}
+	return false
 }
 
 // javaTypeQualifiedCall reports whether a method call's receiver is a type

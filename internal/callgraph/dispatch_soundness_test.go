@@ -937,3 +937,33 @@ public class Other {
 		}
 	}
 }
+
+func TestJavaParser_AnonymousClassCallInStaticMethodIsNotStaticallyBound(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/S.java": `package com.acme;
+public class S {
+  public static void st() {
+    Runnable r = new Runnable() { public void run() { helper(); } void helper() {} };
+    other();
+  }
+  static void other() {}
+}
+`,
+	})
+	fn := graph.Functions["com.acme.(S).st#0"]
+	if fn == nil {
+		t.Fatal("fixture: S.st missing")
+	}
+	for _, c := range fn.Calls {
+		switch c.Raw {
+		case "helper":
+			if c.StaticReceiver {
+				t.Errorf("helper() runs inside the anonymous class, with its own this: it must not be marked statically bound")
+			}
+		case "other":
+			if !c.StaticReceiver {
+				t.Errorf("other() inside the static method is statically bound")
+			}
+		}
+	}
+}
