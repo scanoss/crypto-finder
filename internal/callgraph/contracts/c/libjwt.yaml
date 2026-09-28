@@ -1,0 +1,215 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libjwt
+  coordinates:
+    - libjwt
+  version_range: ">=1.0.0,<4.0.0"
+  description: "libjwt JSON Web Token signing, verification and JWK APIs"
+
+# Inventory sources: libjwt public headers (include/jwt.h) from the upstream tag
+# archives v1.0.0, v1.15.3, v2.1.3, v3.0.0, v3.2.0 and v3.6.1. The contracted
+# signatures keep their arity across the releases that declare them: the v1/v2
+# jwt_t API (jwt_encode_str from v1.1.0, jwt_valid_* from v1.12.0) and the v3
+# builder/checker/JWK API. jwks_find_bykid is v3.1.0 and later.
+#
+# The JWS algorithm is the jwt_alg_t argument of jwt_set_alg, jwt_valid_new,
+# jwt_builder_setkey and jwt_checker_setkey, so it is operation-determining
+# there. jwt_encode_*, jwt_decode*, jwt_validate, jwt_builder_generate and
+# jwt_checker_verify perform the signing, parsing or verification. A jwt_decode
+# with no key parses without verifying; that is a runtime fact of the key
+# argument, not of the contract.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: claim and header getters/deleters other than
+#   jwt_get_grant, JSON dump helpers (jwt_dump_*), allocator hooks
+#   (jwt_set_alloc/jwt_get_alloc), jwt_alg_str/jwt_str_alg name conversion,
+#   jwt_exception_str and all *_free teardown calls.
+# needs-follow-up: the v3 crypto-ops backend selection (jwt_set_crypto_ops*),
+#   JWK item accessors beyond lookup, and the v3 callback-based key selection.
+contracts:
+
+  # v1/v2 token lifecycle.
+  - method: jwt_new
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: jwt_dup
+    arity: 1
+    return: {type: "jwt_t*", confidence: high}
+    role: factory
+  - method: jwt_set_alg
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: jwt_add_grant
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_add_grant_int
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_add_grant_bool
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_add_grants_json
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_add_header
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_encode_str
+    arity: 1
+    return: {type: "char*", confidence: high}
+    role: operation
+  - method: jwt_encode_fp
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: jwt_decode
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: jwt_decode_2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: jwt_get_alg
+    arity: 1
+    return: {type: "jwt_alg_t", confidence: high}
+    role: output
+  - method: jwt_get_grant
+    arity: 2
+    return: {type: "const char*", confidence: high}
+    role: output
+
+  # v1/v2 validation (v1.12.0 and later).
+  - method: jwt_valid_new
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: jwt_valid_add_grant
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_validate
+    arity: 2
+    return: {type: "unsigned int", confidence: high}
+    role: operation
+
+  # v3 builder (signing).
+  - method: jwt_builder_new
+    arity: 0
+    return: {type: "jwt_builder_t*", confidence: high}
+    role: factory
+  - method: jwt_builder_setkey
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: jwt_builder_claim_set
+    arity: 2
+    return: {type: "jwt_value_error_t", confidence: high}
+    role: config
+  - method: jwt_builder_header_set
+    arity: 2
+    return: {type: "jwt_value_error_t", confidence: high}
+    role: config
+  - method: jwt_builder_generate
+    arity: 1
+    return: {type: "char*", confidence: high}
+    role: operation
+
+  # v3 checker (verification).
+  - method: jwt_checker_new
+    arity: 0
+    return: {type: "jwt_checker_t*", confidence: high}
+    role: factory
+  - method: jwt_checker_setkey
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: jwt_checker_claim_set
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: jwt_checker_verify
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # v3 JSON Web Key sets.
+  - method: jwks_create
+    arity: 1
+    return: {type: "jwk_set_t*", confidence: high}
+    role: factory
+  - method: jwks_create_strn
+    arity: 2
+    return: {type: "jwk_set_t*", confidence: high}
+    role: factory
+  - method: jwks_create_fromfile
+    arity: 1
+    return: {type: "jwk_set_t*", confidence: high}
+    role: factory
+  - method: jwks_create_fromfp
+    arity: 1
+    return: {type: "jwk_set_t*", confidence: high}
+    role: factory
+  - method: jwks_load
+    arity: 2
+    return: {type: "jwk_set_t*", confidence: high}
+    role: config
+  - method: jwks_load_strn
+    arity: 3
+    return: {type: "jwk_set_t*", confidence: high}
+    role: config
+  - method: jwks_load_fromfile
+    arity: 2
+    return: {type: "jwk_set_t*", confidence: high}
+    role: config
+  - method: jwks_load_fromfp
+    arity: 2
+    return: {type: "jwk_set_t*", confidence: high}
+    role: config
+  - method: jwks_item_get
+    arity: 2
+    return: {type: "const jwk_item_t*", confidence: high}
+    role: output
+  - method: jwks_find_bykid
+    arity: 2
+    return: {type: "const jwk_item_t*", confidence: high}
+    role: output
+
+hierarchy: {}
