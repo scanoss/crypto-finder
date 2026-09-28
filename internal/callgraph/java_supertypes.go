@@ -187,10 +187,21 @@ func qualifyJavaParameters(params []FunctionParameter, analysis *FileAnalysis) {
 		if params[i].QualifiedType != "" {
 			continue
 		}
-		base := javaParameterBaseType(params[i].Type)
-		if base == "" || isJavaPrimitive(base) || isJavaTypeVariable(base) {
-			continue
-		}
-		params[i].QualifiedType = strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
+		params[i].QualifiedType = qualifyJavaType(params[i].Type, analysis)
 	}
+}
+
+// qualifyJavaType resolves a source type the way qualifyJavaParameters does:
+// as written when fully qualified, otherwise through the file's imports and
+// declarations, listing alternatives where they leave it open. Empty for
+// primitives, void and type variables.
+func qualifyJavaType(raw string, analysis *FileAnalysis) string {
+	base := javaParameterBaseType(raw)
+	if base == "" || base == javaVoidType || isJavaPrimitive(base) || isJavaTypeVariable(base) {
+		return ""
+	}
+	if strings.Contains(base, ".") && !looksLikeJavaTypeName(base) {
+		return base
+	}
+	return strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
 }

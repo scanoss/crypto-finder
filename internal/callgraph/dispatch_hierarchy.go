@@ -194,6 +194,9 @@ func (h *dispatchHierarchy) indexChildren() {
 func (h *dispatchHierarchy) inheritedProviders(iface string, ifaceMethod *FunctionDecl) map[string]bool {
 	iface = normalizeHierarchyName(iface)
 	method := methodArityKey(ifaceMethod.ID.Name)
+	// The full decorated name identifies the signature: same-arity interface
+	// overloads carry their parameter types as a suffix (hash#1$byte[]), so
+	// two of them never share a cache entry.
 	memoKey := iface + "\x00" + ifaceMethod.ID.Name
 	if set, ok := h.inheritedBy[memoKey]; ok {
 		return set
@@ -797,8 +800,10 @@ func (s *overloadSelector) qualifiedSourceNodeType(node SourceNode, callerPkg st
 		if BaseFunctionName(node.CallTarget.Name) == constructorMethodName {
 			return declOwnerFQN(FunctionID{Package: node.CallTarget.Package, Type: node.CallTarget.Type})
 		}
-		if fn := s.graph.Functions[node.CallTarget.String()]; fn != nil {
-			return s.resolveQualified("", javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType)), fn.ID.Package)
+		// Only the declaring file's imports tell which type a simple return
+		// type names; without that record the package stays unknown.
+		if fn := s.graph.Functions[node.CallTarget.String()]; fn != nil && fn.QualifiedReturnType != "" {
+			return s.resolveQualified(fn.QualifiedReturnType, javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType)), fn.ID.Package)
 		}
 	case sourceNodeValue, sourceNodeExpression:
 		if s.staticSourceNodeType(node, depth) == javaStringType {

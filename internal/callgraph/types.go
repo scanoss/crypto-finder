@@ -207,17 +207,21 @@ type InferredReturn struct {
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
-	ID              FunctionID
-	FilePath        string
-	StartLine       int
-	EndLine         int
-	OwnerType       string
-	OwnerName       string
-	FunctionType    string
-	ReturnType      string
-	ReturnTypeRef   TypeRef
-	Visibility      string
-	OwnerVisibility string
+	ID           FunctionID
+	FilePath     string
+	StartLine    int
+	EndLine      int
+	OwnerType    string
+	OwnerName    string
+	FunctionType string
+	ReturnType   string
+	// QualifiedReturnType is ReturnType resolved to fully qualified names
+	// through the declaring file's imports, in the FunctionParameter
+	// QualifiedType format. Empty when not resolved (Java methods only).
+	QualifiedReturnType string
+	ReturnTypeRef       TypeRef
+	Visibility          string
+	OwnerVisibility     string
 	// TypeParamBounds maps the declaring class's generic type-parameter names
 	// to their erased first bound ("Object" when unbounded). Used to build the
 	// erased signature consumers join on (Java only).

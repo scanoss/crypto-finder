@@ -396,3 +396,32 @@ func TestJavaExpressionAndHexLiteralTypes(t *testing.T) {
 		t.Errorf(`javaExpressionType("a" + b) = %q, want String`, got)
 	}
 }
+
+func TestDispatch_ReturnTypeResolvedThroughDeclaringFileImports(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key {}\n",
+		"com/other/Key.java":    "package com.other;\npublic interface Key {}\n",
+		"com/other/Svc.java": `package com.other;
+import java.security.MessageDigest;
+public class Svc {
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("MD5"); }
+}
+`,
+		// mk returns com.acme.sec.Key through an import, not com.other.Key.
+		"com/other/F.java": `package com.other;
+import com.acme.sec.Key;
+public class F {
+  public static Key mk() { return null; }
+}
+`,
+		"com/other/App.java": `package com.other;
+public class App {
+  public void run() throws Exception { new Svc().r(F.mk()); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.other.(Svc).r#1$Object", "com.other.(App).run#0") {
+		t.Fatalf("F.mk returns com.acme.sec.Key, so javac picks r(Object), which must stay linked")
+	}
+}

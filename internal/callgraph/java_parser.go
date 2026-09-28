@@ -1040,6 +1040,7 @@ func (p *JavaParser) parseMethodDecl(
 		OwnerVisibility: ownerVisibility,
 		Parameters:      params,
 	}
+	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
