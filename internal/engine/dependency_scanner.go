@@ -87,7 +87,13 @@ type DepScanResult struct {
 	Ecosystem         string
 	ProjectRoot       string
 	Dependencies      []dependency.Dependency
-	summary           dependencyScanSummary
+	// AdditionalEcosystems holds one call graph of the scan target's own
+	// source per other supported ecosystem it contains. The fields above describe
+	// the primary ecosystem, the one dependencies resolve for; a finding
+	// written in another language is resolved against the entry for its own
+	// ecosystem. Entries carry no dependencies and no additional ecosystems.
+	AdditionalEcosystems []*DepScanResult
+	summary              dependencyScanSummary
 }
 
 // ProgressDetails returns the aggregate dependency counters for structured progress.

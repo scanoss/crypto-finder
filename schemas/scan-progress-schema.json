@@ -37,7 +37,8 @@
             "resolver_unavailable",
             "parser_unavailable",
             "callgraph_unavailable",
-            "manifest_absent"
+            "manifest_absent",
+            "lockfile_absent"
           ]
         },
         "deps_scanned": {

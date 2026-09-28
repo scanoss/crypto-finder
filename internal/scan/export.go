@@ -135,6 +135,11 @@ type callGraphExportScanMeta struct {
 	JavaPlatformSignaturesUsed             *bool  `json:"java_platform_signatures_used,omitempty"`
 	JavaPlatformSignatureSource            string `json:"java_platform_signature_source,omitempty"`
 	JavaPlatformSignatureUnavailableReason string `json:"java_platform_signature_unavailable_reason,omitempty"`
+	// Ecosystems (6.16+) lists every call graph the export analyzed when the
+	// target held first-party findings in more than one supported ecosystem.
+	// Ecosystem, RootModule and the counts above stay those of the primary
+	// graph, the one dependencies were resolved for.
+	Ecosystems []graphfrag.ExportEcosystem `json:"ecosystems,omitempty"`
 }
 
 type callGraphExportFinding struct {
@@ -450,15 +455,16 @@ func exportResolvedCallGraphProjection(path, format string, result *engine.DepSc
 }
 
 func buildResolvedCallGraphExportV2ToFile(path string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) (callGraphExportV2, error) {
-	ctx := newCallGraphExportBuildContext(result, report.Findings, options)
+	ctxs := newCallGraphExportContextSet(result, report.Findings, options)
 	assets := callGraphExportAssetsFromFindings(report.Findings)
 	meta := buildResolvedCallGraphExportScanMeta(result, report)
+	applyExportEcosystemsMeta(&meta, result, options)
 	var streamed streamedCallGraphExport
 	if err := utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
 		bw := bufio.NewWriterSize(file, 1<<20)
 		writer := graphFragmentJSONWriter{w: bw}
 		var writeErr error
-		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta, options)
+		streamed, writeErr = streamCallGraphExport(&writer, ctxs, assets, meta, options)
 		return finishBufferedOutput(bw, writeErr)
 	}); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
@@ -519,16 +525,17 @@ func exportCallGraphProjectionWithOptions(path, format string, result *engine.De
 }
 
 func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, options CallGraphExportOptions) (callGraphExportV2, error) {
-	ctx := newCallGraphExportBuildContext(result, result.Report.Findings, options)
+	ctxs := newCallGraphExportContextSet(result, result.Report.Findings, options)
 	assets := callGraphExportAssets(result.Report)
 	meta := buildCallGraphExportScanMeta(result)
+	applyExportEcosystemsMeta(&meta, result, options)
 
 	var streamed streamedCallGraphExport
 	if err := utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
 		bw := bufio.NewWriterSize(file, 1<<20)
 		writer := graphFragmentJSONWriter{w: bw}
 		var writeErr error
-		streamed, writeErr = streamCallGraphExport(&writer, ctx, assets, meta, options)
+		streamed, writeErr = streamCallGraphExport(&writer, ctxs, assets, meta, options)
 		return finishBufferedOutput(bw, writeErr)
 	}); err != nil {
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
@@ -552,7 +559,7 @@ type streamedCallGraphExport struct {
 
 func streamCallGraphExport(
 	writer *graphFragmentJSONWriter,
-	ctx *exportBuildContext,
+	ctxs *exportContextSet,
 	assets []callGraphExportAsset,
 	meta callGraphExportScanMeta,
 	options CallGraphExportOptions,
@@ -560,7 +567,7 @@ func streamCallGraphExport(
 	if err := writeCallGraphPrefix(writer, meta, options.InternedFrames); err != nil {
 		return streamedCallGraphExport{}, err
 	}
-	streamed, err := streamFindingGraphs(writer, ctx, assets, !options.OmitCryptoEntryPoints, options.InternedFrames)
+	streamed, err := streamFindingGraphs(writer, ctxs, assets, !options.OmitCryptoEntryPoints, options.InternedFrames)
 	if err != nil {
 		return streamedCallGraphExport{}, err
 	}
@@ -570,14 +577,18 @@ func streamCallGraphExport(
 
 	supportingCalls := sortedSupportingCalls(streamed.supportingByID)
 	for i := range supportingCalls {
-		supportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, supportingCalls[i].FunctionKey)
+		owner := streamed.supportingOwner[supportingCalls[i].SupportingID]
+		if owner == nil {
+			owner = ctxs.primary
+		}
+		supportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(owner, supportingCalls[i].FunctionKey)
 		if options.OmitCryptoEntryPoints {
 			continue
 		}
 		if _, ok := streamed.referencedSupporting[supportingCalls[i].SupportingID]; ok {
 			continue
 		}
-		addSupportingCallToEntryPointIndex(streamed.index, supportingCalls[i])
+		addSupportingCallToEntryPointIndex(streamed.indexes[owner], supportingCalls[i])
 	}
 	if err := writeGraphFragmentArrayField(writer, "supporting_calls", supportingCalls, true); err != nil {
 		return streamedCallGraphExport{}, err
@@ -585,13 +596,7 @@ func streamCallGraphExport(
 
 	var entryPoints []callGraphCryptoEntryPoint
 	if !options.OmitCryptoEntryPoints {
-		entryPoints = flattenEntryPointIndex(ctx.kb, streamed.index)
-		for i := range entryPoints {
-			if streamed.chainRoots[entryPoints[i].FunctionKey] {
-				entryPoints[i].Root = true
-			}
-			entryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, entryPoints[i].FunctionKey)
-		}
+		entryPoints = flattenStreamedEntryPoints(ctxs, streamed)
 		if err := writeGraphFragmentArrayField(writer, "crypto_entry_points", entryPoints, true); err != nil {
 			return streamedCallGraphExport{}, err
 		}
@@ -600,6 +605,32 @@ func streamCallGraphExport(
 		return streamedCallGraphExport{}, err
 	}
 	return streamedCallGraphExport{functions: streamed.functions, supportingCalls: supportingCalls, entryPoints: entryPoints}, nil
+}
+
+// flattenStreamedEntryPoints flattens each call graph's entry-point index
+// against its own contracts and declarations, then merges them by function key.
+func flattenStreamedEntryPoints(ctxs *exportContextSet, streamed streamedFindingGraphs) []callGraphCryptoEntryPoint {
+	total := 0
+	for _, ctx := range ctxs.ordered {
+		total += len(streamed.indexes[ctx])
+	}
+	entryPoints := make([]callGraphCryptoEntryPoint, 0, total)
+	for _, ctx := range ctxs.ordered {
+		flattened := flattenEntryPointIndex(ctx.kb, streamed.indexes[ctx])
+		for i := range flattened {
+			if streamed.chainRoots[flattened[i].FunctionKey] {
+				flattened[i].Root = true
+			}
+			flattened[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, flattened[i].FunctionKey)
+		}
+		entryPoints = append(entryPoints, flattened...)
+	}
+	if len(ctxs.ordered) > 1 {
+		sort.SliceStable(entryPoints, func(i, j int) bool {
+			return entryPoints[i].FunctionKey < entryPoints[j].FunctionKey
+		})
+	}
+	return entryPoints
 }
 
 func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportScanMeta, internedFrames bool) error {
@@ -616,8 +647,12 @@ func writeCallGraphPrefix(writer *graphFragmentJSONWriter, meta callGraphExportS
 }
 
 type streamedFindingGraphs struct {
-	index                map[string]*entryPointData
-	supportingByID       map[string]callGraphSupportingCall
+	// indexes holds one entry-point index per call graph, so each is
+	// flattened against its own ecosystem's contracts and declarations.
+	indexes        map[*exportBuildContext]map[string]*entryPointData
+	supportingByID map[string]callGraphSupportingCall
+	// supportingOwner records which call graph derived each supporting call.
+	supportingOwner      map[string]*exportBuildContext
 	referencedSupporting map[string]struct{}
 	chainRoots           map[string]bool
 	functions            []graphfrag.ExportInternedFunction
@@ -625,29 +660,42 @@ type streamedFindingGraphs struct {
 
 func streamFindingGraphs(
 	writer *graphFragmentJSONWriter,
-	ctx *exportBuildContext,
+	ctxs *exportContextSet,
 	assets []callGraphExportAsset,
 	buildEntryPointIndex bool,
 	internedFrames bool,
 ) (streamedFindingGraphs, error) {
-	var index map[string]*entryPointData
+	indexes := make(map[*exportBuildContext]map[string]*entryPointData, len(ctxs.ordered))
 	var referencedSupporting map[string]struct{}
 	var chainRoots map[string]bool
 	if buildEntryPointIndex {
-		index = make(map[string]*entryPointData)
+		for _, ctx := range ctxs.ordered {
+			indexes[ctx] = make(map[string]*entryPointData)
+		}
 		referencedSupporting = make(map[string]struct{})
 		chainRoots = make(map[string]bool)
 	}
 	supportingByID := make(map[string]callGraphSupportingCall)
+	supportingOwner := make(map[string]*exportBuildContext)
 	intern := graphfrag.FunctionInterner{}
 	buildStart := time.Now()
 
 	for i := range assets {
 		item := assets[i]
+		ctx, analyzed := ctxs.forFinding(item.finding)
+		index := indexes[ctx]
 		supporting := deriveSupportingCallsForFinding(ctx, item.finding, item.asset)
 		indexSupportingCalls(supportingByID, supporting)
+		for j := range supporting {
+			if _, owned := supportingOwner[supporting[j].SupportingID]; !owned {
+				supportingOwner[supporting[j].SupportingID] = ctx
+			}
+		}
 
 		fg := buildFindingGraph(ctx, item.finding, item.asset)
+		if !analyzed {
+			markLanguageNotAnalyzed(&fg)
+		}
 		fg.SupportingCallIDs = supportingCallIDsOf(supporting)
 		// See buildCryptoEntryPoints for why an unreachable finding contributes
 		// no entry point, and why a nil Reachable (the mine path) is exempt.
@@ -675,8 +723,9 @@ func streamFindingGraphs(
 		return streamedFindingGraphs{}, err
 	}
 	return streamedFindingGraphs{
-		index:                index,
+		indexes:              indexes,
 		supportingByID:       supportingByID,
+		supportingOwner:      supportingOwner,
 		referencedSupporting: referencedSupporting,
 		chainRoots:           chainRoots,
 		functions:            intern.Functions(),
@@ -1714,7 +1763,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	var cryptoCall *callGraphCalledFunction
 
 	if containingFn == nil {
-		unresolvedReason = "no_containing_function"
+		unresolvedReason = unresolvedNoContainingFunction
 	} else if matchedOperation != nil && matchedOperation.Kind == matchedOperationCall {
 		cryptoCall = findCryptoCall(ctx, ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
 		if cryptoCall == nil {
