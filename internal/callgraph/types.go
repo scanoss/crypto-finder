@@ -394,7 +394,14 @@ type FileAnalysis struct {
 	// JavaStringConstants holds the String constants this file declares,
 	// keyed by owner FQN + ".NAME" (Java only).
 	JavaStringConstants map[string]JavaStringConstant
-	Functions           []FunctionDecl
+	// Supertypes maps each type declared in this file, fully qualified, to the
+	// fully qualified direct supertypes its extends/implements clauses name
+	// (generic arguments excluded), resolved through the file's imports. Where
+	// an on-demand import leaves a simple name ambiguous every possible package
+	// is listed, so an entry may name a type the graph does not know. Java
+	// only; merged into CallGraph.SourceSupertypes.
+	Supertypes map[string][]string
+	Functions  []FunctionDecl
 	// PythonReExports maps a symbol name to the module dotted path it is
 	// re-exported from, recorded ONLY when this file is a Python
 	// `__init__.py` and ONLY from explicit relative `from .mod import Sym
@@ -432,6 +439,12 @@ type CallGraph struct {
 	// interfaces/superclasses. E.g., "io.jsonwebtoken.JwtBuilder" →
 	// ["io.jsonwebtoken.ClaimsMutator"]. Populated by TypeResolver from bytecode.
 	TypeHierarchy map[string][]string
+	// SourceSupertypes maps a source-declared type to the supertypes its own
+	// extends/implements clauses name (see FileAnalysis.Supertypes). Kept apart
+	// from TypeHierarchy, which holds only resolver-indexed edges; the dispatch
+	// expansions read both to link a call only to real subtypes of its
+	// receiver type.
+	SourceSupertypes map[string][]string
 	// ExternalMethodSignatures stores resolver-derived signatures for methods that
 	// are known to the graph by symbol but do not have a source declaration.
 	// Keyed by fully qualified method + arity via ExternalMethodSignatureKey.

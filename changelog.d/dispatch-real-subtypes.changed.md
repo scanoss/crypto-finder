@@ -1,0 +1,1 @@
+- `graphfrag.GraphAlgoVersion` is now `graph-algo-4` (was `graph-algo-3`). The dispatch fix below removes call-graph edges between unrelated types and selects overloads by argument type, so structural graphs cached under `scan_metadata.graph_algo_version` must be re-mined. The wire schemas are unchanged.

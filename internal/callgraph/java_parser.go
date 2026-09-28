@@ -325,6 +325,7 @@ func (p *JavaParser) processClass(
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
+	recordJavaSupertypes(analysis, fullClassName, extractJavaSupertypes(node, src, analysis))
 	stampTypeParamBounds(constructorDecls, typeParamBounds)
 	stampTypeParamBounds(methodDecls, typeParamBounds)
 	applyJavaTypeParamErasure(constructorDecls, typeParamBounds, analysis)
@@ -368,6 +369,8 @@ func (p *JavaParser) processEnumConstantBody(
 	fieldTypes := p.collectJavaFieldTypes(body, src)
 	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, constantClass, ownerVisibility, fieldTypes, fieldAssignments)
+	// javac compiles the constant body to a subclass of the enum itself.
+	recordJavaSupertypes(analysis, constantClass, []string{joinJavaPackage(javaAnalysisPackagePath(analysis), ownerClass)})
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 	p.processJavaAnonymousClasses(body, src, filePath, analysis, constantClass, ownerVisibility)
@@ -466,6 +469,9 @@ func (p *JavaParser) processAnonymousClass(
 	}
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
+	if len(bases) == 1 {
+		recordJavaSupertypes(analysis, fullClassName, resolveJavaSupertype(bases[0], analysis))
+	}
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 
@@ -954,6 +960,7 @@ func (p *JavaParser) processInterface(
 	if outerType != "" {
 		fullInterfaceName = outerType + "." + interfaceName
 	}
+	recordJavaSupertypes(analysis, fullInterfaceName, extractJavaSupertypes(node, src, analysis))
 	ownerVisibility := combineJavaOwnerVisibility(outerVisibility, parseJavaDeclaredVisibility(node, src))
 
 	var methodDecls []*FunctionDecl

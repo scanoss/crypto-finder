@@ -44,10 +44,12 @@ func buildConstructorArgFixtureGraph(t *testing.T) *CallGraph {
 	implA := FunctionDecl{
 		ID: implAID, FilePath: filepath.Join(root, "SinkImplA.java"), StartLine: 1, EndLine: 4,
 		OwnerType: ownerTypeClass, OwnerName: "SinkImplA", Parameters: []FunctionParameter{},
+		OwnerBases: []string{"Sink"},
 	}
 	implB := FunctionDecl{
 		ID: implBID, FilePath: filepath.Join(root, "SinkImplB.java"), StartLine: 1, EndLine: 4,
 		OwnerType: ownerTypeClass, OwnerName: "SinkImplB", Parameters: []FunctionParameter{},
+		OwnerBases: []string{"Sink"},
 	}
 	// with(Sink s) { s.run(); } — the pass-through candidate: a single call
 	// whose ReceiverVar ("s") names its own only parameter.
@@ -170,10 +172,12 @@ func TestResolveParameterPassthroughDispatch_NoBypassWithoutConcreteArgument(t *
 	implA := FunctionDecl{
 		ID: implAID, FilePath: filepath.Join(root, "SinkImplA.java"), StartLine: 1, EndLine: 4,
 		OwnerType: ownerTypeClass, OwnerName: "SinkImplA", Parameters: []FunctionParameter{},
+		OwnerBases: []string{"Sink"},
 	}
 	implB := FunctionDecl{
 		ID: implBID, FilePath: filepath.Join(root, "SinkImplB.java"), StartLine: 1, EndLine: 4,
 		OwnerType: ownerTypeClass, OwnerName: "SinkImplB", Parameters: []FunctionParameter{},
+		OwnerBases: []string{"Sink"},
 	}
 	withFn := FunctionDecl{
 		ID: withID, FilePath: filepath.Join(root, "Builder.java"), StartLine: 10, EndLine: 12,

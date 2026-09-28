@@ -82,6 +82,8 @@ func TestBuilder_ExpandsAbstractClassDispatchToSubclassOverrides(t *testing.T) {
 		EndLine:   97,
 		OwnerType: "class",
 		OwnerName: "AbstractHashingFunction",
+		// abstract class AbstractHashingFunction implements HashingFunction
+		OwnerBases: []string{"HashingFunction"},
 		Parameters: []FunctionParameter{
 			{Type: "byte[]"}, {Type: "byte[]"}, {Type: "byte[]"},
 		},
@@ -108,12 +110,14 @@ func TestBuilder_ExpandsAbstractClassDispatchToSubclassOverrides(t *testing.T) {
 	//   public Hash hash(byte[] plain, byte[] salt) { return internalHash(...); } // hash#2
 	// }
 	pbkdf2Hash1 := FunctionDecl{
-		ID:         FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "hash#1"},
-		FilePath:   filepath.Join(root, "PBKDF2Function.java"),
-		StartLine:  145,
-		EndLine:    150,
-		OwnerType:  "class",
-		OwnerName:  "PBKDF2Function",
+		ID:        FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "hash#1"},
+		FilePath:  filepath.Join(root, "PBKDF2Function.java"),
+		StartLine: 145,
+		EndLine:   150,
+		OwnerType: "class",
+		OwnerName: "PBKDF2Function",
+		// class PBKDF2Function extends AbstractHashingFunction
+		OwnerBases: []string{"AbstractHashingFunction"},
 		Parameters: []FunctionParameter{{Type: "byte[]"}},
 		Calls: []FunctionCall{
 			{
@@ -132,6 +136,8 @@ func TestBuilder_ExpandsAbstractClassDispatchToSubclassOverrides(t *testing.T) {
 		EndLine:   167,
 		OwnerType: "class",
 		OwnerName: "PBKDF2Function",
+		// class PBKDF2Function extends AbstractHashingFunction
+		OwnerBases: []string{"AbstractHashingFunction"},
 		Parameters: []FunctionParameter{
 			{Type: "byte[]"}, {Type: "byte[]"},
 		},
@@ -146,12 +152,14 @@ func TestBuilder_ExpandsAbstractClassDispatchToSubclassOverrides(t *testing.T) {
 		},
 	}
 	internalHash := FunctionDecl{
-		ID:         FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "internalHash#2"},
-		FilePath:   filepath.Join(root, "PBKDF2Function.java"),
-		StartLine:  130,
-		EndLine:    140,
-		OwnerType:  "class",
-		OwnerName:  "PBKDF2Function",
+		ID:        FunctionID{Package: "com.password4j", Type: "PBKDF2Function", Name: "internalHash#2"},
+		FilePath:  filepath.Join(root, "PBKDF2Function.java"),
+		StartLine: 130,
+		EndLine:   140,
+		OwnerType: "class",
+		OwnerName: "PBKDF2Function",
+		// class PBKDF2Function extends AbstractHashingFunction
+		OwnerBases: []string{"AbstractHashingFunction"},
 		Parameters: []FunctionParameter{{Type: "byte[]"}, {Type: "byte[]"}},
 	}
 

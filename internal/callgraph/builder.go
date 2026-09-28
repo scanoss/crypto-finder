@@ -474,6 +474,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 			continue
 		}
 		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
+		mergeSourceSupertypes(graph, analysis.Supertypes)
 		b.mergeAnalysisFunctions(graph, analysis)
 		mergeJavaStringConstants(graph, analysis)
 	}
@@ -923,11 +924,14 @@ func rewritePythonReExportedCallee(graph *CallGraph, callee *FunctionID, table m
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.
 func (b *Builder) buildCallerIndex(graph *CallGraph) {
+	hierarchy := newDispatchHierarchy(graph)
 	idx := dispatchIndexes{
 		methodsByName:           indexMethodsByName(graph),
 		methodsByQualifiedArity: indexMethodsByQualifiedArity(graph),
 		subclassByTypeName:      indexSubclassByTypeName(graph),
 		knownClassTypes:         indexKnownClassTypes(graph),
+		hierarchy:               hierarchy,
+		overloads:               newOverloadSelector(graph, hierarchy),
 		interfaceDispatchMemo:   make(map[string][]interfaceDispatchAlias),
 		abstractDispatchMemo:    make(map[string][]interfaceDispatchAlias),
 		callerSeen:              make(map[string]map[string]struct{}),
@@ -959,6 +963,8 @@ type dispatchIndexes struct {
 	methodsByQualifiedArity map[string][]string
 	subclassByTypeName      map[string][]*FunctionDecl
 	knownClassTypes         map[string]bool
+	hierarchy               *dispatchHierarchy
+	overloads               *overloadSelector
 	interfaceDispatchMemo   map[string][]interfaceDispatchAlias
 	abstractDispatchMemo    map[string][]interfaceDispatchAlias
 	callerSeen              map[string]map[string]struct{}
@@ -984,7 +990,7 @@ func (idx dispatchIndexes) expandInterfaceDispatchMemoized(b *Builder, calleeKey
 	if aliases, ok := idx.interfaceDispatchMemo[calleeKey]; ok {
 		return aliases
 	}
-	aliases := b.expandInterfaceDispatch(calleeKey, graph, idx.methodsByName)
+	aliases := b.expandInterfaceDispatch(calleeKey, graph, idx.methodsByName, idx.hierarchy)
 	idx.interfaceDispatchMemo[calleeKey] = aliases
 	return aliases
 }
@@ -993,7 +999,7 @@ func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, calle
 	if aliases, ok := idx.abstractDispatchMemo[calleeKey]; ok {
 		return aliases
 	}
-	aliases := b.expandAbstractClassDispatch(callee, graph, idx.methodsByName, idx.knownClassTypes)
+	aliases := b.expandAbstractClassDispatch(callee, graph, idx)
 	idx.abstractDispatchMemo[calleeKey] = aliases
 	return aliases
 }
@@ -1014,6 +1020,9 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	}
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
+	if _, declared := graph.Functions[calleeKey]; !declared {
+		overloadTargets = idx.overloads.selectOverloads(graph, call, overloadTargets)
+	}
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
 	for _, target := range overloadTargets {
@@ -1033,9 +1042,14 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 		}
 	}
 
-	for _, alias := range idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph) {
+	abstractAliases := idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph)
+	for _, alias := range selectInheritedOverloads(graph, call, abstractAliases, idx.overloads) {
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call)
+		kind := EdgeKindInterfaceDispatch
+		if alias.Inherited {
+			kind = EdgeKindExact
+		}
+		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, kind, alias.DeclaredType, call)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
@@ -1283,14 +1297,26 @@ func (b *Builder) expandOverloadCandidates(callee FunctionID, methodsByQualified
 type interfaceDispatchAlias struct {
 	CalleeKey    string
 	DeclaredType string
+	// Inherited marks the method a type inherits from its nearest declaring
+	// superclass, which a call on that type invokes unless a subtype overrides
+	// it. It is resolved statically, so it is an exact edge, not a dispatch.
+	Inherited bool
 }
 
-// expandInterfaceDispatch links interface method call-sites to concrete implementations
-// with matching method name/arity in the same namespace root.
+// expandInterfaceDispatch links an interface method call site to the
+// implementations in the graph: methods of the same name and arity, in the same
+// namespace root, declared by a type that really implements the interface.
+// For Java that is a class whose known extends/implements hierarchy reaches the
+// interface (dispatchHierarchy.isSubtype); for Go, a type that declares every
+// method of the interface. A class whose hierarchy is unknown is not linked:
+// name and arity alone are not evidence. Among one implementing type's
+// same-arity overloads, those whose parameter types match the interface
+// method's are the override and the others are dropped.
 func (b *Builder) expandInterfaceDispatch(
 	calleeKey string,
 	graph *CallGraph,
 	methodsByName map[string][]*FunctionDecl,
+	hierarchy *dispatchHierarchy,
 ) []interfaceDispatchAlias {
 	calleeDecl, ok := graph.Functions[calleeKey]
 	if !ok || calleeDecl.OwnerType != ownerTypeInterface {
@@ -1304,7 +1330,7 @@ func (b *Builder) expandInterfaceDispatch(
 
 	declaredType := interfaceDeclaredType(calleeDecl.ID)
 	baseRoot := namespaceRoot(calleeDecl.ID.Package)
-	keys := make([]string, 0, len(targets))
+	byOwner := make(map[string][]*FunctionDecl)
 	for _, candidate := range targets {
 		if candidate.OwnerType == ownerTypeInterface {
 			continue
@@ -1315,15 +1341,73 @@ func (b *Builder) expandInterfaceDispatch(
 		if namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
-		keys = append(keys, candidate.ID.String())
+		if !b.implementsInterface(hierarchy, candidate.ID, calleeDecl.ID) {
+			continue
+		}
+		owner := declOwnerFQN(candidate.ID)
+		byOwner[owner] = append(byOwner[owner], candidate)
 	}
 
+	keys := make([]string, 0, len(byOwner))
+	for _, candidates := range byOwner {
+		for _, candidate := range overridingCandidates(calleeDecl, candidates) {
+			keys = append(keys, candidate.ID.String())
+		}
+	}
 	sort.Strings(keys)
 	results := make([]interfaceDispatchAlias, 0, len(keys))
 	for _, k := range keys {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
 	}
 	return results
+}
+
+// implementsInterface reports whether the type owning candidate implements the
+// interface owning iface.
+func (b *Builder) implementsInterface(hierarchy *dispatchHierarchy, candidate, iface FunctionID) bool {
+	if hierarchy == nil {
+		return false
+	}
+	if hierarchy.isSubtype(declOwnerFQN(candidate), declOwnerFQN(iface)) {
+		return true
+	}
+	return b.ecosystem == ecosystemGo && hierarchy.implementsStructurally(candidate, iface)
+}
+
+// overridingCandidates keeps, among one type's same-name, same-arity methods,
+// those whose parameter types match the base method's. A type-variable
+// parameter on either side matches anything, since erasure hides the concrete
+// type. When none matches (the graph spells the types differently) all are
+// kept rather than losing the override.
+func overridingCandidates(base *FunctionDecl, candidates []*FunctionDecl) []*FunctionDecl {
+	if len(candidates) < 2 {
+		return candidates
+	}
+	var matching []*FunctionDecl
+	for _, candidate := range candidates {
+		if sameErasedParameters(base.Parameters, candidate.Parameters) {
+			matching = append(matching, candidate)
+		}
+	}
+	if len(matching) == 0 {
+		return candidates
+	}
+	return matching
+}
+
+func sameErasedParameters(a, b []FunctionParameter) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		left := stripGenericSuffix(normalizeJavaTypeName(a[i].Type))
+		right := stripGenericSuffix(normalizeJavaTypeName(b[i].Type))
+		if left == right || left == "" || right == "" || isJavaTypeVariable(left) || isJavaTypeVariable(right) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // interfaceDeclaredType renders the fully-qualified interface type for a method
@@ -1338,56 +1422,43 @@ func interfaceDeclaredType(id FunctionID) string {
 	return id.Package + "." + id.Type
 }
 
-// expandAbstractClassDispatch links a call site to concrete overrides when the
-// resolved callee is an unqualified/this-call to a method that its own class
-// never defines a body for — the Java shape of an abstract intermediate class
-// declaring (but not implementing) a method that only its concrete subclasses
-// override. Mirrors expandInterfaceDispatch's policy (same-name+arity, same
-// namespace root) but keys off "callee class is known yet the exact method
-// has no declaration" rather than "callee owner is an interface", so it also
-// covers the case where the interface's only concrete body sits on an
-// abstract class that itself calls other not-yet-overridden interface methods
-// via `this`.
+// expandAbstractClassDispatch resolves a call on a known class that declares no
+// method of that name and arity: the Java shape of an abstract intermediate
+// class that declares (but does not implement) a method only its concrete
+// subclasses override, or of a method inherited from a superclass. It returns
 //
-// It intentionally does NOT fire when the callee's Type is unknown to the
-// graph at all (e.g. an external/unresolved receiver) — knownClassTypes gates
-// that, so this stays a narrow "missing override" inference instead of a
-// generic name+arity fallback.
+//   - the method of the nearest superclass that declares it (Inherited: the
+//     static target of the call), and
+//   - the overrides declared by real subclasses of the callee's class, found
+//     through the known type hierarchy (dispatchHierarchy.isSubtype).
+//
+// A class with the same method name and arity that is not a subtype of the
+// callee's class is never a target: that is what linked unrelated libraries
+// sharing a namespace root. It does not fire when the callee's class declares
+// same-arity overloads of the method (overload selection resolves those) or
+// when the class is unknown to the graph, so it stays a narrow "missing
+// override" inference instead of a generic name+arity fallback.
 func (b *Builder) expandAbstractClassDispatch(
 	callee FunctionID,
 	graph *CallGraph,
-	methodsByName map[string][]*FunctionDecl,
-	knownClassTypes map[string]bool,
+	idx dispatchIndexes,
 ) []interfaceDispatchAlias {
-	if callee.Type == "" {
-		return nil
-	}
-	// Constructors and static initializers never dispatch virtually: `new Foo()`
-	// invokes exactly Foo.<init>, regardless of hierarchy. Without this guard, a
-	// constructor call whose exact declaration is missing from the graph (implicit
-	// default constructor, unparsed overload) fans out to EVERY same-arity
-	// constructor in the namespace root — on the bcprov corpus that synthesized
-	// 6.58M of the graph's 7.16M edges, all semantically impossible.
-	if base := BaseFunctionName(callee.Name); base == constructorMethodName || base == clinitMethodName {
-		return nil
-	}
-	calleeKey := callee.String()
-	if _, declared := graph.Functions[calleeKey]; declared {
-		return nil
-	}
-	if !knownClassTypes[callee.Package+"|"+callee.Type] {
+	if !abstractClassDispatchApplies(callee, graph, idx) {
 		return nil
 	}
 
-	targets := methodsByName[methodLookupName(callee.Name)]
+	targets := idx.methodsByName[methodLookupName(callee.Name)]
 	if len(targets) == 0 {
 		return nil
 	}
 
 	declaredType := interfaceDeclaredType(callee)
+	calleeOwner := declOwnerFQN(callee)
 	baseRoot := namespaceRoot(callee.Package)
 	calleeArity := functionArity(callee.Name)
-	keys := make([]string, 0, len(targets))
+	ancestors := idx.hierarchy.ancestorSet(calleeOwner)
+	var overrides []string
+	inheritedByOwner := make(map[string][]string)
 	for _, candidate := range targets {
 		if candidate.OwnerType != ownerTypeClass {
 			continue
@@ -1398,18 +1469,105 @@ func (b *Builder) expandAbstractClassDispatch(
 		if functionArity(candidate.ID.Name) != calleeArity {
 			continue
 		}
-		if namespaceRoot(candidate.ID.Package) != baseRoot {
-			continue
+		owner := declOwnerFQN(candidate.ID)
+		switch {
+		case ancestors[owner]:
+			inheritedByOwner[owner] = append(inheritedByOwner[owner], candidate.ID.String())
+		case namespaceRoot(candidate.ID.Package) == baseRoot && idx.hierarchy.isSubtype(owner, calleeOwner):
+			overrides = append(overrides, candidate.ID.String())
 		}
-		keys = append(keys, candidate.ID.String())
 	}
 
-	sort.Strings(keys)
-	results := make([]interfaceDispatchAlias, 0, len(keys))
-	for _, k := range keys {
+	sort.Strings(overrides)
+	results := make([]interfaceDispatchAlias, 0, len(overrides)+1)
+	for _, k := range nearestInherited(idx.hierarchy, calleeOwner, inheritedByOwner) {
+		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Inherited: true})
+	}
+	for _, k := range overrides {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
 	}
 	return results
+}
+
+// abstractClassDispatchApplies gates expandAbstractClassDispatch to calls on a
+// known class that declares no method of the callee's name and arity.
+func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispatchIndexes) bool {
+	if callee.Type == "" {
+		return false
+	}
+	// Constructors and static initializers never dispatch virtually: `new Foo()`
+	// invokes exactly Foo.<init>, regardless of hierarchy. Without this guard, a
+	// constructor call whose exact declaration is missing from the graph (implicit
+	// default constructor, unparsed overload) fans out to EVERY same-arity
+	// constructor in the namespace root — on the bcprov corpus that synthesized
+	// 6.58M of the graph's 7.16M edges, all semantically impossible.
+	if base := BaseFunctionName(callee.Name); base == constructorMethodName || base == clinitMethodName {
+		return false
+	}
+	if _, declared := graph.Functions[callee.String()]; declared {
+		return false
+	}
+	if !idx.knownClassTypes[callee.Package+"|"+callee.Type] {
+		return false
+	}
+	// Same-arity overloads on the callee's own class are resolved by overload
+	// selection, not by dispatch.
+	return len(idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]) == 0
+}
+
+// nearestInherited returns the declarations of the closest ancestor of owner
+// (breadth-first over its superclasses and interfaces) that declares one.
+func nearestInherited(hierarchy *dispatchHierarchy, owner string, byOwner map[string][]string) []string {
+	if len(byOwner) == 0 {
+		return nil
+	}
+	seen := map[string]bool{owner: true}
+	frontier := []string{owner}
+	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
+		var next []string
+		var found []string
+		for _, current := range frontier {
+			for _, parent := range hierarchy.parents[current] {
+				if seen[parent] {
+					continue
+				}
+				seen[parent] = true
+				found = append(found, byOwner[parent]...)
+				next = append(next, parent)
+			}
+		}
+		if len(found) > 0 {
+			sort.Strings(found)
+			return found
+		}
+		frontier = next
+	}
+	return nil
+}
+
+// selectInheritedOverloads applies call-site overload selection to the
+// inherited targets of an abstract-class expansion; overrides pass through.
+func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, aliases []interfaceDispatchAlias, selector *overloadSelector) []interfaceDispatchAlias {
+	var inherited []string
+	for _, alias := range aliases {
+		if alias.Inherited {
+			inherited = append(inherited, alias.CalleeKey)
+		}
+	}
+	if len(inherited) < 2 || selector == nil {
+		return aliases
+	}
+	keep := make(map[string]bool)
+	for _, key := range selector.selectOverloads(graph, call, inherited) {
+		keep[key] = true
+	}
+	out := make([]interfaceDispatchAlias, 0, len(aliases))
+	for _, alias := range aliases {
+		if !alias.Inherited || keep[alias.CalleeKey] {
+			out = append(out, alias)
+		}
+	}
+	return out
 }
 
 // expandFluentFallback links unresolved fluent-chain calls (foo().bar().baz()) to
@@ -3296,8 +3454,13 @@ func inferJavaArgumentType(call *FunctionCall, idx int) string {
 	if idx >= len(call.Arguments) {
 		return ""
 	}
+	return inferJavaArgumentTextType(call.Arguments[idx])
+}
 
-	expr := strings.TrimSpace(call.Arguments[idx])
+// inferJavaArgumentTextType infers an argument's type from its source text
+// alone: literals, `new T(...)` and enum-constant references.
+func inferJavaArgumentTextType(expr string) string {
+	expr = strings.TrimSpace(expr)
 	switch {
 	case expr == "":
 		return ""
