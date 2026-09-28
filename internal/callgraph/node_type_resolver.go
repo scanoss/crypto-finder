@@ -114,25 +114,16 @@ func nodeModuleDecls(graph *CallGraph) map[string]*FunctionDecl {
 	return decls
 }
 
-// moduleVariableTypes returns the module variable types a function sees: the
-// module's, less any name the function binds itself as a parameter or from a
-// call. A local declared any other way, as in `const ec = opts.ec`, is not
-// visible here and would still inherit the module's type for ec.
+// moduleVariableTypes returns the types of the module variables a function
+// uses without declaring them, the names the parser lists in ModuleVars.
 func moduleVariableTypes(fn *FunctionDecl, moduleTypes map[string]string) map[string]string {
-	if len(moduleTypes) == 0 {
-		return nil
+	seed := make(map[string]string, len(fn.ModuleVars))
+	for _, name := range fn.ModuleVars {
+		if typ, ok := moduleTypes[name]; ok {
+			seed[name] = typ
+		}
 	}
-	seen := make(map[string]string, len(moduleTypes))
-	for name, typ := range moduleTypes {
-		seen[name] = typ
-	}
-	for _, param := range fn.Parameters {
-		delete(seen, param.Name)
-	}
-	for i := range fn.Calls {
-		delete(seen, fn.Calls[i].AssignedVar)
-	}
-	return seen
+	return seed
 }
 
 // resolveNodeAssignedVarCalleesInFunction walks one function's calls in

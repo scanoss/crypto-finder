@@ -32,8 +32,8 @@ func nodeCallNames(fn *FunctionDecl) []string {
 	return names
 }
 
-// A CommonJS module declares its functions by assignment, and the calls in an
-// anonymous callback belong to the function that runs it.
+// A CommonJS module declares its functions by assignment, and an anonymous
+// callback is a function of its own, named by where it starts.
 func TestNodeParser_AssignedFunctionsAndCallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -60,9 +60,11 @@ function Hasher() {}
 		byID[analysis.Functions[i].ID.String()] = &analysis.Functions[i]
 	}
 	for id, want := range map[string][]string{
-		"app/lib.hash":         {"createHash", "digest", "update"},
-		"app/lib.sign":         {"createSign", "resolve", "sign", "update"},
-		"app/lib.(Hasher).run": {"map", "randomBytes"},
+		"app/lib.hash":              {"createHash", "digest", "update"},
+		"app/lib.sign":              nil,
+		"app/lib.<anonymous>@8:22":  {"createSign", "resolve", "sign", "update"},
+		"app/lib.(Hasher).run":      {"map"},
+		"app/lib.<anonymous>@15:45": {"randomBytes"},
 	} {
 		fn := byID[id]
 		if fn == nil {
@@ -73,8 +75,7 @@ function Hasher() {}
 			t.Errorf("%s calls = %v, want %v", id, got, want)
 		}
 	}
-	sign := byID["app/lib.sign"]
-	if sign != nil {
+	if sign := byID["app/lib.<anonymous>@8:22"]; sign != nil {
 		for i := range sign.Calls {
 			if call := &sign.Calls[i]; call.Callee.Name == "update" && call.ReceiverVar != "signer" {
 				t.Errorf("signer.update ReceiverVar = %q, want signer", call.ReceiverVar)

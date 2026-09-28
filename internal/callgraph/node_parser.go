@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -224,17 +225,39 @@ func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, 
 	return binding, ok && binding.module != ""
 }
 
-// addModuleVariables adds the variables the module declares to a function's
-// locals. A call on one then records its receiver, which is how a variable
-// the module binds once, as elliptic consumers do with their curve context,
-// reaches the functions that use it.
-func (b nodeBindings) addModuleVariables(locals map[string]bool) map[string]bool {
+// withModuleVariables returns a function's locals plus the variables the
+// module declares, so a call on a module variable records its receiver. That
+// is how a variable the module binds once, as elliptic consumers do with their
+// curve context, reaches the functions that use it.
+func (b nodeBindings) withModuleVariables(own map[string]bool) map[string]bool {
+	locals := make(map[string]bool, len(own))
+	for name := range own {
+		locals[name] = true
+	}
 	for name, binding := range b {
 		if binding.module == "" {
 			locals[name] = true
 		}
 	}
 	return locals
+}
+
+// moduleReceivers lists, sorted, the module variables that calls use as their
+// receiver and that the function does not declare itself.
+func (b nodeBindings) moduleReceivers(calls []FunctionCall, own map[string]bool) []string {
+	seen := make(map[string]bool)
+	for i := range calls {
+		name := calls[i].ReceiverVar
+		if binding, ok := b[name]; ok && binding.module == "" && !own[name] {
+			seen[name] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // qualify appends a dotted access path to the binding and splits the result
@@ -427,13 +450,19 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 	case javaNodeClassDeclaration:
 		p.extractClassMethods(node, src, filePath, packagePath, "", bindings, analysis)
 		return
+	case nodeObjectLiteral:
+		p.extractObjectMethods(node, src, filePath, packagePath, "", bindings, analysis)
+		return
+	case nodeArrowFunction, nodeFunctionExpression:
+		// Every function the other cases do not declare, such as a callback or
+		// a route handler, is a function of its own: it runs later, on its own
+		// variables, so its calls must not join those around it.
+		p.declareNodeFunction(node, src, filePath, packagePath, nodeAnonymousName(node), "", bindings, analysis)
+		return
 	case nodeAssignmentExpression:
 		if fn := nodeAssignedFunction(node); fn != nil {
 			if name, owner := nodeAssignmentTarget(node.ChildByFieldName("left"), src); name != "" {
-				if decl := p.parseNodeFunction(fn, src, filePath, packagePath, name, owner, bindings); decl != nil {
-					analysis.Functions = append(analysis.Functions, *decl)
-				}
-				p.extractDeclarations(fn.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
+				p.declareNodeFunction(fn, src, filePath, packagePath, name, owner, bindings, analysis)
 				return
 			}
 		}
@@ -480,47 +509,11 @@ func nodeAssignmentTarget(left *sitter.Node, src []byte) (name, owner string) {
 	return "", ""
 }
 
-// nodeFunctionIsDeclared reports whether the parser records a function
-// expression as a declaration of its own: bound to a name by a declarator, or
-// assigned to a name or a member.
-func nodeFunctionIsDeclared(fn *sitter.Node) bool {
-	parent := fn.Parent()
-	if parent == nil {
-		return false
-	}
-	switch parent.Type() {
-	case nodeVariableDeclarator:
-		name := parent.ChildByFieldName("name")
-		return name != nil && name.Type() == goNodeIdentifier && sameSyntaxNode(parent.ChildByFieldName("value"), fn)
-	case nodeAssignmentExpression:
-		left := parent.ChildByFieldName("left")
-		return sameSyntaxNode(parent.ChildByFieldName("right"), fn) && left != nil &&
-			(left.Type() == goNodeIdentifier || left.Type() == nodeMemberExpression)
-	}
-	return false
-}
-
-// nodeOwnsScope reports whether node is a function or class whose calls
-// belong to a declaration of its own. An anonymous function the parser does
-// not record, such as a callback passed to a call, does not own its calls:
-// they belong to the enclosing function, the code that hands the callback
-// on, as `new Promise(function (resolve) { .. })` does.
-func nodeOwnsScope(node *sitter.Node) bool {
-	switch node.Type() {
-	case nodeArrowFunction, nodeFunctionExpression:
-		return nodeFunctionIsDeclared(node)
-	case nodeClassExpression:
-		return true
-	}
-	return isNodeNestedScope(node.Type())
-}
-
-// moduleInitDecl collects the calls a module makes when it loads: its
-// top-level statements and the anonymous callbacks they run, under the
-// synthetic <module> declaration the Python parser also emits. A module that
-// makes no such call gets none.
+// moduleInitDecl collects the calls a module makes when it loads, its
+// top-level statements, under the synthetic <module> declaration the Python
+// parser also emits. A module that makes no such call gets none.
 func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, modulePath string, bindings nodeBindings) *FunctionDecl {
-	locals := bindings.addModuleVariables(make(map[string]bool))
+	locals := bindings.withModuleVariables(nil)
 	calls := p.extractCalls(root, src, filePath, modulePath, "", bindings, locals)
 	if len(calls) == 0 {
 		return nil
@@ -563,31 +556,51 @@ func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, fil
 			continue
 		}
 
-		value = nodeAssignedFunction(value)
-		if value == nil {
+		if fn := nodeAssignedFunction(value); fn != nil {
+			p.declareNodeFunction(fn, src, filePath, packagePath, bound, "", bindings, analysis)
 			continue
 		}
-		if decl := p.parseNodeFunction(value, src, filePath, packagePath, bound, "", bindings); decl != nil {
-			analysis.Functions = append(analysis.Functions, *decl)
-		}
-		p.extractDeclarations(value.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
+		p.extractDeclarations(value, src, filePath, packagePath, bindings, analysis)
 	}
 }
 
-// extractObjectMethods walks the shorthand methods of an object literal bound
-// to a name. tree-sitter gives them the same `method_definition` node a class
-// body uses, and the binding names their owner.
-func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePath, packagePath, owner string, bindings nodeBindings, analysis *FileAnalysis) {
-	if node == nil || owner == "" {
-		return
+// declareNodeFunction records a function expression under name, then the
+// functions declared inside it.
+func (p *NodeParser) declareNodeFunction(fn *sitter.Node, src []byte, filePath, packagePath, name, owner string, bindings nodeBindings, analysis *FileAnalysis) {
+	if decl := p.parseNodeFunction(fn, src, filePath, packagePath, name, owner, bindings); decl != nil {
+		analysis.Functions = append(analysis.Functions, *decl)
 	}
+	p.extractDeclarations(fn.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
+}
+
+// nodeAnonymousName names a function expression that nothing names by where
+// it starts, as <anonymous>@12:5, which is unique within its module.
+func nodeAnonymousName(fn *sitter.Node) string {
+	return fmt.Sprintf("<anonymous>@%d:%d", fn.StartPoint().Row+1, fn.StartPoint().Column+1)
+}
+
+// extractObjectMethods declares the methods of an object literal: shorthand
+// methods, which tree-sitter parses as the `method_definition` a class body
+// uses, and properties whose value is a function, as in
+// `module.exports = { sign: function (..) {..} }`. owner is the name the
+// object is bound to, or empty for an object nothing names. Other property
+// values are searched for declarations of their own.
+func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePath, packagePath, owner string, bindings nodeBindings, analysis *FileAnalysis) {
 	for i := 0; i < int(node.NamedChildCount()); i++ {
-		method := node.NamedChild(i)
-		if method.Type() != nodeMethodDefinition {
-			continue
-		}
-		if decl := p.parseNodeFunction(method, src, filePath, packagePath, "", owner, bindings); decl != nil {
-			analysis.Functions = append(analysis.Functions, *decl)
+		member := node.NamedChild(i)
+		switch member.Type() {
+		case nodeMethodDefinition:
+			p.declareNodeFunction(member, src, filePath, packagePath, "", owner, bindings, analysis)
+		case "pair":
+			key := member.ChildByFieldName("key")
+			value := member.ChildByFieldName("value")
+			if fn := nodeAssignedFunction(value); fn != nil && key != nil && key.Type() != "computed_property_name" {
+				p.declareNodeFunction(fn, src, filePath, packagePath, unquoteNodeString(key.Content(src)), owner, bindings, analysis)
+				continue
+			}
+			p.extractDeclarations(value, src, filePath, packagePath, bindings, analysis)
+		default:
+			p.extractDeclarations(member, src, filePath, packagePath, bindings, analysis)
 		}
 	}
 }
@@ -649,10 +662,15 @@ func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, sr
 		OwnerName:    owner,
 		FunctionType: javaFunctionTypeMethod,
 	}
+	own := make(map[string]bool)
 	for _, init := range inits {
-		locals := bindings.addModuleVariables(collectNodeLocalNames(nil, init, src))
+		collectNodeBindingNames(init, src, own)
+	}
+	locals := bindings.withModuleVariables(own)
+	for _, init := range inits {
 		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, bindings, locals)...)
 	}
+	decl.ModuleVars = bindings.moduleReceivers(decl.Calls, own)
 	analysis.Functions = append(analysis.Functions, *decl)
 }
 
@@ -684,8 +702,10 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 		decl.OwnerName = owner
 		decl.FunctionType = javaFunctionTypeMethod
 	}
-	locals := imports.addModuleVariables(collectNodeLocalNames(params, body, src))
+	own := collectNodeLocalNames(params, body, src)
+	locals := imports.withModuleVariables(own)
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
+	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
 	return decl
 }
@@ -808,7 +828,7 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 }
 
 func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]bool) bool {
-	if !nodeOwnsScope(node) {
+	if !isNodeNestedScope(node.Type()) {
 		return false
 	}
 	switch node.Type() {
@@ -823,7 +843,7 @@ func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]b
 
 func isNodeNestedScope(nodeType string) bool {
 	switch nodeType {
-	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, javaNodeClassDeclaration:
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, javaNodeClassDeclaration, nodeClassExpression:
 		return true
 	default:
 		return false
@@ -840,7 +860,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 	if node == nil {
 		return
 	}
-	if nodeOwnsScope(node) {
+	if isNodeNestedScope(node.Type()) {
 		return
 	}
 	var call *FunctionCall
