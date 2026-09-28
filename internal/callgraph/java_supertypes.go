@@ -166,3 +166,31 @@ func recordJavaSupertypes(analysis *FileAnalysis, typeName string, supertypes []
 	}
 	analysis.Supertypes[owner] = append(existing, supertypes...)
 }
+
+// javaParameterBaseType strips generic arguments, array brackets and a varargs
+// ellipsis from a parameter's source type.
+func javaParameterBaseType(raw string) string {
+	base := strings.TrimSpace(stripGenericSuffix(strings.TrimSpace(raw)))
+	base = strings.TrimSpace(strings.TrimSuffix(base, "..."))
+	for strings.HasSuffix(base, "[]") {
+		base = strings.TrimSpace(strings.TrimSuffix(base, "[]"))
+	}
+	return base
+}
+
+// qualifyJavaParameters fills FunctionParameter.QualifiedType for the
+// parameters whose type the source did not spell fully qualified, with the
+// names resolveJavaSupertype would give it (import, type declared in this
+// file, this package, then any on-demand import and java.lang).
+func qualifyJavaParameters(params []FunctionParameter, analysis *FileAnalysis) {
+	for i := range params {
+		if params[i].QualifiedType != "" {
+			continue
+		}
+		base := javaParameterBaseType(params[i].Type)
+		if base == "" || isJavaPrimitive(base) || isJavaTypeVariable(base) {
+			continue
+		}
+		params[i].QualifiedType = strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
+	}
+}

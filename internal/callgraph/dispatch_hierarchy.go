@@ -73,7 +73,7 @@ type dispatchHierarchy struct {
 	children map[string][]string
 	// inheritedBy memoizes inheritedProviders per interface and method.
 	inheritedBy     map[string]map[string]bool
-	declaredMethods map[string]map[string]bool
+	declaredMethods map[string]map[string][]*FunctionDecl
 	recorded        map[string]bool
 	ancestors       map[string]map[string]bool
 	complete        map[string]bool
@@ -191,9 +191,10 @@ func (h *dispatchHierarchy) indexChildren() {
 // those are real targets of an interface call; an ancestor whose method every
 // implementor below it overrides is not (class Impl extends Base implements
 // Hasher, with hash declared only on Base, makes Base.hash a target).
-func (h *dispatchHierarchy) inheritedProviders(iface, method string) map[string]bool {
+func (h *dispatchHierarchy) inheritedProviders(iface string, ifaceMethod *FunctionDecl) map[string]bool {
 	iface = normalizeHierarchyName(iface)
-	memoKey := iface + "\x00" + method
+	method := methodArityKey(ifaceMethod.ID.Name)
+	memoKey := iface + "\x00" + ifaceMethod.ID.Name
 	if set, ok := h.inheritedBy[memoKey]; ok {
 		return set
 	}
@@ -210,10 +211,10 @@ func (h *dispatchHierarchy) inheritedProviders(iface, method string) map[string]
 				}
 				seen[implementor] = true
 				next = append(next, implementor)
-				if declares[implementor][method] {
+				if declaresOverride(declares[implementor][method], ifaceMethod) {
 					continue
 				}
-				for _, provider := range h.nearestDeclaring(implementor, method, declares) {
+				for _, provider := range h.nearestDeclaring(implementor, method, ifaceMethod, declares) {
 					set[provider] = true
 				}
 			}
@@ -225,8 +226,8 @@ func (h *dispatchHierarchy) inheritedProviders(iface, method string) map[string]
 }
 
 // nearestDeclaring walks typeName's ancestors breadth-first and returns the
-// closest level's classes that declare method.
-func (h *dispatchHierarchy) nearestDeclaring(typeName, method string, declares map[string]map[string]bool) []string {
+// closest level's classes that declare a method with ifaceMethod's signature.
+func (h *dispatchHierarchy) nearestDeclaring(typeName, method string, ifaceMethod *FunctionDecl, declares map[string]map[string][]*FunctionDecl) []string {
 	seen := map[string]bool{typeName: true}
 	frontier := []string{typeName}
 	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
@@ -237,7 +238,7 @@ func (h *dispatchHierarchy) nearestDeclaring(typeName, method string, declares m
 					continue
 				}
 				seen[parent] = true
-				if declares[parent][method] {
+				if declaresOverride(declares[parent][method], ifaceMethod) {
 					found = append(found, parent)
 				}
 				next = append(next, parent)
@@ -251,24 +252,37 @@ func (h *dispatchHierarchy) nearestDeclaring(typeName, method string, declares m
 	return nil
 }
 
-// classMethodIndex maps each type to the "name#arity" keys of the methods it
-// declares with a body (interface declarations excluded). Built on first use.
-func (h *dispatchHierarchy) classMethodIndex() map[string]map[string]bool {
+// classMethodIndex maps each type to its methods with a body (interface
+// declarations excluded), grouped by "name#arity" key. Built on first use.
+func (h *dispatchHierarchy) classMethodIndex() map[string]map[string][]*FunctionDecl {
 	if h.declaredMethods != nil {
 		return h.declaredMethods
 	}
-	h.declaredMethods = make(map[string]map[string]bool)
+	h.declaredMethods = make(map[string]map[string][]*FunctionDecl)
 	for _, fn := range h.graph.Functions {
 		if fn == nil || fn.ID.Type == "" || fn.OwnerType == ownerTypeInterface {
 			continue
 		}
 		owner := declOwnerFQN(fn.ID)
 		if h.declaredMethods[owner] == nil {
-			h.declaredMethods[owner] = make(map[string]bool)
+			h.declaredMethods[owner] = make(map[string][]*FunctionDecl)
 		}
-		h.declaredMethods[owner][methodArityKey(fn.ID.Name)] = true
+		key := methodArityKey(fn.ID.Name)
+		h.declaredMethods[owner][key] = append(h.declaredMethods[owner][key], fn)
 	}
 	return h.declaredMethods
+}
+
+// declaresOverride reports whether one of decls has ifaceMethod's erased
+// parameter types. A same-name, same-arity overload with other parameter
+// types does not override it.
+func declaresOverride(decls []*FunctionDecl, ifaceMethod *FunctionDecl) bool {
+	for _, decl := range decls {
+		if sameErasedParameters(decl.Parameters, ifaceMethod.Parameters) {
+			return true
+		}
+	}
+	return false
 }
 
 // relation classifies whether sub is a subtype of super.
@@ -493,6 +507,8 @@ const (
 	javaBooleanType = "boolean"
 	javaCharType    = "char"
 	javaIntType     = "int"
+	javaLongType    = "long"
+	javaLangString  = "java.lang.String"
 	javaVoidType    = "void"
 )
 
@@ -565,7 +581,7 @@ func newOverloadSelector(graph *CallGraph, hierarchy *dispatchHierarchy) *overlo
 //     kept, as before, rather than dropping the call.
 //
 // An argument whose type the call site does not record constrains nothing.
-func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall, candidates []string) []string {
+func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall, callerPkg string, candidates []string) []string {
 	if len(candidates) < 2 || call == nil {
 		return candidates
 	}
@@ -576,7 +592,7 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 			applicable = append(applicable, key)
 			continue
 		}
-		known, exactPositions, accepted := s.matchArguments(fn, call)
+		known, exactPositions, accepted := s.matchArguments(fn, call, callerPkg)
 		if known > 0 && exactPositions == len(fn.Parameters) {
 			exact = append(exact, key)
 		}
@@ -588,7 +604,7 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 	case len(exact) > 0:
 		return exact
 	case len(applicable) > 0:
-		return s.pruneDominated(graph, call, applicable)
+		return s.pruneDominated(graph, call, callerPkg, applicable)
 	default:
 		return candidates
 	}
@@ -599,13 +615,13 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 // the other declares exactly the recorded type at every typed position and the
 // same parameter type as this one at every untyped position. javac would pick
 // the other in every case, so this one is never the target.
-func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, applicable []string) []string {
+func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, callerPkg string, applicable []string) []string {
 	if len(applicable) < 2 {
 		return applicable
 	}
 	var typedExact []*FunctionDecl
 	for _, key := range applicable {
-		if fn := graph.Functions[key]; fn != nil && s.typedPositionsExact(fn, call) {
+		if fn := graph.Functions[key]; fn != nil && s.typedPositionsExact(fn, call, callerPkg) {
 			typedExact = append(typedExact, fn)
 		}
 	}
@@ -615,7 +631,7 @@ func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, 
 	kept := make([]string, 0, len(applicable))
 	for _, key := range applicable {
 		fn := graph.Functions[key]
-		if fn == nil || s.typedPositionsExact(fn, call) || !s.dominatedBy(fn, typedExact, call) {
+		if fn == nil || s.typedPositionsExact(fn, call, callerPkg) || !s.dominatedBy(fn, typedExact, call) {
 			kept = append(kept, key)
 		}
 	}
@@ -624,14 +640,34 @@ func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, 
 
 // typedPositionsExact reports whether fn declares exactly the recorded type at
 // every argument position whose type is known.
-func (s *overloadSelector) typedPositionsExact(fn *FunctionDecl, call *FunctionCall) bool {
-	for i, param := range fn.Parameters {
-		arg := stripGenericSuffix(s.staticArgumentType(call, i))
-		if arg != "" && arg != stripGenericSuffix(normalizeJavaTypeName(param.Type)) {
+func (s *overloadSelector) typedPositionsExact(fn *FunctionDecl, call *FunctionCall, callerPkg string) bool {
+	for i := range fn.Parameters {
+		if arg := stripGenericSuffix(s.staticArgumentType(call, i)); arg != "" && !s.exactAt(fn, call, i, callerPkg) {
 			return false
 		}
 	}
 	return true
+}
+
+// exactAt reports whether the argument at position i has exactly fn's
+// parameter type. Equal simple names are not enough for a reference type:
+// both sides must resolve to the same fully qualified type, since
+// com.other.Key is not com.acme.sec.Key. When either side's package cannot be
+// resolved the position is not exact, so the overload does not win outright.
+func (s *overloadSelector) exactAt(fn *FunctionDecl, call *FunctionCall, i int, callerPkg string) bool {
+	param := fn.Parameters[i]
+	arg := stripGenericSuffix(s.staticArgumentType(call, i))
+	paramType := stripGenericSuffix(normalizeJavaTypeName(param.Type))
+	if arg == "" || arg != paramType {
+		return false
+	}
+	base := strings.TrimRight(arg, "[]")
+	if isJavaPrimitive(base) {
+		return true
+	}
+	argFQN := s.qualifiedArgumentType(call, i, callerPkg)
+	paramFQN := s.resolveQualified(param.QualifiedType, base, fn.ID.Package)
+	return argFQN != "" && argFQN == paramFQN
 }
 
 // dominatedBy reports whether some overload in others has fn's parameter type
@@ -662,7 +698,7 @@ func (s *overloadSelector) dominatedBy(fn *FunctionDecl, others []*FunctionDecl,
 // types: known counts arguments with a recorded type; exactPositions counts
 // typed arguments equal to their parameter type; accepted is false when some
 // recorded type cannot be passed to its parameter.
-func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall) (known, exactPositions int, accepted bool) {
+func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall, callerPkg string) (known, exactPositions int, accepted bool) {
 	accepted = true
 	for i, param := range fn.Parameters {
 		arg := stripGenericSuffix(s.staticArgumentType(call, i))
@@ -671,15 +707,109 @@ func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall) 
 			continue
 		}
 		known++
-		if arg == paramType {
+		if s.exactAt(fn, call, i, callerPkg) {
 			exactPositions++
 			continue
 		}
-		if !s.assignable(arg, paramType) {
+		if arg != paramType && !s.assignable(arg, paramType) {
 			accepted = false
 		}
 	}
 	return known, exactPositions, accepted
+}
+
+// javaLangTypes are the java.lang types a source file uses without importing.
+var javaLangTypes = map[string]bool{
+	"Object": true, "String": true, "CharSequence": true, "Number": true,
+	"Integer": true, "Long": true, "Short": true, "Byte": true, "Character": true,
+	"Boolean": true, "Double": true, "Float": true, "Void": true, "Class": true,
+	"Iterable": true, "Comparable": true, "Runnable": true, "AutoCloseable": true,
+	"Cloneable": true, "Throwable": true, "Exception": true, "RuntimeException": true,
+	"Error": true, "StringBuilder": true, "StringBuffer": true, "Enum": true,
+	"Record": true, "Thread": true, "ClassLoader": true, "Process": true,
+}
+
+// resolveQualified picks the fully qualified name a type written as simple in
+// package pkg denotes. qualified is the parser's resolution, possibly listing
+// alternatives; the first alternative naming a type the graph knows wins, a
+// single alternative is trusted as is, and otherwise a java.lang type the file
+// did not shadow is assumed. "" means the package cannot be told.
+func (s *overloadSelector) resolveQualified(qualified, simple, pkg string) string {
+	if qualified != "" {
+		alternatives := strings.Split(qualified, javaSupertypeAlternatives)
+		if len(alternatives) == 1 {
+			return normalizeHierarchyName(alternatives[0])
+		}
+		for _, alt := range alternatives {
+			if s.knownType(normalizeHierarchyName(alt)) {
+				return normalizeHierarchyName(alt)
+			}
+		}
+		if javaLangTypes[simple] {
+			return "java.lang." + simple
+		}
+		return ""
+	}
+	if pkg != "" && s.knownType(pkg+"."+simple) {
+		return pkg + "." + simple
+	}
+	if javaLangTypes[simple] {
+		return "java.lang." + simple
+	}
+	return ""
+}
+
+func (s *overloadSelector) knownType(fqn string) bool {
+	for _, owner := range s.typesBySimple[simpleTypeName(fqn)] {
+		if owner == fqn {
+			return true
+		}
+	}
+	return false
+}
+
+// qualifiedArgumentType resolves the fully qualified static type of the
+// argument at idx, or "" when its package cannot be told. A type name the
+// caller's source left simple resolves against the caller's package.
+func (s *overloadSelector) qualifiedArgumentType(call *FunctionCall, idx int, callerPkg string) string {
+	if idx < len(call.ArgumentSources) && len(call.ArgumentSources[idx]) == 1 {
+		return s.qualifiedSourceNodeType(call.ArgumentSources[idx][0], callerPkg, 0)
+	}
+	if idx < len(call.Arguments) && javaLiteralType(call.Arguments[idx]) == javaStringType {
+		return javaLangString
+	}
+	return ""
+}
+
+func (s *overloadSelector) qualifiedSourceNodeType(node SourceNode, callerPkg string, depth int) string {
+	if node.DeclaredType != "" {
+		base := javaParameterBaseType(node.DeclaredType)
+		if strings.Contains(base, ".") {
+			return normalizeHierarchyName(base)
+		}
+		return s.resolveQualified("", base, callerPkg)
+	}
+	switch node.Type {
+	case sourceNodeCallResult:
+		if node.CallTarget == nil {
+			return ""
+		}
+		if BaseFunctionName(node.CallTarget.Name) == constructorMethodName {
+			return declOwnerFQN(FunctionID{Package: node.CallTarget.Package, Type: node.CallTarget.Type})
+		}
+		if fn := s.graph.Functions[node.CallTarget.String()]; fn != nil {
+			return s.resolveQualified("", javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType)), fn.ID.Package)
+		}
+	case sourceNodeValue, sourceNodeExpression:
+		if s.staticSourceNodeType(node, depth) == javaStringType {
+			return javaLangString
+		}
+	case sourceNodeVariable:
+		if depth < hierarchyMaxDepth && len(node.SourceNodes) == 1 {
+			return s.qualifiedSourceNodeType(node.SourceNodes[0], callerPkg, depth+1)
+		}
+	}
+	return ""
 }
 
 // assignable reports whether a value of static type arg can be passed to a
@@ -863,16 +993,43 @@ func javaLiteralType(expr string) string {
 	switch {
 	case len(expr) >= 3 && expr[0] == '\'' && expr[len(expr)-1] == '\'':
 		return javaCharType
-	case javaNumericLiteral(expr, "lL"):
-		return "long"
+	case javaNumericLiteral(expr, "lL") || javaHexLiteral(expr, true):
+		return javaLongType
 	case javaNumericLiteral(expr, "fF"):
 		return "float"
 	case javaNumericLiteral(expr, "dD") || (javaNumericLiteral(expr, "") && strings.ContainsAny(expr, ".eE") && !strings.HasPrefix(strings.TrimLeft(expr, "+-"), "0x")):
 		return "double"
-	case strings.HasPrefix(strings.TrimLeft(expr, "+-"), "0x") || strings.HasPrefix(strings.TrimLeft(expr, "+-"), "0X"):
+	case javaHexLiteral(expr, false):
 		return javaIntType
 	}
 	return inferJavaArgumentTextType(expr)
+}
+
+// javaHexLiteral reports whether expr is a hexadecimal integer literal, with
+// the long suffix when long is set and without it otherwise.
+func javaHexLiteral(expr string, long bool) bool {
+	body := strings.TrimLeft(expr, "+-")
+	if !strings.HasPrefix(body, "0x") && !strings.HasPrefix(body, "0X") {
+		return false
+	}
+	body = body[2:]
+	hasSuffix := strings.HasSuffix(body, "L") || strings.HasSuffix(body, "l")
+	if hasSuffix != long {
+		return false
+	}
+	if long {
+		body = body[:len(body)-1]
+	}
+	if body == "" {
+		return false
+	}
+	for _, r := range body {
+		isHex := r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r == '_'
+		if !isHex {
+			return false
+		}
+	}
+	return true
 }
 
 // javaNumericLiteral reports whether expr is a decimal numeric literal ending
@@ -917,10 +1074,13 @@ func javaNumericLiteralRune(body string, i int, r rune) bool {
 }
 
 // javaExpressionType types the one expression form whose type the text
-// settles: a concatenation involving a string literal is a String. A
-// conditional is left unknown, since its branches may differ.
+// settles: a concatenation that starts or ends with a string literal is a
+// String. A conditional is left unknown, since its branches may differ, and
+// so is a sum whose string literal sits inside a call (s.indexOf("x") + 1).
 func javaExpressionType(expr string) string {
-	if strings.Contains(expr, "+") && strings.Contains(expr, "\"") && !strings.Contains(expr, "?") {
+	expr = strings.TrimSpace(expr)
+	literalEdge := strings.HasPrefix(expr, "\"") || strings.HasSuffix(expr, "\"")
+	if literalEdge && strings.Contains(expr, "+") && !strings.Contains(expr, "?") {
 		return javaStringType
 	}
 	return ""

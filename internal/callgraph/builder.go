@@ -1021,7 +1021,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	if _, declared := graph.Functions[calleeKey]; !declared {
-		overloadTargets = idx.overloads.selectOverloads(graph, call, overloadTargets)
+		overloadTargets = idx.overloads.selectOverloads(graph, call, callerPackage(graph, callerKey), overloadTargets)
 	}
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
 	resolvedTargets[0] = calleeKey
@@ -1043,7 +1043,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	}
 
 	abstractAliases := idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph)
-	for _, alias := range selectInheritedOverloads(graph, call, abstractAliases, idx.overloads) {
+	for _, alias := range selectInheritedOverloads(graph, call, callerPackage(graph, callerKey), abstractAliases, idx.overloads) {
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
 	}
@@ -1349,7 +1349,7 @@ func (b *Builder) expandInterfaceDispatch(
 		if namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
-		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl.ID)
+		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl)
 		if !ok {
 			continue
 		}
@@ -1371,7 +1371,8 @@ func (b *Builder) expandInterfaceDispatch(
 // interfaceImplementationKind classifies the type owning candidate against the
 // interface owning iface: an implementation (interface_dispatch), possibly one
 // (name_only, when its ancestry is not fully recorded), or not one (ok false).
-func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, candidate, iface FunctionID) (EdgeKind, bool) {
+func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, candidate FunctionID, ifaceMethod *FunctionDecl) (EdgeKind, bool) {
+	iface := ifaceMethod.ID
 	if hierarchy == nil {
 		return EdgeKindNameOnly, true
 	}
@@ -1387,7 +1388,7 @@ func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, cand
 	case subtypeNo:
 		// Not an implementor itself, but an implementor may inherit the
 		// method from it.
-		if hierarchy.inheritedProviders(declOwnerFQN(iface), methodArityKey(candidate.Name))[declOwnerFQN(candidate)] {
+		if hierarchy.inheritedProviders(declOwnerFQN(iface), ifaceMethod)[declOwnerFQN(candidate)] {
 			return EdgeKindInterfaceDispatch, true
 		}
 		return "", false
@@ -1600,9 +1601,18 @@ func nearestInherited(hierarchy *dispatchHierarchy, owner string, byOwner map[st
 	return nil
 }
 
+// callerPackage returns the package of the function making a call, which
+// resolves the simple type names its arguments carry.
+func callerPackage(graph *CallGraph, callerKey string) string {
+	if fn := graph.Functions[callerKey]; fn != nil {
+		return fn.ID.Package
+	}
+	return ""
+}
+
 // selectInheritedOverloads applies call-site overload selection to the
 // inherited targets of an abstract-class expansion; overrides pass through.
-func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, aliases []interfaceDispatchAlias, selector *overloadSelector) []interfaceDispatchAlias {
+func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, callerPkg string, aliases []interfaceDispatchAlias, selector *overloadSelector) []interfaceDispatchAlias {
 	var inherited []string
 	for _, alias := range aliases {
 		if alias.Kind == EdgeKindExact {
@@ -1613,7 +1623,7 @@ func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, aliases []in
 		return aliases
 	}
 	keep := make(map[string]bool)
-	for _, key := range selector.selectOverloads(graph, call, inherited) {
+	for _, key := range selector.selectOverloads(graph, call, callerPkg, inherited) {
 		keep[key] = true
 	}
 	out := make([]interfaceDispatchAlias, 0, len(aliases))

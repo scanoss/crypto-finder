@@ -257,6 +257,12 @@ type FunctionDecl struct {
 type FunctionParameter struct {
 	Type    string
 	TypeRef TypeRef
+	// QualifiedType is the fully qualified erased type the parser resolved for
+	// Type through the file's imports and declarations, without array
+	// brackets. Where the file's imports leave it open, the possible names
+	// are listed in Java's lookup order separated by "|". Empty for
+	// primitives and for parsers that do not resolve it (Java only).
+	QualifiedType string
 	// Name is the declared parameter name (e.g. "hashingFunction"), when the
 	// parser captures it (1.6+ / Java only as of introduction). Empty for
 	// ecosystems whose parser does not populate it — callers that key off Name

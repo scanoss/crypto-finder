@@ -1019,6 +1019,7 @@ func (p *JavaParser) parseMethodDecl(
 	}
 
 	params := p.extractJavaParameterTypes(node, src)
+	qualifyJavaParameters(params, analysis)
 	returnRaw, returnRef := p.extractMethodReturnTypeRef(node, src)
 
 	decl := &FunctionDecl{
@@ -1085,6 +1086,7 @@ func (p *JavaParser) parseConstructorDecl(
 	}
 
 	params := p.extractJavaParameterTypes(node, src)
+	qualifyJavaParameters(params, analysis)
 
 	decl := &FunctionDecl{
 		ID: FunctionID{
@@ -2787,11 +2789,15 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 	params := make([]FunctionParameter, 0, len(specs))
 	for _, spec := range specs {
 		ref := parseSourceTypeRef(spec.RawType)
-		params = append(params, FunctionParameter{
+		param := FunctionParameter{
 			Type:    erasedTypeName(spec.RawType, ref),
 			TypeRef: ref,
 			Name:    spec.Name,
-		})
+		}
+		if base := javaParameterBaseType(spec.RawType); strings.Contains(base, ".") {
+			param.QualifiedType = base
+		}
+		params = append(params, param)
 	}
 	return params
 }

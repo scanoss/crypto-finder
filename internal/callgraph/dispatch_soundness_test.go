@@ -330,3 +330,69 @@ public class Use {
 		}
 	}
 }
+
+func TestDispatch_SameArityOverloadInImplementorIsNotAnOverride(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Hasher.java": `package com.lib;
+public interface Hasher { byte[] hash(byte[] d); }
+`,
+		"com/lib/Base.java": `package com.lib;
+import java.security.MessageDigest;
+public class Base {
+  public byte[] hash(byte[] d) throws Exception { return MessageDigest.getInstance("SHA-256").digest(d); }
+}
+`,
+		// hash(String) is an overload, not an override of hash(byte[]).
+		"com/lib/Impl.java": `package com.lib;
+public class Impl extends Base implements Hasher {
+  public byte[] hash(String s) { return null; }
+}
+`,
+		"com/app/App.java": `package com.app;
+import com.lib.Hasher;
+public class App {
+  public byte[] run(Hasher h, byte[] bytes) { return h.hash(bytes); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.lib.(Base).hash#1", "com.app.(App).run#2") {
+		t.Fatalf("Impl inherits hash(byte[]) from Base; its hash(String) overload does not override it")
+	}
+}
+
+func TestDispatch_SameSimpleNameInOtherPackageIsNotAnExactOverload(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key {}\n",
+		"com/other/Key.java":    "package com.other;\npublic interface Key {}\n",
+		"com/acme/Svc.java": `package com.acme;
+import com.acme.sec.Key;
+import java.security.MessageDigest;
+public class Svc {
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("SHA-256"); }
+}
+`,
+		"com/app/App.java": `package com.app;
+import com.acme.Svc;
+import com.other.Key;
+public class App {
+  public void run(Svc svc, Key k) throws Exception { svc.r(k); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.acme.(Svc).r#1$Object", "com.app.(App).run#2") {
+		t.Fatalf("com.other.Key is not com.acme.sec.Key: javac picks r(Object), which must stay linked")
+	}
+}
+
+func TestJavaExpressionAndHexLiteralTypes(t *testing.T) {
+	if got := javaLiteralType("0x10L"); got != "long" {
+		t.Errorf("javaLiteralType(0x10L) = %q, want long", got)
+	}
+	if got := javaExpressionType(`s.indexOf("x") + 1`); got != "" {
+		t.Errorf("javaExpressionType(indexOf+1) = %q, want unknown", got)
+	}
+	if got := javaExpressionType(`"a" + b`); got != javaStringType {
+		t.Errorf(`javaExpressionType("a" + b) = %q, want String`, got)
+	}
+}
