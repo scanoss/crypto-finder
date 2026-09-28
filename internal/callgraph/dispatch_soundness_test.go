@@ -229,3 +229,104 @@ func TestJavaSupertypesSkipTypeAnnotations(t *testing.T) {
 		t.Fatalf("SourceSupertypes[com.lib.Impl] = %v, want one entry naming com.lib.Hasher", parents)
 	}
 }
+
+func TestDispatch_OverriddenAncestorMethodIsNotAnInterfaceTarget(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Hasher.java": `package com.lib;
+public interface Hasher { byte[] hash(byte[] d); }
+`,
+		"com/lib/Base.java": `package com.lib;
+public class Base {
+  public byte[] hash(byte[] d) { return d; }
+}
+`,
+		// Impl overrides hash, so Base.hash is reached from a Hasher call
+		// only through Impl.hash itself, never directly.
+		"com/lib/Impl.java": `package com.lib;
+public class Impl extends Base implements Hasher {
+  public byte[] hash(byte[] d) { return d; }
+}
+`,
+		"com/app/App.java": `package com.app;
+import com.lib.Hasher;
+public class App {
+  public byte[] main(Hasher h, byte[] x) { return h.hash(x); }
+}
+`,
+	})
+	caller := "com.app.(App).main#2"
+	if !hasCaller(graph, "com.lib.(Impl).hash#1", caller) {
+		t.Fatalf("Impl.hash implements Hasher and must be linked")
+	}
+	if hasCaller(graph, "com.lib.(Base).hash#1", caller) {
+		t.Fatalf("every implementor below Base overrides hash, so Base.hash is not a target of the interface call")
+	}
+}
+
+func TestDispatch_OverloadArgumentTypedByCalleeReturnType(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Codec.java": `package com.lib;
+public class Codec {
+  public static String name() { return "x"; }
+  public static void put(String key, String value) {}
+  public static void put(String key, byte[] value) {}
+}
+`,
+		"com/app/Use.java": `package com.app;
+import com.lib.Codec;
+public class Use {
+  public void go() { Codec.put("k", Codec.name()); }
+  public void lit() { Codec.put("k", 'c' + "v"); }
+}
+`,
+	})
+	for _, caller := range []string{"com.app.(Use).go#0", "com.app.(Use).lit#0"} {
+		if !hasCaller(graph, "com.lib.(Codec).put#2$String,String", caller) {
+			t.Errorf("%s: the String overload must be linked", caller)
+		}
+		if hasCaller(graph, "com.lib.(Codec).put#2$String,byte[]", caller) {
+			t.Errorf("%s: the second argument is a String, so the byte[] overload must not be linked", caller)
+		}
+	}
+}
+
+func TestJavaLiteralType(t *testing.T) {
+	for expr, want := range map[string]string{
+		"'c'": "char", "10L": "long", "1.5f": "float", "2.0": "double", "1e3": "double",
+		"0x1F": "int", "42": "int", "null": "", "\"s\"": "String",
+	} {
+		if got := javaLiteralType(expr); got != want {
+			t.Errorf("javaLiteralType(%q) = %q, want %q", expr, got, want)
+		}
+	}
+}
+
+func TestDispatch_DominatedOverloadDroppedDespiteUntypedArgument(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Meta.java": `package com.lib;
+public class Meta {
+  public void set(String name, Object value) {}
+  public void set(Object name, Object value) {}
+  public void set(String name, Integer value) {}
+}
+`,
+		"com/app/Use.java": `package com.app;
+import com.lib.Meta;
+import com.vendor.Values;
+public class Use {
+  public void go(Meta m) { m.set("k", Values.any()); }
+}
+`,
+	})
+	caller := "com.app.(Use).go#1"
+	// set(String, Object) is more specific than set(Object, Object) whatever
+	// the second argument is, so the latter is never chosen.
+	if hasCaller(graph, "com.lib.(Meta).set#2$Object,Object", caller) {
+		t.Errorf("set(Object, Object) is dominated by set(String, Object) and must not be linked")
+	}
+	for _, overload := range []string{"set#2$String,Object", "set#2$String,Integer"} {
+		if key := "com.lib.(Meta)." + overload; !hasCaller(graph, key, caller) {
+			t.Errorf("the second argument's type is unknown, so %s must be kept", key)
+		}
+	}
+}
